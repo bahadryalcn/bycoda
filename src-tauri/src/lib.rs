@@ -1,0 +1,884 @@
+use tauri::Manager;
+
+mod account_identity;
+mod automations;
+mod azure_devops;
+mod bundled_host;
+mod chat_background;
+mod checkpoint;
+mod claude_commands;
+mod control;
+pub mod control_cli;
+mod conversation_tools_bridge;
+mod cursor_store;
+mod external_editor;
+mod file_access;
+mod fs;
+mod generic_acp;
+mod git_conflicts;
+mod git_watch;
+mod gitlab;
+mod handoff_history;
+mod harness;
+mod harness_updates;
+mod html_preview;
+mod inbox_media;
+mod integrations;
+mod jira;
+mod keep_awake;
+mod linear;
+mod link_preview;
+mod local_host;
+#[cfg(target_os = "macos")]
+mod macos;
+#[cfg(target_os = "macos")]
+mod macos_background;
+mod mcp;
+mod menu;
+mod native_language;
+mod notes;
+mod notifications;
+mod pasteboard;
+mod pi_usage;
+mod project_logo;
+mod provider_terminal_profiles;
+mod provider_usage;
+mod pty;
+mod pty_runtime_logs;
+#[cfg(target_os = "macos")]
+mod quick_composer;
+mod rate_limits;
+mod reminders;
+mod remote;
+mod remote_files;
+mod remote_ssh;
+mod runtime_logs_bridge;
+mod search;
+mod session_import;
+mod session_store;
+mod session_transfer;
+mod skills;
+mod social_bridge;
+pub mod ssh_askpass;
+mod terminal_profiles;
+mod trackpad_zoom;
+mod tray;
+mod turn_probe;
+mod turn_steps;
+mod window;
+mod window_transfer;
+#[cfg(windows)]
+mod windows;
+mod worktree_lifecycle;
+mod worktrees;
+
+// Phase 1 seam: spawn / kill harness children per bycoda thread.
+// Adapters own the protocol; this host only supervises processes.
+
+/// Project directory for new sessions — prefer cwd, else home.
+#[tauri::command]
+fn default_cwd() -> String {
+    if let Ok(cwd) = std::env::current_dir() {
+        return fs::path_to_js(&cwd);
+    }
+    dirs_home()
+        .map(|home| fs::path_to_js(std::path::Path::new(&home)))
+        .unwrap_or_else(|| "~".into())
+}
+
+#[tauri::command]
+fn home_dir() -> String {
+    dirs_home()
+        .map(|home| fs::path_to_js(std::path::Path::new(&home)))
+        .unwrap_or_else(|| "~".into())
+}
+
+#[tauri::command]
+fn path_environment() -> std::collections::HashMap<String, String> {
+    [
+        "USERPROFILE",
+        "LOCALAPPDATA",
+        "APPDATA",
+        "TEMP",
+        "TMP",
+        "PROGRAMDATA",
+        "PROGRAMFILES",
+        "PROGRAMFILES(X86)",
+        "WINDIR",
+    ]
+    .into_iter()
+    .filter_map(|key| {
+        std::env::var(key).ok().map(|value| {
+            (
+                key.to_string(),
+                fs::path_to_js(std::path::Path::new(&value)),
+            )
+        })
+    })
+    .collect()
+}
+
+pub(crate) struct PasswdIdentity {
+    pub home: String,
+    pub user: String,
+    pub shell: String,
+}
+
+pub(crate) fn dirs_home() -> Option<String> {
+    #[cfg(windows)]
+    let keys = ["USERPROFILE", "HOME"];
+    #[cfg(not(windows))]
+    let keys = ["HOME", "USERPROFILE"];
+    for key in keys {
+        if let Some(home) = std::env::var_os(key) {
+            let home = home.to_string_lossy().into_owned();
+            if !home.is_empty() {
+                return Some(home);
+            }
+        }
+    }
+    match (std::env::var("HOMEDRIVE"), std::env::var("HOMEPATH")) {
+        (Ok(drive), Ok(path)) if !drive.is_empty() && !path.is_empty() => {
+            Some(format!("{drive}{path}"))
+        }
+        _ => passwd_identity().map(|id| id.home),
+    }
+}
+
+/// Hide the console window that Windows allocates for GUI-spawned children.
+pub(crate) fn hide_window_console(cmd: &mut std::process::Command) {
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(WINDOWS_BACKGROUND_CREATION_FLAGS);
+    }
+    let _ = cmd;
+}
+
+#[cfg(windows)]
+const WINDOWS_BACKGROUND_CREATION_FLAGS: u32 = 0x0800_0000; // CREATE_NO_WINDOW
+
+#[cfg(all(test, windows))]
+mod background_command_tests {
+    use super::*;
+
+    #[test]
+    fn background_commands_keep_piped_output_and_exit_status() {
+        assert_eq!(WINDOWS_BACKGROUND_CREATION_FLAGS, 0x0800_0000);
+
+        let mut cmd = std::process::Command::new("cmd.exe");
+        cmd.args(["/D", "/C", "(echo stdout)&(echo stderr 1>&2)&exit /b 7"]);
+        hide_window_console(&mut cmd);
+
+        let output = cmd.output().expect("background command should run");
+        assert_eq!(output.status.code(), Some(7));
+        assert!(String::from_utf8_lossy(&output.stdout).contains("stdout"));
+        assert!(String::from_utf8_lossy(&output.stderr).contains("stderr"));
+    }
+}
+
+/// Finder-launched .app bundles often omit HOME/USER/SHELL. Fall back to the
+/// passwd database so harness CLIs still find `~/.fx` and the login keychain.
+pub(crate) fn passwd_identity() -> Option<PasswdIdentity> {
+    #[cfg(unix)]
+    {
+        let uid = unsafe { libc::getuid() };
+        let mut buf = vec![0u8; 4096];
+        let mut pwd = unsafe { std::mem::zeroed::<libc::passwd>() };
+        let mut result = std::ptr::null_mut::<libc::passwd>();
+        let rc = unsafe {
+            libc::getpwuid_r(
+                uid,
+                &mut pwd,
+                buf.as_mut_ptr() as *mut libc::c_char,
+                buf.len(),
+                &mut result,
+            )
+        };
+        if rc != 0 || result.is_null() {
+            return None;
+        }
+        unsafe {
+            let user = std::ffi::CStr::from_ptr(pwd.pw_name)
+                .to_string_lossy()
+                .into_owned();
+            let home = std::ffi::CStr::from_ptr(pwd.pw_dir)
+                .to_string_lossy()
+                .into_owned();
+            let shell = std::ffi::CStr::from_ptr(pwd.pw_shell)
+                .to_string_lossy()
+                .into_owned();
+            if user.is_empty() || home.is_empty() {
+                return None;
+            }
+            Some(PasswdIdentity { home, user, shell })
+        }
+    }
+    #[cfg(not(unix))]
+    {
+        None
+    }
+}
+
+#[tauri::command]
+fn set_traffic_lights_visible(
+    #[allow(unused_variables)] window: tauri::WebviewWindow,
+    #[allow(unused_variables)] visible: bool,
+) {
+    #[cfg(target_os = "macos")]
+    macos::set_visible(&window, visible);
+}
+
+#[tauri::command]
+fn set_window_background_blur(
+    #[allow(unused_variables)] window: tauri::WebviewWindow,
+    #[allow(unused_variables)] radius: u8,
+) {
+    #[cfg(target_os = "macos")]
+    macos::set_background_blur_radius(&window, radius);
+}
+
+#[tauri::command]
+fn set_dock_badge(
+    #[allow(unused_variables)] window: tauri::WebviewWindow,
+    #[allow(unused_variables)] count: u32,
+) {
+    #[cfg(target_os = "macos")]
+    macos::set_window_badge(&window, count);
+}
+
+// Async: building a webview from a sync command deadlocks the Windows event loop (wry#583).
+#[tauri::command]
+async fn open_new_window(
+    app: tauri::AppHandle,
+    transfer: Option<String>,
+    x: Option<f64>,
+    y: Option<f64>,
+) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || match transfer {
+        Some(payload) => window::open_transfer_window(&app, payload, x.zip(y)),
+        None => window::open_new_window(&app),
+    })
+    .await
+    .map_err(|error| error.to_string())?
+}
+
+fn should_request_quit(code: Option<i32>) -> bool {
+    code.is_some() || cfg!(any(target_os = "linux", target_os = "windows"))
+}
+
+#[tauri::command]
+async fn open_tool_window(
+    app: tauri::AppHandle,
+    tool: String,
+    cwd: String,
+    grouped: bool,
+) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        window::open_tool_window(&app, &tool, &cwd, grouped)
+    })
+    .await
+    .map_err(|error| error.to_string())?
+}
+
+#[cfg_attr(mobile, tauri::mobile_entry_point)]
+pub fn run() {
+    #[cfg(windows)]
+    windows::initialize().expect("Failed to initialize Windows process safety");
+    let app = tauri::Builder::default()
+        .plugin(tauri_plugin_process::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_fs::init())
+        .plugin(tauri_plugin_dialog::init())
+        .plugin(
+            tauri_plugin_window_state::Builder::default()
+                .with_denylist(&[
+                    window::QUICK_COMPOSER_LABEL,
+                    window::QUICK_COMPOSER_GIT_LABEL,
+                ])
+                .build(),
+        )
+        .manage(harness::HarnessHost::new())
+        .manage(keep_awake::KeepAwakeState::new())
+        .manage(git_watch::GitWatchHost::default())
+        .manage(pty::PtyHost::new())
+        .manage(remote::RemoteConnections::default())
+        .manage(window_transfer::WindowTransferState::new())
+        .setup(|app| {
+            harness::reap_orphaned_harness_processes();
+            app.state::<remote::RemoteConnections>()
+                .emit_tunnel_exits(app.handle().clone());
+            file_access::init(app.handle())?;
+            session_store::init(app.handle())?;
+            control::init(app.handle())?;
+            reminders::init(app.handle());
+            // Keep this computer's host in step with the desktop it shipped with.
+            bundled_host::start(app.handle());
+            conversation_tools_bridge::start_desktop_relay(app.handle().clone());
+            checkpoint::init(app.handle())?;
+            menu::install(app.handle())?;
+            tray::install(app.handle())?;
+            #[cfg(target_os = "macos")]
+            {
+                quick_composer::init(app.handle())?;
+                macos::install_dock_menu(app.handle());
+                if let Some(window) = app.get_webview_window("main") {
+                    macos::install(&window);
+                }
+            }
+            #[cfg(not(target_os = "macos"))]
+            {
+                if let Some(window) = app.get_webview_window("main") {
+                    let _ = window.set_decorations(false);
+                    let _ = window.set_shadow(true);
+                }
+            }
+            Ok(())
+        })
+        .on_menu_event(|app, event| {
+            menu::dispatch(app, event.id().as_ref());
+        })
+        .register_uri_scheme_protocol("html-preview", |_context, request| {
+            html_preview::respond(request)
+        })
+        .invoke_handler(tauri::generate_handler![
+            remote::remote_machines,
+            remote::remote_connect,
+            local_host::local_host_connect,
+            bundled_host::local_host_bundle_status,
+            generic_acp::generic_acp_list,
+            generic_acp::generic_acp_save,
+            generic_acp::generic_acp_remove,
+            generic_acp::generic_acp_registry,
+            generic_acp::generic_acp_install,
+            generic_acp::generic_acp_cancel_install,
+            handoff_history::handoff_history_save,
+            handoff_history::handoff_history_read,
+            remote::remote_disconnect,
+            remote::remote_request,
+            remote::dev_access::remote_dev_server_url,
+            remote::folder_access::remote_open_live_folder,
+            remote_files::begin_remote_file_copy,
+            remote_files::cached_remote_file_copy,
+            remote_files::append_remote_file_copy,
+            remote_files::finish_remote_file_copy,
+            remote_files::cancel_remote_file_copy,
+            remote_files::prepare_local_file,
+            remote::social_authority_status,
+            remote::social_authority_connect,
+            remote::remote_ssh_begin,
+            remote::remote_ssh_reconnect,
+            remote::remote_machine_update,
+            remote::remote_ssh_poll,
+            remote::remote_ssh_answer,
+            remote::remote_ssh_cancel,
+            control::control_enable,
+            control::control_disable,
+            control::control_reply,
+            control::control_save,
+            control::control_load,
+            control::control_scopes,
+            control::control_write_path,
+            control::control_attach_worker,
+            control::control_authorize_turn,
+            control::control_turn_finished,
+            control::app_cli_path,
+            social_bridge::harness_social_bridge,
+            runtime_logs_bridge::harness_runtime_logs_bridge,
+            conversation_tools_bridge::harness_conversation_tools_bridge,
+            default_cwd,
+            home_dir,
+            path_environment,
+            keep_awake::set_keep_awake,
+            notifications::notification_permission,
+            notifications::request_notification_permission,
+            notifications::show_notification,
+            notifications::open_notification_settings,
+            notifications::set_taskbar_attention,
+            tray::tray_sessions_update,
+            reminders::reminder_list,
+            reminders::reminder_set,
+            reminders::reminder_clear,
+            reminders::reminder_configure,
+            reminders::reminder_take_open,
+            reminders::reminder_register_window,
+            reminders::reminder_open,
+            automations::automations_list,
+            automations::automations_upsert,
+            automations::automations_delete,
+            automations::automation_runs_list,
+            automations::automation_runs_recover,
+            automations::automation_run_now,
+            automations::automations_claim_due,
+            automations::automations_claim_event,
+            automations::automation_run_update,
+            external_editor::list_external_editors,
+            external_editor::open_in_external_editor,
+            html_preview::open_html_in_chrome,
+            html_preview::create_html_preview,
+            html_preview::close_html_preview,
+            fs::resolve_project_location,
+            file_access::authorize_project_path,
+            file_access::revoke_file_access,
+            file_access::get_file_access_mode,
+            file_access::configure_file_access,
+            fs::open_path_with_default_app,
+            fs::claude_sessions,
+            session_transfer::provider_transfer_session,
+            fs::list_dir,
+            fs::list_project_files,
+            fs::git_diff_stats,
+            fs::git_diff_index,
+            fs::git_diff_files,
+            fs::git_file_diff,
+            fs::git_history,
+            fs::git_commit_files,
+            fs::git_commit_file_diff,
+            fs::git_stage_file,
+            fs::git_stage_contents,
+            fs::git_unstage_file,
+            fs::git_discard_file,
+            fs::git_discard_all,
+            fs::git_stage_all,
+            fs::git_unstage_all,
+            fs::git_commit,
+            fs::git_head_message,
+            fs::git_staged_context,
+            fs::git_push,
+            fs::git_pull,
+            fs::git_sync,
+            fs::git_range_context,
+            fs::git_pr_status,
+            fs::git_pr_create,
+            fs::git_github_status,
+            fs::github_bycoda_star_status,
+            fs::github_star_bycoda,
+            fs::git_github_repo,
+            fs::git_github_repositories,
+            fs::git_github_work_item,
+            fs::git_github_work_items,
+            fs::git_github_work_item_details,
+            fs::git_github_work_item_thread,
+            fs::git_github_work_item_comment,
+            fs::git_github_pr_action,
+            fs::git_github_pr_diff,
+            fs::git_github_pr_checks,
+            fs::git_github_check_details,
+            inbox_media::fetch_inbox_media,
+            gitlab::checks::gitlab_pr_checks,
+            gitlab::checks::gitlab_check_details,
+            gitlab::checks::gitlab_list_projects,
+            gitlab::gitlab_status,
+            gitlab::gitlab_set_config,
+            gitlab::gitlab_repo,
+            gitlab::gitlab_list_work_items,
+            gitlab::gitlab_list_todos,
+            gitlab::gitlab_work_item_details,
+            gitlab::gitlab_work_item_thread,
+            gitlab::gitlab_work_item_comment,
+            gitlab::gitlab_mr_diff,
+            azure_devops::checks::azure_devops_pr_checks,
+            azure_devops::checks::azure_devops_check_details,
+            azure_devops::checks::azure_devops_list_projects,
+            azure_devops::azure_devops_status,
+            azure_devops::azure_devops_set_config,
+            azure_devops::azure_devops_repo,
+            azure_devops::azure_devops_list_work_items,
+            azure_devops::azure_devops_list_todos,
+            azure_devops::azure_devops_work_item_details,
+            azure_devops::azure_devops_work_item_thread,
+            azure_devops::azure_devops_work_item_comment,
+            azure_devops::azure_devops_mr_diff,
+            linear::linear_status,
+            linear::linear_set_token,
+            linear::linear_list_teams,
+            linear::linear_list_issues,
+            linear::linear_issue_details,
+            linear::linear_issue_thread,
+            linear::linear_issue_comment,
+            jira::jira_status,
+            jira::jira_set_config,
+            jira::jira_list_projects,
+            jira::jira_list_issues,
+            jira::jira_issue_details,
+            jira::jira_issue_thread,
+            jira::jira_issue_comment,
+            jira::board::jira_list_boards,
+            jira::board::jira_board_configuration,
+            jira::board::jira_board_issues,
+            jira::board::jira_issue_transitions,
+            jira::board::jira_issue_transition,
+            jira::board::jira_board_move,
+            link_preview::fetch_link_preview,
+            fs::git_branches,
+            fs::git_checkout,
+            fs::git_create_branch,
+            fs::git_stash,
+            fs::git_checkout_commit,
+            fs::git_create_branch_at,
+            fs::git_create_tag,
+            fs::git_cherry_pick,
+            fs::git_revert,
+            fs::git_reset,
+            fs::git_operation_state,
+            fs::git_operation_abort,
+            fs::git_operation_continue,
+            fs::git_delete_branch,
+            fs::git_rename_branch,
+            fs::git_merge,
+            fs::git_rebase,
+            fs::git_fetch,
+            fs::git_trust_repository,
+            fs::git_undo_last_commit,
+            fs::git_stash_clear,
+            fs::git_create_branch_from,
+            fs::git_delete_remote_branch,
+            fs::git_remotes,
+            fs::git_remote_add,
+            fs::git_remote_remove,
+            fs::git_tags,
+            fs::git_delete_tag,
+            fs::git_stash_list,
+            fs::git_stash_action,
+            fs::git_conflicts,
+            fs::git_resolve_conflict,
+            git_conflicts::git_conflict_stages,
+            git_watch::git_watch,
+            git_watch::git_unwatch,
+            git_watch::git_watch_reset,
+            fs::git_file_history,
+            fs::git_blame,
+            fs::git_commit_message,
+            worktrees::git_worktrees,
+            worktrees::git_worktree_create,
+            worktrees::git_orchestration_worktree_create,
+            worktrees::git_worktree_rename_branch,
+            worktrees::git_worktree_check_remove,
+            worktrees::git_worktree_remove,
+            worktrees::git_orchestration_worktree_remove,
+            worktrees::git_orchestration_branch_remove,
+            fs::create_path,
+            fs::rename_path,
+            fs::delete_path,
+            fs::copy_path,
+            fs::move_path,
+            fs::reveal_path,
+            pasteboard::clipboard_file_paths,
+            pasteboard::copy_text_to_clipboard,
+            pasteboard::clipboard_image,
+            pasteboard::copy_file_to_clipboard,
+            fs::clone_repo,
+            fs::read_file_preview,
+            fs::stat_files,
+            fs::inspect_paths,
+            fs::read_file_base64,
+            fs::read_attachment_chunk,
+            fs::hash_attachment_prefix,
+            fs::read_binary_file,
+            fs::write_attachment,
+            fs::save_generated_image,
+            fs::delete_generated_images,
+            fs::read_text_file,
+            fs::format_text_file,
+            fs::omp_session_interjections,
+            fs::omp_active_assistant_texts,
+            fs::claude_shell_commands,
+            fs::write_text_file,
+            skills::list_skills,
+            skills::skill_export,
+            skills::skill_delete,
+            skills::skill_import,
+            claude_commands::list_claude_commands,
+            search::search_project,
+            search::cancel_project_search,
+            cursor_store::cursor_tool_calls,
+            cursor_store::cursor_subagent_runs,
+            harness::harness_resolve_cursor,
+            harness::harness_resolve_codex,
+            harness::harness_resolve_opencode,
+            harness::harness_resolve_configured,
+            harness::harness_runtime_binary_paths,
+            harness::harness_resolve_claude,
+            harness::claude_mcp_list,
+            mcp::mcp_discover,
+            mcp::mcp_add,
+            harness::claude_mcp_add,
+            harness::claude_mcp_remove,
+            harness::mcp_provider_login,
+            harness::harness_resolve_omp,
+            harness::harness_resolve_pi,
+            harness::harness_resolve_fx,
+            harness::harness_resolve_grok,
+            harness::harness_resolve_hermes,
+            harness::harness_resolve_antigravity,
+            harness::harness_resolve_gemini,
+            harness::harness_free_port,
+            harness::harness_spawn,
+            harness::harness_write,
+            harness::harness_kill,
+            harness::harness_kill_all,
+            harness::harness_set_owner,
+            harness::harness_http,
+            harness::harness_sse_open,
+            harness::harness_sse_close,
+            harness::harness_exec,
+            harness::run_shell_command,
+            terminal_profiles::terminal_profiles,
+            terminal_profiles::set_terminal_profile,
+            harness_updates::harness_latest_version,
+            harness_updates::harness_update_check_claim,
+            harness_updates::harness_update,
+            harness::provider_account_remove,
+            account_identity::provider_account_identity,
+            provider_terminal_profiles::provider_terminal_profiles,
+            provider_terminal_profiles::provider_terminal_profile_connect,
+            pi_usage::fetch_pi_usage,
+            rate_limits::fetch_claude_usage,
+            rate_limits::fetch_opencode_go_usage,
+            provider_usage::provider_usage_report,
+            provider_usage::provider_model_prices,
+            pty::pty_spawn,
+            pty::pty_write,
+            pty::pty_resize,
+            pty::pty_status,
+            pty::pty_kill,
+            pty::pty_kill_all,
+            session_import::import_discover,
+            session_import::import_read_claude,
+            session_import::import_read_codex,
+            session_import::import_placeholder_dir,
+            session_store::session_upsert,
+            session_store::incremental::session_apply_delta,
+            session_store::incremental::session_get_page,
+            session_store::session_import,
+            session_store::session_import_keys,
+            session_store::session_list_by_project,
+            session_store::session_rebase_project,
+            session_store::session_list_linked,
+            session_store::session_list_recent,
+            session_store::session_search,
+            session_store::session_search_content,
+            session_store::cancel_session_search,
+            session_store::session_get,
+            session_store::session_delete,
+            session_store::session_set_archived,
+            session_store::session_set_pinned,
+            session_store::session_set_linked_work_item,
+            session_store::session_set_queue,
+            turn_probe::probe_turn_tail,
+            turn_steps::read_turn_steps,
+            session_store::session_get_queue,
+            session_store::session_set_draft,
+            session_store::session_list_drafts,
+            session_store::session_set_in_flight,
+            session_store::session_list_in_flight,
+            session_store::session_take_in_flight,
+            session_store::workspace_set_snapshot,
+            session_store::workspace_get_snapshot,
+            notes::notes_list,
+            notes::notes_list_summaries,
+            notes::notes_search,
+            notes::notes_get,
+            notes::notes_upsert,
+            notes::notes_link_session,
+            notes::notes_delete,
+            notes::notes_save_image,
+            notes::notes_image_path,
+            checkpoint::session_checkpoint_ensure,
+            trackpad_zoom::set_trackpad_zoom_enabled,
+            checkpoint::turn::session_checkpoint_begin_turn,
+            checkpoint::turn::session_checkpoint_finish_turn,
+            checkpoint::session_checkpoint_prepare,
+            checkpoint::session_checkpoint_capture,
+            checkpoint::session_checkpoint_status,
+            checkpoint::session_checkpoint_apply,
+            checkpoint::session_checkpoint_cleanup_safe,
+            checkpoint::session_checkpoint_forget,
+            checkpoint::session_checkpoint_file_diff,
+            checkpoint::session_checkpoint_undo,
+            checkpoint::session_checkpoint_keep,
+            set_traffic_lights_visible,
+            set_window_background_blur,
+            set_dock_badge,
+            #[cfg(target_os = "macos")]
+            menu::keybindings_set_overrides,
+            native_language::native_language_set,
+            #[cfg(target_os = "macos")]
+            menu::autosave_set_enabled,
+            open_new_window,
+            open_tool_window,
+            window::hide_window,
+            window::destroy_window,
+            window::quit_poll_reply,
+            window::quit_decision,
+            window::quit_ready,
+            window::set_window_glass_enabled,
+            #[cfg(target_os = "macos")]
+            quick_composer::quick_composer_set_enabled,
+            #[cfg(target_os = "macos")]
+            quick_composer::quick_composer_prepare,
+            #[cfg(target_os = "macos")]
+            quick_composer::quick_composer_fit,
+            #[cfg(target_os = "macos")]
+            quick_composer::quick_composer_submit,
+            #[cfg(target_os = "macos")]
+            quick_composer::quick_composer_take,
+            #[cfg(target_os = "macos")]
+            quick_composer::quick_composer_ack,
+            #[cfg(target_os = "macos")]
+            quick_composer::screenshots::quick_composer_release_capture,
+            #[cfg(target_os = "macos")]
+            quick_composer::quick_composer_capture,
+            #[cfg(target_os = "macos")]
+            quick_composer::git_popup::quick_git_open,
+            #[cfg(target_os = "macos")]
+            quick_composer::git_popup::quick_git_state,
+            #[cfg(target_os = "macos")]
+            quick_composer::git_popup::quick_git_fit,
+            #[cfg(target_os = "macos")]
+            quick_composer::git_popup::quick_git_complete,
+            #[cfg(target_os = "macos")]
+            quick_composer::git_popup::quick_composer_dismiss,
+            window_transfer::take_window_transfer,
+            window_transfer::window_transfer_ready,
+            window_transfer::reject_window_transfer,
+            window_transfer::move_window_tabs,
+            window_transfer::preview_window_tab_drag,
+            window_transfer::clear_window_tab_drag,
+            chat_background::save_chat_background,
+            chat_background::remove_chat_background,
+            chat_background::save_project_chat_background,
+            chat_background::remove_project_chat_background,
+            project_logo::save_project_logo,
+            project_logo::remove_project_logo,
+            project_logo::forget_logo_file,
+        ])
+        .build(tauri::generate_context!())
+        .expect("error while building bycoda");
+
+    app.run(|handle, event| match event {
+        #[cfg(target_os = "macos")]
+        tauri::RunEvent::Reopen {
+            has_visible_windows: false,
+            ..
+        } => {
+            let _ = window::show_hidden_or_open_new(handle);
+        }
+        tauri::RunEvent::Ready => {
+            #[cfg(target_os = "macos")]
+            {
+                macos::request_badge_authorization();
+                notifications::install_delegate(handle);
+                #[cfg(debug_assertions)]
+                macos::prefer_bundle_dock_icon();
+            }
+            window::ensure_launch_window_visible(handle);
+        }
+        tauri::RunEvent::WindowEvent {
+            label,
+            event: tauri::WindowEvent::Focused(true),
+            ..
+        } => {
+            if let Some(workspace) = window::workspace_windows(handle)
+                .into_iter()
+                .find(|window| window.label() == label)
+            {
+                let _ = window::ensure_window_reachable(&workspace);
+            }
+        }
+        tauri::RunEvent::WindowEvent {
+            label,
+            event: tauri::WindowEvent::Destroyed,
+            ..
+        } => {
+            window_transfer::window_closed(handle, &label);
+            window::forget_quit_window(handle, &label);
+            tray::window_closed(handle, &label);
+            let other_window = window::workspace_windows(handle)
+                .iter()
+                .any(|window| window.label() != label);
+            control::window_closed(handle, &label);
+            if let Some(state) = handle.try_state::<keep_awake::KeepAwakeState>() {
+                state.window_closed(&label);
+            }
+            if let Some(state) = handle.try_state::<git_watch::GitWatchHost>() {
+                state.window_closed(&label);
+            }
+            if !other_window {
+                reap_harness_children(handle);
+            } else {
+                // A page unload no longer kills its terminals, because a
+                // reload keeps them. The window going away is what ends them.
+                // Off the event loop: the reap waits for the shells to die.
+                // Shutdown joins it so the shells are dead before we exit.
+                if let Some(host) = handle.try_state::<pty::PtyHost>() {
+                    let app = handle.clone();
+                    host.track_reaper(std::thread::spawn(move || {
+                        if let Some(host) = app.try_state::<pty::PtyHost>() {
+                            host.kill_window(&label);
+                        }
+                    }));
+                }
+            }
+        }
+        tauri::RunEvent::ExitRequested { api, code, .. } => {
+            if window::allow_exit() {
+                return;
+            }
+            api.prevent_exit();
+            // Last window destroyed (red button). Stay in the dock on macOS;
+            // ⌘Q is a separate menu handler and arrives with an exit code.
+            // Linux and Windows have no dock, so the last close is a quit.
+            if !should_request_quit(code) {
+                return;
+            }
+            window::request_quit(handle);
+        }
+        tauri::RunEvent::Exit => {
+            if let Some(state) = handle.try_state::<keep_awake::KeepAwakeState>() {
+                state.shutdown();
+            }
+            handle.state::<remote::RemoteConnections>().shutdown();
+            reap_harness_children(handle);
+        }
+        _ => {}
+    });
+}
+
+fn reap_harness_children(handle: &tauri::AppHandle) {
+    if let Some(host) = handle.try_state::<harness::HarnessHost>() {
+        host.kill_all();
+    }
+    if let Some(host) = handle.try_state::<pty::PtyHost>() {
+        host.kill_all();
+        host.join_reapers();
+    }
+}
+
+#[cfg(all(debug_assertions, target_os = "macos"))]
+pub fn ensure_macos_dev_bundle() {
+    macos::ensure_dev_bundle();
+}
+
+#[cfg(test)]
+mod tests {
+    use super::should_request_quit;
+
+    #[test]
+    fn explicit_exit_requests_quit() {
+        assert!(should_request_quit(Some(0)));
+    }
+
+    #[cfg(any(target_os = "linux", target_os = "windows"))]
+    #[test]
+    fn last_window_close_requests_quit_without_dock() {
+        assert!(should_request_quit(None));
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn last_window_close_stays_alive_with_dock() {
+        assert!(!should_request_quit(None));
+    }
+}

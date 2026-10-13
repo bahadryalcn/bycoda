@@ -1,0 +1,376 @@
+.notes-workspace :is(button, input, select, [role="button"]):focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+.notes-workspace button:active {
+  background-color: color-mix(in oklch, var(--color-content) 15%, transparent);
+}
+
+.note-library-controls {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  padding: 12px;
+}
+
+.note-filter-button {
+  position: relative;
+  display: grid;
+  place-items: center;
+  flex: none;
+  inline-size: 32px;
+  block-size: 32px;
+  border-radius: 6px;
+  color: color-mix(in oklch, var(--color-content) 70%, transparent);
+}
+
+.note-filter-button[data-active],
+.note-filter-button[aria-expanded="true"] {
+  background: color-mix(in oklch, var(--color-content) 10%, transparent);
+  color: var(--color-content);
+}
+
+.note-filter-dot {
+  position: absolute;
+  inset-block-start: 5px;
+  inset-inline-end: 5px;
+  inline-size: 4px;
+  block-size: 4px;
+  border-radius: 50%;
+  background: var(--color-accent);
+}
+
+.note-filters-popover :is(select, button):focus-visible,
+.note-action:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+.note-library-controls label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-inline-size: 0;
+  font-size: 11px;
+  color: color-mix(in oklch, var(--color-content) 70%, transparent);
+}
+
+.note-library-controls select {
+  inline-size: 100%;
+  min-inline-size: 0;
+  block-size: 30px;
+  border: 1px solid var(--color-stroke);
+  border-radius: 6px;
+  padding-inline: 6px;
+  background: var(--color-background-base);
+  color: var(--color-content);
+  font-size: 12px;
+  text-overflow: ellipsis;
+}
+
+.note-group-heading {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  inline-size: 100%;
+  min-block-size: 34px;
+  padding-inline: 8px;
+  margin-block-start: 4px;
+  border-radius: 6px;
+  color: color-mix(in oklch, var(--color-content) 85%, transparent);
+  font-size: 12px;
+  font-weight: 600;
+  text-align: start;
+}
+
+.note-library-pages {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding-block: 8px;
+  padding-inline: 12px;
+  border-block-start: 1px solid var(--color-stroke);
+  color: color-mix(in oklch, var(--color-content) 70%, transparent);
+  font-size: 11px;
+}
+
+.note-library-pages button {
+  min-block-size: 28px;
+  padding-inline: 8px;
+  border-radius: 5px;
+}
+
+.note-library-pages button:disabled {
+  opacity: 0.4;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .note-library-pages button:enabled:hover {
+    background: color-mix(in oklch, var(--color-content) 8%, transparent);
+  }
+}
+
+.note-detail {
+  container-type: inline-size;
+}
+
+.note-detail-content {
+  display: flex;
+  flex-direction: column;
+  block-size: 100%;
+  gap: 10px;
+  padding-inline: clamp(16px, 2.5cqi, 40px);
+  padding-block: 14px;
+  min-inline-size: 0;
+}
+
+.note-detail-header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas: "identity actions" "title actions" "tags status";
+  align-items: center;
+  gap: 6px 16px;
+}
+
+.note-detail-identity {
+  grid-area: identity;
+  flex-wrap: wrap;
+  row-gap: 2px;
+}
+
+.note-detail-updated {
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.note-detail-title {
+  grid-area: title;
+}
+.note-detail-tags {
+  grid-area: tags;
+  min-inline-size: 0;
+}
+.note-detail-status {
+  grid-area: status;
+  text-align: end;
+}
+.note-detail-error {
+  grid-column: 1 / -1;
+}
+
+.note-detail-actions {
+  grid-area: actions;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: end;
+  align-items: center;
+  gap: 6px;
+}
+
+.note-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-block-size: 30px;
+  padding-inline: 10px;
+  border: 1px solid var(--color-stroke);
+  border-radius: 6px;
+  white-space: nowrap;
+  font-size: 12px;
+  color: color-mix(in oklch, var(--color-content) 85%, transparent);
+  transition:
+    background-color 150ms ease-out,
+    color 150ms ease-out,
+    border-color 150ms ease-out;
+}
+
+.note-action-primary {
+  background: var(--color-content);
+  color: var(--color-background-base);
+  border-color: transparent;
+}
+
+.note-action-delete {
+  border-color: transparent;
+}
+.note-action-confirm {
+  background: var(--color-red-500);
+  color: white;
+  border-color: transparent;
+}
+.note-action:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.note-action:enabled:active {
+  background: color-mix(in oklch, var(--color-content) 16%, var(--color-background-base));
+}
+.note-action-primary:enabled:active {
+  background: color-mix(in oklch, var(--color-content) 80%, var(--color-background-base));
+}
+.note-action-confirm:enabled:active {
+  background: var(--color-red-600);
+}
+
+.note-delete-description {
+  margin: 0;
+  padding: 16px;
+  overflow-wrap: anywhere;
+  font-size: 13px;
+  line-height: 1.6;
+  color: color-mix(in oklch, var(--color-content) 75%, transparent);
+}
+
+.note-delete-actions {
+  display: flex;
+  justify-content: end;
+  gap: 8px;
+  padding: 12px 16px;
+  border-block-start: 1px solid var(--color-stroke);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .note-filter-button:hover,
+  .note-action:enabled:hover {
+    background: color-mix(in oklch, var(--color-content) 8%, transparent);
+  }
+  .note-action-primary:enabled:hover {
+    background: color-mix(in oklch, var(--color-content) 85%, var(--color-background-base));
+  }
+  .note-action-delete:enabled:hover {
+    color: var(--color-red-400);
+    background: color-mix(in oklch, var(--color-red-400) 8%, transparent);
+  }
+  .note-action-confirm:enabled:hover {
+    background: var(--color-red-600);
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .note-action {
+    transition:
+      transform 150ms ease-out,
+      background-color 150ms ease-out,
+      color 150ms ease-out,
+      border-color 150ms ease-out;
+  }
+  .note-action:enabled:active {
+    transform: translateY(1px);
+  }
+}
+
+@container (max-width: 620px) {
+  .note-detail-header {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas: "identity" "title" "tags" "actions" "status";
+  }
+  .note-detail-actions {
+    justify-content: start;
+  }
+  .note-detail-status {
+    text-align: start;
+  }
+}
+
+.note-detail-content > header,
+.note-editor-toolbar {
+  flex: none;
+}
+
+.note-editor-body {
+  flex: 1;
+  min-block-size: 0;
+  max-block-size: min(36rem, 60dvh);
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+
+.note-editor-toolbar {
+  position: sticky;
+  inset-block-start: 0;
+  z-index: 5;
+  min-block-size: 42px;
+  background: var(--color-background-base);
+}
+
+.note-split {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 24rem), 1fr));
+  gap: 20px;
+  align-items: start;
+}
+
+.note-split > * {
+  min-inline-size: 0;
+  border: 1px solid var(--color-stroke);
+  border-radius: 8px;
+  padding: 14px;
+}
+
+.note-pane-label {
+  margin-block-end: 12px;
+  padding-block-end: 10px;
+  border-block-end: 1px solid var(--color-stroke);
+  color: color-mix(in oklch, var(--color-content) 70%, transparent);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.note-preview-block {
+  position: relative;
+  margin-block-end: 12px;
+}
+
+.note-preview-content {
+  cursor: text;
+  padding: 8px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+}
+
+.note-active-block {
+  margin-block: 12px;
+  padding: 10px;
+  border: 1px solid var(--color-accent);
+  border-radius: 6px;
+}
+
+.note-edit-block,
+.note-add-block {
+  border: 1px solid var(--color-stroke);
+  border-radius: 5px;
+  padding: 5px 9px;
+  font-size: 11px;
+  color: color-mix(in oklch, var(--color-content) 80%, transparent);
+}
+
+.note-edit-block {
+  display: block;
+  margin-inline-start: auto;
+}
+
+.note-add-block {
+  inline-size: 100%;
+  margin-block-start: 12px;
+  min-block-size: 34px;
+  border-style: dashed;
+  text-align: start;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .note-group-heading:hover,
+  .note-edit-block:hover,
+  .note-add-block:hover {
+    background: color-mix(in oklch, var(--color-content) 7%, transparent);
+  }
+
+  .note-preview-content:hover {
+    border-color: var(--color-stroke);
+    background: color-mix(in oklch, var(--color-content) 3%, transparent);
+  }
+}

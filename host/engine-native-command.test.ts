@@ -1,0 +1,103 @@
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import type { SendTurnInput } from "../src/integrations/harness/core/types";
+import type { HostProvider } from "./providers";
+
+const bridge = vi.hoisted(() => ({ command: "/fake/node", args: ["/fake/host.mjs"] }));
+const prepareSkill = vi.hoisted(() =>
+  vi.fn(async (text: string) => `Host skill instructions.\n\n${text}`),
+);
+vi.mock("../src/integrations/harness/core/socialBridge", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../src/integrations/harness/core/socialBridge")>()),
+  socialBridge: vi.fn(async () => bridge),
+}));
+vi.mock("./prompt-skills", () => ({ prepareHostSkillPrompt: prepareSkill }));
+
+import { HostEngine } from "./engine";
+import { HostStore } from "./store";
+
+const cleanups: Array<() => Promise<void>> = [];
+afterEach(async () => {
+  for (const cleanup of cleanups.splice(0).reverse()) await cleanup();
+  prepareSkill.mockClear();
+});
+
+function setup(harness: "codex" | "claude") {
+  const directory = mkdtempSync(join(tmpdir(), "bycoda-native-command-test-"));
+  const store = new HostStore(join(directory, "host.db"));
+  const project = store.addProject(directory, "Native command test");
+  const turns: Array<{ input: SendTurnInput; finish: () => void }> = [];
+  const finish = async () => {
+    turns.at(-1)?.finish();
+  };
+  const provider: HostProvider = {
+    send: vi.fn((input) => new Promise<void>((resolve) => turns.push({ input, finish: resolve }))),
+    cancel: finish,
+    stop: finish,
+    bind: vi.fn(),
+    approve: vi.fn(),
+    answer: vi.fn(),
+  };
+  const engine = new HostEngine(store, { codex: provider, claude: provider });
+  cleanups.push(async () => {
+    await engine.close();
+    store.close();
+    rmSync(directory, { recursive: true, force: true });
+  });
+  const { sessionId } = engine.command({
+    type: "create",
+    commandId: "create-native-command",
+    projectId: project.id,
+    harness,
+    model: `${harness}:test`,
+    runtimeMode: "supervised",
+  });
+  return { engine, store, turns, sessionId };
+}
+
+describe("headless native command guidance", () => {
+  it.each([
+    "/goal",
+    "/goal status",
+    "/goal pause",
+    "/goal clear",
+    "/goal resume",
+    "/goal Finish the $review checklist",
+  ])("preserves Codex %s with a non-null runtime bridge", async (text) => {
+    const { engine, store, turns, sessionId } = setup("codex");
+    engine.command({ type: "send", commandId: "send-native-command", sessionId, text });
+    await vi.waitFor(() => expect(turns).toHaveLength(1));
+    expect(turns[0].input.text).toBe(text);
+    expect(turns[0].input.runtimeInstructions).toContain("social_policy_get");
+    expect(turns[0].input.runtimeInstructions).toContain("Drafts do not authorize sending");
+    expect(prepareSkill).not.toHaveBeenCalled();
+    expect(
+      store.session(sessionId).session.blocks.find((block) => block.role === "user")?.text,
+    ).toBe(text);
+  });
+
+  it.each(["codex", "claude"] as const)(
+    "retains %s ordinary prompts and host skill expansion",
+    async (harness) => {
+      const { engine, store, turns, sessionId } = setup(harness);
+      const text = "$review inspect this change";
+      engine.command({ type: "send", commandId: "send-skill", sessionId, text });
+      await vi.waitFor(() => expect(turns).toHaveLength(1));
+      const sent = turns[0].input;
+      expect(prepareSkill).toHaveBeenCalledOnce();
+      expect(sent.text).toContain(`Host skill instructions.\n\n${text}`);
+      if (harness === "codex") {
+        expect(sent.text).not.toContain("social_policy_get");
+        expect(sent.runtimeInstructions).toContain("social_policy_get");
+      } else {
+        expect(sent.text).toContain("social_policy_get");
+        expect(sent.runtimeInstructions).toBeUndefined();
+      }
+      expect(
+        store.session(sessionId).session.blocks.find((block) => block.role === "user")?.text,
+      ).toBe(text);
+    },
+  );
+});

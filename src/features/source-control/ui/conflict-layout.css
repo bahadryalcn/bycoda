@@ -1,0 +1,136 @@
+.conflict-workspace {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-inline-size: 0;
+  min-block-size: 0;
+  container-type: inline-size;
+}
+.conflict-layout-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 4px 8px;
+  border-block-end: 1px solid var(--color-stroke);
+  font-size: 11px;
+}
+.conflict-layout-controls button {
+  padding: 4px 8px;
+  border-radius: 4px;
+  color: color-mix(in oklch, var(--color-content) 70%, transparent);
+}
+.conflict-layout-controls button[aria-pressed="true"] {
+  background: color-mix(in oklch, var(--color-content) 12%, transparent);
+  color: var(--color-content);
+}
+@media (hover: hover) and (pointer: fine) {
+  .conflict-layout-controls button:hover {
+    background: color-mix(in oklch, var(--color-content) 8%, transparent);
+  }
+}
+.conflict-layout-controls button:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: -2px;
+}
+.conflict-layout-controls button:active {
+  background: color-mix(in oklch, var(--color-accent) 20%, transparent);
+}
+.conflict-layout-panes {
+  display: grid;
+  flex: 1;
+  min-inline-size: 0;
+  min-block-size: 0;
+  gap: 1px;
+  background: var(--color-stroke);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-rows: minmax(0, 1fr) minmax(0, 1fr);
+  grid-template-areas: "ours theirs" "result result";
+}
+.conflict-pane {
+  display: flex;
+  flex-direction: column;
+  min-inline-size: 0;
+  min-block-size: 0;
+  overflow: clip;
+  background: var(--color-background-base);
+}
+.conflict-pane-result {
+  grid-area: result;
+}
+.conflict-pane-ours {
+  grid-area: ours;
+  --conflict-tint: oklch(0.73 0.12 175);
+}
+.conflict-pane-theirs {
+  grid-area: theirs;
+  --conflict-tint: oklch(0.73 0.12 255);
+}
+.conflict-pane-heading {
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  gap: 2px;
+  padding: 6px 12px;
+  border-block-end: 1px solid var(--color-stroke);
+  border-block-start: 2px solid var(--conflict-tint, var(--color-accent));
+  background: color-mix(in oklch, var(--conflict-tint, var(--color-accent)) 6%, transparent);
+  font-size: 12px;
+}
+.conflict-pane-heading strong,
+.conflict-pane-heading span {
+  overflow: clip;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.conflict-pane-result .conflict-pane-heading {
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.conflict-pane-heading-text {
+  display: flex;
+  flex-direction: column;
+  min-inline-size: 0;
+  gap: 2px;
+}
+.conflict-pane-heading span {
+  color: color-mix(in oklch, var(--color-content) 65%, transparent);
+  font-size: 11px;
+}
+.conflict-source-editor {
+  flex: 1;
+  min-block-size: 0;
+}
+.conflict-source-change {
+  background: color-mix(in oklch, var(--conflict-tint) 12%, transparent);
+  border-inline-start: 2px solid var(--conflict-tint);
+}
+.conflict-source-missing {
+  padding: 12px;
+  font-size: 12px;
+}
+.conflict-workspace[data-layout="columns"] .conflict-layout-panes {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-rows: minmax(0, 1fr);
+  grid-template-areas: "ours result theirs";
+}
+.conflict-workspace[data-layout="inline"] .conflict-layout-panes {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+  grid-template-areas: "result";
+}
+.conflict-workspace[data-layout="inline"] :is(.conflict-pane-ours, .conflict-pane-theirs) {
+  display: none;
+}
+@container (inline-size < 600px) {
+  .conflict-workspace[data-layout] .conflict-layout-panes {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 2fr);
+    grid-template-areas: "ours" "theirs" "result";
+  }
+  .conflict-workspace[data-layout="inline"] .conflict-layout-panes {
+    grid-template-rows: minmax(0, 1fr);
+    grid-template-areas: "result";
+  }
+}

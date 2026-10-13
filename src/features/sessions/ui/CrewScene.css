@@ -1,0 +1,137 @@
+.crew-scene {
+  inline-size: 100%;
+  max-inline-size: 1280px;
+  padding-block-end: 1.25rem;
+  flex: 0 0 auto;
+  margin-inline: auto;
+  pointer-events: none;
+  user-select: none;
+}
+.crew-scene canvas {
+  display: block;
+  inline-size: 100%;
+  block-size: auto;
+  background: transparent;
+}
+.crew-scene__stage {
+  position: relative;
+  container-type: inline-size;
+}
+.crew-scene__labels {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: visible;
+}
+.crew-scene__label {
+  position: absolute;
+  transform: translate(-50%, -100%);
+  min-inline-size: 0;
+  white-space: nowrap;
+  overflow: clip;
+  text-overflow: ellipsis;
+  text-align: center;
+  font-size: clamp(8px, 1.4cqi, 11px);
+  line-height: 1.2;
+  letter-spacing: 0.02em;
+  color: currentColor;
+  opacity: 0.45;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .crew-scene__label {
+    transition: opacity 0.3s ease-out;
+  }
+}
+.crew-scene__label[data-working="true"] {
+  opacity: 1;
+  font-weight: 600;
+}
+.crew-scene--background .crew-scene__label {
+  font-size: clamp(7px, 1.2cqi, 9px);
+  opacity: 0.5;
+}
+.crew-scene--background .crew-scene__label[data-working="true"] {
+  opacity: 0.9;
+}
+.crew-scene--hero {
+  opacity: 1;
+}
+.crew-scene--background {
+  opacity: 0.28;
+  max-inline-size: 1280px;
+}
+.crew-scene[data-theme="star-wars"] .crew-scene__label {
+  opacity: 0.85;
+  line-height: 1.4;
+}
+.crew-scene[data-theme="star-wars"] .crew-scene__label[data-working="true"] {
+  opacity: 1;
+}
+.crew-scene__name {
+  display: block;
+  overflow: clip;
+  text-overflow: ellipsis;
+  font-weight: 600;
+}
+.crew-scene__detail {
+  display: block;
+  font-size: 0.85em;
+  opacity: 0.65;
+  overflow: clip;
+  text-overflow: ellipsis;
+  font-variant-numeric: tabular-nums;
+}
+.crew-scene__meter {
+  display: block;
+  block-size: 3px;
+  inline-size: 60%;
+  margin-inline: auto;
+  margin-block: 4px 3px;
+  border-radius: 2px;
+  background: color-mix(in oklch, currentColor 15%, transparent);
+  overflow: clip;
+}
+.crew-scene__meter > span {
+  display: block;
+  block-size: 100%;
+  border-radius: inherit;
+}
+.crew-scene__status {
+  position: absolute;
+  inset-inline: 0;
+  inset-block-start: 35%;
+  text-align: center;
+  font-size: 12px;
+  opacity: 0.75;
+}
+.crew-scene__theme-title {
+  position: absolute;
+  inset-inline: 0;
+  inset-block-start: 4%;
+  text-align: center;
+  color: currentColor;
+  opacity: 0.7;
+}
+.crew-scene__theme-title > span {
+  display: block;
+  font-size: clamp(10px, 2.4cqi, 21px);
+  font-weight: 800;
+  letter-spacing: 0.25em;
+}
+.crew-scene__theme-title > small {
+  display: block;
+  margin-block-start: 3px;
+  font-size: clamp(7px, 1.1cqi, 10px);
+  letter-spacing: 0.12em;
+}
+.crew-scene__status button {
+  pointer-events: auto;
+  text-decoration: underline;
+}
+.crew-scene__status button:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 3px;
+}
+.crew-scene__status button:active {
+  opacity: 0.7;
+}

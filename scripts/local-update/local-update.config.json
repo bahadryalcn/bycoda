@@ -1,0 +1,11 @@
+{
+  "stateRoot": "~/.bycoda-build",
+  "windows": {
+    "cargoTarget": "target"
+  },
+  "mac": {
+    "ssh": "mac-builder",
+    "python": "python3",
+    "cargoTarget": "~/bycoda/target"
+  }
+}

@@ -1,0 +1,122 @@
+.composer-tips {
+  display: flex;
+  flex: 1 1 0;
+  min-inline-size: 0;
+  align-items: center;
+  gap: 0.375rem;
+  --composer-tip-muted: color-mix(
+    in oklch,
+    var(--ui-text-secondary) 72%,
+    var(--color-background-base)
+  );
+  color: var(--composer-tip-muted);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.composer-tips-label {
+  flex-shrink: 0;
+  font-weight: 600;
+  color: var(--composer-tip-muted);
+}
+
+.composer-tips-trigger {
+  min-block-size: 1.25rem;
+  padding-inline: 0.375rem;
+  border-radius: 0.375rem;
+  background: color-mix(in oklch, var(--ui-text-secondary) 6%, transparent);
+  font-size: inherit;
+  line-height: inherit;
+}
+
+.composer-tip-popover {
+  padding-block: 0.75rem;
+  padding-inline: 0.875rem;
+  color: var(--ui-text-secondary);
+  font-size: var(--ui-font-caption);
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.composer-tip-popover p {
+  margin: 0;
+}
+
+.composer-tips-copy {
+  display: grid;
+  min-inline-size: 0;
+  overflow: clip;
+  flex: 1 1 0;
+  min-block-size: 1.5em;
+  align-items: center;
+}
+
+.composer-tips-text {
+  grid-area: 1 / 1;
+  min-inline-size: 0;
+  margin: 0;
+  overflow: clip;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  opacity: 1;
+}
+
+.composer-tip-fold-segment {
+  display: inline-block;
+  perspective: 700px;
+  vertical-align: baseline;
+}
+
+.composer-tip-fold-piece {
+  position: relative;
+  display: inline-block;
+  transform-origin: 50% 0%;
+  backface-visibility: hidden;
+}
+
+/* Fold Text's crease shade is visible only while the panel unfolds. */
+.composer-tip-fold-piece::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0;
+  background: linear-gradient(
+    180deg,
+    oklch(0 0 none / 0.58),
+    oklch(0 0 none / 0.22) 42%,
+    oklch(1 0 none / 0.26)
+  );
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  [data-tip-fold-animate] .composer-tip-fold-piece {
+    animation: composer-tip-unfold var(--duration-standard, 240ms)
+      var(--motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)) var(--tip-fold-delay) both;
+  }
+
+  [data-tip-fold-animate] .composer-tip-fold-piece::after {
+    animation: composer-tip-crease var(--duration-standard, 240ms)
+      var(--motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)) var(--tip-fold-delay) both;
+  }
+
+  @keyframes composer-tip-unfold {
+    from {
+      transform: rotateX(-92deg);
+      opacity: 0;
+    }
+    to {
+      transform: rotateX(0deg);
+      opacity: 1;
+    }
+  }
+
+  @keyframes composer-tip-crease {
+    from {
+      opacity: 0.55;
+    }
+    to {
+      opacity: 0;
+    }
+  }
+}
