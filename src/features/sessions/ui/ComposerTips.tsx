@@ -1,0 +1,159 @@
+import { memo, useEffect, useId, useRef, useState } from "react";
+import { t, useLocale } from "../../../shared/i18n";
+import { Popover } from "../../../shared/ui/Popover";
+import "./ComposerTips.css";
+
+export const COMPOSER_TIPS = [
+  "Type @ in the message box to find and attach a project file for the agent to read.",
+  "Type / in the message box to see the commands available for your selected agent.",
+  "Attach a screenshot to show the agent exactly where a visual problem appears.",
+  "Use the selectors beside the message box to choose the agent and model for your next message.",
+  "Open Files to browse your project and read or edit a file without leaving the chat.",
+  "Use Find in Files to locate a function, error message or setting across the project.",
+  "Open a file in Changes to compare the original code with the agent's edits.",
+  "In Changes, stage only the files you want to include in your next commit.",
+  "Open the terminal dock to run project commands while keeping the conversation visible.",
+  "Use Split in the terminal dock to keep two terminals visible side by side.",
+  "Use the pane layout controls to keep a conversation and a file visible together.",
+  "Pin a session in the session list to keep a frequently used conversation easy to find.",
+  "Use Notes to save decisions, checklists and project information for later.",
+  "While the agent works, use Queue message to save the next request for after the current turn.",
+  "Above the message box, edit a queued message or drag it to change the sending order.",
+  "Stop pauses the message queue too. Review pending messages and use Resume when ready.",
+  "Stopping the agent leaves existing file edits in place; review them in Changes before continuing.",
+  "In Settings → Chat, choose whether messages sent during a turn steer the work or join the queue.",
+  "Use Connections to set up another machine, then select its project to work remotely.",
+  "When creating a task, check its machine, branch and worktree to choose where the work runs.",
+  "Use Goals to plan a larger job as tasks; review the proposed plan before approving it.",
+  "In Social Media, review drafts before publishing; saving a draft does not authorize sending it.",
+  "Customize your shortcuts in Settings → Shortcuts and see the current keys in the usage guide.",
+  "Open View → Usage guide for a walkthrough of sending, queuing and reviewing agent work.",
+] as const;
+
+export const COMPOSER_TIP_INTERVAL = 20_000;
+
+// Text Type treatment, scoped to a single tip and the composer's activity gates.
+function TypedTip({ text, animate }: { text: string; animate: boolean }) {
+  const [motion, setMotion] = useState(
+    () => window.matchMedia("(prefers-reduced-motion: no-preference)").matches,
+  );
+  const characters = Array.from(text);
+  const [length, setLength] = useState(() => (animate && motion ? 0 : characters.length));
+  const position = useRef(length);
+  useEffect(() => {
+    const query = window.matchMedia("(prefers-reduced-motion: no-preference)");
+    const update = () => setMotion(query.matches);
+    query.addEventListener("change", update);
+    return () => query.removeEventListener("change", update);
+  }, []);
+  useEffect(() => {
+    if (!animate || !motion) {
+      position.current = characters.length;
+      setLength(characters.length);
+      return;
+    }
+    if (position.current >= characters.length) return;
+    let count = position.current;
+    const timer = window.setInterval(
+      () => {
+        count += 1;
+        position.current = count;
+        setLength(count);
+        if (count >= characters.length) window.clearInterval(timer);
+      },
+      Math.min(32, 3000 / characters.length),
+    );
+    return () => window.clearInterval(timer);
+  }, [animate, motion, text]);
+
+  return (
+    <p className="composer-tips-text" aria-label={text}>
+      <span aria-hidden="true" data-tip-typed>
+        {characters.slice(0, length).join("")}
+      </span>
+      {animate && motion && length < characters.length ? (
+        <span className="composer-tips-cursor" aria-hidden="true">
+          |
+        </span>
+      ) : null}
+    </p>
+  );
+}
+
+export const ComposerTips = memo(function ComposerTips({ active }: { active: boolean }) {
+  const locale = useLocale();
+  const [index, setTip] = useState(() => Math.floor(Math.random() * COMPOSER_TIPS.length));
+  const [hovered, setHovered] = useState(false);
+  const [open, setOpen] = useState(false);
+  const [focusWithin, setFocusWithin] = useState(false);
+  const trigger = useRef<HTMLButtonElement>(null);
+  const tipId = useId();
+  const [hidden, setHidden] = useState(() => typeof document !== "undefined" && document.hidden);
+  useEffect(() => {
+    const update = () => setHidden(document.hidden);
+    document.addEventListener("visibilitychange", update);
+    return () => document.removeEventListener("visibilitychange", update);
+  }, []);
+  useEffect(() => {
+    if (!active || hovered || focusWithin || open || hidden) return;
+    const timer = window.setInterval(
+      () => setTip((index) => (index + 1) % COMPOSER_TIPS.length),
+      COMPOSER_TIP_INTERVAL,
+    );
+    return () => window.clearInterval(timer);
+  }, [active, hovered, focusWithin, open, hidden]);
+
+  return (
+    <aside
+      data-composer-tips
+      className="composer-tips"
+      aria-label={t("Chat tips")}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      onFocus={() => setFocusWithin(true)}
+      onBlur={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget)) setFocusWithin(false);
+      }}
+    >
+      <button
+        ref={trigger}
+        type="button"
+        className="composer-tips-trigger composer-tips-label"
+        aria-label={t("Chat tips")}
+        aria-haspopup="dialog"
+        aria-expanded={open}
+        aria-controls={open ? tipId : undefined}
+        onClick={() => setOpen((value) => !value)}
+      >
+        {t("Hint")}
+      </button>
+      <div className="composer-tips-copy" title={t(COMPOSER_TIPS[index])}>
+        <TypedTip
+          key={`${locale}-${index}`}
+          text={t(COMPOSER_TIPS[index])}
+          animate={active && !hovered && !focusWithin && !open && !hidden}
+        />
+      </div>
+      {open ? (
+        <Popover
+          anchor={trigger}
+          side="top"
+          align="end"
+          width={320}
+          autoFocus
+          role="dialog"
+          aria-label={t("Chat tips")}
+          id={tipId}
+          tabIndex={-1}
+          className="composer-tip-popover"
+          onDismiss={(reason) => {
+            setOpen(false);
+            if (reason === "escape") trigger.current?.focus();
+          }}
+        >
+          <p>{t(COMPOSER_TIPS[index])}</p>
+        </Popover>
+      ) : null}
+    </aside>
+  );
+});

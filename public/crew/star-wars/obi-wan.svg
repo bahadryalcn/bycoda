@@ -1,0 +1,61 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 240" fill="none">
+  <defs>
+    <linearGradient id="robe" x1="35" y1="85" x2="114" y2="215" gradientUnits="userSpaceOnUse"><stop stop-color="#9f7250"/><stop offset="1" stop-color="#493528"/></linearGradient>
+    <linearGradient id="tunic" x1="58" y1="96" x2="95" y2="204" gradientUnits="userSpaceOnUse"><stop stop-color="#fff0c8"/><stop offset="1" stop-color="#bca47c"/></linearGradient>
+    <linearGradient id="skin" x1="56" y1="37" x2="94" y2="83" gradientUnits="userSpaceOnUse"><stop stop-color="#ffe0b8"/><stop offset="1" stop-color="#cd956e"/></linearGradient>
+    <linearGradient id="hair" x1="58" y1="29" x2="93" y2="70" gradientUnits="userSpaceOnUse"><stop stop-color="#e2c9a5"/><stop offset="1" stop-color="#8d6953"/></linearGradient>
+  </defs>
+  <g stroke="#372d2c" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round">
+    <g data-part="body">
+    <path d="M56 89Q29 94 25 123L19 205Q43 222 78 213Q106 223 131 207L122 113Q112 92 94 88Z" fill="url(#robe)"/>
+    <path d="M42 113L33 202M110 115L120 202M35 208L48 147M112 207L102 151" stroke="#c5996b" opacity=".5"/>
+    <path d="M56 182L55 221H73L77 177M82 176L85 221H105L101 181" fill="#6c5844"/>
+    <path d="M55 201L53 222L46 228H75L73 200M85 201L86 228H114Q112 221 104 220L103 200" fill="#564133"/>
+    <path d="M55 210H73M86 210H104" stroke="#aa8860"/>
+    <path d="M58 87L99 88L105 179L94 195L76 184L60 195L48 178Z" fill="url(#tunic)"/>
+    <path d="M63 88L81 124L99 89M57 91L75 129L67 150M91 99L70 146" stroke="#a58459" stroke-width="3"/>
+    <path d="M51 145Q78 152 103 145L104 156Q77 164 50 156Z" fill="#67452f"/>
+    <rect x="74" y="147" width="14" height="11" rx="2" fill="#b8965e"/><path d="M78 149H85V155H78Z" fill="#5f4d39" stroke="none"/>
+    <path d="M55 94Q37 95 33 115L27 142L47 150L59 113" fill="url(#robe)"/>
+    </g>
+    <g data-part="arm" data-pivot-x="104" data-pivot-y="108">
+    <path d="M103 96L120 124L126 154L108 160L93 115" fill="url(#robe)"/>
+    </g>
+    <g data-part="body">
+    <path d="M28 140L48 147L45 161L28 155Z" fill="#dec798"/><path d="M29 153Q25 164 31 170Q40 175 44 163L44 156" fill="url(#skin)"/>
+    </g>
+    <g data-part="arm" data-pivot-x="104" data-pivot-y="108">
+    <path d="M107 153L125 147L129 159L110 165Z" fill="#dec798"/>
+    <path d="M114 159Q111 169 117 172L127 170Q132 164 127 158Z" fill="url(#skin)"/>
+    </g>
+    <g data-part="weapon" data-follow="arm" data-pivot-x="118" data-pivot-y="164">
+    <path d="M118 158L143 68" stroke="#248be1" stroke-width="10" opacity=".2"/>
+    <path d="M118 158L143 68" stroke="#78d9ff" stroke-width="5"/><path d="M118 158L143 68" stroke="#f0fdff" stroke-width="2"/>
+    <path d="M114 172L119 154" stroke="#1e2939" stroke-width="8"/><path d="M115 169L118 157" stroke="#b8c9d0" stroke-width="4"/>
+    </g>
+    <g data-part="body">
+    <path d="M66 77L65 94L78 109L94 91L90 74" fill="url(#skin)"/>
+    </g>
+    <g data-part="head" data-pivot-x="78" data-pivot-y="87">
+    <ellipse cx="54" cy="59" rx="5" ry="8" fill="#dca47d"/><ellipse cx="101" cy="59" rx="4" ry="8" fill="#c68d6b"/>
+    <path d="M54 42Q54 26 77 27Q101 26 101 47L98 72Q90 89 77 89Q64 86 57 74Z" fill="url(#skin)"/>
+    <path d="M54 57Q46 38 58 29Q75 19 94 30Q106 37 101 55L93 44Q79 43 68 35L61 45L59 60Z" fill="url(#hair)"/>
+    <path d="M57 37Q68 28 82 30M59 40L67 36M88 32L98 40" stroke="#f4ddbb"/>
+    <path d="M58 65L65 69L70 66L77 71L86 66L97 64L94 80L80 94L68 90L59 78Z" fill="url(#hair)"/>
+    <path d="M66 69Q71 61 78 65Q84 62 89 68L79 72Z" fill="#a18065"/>
+    <path d="M64 52L71 50M84 50L92 52" stroke="#785844" stroke-width="2.4"/>
+    <path d="M63 57Q67 54 72 57M84 57Q88 54 92 57" stroke="#543f35"/><circle cx="68" cy="57" r="1.5" fill="#425b70"/><circle cx="88" cy="57" r="1.5" fill="#425b70"/>
+    <path d="M78 56L75 65L80 66M74 75Q78 77 84 74" stroke="#9c684f"/>
+    <path d="M65 76L70 84M89 74L83 87M77 82V90" stroke="#ead5b3"/>
+    </g>
+    <g data-part="blink" data-follow="head" data-pivot-x="78" data-pivot-y="87" opacity="0">
+      <path d="M61 53Q68 51 74 54V61H61ZM82 54Q88 51 94 53V61H82Z" fill="url(#skin)" stroke="none"/>
+      <path d="M63 57Q67 61 72 57M84 57Q88 61 92 57" stroke="#785844"/>
+    </g>
+    <g data-part="mouth" data-follow="head" data-pivot-x="78" data-pivot-y="87" opacity="0">
+      <path d="M71 71H87V80H71Z" fill="url(#hair)" stroke="none"/>
+      <ellipse cx="79" cy="75.5" rx="4.8" ry="3" fill="#654035" stroke="#99715a"/>
+      <path d="M76 74H82" stroke="#efdec0" stroke-width="1.1"/>
+    </g>
+  </g>
+</svg>

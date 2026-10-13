@@ -1,0 +1,40 @@
+/* The slice of pdf.js's pdf_viewer.css the selectable text layer needs. The
+   full file is ~160 KB of global rules for the toolbar, annotations and editors. */
+.pdf-text-layer {
+  position: absolute;
+  inset: 0;
+  overflow: clip;
+  line-height: 1;
+  text-align: initial;
+  --min-font-size: 1;
+  --text-scale-factor: calc(var(--total-scale-factor) * var(--min-font-size));
+  --min-font-size-inv: calc(1 / var(--min-font-size));
+}
+
+.pdf-text-layer :is(span, br) {
+  color: transparent;
+  position: absolute;
+  white-space: pre;
+  cursor: text;
+  transform-origin: 0% 0%;
+  user-select: text;
+}
+
+.pdf-text-layer > span,
+.pdf-text-layer .markedContent span {
+  z-index: 1;
+  --font-height: 0;
+  font-size: calc(var(--text-scale-factor) * var(--font-height));
+  --scale-x: 1;
+  --rotate: 0deg;
+  transform: rotate(var(--rotate)) scaleX(var(--scale-x)) scale(var(--min-font-size-inv));
+}
+
+.pdf-text-layer ::selection {
+  background: rgb(0 100 255 / 0.3);
+  color: transparent;
+}
+
+.pdf-text-layer .markedContent {
+  display: contents;
+}

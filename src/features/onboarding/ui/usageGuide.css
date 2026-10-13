@@ -1,0 +1,47 @@
+.usage-guide-content {
+  font-size: 13px;
+  line-height: 1.6;
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+.usage-guide-progress {
+  font-size: 11px;
+  opacity: 0.6;
+  margin-bottom: 8px;
+}
+.usage-guide-content blockquote {
+  border-left: 3px solid color-mix(in srgb, var(--color-content) 30%, transparent);
+  background: color-mix(in srgb, var(--color-content) 4%, transparent);
+  padding: 10px 14px;
+  margin: 14px 0;
+}
+.usage-guide-content ul {
+  list-style: disc;
+  padding-left: 18px;
+  margin: 14px 0;
+}
+.usage-guide-content li + li {
+  margin-top: 7px;
+}
+.usage-guide-shortcuts {
+  border-top: 1px solid color-mix(in srgb, var(--color-content) 10%, transparent);
+  padding-top: 8px;
+}
+.usage-guide-shortcuts > div {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  padding: 5px 0;
+}
+.usage-guide-shortcuts kbd {
+  font-family: monospace;
+  border: 1px solid color-mix(in srgb, var(--color-content) 18%, transparent);
+  border-radius: 5px;
+  padding: 2px 7px;
+  white-space: nowrap;
+}
+[data-joyride-step] button:focus-visible {
+  outline: 2px solid var(--color-content);
+  outline-offset: 2px;
+}

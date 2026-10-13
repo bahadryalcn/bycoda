@@ -1,0 +1,87 @@
+.device-panel-choice {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 8px;
+}
+
+.device-panel-choice > div {
+  inline-size: 100%;
+  min-inline-size: 0;
+}
+
+.device-panel-setup {
+  order: 10;
+}
+
+.device-panel-setup > div {
+  padding-block-start: 12px;
+}
+
+.device-panel-error {
+  display: grid;
+  gap: 8px;
+  border: 1px solid
+    color-mix(in oklch, var(--color-danger, var(--color-content)) 35%, var(--color-stroke));
+  border-radius: 8px;
+  padding: 12px;
+  background: color-mix(
+    in oklch,
+    var(--color-danger, var(--color-content)) 8%,
+    var(--color-background-base)
+  );
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.device-panel-error > p {
+  margin: 0;
+  color: var(--host-tool-muted);
+}
+
+.device-panel-error pre,
+.device-panel-output {
+  max-block-size: 180px;
+  margin-block: 8px 0;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 11px;
+}
+
+.device-panel-preview {
+  display: grid;
+  place-items: center;
+  overflow: clip;
+  background: var(--color-background-base);
+  padding: 8px;
+  min-inline-size: 0;
+}
+
+.device-panel-preview > img {
+  display: block;
+  max-inline-size: 100%;
+  inline-size: auto;
+  block-size: auto;
+  max-block-size: clamp(160px, 42dvh, 520px);
+  object-fit: contain;
+}
+
+.device-panel-waiting {
+  min-block-size: 180px;
+  color: var(--host-tool-muted);
+  font-size: 12px;
+}
+
+.device-panel-manual > .host-tool-controls {
+  margin-block-start: 10px;
+}
+
+.device-panel-choice .host-tool-muted {
+  margin: 0;
+  font-size: 11px;
+}
+
+.device-panel .host-tool-controls {
+  display: grid;
+  gap: 12px;
+}

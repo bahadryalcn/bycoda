@@ -1,0 +1,127 @@
+name: Release
+
+# Push a vX.Y.Z tag that matches package.json. The workflow builds signed updater
+# artifacts into a draft release; installed apps see the update only after the
+# draft is published, because the feed reads releases/latest.
+on:
+  push:
+    tags: ["v*.*.*"]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  draft:
+    runs-on: ubuntu-latest
+    outputs:
+      release-id: ${{ steps.create.outputs.id }}
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: version
+        name: Check tag, version files and release notes
+        run: |
+          version="$(node -p "require('./package.json').version")"
+          if [ "${GITHUB_REF_NAME}" != "v${version}" ]; then
+            echo "::error::Tag ${GITHUB_REF_NAME} does not match package.json version ${version}"
+            exit 1
+          fi
+          for file in src-tauri/tauri.conf.json; do
+            [ "$(node -p "require('./${file}').version")" = "${version}" ] || { echo "::error::${file} version differs"; exit 1; }
+          done
+          awk -v v="## [${version}]" 'index($0, v) == 1 {found=1; next} found && /^## \[/ {exit} found' CHANGELOG.md > release-notes.md
+          if ! grep -q '[^[:space:]]' release-notes.md; then
+            echo "::error::CHANGELOG.md has no notes for ${version}"
+            exit 1
+          fi
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+      - id: create
+        name: Create draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${GITHUB_REF_NAME}" --draft --verify-tag \
+            --title "bycoda ${{ steps.version.outputs.version }}" --notes-file release-notes.md
+          echo "id=$(gh release view "${GITHUB_REF_NAME}" --json databaseId --jq .databaseId)" >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: draft
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: windows-latest
+            args: --bundles nsis --config src-tauri/tauri.fork.conf.json
+          - platform: macos-latest
+            args: --target aarch64-apple-darwin --bundles app,dmg --config src-tauri/tauri.fork.macos.conf.json
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 12.8.2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin' || '' }}
+      - run: pnpm install --frozen-lockfile
+      # The installer ships this platform's host package; the app installs and
+      # upgrades its own host from it (src-tauri/src/bundled_host.rs).
+      - name: Package the bundled host
+        run: pnpm run host:package
+      # Local builds stay unsigned; only this workflow creates updater artifacts.
+      - name: Enable signed updater artifacts
+        shell: bash
+        run: echo '{"bundle":{"createUpdaterArtifacts":true}}' > release-updater.conf.json
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          # SSH setup and Update Host download this release's host packages.
+          BYCODA_HOST_RELEASE_URL: https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}
+        with:
+          releaseId: ${{ needs.draft.outputs.release-id }}
+          args: ${{ matrix.args }} --config release-updater.conf.json
+          includeUpdaterJson: true
+          updaterJsonPreferNsis: true
+
+  # Host packages for every supported machine, for SSH setup and Update Host.
+  host-packages:
+    needs: draft
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 12.8.2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Package hosts for all platforms
+        run: pnpm run host:package -- --all
+      - name: Upload host packages to the draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          files=(build/host-packages/bycoda-host-*.tar.gz build/host-packages/bycoda-host-*.zip)
+          if (( ${#files[@]} != 6 )); then
+            echo "::error::Expected 6 host packages, found ${#files[@]}"
+            exit 1
+          fi
+          for file in "${files[@]}"; do
+            test -s "$file.sha256" || { echo "::error::$file has no checksum"; exit 1; }
+          done
+          gh release upload "${GITHUB_REF_NAME}" "${files[@]}" "${files[@]/%/.sha256}" --clobber

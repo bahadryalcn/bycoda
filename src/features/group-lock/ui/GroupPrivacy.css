@@ -1,0 +1,180 @@
+/* Scoped to group privacy: shared Settings layouts keep their own contracts. */
+.bycoda-settings-workbench .bycoda-settings-form[data-settings-section="groupLock"] {
+  max-width: 1136px;
+}
+.group-privacy {
+  display: grid;
+  gap: 20px;
+  max-width: 1080px;
+  container-type: inline-size;
+}
+.group-privacy-security {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr);
+  gap: 20px;
+  align-items: start;
+}
+.bycoda-settings-workbench .group-privacy section {
+  min-width: 0;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid var(--color-stroke);
+  border-radius: 10px;
+  background: var(--bycoda-panel);
+}
+.bycoda-settings-workbench .group-privacy section > div:first-child {
+  padding: 18px 20px 16px;
+  border-bottom: 1px solid var(--color-stroke);
+}
+.bycoda-settings-workbench .group-privacy section > div:first-child h2 {
+  font-size: 14px;
+  line-height: 1.4;
+  font-weight: 600;
+}
+.bycoda-settings-workbench .group-privacy section > div:first-child p {
+  max-width: 68ch;
+  margin-top: 6px;
+  color: var(--ui-text-secondary);
+  font-size: 12px;
+  line-height: 1.6;
+}
+.bycoda-settings-workbench .group-privacy section > div:last-child {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+.bycoda-settings-workbench .group-privacy .settings-row,
+.bycoda-settings-workbench .group-privacy .settings-row:first-child {
+  padding: 16px 20px;
+  gap: 20px;
+  align-items: center;
+}
+.bycoda-settings-workbench .group-privacy .settings-row p {
+  color: var(--ui-text-secondary);
+  line-height: 1.6;
+}
+.bycoda-settings-workbench .group-privacy .settings-row-control {
+  max-width: none;
+  gap: 10px;
+  align-items: center;
+}
+.bycoda-settings-workbench .group-privacy .settings-row-control > button:not([role="switch"]) {
+  min-height: 32px;
+  padding-inline: 12px;
+}
+.privacy-heading,
+.privacy-gate-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+}
+.privacy-heading svg,
+.privacy-gate-label svg {
+  flex-shrink: 0;
+  color: var(--ui-text-secondary);
+}
+.privacy-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+.privacy-status::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--color-accent);
+}
+.privacy-recovery {
+  border-top: 1px solid var(--color-stroke);
+}
+.privacy-recovery summary {
+  padding: 14px 20px;
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--ui-text-secondary);
+}
+.privacy-recovery summary:hover {
+  color: var(--color-content);
+}
+.privacy-recovery summary:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: -3px;
+}
+.privacy-group-name {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  flex-wrap: wrap;
+}
+.privacy-group-name > .truncate {
+  max-width: min(40cqw, 420px);
+}
+.privacy-group-icon {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border: 1px solid var(--color-stroke);
+  border-radius: 7px;
+  color: var(--ui-text-secondary);
+  background: var(--bycoda-raised);
+  flex-shrink: 0;
+}
+.privacy-group-state {
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--ui-text-secondary);
+}
+.privacy-control-label {
+  color: var(--ui-text-secondary);
+  font-size: 11px;
+}
+.privacy-footnote,
+.privacy-inline-note {
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--ui-text-secondary);
+}
+.privacy-footnote {
+  max-width: 80ch;
+  margin-top: -4px;
+}
+.privacy-inline-note {
+  padding: 0 20px 16px;
+}
+.privacy-hidden-footer {
+  display: flex;
+  padding: 12px 20px 16px;
+  justify-content: flex-end;
+}
+@container (max-width: 880px) {
+  .group-privacy-security {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+@container (max-width: 560px) {
+  .bycoda-settings-workbench .group-privacy .settings-row,
+  .bycoda-settings-workbench .group-privacy .settings-row:first-child {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+  }
+  .bycoda-settings-workbench .group-privacy .settings-row-control {
+    justify-content: flex-start;
+    max-width: 100%;
+  }
+  .bycoda-settings-workbench
+    .group-privacy
+    .settings-row:has(> .settings-row-control > [role="switch"]:only-child) {
+    flex-direction: row;
+    align-items: center;
+  }
+  .privacy-group-name > .truncate {
+    max-width: 65cqw;
+  }
+  .privacy-hidden-footer {
+    justify-content: flex-start;
+  }
+}

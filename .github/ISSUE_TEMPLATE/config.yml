@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Private security report
+    url: https://github.com/bahadryalcn
+    about: Use the maintainer's profile contact channel for private vulnerability reports. See SECURITY.md for details.
