@@ -1,0 +1,111 @@
+# Repository file and artifact policy
+
+Read this file before creating, moving, or generating files in this repository.
+Paths below are relative to the repository root. This policy applies to all agents
+and contributors. Preserve existing work and use the established locations.
+
+## Maintained files: included in Git
+
+| Content | Location |
+| --- | --- |
+| Application composition and desktop shell | `src/app/` |
+| Feature code and focused tests | `src/features/<feature>/` |
+| Shared components, utilities, and translation catalogs | `src/shared/` |
+| Platform bridges | `src/platform/` |
+| Provider adapters and integration contracts | `src/integrations/` |
+| Host runtime and its tests | `host/` |
+| Native application and Tauri configuration | `src-tauri/` |
+| Browser scenarios, fixtures, servers, and fixture configurations | `tests/browser/` |
+| Assets required by the product | `public/`; branding in `public/brand/` |
+| Vendored dependencies and their license notices | `vendor/` |
+| Platform build helpers | `scripts/build/` |
+| Environment setup helpers | `scripts/setup/` |
+| Version and release maintenance | `scripts/release/` |
+| Repository and transport checks | `scripts/checks/` |
+| Translation maintenance | `scripts/i18n/` |
+| Local update implementation, configuration, and tests | `scripts/local-update/` |
+| Public local update commands | `scripts/update-local.ps1`, `scripts/update-local.sh` |
+| User guides | `docs/guides/` |
+| Integration and host workflow guides | `docs/integrations/` |
+| Architecture and maintenance references | `docs/reference/` |
+| Shared local update guide | `docs/local-update.md` |
+| Issue/PR templates and CI | `.github/` |
+
+Keep unit tests beside their source modules when that is the existing convention.
+Place a reusable helper in its maintained script group; place a one-time helper
+under `temp/local/<task-id>/`. Required product assets must not depend on `temp/`.
+Write maintained documentation in English. Translation catalogs keep their target
+languages. Preserve third-party license notices and attribution.
+
+Keep tool entry points and manifests in the root when their tools expect them
+there: package/Cargo manifests and locks, TypeScript/Vite/Vitest/Playwright
+configuration, HTML application entry points, README, contributing/security/license
+files, `AGENTS.md`, and this policy. Do not move these solely to reduce root entries.
+Do not introduce another top-level folder or alternate script/document hierarchy
+without a concrete need and an update to this policy.
+
+## Agent outputs: local and excluded from Git
+
+The entire `temp/` directory is ignored. Use these locations instead of scattering
+development records through the source tree:
+
+| Output | Location |
+| --- | --- |
+| Task plans, TODOs, research, one-time scripts, and scratch data | `temp/local/<task-id>/` |
+| Check logs, benchmark results, screenshots, and visual reviews | `temp/verification/<task-id>/` |
+| Temporary builds and browser fixture bundles | `temp/build/<task-id>/` |
+| Browser test traces and results | `temp/test-results/<suite>/` |
+| Useful retired files kept for later reference | `temp/archive/<original-relative-path>` |
+| Git bundles, ref inventories, and history recovery records | `temp/history/` |
+
+Use a short descriptive task ID, for example `2026-10-09-provider-settings`.
+Keep one task's outputs together. When retaining useful material, include a short
+README describing its purpose, origin, reuse limitations, and any recovery steps.
+Do not overwrite another task's outputs or an existing archive entry. Use a versioned
+subfolder if the same original path needs another archived version.
+
+Do not create new `.scratch*`, `output/`, `docs/evidence/`, `docs/benchmarks/`,
+or dated development-plan/TODO/report files in maintained documentation folders.
+Their legacy ignore rules protect old checkouts; they are not approved destinations.
+Agent logs and generated captures are not product assets just because they are images.
+
+Keep dependency caches, Cargo targets, and operational build/release packages in
+the locations required by their tools and the local update coordinator. Do not move
+active packages, databases, credentials, live lock files, or rollback material into
+`temp/` as a cleanup shortcut. Credentials remain in the existing credential stores;
+never copy them into tracked source or an archive. Preserve useful local material
+when cleaning up; do not delete it without task authorization.
+
+## Creating or relocating a file
+
+1. Decide whether the file is maintained product source/documentation or a local
+   task output, then select the matching location above.
+2. Reuse an existing directory and naming convention. Avoid parallel copies,
+   unreferenced asset variants, and root-level experiment files.
+3. If moving maintained files, update imports, root/path calculations, package
+   commands, CI references, documentation links, and tests in the same change.
+   Preserve the public local update entry points and persistent caches.
+4. Verify relevant checks and review the Git diff. Check that local outputs are
+   ignored with `git check-ignore <path>`; never bypass that with `git add -f`.
+5. Run `node scripts/checks/check-repository-hygiene.mjs` before committing.
+   Stage only intended paths. PRs still require passing relevant tests and required
+   CI checks before merging; this policy does not relax those requirements.
+
+## Organization recorded on 2026-10-09
+
+- Grouped maintained scripts by build, setup, release, checks, translation, and
+  local update responsibilities; preserved the public update wrappers.
+- Grouped product documentation into guides, integrations, and references while
+  preserving the shared local update guide's entry path.
+- Moved browser fixture configuration beside the browser tests and redirected
+  fixture builds/results into ignored `temp/` locations.
+- Retained 99 recoverable historical documents, scripts, assets, and output files
+  under `temp/archive/`; preserved history recovery bundles under `temp/history/`.
+  Files previously deleted without a Git record or backup could not be recovered.
+- Started maintained history with a single consolidated first commit by the
+  maintainer. Kept original license notices and explicit MonoCode v0.6 attribution
+  and thanks in the project documentation.
+
+This records file organization, not a claim that every test or installed runtime
+has passed. Detailed run results belong in `temp/verification/`, not this policy.
+Update this file when an approved change adds or changes a maintained file category.

@@ -1,0 +1,36 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "bycoda",
+  "mainBinaryName": "bycoda",
+  "identifier": "com.bycoda.desktop",
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "bycoda",
+        "width": 1280,
+        "height": 800,
+        "minWidth": 800,
+        "minHeight": 520,
+        "decorations": false,
+        "transparent": true,
+        "backgroundColor": "#171717",
+        "backgroundThrottling": "throttle",
+        "shadow": true
+      }
+    ]
+  },
+  "bundle": {
+    "createUpdaterArtifacts": false,
+    "resources": {
+      "../build/host-packages/bycoda-host-win32-x64.zip": "host/bycoda-host-win32-x64.zip",
+      "../build/host-packages/bycoda-host-win32-x64.zip.sha256": "host/bycoda-host-win32-x64.zip.sha256"
+    }
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDIxQ0UyNDFGNEQyN0FFNzgKUldSNHJpZE5IeVRPSVo3TFZERFpCVitHcjVNUWJ2NDFJay9PUHJEN3dvQjFyWXBhT05iNFFPcGwK",
+      "endpoints": ["https://github.com/bahadryalcn/bycoda/releases/latest/download/latest.json"]
+    }
+  }
+}

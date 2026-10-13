@@ -1,0 +1,295 @@
+import type { HostSession } from "../src/features/connections/model/protocol";
+import type { SessionSync } from "../src/features/connections/model/protocol";
+import type { Block } from "../src/features/sessions/model/session";
+import { snapshotWeight } from "../src/features/connections/model/snapshotWeight";
+export const TRANSCRIPT_BLOCK_PREVIEW_BYTES = 64 * 1024;
+
+function truncateJsonString(value: string, maxBytes: number): string {
+  if (Buffer.byteLength(JSON.stringify(value)) <= maxBytes) return value;
+  let lo = 0,
+    hi = value.length;
+  while (lo < hi) {
+    const mid = Math.ceil((lo + hi) / 2);
+    const candidate = value.slice(0, mid) + "…";
+    if (Buffer.byteLength(JSON.stringify(candidate)) <= maxBytes) lo = mid;
+    else hi = mid - 1;
+  }
+  let prefix = value.slice(0, lo);
+  if (
+    prefix.charCodeAt(prefix.length - 1) >= 0xd800 &&
+    prefix.charCodeAt(prefix.length - 1) <= 0xdbff
+  )
+    prefix = prefix.slice(0, -1);
+  return prefix + "…";
+}
+
+/** Keeps a transcript block's shape while bounding every nested string. */
+export function previewBlock(block: Block, revision: number): Block {
+  let cached = previewCache.get(block);
+  if (!cached) {
+    cached = buildBlockPreview(block);
+    previewCache.set(block, cached);
+  }
+  return cached.remote
+    ? { ...cached.value, remoteContent: { revision, bytes: cached.bytes } }
+    : cached.value;
+}
+
+const previewCache = new WeakMap<Block, { value: Block; bytes: number; remote: boolean }>();
+
+function buildBlockPreview(block: Block): {
+  value: Block;
+  bytes: number;
+  remote: boolean;
+} {
+  const fullBytes = Buffer.byteLength(JSON.stringify(block));
+  let omitted = false;
+  let remaining = TRANSCRIPT_BLOCK_PREVIEW_BYTES - 96;
+  const clip = (value: unknown, depth: number): unknown => {
+    if (typeof value === "string") {
+      const result = truncateJsonString(value, remaining);
+      let size = Buffer.byteLength(JSON.stringify(result));
+      if (size > remaining) {
+        size = 0;
+        omitted = true;
+        return undefined;
+      }
+      if (result.length < value.length) omitted = true;
+      remaining -= size;
+      return result;
+    }
+    if (typeof value === "undefined" || typeof value === "function") {
+      omitted = true;
+      return undefined;
+    }
+    if (value === null || typeof value !== "object") {
+      const size = Buffer.byteLength(JSON.stringify(value) ?? "null");
+      if (size > remaining) {
+        omitted = true;
+        return undefined;
+      }
+      remaining -= size;
+      return value;
+    }
+    if (depth >= 16) {
+      omitted = true;
+      return undefined;
+    }
+    if (Array.isArray(value)) {
+      remaining -= 2;
+      const result: unknown[] = [];
+      for (const item of value) {
+        if (remaining < 32) {
+          omitted = true;
+          break;
+        }
+        const next = clip(item, depth + 1);
+        if (next !== undefined) result.push(next);
+        remaining -= 2;
+      }
+      return result;
+    }
+    remaining -= 2;
+    const result: Record<string, unknown> = {};
+    for (const [key, item] of Object.entries(value)) {
+      if (["data", "previewUrl", "loadPreview"].includes(key)) {
+        omitted = true;
+        continue;
+      }
+      if (remaining < 64) {
+        omitted = true;
+        break;
+      }
+      const keyBytes = Buffer.byteLength(JSON.stringify(key)) + 2;
+      remaining -= keyBytes;
+      const next = clip(item, depth + 1);
+      if (next !== undefined) result[key] = next;
+      else omitted = true;
+    }
+    return result;
+  };
+  const { id, role, text, attachments, remoteContent: _remoteContent, ...rest } = block;
+  if (_remoteContent) omitted = true;
+  const attachmentPreview = attachments?.slice(0, 128);
+  if (attachments && attachments.length > 128) omitted = true;
+  const prepared = {
+    id,
+    role,
+    text: truncateJsonString(text, 32 * 1024),
+    ...(attachmentPreview
+      ? {
+          attachments: attachmentPreview.map(
+            ({
+              data: _data,
+              path: _path,
+              previewUrl: _preview,
+              loadPreview: _load,
+              ...metadata
+            }) => {
+              if (
+                _data !== undefined ||
+                _path !== undefined ||
+                _preview !== undefined ||
+                _load !== undefined
+              )
+                omitted = true;
+              return metadata;
+            },
+          ),
+        }
+      : {}),
+    ...rest,
+  };
+  if (prepared.text.length < block.text.length) omitted = true;
+  const preview = clip(prepared, 0) as Block | undefined;
+  let marker = fullBytes > TRANSCRIPT_BLOCK_PREVIEW_BYTES || omitted;
+  if (
+    block.tool?.output &&
+    (preview?.tool?.output?.length ?? 0) < block.tool.output.length &&
+    preview?.tool
+  )
+    preview.tool.outputTruncated = true;
+  let result = {
+    ...(preview ?? { id: block.id, role: block.role, text: prepared.text }),
+    id: block.id,
+    role: block.role,
+    text: typeof preview?.text === "string" ? preview.text : prepared.text,
+    ...(marker ? { remoteContent: { revision: 0, bytes: fullBytes } } : {}),
+  } as Block;
+  if (Buffer.byteLength(JSON.stringify(result)) > TRANSCRIPT_BLOCK_PREVIEW_BYTES) {
+    marker = true;
+    result = {
+      id: block.id,
+      role: block.role,
+      text: truncateJsonString(block.text, 32 * 1024),
+      remoteContent: { revision: 0, bytes: fullBytes },
+    } as Block;
+  }
+  return { value: result, bytes: fullBytes, remote: marker };
+}
+
+export function previewSession(value: HostSession): HostSession {
+  return {
+    ...value,
+    session: {
+      ...value.session,
+      blocks: value.session.blocks.map((block) => previewBlock(block, value.revision)),
+    },
+  };
+}
+
+/** Returns a partial delta for the contiguous window starting at its earliest
+ * surviving loaded block, or undefined when the caller must send a tail page. */
+export function partialSessionSync(
+  sync: SessionSync,
+  current: HostSession,
+  loadedBlockIds: string[],
+): SessionSync | undefined {
+  if (sync.kind === "unchanged") return sync;
+  if (sync.kind !== "delta") return undefined;
+  const loaded = new Set(loadedBlockIds);
+  const first = current.session.blocks.findIndex((block) => loaded.has(block.id));
+  if (first < 0) return undefined;
+  const blocks = current.session.blocks.slice(first);
+  const ids = new Set(blocks.map((block) => block.id));
+  const { session, ...metadata } = sync.value;
+  return {
+    ...sync,
+    partial: true,
+    value: {
+      ...metadata,
+      history: {
+        before: first > 0 ? first : undefined,
+        revision: current.revision,
+        totalBlocks: current.session.blocks.length,
+      },
+      session,
+    },
+    blockIds: blocks.map((block) => block.id),
+    blocks: sync.blocks
+      .filter((block) => ids.has(block.id))
+      .map((block) => previewBlock(block, current.revision)),
+  };
+}
+export class TranscriptPages {
+  private snapshots = new Map<string, { value: HostSession; expires: number; bytes: number }>();
+  page(read: () => HostSession, id: string, before?: number, revision?: number, preview = true) {
+    const key = `${id}:${revision}`;
+    const captured = revision === undefined ? undefined : this.snapshots.get(key);
+    const value = captured && captured.expires > Date.now() ? captured.value : read();
+    const page = transcriptPage(value, before, revision, preview);
+    const captureKey = `${id}:${value.revision}`;
+    this.snapshots.delete(captureKey);
+    this.snapshots.set(captureKey, {
+      value,
+      expires: Date.now() + 120_000,
+      bytes: snapshotWeight(value),
+    });
+    let bytes = [...this.snapshots.values()].reduce((sum, entry) => sum + entry.bytes, 0);
+    for (const [entryKey, entry] of this.snapshots) {
+      if (entry.expires < Date.now() || this.snapshots.size > 8 || bytes > 128 * 1024 * 1024) {
+        this.snapshots.delete(entryKey);
+        bytes -= entry.bytes;
+      }
+    }
+    return page;
+  }
+}
+export function transcriptPage(
+  value: HostSession,
+  before?: number,
+  revision?: number,
+  preview = true,
+) {
+  if (revision !== undefined && revision !== value.revision)
+    throw new Error("Transcript changed; reload history");
+  const end = before ?? value.session.blocks.length;
+  if (!Number.isSafeInteger(end) || end < 0 || end > value.session.blocks.length)
+    throw new Error("Invalid transcript cursor");
+  let start = end;
+  let bytes = 0;
+  const { blockRevisions: _revisions, ...metadata } = value;
+  const emptyPage = {
+    ...metadata,
+    session: { ...value.session, blocks: [] },
+    history: {
+      before: 0,
+      revision: value.revision,
+      totalBlocks: value.session.blocks.length,
+    },
+  };
+  const pageOverhead = preview ? Buffer.byteLength(JSON.stringify(emptyPage)) + 128 : 0;
+  if (preview && pageOverhead >= 1024 * 1024)
+    throw new Error("Transcript metadata exceeds the page transfer budget");
+  const blockBudget = preview ? 1024 * 1024 - pageOverhead : 1024 * 1024;
+  while (start > 0 && end - start < 100) {
+    const block = value.session.blocks[start - 1]!;
+    const bounded = preview ? previewBlock(block, value.revision) : block;
+    const size = Buffer.byteLength(JSON.stringify(bounded));
+    if (preview && start === end && size > blockBudget)
+      throw new Error("Transcript metadata leaves no room for a bounded page");
+    if (bytes + size > blockBudget && start < end) break;
+    bytes += size;
+    start--;
+  }
+  const beforeCursor = start > 0 ? start : undefined;
+  return {
+    value: {
+      ...metadata,
+      session: {
+        ...value.session,
+        blocks: value.session.blocks
+          .slice(start, end)
+          .map((block) => (preview ? previewBlock(block, value.revision) : block)),
+      },
+      history: {
+        before: beforeCursor,
+        revision: value.revision,
+        totalBlocks: value.session.blocks.length,
+      },
+    },
+    before: beforeCursor,
+    totalBlocks: value.session.blocks.length,
+    revision: value.revision,
+  };
+}

@@ -1,0 +1,32 @@
+.policies-settings .policy-intro,
+.policies-settings .policy-document {
+  padding-block: 1rem;
+  padding-inline: clamp(1rem, 3cqi, 1.5rem);
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+
+.policies-settings .policy-intro {
+  font-size: 0.8125rem;
+  line-height: 1.7;
+}
+
+.policies-settings .policy-document {
+  font-size: 0.875rem;
+  line-height: 1.75;
+}
+
+.policies-settings .policy-document a:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 3px;
+}
+
+.policies-settings .policy-document a:active {
+  opacity: 0.7;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .policies-settings .policy-document a:hover {
+    text-decoration: underline;
+  }
+}

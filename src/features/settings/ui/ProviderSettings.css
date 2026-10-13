@@ -1,0 +1,135 @@
+/* Keep the CLI overview together instead of splitting labels from controls. */
+.bycoda-settings-workbench .bycoda-settings-form > #setting-agent-clis {
+  display: block;
+}
+.bycoda-settings-workbench .bycoda-settings-form > #setting-agent-clis > .settings-group-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 16px;
+  padding-block-end: 18px;
+}
+#setting-agent-clis > .settings-group-content {
+  container-type: inline-size;
+  overflow: visible;
+}
+.provider-cli-scope {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+}
+.provider-cli-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+.provider-cli-card {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  padding: 16px;
+  border: 1px solid var(--color-stroke);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--color-content) 3%, var(--color-background-base));
+}
+.provider-cli-card[data-default] {
+  border-color: color-mix(in srgb, var(--color-accent) 45%, var(--color-stroke));
+}
+#setting-agent-clis :is(button, summary):focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 3px;
+}
+.provider-cli-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+.provider-cli-fields {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  align-items: start;
+  gap: 12px;
+  margin-block-start: 20px;
+  margin-block-end: 18px;
+}
+.provider-cli-field {
+  min-width: 0;
+}
+.provider-cli-field:first-child:nth-last-child(2) {
+  grid-column: span 2;
+}
+.provider-cli-field > span {
+  display: block;
+  margin-block-end: 6px;
+  font-size: 11px;
+  color: color-mix(in oklch, var(--color-content) 60%, transparent);
+}
+.provider-cli-field > div {
+  max-width: none;
+}
+.provider-cli-field > div > button {
+  width: 100%;
+  justify-content: space-between;
+}
+.provider-cli-footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-block-start: auto;
+  padding-block-start: 12px;
+  border-block-start: 1px solid var(--color-stroke);
+}
+.provider-cli-card[data-default] .provider-cli-footer > button:disabled {
+  color: var(--color-content);
+  opacity: 0.8;
+}
+.provider-cli-install {
+  margin-block-start: 12px;
+  font-size: 11px;
+  color: color-mix(in oklch, var(--color-content) 60%, transparent);
+}
+.provider-cli-install > summary {
+  width: fit-content;
+  cursor: pointer;
+}
+@media (hover: hover) and (pointer: fine) {
+  .provider-cli-install > summary:hover {
+    color: var(--color-content);
+  }
+}
+
+.provider-cli-install > summary:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 3px;
+}
+.provider-cli-extras {
+  margin: -6px 0 16px;
+}
+.provider-cli-extras > .provider-cli-fields {
+  margin: 12px 0 0;
+}
+.provider-cli-install > p {
+  margin-block-start: 8px;
+  line-height: 1.7;
+  overflow-wrap: anywhere;
+}
+@container (max-width: 850px) {
+  .provider-cli-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+@container (max-width: 430px) {
+  .provider-cli-fields {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .provider-cli-field:first-child:nth-last-child(2) {
+    grid-column: auto;
+  }
+  .provider-cli-card {
+    padding: 12px;
+  }
+}
