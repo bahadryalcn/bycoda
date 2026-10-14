@@ -132,6 +132,9 @@ html.appearance-word-wrap .agent-markdown [data-streamdown="code-block-body"] co
     var(--color-conflict-theirs) 12%,
     var(--color-background-base)
   );
+  /* Intra-conflict differences sit on top of the side's line tint. */
+  --ui-conflict-current-word: color-mix(in oklab, var(--color-conflict-ours) 30%, transparent);
+  --ui-conflict-incoming-word: color-mix(in oklab, var(--color-conflict-theirs) 30%, transparent);
   --ui-surface-muted: color-mix(in oklab, var(--color-content) 8%, var(--color-background-base));
   --ui-surface-hover: color-mix(in oklab, var(--color-content) 7%, var(--color-background-base));
   --ui-surface-pressed: color-mix(in oklab, var(--color-content) 16%, var(--color-background-base));

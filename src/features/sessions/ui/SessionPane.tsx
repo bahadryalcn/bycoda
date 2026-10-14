@@ -121,6 +121,7 @@ import {
 } from "../../projects/model/projectChatBackground";
 import { useProjectBackgroundEffect } from "../../projects/ui/useProjectBackgroundEffect";
 import { GradientBlurBackground } from "../../settings/ui/GradientBlurBackground";
+import { LiveBackgroundLayer } from "../../settings/ui/LiveBackgroundCanvas";
 import {
   loadChatBackgroundPath,
   loadNewThreadBackgroundEffect,
@@ -1152,6 +1153,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
       className="chat-pane-background relative isolate flex h-full min-h-0 min-w-0 flex-1 flex-col"
       onMouseDown={() => onFocus(session.id)}
     >
+      <LiveBackgroundLayer active={visible} speech={streamingReplyLength(session)} />
       {!isEmpty ? <CrewBackdrop visible={visible} session={session} /> : null}
       {projectBackground?.effect === "gradient-blur" ||
       (!projectBackground && globalBackgroundPath && globalBackgroundEffect === "gradient-blur") ? (
@@ -1560,3 +1562,9 @@ const LocalSessionPane = memo(function LocalSessionPane({
     </>
   );
 });
+
+/** Length of the assistant reply currently streaming, or -1 when none is. */
+function streamingReplyLength(session: Session): number {
+  const last = session.blocks[session.blocks.length - 1];
+  return session.busy && last?.role === "assistant" && last.streaming ? last.text.length : -1;
+}

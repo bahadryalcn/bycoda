@@ -1,5 +1,11 @@
 import { useCallback, useEffect, useState } from "react";
 import {
+  LIVE_BACKGROUND_DEFAULT,
+  LIVE_BACKGROUND_INTENSITY_DEFAULT,
+  saveLiveBackground,
+  saveLiveBackgroundIntensity,
+} from "../model/liveBackground";
+import {
   APPEARANCE_DEFAULTS,
   APPEARANCE_PREFERENCES_EVENT,
   loadAppearancePreferences,
@@ -316,6 +322,8 @@ export function useAppearanceSettings(
     onDiffPalette(DIFF_PALETTE_DEFAULT);
     onChatBackgroundBlur(CHAT_BACKGROUND_BLUR_DEFAULT);
     onNewThreadBackgroundEffect(NEW_THREAD_BACKGROUND_EFFECT_DEFAULT);
+    saveLiveBackground(LIVE_BACKGROUND_DEFAULT);
+    saveLiveBackgroundIntensity(LIVE_BACKGROUND_INTENSITY_DEFAULT);
     if (chatBackgroundPath) void onClearChatBackground();
     onUiScale(Math.round(UI_SCALE_DEFAULT * 100));
     onCollapsedProjectRailMode(COLLAPSED_PROJECT_RAIL_MODE_DEFAULT);

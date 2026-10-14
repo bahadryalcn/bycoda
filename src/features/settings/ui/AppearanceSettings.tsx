@@ -11,6 +11,7 @@ import { Popover } from "../../../shared/ui/Popover";
 import { SecondaryButton } from "../../../shared/ui/SecondaryButton";
 
 import { GradientBlurBackground } from "./GradientBlurBackground";
+import { LiveBackgroundCanvas } from "./LiveBackgroundCanvas";
 import { SessionListSettings } from "./SessionListSettings";
 
 import { useColorScheme } from "../../../shared/hooks/useColorScheme";
@@ -39,6 +40,17 @@ import {
 } from "../model/appearance";
 
 import { UI_SCALE_PERCENTS } from "../model/uiScale";
+import {
+  LIVE_BACKGROUNDS,
+  LIVE_BACKGROUND_INTENSITY_MAX,
+  LIVE_BACKGROUND_INTENSITY_MIN,
+  liveBackgroundDescription,
+  liveBackgroundLabel,
+  saveLiveBackground,
+  saveLiveBackgroundIntensity,
+  useLiveBackground,
+  useLiveBackgroundIntensity,
+} from "../model/liveBackground";
 import {
   saveDecorativeMotionEnabled,
   useDecorativeMotionPreference,
@@ -289,8 +301,60 @@ export function AppearancePage({ appearance }: { appearance: AppearanceSettings 
         </Row>
       </Group>
       <ChatBackgroundCard appearance={appearance} />
+      <LiveBackgroundCard />
       <CrewSettings />
     </>
+  );
+}
+
+function LiveBackgroundCard() {
+  useLocale();
+  const effect = useLiveBackground();
+  const intensity = useLiveBackgroundIntensity();
+  const strength = Math.round(intensity * 100);
+
+  return (
+    <Group
+      id="live-background"
+      title={t("Live background")}
+      description={t(
+        "An animated scene behind your chat panes. While a reply streams, lips form in the scene and speak it. It stays still when decorative animations are off.",
+      )}
+    >
+      {effect !== "none" ? (
+        <div className="border-b border-content/5 p-4">
+          <div className="relative h-36 overflow-hidden rounded-lg border border-content/10 bg-background-base">
+            <LiveBackgroundCanvas
+              effect={effect}
+              intensity={intensity}
+              demoSpeech
+              className="absolute inset-0"
+            />
+          </div>
+        </div>
+      ) : null}
+      <Row label={t("Scene")} description={liveBackgroundDescription(effect)}>
+        <Segmented
+          label={t("Live background scene")}
+          value={effect}
+          options={LIVE_BACKGROUNDS.map((value) => ({ value, label: liveBackgroundLabel(value) }))}
+          onChange={saveLiveBackground}
+          optionIdPrefix="live-background"
+        />
+      </Row>
+      {effect !== "none" ? (
+        <Row label={t("Visibility")} description={t("Strength of the animated layer.")}>
+          <Slider
+            label={t("Live background visibility")}
+            value={strength}
+            display={`${strength}%`}
+            min={Math.round(LIVE_BACKGROUND_INTENSITY_MIN * 100)}
+            max={Math.round(LIVE_BACKGROUND_INTENSITY_MAX * 100)}
+            onChange={(value) => saveLiveBackgroundIntensity(value / 100)}
+          />
+        </Row>
+      ) : null}
+    </Group>
   );
 }
 

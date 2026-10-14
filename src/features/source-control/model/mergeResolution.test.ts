@@ -89,6 +89,24 @@ describe("editable merge result", () => {
     chooseMergeRegion(view, 0, "theirs");
     expect(view.state.doc.toString()).toBe("prefix\nnew");
   });
+  it("records where pending text came from and resets a decision to it", () => {
+    mount(markers, "top\nprice=80\nmiddle\nname=base\nend\n");
+    expect(mergeResolution(view.state).regions.map((region) => region.origin)).toEqual([
+      "base",
+      "base",
+    ]);
+    chooseMergeRegion(view, 1, "both");
+    chooseMergeRegion(view, 0, "theirs");
+    chooseMergeRegion(view, 1, "reset");
+    expect(view.state.doc.toString()).toBe("top\nprice=120\nmiddle\nname=base\nend\n");
+    expect(mergeResolution(view.state).regions.map((region) => region.choice)).toEqual([
+      "theirs",
+      null,
+    ]);
+    view.destroy();
+    mount();
+    expect(mergeResolution(view.state).regions[0].origin).toBe("ours");
+  });
   it("does not consume adjacent conflicts when selecting an empty side", () => {
     mount(
       "<<<<<<< HEAD\n=======\na\n>>>>>>> branch\n<<<<<<< HEAD\nb\n=======\nc\n>>>>>>> branch\n",

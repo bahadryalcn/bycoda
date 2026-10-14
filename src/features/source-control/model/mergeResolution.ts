@@ -16,8 +16,12 @@ export type MergeRegion = {
   to: number;
   ours: string;
   theirs: string;
+  /** Pending text restored by Reset, and where it came from. */
+  initial: string;
+  origin: "base" | "ours";
   choice: ConflictSide | "manual" | null;
 };
+export type MergeChoice = ConflictSide | "manual" | "reset";
 export type MergeResolution = { regions: readonly MergeRegion[]; active: number };
 export const setMergeResolution = StateEffect.define<MergeResolution>();
 
@@ -122,6 +126,7 @@ export function createMergeResolution(markers: string, base?: string | null) {
     oursOffset += context.length;
     const ours = conflictReplacement(text, block, "ours");
     const theirs = conflictReplacement(text, block, "theirs");
+    const origin = block.base || (toBase && ancestor != null) ? "base" : "ours";
     let initial = block.base
       ? text.slice(block.base.from, block.base.to)
       : toBase && ancestor != null
@@ -134,6 +139,8 @@ export function createMergeResolution(markers: string, base?: string | null) {
       to: result.length + initial.length,
       ours,
       theirs,
+      initial,
+      origin,
       choice: null,
     });
     result += initial;
@@ -150,23 +157,25 @@ export function mergeResolution(state: EditorState) {
   return state.field(mergeResolutionField);
 }
 
-export function chooseMergeRegion(view: EditorView, id: number, side: ConflictSide | "manual") {
+export function chooseMergeRegion(view: EditorView, id: number, side: MergeChoice) {
   const state = mergeResolution(view.state);
   const region = state.regions.find((item) => item.id === id);
   if (!region) return;
   const insert =
     side === "manual"
       ? view.state.sliceDoc(region.from, region.to)
-      : side === "ours"
-        ? region.ours
-        : side === "theirs"
-          ? region.theirs
-          : region.ours + region.theirs;
+      : side === "reset"
+        ? region.initial
+        : side === "ours"
+          ? region.ours
+          : side === "theirs"
+            ? region.theirs
+            : region.ours + region.theirs;
   const changes = view.state.changes({ from: region.from, to: region.to, insert });
   // Map surrounding regions with boundary affinity that never consumes a neighbour.
   const regions = state.regions.map((item) =>
     item.id === id
-      ? { ...item, to: item.from + insert.length, choice: side }
+      ? { ...item, to: item.from + insert.length, choice: side === "reset" ? null : side }
       : {
           ...item,
           from: changes.mapPos(item.from, item.id < id ? -1 : 1),

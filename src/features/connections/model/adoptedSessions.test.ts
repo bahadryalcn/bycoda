@@ -360,6 +360,115 @@ describe("mergeAdoptedSession", () => {
   });
 });
 
+describe("adopted sessions after quitting mid-turn or with a lagging host", () => {
+  const user = (id: string, text = id) => ({ id, role: "user", text }) as Block;
+  const notice = { id: "quit", role: "system", text: "x", notice: "interrupt" } as Block;
+  const openTurn = [
+    user("u1"),
+    { id: "r1", role: "assistant", text: "done" } as Block,
+    { ...user("u2"), startedAt: 1 },
+    { id: "t1", role: "tool", text: "", streaming: true, tool: { status: "in_progress" } } as never,
+    { id: "ap", role: "approval", text: "", approval: {} } as never,
+  ];
+  const sealed = [
+    openTurn[0],
+    openTurn[1],
+    { ...openTurn[2], durationMs: 5 },
+    { id: "t1", role: "tool", text: "", streaming: false, tool: { status: "cancelled" } } as never,
+    notice,
+  ];
+
+  it("keeps the sealed local turn over a host copy saved before the quit", () => {
+    const merged = mergeAdoptedSession(local({ blocks: sealed }), host({ blocks: openTurn }));
+    expect(merged!.blocks).toEqual(sealed);
+  });
+
+  it("takes a host copy that continued past the interrupted turn", () => {
+    const ahead = [...openTurn.slice(0, 4), user("u3")];
+    const merged = mergeAdoptedSession(local({ blocks: sealed }), host({ blocks: ahead }));
+    expect(merged!.blocks).toEqual(ahead);
+  });
+
+  it("still reports an earlier turn edited on the host", () => {
+    const edited = [openTurn[0], { ...openTurn[1], text: "other" }, ...openTurn.slice(2)];
+    expect(
+      mergeAdoptedSession(local({ blocks: sealed }), host({ blocks: edited })),
+    ).toBeUndefined();
+  });
+
+  it("prefers a running host copy over the local one when both hold the same blocks", () => {
+    const merged = mergeAdoptedSession(
+      local({ blocks: sealed }),
+      host({ blocks: openTurn }, "running"),
+    );
+    expect(merged!.blocks).toEqual(openTurn);
+  });
+
+  function mirrorAfterRestart(session: Session, remote: Session["blocks"]) {
+    let current = session;
+    const preserve = vi.fn(async () => true);
+    const conflict = vi.fn();
+    const mirrored = new Map<string, number>();
+    const run = mirrorAdoptedSessions({
+      list: async () => [entry()],
+      load: async () => host({ blocks: remote }),
+      local: () => [current],
+      apply: (merged) => {
+        current = merged;
+      },
+      mirrored,
+      autoRefreshConflicts: true,
+      preserve,
+      conflict,
+    });
+    return { run, preserve, conflict, mirrored, current: () => current };
+  }
+
+  it("does not fork a separate local copy for a host copy saved before the quit", async () => {
+    const mirror = mirrorAfterRestart(local({ blocks: sealed }), openTurn);
+    await mirror.run;
+    expect(mirror.preserve).not.toHaveBeenCalled();
+    expect(mirror.current().blocks).toEqual(sealed);
+  });
+
+  it("keeps the sealed turn when a stale host copy changes revision again", async () => {
+    let current = local({ blocks: sealed });
+    let remote = host({ blocks: openTurn });
+    const deps: AdoptedMirrorDeps = {
+      list: async () => [entry({ revision: remote.revision })],
+      load: async () => remote,
+      local: () => [current],
+      apply: (merged) => {
+        current = merged;
+      },
+      mirrored: new Map(),
+    };
+    await mirrorAdoptedSessions(deps);
+    remote = { ...host({ blocks: openTurn, title: "Renamed" }), revision: 6 };
+    await mirrorAdoptedSessions(deps);
+    expect(current.title).toBe("Renamed");
+    expect(current.blocks).toEqual(sealed);
+  });
+
+  it("waits for a host that never received the interrupted turn or later ones", async () => {
+    const session = local({ blocks: [...sealed, user("continue")] });
+    const mirror = mirrorAfterRestart(session, openTurn.slice(0, 2));
+    await mirror.run;
+    expect(mirror.preserve).not.toHaveBeenCalled();
+    expect(mirror.conflict).not.toHaveBeenCalled();
+    expect(mirror.current()).toBe(session);
+    // Judged at this revision; only the host's next change is fetched again.
+    expect(mirror.mirrored.get("s1")).toBe(5);
+  });
+
+  it("still saves a separate copy when the lagging host diverged", async () => {
+    const session = local({ blocks: [...sealed, user("continue")] });
+    const mirror = mirrorAfterRestart(session, [openTurn[0], user("elsewhere")]);
+    await mirror.run;
+    expect(mirror.preserve).toHaveBeenCalledOnce();
+  });
+});
+
 describe("mirrorAdoptedSessions", () => {
   it("reports live status before loading a conflicting transcript", async () => {
     const onRunning = vi.fn();

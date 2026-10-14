@@ -41,11 +41,13 @@
   grid-area: ours;
   --conflict-tint: var(--color-conflict-ours);
   --conflict-highlight: var(--ui-conflict-current-surface);
+  --conflict-word: var(--ui-conflict-current-word);
 }
 .conflict-pane-theirs {
   grid-area: theirs;
   --conflict-tint: var(--color-conflict-theirs);
   --conflict-highlight: var(--ui-conflict-incoming-surface);
+  --conflict-word: var(--ui-conflict-incoming-word);
 }
 .conflict-pane-heading {
   display: flex;
@@ -58,8 +60,7 @@
   background: var(--ui-surface-raised);
   font-size: 12px;
 }
-.conflict-pane-heading strong,
-.conflict-pane-heading span {
+.conflict-pane-heading strong {
   overflow: clip;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -72,14 +73,7 @@
   gap: 8px;
 }
 .conflict-pane-heading-text {
-  display: flex;
-  flex-direction: column;
   min-inline-size: 0;
-  gap: 2px;
-}
-.conflict-pane-heading span {
-  color: var(--ui-text-secondary);
-  font-size: 11px;
 }
 .conflict-source-editor {
   flex: 1;
@@ -88,6 +82,68 @@
 .conflict-source-change {
   background: var(--conflict-highlight);
   border-inline-start: 2px solid var(--conflict-tint);
+}
+.conflict-source-word {
+  background: var(--conflict-word);
+  border-radius: 2px;
+}
+.conflict-progress {
+  padding-inline: 4px;
+  color: var(--color-warning);
+}
+.conflict-progress[data-complete="true"] {
+  color: var(--color-success);
+}
+.conflict-inline-actions {
+  display: flex;
+  flex-wrap: wrap;
+  /* Contribute no intrinsic width so the bar wraps inside the visible editor
+     instead of widening CodeMirror's max-content line box. */
+  box-sizing: border-box;
+  inline-size: 0;
+  min-inline-size: 100%;
+  align-items: center;
+  gap: 2px;
+  padding: 2px 8px;
+  border-inline-start: 2px solid var(--color-warning);
+  background: var(--ui-surface-raised);
+  font-family: var(--font-sans);
+  font-size: 11px;
+  color: var(--ui-text-secondary);
+}
+.conflict-inline-actions:not([data-state="pending"]) {
+  border-inline-start-color: var(--color-accent);
+}
+.conflict-inline-actions[data-active="true"] {
+  box-shadow: inset 0 1px var(--ui-border-accent);
+  color: var(--color-content);
+}
+.conflict-inline-label {
+  margin-inline-end: 8px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+.conflict-inline-choice {
+  padding: 1px 6px;
+  border-radius: 4px;
+  color: inherit;
+  background: transparent;
+  cursor: pointer;
+}
+.conflict-inline-choice:active {
+  background: var(--ui-surface-pressed);
+}
+.conflict-inline-choice[aria-pressed="true"] {
+  background: var(--ui-surface-selected);
+  color: var(--color-content);
+}
+.conflict-inline-choice:disabled {
+  color: var(--ui-text-disabled);
+  cursor: default;
+}
+.conflict-inline-choice:focus-visible {
+  outline: 1px solid var(--color-accent);
+  outline-offset: -1px;
 }
 .merge-conflict-editor,
 .conflict-result-editor {
@@ -156,7 +212,8 @@
   outline-offset: -1px;
 }
 @media (hover: hover) and (pointer: fine) {
-  .conflict-gutter-choice:hover {
+  .conflict-gutter-choice:hover,
+  .conflict-inline-choice:not(:disabled):hover {
     background: var(--ui-surface-hover);
   }
 }

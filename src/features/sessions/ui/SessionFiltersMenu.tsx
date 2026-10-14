@@ -180,11 +180,6 @@ export function SessionFiltersMenu({ x, y, harnesses, filters, onChange, onClose
         checked={display.showBranch}
         onClick={() => updateSessionListDisplay({ showBranch: !display.showBranch })}
       />
-      <FilterItem
-        label={t("Alternate row shading")}
-        checked={display.striped}
-        onClick={() => updateSessionListDisplay({ striped: !display.striped })}
-      />
 
       {hasActiveSessionFilters(filters) ? (
         <>

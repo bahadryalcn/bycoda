@@ -17,7 +17,7 @@ import { useColorScheme } from "../../../shared/hooks/useColorScheme";
 import { languageForPath, schemeExtensions } from "../../files/editor/editorChrome";
 import { editorSearch } from "../../files/editor/editorSearch";
 import { editorZoom } from "../../files/editor/editorZoom";
-import { hasConflictMarkers, type ConflictSide } from "../model/conflictMarkers";
+import { hasConflictMarkers } from "../model/conflictMarkers";
 import { nextConflictedFile } from "../model/conflictSection";
 import {
   chooseMergeRegion,
@@ -26,9 +26,11 @@ import {
   mergeResolutionField,
   mergeResolutionHistory,
   selectMergeRegion,
+  type MergeChoice,
   type MergeResolution,
 } from "../model/mergeResolution";
 import { ConflictLayout, conflictSourcesFromMarkers } from "./ConflictLayout";
+import { mergeActionsDisabled, mergeResultActions } from "./mergeResultActions";
 
 export type MergeConflictEditorProps = {
   path: string;
@@ -62,6 +64,7 @@ export function MergeConflictEditor(props: MergeConflictEditorProps) {
   const propsRef = useRef(props);
   propsRef.current = props;
   const saveRef = useRef<(() => Promise<boolean>) | null>(null);
+  const chooseRef = useRef<(id: number, side: MergeChoice) => void>(() => {});
   const busyRef = useRef(false);
   const savedRef = useRef<EditorState | null>(null);
   const theme = useRef(new Compartment());
@@ -103,7 +106,14 @@ export function MergeConflictEditor(props: MergeConflictEditorProps) {
         mergeResolutionHistory,
         theme.current.of(schemeExtensions(schemeRef.current)),
         language.of([]),
-        editability.current.of(EditorState.readOnly.of(!!propsRef.current.disabled)),
+        editability.current.of([
+          EditorState.readOnly.of(!!propsRef.current.disabled),
+          mergeActionsDisabled.of(!!propsRef.current.disabled),
+        ]),
+        mergeResultActions(
+          (id, side) => chooseRef.current(id, side),
+          (id) => selectMergeRegion(view, id),
+        ),
         EditorView.contentAttributes.of({ "aria-label": t("Resolved output") }),
         keymap.of([
           {
@@ -215,7 +225,10 @@ export function MergeConflictEditor(props: MergeConflictEditorProps) {
   }, [scheme]);
   useEffect(() => {
     viewRef.current?.dispatch({
-      effects: editability.current.reconfigure(EditorState.readOnly.of(disabled || busy)),
+      effects: editability.current.reconfigure([
+        EditorState.readOnly.of(disabled || busy),
+        mergeActionsDisabled.of(disabled || busy),
+      ]),
     });
   }, [disabled, busy]);
   useEffect(() => {
@@ -223,12 +236,13 @@ export function MergeConflictEditor(props: MergeConflictEditorProps) {
   }, [active]);
 
   const pending = state.regions.filter((region) => region.choice === null).length;
-  const choose = (id: number, side: ConflictSide | "manual") => {
+  const choose = (id: number, side: MergeChoice) => {
     if (viewRef.current && !busyRef.current && !disabled) {
       setResolved(false);
       chooseMergeRegion(viewRef.current, id, side);
     }
   };
+  chooseRef.current = choose;
   const stage = async () => {
     if (!(await saveRef.current?.()) || !viewRef.current) return;
     busyRef.current = true;
@@ -325,11 +339,15 @@ export function MergeConflictEditor(props: MergeConflictEditorProps) {
               motion="none"
               disabled={!initial || disabled || busy || pending > 0 || resolved}
               tooltip={
-                pending ? t("Resolve every conflict first") : t("Save the file and stage it")
+                pending
+                  ? t("Resolve every conflict first")
+                  : resolved
+                    ? t("Saved and staged")
+                    : t("Save the file and stage it")
               }
               onClick={() => void stage()}
             >
-              {t("Save and stage")}
+              {resolved ? t("Staged") : t("Save and stage")}
             </Button>
           </>
         }

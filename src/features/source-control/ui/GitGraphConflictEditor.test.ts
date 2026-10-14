@@ -83,7 +83,7 @@ it("marker varken stage etmez, seçilen sonucu dosyaya yazıp stage eder", async
   await mount();
   expect(host.querySelector(".conflict-pane-ours")?.textContent).toContain("HEAD");
   expect(host.querySelector(".conflict-pane-theirs")?.textContent).toContain("topic");
-  expect(host.querySelector(".conflict-pane-ours")?.textContent).toContain(
+  expect(host.querySelector(".conflict-pane-ours strong")?.getAttribute("title")).toContain(
     "Current side of conflict markers",
   );
   expect(
@@ -91,7 +91,7 @@ it("marker varken stage etmez, seçilen sonucu dosyaya yazıp stage eder", async
       (button) => button.textContent === "Save and stage",
     )?.disabled,
   ).toBe(true);
-  await click("Use incoming");
+  await click("Incoming");
   await click("Save and stage");
   expect(writeTextFile).toHaveBeenCalledWith(stages.path, "theirs\n");
   expect(gitStageFile).toHaveBeenCalledWith("/repo", stages.relative);
@@ -100,7 +100,7 @@ it("marker varken stage etmez, seçilen sonucu dosyaya yazıp stage eder", async
 
 it("diskte dışarıdan değişmiş dosyanın üzerine yazmaz", async () => {
   await mount();
-  await click("Use current");
+  await click("Current");
   vi.mocked(readTextFile).mockResolvedValue("external edit");
   await click("Save and stage");
   expect(writeTextFile).not.toHaveBeenCalled();
@@ -110,7 +110,7 @@ it("diskte dışarıdan değişmiş dosyanın üzerine yazmaz", async () => {
 
 it("stage hatasından sonra sonucu korur ve aynı dosyaya güvenle tekrar dener", async () => {
   await mount();
-  await click("Use incoming");
+  await click("Incoming");
   vi.mocked(gitStageFile).mockRejectedValueOnce(new Error("Index temporarily locked"));
   await click("Save and stage");
   expect(host.querySelector('[role="alert"]')?.textContent).toContain("Index temporarily locked");

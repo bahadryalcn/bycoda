@@ -124,11 +124,17 @@ test("grouped repository files allow wheel scrolling the outer list", async ({ p
   await expect.poll(() => outer.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
 });
 
-test("checkout rows preserve identity, keyboard disclosure and searchable selection", async ({
+test("checkout rows preserve identity, keyboard selection and searchable selection", async ({
   page,
 }, testInfo) => {
   await page.addInitScript(() => localStorage.setItem("bycoda.language.git", "en"));
   await page.goto("/tests/browser/git-workspace.html?checkouts");
+  // The picker opens on the session checkout; the overview lists every checkout.
+  await page.getByRole("button", { name: /^Working copy:/ }).click();
+  await page.getByRole("option", { name: "All checkouts", exact: true }).click();
+  const list = page.locator("[data-checkout-list]");
+  const row = list.locator('button[title="/trees/audit/very-long-worktree-folder-name"]');
+  await expect(list.locator("li")).toHaveCount(3);
   for (const width of [390, 768, 1024, 1440]) {
     await page.setViewportSize({ width, height: 850 });
     for (const light of [false, true]) {
@@ -136,37 +142,45 @@ test("checkout rows preserve identity, keyboard disclosure and searchable select
         (value) => document.documentElement.classList.toggle("theme-light", value),
         light,
       );
-      const row = page.locator(
-        '[data-git-repository="/trees/audit/very-long-worktree-folder-name"]',
-      );
-      await expect(row.locator("header")).toContainText(
-        "audit/2026-10-14-long-branch-name-for-responsive-review",
-      );
-      await expect(row.locator('header button[aria-label="Stage All Changes"]')).toHaveCount(0);
-      await expect(page.locator("[data-current-checkout]")).toContainText("Current");
-      expect(await row.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(
-        true,
-      );
+      await expect(row).toContainText("audit/2026-10-14-long-branch-name-for-responsive-review");
+      await expect(row).toContainText("very-long-worktree-folder-name");
+      await expect(row.getByRole("img", { name: "Uncommitted changes" })).toBeVisible();
+      await expect(list.locator('button[title="/fixture"]')).toContainText("This session");
+      // Poll: the picker's value roll briefly overflows while the old label exits.
+      await expect
+        .poll(() =>
+          list.evaluate((element) =>
+            [element, ...element.querySelectorAll("li")].every(
+              (node) => node.scrollWidth <= node.clientWidth,
+            ),
+          ),
+        )
+        .toBe(true);
       await page.screenshot({
         path: testInfo.outputPath(`checkouts-${width}-${light ? "light" : "dark"}.png`),
       });
     }
   }
-  const detached = page.locator('[data-git-repository="/trees/detached"]');
   await page.emulateMedia({ reducedMotion: "reduce" });
-  await expect(detached.locator("header")).toContainText("fd3caac");
-  const toggle = detached.locator("header button[aria-expanded]").first();
-  await toggle.focus();
+  const detachedRow = list.locator('button[title="/trees/detached"]');
+  await expect(detachedRow).toContainText("fd3caac");
+  await detachedRow.focus();
   await page.keyboard.press("Enter");
-  await expect(toggle).toHaveAttribute("aria-expanded", "true");
-  await expect(detached.locator('header button[aria-label="Stage All Changes"]')).toBeVisible();
-  await page.keyboard.press("Enter");
-  await expect(toggle).toHaveAttribute("aria-expanded", "false");
-  await page.getByRole("button", { name: "Working copy: All checkouts", exact: true }).click();
-  await page.getByRole("combobox").fill("detached");
-  await page.getByRole("option", { name: "Detached · /trees/detached", exact: true }).click();
-  await expect(page.locator("[data-git-repository]")).toHaveCount(0);
   await expect(
     page.getByRole("button", { name: "Working copy: Detached · /trees/detached", exact: true }),
   ).toBeVisible();
+  await expect(list).toHaveCount(0);
+  await page.getByRole("button", { name: /^Working copy:/ }).click();
+  await page.getByRole("option", { name: "All checkouts", exact: true }).click();
+  await expect(list.locator("li")).toHaveCount(3);
+  await page.getByRole("button", { name: "Working copy: All checkouts", exact: true }).click();
+  await page.getByRole("combobox").fill("audit");
+  await page
+    .getByRole("option", {
+      name: "audit/2026-10-14-long-branch-name-for-responsive-review · /trees/audit/very-long-worktree-folder-name",
+      exact: true,
+    })
+    .click();
+  await expect(list).toHaveCount(0);
+  await expect(page.getByRole("button", { name: /^Working copy: audit\// })).toBeVisible();
 });

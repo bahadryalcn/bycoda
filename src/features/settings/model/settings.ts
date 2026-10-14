@@ -759,7 +759,7 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
     get label() {
       return t("Session list");
     },
-    keywords: "sidebar sessions rows density compact detailed model branch stripes zebra",
+    keywords: "sidebar sessions rows density compact detailed model branch",
   },
   {
     id: "show-excluded-files",
@@ -776,6 +776,14 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
       return t("Chat background");
     },
     keywords: "wallpaper image picture opacity backdrop blur",
+  },
+  {
+    id: "live-background",
+    section: "appearance",
+    get label() {
+      return t("Live background");
+    },
+    keywords: "animated wallpaper matrix code rain galaxy stars water ripple aurora motion backdrop",
   },
   {
     id: "git-generation-default",
@@ -1098,7 +1106,6 @@ const SETTINGS_CONTROL_LABELS: Record<string, readonly string[]> = {
     "Show model",
     "Show branch",
     "Group after holding",
-    "Alternate row shading",
   ],
   "diff-colors": ["Red & green", "Blue & orange", "Blue & orange · stronger"],
   "chat-width": ["Comfortable", "Wide", "Full width"],
@@ -1109,6 +1116,7 @@ const SETTINGS_CONTROL_LABELS: Record<string, readonly string[]> = {
   "streaming-text-mode": ["Paced (default)", "Immediate with adaptive fade"],
   "crew-growth": ["Color with context", "Grow with context"],
   "chat-background": ["Empty only", "All sessions"],
+  "live-background": ["Code rain", "Galaxy", "Water", "Aurora"],
   "format-on-save": ["Advanced editor settings", "Prettier"],
   "diff-view": ["Editor", "Unified", "Code review"],
   "agent-clis": ["Agent CLIs", "Model", "Default provider", "Default model", "Effort", "Permissions", "Default extras", "Show in picker", "Apply defaults to", "Provider defaults scope", "Global"],

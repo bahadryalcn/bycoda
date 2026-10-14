@@ -891,8 +891,6 @@ function SidebarComponent({
   const sessionNavigationIds = sessionListNavigationIds(fullSessionListEntries, searchNarrowed);
   const sessionNavigationKey = sessionNavigationIds.join("\0");
   const listDisplay = useSessionListDisplay();
-  // Stripes follow the visible order across pinned, folder and loose rows.
-  const stripeIndex = new Map(sessionNavigationIds.map((id, index) => [id, index]));
   useEffect(() => {
     onSessionNavigationOrder?.(sessionNavigationIds);
   }, [onSessionNavigationOrder, sessionNavigationKey]);
@@ -2044,7 +2042,6 @@ function SidebarComponent({
       <SessionRenameRow
         session={session}
         isActive={session.id === activeListedSessionId}
-        needsApproval={listedApprovalSessionIds.has(session.id)}
         onCommit={(title) => {
           onRenameSession(session.id, title);
           setRenamingSessionId(null);
@@ -2075,7 +2072,6 @@ function SidebarComponent({
         density={listDisplay.density}
         showModel={listDisplay.showModel}
         showBranch={listDisplay.showBranch}
-        striped={listDisplay.striped && (stripeIndex.get(session.id) ?? 0) % 2 === 1}
         now={now}
         onSelect={cardActions.select}
         onLongPress={cardActions.longPress}
@@ -4218,7 +4214,6 @@ const SessionCard = memo(function SessionCard({
   density,
   showModel,
   showBranch,
-  striped = false,
   now,
   onSelect,
   onLongPress,
@@ -4253,8 +4248,6 @@ const SessionCard = memo(function SessionCard({
   density: SessionListDensity;
   showModel: boolean;
   showBranch: boolean;
-  /** Odd row in the visible list order: alternate background. */
-  striped?: boolean;
   now: number;
   onSelect: (
     sessionId: string,
@@ -4822,24 +4815,16 @@ const SessionCard = memo(function SessionCard({
         onContextMenu={onContextMenu ? (event) => onContextMenu(session.id, event) : undefined}
         className={`relative border flex w-full ${onPlaceOnPane || onListDrop || onPopOut ? "cursor-grab" : "cursor-default"} select-none touch-none flex-col rounded-md px-2.5 text-left ${cardPaddingY} ${
           dragging ? "opacity-40" : ""
-        } ${
+        } ${draft && !dropTarget ? "border-dashed border-content/25" : "border-transparent"} ${
           dropTarget
-            ? "text-content border-transparent"
+            ? "text-content"
             : isSelected
-              ? `bg-accent/15 text-content ${draft ? "border-content/30 border-dashed" : "border-accent/45"}`
+              ? "bg-accent/15 text-content"
               : pressing
-                ? "bg-content/10 text-content border-transparent transition-colors duration-500 ease-linear"
-                : needsApproval
-                  ? "bg-content/20 text-content border-content/30 border-dashed"
-                  : isActive
-                    ? `bg-selection text-content ${draft ? "border-content/30 border-dashed" : "border-transparent"}`
-                    : draft
-                      ? "border-content/25 border-dashed text-content/80 hover:bg-content/5 hover:text-content"
-                      : `text-content/80 hover:text-content border-transparent ${
-                          orchestrationExpanded
-                            ? "bg-content/5 hover:bg-content/10"
-                            : `${striped ? "bg-(--ui-surface)" : ""} hover:bg-content/5`
-                        }`
+                ? "bg-content/10 text-content transition-colors duration-500 ease-linear"
+                : isActive
+                  ? "bg-selection text-content"
+                  : "text-content/80 hover:bg-content/5 hover:text-content"
         }`}
       >
         {dropTarget ? (
@@ -5040,13 +5025,11 @@ const SessionCard = memo(function SessionCard({
 function SessionRenameRow({
   session,
   isActive,
-  needsApproval,
   onCommit,
   onCancel,
 }: {
   session: SessionSummary;
   isActive: boolean;
-  needsApproval: boolean;
   onCommit: (title: string) => void;
   onCancel: () => void;
 }) {
@@ -5093,11 +5076,7 @@ function SessionRenameRow({
   return (
     <div
       className={`flex w-full flex-col rounded-md px-2.5 py-2 ${
-        needsApproval
-          ? "bg-warning/10 text-content"
-          : isActive
-            ? "bg-selection text-content"
-            : "text-content/80"
+        isActive ? "bg-selection text-content" : "text-content/80"
       }`}
     >
       <input

@@ -130,6 +130,10 @@ describe("merge conflicts and blame in the file editor", () => {
     container.querySelector<HTMLButtonElement>('button[aria-label="Git blame"]')!;
   const buttonByText = (text: string) =>
     [...container.querySelectorAll("button")].find((button) => button.textContent === text);
+  const choice = (id: number, text: string) =>
+    [...container.querySelectorAll<HTMLButtonElement>(`[data-merge-widget="${id}"] button`)].find(
+      (button) => button.textContent === text,
+    )!;
   const gutterText = () => container.querySelector(".cm-blameGutter")?.textContent;
 
   it("shows two read-only marker previews above the editable result", async () => {
@@ -160,7 +164,7 @@ describe("merge conflicts and blame in the file editor", () => {
     const result = view();
     const initial = result.state.doc.toString();
     await act(async () => result.dispatch({ changes: { from: 0, to: 3, insert: "edited" } }));
-    for (const label of ["Three column", "Focus result", "Twin source"]) {
+    for (const label of ["Side by side", "Result only", "Sources above"]) {
       await act(async () => buttonByText(label)!.click());
       expect(view()).toBe(result);
       expect(view().state.doc.toString()).toContain("edited");
@@ -193,15 +197,19 @@ describe("merge conflicts and blame in the file editor", () => {
     ).toBe("new");
   });
 
-  it("resolves from the source panes, then saves with CRLF before staging", async () => {
+  it("resolves each conflict from its inline actions, then saves with CRLF before staging", async () => {
     disk = CONFLICTED;
     await render();
-    await act(async () => buttonByText("Use current")!.click());
+    expect(container.querySelector('[data-merge-widget="0"]')?.textContent).toContain(
+      "Conflict 1 of 2 · Unresolved · showing current",
+    );
+    await act(async () => choice(0, "Current").click());
     expect(conflictStatus()).toBe("Conflict 1 of 2 · 1 unresolved");
+    expect(choice(0, "Current").getAttribute("aria-pressed")).toBe("true");
     await act(async () =>
       container.querySelector<HTMLButtonElement>('button[aria-label="Next conflict"]')!.click(),
     );
-    await act(async () => buttonByText("Use incoming")!.click());
+    await act(async () => choice(1, "Incoming").click());
     expect(conflictStatus()).toBe("Conflict 2 of 2 · 0 unresolved");
     expect(view().state.doc.toString()).toBe("top\nmine\nmiddle\nt2\nend\n");
 
@@ -216,6 +224,30 @@ describe("merge conflicts and blame in the file editor", () => {
       cwd: CWD,
       relative: "notes.txt",
     });
+  });
+
+  it("resets a decision and marks what differs between the sides", async () => {
+    disk = CONFLICTED;
+    await render();
+    const initial = view().state.doc.toString();
+    await act(async () => choice(0, "Incoming").click());
+    expect(view().state.doc.toString()).not.toBe(initial);
+    await act(async () => choice(0, "Reset").click());
+    expect(view().state.doc.toString()).toBe(initial);
+    expect(conflictStatus()).toContain("2 unresolved");
+    expect(choice(0, "Reset").disabled).toBe(true);
+    const region = mergeResolution(view().state).regions[0];
+    await act(async () =>
+      view().dispatch({ changes: { from: region.from, to: region.to, insert: "typo\n" } }),
+    );
+    expect(choice(0, "Reset").disabled).toBe(false);
+    await act(async () => choice(0, "Reset").click());
+    expect(view().state.doc.toString()).toBe(initial);
+    expect(
+      [...container.querySelectorAll(".conflict-pane-theirs .conflict-source-word")].map(
+        (mark) => mark.textContent,
+      ),
+    ).toEqual(["theirs", "t2"]);
   });
 
   it("shows no conflict UI for an ordinary file", async () => {
@@ -254,12 +286,9 @@ describe("merge conflicts and blame in the file editor", () => {
       view().dispatch({ changes: { from: region.from, to: region.to, insert: "custom\n" } }),
     );
     expect(conflictStatus()).toContain("2 unresolved");
-    await act(async () => buttonByText("Use edited result")!.click());
+    await act(async () => choice(0, "Keep this text").click());
     expect(conflictStatus()).toContain("1 unresolved");
-    await act(async () =>
-      container.querySelector<HTMLButtonElement>('button[aria-label="Next conflict"]')!.click(),
-    );
-    await act(async () => buttonByText("Use incoming")!.click());
+    await act(async () => choice(1, "Incoming").click());
     await act(async () => buttonByText("Save and stage")!.click());
     expect(disk).toBe("top\r\ncustom\r\nmiddle\r\nt2\r\nend\r\n");
   });

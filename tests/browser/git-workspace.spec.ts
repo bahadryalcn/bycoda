@@ -309,7 +309,7 @@ test("conflict sonucu panel içinde düzenlenip stage edilir ve merge sürdürü
     name: "Resolved output",
     exact: true,
   });
-  await expect(output).toHaveText("const theme = 'system';");
+  await expect(output.locator(".cm-line").first()).toHaveText("const theme = 'system';");
   const workspace = page.locator(".conflict-workspace");
   // Inspector resizing settles asynchronously, especially in WebKit.
   await expect.poll(async () => (await workspace.boundingBox())?.width ?? 0).toBeGreaterThan(600);
@@ -334,21 +334,24 @@ test("conflict sonucu panel içinde düzenlenip stage edilir ve merge sürdürü
   expect(left.y).toBe(right.y);
   expect(middle.y).toBeGreaterThan(left.y);
   await page.screenshot({ path: testInfo.outputPath("conflict-stacked.png") });
-  await page.getByRole("button", { name: "Three column", exact: true }).click();
+  await page.getByRole("button", { name: "Side by side", exact: true }).click();
   [left, middle, right] = await boxes();
   expect(left.x).toBeLessThan(middle.x);
   expect(middle.x).toBeLessThan(right.x);
   expect(left.y).toBe(middle.y);
   await page.screenshot({ path: testInfo.outputPath("conflict-columns.png") });
   await expect(page.getByRole("button", { name: "Save and stage", exact: true })).toBeDisabled();
-  await page.getByRole("button", { name: "Use incoming", exact: true }).click();
-  await expect(output).toHaveText("const theme = 'light';");
+  await page
+    .getByRole("group", { name: "Conflict 1 of 1", exact: true })
+    .getByRole("button", { name: "Incoming", exact: true })
+    .click();
+  await expect(output.locator(".cm-line").first()).toHaveText("const theme = 'light';");
   await output.fill("const theme = 'merged';\n");
-  await page.getByRole("button", { name: "Focus result", exact: true }).click();
+  await page.getByRole("button", { name: "Result only", exact: true }).click();
   await expect(ours).toBeHidden();
-  await expect(output).toHaveText("const theme = 'merged';");
-  await page.getByRole("button", { name: "Twin source", exact: true }).click();
-  await expect(output).toHaveText("const theme = 'merged';");
+  await expect(output.locator(".cm-line").first()).toHaveText("const theme = 'merged';");
+  await page.getByRole("button", { name: "Sources above", exact: true }).click();
+  await expect(output.locator(".cm-line").first()).toHaveText("const theme = 'merged';");
   await page.setViewportSize({ width: 700, height: 900 });
   [left, middle, right] = await boxes();
   expect(left.y).toBeLessThan(right.y);

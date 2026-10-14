@@ -1116,7 +1116,6 @@ describe("sidebar orchestration card", () => {
     ).toBe("true");
     props.approvalSessionIds = new Set([lead.id]);
     act(() => render());
-    expect(card().className).toContain("border-dashed");
     expect(card().textContent).toContain("Needs input");
   });
 

@@ -11,8 +11,6 @@ export type SessionListDisplay = {
   density: SessionListDensity;
   showModel: boolean;
   showBranch: boolean;
-  /** Alternate row backgrounds across the whole visible list. */
-  striped: boolean;
   /** How long a dragged session rests on another before they group. */
   groupDelayMs: number;
 };
@@ -27,7 +25,6 @@ export const DEFAULT_SESSION_LIST_DISPLAY: SessionListDisplay = {
   density: "standard",
   showModel: true,
   showBranch: true,
-  striped: true,
   groupDelayMs: 700,
 };
 
@@ -52,7 +49,6 @@ export function parseSessionListDisplay(raw: string | null): SessionListDisplay 
         : DEFAULT_SESSION_LIST_DISPLAY.density,
       showModel: flag(parsed.showModel, DEFAULT_SESSION_LIST_DISPLAY.showModel),
       showBranch: flag(parsed.showBranch, DEFAULT_SESSION_LIST_DISPLAY.showBranch),
-      striped: flag(parsed.striped, DEFAULT_SESSION_LIST_DISPLAY.striped),
       groupDelayMs:
         typeof parsed.groupDelayMs === "number" && Number.isFinite(parsed.groupDelayMs)
           ? Math.round(

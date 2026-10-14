@@ -32,6 +32,7 @@
 
 .branch,
 .folder {
+  min-inline-size: 0;
   overflow: clip;
   white-space: nowrap;
   text-overflow: ellipsis;

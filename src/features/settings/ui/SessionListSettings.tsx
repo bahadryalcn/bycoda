@@ -72,13 +72,6 @@ export function SessionListSettings() {
           onChange={(groupDelayMs) => updateSessionListDisplay({ groupDelayMs })}
         />
       </Row>
-      <Row label={t("Alternate row shading")}>
-        <Toggle
-          label={t("Alternate row shading")}
-          on={display.striped}
-          onChange={(striped) => updateSessionListDisplay({ striped })}
-        />
-      </Row>
     </Group>
   );
 }

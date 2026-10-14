@@ -1,14 +1,14 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { EditorState, Compartment } from "@codemirror/state";
+import { EditorState, Compartment, type Text } from "@codemirror/state";
 import { Decoration, EditorView, lineNumbers, gutter, GutterMarker } from "@codemirror/view";
 import { RangeSet } from "@codemirror/state";
 import { minimalSetup } from "codemirror";
+import { presentableDiff } from "@codemirror/merge";
 import { editorSearch } from "../../files/editor/editorSearch";
 import { Button } from "../../../shared/ui/Button";
 import { ChevronDown, ChevronUp, Search } from "../../../shared/ui/icons";
 import { openSearchPanel } from "@codemirror/search";
-import type { MergeResolution } from "../model/mergeResolution";
-import type { ConflictSide } from "../model/conflictMarkers";
+import type { MergeChoice, MergeResolution } from "../model/mergeResolution";
 import { t, useLocale } from "../../../shared/i18n/git";
 import { useColorScheme } from "../../../shared/hooks/useColorScheme";
 import { isLightScheme } from "../../settings/model/appearance";
@@ -18,13 +18,14 @@ import {
   findConflictBlocks,
   resolveConflictMarkers,
 } from "../model/conflictMarkers";
+import { stepConflict } from "./mergeResultActions";
 import "./conflict-layout.css";
 
 type Layout = "stacked" | "columns" | "inline";
 export type ConflictControls = {
   state: MergeResolution;
   disabled?: boolean;
-  choose: (id: number, side: ConflictSide | "manual") => void;
+  choose: (id: number, side: MergeChoice) => void;
   select: (id: number) => void;
   measure?: () => void;
 };
@@ -33,6 +34,8 @@ export type ConflictSource = {
   label: string;
   origin: string;
   highlights?: { from: number; to: number }[];
+  /** The other side's text for each highlight, used for intra-conflict differences. */
+  counterparts?: string[];
 };
 
 /** Marker labels describe Git's sides without assuming ours means the user's branch
@@ -57,14 +60,52 @@ export function conflictSourcesFromMarkers(text: string) {
       label: labels("oursLabel"),
       origin: "Current side of conflict markers",
       highlights: highlights("ours"),
+      counterparts: blocks.map((block) => conflictReplacement(text, block, "theirs")),
     },
     theirs: {
       text: resolveConflictMarkers(text, "theirs"),
       label: labels("theirsLabel"),
       origin: "Incoming side of conflict markers",
       highlights: highlights("theirs"),
+      counterparts: blocks.map((block) => conflictReplacement(text, block, "ours")),
     },
   };
+}
+
+/** Line tint marks each conflict; inner marks show what differs from the other side. */
+function sourceDecorations(doc: Text, source: ConflictSource, active: number) {
+  return Decoration.set(
+    (source.highlights ?? []).flatMap(({ from, to }, index) => {
+      if (from === to) return [];
+      const ranges = [];
+      for (let n = doc.lineAt(from).number; n <= doc.lineAt(to - 1).number; n++)
+        ranges.push(
+          Decoration.line({
+            class:
+              index === active
+                ? "conflict-source-change conflict-source-active"
+                : "conflict-source-change",
+          }).range(doc.line(n).from),
+        );
+      const other = source.counterparts?.[index];
+      if (other) {
+        for (const change of presentableDiff(doc.sliceString(from, to), other, {
+          scanLimit: 500,
+        })) {
+          // A side with nothing in common is already conveyed by the line tint.
+          if (change.fromA === change.toA || change.toA - change.fromA === to - from) continue;
+          ranges.push(
+            Decoration.mark({ class: "conflict-source-word" }).range(
+              from + change.fromA,
+              from + change.toA,
+            ),
+          );
+        }
+      }
+      return ranges;
+    }),
+    true,
+  );
 }
 
 function loadLayout(): Layout {
@@ -104,9 +145,9 @@ export function ConflictLayout({
       <div className="conflict-layout-controls" role="group" aria-label={t("Conflict layout")}>
         {(
           [
-            ["stacked", "Twin source"],
-            ["columns", "Three column"],
-            ["inline", "Focus result"],
+            ["stacked", "Sources above"],
+            ["columns", "Side by side"],
+            ["inline", "Result only"],
           ] as const
         ).map(([value, label]) => (
           <Button
@@ -129,7 +170,11 @@ export function ConflictLayout({
         ))}
         {controls ? (
           <div className="conflict-navigation" role="group" aria-label={t("Merge conflicts")}>
-            <span role="status">
+            <span
+              role="status"
+              className="conflict-progress"
+              data-complete={controls.state.regions.every((region) => region.choice !== null)}
+            >
               {t("Conflict {p0} of {p1}", {
                 p0: controls.state.active + 1,
                 p1: controls.state.regions.length,
@@ -145,13 +190,9 @@ export function ConflictLayout({
               motion="none"
               iconOnly
               label={t("Previous conflict")}
+              tooltip={t("Previous conflict (Shift+F7)")}
               disabled={controls.disabled || controls.state.regions.length < 2}
-              onClick={() =>
-                controls.select(
-                  (controls.state.active - 1 + controls.state.regions.length) %
-                    controls.state.regions.length,
-                )
-              }
+              onClick={() => controls.select(stepConflict(controls.state, -1))}
             >
               <ChevronUp size={14} />
             </Button>
@@ -161,10 +202,9 @@ export function ConflictLayout({
               motion="none"
               iconOnly
               label={t("Next conflict")}
+              tooltip={t("Next conflict (F7)")}
               disabled={controls.disabled || controls.state.regions.length < 2}
-              onClick={() =>
-                controls.select((controls.state.active + 1) % controls.state.regions.length)
-              }
+              onClick={() => controls.select(stepConflict(controls.state, 1))}
             >
               <ChevronDown size={14} />
             </Button>
@@ -174,39 +214,14 @@ export function ConflictLayout({
       <div className="conflict-layout-panes">
         <section className="conflict-pane conflict-pane-result" aria-label={t("Resolved output")}>
           <header className="conflict-pane-heading">
-            <div className="conflict-pane-heading-text">
-              <strong>{t("Resolved output")}</strong>
-              <span>
-                {t("Working tree")} · {t("Editable")}
-                {dirty ? " *" : ""}
-              </span>
-            </div>
-            <div className="conflict-pane-actions">
-              {controls ? (
-                <>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    motion="none"
-                    disabled={controls.disabled}
-                    onClick={() => controls.choose(controls.state.active, "both")}
-                  >
-                    {t("Use both")}
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    motion="none"
-                    disabled={controls.disabled}
-                    tooltip={t("Keep the edited text for this conflict")}
-                    onClick={() => controls.choose(controls.state.active, "manual")}
-                  >
-                    {t("Use edited result")}
-                  </Button>
-                </>
-              ) : null}
-              {resultActions}
-            </div>
+            <strong
+              className="conflict-pane-heading-text"
+              title={`${t("Working tree")} · ${t("Editable")}`}
+            >
+              {t("Resolved output")}
+              {dirty ? " *" : ""}
+            </strong>
+            <div className="conflict-pane-actions">{resultActions}</div>
           </header>
           {children}
         </section>
@@ -254,14 +269,6 @@ function ConflictSourcePane({
     if (!host.current || source.text === null) return;
     const language = new Compartment();
     const doc = EditorState.create({ doc: source.text }).doc;
-    const ranges = (source.highlights ?? []).flatMap(({ from, to }) => {
-      if (from === to) return [];
-      const lines = [];
-      for (let n = doc.lineAt(from).number; n <= doc.lineAt(to - 1).number; n++) {
-        lines.push(Decoration.line({ class: "conflict-source-change" }).range(doc.line(n).from));
-      }
-      return lines;
-    });
     const view = new EditorView({
       parent: host.current,
       doc: source.text,
@@ -278,7 +285,11 @@ function ConflictSourcePane({
         editorSearch,
         scheme.current.of(schemeExtensions(isLightScheme() ? "light" : "dark")),
         language.of([]),
-        decorations.current.of(EditorView.decorations.of(Decoration.set(ranges, true))),
+        decorations.current.of(
+          EditorView.decorations.of(
+            sourceDecorations(doc, source, controlsRef.current?.state.active ?? 0),
+          ),
+        ),
         gutter({
           class: "conflict-choice-gutter",
           markers: () =>
@@ -342,21 +353,10 @@ function ConflictSourcePane({
     const view = viewRef.current;
     const range = source.highlights?.[controls?.state.active ?? 0];
     if (!view || !range) return;
-    const lines = (source.highlights ?? []).flatMap((item, index) => {
-      const start = view.state.doc.lineAt(item.from).number;
-      const end = view.state.doc.lineAt(Math.max(item.from, item.to - 1)).number;
-      return Array.from({ length: end - start + 1 }, (_, offset) =>
-        Decoration.line({
-          class:
-            index === controls?.state.active
-              ? "conflict-source-change conflict-source-active"
-              : "conflict-source-change",
-        }).range(view.state.doc.line(start + offset).from),
-      );
-    });
+    const marks = sourceDecorations(view.state.doc, source, controls?.state.active ?? 0);
     view.dispatch({
       effects: [
-        decorations.current.reconfigure(EditorView.decorations.of(Decoration.set(lines, true))),
+        decorations.current.reconfigure(EditorView.decorations.of(marks)),
         EditorView.scrollIntoView(range.from, { y: "center" }),
       ],
     });
@@ -365,26 +365,11 @@ function ConflictSourcePane({
     <section className={`conflict-pane conflict-pane-${side}`} aria-label={t(heading)}>
       <header className="conflict-pane-heading">
         <div className="conflict-source-title">
-          <strong title={source.label}>
+          <strong title={`${t(source.origin)} · ${t("Read only")}`}>
             {t(heading)}
             {source.label ? ` · ${source.label}` : ""}
           </strong>
           <div className="conflict-pane-actions">
-            {controls ? (
-              <Button
-                variant="ghost"
-                size="sm"
-                motion="none"
-                disabled={controls.disabled}
-                aria-pressed={
-                  controls.state.regions[controls.state.active]?.choice === side ||
-                  controls.state.regions[controls.state.active]?.choice === "both"
-                }
-                onClick={() => controls.choose(controls.state.active, side)}
-              >
-                {t(side === "ours" ? "Use current" : "Use incoming")}
-              </Button>
-            ) : null}
             <Button
               variant="ghost"
               size="sm"
@@ -400,9 +385,6 @@ function ConflictSourcePane({
             </Button>
           </div>
         </div>
-        <span title={`${t(source.origin)} · ${source.label}`}>
-          {t(source.origin)} · {t("Read only")}
-        </span>
       </header>
       {source.text === null ? (
         <p className="conflict-source-missing">{t("Deleted in this version")}</p>

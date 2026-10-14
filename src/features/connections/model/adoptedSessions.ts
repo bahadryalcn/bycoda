@@ -1,4 +1,5 @@
-import type { Session } from "../../sessions/model/session";
+import type { Block, Session } from "../../sessions/model/session";
+import { isTurnInterruptMessage } from "../../sessions/model/inFlight";
 import type { HostSession } from "./protocol";
 import { canonicalJson } from "../../sync/model/canonicalJson";
 import { persistableAttachment } from "../../sessions/model/attachments";
@@ -81,29 +82,94 @@ function transcript(session: Session): string {
   );
 }
 
+const OPEN_TOOL_STATUS = new Set(["in_progress", "pending", "running"]);
+
+/** Still being written when the host saved it; a desktop quit seals it. */
+function isOpenBlock(block: Block): boolean {
+  return (
+    !!block.streaming ||
+    OPEN_TOOL_STATUS.has(block.tool?.status?.toLowerCase() ?? "") ||
+    (!!block.approval && !block.approval.decided) ||
+    block.plan?.status === "streaming" ||
+    block.orchestration?.status === "planning" ||
+    !!block.taskList?.items.some((item) => item.status === "in_progress")
+  );
+}
+
+function isQuitNotice(block: Block): boolean {
+  return (
+    block.role === "system" && (block.notice === "interrupt" || isTurnInterruptMessage(block.text))
+  );
+}
+
+const blockJson = (block: Block) => transcript({ blocks: [block] } as Session);
+
+/** Which side holds more of one shared transcript, or `undefined` when they
+ * diverge. Quitting mid-turn seals the desktop's open turn (cancelled tools,
+ * settled approvals, turn duration) and appends a notice: a host block still
+ * open matches its sealed local version, and quit notices are not content. */
+function transcriptLead(local: Session, remote: Session): "same" | "local" | "host" | undefined {
+  const mine = local.blocks.filter((block) => !isQuitNotice(block));
+  const theirs = remote.blocks.filter(
+    (block) => !isQuitNotice(block) && (block.role !== "approval" || !!block.approval?.decided),
+  );
+  const shared = Math.min(mine.length, theirs.length);
+  for (let i = 0; i < shared; i++) {
+    const a = mine[i];
+    const b = theirs[i];
+    if (a.id !== b.id || a.role !== b.role) return undefined;
+    if (blockJson(a) === blockJson(b) || isOpenBlock(b)) continue;
+    if (
+      a.role === "user" &&
+      blockJson({ ...a, durationMs: undefined }) === blockJson({ ...b, durationMs: undefined })
+    )
+      continue;
+    return undefined;
+  }
+  if (mine.length === theirs.length) return "same";
+  return mine.length > theirs.length ? "local" : "host";
+}
+
+/** The host copy only lags this desktop: it has not caught up with turns run
+ * here yet. That is not a conflict and needs no separate local copy. An empty
+ * host transcript was reset, and a host running its own turn has diverged. */
+export function adoptedLocalAhead(local: Session, host: HostSession): boolean {
+  return (
+    host.status !== "running" &&
+    host.session.blocks.length > 0 &&
+    transcriptLead(local, host.session) === "local"
+  );
+}
+
+/** A merge baseline records the transcript the host held, so a sealed local
+ * turn kept over a stale host copy still counts as local on the next pass. */
+function baselineOf(merged: Session, host: HostSession): Session {
+  return { ...merged, blocks: host.session.blocks };
+}
+
 export function mergeAdoptedSession(
   local: Session,
   host: HostSession,
   base?: Session,
 ): Session | undefined {
   const remote = host.session;
+  let keepLocal = false;
   if (transcript(local) !== transcript(remote)) {
-    if (base) {
-      // The host may legitimately reset/rewind. Only accept it if the local
-      // transcript hasn't changed since our last successful merge.
-      if (transcript(local) !== transcript(base)) return undefined;
-    } else {
-      // On first contact there is no shared ancestor. An identical prefix is
-      // safe; block count alone doesn't prove the local text is unchanged.
-      if (
-        remote.blocks.length < local.blocks.length ||
-        transcript(local) !==
-          transcript({
-            ...remote,
-            blocks: remote.blocks.slice(0, local.blocks.length),
-          })
-      )
-        return undefined;
+    // The host may legitimately reset/rewind. Only accept it if the local
+    // transcript hasn't changed since our last successful merge. On first
+    // contact there is no shared ancestor: an identical prefix is safe; block
+    // count alone doesn't prove the local text is unchanged.
+    const accepted = base
+      ? transcript(local) === transcript(base)
+      : remote.blocks.length >= local.blocks.length &&
+        transcript(local) ===
+          transcript({ ...remote, blocks: remote.blocks.slice(0, local.blocks.length) });
+    if (!accepted) {
+      // A host copy saved before a quit is behind the sealed local turn
+      // unless the host has continued past it.
+      const lead = transcriptLead(local, remote);
+      if (lead !== "same" && lead !== "host") return undefined;
+      keepLocal = lead === "same" && host.status !== "running";
     }
   }
   const fromHost = <K extends keyof Session>(key: K): Session[K] =>
@@ -124,7 +190,7 @@ export function mergeAdoptedSession(
   const configuration = localChanged ? local : remote;
   return {
     ...local,
-    blocks: remote.blocks,
+    blocks: keepLocal ? local.blocks : remote.blocks,
     historyPartial: undefined,
     historyLoading: undefined,
     historyLoadError: undefined,
@@ -243,7 +309,7 @@ async function applyAdoptedSnapshot(
   deps.apply(merged, before);
   let bases = baselines.get(deps.mirrored);
   if (!bases) baselines.set(deps.mirrored, (bases = new Map()));
-  bases.set(sessionId, merged);
+  bases.set(sessionId, baselineOf(merged, host));
   // Drop any older delta base; the next automatic pass starts from a full copy.
   snapshots.get(deps.mirrored)?.delete(sessionId);
   deps.mirrored.set(sessionId, host.revision);
@@ -286,6 +352,12 @@ export async function mirrorAdoptedSessions(deps: AdoptedMirrorDeps): Promise<Se
         // Not mirrored, but the host copy itself arrived: the next pass only
         // needs what changed after it.
         remember(entry.id, host);
+        // The host has yet to catch up with turns run here. Judged at this
+        // revision; its next change is fetched and compared again.
+        if (adoptedLocalAhead(current, host)) {
+          deps.mirrored.set(entry.id, host.revision);
+          continue;
+        }
         if (deps.autoRefreshConflicts) {
           try {
             await applyAdoptedSnapshot(deps, current, host);
@@ -300,7 +372,7 @@ export async function mirrorAdoptedSessions(deps: AdoptedMirrorDeps): Promise<Se
       }
       deps.apply(merged, current);
       remember(entry.id, host);
-      base.set(entry.id, merged);
+      base.set(entry.id, baselineOf(merged, host));
       deps.mirrored.set(entry.id, host.revision);
     } catch {
       // Retried on the next pass.
@@ -344,7 +416,8 @@ export async function mirrorAdoptedSessions(deps: AdoptedMirrorDeps): Promise<Se
           const merged = mergeAdoptedSession(current, host, base.get(entry.id));
           if (!merged) {
             remember(entry.id, host);
-            deps.conflict?.(current);
+            if (adoptedLocalAhead(current, host)) deps.mirrored.set(entry.id, host.revision);
+            else deps.conflict?.(current);
             continue;
           }
           // Another window may have written since: the save then refuses and
@@ -355,7 +428,7 @@ export async function mirrorAdoptedSessions(deps: AdoptedMirrorDeps): Promise<Se
           // Opening during the save may have loaded the previous stored copy.
           // Keep its old baseline/revision so the next pass catches the tab up.
           if (deps.local().some((session) => session.id === entry.id)) continue;
-          base.set(entry.id, merged);
+          base.set(entry.id, baselineOf(merged, host));
           deps.mirrored.set(entry.id, host.revision);
           continue;
         }

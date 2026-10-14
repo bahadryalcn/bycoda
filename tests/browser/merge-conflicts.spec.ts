@@ -9,20 +9,30 @@ test("merge editor selects individual source conflicts, preserves manual edits a
   await expect(output).toContainText("price=80");
   await expect(output).not.toContainText("<<<<<<<");
   await expect(page.getByRole("status")).toContainText("Conflict 1 of 2 · 2 unresolved");
-  await page.getByRole("button", { name: "Use current", exact: true }).click();
+  await page
+    .getByRole("group", { name: "Conflict 1 of 2", exact: true })
+    .getByRole("button", { name: "Current", exact: true })
+    .click();
   await expect(output).toContainText("price=100");
   await expect(page.getByRole("button", { name: "Save and stage", exact: true })).toBeDisabled();
   await page.getByRole("button", { name: "Next conflict", exact: true }).click();
   await expect(page.getByRole("status")).toContainText("Conflict 2 of 2 · 1 unresolved");
-  await page.getByRole("button", { name: "Use incoming", exact: true }).click();
+  await page
+    .getByRole("group", { name: "Conflict 2 of 2", exact: true })
+    .getByRole("button", { name: "Incoming", exact: true })
+    .click();
   await expect(output).toContainText("name=incoming");
-  const text = await output.innerText();
+  // Read code lines only; per-conflict action widgets also live in the content DOM.
+  const text = (await output.locator(".cm-line").allInnerTexts()).join("\n");
   await output.fill(text.replace("name=incoming", "name=custom"));
-  await page.getByRole("button", { name: "Use edited result", exact: true }).click();
-  await page.getByRole("button", { name: "Three column", exact: true }).click();
+  await page
+    .getByRole("group", { name: "Conflict 2 of 2", exact: true })
+    .getByRole("button", { name: "Keep this text", exact: true })
+    .click();
+  await page.getByRole("button", { name: "Side by side", exact: true }).click();
   await expect(output).toContainText("name=custom");
   await page.screenshot({ path: info.outputPath("three-column.png") });
-  await page.getByRole("button", { name: "Twin source", exact: true }).click();
+  await page.getByRole("button", { name: "Sources above", exact: true }).click();
   await expect(output).toContainText("name=custom");
   await page.screenshot({ path: info.outputPath("twin-source.png") });
   await page.getByRole("button", { name: "Save and stage", exact: true }).click();
@@ -78,7 +88,9 @@ test("merge editor keyboard navigation, undo and narrow light layout keep all de
 }, info) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.goto("/tests/browser/merge-conflicts.html?light");
-  const current = page.getByRole("button", { name: "Use current", exact: true });
+  const current = page
+    .getByRole("group", { name: "Conflict 1 of 2", exact: true })
+    .getByRole("button", { name: "Current", exact: true });
   await current.focus();
   await current.press("Enter");
   const output = page.getByRole("textbox", { name: "Resolved output", exact: true });
