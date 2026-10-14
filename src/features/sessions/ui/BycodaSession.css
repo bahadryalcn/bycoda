@@ -1,0 +1,86 @@
+.bycoda-session-backdrop {
+  position: absolute;
+  inset: auto 0 5.5rem;
+  z-index: -1;
+  margin: 0 auto;
+  pointer-events: none;
+}
+.bycoda-empty .bycoda-entry-workbench {
+  max-inline-size: 944px;
+  min-inline-size: 0;
+  padding-block: clamp(32px, 12vh, 112px) 24px;
+  padding-inline: clamp(16px, 3vw, 24px);
+  justify-content: safe center;
+  gap: 24px;
+}
+.bycoda-entry-heading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 20px;
+  text-align: center;
+}
+.bycoda-empty .bycoda-wordmark {
+  margin: 0;
+  font-size: 14px;
+  letter-spacing: 0.08em;
+}
+.bycoda-empty .bycoda-task-brief {
+  min-inline-size: 0;
+  max-inline-size: 100%;
+  margin: 0;
+}
+.bycoda-empty .bycoda-task-brief h1 {
+  font-size: clamp(20px, 2vw, 28px);
+  font-weight: 560;
+  line-height: 1.35;
+  letter-spacing: -0.025em;
+  max-inline-size: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  text-wrap: balance;
+}
+.bycoda-entry-composer {
+  position: relative;
+  min-inline-size: 0;
+  max-inline-size: 896px;
+  margin-inline: auto;
+}
+.chat-pane-background {
+  container: session-pane / size;
+}
+
+/* Keep transcript space while long drafts and attachments remain scrollable. */
+[data-session-body] > [data-session-composer] {
+  min-inline-size: 0;
+  max-block-size: 60%;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.chat-pane-background :is(.composer-field, .composer-highlight) {
+  max-block-size: clamp(2.75rem, 28cqb, 10rem);
+}
+
+.chat-pane-background .bycoda-entry-workbench {
+  padding-block: clamp(1rem, 8cqb, 7rem) 1.5rem;
+}
+
+[data-composer-context] > * {
+  min-inline-size: 0;
+  max-inline-size: 100%;
+}
+
+/* The maximize action owns a slot, leaving notes and close controls clickable. */
+[data-pane-can-maximize] [data-session-header],
+[data-pane-can-maximize] > [role="tablist"] {
+  padding-inline-end: 2.5rem;
+}
+[data-pane-can-maximize] [data-surface-pane-id] {
+  margin-inline-end: 2rem;
+}
+.bycoda-empty .crew-scene {
+  margin-block-start: 8px;
+  padding-block-start: 0;
+  align-self: stretch;
+}

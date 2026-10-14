@@ -1,0 +1,300 @@
+import { afterEach, expect, it, vi } from "vitest";
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { execFileSync, spawn } from "node:child_process";
+import { providerLaunch } from "./process";
+import {
+  powershell,
+  powershellArgs,
+  powershellEnvironment,
+  powershellErrorText,
+  psQuote,
+  protectWindowsDirectory,
+  runPowerShell,
+  windowsTaskScript,
+  windowsUninstallScript,
+} from "./windows";
+
+const directories: string[] = [];
+afterEach(() => {
+  for (const dir of directories.splice(0)) rmSync(dir, { recursive: true, force: true });
+});
+const temporary = () => {
+  const dir = mkdtempSync(join(tmpdir(), "bycoda-win-test-"));
+  directories.push(dir);
+  return dir;
+};
+
+it("runs npm provider entry points directly with literal arguments and bundled Node", async () => {
+  const directory = temporary();
+  const entry = join(directory, "node_modules/@openai/codex/bin/codex.js");
+  mkdirSync(join(directory, "node_modules/@openai/codex/bin"), {
+    recursive: true,
+  });
+  writeFileSync(entry, "console.log(JSON.stringify(process.argv.slice(2)))");
+  const args = [
+    "path with spaces",
+    "a&b",
+    "a|b",
+    "%USERPROFILE%",
+    "$(whoami)",
+    'a"b',
+    "line\nbreak",
+  ];
+  const launch = await providerLaunch(join(directory, "codex.cmd"), args, "win32");
+  expect(launch.command).toBe(process.execPath);
+  expect(JSON.parse(execFileSync(launch.command, launch.args, { encoding: "utf8" }))).toEqual(args);
+  await expect(providerLaunch(join(directory, "unknown.cmd"), args, "win32")).rejects.toThrow(
+    "Unsupported",
+  );
+});
+
+it("uses an unlimited, unelevated per-user task and preserves literal paths", () => {
+  const options = {
+    directory: "C:\\Users\\Nick's $PC\\.bycoda-host",
+    executable: "C:\\Runtime\\node.exe",
+    entry: "C:\\Runtime\\host.mjs",
+    port: 3774,
+  };
+  const script = windowsTaskScript(options, "C:\\bin;C:\\User's tools");
+  expect(script).toContain("-LogonType Interactive -RunLevel Limited");
+  expect(script).toContain("-ExecutionTimeLimit ([TimeSpan]::Zero)");
+  expect(script).toContain("-MultipleInstances IgnoreNew");
+  expect(script).toContain("-OutputType WindowsApplication");
+  expect(script).toContain("service-launcher-v2.exe");
+  expect(script).toContain("Set-ScheduledTask -TaskName $name -Action $action");
+  expect(script).not.toMatch(/Stop-ScheduledTask|Unregister-ScheduledTask|S4U|RunLevel Highest/);
+  expect(psQuote("Nick's $PC")).toBe("'Nick''s $PC'");
+  expect(Buffer.from(powershellArgs("$x = '日本語'").at(-1)!, "base64").toString("utf16le")).toBe(
+    "$x = '日本語'",
+  );
+});
+
+it("keeps only the text of a PowerShell error written as CLIXML", () => {
+  const privilege =
+    "The process does not possess the 'SeSecurityPrivilege' privilege which is required for this operation.";
+  expect(
+    powershellErrorText(
+      `#< CLIXML\r\n<Objs Version="1.1.0.1" xmlns="http://schemas.microsoft.com/powershell/2004/04"><Obj S="progress" RefId="0"><TN RefId="0"><T>System.Management.Automation.PSCustomObject</T></TN><MS><PR N="Record"><AV>Preparing modules for first use.</AV></PR></MS></Obj></Objs>${privilege}\r\n`,
+    ),
+  ).toBe(privilege);
+  expect(powershellErrorText("Access denied.\r\n")).toBe("Access denied.");
+});
+
+it.skipIf(process.platform !== "win32")(
+  "refreshes a stopped task's runner and refuses to replace a running one",
+  async () => {
+    const directory = temporary();
+    const options = {
+      directory,
+      executable: process.execPath,
+      entry: join(directory, "new-host.mjs"),
+      port: 3776,
+    };
+    const runner = join(directory, "service.ps1");
+    writeFileSync(runner, "old runtime");
+    const result = JSON.parse(
+      await runPowerShell(`
+$sid = [Security.Principal.WindowsIdentity]::GetCurrent().User.Value
+$script:task = [PSCustomObject]@{ Principal = [PSCustomObject]@{ UserId = $sid }; State = 'Ready'; Actions = @([PSCustomObject]@{ Execute = 'old'; Arguments = 'old' }) }
+function Get-ScheduledTask { param($TaskName, $ErrorAction) $script:task }
+function Set-ScheduledTask { param($TaskName, $Action, $ErrorAction) $script:task.Actions = @($Action) }
+function Start-ScheduledTask { param($TaskName) }
+${windowsTaskScript(options, process.env.PATH ?? "")}
+$updated = [IO.File]::ReadAllText(${psQuote(runner)})
+$script:task.State = 'Running'
+[IO.File]::WriteAllText(${psQuote(runner)}, 'live runtime')
+$rejected = $false
+try { ${windowsTaskScript(options, process.env.PATH ?? "")} } catch { $rejected = $true }
+@{ updated = $updated; rejected = $rejected; preserved = [IO.File]::ReadAllText(${psQuote(runner)}) } | ConvertTo-Json -Compress
+`),
+    );
+    expect(result.updated).toContain("new-host.mjs");
+    expect(result.rejected).toBe(true);
+    expect(result.preserved).toBe("live runtime");
+  },
+);
+
+it.skipIf(process.platform !== "win32")(
+  "refuses to stop another user's task during service removal",
+  async () => {
+    const result = await runPowerShell(`
+function Get-ScheduledTask { param($TaskName, $ErrorAction) [PSCustomObject]@{ Principal = [PSCustomObject]@{ UserId = 'S-1-5-18' } } }
+function Stop-ScheduledTask { throw 'Should never stop another user' }
+try { ${windowsUninstallScript()} } catch { $_.Exception.Message }
+`);
+    expect(result).toContain("different user");
+  },
+);
+
+it.skipIf(process.platform !== "win32")(
+  "releases a legacy launcher's child tree without touching another process",
+  async () => {
+    const directory = temporary();
+    const entry = join(directory, "legacy.cjs");
+    const ready = join(directory, "ready.json");
+    writeFileSync(
+      entry,
+      `const {spawn}=require('node:child_process'); const fs=require('node:fs');
+const child=spawn(process.execPath,['-e','setInterval(()=>{},1000)'],{windowsHide:true});
+fs.writeFileSync(${JSON.stringify(ready)},JSON.stringify({pid:process.pid,child:child.pid}));
+setInterval(()=>{},1000);`,
+    );
+    const owner = spawn(process.execPath, [entry], { windowsHide: true, stdio: "ignore" });
+    const unrelated = spawn(process.execPath, ["-e", "setInterval(()=>{},1000)"], {
+      windowsHide: true,
+      stdio: "ignore",
+    });
+    let childPid: number | undefined;
+    try {
+      await vi.waitFor(() => expect(() => readFileSync(ready)).not.toThrow());
+      childPid = JSON.parse(readFileSync(ready, "utf8")).child;
+      await runPowerShell(`
+$sid = [Security.Principal.WindowsIdentity]::GetCurrent().User.Value
+$process = Get-CimInstance Win32_Process -Filter 'ProcessId=${owner.pid}'
+$arguments = $process.CommandLine.Substring($process.CommandLine.IndexOf(${psQuote(entry)}))
+$script:fakeTask = [PSCustomObject]@{ Principal = [PSCustomObject]@{ UserId = $sid }; Actions = @([PSCustomObject]@{ Execute = $process.ExecutablePath; Arguments = $arguments }) }
+function Get-ScheduledTask { param($TaskName,$ErrorAction) $script:fakeTask }
+function Stop-ScheduledTask { param($TaskName,$ErrorAction) }
+function Unregister-ScheduledTask { param($TaskName,$Confirm) }
+${windowsUninstallScript()}
+`);
+      await vi.waitFor(() => expect(() => process.kill(owner.pid!, 0)).toThrow());
+      await vi.waitFor(() => expect(() => process.kill(childPid!, 0)).toThrow());
+      expect(() => process.kill(unrelated.pid!, 0)).not.toThrow();
+    } finally {
+      for (const pid of [owner.pid, childPid, unrelated.pid]) {
+        if (pid) {
+          try {
+            process.kill(pid);
+          } catch {
+            /* already exited */
+          }
+        }
+      }
+    }
+  },
+);
+
+it.skipIf(process.platform !== "win32")(
+  "protects Windows credentials and reuses only this user's unlimited task",
+  async () => {
+    const directory = temporary();
+    await protectWindowsDirectory(directory);
+    writeFileSync(join(directory, "credential.json"), "secret");
+    const acl = JSON.parse(
+      await runPowerShell(`
+$acl = Get-Acl -LiteralPath ${psQuote(directory)}
+$file = Get-Acl -LiteralPath ${psQuote(join(directory, "credential.json"))}
+@{ protected = $acl.AreAccessRulesProtected; owner = $acl.Owner; rules = @($file.Access | ForEach-Object { $_.IdentityReference.Translate([Security.Principal.SecurityIdentifier]).Value }) } | ConvertTo-Json -Compress
+`),
+    );
+    expect(acl.protected).toBe(true);
+    expect(acl.rules).not.toContain("S-1-1-0");
+    expect(acl.rules).not.toContain("S-1-5-32-545");
+    // Use the real ScheduledTasks constructors but never register a task in the
+    // developer's account. Capture the resulting definition for assertions.
+    const options = {
+      directory,
+      port: 3774,
+      executable: process.execPath,
+      entry: join(directory, "host.mjs"),
+    };
+    const result = JSON.parse(
+      await runPowerShell(`
+$script:registeredTask = $null
+$script:registrations = 0
+$script:starts = 0
+$script:migrations = 0
+function Get-ScheduledTask { param($TaskName, $ErrorAction) return $script:registeredTask }
+function Set-ScheduledTask {
+  param($TaskName, $Action, $ErrorAction)
+  $script:migrations++
+  $script:registeredTask.Actions = @($Action)
+}
+function Register-ScheduledTask {
+  param($TaskName, $Action, $Principal, $Trigger, $Settings, $Description)
+  $script:registrations++
+  $script:registeredTask = [PSCustomObject]@{ Principal = $Principal; Actions = @($Action) }
+  @{ user = $Principal.UserId; sid = [Security.Principal.WindowsIdentity]::GetCurrent().User.Value; logon = $Principal.LogonType.ToString(); limit = $Settings.ExecutionTimeLimit; instances = $Settings.MultipleInstances.ToString(); executable = $Action.Execute; action = $Action.Arguments } | ConvertTo-Json -Compress | Set-Content -LiteralPath ${psQuote(join(directory, "task.json"))}
+}
+function Start-ScheduledTask { param($TaskName) $script:starts++ }
+${windowsTaskScript(options, process.env.PATH ?? "")}
+$script:registeredTask.Actions = @([PSCustomObject]@{ Execute = 'powershell.exe'; Arguments = 'old' })
+${windowsTaskScript(options, process.env.PATH ?? "")}
+${windowsTaskScript(options, process.env.PATH ?? "")}
+$definition = Get-Content -LiteralPath ${psQuote(join(directory, "task.json"))} -Raw | ConvertFrom-Json
+$script:registeredTask = [PSCustomObject]@{ Principal = [PSCustomObject]@{ UserId = 'S-1-5-18' } }
+$rejected = $false
+try {
+  ${windowsTaskScript(options, process.env.PATH ?? "")}
+} catch {
+  if ($_.Exception.Message -notlike '*different user*') { throw }
+  $rejected = $true
+}
+@{ definition = $definition; registrations = $script:registrations; migrations = $script:migrations; starts = $script:starts; rejected = $rejected; userSid = if ($definition.user -match '^S-1-') { $definition.user } else { ([Security.Principal.NTAccount]::new($definition.user)).Translate([Security.Principal.SecurityIdentifier]).Value } } | ConvertTo-Json -Compress
+`),
+    );
+    expect(result.userSid).toBe(result.definition.sid);
+    expect(result.registrations).toBe(1);
+    expect(result.starts).toBe(3);
+    expect(result.migrations).toBe(1);
+    expect(result.rejected).toBe(true);
+    expect(["Interactive", "3"]).toContain(result.definition.logon);
+    expect(result.definition.limit).toBe("PT0S");
+    expect(["IgnoreNew", "2"]).toContain(result.definition.instances);
+    expect(result.definition.executable).toBe(join(directory, "service-launcher-v2.exe"));
+    const executable = readFileSync(result.definition.executable);
+    const peHeader = executable.readUInt32LE(0x3c);
+    expect(executable.readUInt16LE(peHeader + 24 + 68)).toBe(2); // Windows GUI subsystem
+    expect(Buffer.from(result.definition.action, "base64").toString("utf16le")).toContain(
+      "service.ps1",
+    );
+
+    // Exercise the compiled GUI executable, not just the task definition. The
+    // child must have no console and errors must reach the task's exit status.
+    const probe = join(directory, "console.json");
+    execFileSync(
+      result.definition.executable,
+      powershellArgs(`
+Add-Type -TypeDefinition 'using System; using System.Runtime.InteropServices; public static class ConsoleProbe { [DllImport("kernel32.dll")] public static extern IntPtr GetConsoleWindow(); }'
+@{ console = [ConsoleProbe]::GetConsoleWindow().ToInt64(); pid = $PID } | ConvertTo-Json -Compress | Set-Content -LiteralPath ${psQuote(probe)}
+`).slice(-1),
+      { windowsHide: true, timeout: 30_000 },
+    );
+    expect(JSON.parse(readFileSync(probe, "utf8").replace(/^\uFEFF/, "")).console).toBe(0);
+    try {
+      execFileSync(result.definition.executable, powershellArgs("exit 23").slice(-1), {
+        windowsHide: true,
+        timeout: 30_000,
+      });
+      throw new Error("The launcher swallowed the child failure");
+    } catch (error) {
+      expect((error as { status?: number }).status).toBe(23);
+    }
+  },
+  // Three sequential PowerShell calls each have their own 30s process timeout.
+  // Leave room for all three to settle before test teardown removes their files.
+  100_000,
+);
+
+it.skipIf(process.platform !== "win32")(
+  "parses the Windows bootstrap with Windows PowerShell",
+  () => {
+    const script = readFileSync("src-tauri/src/remote_bootstrap.ps1", "utf8")
+      .replace("@@VERSION@@", "'test'")
+      .replace("@@RELEASE@@", "'https://example.invalid'")
+      .replace("@@ACL@@", readFileSync("host/windows-acl.ps1", "utf8"));
+    const file = join(temporary(), "bootstrap.ps1");
+    writeFileSync(file, script);
+    const result = execFileSync(
+      powershell(),
+      powershellArgs(
+        `$tokens = $null; $errors = $null; $null = [Management.Automation.Language.Parser]::ParseFile(${psQuote(file)}, [ref] $tokens, [ref] $errors); if ($errors.Count) { $errors | Out-String | Write-Output; exit 1 }`,
+      ),
+      { encoding: "utf8", env: powershellEnvironment() },
+    );
+    expect(result).toBe("");
+  },
+);
