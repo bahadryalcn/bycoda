@@ -1,0 +1,114 @@
+import { useState } from "react";
+import { createRoot } from "react-dom/client";
+import { SessionRecoveryPanel } from "../../src/app/shell/SessionRecoveryPanel";
+import { SessionRecoveryControl } from "../../src/app/shell/SessionRecoveryControl";
+import { Sidebar } from "../../src/app/shell/Sidebar";
+import { newSession } from "../../src/features/sessions/model/session";
+import { markTurnInterrupted } from "../../src/features/sessions/model/inFlight";
+import { newTab } from "../../src/features/workspace/model/layout";
+import { collectWorkspaceSnapshot } from "../../src/features/workspace/model/workspaceSnapshot";
+import {
+  captureSessionRecovery,
+  removeRecoverySessions,
+} from "../../src/features/workspace/model/sessionRecovery";
+import "../../src/styles/index.css";
+
+// Navigation-only fixture: no native commands, providers or real host sessions.
+const sessions = Array.from({ length: 24 }, (_, index) => {
+  const session = {
+    ...newSession("codex", `/projects/project-${index % 3}`),
+    id: `session-${index}`,
+    title: `Recovered conversation ${index + 1}`,
+    model: "GPT-6",
+    blocks: [
+      {
+        id: `user-${index}`,
+        role: "user" as const,
+        text: "Fixture conversation",
+        startedAt: Date.now() - 120_000,
+        durationMs: 10_000,
+      },
+    ],
+  };
+  return index < 3 ? markTurnInterrupted(session) : session;
+});
+sessions[3].blocks.push({
+  id: "failure",
+  role: "system",
+  text: "Fixture provider failed",
+  notice: "error",
+});
+sessions[4].busy = true;
+sessions[5].blocks.push({
+  id: "approval",
+  role: "system",
+  text: "Fixture approval",
+  approval: { requestId: 1 },
+});
+const tabs = sessions.map((session) => newTab(session.id));
+const recovery = captureSessionRecovery(
+  null,
+  collectWorkspaceSnapshot(tabs, sessions, tabs[0].id, sessions[0].cwd, new Map()),
+)!;
+function SidebarFixture() {
+  const [recoveredCount, setRecoveredCount] = useState(40);
+  const [tab, setTab] = useState<"sessions" | "files" | "changes" | "inbox">("sessions");
+  const [railOpen, setRailOpen] = useState(false);
+  return (
+    <main className="flex h-dvh bg-background-base text-content">
+      <Sidebar
+        cwd="/fixture"
+        open
+        sessions={[]}
+        busySessionIds={new Set()}
+        approvalSessionIds={new Set()}
+        status="idle"
+        pending={false}
+        tab={tab}
+        filesSearchOpen={false}
+        projectRailOpen={railOpen}
+        compactProjectRail
+        onToggleProjectRail={() => setRailOpen((value) => !value)}
+        onSelectSession={() => {}}
+        onRenameSession={() => {}}
+        onOpenFile={() => {}}
+        onTabChange={setTab}
+        onFilesSearchOpenChange={() => {}}
+        onSelectProject={() => {}}
+        onOpenProject={() => {}}
+        recoveryControl={
+          <SessionRecoveryControl
+            count={recoveredCount}
+            onOpen={() => {}}
+            onClear={async () => setRecoveredCount(0)}
+          />
+        }
+      />
+      <output data-testid="active-sidebar-tab">{tab}</output>
+    </main>
+  );
+}
+function Fixture() {
+  const [journal, setJournal] = useState(recovery);
+  const [open, setOpen] = useState(true);
+  const [result, setResult] = useState("");
+  return (
+    <main className="h-dvh bg-background-base p-4 text-content">
+      <button onClick={() => setOpen(true)}>Recovered sessions 24</button>
+      <output data-testid="opened">{result}</output>
+      {open ? (
+        <SessionRecoveryPanel
+          recovery={journal}
+          sessions={sessions}
+          remoteSessions={[]}
+          onClose={() => setOpen(false)}
+          onOpen={async (ids, layout) => setResult(JSON.stringify({ ids, layout }))}
+          onRemove={async (ids) => setJournal((current) => removeRecoverySessions(current, ids))}
+        />
+      ) : null}
+    </main>
+  );
+}
+createRoot(document.getElementById("root")!).render(
+  new URLSearchParams(location.search).has("sidebar") ? <SidebarFixture /> : <Fixture />,
+);

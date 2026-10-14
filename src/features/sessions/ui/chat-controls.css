@@ -1,0 +1,175 @@
+/* Chat controls reuse the application's surfaces, typography and contrast tokens. */
+[data-composer] {
+  container: chat-composer / inline-size;
+}
+
+html [data-composer] div[data-composer-box],
+html [data-activity-dock] {
+  background: var(--color-background-base);
+}
+
+[data-composer-context] .composer-context-actions {
+  margin-inline-start: auto;
+}
+
+[data-composer-context]:not(:has(button, svg)) {
+  display: none;
+}
+
+.composer-session-meta {
+  display: flex;
+  min-inline-size: 0;
+  align-items: center;
+  gap: 0.75rem;
+  padding-inline: 0.75rem;
+  padding-block-end: 0.375rem;
+  color: var(--ui-text-secondary);
+  font-size: var(--ui-font-caption);
+  line-height: 1.5;
+}
+
+.session-header-title > [data-session-agent] {
+  flex: 0 1 auto;
+  max-inline-size: 48%;
+  border-inline-start: 1px solid var(--color-stroke);
+  padding-inline-start: 0.625rem;
+}
+
+.session-agent-identity,
+.chat-control-secondary,
+.context-meter-neutral {
+  color: var(--ui-text-secondary);
+}
+
+.session-agent-identity {
+  font-size: var(--ui-font-caption);
+  line-height: 1.5;
+}
+
+[data-composer] .composer-field::placeholder {
+  color: var(--ui-text-secondary);
+  -webkit-text-fill-color: var(--ui-text-secondary);
+}
+
+.composer-send-controls {
+  margin-inline-start: auto;
+  align-self: flex-end;
+}
+
+.composer-busy-send {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  min-inline-size: 1.75rem;
+  min-block-size: 1.75rem;
+  padding-inline: 0.5rem;
+  font-size: var(--ui-font-caption);
+}
+
+.composer-busy-send span {
+  max-inline-size: 7rem;
+  overflow: clip;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.composer-busy-send svg {
+  flex: none;
+}
+
+[data-composer] .composer-controls {
+  align-items: flex-end;
+  column-gap: 0.375rem;
+}
+
+[data-composer] .composer-toolbar > div {
+  row-gap: 0.375rem;
+}
+
+[data-composer] [data-model-effort],
+[data-composer] [data-composer-workspace] {
+  color: var(--ui-text-secondary);
+}
+
+[data-composer] [data-composer-workspace] {
+  background: var(--color-background-base);
+}
+
+[data-jump-to-bottom] {
+  min-inline-size: 2rem;
+  min-block-size: 2rem;
+}
+
+[data-jump-to-bottom]:focus-visible {
+  outline: var(--ui-focus-width) solid var(--color-accent);
+  outline-offset: var(--ui-focus-offset);
+}
+
+[data-jump-to-bottom]:active {
+  filter: brightness(0.9);
+}
+
+.context-meter-trigger {
+  display: grid;
+  place-items: center;
+  inline-size: 1.75rem;
+  block-size: 1.75rem;
+  border-radius: 0.375rem;
+}
+
+.context-meter-popover {
+  max-inline-size: min(22rem, calc(100vw - 1rem));
+  overflow-wrap: anywhere;
+}
+
+.context-compact-action {
+  min-block-size: 1.75rem;
+  margin-block-start: 0.375rem;
+}
+
+[data-composer] :is(.composer-controls, [data-composer-workspace]) button,
+[data-activity-dock] button {
+  min-block-size: 1.75rem;
+}
+
+[data-composer] [data-usage-guide="send-controls"] button,
+[data-composer] .composer-controls > div:not(.composer-toolbar) > button {
+  min-inline-size: 1.75rem;
+}
+
+:is([data-composer], [data-activity-dock]) button:focus-visible,
+:is(.context-meter-trigger, .context-compact-action, .composer-tips-trigger):focus-visible {
+  outline: var(--ui-focus-width) solid var(--color-accent);
+  outline-offset: var(--ui-focus-offset);
+}
+
+:is([data-composer], [data-activity-dock]) button:enabled:active,
+:is(.context-meter-trigger, .context-compact-action, .composer-tips-trigger):enabled:active {
+  filter: brightness(0.9);
+}
+
+[data-activity-status-row] {
+  color: var(--ui-text-secondary);
+}
+
+.activity-dock-summary {
+  display: flex;
+  min-inline-size: 0;
+  align-self: stretch;
+  align-items: center;
+  gap: 0.5rem;
+  padding-inline: 0.25rem;
+  margin-inline-start: -0.25rem;
+  background: var(--color-background-base);
+}
+
+[data-activity-status-row] .activity-dock-label,
+[data-activity-dock] .activity-dock-clock {
+  color: var(--ui-text-secondary);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  :is(.context-meter-trigger, .context-compact-action, .composer-tips-trigger):hover {
+    background: var(--color-selection-hover);
+  }
+}

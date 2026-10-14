@@ -1,0 +1,115 @@
+// @vitest-environment happy-dom
+import { beforeEach, describe, expect, it } from "vitest";
+import {
+  applyShownSectionOrder,
+  isDefaultRailSectionOrder,
+  loadRailSectionOrder,
+  moveRailSection,
+  normalizeRailSectionOrder,
+  resetRailSectionOrder,
+  saveRailSectionOrder,
+  type RailSectionId,
+} from "./railSections";
+
+const DEFAULT: RailSectionId[] = ["last-sessions", "pinned", "groups", "projects"];
+
+describe("normalizeRailSectionOrder", () => {
+  it("falls back to the default order", () => {
+    expect(normalizeRailSectionOrder(null)).toEqual(DEFAULT);
+    expect(normalizeRailSectionOrder("nope")).toEqual(DEFAULT);
+    expect(normalizeRailSectionOrder([])).toEqual(DEFAULT);
+  });
+
+  it("keeps a stored order and appends missing sections in default order", () => {
+    expect(normalizeRailSectionOrder(["projects", "groups"])).toEqual([
+      "projects",
+      "groups",
+      "last-sessions",
+      "pinned",
+    ]);
+  });
+
+  it("ignores unknown ids, repeats and non-strings", () => {
+    expect(normalizeRailSectionOrder(["future", "groups", "groups", 4, "pinned"])).toEqual([
+      "groups",
+      "pinned",
+      "last-sessions",
+      "projects",
+    ]);
+  });
+});
+
+describe("moveRailSection", () => {
+  it("moves a section up, down and to the top", () => {
+    expect(moveRailSection(DEFAULT, "groups", "up")).toEqual([
+      "last-sessions",
+      "groups",
+      "pinned",
+      "projects",
+    ]);
+    expect(moveRailSection(DEFAULT, "pinned", "down")).toEqual([
+      "last-sessions",
+      "groups",
+      "pinned",
+      "projects",
+    ]);
+    expect(moveRailSection(DEFAULT, "projects", "top")[0]).toBe("projects");
+  });
+
+  it("does nothing at the ends", () => {
+    expect(moveRailSection(DEFAULT, "last-sessions", "up")).toEqual(DEFAULT);
+    expect(moveRailSection(DEFAULT, "projects", "down")).toEqual(DEFAULT);
+  });
+
+  it("steps over sections that are not on screen", () => {
+    const shown = new Set<RailSectionId>(["last-sessions", "projects"]);
+    expect(moveRailSection(DEFAULT, "projects", "up", shown)).toEqual([
+      "projects",
+      "last-sessions",
+      "pinned",
+      "groups",
+    ]);
+    expect(moveRailSection(DEFAULT, "last-sessions", "down", shown)).toEqual([
+      "pinned",
+      "groups",
+      "projects",
+      "last-sessions",
+    ]);
+    expect(moveRailSection(DEFAULT, "projects", "down", shown)).toEqual(DEFAULT);
+  });
+});
+
+describe("applyShownSectionOrder", () => {
+  it("lets hidden sections keep their slot", () => {
+    // Pinned is hidden; dragging Projects above Groups and Last sessions.
+    expect(applyShownSectionOrder(DEFAULT, ["projects", "last-sessions", "groups"])).toEqual([
+      "projects",
+      "pinned",
+      "last-sessions",
+      "groups",
+    ]);
+  });
+
+  it("returns the order unchanged for a malformed drag", () => {
+    expect(applyShownSectionOrder(DEFAULT, ["groups", "groups"])).toEqual(DEFAULT);
+  });
+});
+
+describe("saved section order", () => {
+  beforeEach(() => localStorage.clear());
+
+  it("round-trips and resets", () => {
+    expect(loadRailSectionOrder()).toEqual(DEFAULT);
+    saveRailSectionOrder(["groups", "projects", "pinned", "last-sessions"]);
+    expect(loadRailSectionOrder()).toEqual(["groups", "projects", "pinned", "last-sessions"]);
+    expect(isDefaultRailSectionOrder(loadRailSectionOrder())).toBe(false);
+    resetRailSectionOrder();
+    expect(loadRailSectionOrder()).toEqual(DEFAULT);
+    expect(isDefaultRailSectionOrder(loadRailSectionOrder())).toBe(true);
+  });
+
+  it("survives corrupt storage", () => {
+    localStorage.setItem("bycoda.projectRailSectionOrder", "{oops");
+    expect(loadRailSectionOrder()).toEqual(DEFAULT);
+  });
+});
