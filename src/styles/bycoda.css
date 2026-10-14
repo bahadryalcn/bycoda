@@ -1,0 +1,470 @@
+/* bycoda workbench: near-black surfaces, cool ink and quiet structural lines. */
+:root {
+  --ui-island-surface: var(--palette-scrim);
+  --ui-island-text: var(--palette-solidInk);
+  --ui-island-text-secondary: color-mix(in srgb, var(--palette-solidInk) 66%, var(--palette-scrim));
+  --ui-island-hover: color-mix(in srgb, var(--palette-solidInk) 10%, var(--palette-scrim));
+  --ui-island-border: color-mix(in srgb, var(--palette-solidInk) 12%, var(--palette-scrim));
+  --bycoda-panel: color-mix(in srgb, var(--color-background-base) 97%, var(--palette-solidInk));
+  --bycoda-raised: color-mix(in srgb, var(--color-background-base) 94%, var(--palette-solidInk));
+  --bycoda-brass-muted: var(--palette-hex7e8795);
+}
+.bycoda-workspace-heading {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 16px;
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--color-stroke);
+}
+.bycoda-heading-mark {
+  display: grid;
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  place-items: center;
+  color: var(--color-accent);
+  border: 1px solid color-mix(in srgb, var(--color-accent) 30%, transparent);
+  border-radius: 3px;
+  background: var(--bycoda-raised);
+}
+.bycoda-workspace-heading h1 {
+  font-size: 18px;
+  font-weight: 560;
+  letter-spacing: -0.025em;
+  line-height: 1.25;
+}
+.bycoda-workspace-heading p {
+  margin-top: 5px;
+  font-size: 12px;
+  color: var(--ui-text-secondary);
+}
+.bycoda-heading-count {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  color: var(--ui-text-secondary);
+  font-size: 12px;
+}
+.bycoda-heading-count strong {
+  font-size: 20px;
+  font-weight: 550;
+  color: var(--color-accent);
+  font-variant-numeric: tabular-nums;
+}
+.bycoda-settings-content > header {
+  padding-bottom: 26px;
+  border-bottom: 1px solid var(--color-stroke);
+  margin-bottom: 10px;
+}
+.bycoda-settings-content > header h1 {
+  font-size: 24px;
+  font-weight: 550;
+  letter-spacing: -0.035em;
+}
+.bycoda-page-eyebrow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 20px;
+  font-size: 12px;
+  color: var(--color-accent);
+}
+.bycoda-page-eyebrow img {
+  width: 28px;
+  height: 28px;
+  object-fit: contain;
+}
+.bycoda-settings-content section > div:first-child h2 {
+  font-size: 16px;
+  font-weight: 550;
+}
+.bycoda-settings-content section > div:last-child {
+  border-radius: 6px;
+  border: 1px solid var(--color-stroke);
+}
+.bycoda-task-column > h2 {
+  border-bottom: 1px solid var(--color-stroke);
+  margin-bottom: 8px;
+}
+.bycoda-task-column[data-task-column="running"] {
+  border-top: 2px solid var(--color-accent);
+}
+.bycoda-task-column[data-task-column="done"] {
+  border-top: 2px solid var(--bycoda-brass-muted);
+}
+.bycoda-task-column article {
+  border-radius: 5px;
+}
+@media (max-height: 600px) {
+  .bycoda-workspace-heading {
+    padding-block: 12px;
+  }
+  .bycoda-workspace-heading p {
+    display: none;
+  }
+}
+@media (max-width: 600px) {
+  .bycoda-workspace-heading {
+    padding-inline: 16px;
+    gap: 10px;
+  }
+  .bycoda-workspace-heading h1 {
+    font-size: 18px;
+  }
+  .bycoda-workspace-heading p {
+    font-size: 11px;
+  }
+  .bycoda-heading-mark {
+    width: 36px;
+    height: 36px;
+  }
+}
+.bycoda-titlebar {
+  background: var(--color-background-base);
+  border-block-end-color: var(--color-stroke);
+}
+.bycoda-project-rail {
+  background: var(--bycoda-panel);
+  box-shadow: none;
+}
+.bycoda-rail-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 7px 10px 12px;
+  color: var(--color-content);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: -0.025em;
+}
+/* The rail shows the mark alone, large enough to read without the wordmark. */
+.bycoda-rail-brand img {
+  width: 32px;
+  height: 32px;
+  flex: none;
+  object-fit: contain;
+}
+@container rail (width < 140px) {
+  .bycoda-rail-brand {
+    gap: 8px;
+    padding-inline: 7px;
+  }
+}
+.bycoda-rail-brand button > svg {
+  width: 14px;
+  height: 14px;
+}
+.bycoda-rail-brand button > span {
+  font-size: 12px;
+}
+.bycoda-project-rail button,
+.bycoda-sidebar button {
+  border-radius: 5px;
+}
+.bycoda-sidebar [data-session-list] {
+  padding: 5px;
+  gap: 2px;
+}
+.bycoda-sidebar [aria-selected="true"],
+.bycoda-project-rail [aria-current]:not(.project-reorder-item *) {
+  box-shadow: inset 2px 0 var(--color-accent);
+}
+/* Project buttons sit inside a padded card; anchor its marker to the card edge. */
+.bycoda-project-rail .project-reorder-item[data-selected="true"]::before {
+  content: "";
+  position: absolute;
+  inset-block: 0;
+  left: 0;
+  width: 2px;
+  border-radius: inherit;
+  background: var(--color-accent);
+  pointer-events: none;
+}
+.bycoda-empty {
+  background-image: none;
+}
+.bycoda-task-brief {
+  max-width: 640px;
+}
+.bycoda-wordmark {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 32px;
+  color: var(--color-accent);
+  font-size: 17px;
+  font-weight: 650;
+  letter-spacing: 0.025em;
+}
+.bycoda-wordmark img {
+  width: 34px;
+  height: 34px;
+  object-fit: contain;
+}
+.bycoda-wordmark img.bycoda-brand-lettering {
+  width: 119px;
+  height: 24px;
+}
+.theme-light .bycoda-brand-lettering {
+  filter: none;
+}
+html:not(.theme-light) img[src="/brand/bycoda/mark-light.svg"],
+html:not(.theme-light) .bycoda-brand-lettering {
+  filter: brightness(0) invert(1);
+}
+html:not(.theme-light) img[src="/brand/bycoda/mark-black.svg"] {
+  content: url("/brand/bycoda/mark-white.svg");
+}
+.bycoda-task-brief h1 {
+  font-size: clamp(26px, 3.2vw, 42px);
+  font-weight: 560;
+  line-height: 1.14;
+  letter-spacing: -0.035em;
+  overflow-wrap: anywhere;
+  max-width: 600px;
+}
+.bycoda-task-brief p {
+  max-width: 460px;
+  margin-top: 16px;
+  font-size: 14px;
+  line-height: 1.65;
+  color: color-mix(in srgb, var(--color-content) 65%, transparent);
+}
+html [data-composer-box] {
+  border-radius: 12px;
+  border-color: var(--color-stroke);
+  box-shadow: none;
+}
+html.theme-light [data-composer-box] {
+  background: color-mix(in srgb, var(--color-background-base) 96%, var(--palette-solidInk));
+}
+html .user-message-bubble {
+  border-radius: 12px;
+  border-inline-start: 1px solid var(--color-stroke);
+}
+.bycoda-title-settle {
+  animation: bycoda-title-settle 220ms ease-out both;
+}
+@keyframes bycoda-title-settle {
+  from {
+    opacity: 0.65;
+    transform: translateY(2px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+/* Project code-art icons: a solid tinted silhouette with a crisp edge keeps
+   the shape readable at 12-14px; the code-glyph texture sits on top. Dark
+   theme lifts the ink toward the highlight; light theme deepens it so pale
+   palette colors don't wash out. No blur, glow or drop-shadow filters. */
+.project-sigil {
+  overflow: visible;
+  shape-rendering: geometricPrecision;
+  --sigil-ink-a: color-mix(in oklab, var(--sigil-hi) 28%, currentColor);
+  --sigil-ink-hi: color-mix(in oklab, var(--sigil-hi) 72%, currentColor);
+  --sigil-base-opacity: 0.52;
+  --sigil-edge: currentColor;
+  --sigil-edge-opacity: 0.8;
+}
+html.theme-light .project-sigil {
+  --sigil-ink-a: color-mix(in oklab, currentColor 62%, var(--palette-scrim));
+  --sigil-ink-hi: color-mix(in oklab, currentColor 80%, var(--palette-scrim));
+  --sigil-base-opacity: 0.5;
+  --sigil-edge: color-mix(in oklab, currentColor 76%, var(--palette-scrim));
+  --sigil-edge-opacity: 1;
+}
+.project-sigil-base {
+  fill: currentColor;
+  fill-opacity: var(--sigil-base-opacity);
+  stroke: var(--sigil-edge);
+  stroke-opacity: var(--sigil-edge-opacity);
+  stroke-width: 0.9px;
+  stroke-linejoin: round;
+}
+.project-sigil-ink-a {
+  stop-color: var(--sigil-ink-a);
+}
+.project-sigil-ink-hi {
+  stop-color: var(--sigil-ink-hi);
+}
+/* Selected rows: slightly firmer edge, not brighter fill. */
+[data-selected] .project-sigil {
+  --sigil-edge-opacity: 1;
+}
+[data-selected] .project-sigil-base {
+  stroke-width: 1.1px;
+}
+/* Running: opacity-only pulse; scaling would blur the pixel-aligned edge. */
+.bycoda-sigil-active {
+  animation: bycoda-sigil-breathe 1800ms ease-in-out infinite;
+}
+@keyframes bycoda-sigil-breathe {
+  0%,
+  100% {
+    opacity: 0.88;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+.bycoda-welcome {
+  position: absolute;
+  z-index: 30;
+  top: 48px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 10px 16px;
+  border: 1px solid color-mix(in srgb, var(--color-accent) 35%, transparent);
+  border-radius: 6px;
+  background: var(--color-background-base);
+  color: var(--color-content);
+  font-size: 12px;
+  white-space: nowrap;
+  animation: bycoda-welcome 1400ms ease both;
+}
+.bycoda-welcome img {
+  width: 24px;
+  height: 24px;
+  object-fit: contain;
+}
+@keyframes bycoda-welcome {
+  0% {
+    opacity: 0;
+    margin-top: -4px;
+  }
+  15%,
+  80% {
+    opacity: 1;
+    margin-top: 0;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .bycoda-title-settle,
+  .bycoda-sigil-active,
+  .bycoda-welcome {
+    animation: none;
+  }
+}
+
+/* Compact project tools above a separate project ledger. */
+.bycoda-workbench-tag {
+  display: flex;
+  align-items: center;
+  padding: 0 11px;
+  border-right: 1px solid var(--color-stroke);
+  font: 10px var(--font-mono);
+  letter-spacing: 0.08em;
+  color: var(--ui-text-secondary);
+}
+.bycoda-rail-tools {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 2px;
+  padding: 0 7px 8px;
+  border-bottom: 1px solid var(--color-stroke);
+}
+.bycoda-rail-tools > div,
+.bycoda-rail-tools > :first-child {
+  grid-column: 1 / -1;
+}
+.bycoda-project-ledger {
+  padding-top: 8px;
+}
+.bycoda-sidebar {
+  background: var(--color-background-base);
+}
+.bycoda-workspace-tabs {
+  min-height: 32px;
+  height: 32px;
+  padding-inline: 6px;
+  background: var(--bycoda-panel);
+}
+.bycoda-workspace-tabs .workspace-tab {
+  container: workspace-tab / inline-size;
+}
+.workspace-tab-icon {
+  display: none;
+  flex: none;
+  inline-size: 1.25em;
+  block-size: 1.25em;
+}
+/* Switch before labels and diff totals become unreadably truncated. */
+@container workspace-tab (inline-size < 100px) {
+  .workspace-tab-content {
+    display: none;
+  }
+  .workspace-tab-icon {
+    display: block;
+  }
+  [data-workspace-working-count] {
+    margin-inline-start: 0.25em;
+  }
+}
+.bycoda-titlebar {
+  min-height: 34px;
+  height: 34px;
+  background: var(--color-background-base);
+  border-bottom: 1px solid var(--color-stroke);
+}
+.bycoda-settings-return {
+  margin: 4px 8px;
+  padding: 8px;
+  font-size: 11px;
+  text-align: left;
+  color: var(--ui-text-secondary);
+  border: 1px solid var(--color-stroke);
+}
+@container rail (width < 140px) {
+  .bycoda-rail-tools {
+    grid-template-columns: 1fr;
+  }
+  .bycoda-workbench-tag {
+    display: none;
+  }
+}
+/* Short windows hand the brand row's height to the scrolling project ledger. */
+@media (max-height: 720px) {
+  .bycoda-rail-brand {
+    padding-block: 6px 4px;
+  }
+  .bycoda-rail-brand img {
+    width: 24px;
+    height: 24px;
+  }
+  .bycoda-project-ledger {
+    padding-top: 4px;
+  }
+}
+@media (max-height: 560px) {
+  .bycoda-rail-brand img {
+    display: none;
+  }
+}
+html.theme-light .bycoda-project-rail,
+html.theme-light .bycoda-workspace-tabs {
+  background: var(--color-background-base);
+}
+.bycoda-project-rail > [data-tauri-drag-region] {
+  height: 34px;
+}
+.bycoda-rail-tools > button {
+  height: 28px;
+  gap: 5px;
+  padding-inline: 6px;
+}
+.bycoda-rail-tools > button > svg {
+  width: 14px;
+  height: 14px;
+}
+.bycoda-rail-tools > button > span {
+  font-size: 11px;
+}

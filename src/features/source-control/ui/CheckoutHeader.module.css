@@ -1,0 +1,117 @@
+.header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 4px 8px;
+  padding: 4px 8px;
+  color: var(--color-content);
+}
+
+.header[data-current-checkout] {
+  background: var(--ui-surface-selected);
+}
+
+.disclosure {
+  display: flex;
+  flex: 1 1 12rem;
+  align-items: center;
+  gap: 4px;
+  min-inline-size: 0;
+  min-block-size: 44px;
+  text-align: start;
+}
+
+.identity {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 4px;
+  min-inline-size: 0;
+}
+
+.name,
+.path {
+  overflow: clip;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.name {
+  font-size: var(--ui-font-caption);
+  font-weight: 500;
+  color: var(--color-content);
+}
+
+.path {
+  font-size: var(--ui-font-caption);
+  color: var(--ui-text-secondary);
+}
+
+.current {
+  flex-shrink: 0;
+  font-size: var(--ui-font-caption);
+  color: var(--color-accent);
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+  min-inline-size: 0;
+  max-inline-size: 100%;
+  margin-inline-start: auto;
+}
+
+.header:has(.disclosure[aria-expanded="true"]) .actions {
+  grid-column: 1 / -1;
+  inline-size: 100%;
+  flex-wrap: nowrap;
+}
+
+.messageField {
+  min-inline-size: 0;
+}
+
+.generationActions {
+  position: absolute;
+  inset-block-start: 2px;
+  inset-inline-end: 2px;
+  display: flex;
+  align-items: center;
+}
+
+.messageField textarea.message {
+  display: block;
+  inline-size: 100%;
+  min-block-size: 32px;
+  max-block-size: 160px;
+  padding-block: 4px;
+  padding-inline: 8px 52px;
+  resize: none;
+  overflow-y: auto;
+  font-size: var(--ui-font-caption);
+  line-height: 20px;
+}
+
+.syncActions {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 10rem), 1fr));
+  gap: 6px;
+  margin-block-start: 6px;
+}
+
+.summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  font-size: var(--ui-font-caption);
+  font-variant-numeric: tabular-nums;
+  color: var(--ui-text-secondary);
+}
+
+.conflicts {
+  color: var(--color-warning);
+}

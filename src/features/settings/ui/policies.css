@@ -1,0 +1,50 @@
+.policies-settings .policy-intro,
+.policies-settings .policy-document {
+  padding-block: 1rem;
+  padding-inline: clamp(1rem, 3cqi, 1.5rem);
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+
+.policies-settings .policy-intro {
+  font-size: 0.8125rem;
+  line-height: 1.7;
+}
+
+.policies-settings .policy-document {
+  font-size: 0.875rem;
+  line-height: 1.75;
+  max-inline-size: 80ch;
+}
+
+.policies-settings .policy-navigation {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  padding-block: 1rem;
+}
+
+.policies-settings .policy-navigation a {
+  color: var(--color-content);
+  border: 1px solid var(--color-stroke);
+  border-radius: 0.5rem;
+  padding-block: 0.5rem;
+  padding-inline: 0.75rem;
+  font-size: 0.8125rem;
+  overflow-wrap: anywhere;
+}
+
+.policies-settings a:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 3px;
+}
+
+.policies-settings a:active {
+  opacity: 0.7;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .policies-settings a:hover {
+    text-decoration: underline;
+  }
+}
