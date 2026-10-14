@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.78]
+
+### Conversations and workspace
+
+- Add animated conversation backgrounds with configurable appearance settings.
+- Improve merge conflict layout and result editing actions.
+- Preserve remote conversation state when adopting and synchronizing sessions.
+- Refine sidebar renaming, session filters and translated interface labels.
+
 ## [0.5.77]
 
 ### Conversations and workspace
