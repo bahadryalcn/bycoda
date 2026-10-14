@@ -1,0 +1,795 @@
+import { describe, expect, it, vi } from "vitest";
+import type { Attachment, Block, Session } from "../../sessions/model/session";
+import {
+  desktopCopyOf,
+  mergeAdoptedSession,
+  mirrorAdoptedSessions,
+  refreshAdoptedSession,
+  planAdoptedFetches,
+  supportsAdoptedSessions,
+  type AdoptedEntry,
+  type AdoptedMirrorDeps,
+} from "./adoptedSessions";
+import type { HostSession } from "./protocol";
+
+const block = (id: string) => ({ id, role: "user", text: id }) as never;
+const local = (over: Partial<Session> = {}): Session =>
+  ({
+    id: "s1",
+    harness: "claude",
+    model: "old",
+    modelSettings: {},
+    runtimeMode: "ask",
+    title: "Local",
+    cwd: "C:/proj",
+    worktreeCwd: "C:/proj/wt",
+    blocks: [block("a")],
+    ...over,
+  }) as Session;
+const host = (session: Partial<Session>, status: HostSession["status"] = "idle") =>
+  ({
+    session: {
+      ...local(),
+      cwd: "/other",
+      worktreeCwd: undefined,
+      blocks: [block("a"), block("b")],
+      ...session,
+    },
+    projectId: "p",
+    revision: 5,
+    status,
+    updatedAt: 10,
+  }) as HostSession;
+const entry = (over: Partial<AdoptedEntry> = {}): AdoptedEntry => ({
+  id: "s1",
+  projectId: "p",
+  revision: 5,
+  updatedAt: 10,
+  status: "idle",
+  ...over,
+});
+
+describe("refreshAdoptedSession", () => {
+  function setup(session = local(), remote = host({})) {
+    let current = session;
+    const deps: AdoptedMirrorDeps = {
+      list: vi.fn(async () => [entry()]),
+      load: vi.fn(async () => remote),
+      local: () => [current],
+      apply: vi.fn((merged) => {
+        current = merged;
+      }),
+      mirrored: new Map([[session.id, remote.revision]]),
+      preserve: vi.fn(async () => true),
+    };
+    return {
+      deps,
+      current: () => current,
+      change: (next: Session) => {
+        current = next;
+      },
+    };
+  }
+
+  it("fetches a full snapshot even at the same revision and reflects host activity", async () => {
+    const { deps, current } = setup(local(), host({ busy: true }, "running"));
+    expect(await refreshAdoptedSession(deps, "s1")).toBe(false);
+    expect(deps.load).toHaveBeenCalledWith("s1");
+    expect(deps.preserve).not.toHaveBeenCalled();
+    expect(current()).toMatchObject({
+      id: "s1",
+      cwd: "C:/proj",
+      worktreeCwd: "C:/proj/wt",
+      continuingElsewhere: true,
+    });
+    expect(current().busy).toBeUndefined();
+    expect(current().blocks).toHaveLength(2);
+  });
+
+  it("saves the divergent transcript before replacing it and establishes a new merge baseline", async () => {
+    const session = local({
+      blocks: [block("local")],
+      adoptedSyncConflict: true,
+      providerSessionId: "provider-old",
+      automationId: "automation",
+      queuedMessages: [],
+    });
+    const { deps, current } = setup(session);
+    let resolve!: (saved: boolean) => void;
+    vi.mocked(deps.preserve!).mockImplementation(
+      () =>
+        new Promise((done) => {
+          resolve = done;
+        }),
+    );
+    const refresh = refreshAdoptedSession(deps, "s1");
+    await vi.waitFor(() => expect(deps.preserve).toHaveBeenCalledOnce());
+    expect(deps.apply).not.toHaveBeenCalled();
+    const copy = vi.mocked(deps.preserve!).mock.calls[0][0];
+    expect(copy.id).not.toBe(session.id);
+    expect(copy).toMatchObject({
+      title: "Local (local copy)",
+      blocks: session.blocks,
+      cwd: session.cwd,
+    });
+    expect(copy.providerSessionId).toBeUndefined();
+    expect(copy.automationId).toBeUndefined();
+    expect(copy.queuedMessages).toBeUndefined();
+    resolve(true);
+    expect(await refresh).toBe(true);
+    expect(current().adoptedSyncConflict).toBeUndefined();
+    expect(current().blocks).toEqual(host({}).session.blocks);
+    // A host rewind after explicit replacement uses the newly accepted baseline.
+    vi.mocked(deps.list).mockResolvedValue([entry({ revision: 6 })]);
+    vi.mocked(deps.load).mockResolvedValue({ ...host({ blocks: [] }), revision: 6 });
+    await mirrorAdoptedSessions(deps);
+    expect(current().blocks).toEqual([]);
+  });
+
+  it("keeps the original conversation when the backup cannot be saved", async () => {
+    const { deps, current } = setup(local({ blocks: [block("local")] }));
+    const original = current();
+    vi.mocked(deps.preserve!).mockResolvedValue(false);
+    await expect(refreshAdoptedSession(deps, "s1")).rejects.toThrow(
+      "Could not save the local copy",
+    );
+    expect(current()).toBe(original);
+    expect(deps.apply).not.toHaveBeenCalled();
+  });
+
+  it("rejects local edits or a local turn started during the fetch", async () => {
+    for (const edit of [{ blocks: [block("new")] }, { busy: true }]) {
+      const { deps, current, change } = setup();
+      vi.mocked(deps.load).mockImplementation(async () => {
+        change({ ...current(), ...edit });
+        return host({});
+      });
+      await expect(refreshAdoptedSession(deps, "s1")).rejects.toThrow("changed while refreshing");
+      expect(deps.apply).not.toHaveBeenCalled();
+      expect(deps.preserve).not.toHaveBeenCalled();
+    }
+  });
+
+  it("does not replace a conversation edited while its backup is being saved", async () => {
+    const { deps, current, change } = setup(local({ blocks: [block("local")] }));
+    vi.mocked(deps.preserve!).mockImplementation(async () => {
+      change({ ...current(), blocks: [block("newer-local")] });
+      return true;
+    });
+    await expect(refreshAdoptedSession(deps, "s1")).rejects.toThrow("changed while refreshing");
+    expect(current().blocks).toEqual([block("newer-local")]);
+    expect(deps.apply).not.toHaveBeenCalled();
+  });
+
+  it("leaves the local conversation untouched when the host fails or removes the session", async () => {
+    const { deps, current } = setup();
+    const original = current();
+    vi.mocked(deps.load).mockRejectedValue(new Error("offline"));
+    await expect(refreshAdoptedSession(deps, "s1")).rejects.toThrow("offline");
+    vi.mocked(deps.list).mockResolvedValue([]);
+    await expect(refreshAdoptedSession(deps, "s1")).rejects.toThrow("no longer available");
+    expect(current()).toBe(original);
+    expect(deps.apply).not.toHaveBeenCalled();
+  });
+});
+
+describe("planAdoptedFetches", () => {
+  it("fetches loaded idle sessions whose revision moved", () => {
+    expect(planAdoptedFetches([entry()], [local()], new Map())).toHaveLength(1);
+    expect(planAdoptedFetches([entry()], [local()], new Map([["s1", 5]]))).toHaveLength(0);
+    expect(
+      planAdoptedFetches([entry({ revision: 6 })], [local()], new Map([["s1", 5]])),
+    ).toHaveLength(1);
+  });
+  it("skips unloaded and busy sessions", () => {
+    expect(planAdoptedFetches([entry({ id: "zz" })], [local()], new Map())).toHaveLength(0);
+    expect(planAdoptedFetches([entry()], [local({ busy: true })], new Map())).toHaveLength(0);
+  });
+});
+
+describe("mergeAdoptedSession", () => {
+  const file: Attachment = {
+    id: "image1",
+    name: "image.png",
+    mimeType: "image/png",
+    kind: "image",
+    size: 3,
+    path: "C:/proj/image.png",
+  };
+  const message: Block = { id: "a", role: "user", text: "[image1]", attachments: [file] };
+
+  it("merges persisted attachments with desktop-only preview and file flags", () => {
+    const current = local({
+      blocks: [
+        {
+          ...message,
+          attachments: [
+            {
+              ...file,
+              copyFromPath: true,
+              data: "YWJj",
+              previewUrl: "blob:preview",
+              loadPreview: async () => "YWJj",
+              missing: false,
+            },
+          ],
+        },
+      ],
+    });
+    const merged = mergeAdoptedSession(current, host({ blocks: [message, block("b")] }));
+    expect(merged?.blocks).toEqual([message, block("b")]);
+  });
+
+  it("accepts host progress after local preview hydration since the baseline", () => {
+    const base = local({ blocks: [message] });
+    const current = {
+      ...base,
+      blocks: [{ ...message, attachments: [{ ...file, copyFromPath: true }] }],
+    };
+    expect(
+      mergeAdoptedSession(current, host({ blocks: [message, block("b")] }), base)?.blocks,
+    ).toEqual([message, block("b")]);
+  });
+
+  it("treats empty and absent attachment lists as the same transcript", () => {
+    expect(
+      mergeAdoptedSession(
+        local({ blocks: [{ ...message, attachments: [] }] }),
+        host({ blocks: [{ ...message, attachments: undefined }, block("b")] }),
+      )?.blocks,
+    ).toHaveLength(2);
+  });
+
+  it.each([
+    { name: "other.png" },
+    { path: "C:/proj/other.png" },
+    { id: "image2" },
+    { size: 4 },
+    { mimeType: "image/jpeg" },
+    { browserAnnotation: { url: "https://example.test" } },
+  ])("keeps real attachment metadata changes as conflicts: %j", (edit) => {
+    const current = local({
+      blocks: [{ ...message, attachments: [{ ...file, ...edit } as Attachment] }],
+    });
+    expect(mergeAdoptedSession(current, host({ blocks: [message, block("b")] }))).toBeUndefined();
+  });
+
+  it("adopts a host provider switch with its model, settings and resume identity together", () => {
+    const merged = mergeAdoptedSession(
+      local({ providerAccountId: "claude-account", providerSessionId: "claude-thread" }),
+      host({
+        harness: "codex",
+        model: "gpt",
+        modelSettings: { reasoningEffort: "high" },
+        providerSessionId: "codex-thread",
+      }),
+    )!;
+    expect(merged).toMatchObject({
+      harness: "codex",
+      model: "gpt",
+      modelSettings: { reasoningEffort: "high" },
+      providerSessionId: "codex-thread",
+    });
+    expect(merged.providerAccountId).toBeUndefined();
+  });
+  it("clears the old provider thread when the incoming provider has no thread yet", () => {
+    expect(
+      mergeAdoptedSession(
+        local({ providerSessionId: "claude-thread" }),
+        host({ harness: "codex", model: "gpt", providerSessionId: undefined }),
+      )?.providerSessionId,
+    ).toBeUndefined();
+  });
+  it("keeps a local provider configuration as a unit when only the local side changed", () => {
+    const base = local({ providerSessionId: "claude-thread" });
+    const edited = { ...base, model: "local-model", modelSettings: { effort: "high" } };
+    expect(mergeAdoptedSession(edited, host({ ...base }), base)).toMatchObject({
+      harness: "claude",
+      model: "local-model",
+      modelSettings: { effort: "high" },
+      providerSessionId: "claude-thread",
+    });
+  });
+  it("reports conflicting provider configuration edits instead of mixing identities", () => {
+    const base = local({ providerSessionId: "claude-thread" });
+    const edited = { ...base, model: "local-model" };
+    expect(
+      mergeAdoptedSession(
+        edited,
+        host({ harness: "codex", model: "gpt", providerSessionId: "codex-thread" }),
+        base,
+      ),
+    ).toBeUndefined();
+  });
+  it("rejects equal-length divergent text, and accepts a rewind only with an unchanged baseline", () => {
+    const edited = local({
+      blocks: [{ id: "a", role: "user", text: "new local" } as never],
+    });
+    expect(mergeAdoptedSession(edited, host({ blocks: [block("a")] }))).toBeUndefined();
+    const base = local({ blocks: [block("a"), block("b")] });
+    expect(mergeAdoptedSession(base, host({ blocks: [block("a")] }), base)?.blocks).toEqual([
+      block("a"),
+    ]);
+    expect(mergeAdoptedSession(edited, host({ blocks: [] }), base)).toBeUndefined();
+  });
+  it("takes the transcript and keeps local identity", () => {
+    const merged = mergeAdoptedSession(
+      local(),
+      host({ title: "Remote", model: "new", providerSessionId: "prov-2" }),
+    )!;
+    expect(merged.blocks).toHaveLength(2);
+    expect(merged.title).toBe("Remote");
+    expect(merged.model).toBe("new");
+    expect(merged.providerSessionId).toBe("prov-2");
+    expect(merged.cwd).toBe("C:/proj");
+    expect(merged.worktreeCwd).toBe("C:/proj/wt");
+    expect(merged.continuingElsewhere).toBeUndefined();
+  });
+  it("clears incomplete-history state after accepting the complete host transcript", () => {
+    const merged = mergeAdoptedSession(
+      local({ historyPartial: true, historyLoading: true, historyLoadError: "offline" }),
+      host({}),
+    )!;
+    expect(merged.blocks).toHaveLength(2);
+    expect(merged.historyPartial).toBeUndefined();
+    expect(merged.historyLoading).toBeUndefined();
+    expect(merged.historyLoadError).toBeUndefined();
+  });
+  it("adopts rewind archives and pending replay metadata from the host", () => {
+    const history = [{
+      id: "rewind-1",
+      fromBlockId: "b",
+      createdAt: 10,
+      blocks: [block("b")],
+    }];
+    const merged = mergeAdoptedSession(
+      local(),
+      host({ rewindHistory: history, pendingContextReplay: "retained prefix" }),
+    );
+    expect(merged).toMatchObject({
+      rewindHistory: history,
+      pendingContextReplay: "retained prefix",
+    });
+  });
+  it("holds sending while the host runs", () => {
+    expect(mergeAdoptedSession(local(), host({}, "running"))!.continuingElsewhere).toBe(true);
+  });
+  it("does not drop newer local turns", () => {
+    const longer = local({ blocks: [block("a"), block("b"), block("c")] });
+    expect(mergeAdoptedSession(longer, host({}))).toBeUndefined();
+  });
+});
+
+describe("mirrorAdoptedSessions", () => {
+  it("reports live status before loading a conflicting transcript", async () => {
+    const onRunning = vi.fn();
+    const conflict = vi.fn();
+    await mirrorAdoptedSessions({
+      list: async () => [entry({ status: "running" })],
+      load: async () => {
+        expect(onRunning).toHaveBeenCalledWith(new Set(["s1"]));
+        return host({ blocks: [] }, "running");
+      },
+      local: () => [local()],
+      apply: vi.fn(),
+      mirrored: new Map(),
+      onRunning,
+      conflict,
+    });
+    expect(conflict).toHaveBeenCalledTimes(1);
+  });
+
+  it("reports status changes even when the transcript revision is unchanged", async () => {
+    const onRunning = vi.fn();
+    const load = vi.fn();
+    const deps = {
+      list: async () => [entry({ status: "running" })],
+      load,
+      local: () => [local()],
+      apply: vi.fn(),
+      mirrored: new Map([["s1", 5]]),
+      onRunning,
+    };
+    await mirrorAdoptedSessions(deps);
+    await mirrorAdoptedSessions({ ...deps, list: async () => [entry()] });
+    expect(onRunning.mock.calls).toEqual([[new Set(["s1"])], [new Set()]]);
+    expect(load).not.toHaveBeenCalled();
+  });
+
+  it("retains a conflicting local edit and does not mark a rejected revision mirrored", async () => {
+    const mirrored = new Map<string, number>();
+    const current = local({
+      blocks: [{ id: "a", role: "user", text: "edited here" } as never],
+    });
+    const conflict = vi.fn();
+    const apply = vi.fn();
+    await mirrorAdoptedSessions({
+      list: async () => [entry()],
+      load: async () => host({ blocks: [block("a")] }),
+      local: () => [current],
+      apply,
+      mirrored,
+      conflict,
+    });
+    expect(apply).not.toHaveBeenCalled();
+    expect(conflict).toHaveBeenCalledWith(current);
+    expect(mirrored.has("s1")).toBe(false);
+  });
+
+  it("checks edits made while the snapshot is in flight and accepts an unchanged-baseline reset", async () => {
+    let current = local();
+    let revision = 5;
+    let next = host({});
+    const mirrored = new Map<string, number>();
+    const deps = {
+      list: async () => [entry({ revision })],
+      load: async () => next,
+      local: () => [current],
+      apply: (merged: Session) => {
+        current = merged;
+      },
+      mirrored,
+    };
+    await mirrorAdoptedSessions(deps);
+    expect(current.blocks).toHaveLength(2);
+    revision = 6;
+    next = { ...host({ blocks: [] }), revision };
+    await mirrorAdoptedSessions(deps);
+    expect(current.blocks).toEqual([]);
+    revision = 7;
+    const conflict = vi.fn();
+    await mirrorAdoptedSessions({
+      ...deps,
+      conflict,
+      load: async () => {
+        current = { ...current, blocks: [block("new local")] };
+        return { ...host({}), revision };
+      },
+    });
+    expect(current.blocks).toEqual([block("new local")]);
+    expect(mirrored.get("s1")).toBe(6);
+    expect(conflict).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not mark a closed conflicting session or a failed adoption caught up", async () => {
+    const mirrored = new Map<string, number>();
+    const save = vi.fn();
+    await mirrorAdoptedSessions({
+      list: async () => [entry()],
+      load: async () => host({ blocks: [] }),
+      local: () => [],
+      apply: vi.fn(),
+      mirrored,
+      stored: async () => local(),
+      save,
+    });
+    expect(save).not.toHaveBeenCalled();
+    expect(mirrored.has("s1")).toBe(false);
+    await mirrorAdoptedSessions({
+      list: async () => [entry()],
+      load: async () => host({}),
+      local: () => [],
+      apply: vi.fn(),
+      mirrored,
+      stored: async () => null,
+      save,
+      adopt: async () => false,
+    });
+    expect(mirrored.has("s1")).toBe(false);
+  });
+  it("applies once per revision and reports running ids", async () => {
+    const mirrored = new Map<string, number>();
+    const apply = vi.fn();
+    const load = vi.fn(async () => host({}, "running"));
+    const deps = {
+      list: async () => [entry({ status: "running" })],
+      load,
+      local: () => [local()],
+      apply,
+      mirrored,
+    };
+    expect([...(await mirrorAdoptedSessions(deps))]).toEqual(["s1"]);
+    expect(apply).toHaveBeenCalledTimes(1);
+    await mirrorAdoptedSessions(deps);
+    expect(load).toHaveBeenCalledTimes(1);
+  });
+  it("does not apply when the session turned busy during the fetch", async () => {
+    let busy = false;
+    const apply = vi.fn();
+    await mirrorAdoptedSessions({
+      list: async () => [entry()],
+      load: async () => {
+        busy = true;
+        return host({});
+      },
+      local: () => [local({ busy })],
+      apply,
+      mirrored: new Map(),
+    });
+    expect(apply).not.toHaveBeenCalled();
+  });
+  it("catches up a closed session in storage, once per revision", async () => {
+    const save = vi.fn(async () => {});
+    const stored = vi.fn(async () => local());
+    const deps = {
+      list: async () => [entry(), entry({ id: "busy", status: "running" as const })],
+      load: async () => host({}),
+      local: () => [],
+      apply: vi.fn(),
+      mirrored: new Map<string, number>(),
+      stored,
+      save,
+    };
+    await mirrorAdoptedSessions(deps);
+    await mirrorAdoptedSessions(deps);
+    // Once each: the running one only to learn it is already stored here.
+    expect(stored.mock.calls.map(([id]) => id)).toEqual(["s1", "s1", "busy"]);
+    expect(save).toHaveBeenCalledTimes(1);
+    expect(save.mock.calls[0][0]).toMatchObject({
+      id: "s1",
+      cwd: "C:/proj",
+      blocks: [{ id: "a" }, { id: "b" }],
+    });
+  });
+});
+
+describe("sessions started on this machine's host from another computer", () => {
+  it("are saved here once, even while their turn runs", async () => {
+    const adopt = vi.fn(async () => {});
+    const deps = {
+      list: async () => [entry({ id: "new", status: "running" as const })],
+      load: vi.fn(async () => host({})),
+      local: () => [],
+      apply: vi.fn(),
+      mirrored: new Map<string, number>(),
+      stored: vi.fn(async () => null),
+      save: vi.fn(async () => {}),
+      adopt,
+    };
+    await mirrorAdoptedSessions(deps);
+    await mirrorAdoptedSessions(deps);
+    expect(adopt).toHaveBeenCalledTimes(1);
+    expect(adopt).toHaveBeenCalledWith(expect.objectContaining({ id: "new" }));
+    expect(deps.save).not.toHaveBeenCalled();
+  });
+
+  it("then catch up like any shared session once the turn ends", async () => {
+    const save = vi.fn(async () => {});
+    const adopt = vi.fn(async () => {});
+    await mirrorAdoptedSessions({
+      list: async () => [entry({ revision: 7 })],
+      load: async () => host({ title: "Finished" }),
+      local: () => [],
+      apply: vi.fn(),
+      mirrored: new Map([["s1", 5]]),
+      stored: async () => local(),
+      save,
+      adopt,
+    });
+    expect(adopt).not.toHaveBeenCalled();
+    // The second argument is the optional stored-copy stamp, unset here.
+    expect(save).toHaveBeenCalledWith(expect.objectContaining({ title: "Finished" }), undefined);
+  });
+
+  it("are filed under the project folder, with the host's working copy as worktree", () => {
+    const same = (a: string, b: string) => a === b;
+    const inProject = desktopCopyOf(
+      host({ id: "h1", cwd: "/Users/me/shop", busy: true }, "running"),
+      "/Users/me/shop",
+      same,
+    );
+    expect(inProject).toMatchObject({
+      id: "h1",
+      cwd: "/Users/me/shop",
+      worktreeCwd: undefined,
+      continuingElsewhere: true,
+    });
+    expect(inProject.busy).toBeUndefined();
+    const inWorktree = desktopCopyOf(
+      host({ cwd: "/Users/me/shop-worktrees/fix" }),
+      "/Users/me/shop",
+      same,
+    );
+    expect(inWorktree).toMatchObject({
+      cwd: "/Users/me/shop",
+      worktreeCwd: "/Users/me/shop-worktrees/fix",
+    });
+    expect(inWorktree.continuingElsewhere).toBeUndefined();
+  });
+});
+
+it("needs the sessions.desktop capability", () => {
+  expect(supportsAdoptedSessions(["sync"])).toBe(false);
+  expect(supportsAdoptedSessions(["sessions.desktop"])).toBe(true);
+  expect(supportsAdoptedSessions(undefined)).toBe(false);
+});
+
+describe("mirrorAdoptedSessions delta and closed-copy save", () => {
+  const completedBlocks: Session["blocks"] = [
+    block("a"),
+    { id: "output", role: "assistant", text: "Completed the task" } as never,
+    { id: "tool", role: "tool", text: "Verification passed" } as never,
+  ];
+
+  it("catches up a tab opened after its loaded-session fetches were planned", async () => {
+    let sessions: Session[] = [];
+    const promptOnly = local({ historyPartial: true });
+    const load = vi.fn(async () => host({ blocks: completedBlocks }));
+    const deps: AdoptedMirrorDeps = {
+      list: async () => [entry()],
+      local: () => sessions,
+      load,
+      apply: (merged) => {
+        sessions = [merged];
+      },
+      mirrored: new Map(),
+      stored: async () => {
+        sessions = [promptOnly];
+        return promptOnly;
+      },
+      save: vi.fn(async () => true),
+    };
+
+    await mirrorAdoptedSessions(deps);
+    expect(load).not.toHaveBeenCalled();
+    expect(deps.mirrored.has("s1")).toBe(false);
+    await mirrorAdoptedSessions(deps);
+    expect(sessions[0].blocks).toEqual(completedBlocks);
+    expect(sessions[0].historyPartial).toBeUndefined();
+    expect(deps.mirrored.get("s1")).toBe(5);
+  });
+
+  it("refreshes a stale tab opened during adoption even when the host revision stays unchanged", async () => {
+    let sessions: Session[] = [];
+    const remote = host({ blocks: completedBlocks }, "running");
+    const load = vi.fn(async () => remote);
+    const deps: AdoptedMirrorDeps = {
+      list: async () => [entry({ status: "running" })],
+      local: () => sessions,
+      load,
+      apply: (merged) => {
+        sessions = [merged];
+      },
+      mirrored: new Map(),
+      stored: async () => null,
+      save: vi.fn(async () => true),
+      adopt: vi.fn(async () => {
+        sessions = [local()];
+        return true;
+      }),
+    };
+
+    await mirrorAdoptedSessions(deps);
+    expect(deps.mirrored.has("s1")).toBe(false);
+    await mirrorAdoptedSessions(deps);
+    expect(deps.adopt).toHaveBeenCalledOnce();
+    expect(load).toHaveBeenCalledWith("s1", undefined);
+    expect(sessions[0].blocks).toEqual(completedBlocks);
+    expect(sessions[0].continuingElsewhere).toBe(true);
+    expect(deps.mirrored.get("s1")).toBe(5);
+  });
+
+  it("does not mark a newly opened tab caught up when only its stored copy was saved", async () => {
+    let sessions: Session[] = [];
+    const promptOnly = local();
+    const remote = host({ blocks: completedBlocks });
+    const conflict = vi.fn();
+    const deps: AdoptedMirrorDeps = {
+      list: async () => [entry()],
+      local: () => sessions,
+      load: vi.fn(async () => remote),
+      apply: (merged) => {
+        sessions = [merged];
+      },
+      mirrored: new Map(),
+      stored: async () => promptOnly,
+      save: vi.fn(async () => {
+        sessions = [promptOnly];
+        return true;
+      }),
+      conflict,
+    };
+
+    await mirrorAdoptedSessions(deps);
+    expect(deps.save).toHaveBeenCalledOnce();
+    expect(deps.mirrored.has("s1")).toBe(false);
+    await mirrorAdoptedSessions(deps);
+    expect(sessions[0].blocks).toEqual(completedBlocks);
+    expect(conflict).not.toHaveBeenCalled();
+    expect(deps.mirrored.get("s1")).toBe(5);
+  });
+
+  it("asks for a delta from the last applied snapshot", async () => {
+    const mirrored = new Map<string, number>();
+    let current = local();
+    let revision = 5;
+    const seen: (HostSession | undefined)[] = [];
+    const run = () =>
+      mirrorAdoptedSessions({
+        list: async () => [entry({ revision })],
+        load: async (_id, known) => {
+          seen.push(known);
+          return { ...host({}), revision };
+        },
+        local: () => [current],
+        apply: (merged) => {
+          current = merged;
+        },
+        mirrored,
+      });
+    await run();
+    expect(seen).toEqual([undefined]);
+    revision = 6;
+    await run();
+    expect(seen[1]?.revision).toBe(5);
+  });
+
+  it("keeps a conflicting session on deltas without marking it mirrored", async () => {
+    const mirrored = new Map<string, number>();
+    const edited = local({
+      blocks: [{ id: "a", role: "user", text: "edited here" } as never],
+    });
+    const seen: (HostSession | undefined)[] = [];
+    const run = () =>
+      mirrorAdoptedSessions({
+        list: async () => [entry()],
+        load: async (_id, known) => {
+          seen.push(known);
+          return host({ blocks: [block("a")] });
+        },
+        local: () => [edited],
+        apply: vi.fn(),
+        mirrored,
+        conflict: vi.fn(),
+      });
+    await run();
+    await run();
+    expect(seen[0]).toBeUndefined();
+    expect(seen[1]?.revision).toBe(5);
+    expect(mirrored.has("s1")).toBe(false);
+  });
+
+  it("does not remember a snapshot dropped because a local turn started", async () => {
+    const mirrored = new Map<string, number>();
+    let busy = false;
+    const seen: (HostSession | undefined)[] = [];
+    const run = () =>
+      mirrorAdoptedSessions({
+        list: async () => [entry()],
+        load: async (_id, known) => {
+          seen.push(known);
+          busy = true;
+          return host({});
+        },
+        local: () => [local({ busy })],
+        apply: vi.fn(),
+        mirrored,
+      });
+    await run();
+    busy = false;
+    await run();
+    expect(seen).toEqual([undefined, undefined]);
+  });
+
+  it("does not mark a closed copy mirrored when the guarded save refuses", async () => {
+    const mirrored = new Map<string, number>();
+    const stored = local();
+    const save = vi.fn().mockResolvedValueOnce(false).mockResolvedValue(true);
+    const run = () =>
+      mirrorAdoptedSessions({
+        list: async () => [entry()],
+        load: async () => host({}),
+        local: () => [],
+        apply: vi.fn(),
+        mirrored,
+        stored: async () => stored,
+        stamp: async () => 42,
+        save,
+      });
+    await run();
+    expect(save).toHaveBeenCalledWith(expect.anything(), 42);
+    expect(mirrored.has("s1")).toBe(false);
+    await run();
+    expect(mirrored.get("s1")).toBe(5);
+  });
+});

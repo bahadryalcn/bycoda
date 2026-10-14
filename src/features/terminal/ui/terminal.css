@@ -1,0 +1,216 @@
+.project-terminal-dock {
+  --terminal-canvas: var(--color-background-base);
+  --terminal-text: var(--color-content);
+  --terminal-muted: var(--ui-text-secondary);
+  --terminal-border: var(--color-stroke);
+  --terminal-selected: var(--ui-surface-selected);
+  flex-direction: column;
+  container-type: inline-size;
+  background: var(--terminal-canvas);
+  color: var(--terminal-text);
+}
+.terminal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex: 0 0 30px;
+  min-inline-size: 0;
+  padding-inline: 7px 4px;
+  border-block-end: 1px solid var(--terminal-border);
+  background: var(--bycoda-panel);
+}
+.terminal-context-tabs,
+.terminal-toolbar {
+  display: flex;
+  align-items: center;
+  min-inline-size: 0;
+  gap: 2px;
+}
+.terminal-context-tabs {
+  overflow: clip;
+}
+.terminal-context-icon {
+  display: none;
+}
+.terminal-toolbar {
+  flex-shrink: 0;
+}
+.project-terminal-dock .terminal-context-tab {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  inline-size: auto;
+  block-size: 24px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 6px;
+  color: var(--terminal-muted);
+  font-size: var(--ui-font-caption);
+  white-space: nowrap;
+  cursor: pointer;
+}
+.project-terminal-dock .terminal-context-tab[aria-pressed="true"] {
+  background: var(--terminal-selected);
+  color: var(--terminal-text);
+}
+.terminal-toolbar button {
+  inline-size: 24px;
+  block-size: 24px;
+  border-radius: 6px;
+  color: var(--terminal-muted);
+}
+.terminal-profile-trigger button {
+  inline-size: 18px;
+}
+.terminal-body {
+  position: relative;
+  display: flex;
+  flex: 1;
+  min-block-size: 0;
+  min-inline-size: 0;
+}
+.terminal-sidebar {
+  display: flex;
+  flex-direction: column;
+  flex: 0 0 auto;
+  min-inline-size: 0;
+  border-inline-end: 1px solid var(--terminal-border);
+  background: var(--bycoda-panel);
+}
+.terminal-sidebar-sash {
+  position: relative;
+  z-index: 1;
+  flex: 0 0 0;
+  cursor: col-resize;
+  touch-action: none;
+}
+.terminal-sidebar-sash::after {
+  content: "";
+  position: absolute;
+  inset-block: 0;
+  inset-inline: -4px;
+}
+.terminal-sidebar-sash:focus-visible {
+  outline: var(--ui-focus-width) solid var(--color-accent);
+  outline-offset: 0;
+}
+.terminal-sidebar-sash[data-dragging]::after,
+.terminal-sidebar-sash:active::after {
+  background: var(--terminal-selected);
+}
+@media (hover: hover) and (pointer: fine) {
+  .terminal-sidebar-sash:hover::after {
+    background: var(--terminal-selected);
+  }
+}
+.terminal-list {
+  min-block-size: 0;
+  overflow-y: auto;
+  padding-block: 3px;
+}
+.terminal-list-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+.terminal-list-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  inline-size: 100%;
+  block-size: 24px;
+  padding-inline: 9px;
+  color: var(--terminal-muted);
+  font-size: 12px;
+  text-align: start;
+  cursor: pointer;
+}
+.terminal-list-row:has([aria-selected="true"]) {
+  background: var(--terminal-selected);
+}
+.terminal-list-item[aria-selected="true"] {
+  color: var(--terminal-text);
+}
+.terminal-row-actions {
+  position: absolute;
+  inset-inline-end: 3px;
+  display: flex;
+  opacity: 0;
+  pointer-events: none;
+  background: var(--terminal-selected);
+}
+.terminal-row-actions button {
+  display: grid;
+  place-items: center;
+  inline-size: 22px;
+  block-size: 22px;
+  border-radius: 6px;
+  color: var(--terminal-muted);
+  cursor: pointer;
+}
+.terminal-list-row:focus-within .terminal-row-actions {
+  opacity: 1;
+  pointer-events: auto;
+}
+.terminal-list-row:focus-within .terminal-list-item {
+  padding-inline-end: 49px;
+}
+.project-terminal-dock button:focus-visible {
+  outline: var(--ui-focus-width) solid var(--color-accent);
+  outline-offset: -2px;
+}
+.project-terminal-dock button:active {
+  background: var(--terminal-selected);
+  color: var(--terminal-text);
+}
+@media (hover: hover) and (pointer: fine) {
+  .terminal-list-row:hover {
+    background: var(--terminal-selected);
+  }
+  .terminal-list-row:hover .terminal-list-item {
+    color: var(--terminal-text);
+    padding-inline-end: 49px;
+  }
+  .terminal-list-row:hover .terminal-row-actions {
+    opacity: 1;
+    pointer-events: auto;
+  }
+  .terminal-toolbar button:hover,
+  .terminal-row-actions button:hover,
+  .terminal-context-tab:hover {
+    background: var(--color-selection-hover);
+    color: var(--terminal-text);
+  }
+}
+@media (hover: none), (pointer: coarse) {
+  .terminal-row-actions {
+    opacity: 1;
+    pointer-events: auto;
+  }
+  .terminal-list-item {
+    padding-inline-end: 49px;
+  }
+}
+.terminal-canvas {
+  display: grid;
+  background: var(--terminal-canvas);
+  overflow: hidden;
+}
+.terminal-split-pane {
+  grid-row: 1;
+  position: relative;
+  min-inline-size: 0;
+  min-block-size: 0;
+  overflow: hidden;
+}
+.terminal-canvas > .host-tools {
+  grid-column: 1 / -1;
+}
+@container (inline-size < 340px) {
+  .terminal-context-icon {
+    display: block;
+  }
+  .terminal-context-tab span {
+    display: none;
+  }
+}

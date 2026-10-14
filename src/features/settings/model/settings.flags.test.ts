@@ -1,0 +1,235 @@
+// @vitest-environment happy-dom
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import * as settings from "./settings";
+import * as appearance from "./appearance";
+
+const platform = vi.hoisted(() => ({ isWindows: true }));
+vi.mock("../../../platform/tauri/platform", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../../platform/tauri/platform")>()),
+  get IS_WIN() {
+    return platform.isWindows;
+  },
+}));
+
+function memoryStorage(): Storage {
+  const values = new Map<string, string>();
+  return {
+    get length() {
+      return values.size;
+    },
+    clear: () => values.clear(),
+    getItem: (key) => values.get(key) ?? null,
+    key: (index) => [...values.keys()][index] ?? null,
+    removeItem: (key) => values.delete(key),
+    setItem: (key, value) => {
+      values.set(key, value);
+    },
+  };
+}
+
+beforeEach(() => {
+  vi.stubGlobal("localStorage", memoryStorage());
+  platform.isWindows = true;
+});
+
+afterEach(() => {
+  vi.restoreAllMocks();
+  vi.unstubAllGlobals();
+});
+
+describe.each([
+  [
+    "bycoda.tabAnimationsEnabled",
+    settings.loadTabAnimationsEnabled,
+    settings.saveTabAnimationsEnabled,
+    false,
+    undefined,
+  ],
+  [
+    "bycoda.notesEnabled",
+    settings.loadNotesEnabled,
+    settings.saveNotesEnabled,
+    true,
+    "bycoda:notes-enabled-change",
+  ],
+  [
+    "bycoda.liveAgentsEnabled",
+    settings.loadLiveAgentsEnabled,
+    settings.saveLiveAgentsEnabled,
+    true,
+    "bycoda:live-agents-enabled-change",
+  ],
+  [
+    "bycoda.keepAwakeWhileAgentsWork",
+    settings.loadKeepAwakeEnabled,
+    settings.saveKeepAwakeEnabled,
+    false,
+    settings.KEEP_AWAKE_CHANGE_EVENT,
+  ],
+  [
+    "bycoda.keepAwakeScreen",
+    settings.loadKeepAwakeScreen,
+    settings.saveKeepAwakeScreen,
+    false,
+    settings.KEEP_AWAKE_SCREEN_CHANGE_EVENT,
+  ],
+  ["bycoda.closeToTray", settings.loadCloseToTray, settings.saveCloseToTray, true, undefined],
+  [
+    "bycoda.crewSceneEnabled",
+    settings.loadCrewSceneEnabled,
+    settings.saveCrewSceneEnabled,
+    true,
+    "bycoda:crew-scene-enabled-change",
+  ],
+  ["bycoda.claudeHooks", settings.loadClaudeHooks, settings.saveClaudeHooks, true, undefined],
+  ["bycoda.resumeAtReset", settings.loadResumeAtReset, settings.saveResumeAtReset, true, undefined],
+  [
+    "bycoda.autoContinueInterrupted",
+    settings.loadAutoContinueInterrupted,
+    settings.saveAutoContinueInterrupted,
+    true,
+    undefined,
+  ],
+  [
+    "bycoda.bodyGlass",
+    appearance.loadBodyGlass,
+    appearance.saveBodyGlass,
+    appearance.BODY_GLASS_DEFAULT,
+    undefined,
+  ],
+  [
+    "bycoda.projectRailOpen",
+    appearance.loadProjectRailOpen,
+    appearance.saveProjectRailOpen,
+    true,
+    undefined,
+  ],
+  [
+    "bycoda.sessionSidebarOpen",
+    appearance.loadSessionSidebarOpen,
+    appearance.saveSessionSidebarOpen,
+    true,
+    undefined,
+  ],
+  [
+    "bycoda.transcriptAnchor",
+    appearance.loadTranscriptAnchor,
+    appearance.saveTranscriptAnchor,
+    true,
+    "bycoda:transcriptanchorchange",
+  ],
+] as const)("%s", (key, load, save, fallback, eventName) => {
+  it("uses its default when unset or unreadable", () => {
+    expect(load()).toBe(fallback);
+    vi.spyOn(localStorage, "getItem").mockImplementation(() => {
+      throw new Error("storage unavailable");
+    });
+    expect(load()).toBe(fallback);
+  });
+
+  it.each([
+    ["1", true],
+    ["true", true],
+    ["0", false],
+    ["false", false],
+    ["", false],
+    ["TRUE", false],
+    [" true ", false],
+    ["invalid", false],
+  ] as const)("reads %j as %s", (stored, expected) => {
+    localStorage.setItem(key, stored);
+    expect(load()).toBe(expected);
+  });
+
+  it.each([false, true])("persists %s before notifying listeners", (value) => {
+    const dispatch = vi.spyOn(window, "dispatchEvent");
+    const listener = vi.fn((event: Event) => {
+      expect((event as CustomEvent<boolean>).detail).toBe(value);
+      expect(load()).toBe(value);
+    });
+    if (eventName) window.addEventListener(eventName, listener);
+    try {
+      save(value);
+      expect(localStorage.getItem(key)).toBe(value ? "1" : "0");
+      expect(localStorage.length).toBe(1);
+      expect(load()).toBe(value);
+      expect(dispatch).toHaveBeenCalledTimes(eventName ? 1 : 0);
+      expect(listener).toHaveBeenCalledTimes(eventName ? 1 : 0);
+    } finally {
+      if (eventName) window.removeEventListener(eventName, listener);
+    }
+  });
+
+  it("still emits its change event when writing fails", () => {
+    const value = !fallback;
+    const dispatch = vi.spyOn(window, "dispatchEvent");
+    vi.spyOn(localStorage, "setItem").mockImplementation(() => {
+      throw new Error("storage quota exceeded");
+    });
+
+    expect(() => save(value)).not.toThrow();
+    expect(load()).toBe(fallback);
+    expect(dispatch).toHaveBeenCalledTimes(eventName ? 1 : 0);
+    if (eventName) {
+      expect(dispatch).toHaveBeenCalledWith(
+        expect.objectContaining({ type: eventName, detail: value }),
+      );
+    }
+  });
+
+  it("tolerates unavailable storage", () => {
+    vi.stubGlobal("localStorage", undefined);
+    expect(load()).toBe(fallback);
+    expect(() => save(!fallback)).not.toThrow();
+  });
+
+  it("can persist without a window", () => {
+    vi.stubGlobal("window", undefined);
+    save(!fallback);
+    expect(load()).toBe(!fallback);
+  });
+});
+
+it("disables close-to-tray outside Windows without consulting storage", () => {
+  platform.isWindows = false;
+  settings.saveCloseToTray(true);
+  const read = vi.spyOn(localStorage, "getItem");
+
+  expect(settings.loadCloseToTray()).toBe(false);
+  expect(read).not.toHaveBeenCalled();
+});
+
+it("reads keep-awake on Linux and macOS from storage", () => {
+  platform.isWindows = false;
+  settings.saveKeepAwakeEnabled(true);
+
+  expect(settings.loadKeepAwakeEnabled()).toBe(true);
+});
+
+it("persists how long to stay awake after an agent ends", () => {
+  expect(settings.loadKeepAwakeHoldAfter()).toBe("0");
+  settings.saveKeepAwakeHoldAfter("15m");
+  expect(settings.loadKeepAwakeHoldAfter()).toBe("15m");
+  expect(settings.keepAwakeHoldAfterMs("15m")).toBe(15 * 60 * 1000);
+  expect(settings.keepAwakeHoldAfterMs("forever")).toBe(Number.POSITIVE_INFINITY);
+  localStorage.setItem("bycoda.keepAwakeHoldAfter", "nope");
+  expect(settings.loadKeepAwakeHoldAfter()).toBe("0");
+});
+
+it("notifies another window when the keep-awake setting changes", () => {
+  const listener = vi.fn();
+  const unsubscribe = settings.subscribeKeepAwakeEnabled(listener);
+  window.dispatchEvent(
+    new StorageEvent("storage", {
+      key: "bycoda.keepAwakeWhileAgentsWork",
+    }),
+  );
+  expect(listener).toHaveBeenCalledTimes(1);
+  unsubscribe();
+  window.dispatchEvent(
+    new StorageEvent("storage", {
+      key: "bycoda.keepAwakeWhileAgentsWork",
+    }),
+  );
+  expect(listener).toHaveBeenCalledTimes(1);
+});

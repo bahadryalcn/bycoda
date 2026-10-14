@@ -1,0 +1,77 @@
+.list {
+  display: flex;
+  flex-direction: column;
+  min-block-size: 0;
+  overflow-y: auto;
+  padding: 4px;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  inline-size: 100%;
+  min-inline-size: 0;
+  min-block-size: 32px;
+  padding: 4px 8px;
+  text-align: start;
+  color: var(--color-content);
+}
+
+.row[data-session] {
+  background: var(--ui-surface-selected);
+}
+
+.identity {
+  display: flex;
+  flex: 1;
+  align-items: baseline;
+  gap: 8px;
+  min-inline-size: 0;
+}
+
+.branch,
+.folder {
+  overflow: clip;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: var(--ui-font-caption);
+}
+
+.branch {
+  flex-shrink: 1;
+  font-weight: 500;
+  color: var(--color-content);
+}
+
+.folder {
+  flex-shrink: 2;
+  color: var(--ui-text-secondary);
+}
+
+.badges {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--ui-font-caption);
+  font-variant-numeric: tabular-nums;
+  color: var(--ui-text-secondary);
+}
+
+.dirty {
+  inline-size: 6px;
+  block-size: 6px;
+  border-radius: 50%;
+  background: var(--color-warning);
+}
+
+.session {
+  color: var(--color-accent);
+}
+
+.group {
+  padding: 8px 8px 2px;
+  font-size: var(--ui-font-caption);
+  color: var(--ui-text-secondary);
+}

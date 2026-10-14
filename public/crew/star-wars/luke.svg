@@ -1,0 +1,60 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 240" fill="none">
+  <defs>
+    <linearGradient id="cloth" x1="47" y1="92" x2="110" y2="201" gradientUnits="userSpaceOnUse"><stop stop-color="#586375"/><stop offset="1" stop-color="#1b2433"/></linearGradient>
+    <linearGradient id="skin" x1="57" y1="41" x2="94" y2="89" gradientUnits="userSpaceOnUse"><stop stop-color="#ffe2be"/><stop offset="1" stop-color="#d19a76"/></linearGradient>
+    <linearGradient id="hair" x1="53" y1="29" x2="96" y2="63" gradientUnits="userSpaceOnUse"><stop stop-color="#f0d38c"/><stop offset="1" stop-color="#ad814a"/></linearGradient>
+  </defs>
+  <g stroke="#26303c" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+    <g data-part="body">
+    <path d="M52 159L52 205L50 226H72L79 175L84 226H105L107 197L101 155" fill="url(#cloth)"/>
+    <path d="M51 199L48 223L41 230H73L72 199M84 199L86 230H116Q113 223 104 222V199" fill="#293242"/>
+    <path d="M54 207H70M88 207H102M58 169L58 192M97 169L97 192" stroke="#7b899a"/>
+    <path d="M64 88Q47 90 43 107L49 161Q77 172 105 160L111 107Q108 92 91 87Z" fill="url(#cloth)"/>
+    <path d="M65 89L78 100L92 89L95 123L78 139L63 121Z" fill="#343f50"/>
+    <path d="M78 102V146M94 109L87 121" stroke="#7b8999"/>
+    <path d="M88 91L99 101L91 113L83 97Z" fill="#f1e3cf"/>
+    <path d="M49 146H106L105 157H49Z" fill="#111d2b"/><rect x="72" y="146" width="15" height="12" rx="2" fill="#b8b5a4"/><path d="M76 149H84V155H76Z" fill="#415063"/>
+    <path d="M49 98L32 119L29 151L46 157L57 115" fill="url(#cloth)"/>
+    </g>
+    <g data-part="arm" data-pivot-x="104" data-pivot-y="109">
+    <path d="M104 99L121 122L127 154L109 159L97 117" fill="url(#cloth)"/>
+    </g>
+    <g data-part="body">
+    <path d="M30 147L46 149L45 164L29 163" fill="#283445"/>
+    </g>
+    <g data-part="arm" data-pivot-x="104" data-pivot-y="109">
+    <path d="M108 150L125 148L130 164L112 169" fill="#283445"/>
+    </g>
+    <g data-part="body">
+    <path d="M32 162Q27 171 33 177Q43 179 45 168L43 162" fill="url(#skin)"/>
+    </g>
+    <g data-part="arm" data-pivot-x="104" data-pivot-y="109">
+    <path d="M113 164Q112 176 121 177L130 174L129 163Z" fill="#1d2b3d"/>
+    </g>
+    <g data-part="weapon" data-follow="arm" data-pivot-x="120" data-pivot-y="167">
+    <path d="M119 161L142 58" stroke="#82faac" stroke-width="11" opacity=".18"/><path d="M119 161L142 58" stroke="#8cf7af" stroke-width="5"/><path d="M119 161L142 58" stroke="#f2fff2" stroke-width="2"/>
+    <path d="M116 176L121 157" stroke="#152131" stroke-width="8"/><path d="M117 173L120 161" stroke="#d1dedc" stroke-width="4"/>
+    </g>
+    <g data-part="body">
+    <path d="M66 75V91L78 102L92 91L89 75" fill="url(#skin)"/>
+    </g>
+    <g data-part="head" data-pivot-x="78" data-pivot-y="88">
+    <ellipse cx="54" cy="59" rx="4" ry="8" fill="#dba780"/><ellipse cx="101" cy="59" rx="4" ry="8" fill="#d39b74"/>
+    <path d="M55 42Q56 28 79 28Q100 30 102 48L98 72Q91 88 78 88Q65 86 59 74Z" fill="url(#skin)"/>
+    <path d="M54 62Q45 44 53 33L66 28Q90 17 103 35L106 53L98 62L96 42L86 48L88 34Q75 45 59 47L59 63Z" fill="url(#hair)"/>
+    <path d="M58 37L74 29M60 42L80 30M94 30L100 40" stroke="#f7df9d"/>
+    <path d="M62 54L71 52M84 52L93 54" stroke="#95724a" stroke-width="2"/>
+    <path d="M62 59Q67 55 72 59M84 59Q89 55 94 59" stroke="#776354"/><ellipse cx="68" cy="59" rx="1.7" ry="2.2" fill="#4c7b99"/><ellipse cx="88" cy="59" rx="1.7" ry="2.2" fill="#4c7b99"/>
+    <path d="M78 58L75 67L80 68M72 77Q79 80 86 75" stroke="#ae795e"/><path d="M73 73H84" stroke="#e7b791"/>
+    </g>
+    <g data-part="blink" data-follow="head" data-pivot-x="78" data-pivot-y="88" opacity="0">
+      <path d="M60 55Q67 52 74 55V64H60ZM82 55Q88 52 96 55V64H82Z" fill="url(#skin)" stroke="none"/>
+      <path d="M62 59Q67 63 72 59M84 59Q89 63 94 59" stroke="#776354"/>
+    </g>
+    <g data-part="mouth" data-follow="head" data-pivot-x="78" data-pivot-y="88" opacity="0">
+      <path d="M70 74H88V82H70Z" fill="url(#skin)" stroke="none"/>
+      <ellipse cx="79" cy="77" rx="4.8" ry="3.1" fill="#71433a" stroke="#ae795e"/>
+      <path d="M76 75.2H82" stroke="#fae4cd" stroke-width="1.2"/>
+    </g>
+  </g>
+</svg>

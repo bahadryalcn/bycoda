@@ -1,0 +1,52 @@
+.input::-webkit-search-cancel-button {
+  display: none;
+}
+
+.standalone {
+  position: relative;
+  display: grid;
+  min-inline-size: 0;
+  align-items: center;
+}
+
+.standaloneInput {
+  inline-size: 100%;
+  min-inline-size: 0;
+}
+
+.standalone .input[data-search-filled] {
+  padding-inline-end: 2rem !important;
+}
+
+/* Keep compact controls independent of page-wide button defaults. */
+button.clear[data-search-clear] {
+  display: grid;
+  flex: none;
+  place-items: center;
+  inline-size: 24px;
+  block-size: 24px;
+  min-block-size: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-sm, 4px);
+  background: transparent;
+  color: var(--ui-text-secondary);
+  cursor: pointer;
+}
+
+.standalone .clear {
+  position: absolute;
+  inset-inline-end: 4px;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  button.clear[data-search-clear]:hover {
+    background: var(--ui-surface-hover);
+    color: var(--color-content);
+  }
+}
+
+button.clear[data-search-clear]:active {
+  background: var(--color-selection);
+  color: var(--color-content);
+}

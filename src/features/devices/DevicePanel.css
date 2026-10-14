@@ -1,0 +1,187 @@
+.host-tools-content-devices {
+  display: flex;
+  flex-direction: column;
+}
+
+.host-tools-content-devices .host-tools-machine {
+  flex: none;
+  padding-block: 8px;
+}
+
+.host-tools-content-devices .host-tools-machine-toolbar {
+  flex-wrap: nowrap;
+}
+
+.host-tools-content-devices .host-tools-machine-field {
+  flex: 1;
+  min-inline-size: 0;
+}
+
+.host-tools-content-devices .host-tools-machine-field > span {
+  display: none;
+}
+
+.host-tools-content-devices .host-tools-machine-field > div {
+  flex-basis: 0;
+}
+
+.host-tool-panel.device-panel {
+  --control-height-lg: 44px;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  gap: 8px;
+  padding: 12px;
+  min-block-size: min-content;
+}
+
+.device-panel > :not(.device-panel-preview) {
+  flex-shrink: 0;
+}
+
+.device-panel-selection {
+  display: flex;
+  align-items: start;
+  gap: 8px;
+}
+
+.device-panel-selection > .device-panel-choice {
+  flex: 1;
+  min-inline-size: 0;
+}
+
+.device-panel-toolbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.device-panel-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-block-size: 44px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.device-panel-attach {
+  margin-inline-start: auto;
+}
+
+.host-tools:has(.host-tools-content-devices) .host-tools-tabs button {
+  min-block-size: 44px;
+  min-inline-size: 44px;
+}
+
+@container (width < 600px) {
+  .host-tools:has(.host-tools-content-devices)
+    button:not([aria-selected="true"])
+    > .host-tools-tab-label {
+    position: absolute;
+    inline-size: 1px;
+    block-size: 1px;
+    overflow: clip;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  .host-tools:has(.host-tools-content-devices) .host-tools-tabs {
+    justify-content: space-between;
+  }
+}
+
+.device-panel-choice {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 4px;
+}
+
+.device-panel-choice > div {
+  inline-size: 100%;
+  min-inline-size: 0;
+}
+
+.device-panel-setup {
+  order: 10;
+}
+
+.device-panel-setup > div {
+  padding-block-start: 12px;
+}
+
+.device-panel-error {
+  display: grid;
+  gap: 8px;
+  border: 1px solid
+    color-mix(in oklch, var(--color-danger, var(--color-content)) 35%, var(--color-stroke));
+  border-radius: 8px;
+  padding: 12px;
+  background: color-mix(
+    in oklch,
+    var(--color-danger, var(--color-content)) 8%,
+    var(--color-background-base)
+  );
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.device-panel-error > p {
+  margin: 0;
+  color: var(--host-tool-muted);
+}
+
+.device-panel-error pre,
+.device-panel-output {
+  max-block-size: 180px;
+  margin-block: 8px 0;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 11px;
+}
+
+.device-panel-preview {
+  flex: 1 0 180px;
+  min-block-size: 180px;
+  container-type: size;
+  display: grid;
+  place-items: center;
+  overflow: clip;
+  background: var(--color-background-base);
+  padding: 8px;
+  min-inline-size: 0;
+}
+
+.device-panel-preview > img {
+  display: block;
+  max-inline-size: 100%;
+  inline-size: auto;
+  block-size: auto;
+  max-block-size: 100cqh;
+  object-fit: contain;
+}
+
+.device-panel-waiting {
+  min-block-size: 180px;
+  color: var(--host-tool-muted);
+  font-size: 12px;
+}
+
+.device-panel-manual > .host-tool-controls {
+  margin-block-start: 10px;
+}
+
+.device-panel-choice .host-tool-muted {
+  margin: 0;
+  font-size: 11px;
+  overflow: clip;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.device-panel .host-tool-controls {
+  display: grid;
+  gap: 12px;
+}
