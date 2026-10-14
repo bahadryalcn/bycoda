@@ -1,0 +1,112 @@
+.control {
+  box-sizing: border-box;
+  min-inline-size: 0;
+}
+
+.control[data-button-shape="pill"] {
+  border-radius: var(--radius-pill);
+}
+.control.fullWidth {
+  inline-size: 100%;
+}
+.control.iconOnly {
+  flex-shrink: 0;
+  inline-size: var(--control-height-sm);
+  block-size: var(--control-height-sm);
+  min-block-size: var(--control-height-sm);
+  padding: 0;
+  aspect-ratio: 1;
+}
+.control.iconOnly[data-button-size="md"] {
+  inline-size: var(--control-height-md);
+  block-size: var(--control-height-md);
+  min-block-size: var(--control-height-md);
+}
+.control.iconOnly[data-button-size="lg"] {
+  inline-size: var(--control-height-lg);
+  block-size: var(--control-height-lg);
+  min-block-size: var(--control-height-lg);
+}
+.icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.icon > svg {
+  inline-size: 1em;
+  block-size: 1em;
+}
+.nativeContent {
+  gap: var(--space-2);
+}
+
+.control.link {
+  padding-inline: var(--space-1);
+  border-color: transparent;
+  background: transparent;
+  color: var(--text-secondary);
+}
+.control.item,
+.control.tab {
+  white-space: normal;
+  font-weight: 400;
+  text-align: start;
+  transform: none;
+}
+.control.item {
+  inline-size: 100%;
+  justify-content: flex-start;
+}
+.control.tab {
+  justify-content: center;
+}
+.control[data-button-selected]:not([data-button-variant="danger"]) {
+  background: var(--accent-subtle);
+  color: var(--foreground);
+}
+.control.tab[data-button-selected] {
+  border-color: var(--accent);
+}
+.control[aria-disabled="true"] {
+  cursor: not-allowed;
+}
+.control[aria-busy="true"] {
+  cursor: progress;
+}
+.control[aria-disabled="true"]:not([aria-busy="true"]) {
+  color: var(--text-muted);
+}
+.control.item:active:not([aria-disabled="true"]),
+.control.tab:active:not([aria-disabled="true"]) {
+  background: var(--surface-muted);
+}
+.control.link:active:not([aria-disabled="true"]) {
+  color: var(--foreground);
+  text-decoration: underline;
+}
+.structuralLoader {
+  position: absolute;
+  inset-inline-end: var(--space-2);
+  inset-block-start: 50%;
+  translate: 0 -50%;
+  display: grid;
+  inline-size: var(--space-4);
+  block-size: var(--space-4);
+  background: var(--surface);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .control.link:hover:not([aria-disabled="true"]) {
+    color: var(--foreground);
+    text-decoration: underline;
+  }
+  .control.item:hover:not([aria-disabled="true"]),
+  .control.tab:hover:not([aria-disabled="true"]) {
+    background: var(--surface-muted);
+    color: var(--foreground);
+  }
+  .control[data-button-selected]:hover:not([aria-disabled="true"]) {
+    background: var(--accent-subtle);
+  }
+}

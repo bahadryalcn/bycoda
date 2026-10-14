@@ -1,0 +1,727 @@
+import { execFileAsync as exec } from "../src/shared/lib/processExecution.node";
+import { relative, sep } from "node:path";
+import { realpath } from "node:fs/promises";
+import {
+  hostConflictStages,
+  hostConflictStageSet,
+  hostOperationState,
+  hostUnmerged,
+  unmergedMessage,
+} from "./git-conflicts";
+import { safeGitPath } from "./workspace";
+
+/** Source-control commands beyond staging and committing: branches, tags,
+ * remotes, stashes, history rewriting, conflicts, blame. They take the same
+ * names, arguments and results as this app's Tauri commands (see the
+ * `git_*_for` functions in src-tauri/src/fs.rs, which are the reference for
+ * git invocations and input validation). Advertised as `git.actions`. */
+export const GIT_ACTION_COMMANDS = [
+  "git_trust_repository",
+  "git_stash",
+  "git_stash_list",
+  "git_stash_action",
+  "git_stash_clear",
+  "git_checkout_commit",
+  "git_create_branch_at",
+  "git_create_branch_from",
+  "git_create_tag",
+  "git_tags",
+  "git_delete_tag",
+  "git_cherry_pick",
+  "git_revert",
+  "git_reset",
+  "git_undo_last_commit",
+  "git_operation_state",
+  "git_operation_abort",
+  "git_operation_continue",
+  "git_operation_status",
+  "git_delete_branch",
+  "git_rename_branch",
+  "git_delete_remote_branch",
+  "git_merge",
+  "git_rebase",
+  "git_fetch",
+  "git_remotes",
+  "git_remote_add",
+  "git_remote_remove",
+  "git_conflicts",
+  "git_resolve_conflict",
+  "git_conflict_stages",
+  "git_file_history",
+  "git_blame",
+  "git_commit_message",
+] as const;
+export type GitActionCommand = (typeof GIT_ACTION_COMMANDS)[number];
+
+/** Commands that move HEAD or rewrite the working tree under a running agent;
+ * like a branch switch, they wait until the project's sessions are idle. */
+export const GIT_ACTIONS_NEEDING_IDLE: ReadonlySet<string> = new Set<GitActionCommand>([
+  "git_checkout_commit",
+  "git_create_branch_at",
+  "git_create_branch_from",
+  "git_cherry_pick",
+  "git_revert",
+  "git_reset",
+  "git_undo_last_commit",
+  "git_merge",
+  "git_rebase",
+  "git_operation_abort",
+  "git_operation_continue",
+]);
+
+const QUICK_MS = 30_000;
+// Fetching or deleting on a remote crosses the network.
+const NETWORK_MS = 120_000;
+const HISTORY_DEFAULT = 200;
+const HISTORY_MAX = 5000;
+const MAX_BLAME_LINES = 50_000;
+
+/** Runs git, failing with its own message (stderr, else stdout), as the local
+ * commands do. Never prompts and never opens a pager or editor. */
+async function git(
+  root: string,
+  args: string[],
+  { timeout = QUICK_MS, maxBuffer = 8 * 1024 * 1024 } = {},
+): Promise<string> {
+  try {
+    return (
+      await exec(
+        "git",
+        [...(args.includes("--") ? ["--literal-pathspecs"] : []), "--no-pager", ...args],
+        {
+          cwd: root,
+          timeout,
+          maxBuffer,
+          encoding: "utf8",
+          env: {
+            ...process.env,
+            LC_ALL: "C",
+            GIT_OPTIONAL_LOCKS: "0",
+            GIT_TERMINAL_PROMPT: "0",
+          },
+        },
+      )
+    ).stdout;
+  } catch (reason) {
+    const failure = reason as { stderr?: string; stdout?: string; killed?: boolean };
+    if (failure.killed) throw new Error(`git ${args[0]} timed out`);
+    throw new Error(failure.stderr?.trim() || failure.stdout?.trim() || `git ${args[0]} failed`);
+  }
+}
+
+const gitOrNull = (root: string, args: string[]) =>
+  git(root, args).then(
+    (out) => out.trim() || null,
+    () => null,
+  );
+
+async function ensureWorkTree(root: string): Promise<void> {
+  if ((await gitOrNull(root, ["rev-parse", "--is-inside-work-tree"])) !== "true")
+    throw new Error("Not a git repository");
+}
+
+const refExists = (root: string, spec: string) =>
+  git(root, ["show-ref", "--verify", "--quiet", spec]).then(
+    () => true,
+    () => false,
+  );
+
+const text = (value: unknown, what: string, max = 4096): string => {
+  if (typeof value !== "string" || value.length > max || value.includes("\0"))
+    throw new Error(`Invalid ${what}`);
+  return value.trim();
+};
+
+/** A commit id from the UI: hex only, so it can never be read as an option,
+ * and resolved to a commit that exists. */
+async function commitArg(root: string, input: unknown): Promise<string> {
+  const sha = text(input, "commit", 64);
+  if (!/^[0-9a-f]{4,64}$/i.test(sha)) throw new Error("Invalid commit");
+  const resolved = await gitOrNull(root, ["rev-parse", "--verify", `${sha}^{commit}`]);
+  if (!resolved || !/^[0-9a-f]{40,64}$/i.test(resolved)) throw new Error("Unknown commit");
+  return resolved;
+}
+
+/** A branch name git accepts, exactly as typed: no option, no `@{-1}` style
+ * expansion. */
+async function branchName(root: string, input: unknown): Promise<string> {
+  const name = text(input, "branch name", 255);
+  if (!name) throw new Error("Branch name cannot be empty");
+  const normalized = name.startsWith("-")
+    ? null
+    : await gitOrNull(root, ["check-ref-format", "--branch", name]);
+  if (normalized !== name) throw new Error(`'${name}' is not a valid branch name`);
+  return name;
+}
+
+/** A local or remote branch to merge, rebase onto, or branch from. */
+async function branchRef(root: string, input: unknown): Promise<string> {
+  const reference = text(input, "branch", 255);
+  if (!reference || reference.startsWith("-")) throw new Error("Invalid branch");
+  if (
+    (await refExists(root, `refs/heads/${reference}`)) ||
+    (await refExists(root, `refs/remotes/${reference}`))
+  )
+    return reference;
+  throw new Error(`Branch ${reference} does not exist`);
+}
+
+async function tagName(root: string, input: unknown): Promise<string> {
+  const name = text(input, "tag name", 255);
+  if (!name) throw new Error("Tag name cannot be empty");
+  if (
+    name.startsWith("-") ||
+    !(await git(root, ["check-ref-format", `refs/tags/${name}`]).then(
+      () => true,
+      () => false,
+    ))
+  )
+    throw new Error(`${name} is not a valid tag name`);
+  return name;
+}
+
+const remoteNames = async (root: string) =>
+  (await gitOrNull(root, ["remote"]))
+    ?.split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean) ?? [];
+
+async function newRemoteName(root: string, input: unknown): Promise<string> {
+  const name = text(input, "remote name", 255);
+  if (!name) throw new Error("Remote name cannot be empty");
+  if (
+    name.startsWith("-") ||
+    /[\s\p{Cc}]/u.test(name) ||
+    !(await git(root, ["check-ref-format", `refs/remotes/${name}`]).then(
+      () => true,
+      () => false,
+    ))
+  )
+    throw new Error(`${name} is not a valid remote name`);
+  return name;
+}
+
+async function knownRemote(root: string, input: unknown): Promise<string> {
+  const name = text(input, "remote name", 255);
+  if (name.startsWith("-") || !(await remoteNames(root)).includes(name))
+    throw new Error(`Remote ${name} does not exist`);
+  return name;
+}
+
+/** A file path inside the project, relative to its root with `/` separators. */
+async function repoPath(root: string, input: unknown): Promise<string> {
+  return relative(root, await safeGitPath(root, input)).split(sep).join("/");
+}
+
+/** A checkout blocked by local changes gets the same advice as locally. */
+async function switching(root: string, args: string[]): Promise<void> {
+  try {
+    await git(root, args);
+  } catch (reason) {
+    const message = (reason as Error).message;
+    if (
+      /would be overwritten|commit your changes or stash|please move or remove them before/i.test(
+        message,
+      )
+    )
+      throw new Error("Your local changes would be overwritten. Commit or stash them first.");
+    throw reason;
+  }
+}
+
+export type HostHistoryCommit = {
+  sha: string;
+  shortSha: string;
+  parents: string[];
+  author: string;
+  timestamp: number;
+  subject: string;
+  refs: { name: string; kind: string }[];
+  head: boolean;
+};
+
+/** Format for `git log` records that `parseHistoryLog` reads. */
+export const HISTORY_FORMAT = "--format=%H%x00%h%x00%P%x00%an%x00%at%x00%D%x00%s%x1e";
+
+export function parseHistoryLog(
+  output: string,
+  headSha: string | null,
+  remotes: string[],
+): HostHistoryCommit[] {
+  return output.split("\x1e").flatMap((record) => {
+    const [sha, shortSha, parents, author, timestamp, decorations, subject] = record
+      .trim()
+      .split("\0");
+    if (!sha || !/^[0-9a-f]{40,64}$/i.test(sha)) return [];
+    const refs = (decorations ?? "")
+      .split(",")
+      .map((raw) => raw.trim())
+      .filter(Boolean)
+      .flatMap((raw) => {
+        if (raw === "HEAD" || raw.endsWith("/HEAD")) return [];
+        if (raw.startsWith("HEAD -> ")) return [{ name: raw.slice(8), kind: "local" }];
+        if (raw.startsWith("tag: ")) return [{ name: raw.slice(5), kind: "tag" }];
+        return [
+          {
+            name: raw,
+            kind: remotes.some((remote) => raw === remote || raw.startsWith(`${remote}/`))
+              ? "remote"
+              : "local",
+          },
+        ];
+      });
+    return [
+      {
+        sha,
+        shortSha: shortSha || sha.slice(0, 7),
+        parents: parents ? parents.split(" ") : [],
+        author,
+        timestamp: Number(timestamp),
+        subject,
+        refs,
+        head: sha === headSha,
+      },
+    ];
+  });
+}
+
+const operationState = hostOperationState;
+
+async function conflicts(root: string): Promise<string[]> {
+  const out = await gitOrNull(root, [
+    "-c",
+    "core.quotepath=false",
+    "diff",
+    "--name-only",
+    "--relative",
+    "--diff-filter=U",
+  ]);
+  return (
+    out
+      ?.split("\n")
+      .map((line) => line.trim())
+      .filter(Boolean) ?? []
+  );
+}
+
+function parseBlame(output: string) {
+  const lines: {
+    line: number;
+    sha: string;
+    shortSha: string;
+    author: string;
+    timestamp: number;
+    summary: string;
+  }[] = [];
+  let current: (typeof lines)[number] | undefined;
+  for (const line of output.split("\n")) {
+    // The source line itself, tab-prefixed, closes each record.
+    if (line.startsWith("\t")) {
+      if (current) lines.push(current);
+      current = undefined;
+      continue;
+    }
+    if (current) {
+      if (line.startsWith("author ")) current.author = line.slice(7);
+      else if (line.startsWith("author-time ")) current.timestamp = Number(line.slice(12)) || 0;
+      else if (line.startsWith("summary ")) current.summary = line.slice(8);
+      continue;
+    }
+    const [sha, , number] = line.split(" ");
+    if (sha && number)
+      current = {
+        line: Number(number) || 0,
+        sha,
+        shortSha: sha.slice(0, 7),
+        author: "",
+        timestamp: 0,
+        summary: "",
+      };
+  }
+  return lines;
+}
+
+function stashMessage(input: unknown): string | undefined {
+  if (input == null) return undefined;
+  if (typeof input !== "string" || input.length > 1000) throw new Error("Invalid stash message");
+  return input.trim() || undefined;
+}
+
+function stashIndex(input: unknown): number {
+  if (!Number.isSafeInteger(input) || (input as number) < 0 || (input as number) > 100_000)
+    throw new Error("Invalid stash");
+  return input as number;
+}
+
+function historyLimit(input: unknown): string {
+  const count = Number.isSafeInteger(input) ? (input as number) : HISTORY_DEFAULT;
+  return String(Math.min(HISTORY_MAX, Math.max(1, count)));
+}
+
+/** Current branch per folder for the polled session list: one `git` spawn per
+ * folder per TTL, shared by concurrent callers. */
+export class BranchCache {
+  private entries = new Map<string, { promise: Promise<string>; settledAt?: number }>();
+
+  constructor(
+    private readonly lookup: (cwd: string) => Promise<string>,
+    private readonly ttlMs = 4_000,
+    private readonly maxEntries = 256,
+    private readonly now: () => number = Date.now,
+  ) {}
+
+  get(cwd: string): Promise<string> {
+    const found = this.entries.get(cwd);
+    if (found && (found.settledAt === undefined || this.now() - found.settledAt < this.ttlMs))
+      return found.promise;
+    this.entries.delete(cwd);
+    this.prune();
+    const entry: { promise: Promise<string>; settledAt?: number } = {
+      promise: this.lookup(cwd).catch(() => ""),
+    };
+    // Counted from when the answer arrived, so a slow spawn is not born stale.
+    // A cleared entry is detached from the map and just dies.
+    void entry.promise.then(() => {
+      entry.settledAt = this.now();
+    });
+    this.entries.set(cwd, entry);
+    return entry.promise;
+  }
+
+  /** A branch change this host just made must show on the next list. */
+  clear(): void {
+    this.entries.clear();
+  }
+
+  private prune(): void {
+    if (this.entries.size < this.maxEntries) return;
+    for (const [key, entry] of this.entries)
+      if (entry.settledAt !== undefined && this.now() - entry.settledAt >= this.ttlMs)
+        this.entries.delete(key);
+    // Still full of live entries: drop the oldest inserted.
+    while (this.entries.size >= this.maxEntries)
+      this.entries.delete(this.entries.keys().next().value!);
+  }
+}
+
+export const branchCache = new BranchCache((cwd) =>
+  exec("git", ["symbolic-ref", "--quiet", "--short", "HEAD"], {
+    cwd,
+    timeout: 2_000,
+  }).then(({ stdout }) => stdout.trim()),
+);
+
+/** Runs one command in `root`, a validated working copy. */
+export async function runGitAction(
+  command: GitActionCommand,
+  root: string,
+  input: Record<string, unknown>,
+): Promise<unknown> {
+  if (command === "git_trust_repository") {
+    if (input.confirmed !== true) throw new Error("Repository trust requires owner confirmation");
+    const path = (await realpath(root)).split(sep).join("/");
+    if (path.includes("*")) throw new Error("Wildcard repository trust is not allowed");
+    try {
+      await git(path, ["rev-parse", "--show-toplevel"]);
+      return;
+    } catch (error) {
+      if (!String(error).includes("dubious ownership")) throw error;
+    }
+    const top = (
+      await git(path, ["-c", `safe.directory=${path}`, "rev-parse", "--show-toplevel"])
+    ).trim();
+    if ((await realpath(top)) !== (await realpath(root)))
+      throw new Error("Trust must target the repository root");
+    await git(path, ["config", "--global", "--add", "safe.directory", path]);
+    return;
+  }
+  try {
+    return await runGitActionUncached(command, root, input);
+  } finally {
+    // Checkout, commit, reset, rebase... may have moved any checkout's HEAD.
+    if (!HEAD_PRESERVING.has(command)) branchCache.clear();
+  }
+}
+
+/** Reads (some polled) that never move HEAD. */
+const HEAD_PRESERVING: ReadonlySet<string> = new Set<GitActionCommand>([
+  "git_commit_message",
+  "git_stash_list",
+  "git_tags",
+  "git_operation_state",
+  "git_operation_status",
+  "git_remotes",
+  "git_conflicts",
+  "git_conflict_stages",
+  "git_file_history",
+  "git_blame",
+  "git_fetch",
+]);
+
+async function runGitActionUncached(
+  command: GitActionCommand,
+  root: string,
+  input: Record<string, unknown>,
+): Promise<unknown> {
+  // Cheap, polled reads skip the work-tree check: they return "nothing" in a
+  // folder that is not a repository.
+  switch (command) {
+    case "git_operation_state":
+      return operationState(root);
+    case "git_conflicts":
+      return conflicts(root);
+    case "git_operation_status": {
+      const [operation, files] = await Promise.all([operationState(root), conflicts(root)]);
+      return { operation, conflicts: files };
+    }
+    case "git_tags":
+      return (
+        (
+          await gitOrNull(root, [
+            "for-each-ref",
+            "--sort=-creatordate",
+            "--format=%(refname:lstrip=2)",
+            "refs/tags",
+          ])
+        )
+          ?.split("\n")
+          .map((line) => line.trim())
+          .filter(Boolean) ?? []
+      );
+    case "git_remotes":
+      return ((await gitOrNull(root, ["remote", "-v"])) ?? "").split("\n").flatMap((line) => {
+        const [name, rest] = line.split("\t");
+        const url = rest
+          ?.trim()
+          .match(/^(.*)\(fetch\)$/)?.[1]
+          ?.trim();
+        return name && url !== undefined ? [{ name: name.trim(), url }] : [];
+      });
+    case "git_stash_list": {
+      const output = await gitOrNull(root, [
+        "stash",
+        "list",
+        "--format=%gd%x00%H%x00%gs%x00%ct%x1e",
+      ]);
+      return (output ?? "").split("\x1e").flatMap((record) => {
+        const [name, sha, message, time] = record.trim().split("\0");
+        const index = name?.match(/^stash@\{(\d+)\}$/)?.[1];
+        return index === undefined || !sha || message === undefined
+          ? []
+          : [{ index: Number(index), sha, message, timestamp: Number(time) || 0 }];
+      });
+    }
+  }
+
+  await ensureWorkTree(root);
+  switch (command) {
+    case "git_stash": {
+      const flags = new Map([
+        ["tracked", []],
+        ["untracked", ["--include-untracked"]],
+        ["staged", ["--staged"]],
+      ]);
+      const mode = flags.get(String(input.mode ?? "untracked"));
+      if (!mode || (input.mode != null && typeof input.mode !== "string"))
+        throw new Error("Invalid stash mode");
+      const message = stashMessage(input.message);
+      await git(root, ["stash", "push", ...mode, ...(message ? ["-m", message] : [])]);
+      return;
+    }
+    case "git_stash_action": {
+      if (input.action !== "apply" && input.action !== "pop" && input.action !== "drop")
+        throw new Error("Invalid stash action");
+      await git(root, ["stash", input.action, `stash@{${stashIndex(input.index)}}`]);
+      return;
+    }
+    case "git_stash_clear":
+      await git(root, ["stash", "clear"]);
+      return;
+    case "git_checkout_commit":
+      await switching(root, ["checkout", "--detach", await commitArg(root, input.sha)]);
+      return;
+    case "git_create_branch_at": {
+      const sha = await commitArg(root, input.sha);
+      const name = await branchName(root, input.name);
+      if (await refExists(root, `refs/heads/${name}`))
+        throw new Error(`Branch ${name} already exists`);
+      await switching(root, ["checkout", "-b", name, sha]);
+      return name;
+    }
+    case "git_create_branch_from": {
+      const name = await branchName(root, input.name);
+      const reference = await branchRef(root, input.reference);
+      if (await refExists(root, `refs/heads/${name}`))
+        throw new Error(`Branch ${name} already exists`);
+      await switching(root, ["checkout", "-b", name, reference]);
+      return name;
+    }
+    case "git_create_tag": {
+      const sha = await commitArg(root, input.sha);
+      const name = await tagName(root, input.name);
+      if (await refExists(root, `refs/tags/${name}`)) throw new Error(`Tag ${name} already exists`);
+      await git(root, ["tag", name, sha]);
+      return;
+    }
+    case "git_delete_tag": {
+      const name = await tagName(root, input.name);
+      if (!(await refExists(root, `refs/tags/${name}`)))
+        throw new Error(`Tag ${name} does not exist`);
+      await git(root, ["tag", "-d", name]);
+      return;
+    }
+    case "git_cherry_pick":
+      await git(root, ["cherry-pick", await commitArg(root, input.sha)]);
+      return;
+    case "git_revert":
+      await git(root, ["revert", "--no-edit", await commitArg(root, input.sha)]);
+      return;
+    case "git_reset": {
+      const flag = new Map([
+        ["soft", "--soft"],
+        ["mixed", "--mixed"],
+        ["hard", "--hard"],
+      ]).get(String(input.mode));
+      if (!flag || typeof input.mode !== "string") throw new Error("Invalid reset mode");
+      await git(root, ["reset", flag, await commitArg(root, input.sha)]);
+      return;
+    }
+    case "git_undo_last_commit": {
+      // `<sha> <parent>...`: one parent for an ordinary commit.
+      const line = await gitOrNull(root, ["rev-list", "--parents", "-n", "1", "HEAD"]);
+      if (!line) throw new Error("No commits yet");
+      const count = line.split(/\s+/).length;
+      if (count === 1) throw new Error("The first commit has no parent to go back to");
+      if (count > 2) throw new Error("Cannot undo a merge commit");
+      await git(root, ["reset", "--soft", "HEAD~1"]);
+      return;
+    }
+    case "git_operation_abort": {
+      const operation = await operationState(root);
+      if (!operation) throw new Error("No operation in progress");
+      await git(root, [operation, "--abort"]);
+      return;
+    }
+    case "git_operation_continue": {
+      // `core.editor=true` accepts the prepared message instead of opening an editor.
+      const operation = await operationState(root);
+      if (!operation) throw new Error("No operation in progress");
+      const unresolved = await hostUnmerged(root);
+      if (unresolved.length) throw new Error(unmergedMessage(unresolved));
+      try {
+        await git(
+          root,
+          operation === "merge"
+            ? ["-c", "core.editor=true", "commit", "--no-edit"]
+            : ["-c", "core.editor=true", operation, "--continue"],
+        );
+      } catch (reason) {
+        // A rebase that reaches a conflicting commit exits non-zero but is
+        // working: the panel then shows the next conflicts.
+        if (!(await operationState(root)) || !(await hostUnmerged(root)).length) throw reason;
+      }
+      return;
+    }
+    case "git_delete_branch": {
+      const name = await branchName(root, input.name);
+      if ((await gitOrNull(root, ["symbolic-ref", "--quiet", "--short", "HEAD"])) === name)
+        throw new Error("Cannot delete the current branch");
+      await git(root, ["branch", input.force === true ? "-D" : "-d", name]);
+      return;
+    }
+    case "git_rename_branch": {
+      const from = await branchName(root, input.from);
+      const to = await branchName(root, input.to);
+      if (await refExists(root, `refs/heads/${to}`)) throw new Error(`Branch ${to} already exists`);
+      await git(root, ["branch", "-m", from, to]);
+      return to;
+    }
+    case "git_delete_remote_branch": {
+      const remote = await knownRemote(root, input.remote);
+      const name = await branchName(root, input.name);
+      await git(root, ["push", remote, "--delete", name], { timeout: NETWORK_MS });
+      return;
+    }
+    case "git_merge":
+      await git(root, ["merge", "--no-edit", await branchRef(root, input.reference)], {
+        timeout: NETWORK_MS,
+      });
+      return;
+    case "git_rebase":
+      await git(root, ["rebase", await branchRef(root, input.reference)], {
+        timeout: NETWORK_MS,
+      });
+      return;
+    case "git_fetch": {
+      if (!(await remoteNames(root)).length) throw new Error("No git remote to fetch from");
+      // Explicit either way: a user's `fetch.prune` config must not decide this.
+      await git(root, ["fetch", "--all", input.prune === true ? "--prune" : "--no-prune"], {
+        timeout: NETWORK_MS,
+      });
+      return;
+    }
+    case "git_remote_add": {
+      const name = await newRemoteName(root, input.name);
+      const url = text(input.url, "remote URL", 4096);
+      if (!url) throw new Error("Remote URL cannot be empty");
+      if (url.startsWith("-") || /\p{Cc}/u.test(url)) throw new Error("Invalid remote URL");
+      if ((await remoteNames(root)).includes(name))
+        throw new Error(`Remote ${name} already exists`);
+      await git(root, ["remote", "add", name, url]);
+      return;
+    }
+    case "git_remote_remove":
+      await git(root, ["remote", "remove", await knownRemote(root, input.name)]);
+      return;
+    case "git_resolve_conflict": {
+      const path = await repoPath(root, input.relative);
+      if (input.side !== "ours" && input.side !== "theirs") throw new Error("Invalid side");
+      const stages = await hostConflictStageSet(root, path);
+      if (!stages.size) throw new Error("This file has no merge conflict");
+      // `checkout --ours/--theirs` fails when that side deleted the file;
+      // taking the deletion is `git rm`.
+      if (!stages.has(input.side === "ours" ? 2 : 3)) {
+        await git(root, ["rm", "-f", "--", path]);
+        return;
+      }
+      await git(root, ["checkout", input.side === "ours" ? "--ours" : "--theirs", "--", path]);
+      await git(root, ["add", "--", path]);
+      return;
+    }
+    case "git_conflict_stages":
+      return hostConflictStages(root, await repoPath(root, input.relative));
+    case "git_file_history": {
+      const path = await repoPath(root, input.relative);
+      const [head, remotes, output] = await Promise.all([
+        gitOrNull(root, ["rev-parse", "HEAD"]),
+        remoteNames(root),
+        gitOrNull(root, [
+          "log",
+          "--follow",
+          "--decorate=short",
+          "--max-count",
+          historyLimit(input.limit),
+          HISTORY_FORMAT,
+          "--",
+          path,
+        ]),
+      ]);
+      return parseHistoryLog(output ?? "", head, remotes);
+    }
+    case "git_blame": {
+      const path = await repoPath(root, input.relative);
+      const revision = input.sha === undefined ? [] : [await commitArg(root, input.sha)];
+      const output = await git(root, ["blame", "--line-porcelain", ...revision, "--", path], {
+        timeout: NETWORK_MS,
+        maxBuffer: 64 * 1024 * 1024,
+      }).catch(() => {
+        throw new Error("Could not blame this file");
+      });
+      const lines = parseBlame(output);
+      if (lines.length > MAX_BLAME_LINES) throw new Error("File is too large to blame");
+      return lines;
+    }
+    case "git_commit_message":
+      return git(root, ["show", "-s", "--format=%B", await commitArg(root, input.sha), "--"]);
+  }
+}

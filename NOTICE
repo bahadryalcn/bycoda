@@ -1,0 +1,20 @@
+bycoda is an independently maintained desktop application by bahadryalcn,
+originally based on MonoCode v0.6 by Nick and community contributors.
+Original project: https://github.com/hardbeat920/monocode
+Original author: https://github.com/hardbeat920
+Maintained repository: https://github.com/bahadryalcn/bycoda
+Original copyright: Copyright (c) 2026 Nick, distributed under the MIT License.
+Fork modifications: Copyright (c) 2026 bahadryalcn, distributed under the MIT License.
+The original copyright and license text are preserved in LICENSE.
+
+Thank you to Nick, the original developers and community contributors for making
+the original project available. Imported contributions remain credited to their
+respective authors; they are not claimed as solely authored by the maintainer.
+See CREDITS.md and the preserved license notices for attribution.
+
+bycoda is not an official release of, or endorsed by, the upstream project.
+It is not affiliated with, endorsed by, or sponsored by the makers of the agent
+harnesses it can drive.
+
+Provider names and logos appearing in the UI are trademarks of their respective
+owners and are used only to identify those products.

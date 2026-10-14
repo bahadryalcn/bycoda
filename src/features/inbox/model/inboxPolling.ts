@@ -1,0 +1,3 @@
+export const INBOX_VISIBLE_POLL_MS = 120_000;
+export const INBOX_BACKGROUND_POLL_MS = 600_000;
+export const INBOX_HIDDEN_POLL_MS = 900_000;

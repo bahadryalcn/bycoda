@@ -1,0 +1,192 @@
+:root {
+  color-scheme: light;
+  --neutral-0: var(--palette-oklch_100pct_0_0);
+  --neutral-1: var(--palette-oklch_99pct_0_0);
+  --neutral-2: var(--palette-oklch_97_8pct_0_0);
+  --neutral-3: var(--palette-oklch_95_8pct_0_0);
+  --neutral-4: var(--palette-oklch_91_5pct_0_0);
+  --neutral-5: var(--palette-oklch_84pct_0_0);
+  --neutral-6: var(--palette-oklch_72pct_0_0);
+  --neutral-7: var(--palette-oklch_59pct_0_0);
+  --neutral-8: var(--palette-oklch_46pct_0_0);
+  --neutral-9: var(--palette-oklch_34pct_0_0);
+  --neutral-10: var(--palette-oklch_23pct_0_0);
+  --neutral-11: var(--palette-oklch_15pct_0_0);
+  --background: var(--neutral-0);
+  --surface: var(--neutral-0);
+  --surface-raised: var(--neutral-0);
+  --surface-muted: var(--neutral-2);
+  --foreground: var(--neutral-11);
+  --text-secondary: var(--neutral-8);
+  --text-muted: var(--neutral-7);
+  --border: var(--palette-oklch_93_5pct_0_0);
+  --border-subtle: var(--palette-oklch_96_5pct_0_0);
+  --border-strong: var(--palette-oklch_82pct_0_0);
+  --accent: var(--palette-oklch_33pct_0_0);
+  --accent-strong: var(--palette-oklch_24pct_0_0);
+  --accent-subtle: var(--palette-oklch_33pct_0_0_1);
+  --accent-foreground: var(--background);
+  /* Selection controls (switch, checkbox, radio, slider). --control-on fills a chosen control; --control-glyph is the check or dot drawn on it;
+     thumbs stay white in both states so they always read against the track. Tuned per accent below so white thumbs hold on every hue. */
+  --control-on: var(--palette-oklch_23pct_0_0);
+  --control-glyph: var(--palette-oklch_100pct_0_0);
+  --control-track: var(--palette-oklch_89_5pct_0_0);
+  --control-track-hover: var(--palette-oklch_86pct_0_0);
+  --control-thumb: var(--palette-oklch_100pct_0_0);
+  --control-thumb-on: var(--palette-oklch_100pct_0_0);
+  --control-thumb-shadow: 0 0 0 .5px var(--palette-oklch_0pct_0_0_07), 0 1px 2px var(--palette-oklch_0pct_0_0_14), 0 2px 6px var(--palette-oklch_0pct_0_0_06);
+  --control-on-subtle: color-mix(in oklab, var(--control-on) 10%, transparent);
+  /* Slider fills. Same as --control-on except neutral dark, where a mid grey keeps the white thumb distinct. */
+  --control-fill: var(--control-on);
+  /* Pointer focus draws no ring (product decision). --focus-ring is the halo a few fields drew for any input method, so it stays transparent.
+     Keyboard focus uses the outline at the end of this file; tune it with --focus-outline, --focus-outline-width and --focus-outline-offset. */
+  --focus-ring: transparent;
+  --success: var(--palette-oklch_49pct_19_150);
+  --warning: var(--palette-oklch_58pct_18_75);
+  --danger: var(--palette-oklch_54pct_21_25);
+  --shadow-resting: 0 1px 2px var(--palette-oklch_0pct_0_0_035);
+  --shadow-raised: 0 6px 18px var(--palette-oklch_0pct_0_0_065), 0 1px 3px var(--palette-oklch_0pct_0_0_035);
+  --shadow-floating: 0 20px 48px var(--palette-oklch_0pct_0_0_105), 0 3px 10px var(--palette-oklch_0pct_0_0_045);
+  /* Brand gradient: soft lavender to warm peach. Light enough for dark text (--arc-gradient-foreground, >12:1). */
+  --arc-gradient-from: var(--palette-oklch_90pct_045_300);
+  --arc-gradient-to: var(--palette-oklch_92pct_045_65);
+  --arc-gradient: linear-gradient(100deg, var(--arc-gradient-from), var(--arc-gradient-to));
+  --arc-gradient-foreground: var(--palette-oklch_22pct_01_300);
+  /* Faint wash for backgrounds and tinted panels. */
+  --arc-gradient-soft: linear-gradient(135deg, var(--palette-oklch_97_5pct_016_300), var(--palette-oklch_98pct_016_65));
+  /* Hairline borders and rules. */
+  --arc-gradient-line: linear-gradient(100deg, var(--palette-oklch_83pct_06_300), var(--palette-oklch_86pct_06_65));
+  /* Text-safe stops for gradient text and small marks (>4.5:1 on the surface). */
+  --arc-gradient-ink: linear-gradient(100deg, var(--palette-oklch_47pct_1_300), var(--palette-oklch_50pct_09_55));
+  --space-1: .25rem; --space-2: .5rem; --space-3: .75rem; --space-4: 1rem;
+  --space-5: 1.25rem; --space-6: 1.5rem; --space-8: 2rem; --space-10: 2.5rem;
+  --space-12: 3rem; --space-16: 4rem; --space-20: 5rem; --space-24: 6rem;
+  --radius-control: 1.125rem; --radius-panel: 1.625rem; --radius-surface: 2.125rem; --radius-pill: 9999px;
+  --control-height-sm: 2.25rem; --control-height-md: 2.75rem; --control-height-lg: 3.125rem;
+  --font-display: var(--font-geist, "Geist Variable"), sans-serif;
+  --font-body: var(--font-inter, "Inter Variable"), sans-serif;
+  --text-xs: .75rem; --text-sm: .875rem; --text-base: 1rem; --text-lg: 1.125rem;
+  --text-xl: 1.375rem; --text-2xl: 1.75rem; --text-3xl: 2.25rem;
+  --text-4xl: 3.25rem; --text-5xl: 4.5rem;
+  --tracking-display: -.03em; --tracking-body: -.01em;
+  --leading-display: 1.1; --leading-body: 1.4;
+  --ease-enter: cubic-bezier(.16,1,.3,1);
+  --ease-standard: cubic-bezier(.22,1,.36,1);
+  --ease-exit: cubic-bezier(.7,0,.84,0);
+  --ease-in-out: cubic-bezier(.65,0,.35,1);
+  /* Spring with a gentle settle (bounce .15). Pair with --duration-spring for transform transitions. */
+  --ease-spring: linear(0, 0.0258, 0.09, 0.1763, 0.2732, 0.3724, 0.4683, 0.5573, 0.6376, 0.7082, 0.7689, 0.8202, 0.8628, 0.8976, 0.9256, 0.9476, 0.9648, 0.9778, 0.9875, 0.9945, 0.9994, 1.0026, 1.0047, 1.0058, 1.0062, 1.0062, 1.0059, 1.0055, 1.0049, 1.0043, 1.0036, 1.0031, 1.0025, 1.002, 1.0016, 1.0013, 1);
+  --duration-instant: 120ms; --duration-fast: 160ms; --duration-standard: 240ms; --duration-considered: 480ms; --duration-spring: 580ms;
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --background: var(--palette-oklch_19pct_0_0);
+  --surface: var(--palette-oklch_21_5pct_0_0);
+  --surface-raised: var(--palette-oklch_24pct_0_0);
+  /* Keep muted surfaces and hover states distinct from the base surface in dark mode. */
+  --surface-muted: var(--palette-oklch_26pct_0_0);
+  --foreground: var(--palette-oklch_96pct_0_0);
+  --text-secondary: var(--palette-oklch_77pct_0_0);
+  --text-muted: var(--palette-oklch_64pct_0_0);
+  --border: var(--palette-oklch_29pct_0_0);
+  --border-subtle: var(--palette-oklch_25pct_0_0);
+  --border-strong: var(--palette-oklch_40pct_0_0);
+  --focus-ring: transparent;
+  --accent: var(--palette-oklch_80pct_0_0);
+  --accent-strong: var(--palette-oklch_91pct_0_0);
+  --accent-subtle: var(--palette-oklch_80pct_0_0_13);
+  /* Neutral dark inverts: a near-white track carries a dark thumb, so on and off never read alike. */
+  --control-on: var(--palette-oklch_93pct_0_0);
+  --control-glyph: var(--palette-oklch_19pct_0_0);
+  --control-track: var(--palette-oklch_33pct_0_0);
+  --control-track-hover: var(--palette-oklch_37pct_0_0);
+  --control-thumb: var(--palette-oklch_97pct_0_0);
+  --control-thumb-on: var(--palette-oklch_19pct_0_0);
+  --control-fill: var(--palette-oklch_62pct_0_0);
+  --control-thumb-shadow: 0 0 0 .5px var(--palette-oklch_0pct_0_0_3), 0 1px 2px var(--palette-oklch_0pct_0_0_35), 0 2px 6px var(--palette-oklch_0pct_0_0_2);
+  --success: var(--palette-oklch_78pct_18_150);
+  --warning: var(--palette-oklch_83pct_17_80);
+  --danger: var(--palette-oklch_76pct_2_25);
+  --shadow-resting: 0 1px 2px var(--palette-oklch_0pct_0_0_18);
+  --shadow-raised: 0 8px 22px var(--palette-oklch_0pct_0_0_22);
+  --shadow-floating: 0 22px 55px var(--palette-oklch_0pct_0_0_34);
+  --arc-gradient-from: var(--palette-oklch_38pct_05_300);
+  --arc-gradient-to: var(--palette-oklch_40pct_045_60);
+  --arc-gradient-foreground: var(--palette-oklch_96pct_005_300);
+  --arc-gradient-soft: linear-gradient(135deg, var(--palette-oklch_23_5pct_016_300), var(--palette-oklch_24pct_014_65));
+  --arc-gradient-line: linear-gradient(100deg, var(--palette-oklch_48pct_06_300), var(--palette-oklch_52pct_055_65));
+  --arc-gradient-ink: linear-gradient(100deg, var(--palette-oklch_82pct_07_300), var(--palette-oklch_86pct_065_70));
+}
+
+:root[data-accent="neutral"] { --accent: var(--palette-oklch_33pct_0_0); --accent-strong: var(--palette-oklch_24pct_0_0); --accent-subtle: var(--palette-oklch_33pct_0_0_1); }
+:root[data-accent="violet"] { --accent: var(--palette-hex7747ff); --accent-strong: var(--palette-hex5528ce); --accent-subtle: var(--palette-rgb_119_71_255_13); }
+:root[data-accent="blue"] { --accent: var(--palette-hex0562ef); --accent-strong: var(--palette-hex074db7); --accent-subtle: var(--palette-rgb_5_98_239_12); }
+:root[data-accent="green"] { --accent: var(--palette-hex0db879); --accent-strong: var(--palette-hex087c54); --accent-subtle: var(--palette-rgb_13_184_121_13); --accent-foreground: var(--palette-hex102016); }
+:root[data-accent="amber"] { --accent: var(--palette-hexf3ad20); --accent-strong: var(--palette-hex9c6300); --accent-subtle: var(--palette-rgb_243_173_32_16); --accent-foreground: var(--palette-hex20190d); }
+:root[data-accent="orange"] { --accent: var(--palette-hexf48120); --accent-strong: var(--palette-hexaa4700); --accent-subtle: var(--palette-rgb_244_129_32_13); --accent-foreground: var(--palette-hex17130f); }
+:root[data-accent="coral"] { --accent: var(--palette-hexf15f55); --accent-strong: var(--palette-hexb92c27); --accent-subtle: var(--palette-rgb_241_95_85_14); --accent-foreground: var(--palette-hex21110f); }
+:root[data-accent="rose"] { --accent: var(--palette-hexed4e9d); --accent-strong: var(--palette-hexae2570); --accent-subtle: var(--palette-rgb_237_78_157_14); --accent-foreground: var(--palette-hex250f1b); }
+:root[data-theme="dark"][data-accent="neutral"] { --accent: var(--palette-oklch_80pct_0_0); --accent-strong: var(--palette-oklch_91pct_0_0); --accent-subtle: var(--palette-oklch_80pct_0_0_13); }
+:root[data-theme="dark"][data-accent="violet"] { --accent: var(--palette-hexa78bff); --accent-strong: var(--palette-hexc7b7ff); --accent-subtle: var(--palette-rgb_119_71_255_22); }
+:root[data-theme="dark"][data-accent="blue"] { --accent: var(--palette-hex6ba3ff); --accent-strong: var(--palette-hexa4c7ff); --accent-subtle: var(--palette-rgb_5_98_239_22); }
+:root[data-theme="dark"][data-accent="green"] { --accent: var(--palette-hex53dca6); --accent-strong: var(--palette-hex93efd0); --accent-subtle: var(--palette-rgb_13_184_121_2); }
+:root[data-theme="dark"][data-accent="amber"] { --accent: var(--palette-hexffcb62); --accent-strong: var(--palette-hexffe0a1); --accent-subtle: var(--palette-rgb_243_173_32_2); }
+:root[data-theme="dark"][data-accent="orange"] { --accent: var(--palette-hexffad5e); --accent-strong: var(--palette-hexffd0a0); --accent-subtle: var(--palette-rgb_244_129_32_2); --accent-foreground: var(--palette-hex17130f); }
+:root[data-theme="dark"][data-accent="coral"] { --accent: var(--palette-hexff9386); --accent-strong: var(--palette-hexffc1ba); --accent-subtle: var(--palette-rgb_241_95_85_2); }
+:root[data-theme="dark"][data-accent="rose"] { --accent: var(--palette-hexff8bc5); --accent-strong: var(--palette-hexffc0df); --accent-subtle: var(--palette-rgb_237_78_157_2); }
+
+/* Selection control fills per accent. Light: the accent, deepened slightly where a white thumb needs it. Dark: a mid tone instead of the pastel
+   text accent, so white thumbs and checks keep contrast without a neon track. Amber keeps a dark glyph because white on yellow washes out. */
+:root[data-accent="neutral"] { --control-on: var(--palette-oklch_23pct_0_0); --control-thumb-on: var(--palette-oklch_100pct_0_0); --control-glyph: var(--palette-oklch_100pct_0_0); }
+:root[data-accent="violet"] { --control-on: var(--palette-hex7747ff); --control-thumb-on: var(--palette-hexfff); --control-glyph: var(--palette-hexfff); }
+:root[data-accent="blue"] { --control-on: var(--palette-hex0562ef); --control-thumb-on: var(--palette-hexfff); --control-glyph: var(--palette-hexfff); }
+:root[data-accent="green"] { --control-on: var(--palette-hex10a870); --control-thumb-on: var(--palette-hexfff); --control-glyph: var(--palette-hexfff); }
+:root[data-accent="amber"] { --control-on: var(--palette-hexeda11a); --control-thumb-on: var(--palette-hexfff); --control-glyph: var(--palette-hex2a1c03); }
+:root[data-accent="orange"] { --control-on: var(--palette-hexf07818); --control-thumb-on: var(--palette-hexfff); --control-glyph: var(--palette-hexfff); }
+:root[data-accent="coral"] { --control-on: var(--palette-hexec564b); --control-thumb-on: var(--palette-hexfff); --control-glyph: var(--palette-hexfff); }
+:root[data-accent="rose"] { --control-on: var(--palette-hexe64494); --control-thumb-on: var(--palette-hexfff); --control-glyph: var(--palette-hexfff); }
+:root[data-theme="dark"][data-accent="neutral"] { --control-on: var(--palette-oklch_93pct_0_0); --control-thumb-on: var(--palette-oklch_19pct_0_0); --control-glyph: var(--palette-oklch_19pct_0_0); }
+:root[data-theme="dark"][data-accent="violet"] { --control-on: var(--palette-hex8a66ff); --control-thumb-on: var(--palette-hexfff); --control-glyph: var(--palette-hexfff); --control-fill: var(--palette-hex8a66ff); }
+:root[data-theme="dark"][data-accent="blue"] { --control-on: var(--palette-hex3b82f6); --control-thumb-on: var(--palette-hexfff); --control-glyph: var(--palette-hexfff); --control-fill: var(--palette-hex3b82f6); }
+:root[data-theme="dark"][data-accent="green"] { --control-on: var(--palette-hex1fae78); --control-thumb-on: var(--palette-hexfff); --control-glyph: var(--palette-hexfff); --control-fill: var(--palette-hex1fae78); }
+:root[data-theme="dark"][data-accent="amber"] { --control-on: var(--palette-hexe8a52a); --control-thumb-on: var(--palette-hexfff); --control-glyph: var(--palette-hex241803); --control-fill: var(--palette-hexe8a52a); }
+:root[data-theme="dark"][data-accent="orange"] { --control-on: var(--palette-hexef873a); --control-thumb-on: var(--palette-hexfff); --control-glyph: var(--palette-hexfff); --control-fill: var(--palette-hexef873a); }
+:root[data-theme="dark"][data-accent="coral"] { --control-on: var(--palette-hexec6a60); --control-thumb-on: var(--palette-hexfff); --control-glyph: var(--palette-hexfff); --control-fill: var(--palette-hexec6a60); }
+:root[data-theme="dark"][data-accent="rose"] { --control-on: var(--palette-hexe457a0); --control-thumb-on: var(--palette-hexfff); --control-glyph: var(--palette-hexfff); --control-fill: var(--palette-hexe457a0); }
+
+/* Chart series palette, shared by every chart. Series 1 is the accent itself; series 2 to 4 rotate its hue at lightness steps
+   around it, so they stay distinct for every accent. A neutral accent falls back to a blue. Validated with the dataviz script
+   across all eight accents in both themes: every pair (not only neighbours) clears CVD ΔE 9 and normal vision ΔE 17. Browsers
+   without relative color get the neutral set. Override --series-1 to --series-4 on any element to rebrand a chart. */
+:root { --series-1: var(--palette-hex1f7dcf); --series-2: var(--palette-hex7128a5); --series-3: var(--palette-hexe58f00); --series-4: var(--palette-hex009e84); }
+:root[data-theme="dark"] { --series-1: var(--palette-hex55adff); --series-2: var(--palette-hex9c37be); --series-3: var(--palette-hexe66e00); --series-4: var(--palette-hex00a861); }
+@supports (color: oklch(from red clamp(.4, l * sign(max(c - .02, 0)) + .5, .8) c h)) {
+  :root {
+    --series-1: oklch(from var(--accent) calc(l * sign(max(c - .02, 0)) + .58 * (1 - sign(max(c - .02, 0)))) calc(c * sign(max(c - .02, 0)) + .15 * (1 - sign(max(c - .02, 0)))) calc(h * sign(max(c - .02, 0)) + 250 * (1 - sign(max(c - .02, 0)))));
+    --series-2: oklch(from var(--accent) clamp(.45, l * sign(max(c - .02, 0)) + .58 * (1 - sign(max(c - .02, 0))) - 0.25, .76) .19 calc(h * sign(max(c - .02, 0)) + 250 * (1 - sign(max(c - .02, 0))) + 57));
+    --series-3: oklch(from var(--accent) clamp(.45, l * sign(max(c - .02, 0)) + .58 * (1 - sign(max(c - .02, 0))) + 0.14, .76) .18 calc(h * sign(max(c - .02, 0)) + 250 * (1 - sign(max(c - .02, 0))) + 184));
+    --series-4: oklch(from var(--accent) clamp(.45, l * sign(max(c - .02, 0)) + .58 * (1 - sign(max(c - .02, 0))), .76) .21 calc(h * sign(max(c - .02, 0)) + 250 * (1 - sign(max(c - .02, 0))) + 292));
+  }
+  :root[data-theme="dark"] {
+    --series-1: oklch(from var(--accent) calc(l * sign(max(c - .02, 0)) + .73 * (1 - sign(max(c - .02, 0)))) calc(c * sign(max(c - .02, 0)) + .15 * (1 - sign(max(c - .02, 0)))) calc(h * sign(max(c - .02, 0)) + 250 * (1 - sign(max(c - .02, 0)))));
+    --series-2: oklch(from var(--accent) clamp(.485, l * sign(max(c - .02, 0)) + .73 * (1 - sign(max(c - .02, 0))) - 0.19, .665) .21 calc(h * sign(max(c - .02, 0)) + 250 * (1 - sign(max(c - .02, 0))) + 66));
+    --series-3: oklch(from var(--accent) clamp(.485, l * sign(max(c - .02, 0)) + .73 * (1 - sign(max(c - .02, 0))) + 0.02, .665) .21 calc(h * sign(max(c - .02, 0)) + 250 * (1 - sign(max(c - .02, 0))) + 175));
+    --series-4: oklch(from var(--accent) clamp(.485, l * sign(max(c - .02, 0)) + .73 * (1 - sign(max(c - .02, 0))) - 0.1, .665) .18 calc(h * sign(max(c - .02, 0)) + 250 * (1 - sign(max(c - .02, 0))) + 270));
+  }
+}
+
+/* Focus. Pointer focus never draws a ring (product decision). Keyboard focus (:focus-visible) draws a subtle accent outline, so keyboard users
+   can always see where they are (WCAG 2.4.7). Left out of the outline: text fields, which match :focus-visible on a mouse click too and show
+   focus with their border and caret; menu items and listbox options, whose highlight fill marks the keyboard position; and tabindex="-1"
+   targets (dialog panels, regions) that only receive focus from script.
+   Tune it on :root or any element, no !important needed:
+     --focus-outline           color (default: the accent, softened); set transparent to hide it
+     --focus-outline-width     default 2px
+     --focus-outline-offset    default 2px; components inside clipped containers set a negative offset */
+:focus:not(:focus-visible),
+:is(input:not([type="button"], [type="checkbox"], [type="color"], [type="file"], [type="image"], [type="radio"], [type="range"], [type="reset"], [type="submit"]), textarea, [contenteditable]:not([contenteditable="false"]), [role="menuitem"], [role="menuitemcheckbox"], [role="menuitemradio"], [role="option"], [tabindex="-1"]):focus { outline: none !important; }
+:focus-visible:not(input:not([type="button"], [type="checkbox"], [type="color"], [type="file"], [type="image"], [type="radio"], [type="range"], [type="reset"], [type="submit"]), textarea, [contenteditable]:not([contenteditable="false"]), [role="menuitem"], [role="menuitemcheckbox"], [role="menuitemradio"], [role="option"], [tabindex="-1"]) {
+  outline: var(--focus-outline-width, 2px) solid var(--focus-outline, color-mix(in oklab, var(--accent-strong) 72%, transparent)) !important;
+  outline-offset: var(--focus-outline-offset, 2px) !important;
+}

@@ -1,0 +1,5 @@
+# The local update coordinator alone decides when dependencies need installation.
+verifyDepsBeforeRun: false
+allowBuilds:
+  esbuild: true
+  core-js: false

@@ -1,0 +1,97 @@
+.social-programs {
+  display: grid;
+  gap: 1rem;
+  min-inline-size: 0;
+  padding-block: 1rem;
+  border-block-end: 1px solid var(--color-stroke);
+}
+.social-program-form {
+  display: grid;
+  gap: 1rem;
+}
+.social-program-form fieldset {
+  display: grid;
+  gap: 0.75rem;
+  min-inline-size: 0;
+  border: 1px solid var(--color-stroke);
+  border-radius: 0.5rem;
+  padding: 1rem;
+}
+.social-program-form legend {
+  padding-inline: 0.5rem;
+  font-weight: 600;
+}
+.social-program-grid,
+.social-program-calendar {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 18rem), 1fr));
+  gap: 0.75rem;
+}
+.social-program-field {
+  display: grid;
+  gap: 0.375rem;
+  min-inline-size: 0;
+}
+.social-program-field :is(input, select, textarea) {
+  inline-size: 100%;
+  min-inline-size: 0;
+}
+.social-program-field input[type="checkbox"] {
+  inline-size: auto;
+  justify-self: start;
+}
+.social-program-days,
+.social-program-confirm {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+}
+.social-program-days label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  min-block-size: 2.75rem;
+}
+.social-program-list {
+  display: grid;
+  gap: 0.5rem;
+}
+.social-program-list > button {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 0.5rem;
+  min-block-size: 2.75rem;
+}
+.social-program-calendar > article {
+  border: 1px solid var(--color-stroke);
+  border-radius: 0.5rem;
+  padding: 0.75rem;
+  min-inline-size: 0;
+}
+.social-program-calendar header {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  justify-content: space-between;
+}
+.social-program-target {
+  display: grid;
+  gap: 0.5rem;
+  padding-block: 0.75rem;
+  overflow-wrap: anywhere;
+}
+.social-program-target img {
+  inline-size: 100%;
+  max-block-size: 18rem;
+  object-fit: contain;
+  border-radius: 0.375rem;
+}
+.social-programs :is(button, input, select, textarea):focus-visible {
+  outline: 2px solid var(--color-content);
+  outline-offset: 2px;
+}
+.social-programs button:active {
+  opacity: 0.8;
+}
