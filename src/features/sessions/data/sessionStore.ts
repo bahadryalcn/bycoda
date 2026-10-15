@@ -1,0 +1,1717 @@
+import { invoke } from "@tauri-apps/api/core";
+import { readToolWindow } from "../../../app/model/toolWindows";
+import { buildSessionBlockDelta, type PersistedBlock } from "./sessionDelta";
+import { PersistenceBaselines } from "./persistenceBaselines";
+import {
+  getSessionRecovery,
+  hasInitializedSessionRecovery,
+} from "../../workspace/model/sessionRecovery";
+import { startPerformanceSpan } from "../../../shared/lib/performanceTrace";
+import { isWeakToolTitle, titleFromToolInput } from "../../../integrations/harness/core/preview";
+import { codexCommandPresentation } from "../../../integrations/harness/providers/codex/codexProtocol";
+import { recoverCursorSubagents } from "../../../integrations/harness/providers/cursor/cursorSubagents";
+import { pathKey } from "../../../shared/lib/paths";
+import { persistableAttachment } from "../model/attachments";
+import { boundedToolPreview } from "../model/toolInspection";
+import { clearComposerDraft } from "../model/draftCache";
+import {
+  markMissingAttachments,
+  persistableQueue,
+  restoreQueuedMessages,
+} from "../model/queuePersistence";
+import {
+  budgetStepOutputs,
+  capHeadTail,
+  capStepOutput,
+  PERSISTED_AGENT_OUTPUT_RUN_CHARS,
+  PERSISTED_AGENT_OUTPUT_STEP_CHARS,
+  PERSISTED_AGENT_PROMPT_CHARS,
+} from "../model/agentOutput";
+import type { ContextUsage } from "../model/contextUsage";
+import { isRemoteProjectPath, normalizeProjectPath } from "../../projects/model/recents";
+import { removeSessionAdditionalDirs } from "../../projects/model/additionalDirs";
+import {
+  claudeShellCommands,
+  ompActiveAssistantTexts,
+  ompSessionInterjections,
+} from "../../../platform/tauri/fs";
+import { backfillOmpInterjections, ompStatusSplitTexts } from "../model/ompInterjections";
+import type {
+  AgentRunMeta,
+  AgentStep,
+  Block,
+  ConversationRewindEntry,
+  BtwMessage,
+  BtwThread,
+  GeneratedImageMeta,
+  HarnessId,
+  HandoffMeta,
+  HandoffStatus,
+  InterjectionMeta,
+  LinkedWorkItem,
+  RuntimeMode,
+  SecondOpinionMeta,
+  Session,
+  TaskListMeta,
+  PlanBlockMeta,
+  QueuedMessage,
+  TurnModel,
+  TurnMetrics,
+} from "../model/session";
+
+import { HARNESSES, RUNTIME_MODES } from "../model/session";
+
+import { restoreOrchestrationProposal } from "../../orchestration/model/orchestrationPlan";
+
+import type { OrchestrationSummary } from "../../orchestration/model/orchestrationSummary";
+
+export type SessionSummary = {
+  issue?: "retrying" | "failed";
+  transcriptRevision?: number;
+  orchestrationLeadId?: string;
+  orchestration?: OrchestrationSummary;
+  id: string;
+  cwd: string;
+  harness: HarnessId;
+  model: string;
+  runtimeMode: RuntimeMode;
+  title: string;
+  providerSessionId?: string;
+  branch?: string;
+  worktreeCwd?: string;
+  worktreeRemoved?: boolean;
+  repo?: string;
+  additions?: number;
+  deletions?: number;
+  createdAt: number;
+  updatedAt: number;
+  archived?: boolean;
+  pinned?: boolean;
+  draft?: boolean;
+  linkedWorkItem?: LinkedWorkItem;
+  automationId?: string;
+};
+
+type SessionRecord = {
+  transcriptRevision?: number;
+  orchestrationLeadId?: string;
+  id: string;
+  cwd: string;
+  harness: string;
+  model: string;
+  modelSettings: Record<string, string>;
+  runtimeMode: string;
+  title: string;
+  providerSessionId?: string | null;
+  providerAccountId?: string | null;
+  blocks: Block[];
+  contextUsed?: number | null;
+  contextWindow?: number | null;
+  branch?: string | null;
+  worktreeCwd?: string | null;
+  worktreeRemoved?: boolean;
+  linkedWorkItem?: LinkedWorkItem | null;
+  automationId?: string | null;
+  rewindHistory?: ConversationRewindEntry[] | null;
+  pendingContextReplay?: string | null;
+  createdAt: number;
+  updatedAt: number;
+};
+
+type SessionUpsertPayload = {
+  id: string;
+  cwd: string;
+  harness: string;
+  model: string;
+  modelSettings: Record<string, string>;
+  runtimeMode: string;
+  title: string;
+  providerSessionId?: string;
+  providerAccountId?: string;
+  blocks: Block[];
+  contextUsed?: number;
+  contextWindow?: number;
+  branch?: string;
+  worktreeCwd?: string;
+  worktreeRemoved?: boolean;
+  linkedWorkItem?: LinkedWorkItem;
+  automationId?: string;
+  rewindHistory?: ConversationRewindEntry[];
+  pendingContextReplay?: string;
+};
+
+/** Only real chats belong in project history — blank tabs stay ephemeral. */
+export function shouldPersistSession(session: Session): boolean {
+  return (
+    !session.historyPartial &&
+    !session.historyLoading &&
+    !session.inboxAsk &&
+    !isRemoteProjectPath(session.cwd) &&
+    session.cwd !== "~" &&
+    (session.blocks.some((block) => block.role === "user") ||
+      (session.rewindHistory?.length ?? 0) > 0)
+  );
+}
+
+/** Matches Rust `validate_id` — a path here fails the whole upsert. */
+export function isPersistableId(value: string): boolean {
+  return /^[A-Za-z0-9_-]+$/.test(value);
+}
+
+function persistableMeta(session: Session): Omit<SessionUpsertPayload, "blocks"> {
+  const linkedWorkItem = sanitizeLinkedWorkItem(session.linkedWorkItem);
+  const rewindHistory = sanitizeRewindHistory(session.rewindHistory);
+  return {
+    id: session.id,
+    cwd: normalizeProjectPath(session.cwd),
+    harness: session.harness,
+    model: session.model,
+    modelSettings: session.modelSettings,
+    runtimeMode: session.runtimeMode,
+    title: session.title,
+    ...(session.providerSessionId && isPersistableId(session.providerSessionId)
+      ? { providerSessionId: session.providerSessionId }
+      : {}),
+    ...(session.providerAccountId && isPersistableId(session.providerAccountId)
+      ? { providerAccountId: session.providerAccountId }
+      : {}),
+    ...(session.context ? { contextUsed: session.context.used } : {}),
+    ...(session.context?.window ? { contextWindow: session.context.window } : {}),
+    ...(session.branch ? { branch: session.branch } : {}),
+    ...(session.worktreeCwd ? { worktreeCwd: session.worktreeCwd } : {}),
+    ...(session.worktreeRemoved ? { worktreeRemoved: true } : {}),
+    ...(linkedWorkItem ? { linkedWorkItem } : {}),
+    ...(session.automationId && isPersistableId(session.automationId)
+      ? { automationId: session.automationId }
+      : {}),
+    ...(rewindHistory ? { rewindHistory } : {}),
+    ...(typeof session.pendingContextReplay === "string" && session.pendingContextReplay
+      ? { pendingContextReplay: session.pendingContextReplay.slice(0, 24_000) }
+      : {}),
+  };
+}
+
+function sanitizeRewindHistory(value: unknown): ConversationRewindEntry[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const entries = value.flatMap((item): ConversationRewindEntry[] => {
+    if (!item || typeof item !== "object" || Array.isArray(item)) return [];
+    const record = item as Record<string, unknown>;
+    const id = sanitizeNestedId(record.id);
+    const fromBlockId = sanitizeNestedId(record.fromBlockId);
+    const createdAt = sanitizeTimestamp(record.createdAt);
+    if (!id || !fromBlockId || createdAt == null || !Array.isArray(record.blocks)) return [];
+    const blocks = record.blocks.flatMap((block) => {
+      if (!block || typeof block !== "object" || Array.isArray(block)) return [];
+      const clean = sanitizeBlock(block as Block);
+      return clean ? [clean] : [];
+    });
+    return [{ id, fromBlockId, createdAt, blocks }];
+  });
+  return entries.length ? entries : undefined;
+}
+
+export function sanitizeLinkedWorkItem(value: unknown): LinkedWorkItem | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return undefined;
+  }
+  const item = value as Partial<LinkedWorkItem>;
+  const kind = item.kind;
+  const repo = typeof item.repo === "string" ? item.repo.trim() : "";
+  const number = item.number;
+  if (
+    (kind !== "issue" && kind !== "pr") ||
+    !/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repo) ||
+    typeof number !== "number" ||
+    !Number.isSafeInteger(number) ||
+    number <= 0
+  ) {
+    return undefined;
+  }
+  return {
+    kind,
+    repo,
+    number,
+    url: `https://github.com/${repo}/${kind === "pr" ? "pull" : "issues"}/${number}`,
+  };
+}
+
+export function sanitizeSessionForPersist(session: Session): SessionUpsertPayload {
+  const firstUser = session.blocks.findIndex((block) => block.role === "user");
+  return {
+    ...persistableMeta(session),
+    blocks: session.blocks
+      .map((block, index) =>
+        sanitizeBlock(
+          index === firstUser && session.orchestrationLeadId
+            ? { ...block, orchestrationLeadId: session.orchestrationLeadId }
+            : block,
+        ),
+      )
+      .filter((block): block is Block => block != null),
+  };
+}
+
+/**
+ * `session_upsert` runs off the main thread, so two writes for the same
+ * session could otherwise land in either order and let an older transcript
+ * overwrite a newer one. Chain them per session; different sessions still
+ * write concurrently.
+ */
+const persistenceBaselines = new PersistenceBaselines();
+const sanitizedBlocks = new WeakMap<Block, Block | null>();
+function incrementalBlocks(session: Session): PersistedBlock[] {
+  const firstUser = session.blocks.findIndex((block) => block.role === "user");
+  const result: PersistedBlock[] = [];
+  session.blocks.forEach((source, index) => {
+    let value = sanitizedBlocks.get(source);
+    if (value === undefined) {
+      value = sanitizeBlock(source);
+      sanitizedBlocks.set(source, value);
+    }
+    if (!value) return;
+    if (
+      index === firstUser &&
+      session.orchestrationLeadId &&
+      value.orchestrationLeadId !== session.orchestrationLeadId
+    ) {
+      value = { ...value, orchestrationLeadId: session.orchestrationLeadId };
+    }
+    if (value.orchestrationLeadId && deletedSessionIds.has(value.orchestrationLeadId)) {
+      value = { ...value, orchestrationLeadId: undefined };
+    }
+    result.push({ source, value });
+  });
+  return result;
+}
+
+const sessionWriteQueues = new Map<string, Promise<unknown>>();
+const sessionWriteLeadById = new Map<string, string>();
+const deletedSessionIds = new Set<string>();
+
+/**
+ * Newest not-yet-started live snapshot per session. A live write waits in the
+ * chain behind the one in flight; further snapshots replace its content instead
+ * of queueing another full payload behind a slow disk.
+ */
+type LiveWriteOptions = {
+  /** Checked when the write is about to start; false drops it. */
+  shouldWrite?: () => boolean;
+  /** Called as the write starts, never for a snapshot that was replaced. */
+  onStart?: () => void;
+  onFailed?: () => void;
+};
+type LiveSlot = { session: Session; options: LiveWriteOptions };
+const pendingLiveWrites = new Map<string, LiveSlot>();
+
+function enqueueSessionWrite<T>(
+  sessionId: string,
+  operation: () => Promise<T>,
+  live = false,
+): Promise<T> {
+  // Any other write carries newer data than a snapshot that has not started.
+  if (!live) pendingLiveWrites.delete(sessionId);
+  const previous = sessionWriteQueues.get(sessionId) ?? Promise.resolve();
+  const run = previous.catch(() => undefined).then(operation);
+  const tail = run.then(
+    () => undefined,
+    () => undefined,
+  );
+  sessionWriteQueues.set(sessionId, tail);
+  void tail.then(() => {
+    if (sessionWriteQueues.get(sessionId) === tail) {
+      sessionWriteQueues.delete(sessionId);
+      sessionWriteLeadById.delete(sessionId);
+    }
+  });
+  return run;
+}
+
+export function upsertSession(session: Session): Promise<SessionSummary | null> {
+  return persistSession(session);
+}
+
+/**
+ * Mid-turn snapshot for watchers: at most one write in flight and one pending
+ * per session, the pending one always the newest. Shares the per-session chain
+ * with every other write, so a settle/delete/archive write issued later
+ * discards the pending snapshot and runs after the one in flight.
+ */
+export function upsertSessionLive(session: Session, options: LiveWriteOptions = {}): Promise<void> {
+  if (!shouldPersistSession(session) || deletedSessionIds.has(session.id)) {
+    return Promise.resolve();
+  }
+  const id = session.id;
+  const pending = pendingLiveWrites.get(id);
+  if (pending) {
+    pending.session = session;
+    pending.options = options;
+    return Promise.resolve();
+  }
+  const slot: LiveSlot = { session, options };
+  pendingLiveWrites.set(id, slot);
+  return enqueueSessionWrite(
+    id,
+    async () => {
+      // Discarded by a later write, or superseded by a newer slot.
+      if (pendingLiveWrites.get(id) !== slot) return;
+      pendingLiveWrites.delete(id);
+      const { session: latest, options: latestOptions } = slot;
+      if (deletedSessionIds.has(id) || latestOptions.shouldWrite?.() === false) {
+        return;
+      }
+      latestOptions.onStart?.();
+      try {
+        const finish = startPerformanceSpan("session-save");
+        try {
+          const blocks = incrementalBlocks(latest);
+          const baseline = persistenceBaselines.get(id);
+          // Every acknowledged delta is durable. Full checkpoints only compact
+          // the baseline; keep live recovery at 1.5s without rewriting history
+          // every 48s. Eviction and unnormalized baselines still checkpoint now.
+          if (baseline?.normalized && baseline.writes < 256) {
+            const delta = buildSessionBlockDelta(baseline.blocks, blocks);
+            const ack = await invoke<{ updatedAt: number; revision: number } | null>(
+              "session_apply_delta",
+              {
+                delta: {
+                  session: { ...persistableMeta(latest), blocks: [] },
+                  expectedUpdatedAt: baseline.updatedAt,
+                  expectedRevision: baseline.revision,
+                  ...delta,
+                },
+              },
+            );
+            if (!ack) throw new Error("Session changed in another window; reload before saving");
+            persistenceBaselines.set(id, {
+              blocks,
+              updatedAt: ack.updatedAt,
+              revision: ack.revision,
+              writes: baseline.writes + 1,
+              normalized: true,
+            });
+            finish({ blocks: delta.changes.length, revision: ack.revision });
+          } else {
+            const summary = await invoke<SessionSummary | null>("session_upsert", {
+              session: { ...persistableMeta(latest), blocks: blocks.map((item) => item.value) },
+              ...(baseline
+                ? { expectedUpdatedAt: baseline.updatedAt, expectedRevision: baseline.revision }
+                : {}),
+            });
+            if (!summary)
+              throw new Error("Session changed in another window; reload before saving");
+            persistenceBaselines.set(id, {
+              blocks,
+              updatedAt: summary.updatedAt,
+              revision: summary.transcriptRevision,
+              writes: 0,
+              normalized: true,
+            });
+            finish({ blocks: blocks.length });
+          }
+        } catch (error) {
+          finish();
+          throw error;
+        }
+      } catch {
+        latestOptions.onFailed?.();
+      }
+    },
+    true,
+  );
+}
+
+/** The stored row's `updatedAt`, read without the load-time backfills (which
+ * write), so it is safe to call from inside the write queue. */
+export async function storedSessionUpdatedAt(sessionId: string): Promise<number | null> {
+  const record = await invoke<{ updatedAt?: unknown } | null>("session_get", {
+    sessionId,
+  });
+  return record ? (sanitizeTimestamp(record.updatedAt) ?? null) : null;
+}
+
+/** Saves only if the row still has the `updatedAt` the caller read before it
+ * built `session` (`null`: the row must not exist). The Rust command checks
+ * the stamp and writes under one store lock, so no other window can write in
+ * between. Resolves to `false` when the stamp was stale and nothing was saved. */
+export async function upsertSessionIfUnchanged(
+  session: Session,
+  expectedUpdatedAt: number | null,
+  expectedRevision?: number,
+): Promise<boolean> {
+  const summary = await persistSession(
+    session,
+    expectedUpdatedAt === null ? { expectMissing: true } : { expectedUpdatedAt, expectedRevision },
+  );
+  return !!summary;
+}
+
+async function persistSession(
+  session: Session,
+  guard?: { expectedUpdatedAt: number; expectedRevision?: number } | { expectMissing: true },
+): Promise<SessionSummary | null> {
+  if (!shouldPersistSession(session) || deletedSessionIds.has(session.id)) {
+    return null;
+  }
+  const payload = sanitizeSessionForPersist(session);
+  if (session.orchestrationLeadId) {
+    sessionWriteLeadById.set(session.id, session.orchestrationLeadId);
+  } else {
+    sessionWriteLeadById.delete(session.id);
+  }
+  const summary = await enqueueSessionWrite(session.id, async () => {
+    if (deletedSessionIds.has(session.id)) return null;
+    const baseline = persistenceBaselines.get(session.id);
+    const summary = await invoke<SessionSummary | null>("session_upsert", {
+      session: {
+        ...payload,
+        blocks: payload.blocks.map((block) =>
+          block.orchestrationLeadId && deletedSessionIds.has(block.orchestrationLeadId)
+            ? { ...block, orchestrationLeadId: undefined }
+            : block,
+        ),
+      },
+      ...(guard ??
+        (baseline
+          ? { expectedUpdatedAt: baseline.updatedAt, expectedRevision: baseline.revision }
+          : {})),
+    });
+    if (summary)
+      persistenceBaselines.set(session.id, {
+        blocks: incrementalBlocks(session),
+        updatedAt: summary.updatedAt,
+        revision: summary.transcriptRevision,
+        writes: 0,
+        normalized: true,
+      });
+    return summary;
+  });
+  return summary ? normalizeSummary(summary) : null;
+}
+
+/**
+ * Store a conversation brought in from a provider's own history, keeping its
+ * original timestamps so it sorts where it happened. Resolves to `null` when
+ * the conversation is already stored: an import never replaces a session.
+ */
+export async function importSessionRecord(
+  session: Session,
+  times: { createdAt: number; updatedAt: number },
+): Promise<SessionSummary | null> {
+  if (!shouldPersistSession(session)) {
+    throw new Error("The conversation has no messages to import");
+  }
+  if (!isPersistableId(session.id)) throw new Error("Invalid session id");
+  const summary = await invoke<SessionSummary | null>("session_import", {
+    session: { ...sanitizeSessionForPersist(session), ...times },
+  });
+  return summary ? normalizeSummary(summary) : null;
+}
+
+/** `harness:providerSessionId` of every stored session bound to a provider conversation, plus the ids earlier imports created. */
+export function importedSessionKeys(): Promise<string[]> {
+  return invoke<string[]>("session_import_keys");
+}
+
+/**
+ * Blocks are replaced, never mutated in place, so identity stands in for
+ * content. Serializing the session here instead meant a full deep copy and a
+ * `JSON.stringify` of the whole transcript — megabytes on a long chat — on the
+ * main thread every time a save was considered. Header fields go through
+ * `persistableMeta` so a new persisted column cannot be forgotten here.
+ */
+const blockTokens = new WeakMap<Block, number>();
+let lastBlockToken = 0;
+
+function blockToken(block: Block): number {
+  const seen = blockTokens.get(block);
+  if (seen !== undefined) return seen;
+  const token = ++lastBlockToken;
+  blockTokens.set(block, token);
+  return token;
+}
+
+export function persistFingerprint(session: Session): string {
+  const blockIdentity = session.blocks.map(blockToken).join(",");
+  const turnOutcomes = session.blocks
+    .map((block) => `${block.turnOutcome ?? ""}:${block.turnStoppedAt ?? ""}`)
+    .join(",");
+  return `${JSON.stringify(persistableMeta(session))}|${session.orchestrationLeadId ?? ""}|${blockIdentity}|${turnOutcomes}`;
+}
+
+export async function listSessionsByProject(cwd: string): Promise<SessionSummary[]> {
+  if (!cwd || cwd === "~") return [];
+  const rows = await invoke<SessionSummary[]>("session_list_by_project", {
+    cwd: normalizeProjectPath(cwd),
+  });
+  return rows.map(normalizeSummary);
+}
+
+export function rebaseProjectSessions(fromCwd: string, toCwd: string): Promise<void> {
+  return invoke<void>("session_rebase_project", {
+    fromCwd: normalizeProjectPath(fromCwd),
+    toCwd: normalizeProjectPath(toCwd),
+  });
+}
+
+export async function listLinkedSessions(): Promise<SessionSummary[]> {
+  const rows = await invoke<SessionSummary[]>("session_list_linked");
+  return rows.map(normalizeSummary);
+}
+
+/** Newest sessions across every project, plus all pinned ones. No transcripts. */
+export async function listRecentSessions(limit: number): Promise<SessionSummary[]> {
+  const rows = await invoke<SessionSummary[]>("session_list_recent", { limit });
+  return rows.map(normalizeSummary);
+}
+
+export type SessionSearchHit = {
+  kind: "conversation" | "message";
+  sessionId: string;
+  cwd: string;
+  harness: string;
+  title: string;
+  updatedAt: number;
+  blockId?: string;
+  role?: string;
+  preview: string;
+};
+
+export type SessionSearchResult = {
+  hits: SessionSearchHit[];
+  truncated: boolean;
+};
+
+export async function searchSessions(options: {
+  query: string;
+  searchOwner: string;
+  cwd?: string;
+  includeArchived?: boolean;
+}): Promise<SessionSearchResult> {
+  const query = options.query.trim();
+  if (!query) return { hits: [], truncated: false };
+  const result = await invoke<SessionSearchResult>("session_search", {
+    options: {
+      query,
+      searchOwner: options.searchOwner,
+      ...(options.cwd && options.cwd !== "~" ? { cwd: normalizeProjectPath(options.cwd) } : {}),
+      ...(options.includeArchived ? { includeArchived: true } : {}),
+    },
+  });
+  return {
+    hits: Array.isArray(result?.hits) ? result.hits : [],
+    truncated: !!result?.truncated,
+  };
+}
+
+export function cancelSessionSearch(searchOwner: string): Promise<void> {
+  return invoke<void>("cancel_session_search", { searchOwner });
+}
+
+export type SessionContentHit = {
+  blockId: string;
+  role: string;
+  /** Message excerpt around the match. */
+  snippet: string;
+  /** UTF-16 `[start, end)` offsets of the matched words inside `snippet`. */
+  ranges: [number, number][];
+};
+
+export type SessionContentSession = {
+  sessionId: string;
+  cwd: string;
+  harness: string;
+  title: string;
+  titleRanges: [number, number][];
+  createdAt: number;
+  updatedAt: number;
+  archived: boolean;
+  /** Messages that matched; `hits` carries the first few. */
+  hitCount: number;
+  hits: SessionContentHit[];
+};
+
+export type SessionContentResult = {
+  sessions: SessionContentSession[];
+  /** More sessions matched than are listed. */
+  truncated: boolean;
+  /** Sessions whose text is not indexed yet; searching again later finds more. */
+  pending: number;
+};
+
+/** Full-text search over the messages of every stored session. */
+export async function searchSessionContent(options: {
+  query: string;
+  searchOwner: string;
+  cwds?: string[];
+  harness?: string;
+  includeArchived?: boolean;
+  since?: number;
+  until?: number;
+}): Promise<SessionContentResult> {
+  const query = options.query.trim();
+  if (!query) return { sessions: [], truncated: false, pending: 0 };
+  const result = await invoke<SessionContentResult>("session_search_content", {
+    options: {
+      query,
+      searchOwner: options.searchOwner,
+      ...(options.cwds?.length ? { cwds: options.cwds.map(normalizeProjectPath) } : {}),
+      ...(options.harness ? { harness: options.harness } : {}),
+      ...(options.includeArchived ? { includeArchived: true } : {}),
+      ...(options.since != null ? { since: options.since } : {}),
+      ...(options.until != null ? { until: options.until } : {}),
+    },
+  });
+  return {
+    sessions: Array.isArray(result?.sessions) ? result.sessions : [],
+    truncated: !!result?.truncated,
+    pending: typeof result?.pending === "number" ? result.pending : 0,
+  };
+}
+
+export type SessionHydrationOptions = {
+  /** Applied only if the consumer still owns the original, idle snapshot. */
+  onHydrated?: (original: Session, hydrated: Session) => void;
+  onHydrationFailed?: (original: Session) => void;
+};
+type StoredTranscriptPage = {
+  session: SessionRecord;
+  before?: number;
+  totalBlocks: number;
+  revision: number;
+};
+
+export async function getSession(
+  sessionId: string,
+  options: SessionHydrationOptions = {},
+): Promise<Session | null> {
+  const finish = startPerformanceSpan("session-load");
+  // Consumers without progressive callbacks require complete history and queues.
+  // The native full read uses the authoritative transcript compatibility view.
+  if (!options.onHydrated) {
+    try {
+      const record = await invoke<SessionRecord | null>("session_get", { sessionId });
+      if (!record) return null;
+      const session = recordToSession(record);
+      persistenceBaselines.set(sessionId, {
+        blocks: incrementalBlocks(session),
+        updatedAt: record.updatedAt,
+        revision: record.transcriptRevision,
+        writes: 0,
+        normalized: false,
+      });
+      return await hydrateStoredSession(session, record.updatedAt, record.transcriptRevision);
+    } finally {
+      finish();
+    }
+  }
+  let page: StoredTranscriptPage | null;
+  try {
+    page = await invoke<StoredTranscriptPage | null>("session_get_page", { sessionId, limit: 80 });
+  } catch (error) {
+    finish();
+    throw error;
+  }
+  if (!page) {
+    finish();
+    return null;
+  }
+  const record = page.session;
+  const session = recordToSession(record);
+  session.historyLoading = page.before != null;
+  finish({ blocks: session.blocks.length, revision: page.revision });
+  if (!session.historyLoading)
+    persistenceBaselines.set(sessionId, {
+      blocks: incrementalBlocks(session),
+      updatedAt: record.updatedAt,
+      revision: record.transcriptRevision,
+      writes: 0,
+      normalized: false,
+    });
+  // Publish the tail first. Provider log repair, queue attachment checks and
+  // earlier pages cannot delay it. Every page is pinned to the first revision.
+  window.setTimeout(() => {
+    void (async () => {
+      const pages: Block[][] = [session.blocks];
+      let before = page.before;
+      while (before != null) {
+        if (deletedSessionIds.has(sessionId)) return;
+        const previous = await invoke<StoredTranscriptPage | null>("session_get_page", {
+          sessionId,
+          before,
+          revision: page.revision,
+          limit: 200,
+        });
+        if (!previous || (previous.before != null && previous.before >= before))
+          throw new Error("Invalid transcript cursor");
+        pages.push(recordToSession(previous.session).blocks);
+        before = previous.before;
+      }
+      const complete = session.historyLoading
+        ? {
+            ...session,
+            blocks: pages.reverse().flat(),
+            historyLoading: false,
+          }
+        : session;
+      if (deletedSessionIds.has(sessionId)) return;
+      // A tail snapshot never becomes a persistence baseline. Only the complete
+      // logical transcript may be checkpointed or used for provider resume.
+      persistenceBaselines.set(sessionId, {
+        blocks: incrementalBlocks(complete),
+        updatedAt: record.updatedAt,
+        revision: record.transcriptRevision,
+        writes: 0,
+        normalized: false,
+      });
+      if (session.historyLoading) options.onHydrated?.(session, complete);
+      const hydrated = await hydrateStoredSession(
+        complete,
+        record.updatedAt,
+        record.transcriptRevision,
+      );
+      if (!deletedSessionIds.has(sessionId)) options.onHydrated?.(complete, hydrated);
+    })().catch(() => options.onHydrationFailed?.(session));
+  }, 0);
+  return session;
+}
+
+async function hydrateStoredSession(
+  original: Session,
+  expectedUpdatedAt: number,
+  expectedRevision?: number,
+): Promise<Session> {
+  const session = { ...original };
+  const [repaired, queued] = await Promise.all([
+    repairStoredSession(session, expectedUpdatedAt, expectedRevision),
+    withStoredQueue(session),
+  ]);
+  return {
+    ...repaired,
+    ...(queued.queuedMessages
+      ? { queuedMessages: queued.queuedMessages, queueStatus: "restored" as const }
+      : {}),
+  };
+}
+
+/** Which of `paths` still exist on disk. */
+export async function existingPaths(paths: string[]): Promise<Set<string>> {
+  const infos = await invoke<{ path: string }[]>("inspect_paths", { paths });
+  // `inspect_paths` expands `~` and normalizes separators, so match on what
+  // came back rather than on what was sent.
+  const present = new Set(infos.map((info) => pathKey(info.path)));
+  return new Set(paths.filter((path) => present.has(pathKey(path))));
+}
+
+/**
+ * Queued follow-ups saved with the session. They come back as "restored": the
+ * session is idle after a restart, so the queue waits for the user instead of
+ * sending into a chat nobody has looked at yet.
+ */
+async function withStoredQueue(session: Session): Promise<Session> {
+  try {
+    const queue = await loadStoredQueue(session.id);
+    if (queue.length === 0) return session;
+    return { ...session, queuedMessages: queue, queueStatus: "restored" };
+  } catch {
+    // A queue that cannot be read must not cost the reader the session.
+    return session;
+  }
+}
+
+/** The saved queue for a session id, with attachments whose file is gone flagged. */
+export async function loadStoredQueue(sessionId: string): Promise<QueuedMessage[]> {
+  const raw = await invoke<unknown>("session_get_queue", { sessionId });
+  return markMissingAttachments(restoreQueuedMessages(raw), existingPaths);
+}
+
+/** Write the session's queue through to disk; an empty queue removes it. */
+export async function setSessionQueue(
+  sessionId: string,
+  queue: QueuedMessage[] | undefined,
+): Promise<void> {
+  if (!isPersistableId(sessionId) || deletedSessionIds.has(sessionId)) return;
+  const payload = persistableQueue(queue);
+  await enqueueSessionWrite(sessionId, async () => {
+    if (deletedSessionIds.has(sessionId)) return;
+    await invoke<void>("session_set_queue", { sessionId, queue: payload });
+  });
+}
+
+async function repairStoredSession(
+  session: Session,
+  expectedUpdatedAt: number,
+  expectedRevision?: number,
+): Promise<Session> {
+  if (session.harness === "claude" && session.providerSessionId) {
+    const toolIds = shellPlaceholderIds(session.blocks);
+    if (toolIds.length) {
+      try {
+        const commands = await claudeShellCommands(
+          session.providerSessionId,
+          session.providerAccountId,
+          toolIds,
+        );
+        const blocks = backfillClaudeShellCommands(session.blocks, commands);
+        if (blocks !== session.blocks) {
+          session.blocks = blocks;
+          await upsertSessionIfUnchanged(session, expectedUpdatedAt, expectedRevision);
+        }
+      } catch {
+        // A missing or unreadable Claude transcript must not block the session.
+      }
+    }
+  }
+  if (session.harness === "codex") {
+    // Relabel from the command already saved on the row. Codex sends it with
+    // the item and `shellCommandPreview` stores it as the preview title, so
+    // this needs no disk read at all.
+    const blocks = backfillCodexShellCommands(session.blocks);
+    if (blocks !== session.blocks) {
+      session.blocks = blocks;
+      // A failed write must not cost the reader the session. The repair stays
+      // in memory and the next load retries it.
+      await upsertSessionIfUnchanged(session, expectedUpdatedAt, expectedRevision).catch(
+        () => undefined,
+      );
+    }
+  }
+  if (session.harness !== "omp" || !session.providerSessionId) {
+    return recoverCursorSubagents(session);
+  }
+  try {
+    const anchors = await ompSessionInterjections(session.providerSessionId);
+    // Missing source order must not prevent the existing anchored repair.
+    const source = ompStatusSplitTexts(session.blocks).length
+      ? await ompActiveAssistantTexts(session.providerSessionId).catch(() => [])
+      : [];
+    const blocks = backfillOmpInterjections(session.blocks, anchors, source);
+    if (blocks !== session.blocks) {
+      session.blocks = blocks;
+      // Persist only while the original stored revision still owns the row.
+      // Re-reading the source on later loads allows partial repairs to retry;
+      // deterministic IDs ensure already repaired transcripts are not written.
+      await upsertSessionIfUnchanged(session, expectedUpdatedAt, expectedRevision);
+    }
+  } catch {
+    // Source logs may be absent/unreadable. Even a failed write must not stop
+    // restore; the recovered in-memory boundaries can still be displayed.
+  }
+  return session;
+}
+
+export function backfillClaudeShellCommands(
+  blocks: Block[],
+  commands: Record<string, string>,
+): Block[] {
+  let changed = false;
+  const repaired = blocks.map((block) => {
+    const callId = block.tool?.callId;
+    const value = callId ? commands[callId] : undefined;
+    const command = typeof value === "string" ? value.trim() : undefined;
+    if (
+      block.role !== "tool" ||
+      block.tool?.kind !== "execute" ||
+      block.text.trim() !== "Shell" ||
+      !command
+    ) {
+      return block;
+    }
+    changed = true;
+    const title = titleFromToolInput("Bash", "execute", { command });
+    return {
+      ...block,
+      text: title,
+      tool: { ...block.tool, title },
+    };
+  });
+  return changed ? repaired : blocks;
+}
+
+/** Exec rows that were saved without their command, keyed by their tool call. */
+function shellPlaceholderIds(blocks: Block[]): string[] {
+  return blocks.flatMap((block) =>
+    block.role === "tool" &&
+    block.tool?.kind === "execute" &&
+    block.text.trim() === "Shell" &&
+    block.tool.callId
+      ? [block.tool.callId]
+      : [],
+  );
+}
+
+/**
+ * Relabel exec rows that were saved without their command.
+ *
+ * The command is already on the row: Codex sends it with the item, and
+ * `shellCommandPreview` stores it as the preview title. Reading it back from
+ * there keeps whatever Codex chose to show the user — including anything it
+ * redacted — and never re-reads a secret off disk into the transcript store. A
+ * row saved without a usable preview has no command left to recover, so it keeps
+ * its placeholder label.
+ */
+export function backfillCodexShellCommands(blocks: Block[]): Block[] {
+  let changed = false;
+  const repaired = blocks.map((block) => {
+    if (block.role !== "tool" || block.tool?.kind !== "execute" || block.text.trim() !== "Shell") {
+      return block;
+    }
+    const saved = block.tool.preview?.title?.trim();
+    if (!saved || isWeakToolTitle(saved)) return block;
+    changed = true;
+    const { title, preview } = codexCommandPresentation({}, saved);
+    return {
+      ...block,
+      text: title,
+      tool: {
+        ...block.tool,
+        title,
+        ...(preview ? { preview } : {}),
+      },
+    };
+  });
+  return changed ? repaired : blocks;
+}
+
+export async function deleteSession(sessionId: string, imagePaths: string[] = []): Promise<void> {
+  deletedSessionIds.add(sessionId);
+  try {
+    // A lead with workers still has writes in flight. Finish those before
+    // the deletion transaction strips their ownership metadata.
+    const pendingWrites = [...sessionWriteQueues.entries()]
+      .filter(
+        ([queuedSessionId]) =>
+          queuedSessionId === sessionId || sessionWriteLeadById.get(queuedSessionId) === sessionId,
+      )
+      .map(([, pending]) => pending);
+    if (pendingWrites.length > 0) await Promise.all(pendingWrites);
+    await enqueueSessionWrite(sessionId, () =>
+      invoke<void>("session_delete", { sessionId, imagePaths }),
+    );
+    persistenceBaselines.delete(sessionId);
+    removeSessionAdditionalDirs(sessionId);
+    // The cache's change listener deletes the saved draft row.
+    clearComposerDraft(sessionId);
+    const tombstone = setTimeout(() => deletedSessionIds.delete(sessionId), 60_000);
+    if (typeof tombstone === "object") tombstone.unref();
+  } catch (error) {
+    deletedSessionIds.delete(sessionId);
+    throw error;
+  }
+}
+
+/** Delete a draft-only record while allowing its still-open blank session id to be saved later. */
+export async function discardDraftSessionRecord(sessionId: string): Promise<void> {
+  await enqueueSessionWrite(sessionId, () =>
+    invoke<void>("session_delete", { sessionId, imagePaths: [] }),
+  );
+  persistenceBaselines.delete(sessionId);
+}
+
+export async function setSessionArchived(sessionId: string, archived: boolean): Promise<void> {
+  await enqueueSessionWrite(sessionId, () =>
+    invoke<void>("session_set_archived", { sessionId, archived }),
+  );
+}
+
+export async function setSessionPinned(sessionId: string, pinned: boolean): Promise<void> {
+  await invoke<void>("session_set_pinned", { sessionId, pinned });
+}
+
+export async function setSessionLinkedWorkItem(
+  sessionId: string,
+  value: LinkedWorkItem | undefined,
+): Promise<void> {
+  const linkedWorkItem = sanitizeLinkedWorkItem(value);
+  await enqueueSessionWrite(sessionId, () =>
+    invoke<void>("session_set_linked_work_item", {
+      sessionId,
+      linkedWorkItem: linkedWorkItem ?? null,
+    }),
+  );
+}
+
+/** Drain pending saves before a worktree removal changes stored session context. */
+export async function flushSessionWrites(): Promise<void> {
+  await Promise.all([...sessionWriteQueues.values()]);
+}
+
+/**
+ * `session_set_in_flight` runs off the main thread, so two replaces could
+ * otherwise land in either order and restore a stale busy snapshot.
+ */
+let inFlightWrite: Promise<unknown> = Promise.resolve();
+
+export async function replaceInFlightSessions(
+  refs: { sessionId: string; cwd: string }[],
+): Promise<void> {
+  // Tool windows must not replace the main window's recovery list.
+  if (readToolWindow()) return;
+  const run = inFlightWrite
+    .catch(() => undefined)
+    .then(() =>
+      invoke("session_set_in_flight", {
+        sessions: refs.map((ref) => ({
+          sessionId: ref.sessionId,
+          cwd: normalizeProjectPath(ref.cwd),
+        })),
+      }),
+    );
+  inFlightWrite = run;
+  await run;
+}
+
+/** Kept across Vite reloads; boot must not delete the only copy. */
+export async function listInFlightSessions(): Promise<{ sessionId: string; cwd: string }[]> {
+  const rows = await invoke<{ sessionId: string; cwd: string }[]>("session_list_in_flight");
+  return Array.isArray(rows) ? rows : [];
+}
+
+/** Destructive: the first window to boot after a quit owns these chats. */
+export async function takeInFlightSessions(): Promise<{ sessionId: string; cwd: string }[]> {
+  const rows = await invoke<{ sessionId: string; cwd: string }[]>("session_take_in_flight");
+  return Array.isArray(rows) ? rows : [];
+}
+
+/**
+ * `workspace_set_snapshot` runs off the main thread, so two saves could
+ * otherwise finish out of order and keep an older layout.
+ */
+let workspaceWrite: Promise<unknown> = Promise.resolve();
+
+export async function saveWorkspaceSnapshot(snapshot: unknown): Promise<void> {
+  if (readToolWindow()) return;
+  const durableSnapshot =
+    snapshot && typeof snapshot === "object"
+      ? {
+          ...snapshot,
+          ...(hasInitializedSessionRecovery() ? { sessionRecovery: getSessionRecovery() } : {}),
+        }
+      : snapshot;
+  const run = workspaceWrite
+    .catch(() => undefined)
+    .then(async () => {
+      // Detached windows skip boot recovery. Do not let their quit snapshot
+      // erase a journal captured by the primary window. A failed read aborts.
+      if (
+        durableSnapshot &&
+        typeof durableSnapshot === "object" &&
+        !("sessionRecovery" in durableSnapshot)
+      ) {
+        const saved = await loadWorkspaceSnapshot();
+        if (saved && typeof saved === "object" && "sessionRecovery" in saved) {
+          Object.assign(durableSnapshot, { sessionRecovery: saved.sessionRecovery });
+        }
+      }
+      return invoke("workspace_set_snapshot", { snapshot: durableSnapshot });
+    });
+  workspaceWrite = run;
+  await run;
+}
+
+export async function loadWorkspaceSnapshot(): Promise<unknown | null> {
+  const raw = await invoke<unknown | null>("workspace_get_snapshot");
+  return raw ?? null;
+}
+
+function sanitizeBlock(block: Block, options?: { hydrate?: boolean }): Block | null {
+  const next: Block = {
+    id: block.id,
+    role: block.role,
+    text: block.text,
+  };
+  if (block.attachments?.length) {
+    next.attachments = block.attachments.map(persistableAttachment);
+  }
+  const image = sanitizeGeneratedImage(block.image);
+  if (block.role === "image" && !image) return null;
+  if (image) next.image = image;
+  if (block.startedAt != null) next.startedAt = block.startedAt;
+  if (block.durationMs != null) next.durationMs = block.durationMs;
+  if (block.role === "user" && block.turnOutcome === "stopped") {
+    next.turnOutcome = "stopped";
+    const turnStoppedAt = sanitizeTimestamp(block.turnStoppedAt);
+    if (turnStoppedAt != null) next.turnStoppedAt = turnStoppedAt;
+  }
+  const turnModel = sanitizeTurnModel(block.turnModel);
+  if (block.role === "user" && turnModel) next.turnModel = turnModel;
+  if (block.role === "user" && block.draft) next.draft = true;
+  if (
+    block.role === "user" &&
+    block.draft &&
+    (block.followUpDelivery === "pending" ||
+      block.followUpDelivery === "undelivered" ||
+      block.followUpDelivery === "uncertain")
+  )
+    next.followUpDelivery = block.followUpDelivery;
+  if (block.role === "user" && block.bycoda) next.bycoda = true;
+  if (block.role === "user" && (block.intent === "plan" || block.intent === "orchestrate"))
+    next.intent = block.intent;
+  if (
+    block.role === "user" &&
+    typeof block.appRequestId === "string" &&
+    /^[A-Za-z0-9_-]{1,512}$/.test(block.appRequestId)
+  )
+    next.appRequestId = block.appRequestId;
+  if (
+    block.role === "user" &&
+    typeof block.providerTurnId === "string" &&
+    isPersistableId(block.providerTurnId)
+  )
+    next.providerTurnId = block.providerTurnId;
+  if (
+    block.role === "user" &&
+    typeof block.orchestrationLeadId === "string" &&
+    isPersistableId(block.orchestrationLeadId)
+  )
+    next.orchestrationLeadId = block.orchestrationLeadId;
+  // Without this the transcript would show the app's orchestration turns as
+  // the user's own after a reload.
+  if (block.role === "user" && block.internal) next.internal = true;
+  if (block.role === "user" && Array.isArray(block.questionAnswers)) {
+    const questionAnswers = block.questionAnswers.filter(
+      (entry) =>
+        entry &&
+        typeof entry.prompt === "string" &&
+        Array.isArray(entry.answers) &&
+        entry.answers.length > 0 &&
+        entry.answers.every((answer) => typeof answer === "string"),
+    );
+    if (questionAnswers.length) next.questionAnswers = questionAnswers;
+  }
+  const turnMetrics = sanitizeTurnMetrics(block.turnMetrics);
+  if (block.role === "user" && turnMetrics) next.turnMetrics = turnMetrics;
+  if (block.tool)
+    next.tool = block.tool.preview
+      ? { ...block.tool, preview: boundedToolPreview(block.tool.preview) }
+      : block.tool;
+  if (block.approval?.decided) {
+    next.approval = {
+      requestId: block.approval.requestId,
+      decided: block.approval.decided,
+    };
+  } else if (block.approval && !block.approval.decided) {
+    // Drop stale live approval prompts; request ids don't survive restarts.
+    if (block.role === "approval") return null;
+  }
+  const agentRun = sanitizeAgentRun(block.agentRun);
+  if (agentRun) next.agentRun = agentRun;
+  const taskList = sanitizeTaskList(block.taskList);
+  if (taskList) next.taskList = taskList;
+  else if (block.role === "tasks") return null;
+  const plan = sanitizePlan(block.plan, block.text);
+  if (block.orchestration) next.orchestration = restoreOrchestrationProposal(block.orchestration);
+  if (plan) next.plan = plan;
+  else if (block.role === "plan") {
+    next.plan = { status: "ready", originalText: block.text };
+  }
+  const handoff = sanitizeHandoff(block.handoff);
+  if (handoff) next.handoff = handoff;
+  else if (block.role === "handoff") return null;
+  const secondOpinion = sanitizeSecondOpinion(block.secondOpinion);
+  if (secondOpinion) next.secondOpinion = secondOpinion;
+  if (block.role === "user") {
+    const btwThreads = sanitizeBtwThreads(block.btwThreads, options?.hydrate === true);
+    if (btwThreads) next.btwThreads = btwThreads;
+  }
+  const noteCard = sanitizeNoteCard(block.noteCard);
+  if (noteCard) next.noteCard = noteCard;
+  if (block.role === "user" && typeof block.ciContext === "string" && block.ciContext) {
+    next.ciContext = block.ciContext;
+  }
+  // Interjection chrome survives restarts only on system blocks; a malformed
+  // payload keeps the ordinary system row rather than losing its body.
+  if (block.role === "system") {
+    const interjection = sanitizeInterjection(block.interjection);
+    if (interjection) next.interjection = interjection;
+    if (block.notice === "error" || block.notice === "interrupt") {
+      next.notice = block.notice;
+    }
+    const shell = sanitizeShellRun(block.shell);
+    if (shell) next.shell = shell;
+  }
+  return next;
+}
+
+/** A run still in flight when it was saved did not survive the restart. */
+function sanitizeShellRun(value: Block["shell"]): Block["shell"] {
+  if (!value || typeof value !== "object") return undefined;
+  if (typeof value.command !== "string" || !value.command) return undefined;
+  return {
+    command: value.command,
+    output: typeof value.output === "string" ? value.output : "",
+    exitCode: typeof value.exitCode === "number" && !value.running ? value.exitCode : null,
+    ...(value.timedOut ? { timedOut: true } : {}),
+    ...(value.truncated ? { truncated: true } : {}),
+  };
+}
+
+function sanitizeNestedId(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const id = value.trim();
+  if (!id || id.length > 256 || /[\u0000-\u001f]/.test(id)) return undefined;
+  return id;
+}
+function sanitizeStringRecord(value: unknown): Record<string, string> | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return undefined;
+  }
+  const next: Record<string, string> = {};
+  for (const [key, raw] of Object.entries(value)) {
+    const safeKey = sanitizeNestedId(key);
+    const safeValue = sanitizeNestedId(raw);
+    if (safeKey && safeValue) next[safeKey] = safeValue;
+  }
+  return Object.keys(next).length > 0 ? next : undefined;
+}
+
+function sanitizeTimestamp(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : undefined;
+}
+
+function sanitizeBtwMessage(value: unknown): BtwMessage | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return undefined;
+  }
+  const record = value as Record<string, unknown>;
+  const id = sanitizeNestedId(record.id);
+  const text = typeof record.text === "string" ? record.text : undefined;
+  const createdAt = sanitizeTimestamp(record.createdAt);
+  const role = record.role === "user" || record.role === "assistant" ? record.role : undefined;
+  if (!id || text == null || createdAt == null || !role) return undefined;
+  const blocks = Array.isArray(record.blocks)
+    ? record.blocks.flatMap((block) => {
+        const next = sanitizeBlock(block as Block);
+        return next ? [next] : [];
+      })
+    : [];
+  return {
+    id,
+    role,
+    text,
+    createdAt,
+    ...(blocks.length > 0 ? { blocks } : {}),
+  };
+}
+
+function sanitizeBtwThreads(value: unknown, hydrate: boolean): BtwThread[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const threads = value.flatMap((entry): BtwThread[] => {
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+      return [];
+    }
+    const record = entry as Record<string, unknown>;
+    const id = sanitizeNestedId(record.id);
+    const sourceEndBlockId = sanitizeNestedId(record.sourceEndBlockId);
+    const createdAt = sanitizeTimestamp(record.createdAt);
+    const updatedAt = sanitizeTimestamp(record.updatedAt);
+    const status =
+      record.status === "running" || record.status === "ready" || record.status === "error"
+        ? record.status
+        : undefined;
+    const messages = Array.isArray(record.messages)
+      ? record.messages.flatMap((message) => {
+          const next = sanitizeBtwMessage(message);
+          return next ? [next] : [];
+        })
+      : [];
+    if (
+      !id ||
+      !sourceEndBlockId ||
+      createdAt == null ||
+      updatedAt == null ||
+      !status ||
+      messages.length === 0
+    ) {
+      return [];
+    }
+    const error = typeof record.error === "string" ? record.error.trim() : "";
+    const model = typeof record.model === "string" ? record.model.trim() : "";
+    const harness =
+      typeof record.harness === "string" &&
+      record.harness.trim() &&
+      HARNESSES.includes(record.harness as HarnessId)
+        ? (record.harness as HarnessId)
+        : undefined;
+    const modelSettings = sanitizeStringRecord(record.modelSettings);
+    const providerThreadId = sanitizeNestedId(record.providerThreadId);
+    const interrupted = hydrate && status === "running";
+    return [
+      {
+        id,
+        sourceEndBlockId,
+        createdAt,
+        updatedAt,
+        status: interrupted ? "error" : status,
+        messages,
+        ...(harness ? { harness } : {}),
+        ...(model ? { model } : {}),
+        ...(modelSettings ? { modelSettings } : {}),
+        ...(providerThreadId ? { providerThreadId } : {}),
+        ...(interrupted
+          ? {
+              error: error || "This by-the-way request was interrupted before reload.",
+            }
+          : error
+            ? { error }
+            : {}),
+      },
+    ];
+  });
+  return threads.length > 0 ? threads : undefined;
+}
+
+function sanitizeGeneratedImage(value: unknown): GeneratedImageMeta | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return undefined;
+  }
+  const record = value as Record<string, unknown>;
+  const path = typeof record.path === "string" ? record.path.trim() : "";
+  const name = typeof record.name === "string" ? record.name.trim() : "";
+  const mimeType = typeof record.mimeType === "string" ? record.mimeType.trim() : "";
+  const size = record.size;
+  if (
+    !path ||
+    !name ||
+    !mimeType.startsWith("image/") ||
+    typeof size !== "number" ||
+    !Number.isSafeInteger(size) ||
+    size <= 0
+  ) {
+    return undefined;
+  }
+  const alt = typeof record.alt === "string" ? record.alt.trim() : "";
+  return {
+    path,
+    name,
+    mimeType,
+    size,
+    ...(alt ? { alt } : {}),
+  };
+}
+
+function sanitizeTurnMetrics(value: unknown): TurnMetrics | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return undefined;
+  }
+  const rec = value as Record<string, unknown>;
+  const number = (key: keyof TurnMetrics): number | undefined => {
+    const candidate = rec[key];
+    return typeof candidate === "number" && Number.isFinite(candidate) && candidate >= 0
+      ? candidate
+      : undefined;
+  };
+  const metrics: TurnMetrics = {
+    ...(number("inputTokens") != null ? { inputTokens: number("inputTokens") } : {}),
+    ...(number("outputTokens") != null ? { outputTokens: number("outputTokens") } : {}),
+    ...(number("cacheReadTokens") != null ? { cacheReadTokens: number("cacheReadTokens") } : {}),
+    ...(number("cacheWriteTokens") != null ? { cacheWriteTokens: number("cacheWriteTokens") } : {}),
+    ...(number("cacheHitPercent") != null ? { cacheHitPercent: number("cacheHitPercent") } : {}),
+  };
+  return Object.keys(metrics).length > 0 ? metrics : undefined;
+}
+
+function sanitizeTurnModel(value: unknown): TurnModel | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return undefined;
+  }
+  const record = value as Record<string, unknown>;
+  const harness = record.harness;
+  const id = typeof record.id === "string" ? record.id.trim() : "";
+  const name = typeof record.name === "string" ? record.name.trim() : "";
+  if (typeof harness !== "string" || !HARNESSES.includes(harness as HarnessId) || !id || !name) {
+    return undefined;
+  }
+  return { harness: harness as HarnessId, id, name };
+}
+
+function sanitizeInterjection(value: Block["interjection"]): InterjectionMeta | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return undefined;
+  }
+  const record = value as Record<string, unknown>;
+  const customType = typeof record.customType === "string" ? record.customType.trim() : "";
+  if (!customType) return undefined;
+  const severity = record.severity;
+  return {
+    customType,
+    ...(severity === "nit" || severity === "concern" || severity === "blocker" ? { severity } : {}),
+  };
+}
+
+function sanitizePlan(value: unknown, text: string): PlanBlockMeta | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const record = value as Record<string, unknown>;
+  const status = record.status;
+  if (status !== "streaming" && status !== "ready" && status !== "building" && status !== "built") {
+    return null;
+  }
+  const key = typeof record.key === "string" ? record.key.trim() : "";
+  const originalText = typeof record.originalText === "string" ? record.originalText : text;
+  const approvedText = typeof record.approvedText === "string" ? record.approvedText : "";
+  return {
+    ...(key ? { key } : {}),
+    // A restarted app cannot still be executing this approval.
+    status: status === "streaming" || status === "building" ? "ready" : status,
+    ...(originalText ? { originalText } : {}),
+    ...(approvedText ? { approvedText } : {}),
+    ...(record.edited === true ? { edited: true } : {}),
+  };
+}
+
+/**
+ * How much of a delegated run's trail a saved session keeps. Reopening a
+ * session is for reading what the subagent concluded, not for replaying every
+ * call it made, and a long run would otherwise dominate the snapshot.
+ */
+const PERSISTED_AGENT_STEPS = 100;
+
+function sanitizeAgentRun(value: unknown): AgentRunMeta | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const record = value as Record<string, unknown>;
+  if (!Array.isArray(record.steps)) return null;
+  const steps = record.steps.flatMap((entry): AgentStep[] => {
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) return [];
+    const row = entry as Record<string, unknown>;
+    const id = typeof row.id === "string" ? row.id : "";
+    const kind = row.kind;
+    if (!id || (kind !== "tool" && kind !== "message" && kind !== "reasoning")) {
+      return [];
+    }
+    const text = typeof row.text === "string" ? row.text : "";
+    return [
+      {
+        id,
+        kind,
+        text,
+        ...(typeof row.toolKind === "string" ? { toolKind: row.toolKind } : {}),
+        ...(typeof row.status === "string" ? { status: row.status } : {}),
+        ...(typeof row.detail === "string" ? { detail: row.detail } : {}),
+        ...(row.preview && typeof row.preview === "object"
+          ? {
+              preview: boundedToolPreview(
+                row.preview as AgentStep["preview"],
+                PERSISTED_AGENT_OUTPUT_STEP_CHARS,
+              ),
+            }
+          : {}),
+        ...persistedOutput(row),
+      },
+    ];
+  });
+  const name = typeof record.name === "string" ? record.name.trim() : "";
+  const prompt =
+    typeof record.prompt === "string" && record.prompt.trim()
+      ? capHeadTail(record.prompt.trim(), PERSISTED_AGENT_PROMPT_CHARS).text
+      : "";
+  if (!name && steps.length === 0) return null;
+  return {
+    name: name || "Subagent",
+    ...(typeof record.model === "string" && record.model.trim()
+      ? { model: record.model.trim() }
+      : {}),
+    ...(typeof record.agentType === "string" && record.agentType.trim()
+      ? { agentType: record.agentType.trim() }
+      : {}),
+    ...(prompt ? { prompt } : {}),
+    steps: budgetStepOutputs(steps.slice(-PERSISTED_AGENT_STEPS), PERSISTED_AGENT_OUTPUT_RUN_CHARS),
+    ...(isEpochMs(record.startedAt) ? { startedAt: record.startedAt } : {}),
+    ...(isEpochMs(record.endedAt) ? { endedAt: record.endedAt } : {}),
+  };
+}
+
+/**
+ * A saved session keeps a short form of each tool result: enough to see what a
+ * call returned, not a replay of it. Live runs hold far more (agentOutput.ts).
+ */
+function persistedOutput(
+  row: Record<string, unknown>,
+): Pick<AgentStep, "output" | "outputTruncated"> {
+  const capped =
+    typeof row.output === "string"
+      ? capStepOutput(row.output, PERSISTED_AGENT_OUTPUT_STEP_CHARS)
+      : undefined;
+  const truncated = capped?.truncated || row.outputTruncated === true;
+  return {
+    ...(capped ? { output: capped.output } : {}),
+    ...(truncated ? { outputTruncated: true } : {}),
+  };
+}
+
+function isEpochMs(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value) && value > 0;
+}
+
+function sanitizeTaskList(value: unknown): TaskListMeta | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const record = value as Record<string, unknown>;
+  if (!Array.isArray(record.items)) return null;
+  const items = record.items.flatMap((item) => {
+    if (!item || typeof item !== "object" || Array.isArray(item)) return [];
+    const row = item as Record<string, unknown>;
+    const text = typeof row.text === "string" ? row.text.trim() : "";
+    const status = row.status;
+    if (
+      !text ||
+      (status !== "pending" &&
+        status !== "in_progress" &&
+        status !== "completed" &&
+        status !== "cancelled")
+    ) {
+      return [];
+    }
+    const id =
+      typeof row.id === "string"
+        ? row.id.trim()
+        : typeof row.id === "number" && Number.isFinite(row.id)
+          ? String(row.id)
+          : "";
+    return [{ ...(id ? { id } : {}), text, status }] satisfies TaskListMeta["items"];
+  });
+  if (items.length === 0) return null;
+  const key = typeof record.key === "string" ? record.key.trim() : "";
+  const providerSessionId =
+    typeof record.providerSessionId === "string" ? record.providerSessionId.trim() : "";
+  const explanation = typeof record.explanation === "string" ? record.explanation.trim() : "";
+  return {
+    ...(key ? { key } : {}),
+    ...(providerSessionId ? { providerSessionId } : {}),
+    ...(explanation ? { explanation } : {}),
+    items,
+  };
+}
+
+function normalizeSummary(summary: SessionSummary): SessionSummary {
+  const linkedWorkItem = sanitizeLinkedWorkItem(summary.linkedWorkItem);
+  return {
+    ...summary,
+    harness: asHarness(summary.harness),
+    runtimeMode: asRuntimeMode(summary.runtimeMode),
+    ...(summary.providerSessionId ? { providerSessionId: summary.providerSessionId } : {}),
+    ...(summary.branch ? { branch: summary.branch } : {}),
+    ...(summary.repo ? { repo: summary.repo } : {}),
+    additions: summary.additions ?? 0,
+    deletions: summary.deletions ?? 0,
+    archived: summary.archived || undefined,
+    pinned: summary.pinned || undefined,
+    draft: summary.draft || undefined,
+    linkedWorkItem,
+    ...(typeof summary.automationId === "string" && isPersistableId(summary.automationId)
+      ? { automationId: summary.automationId }
+      : {}),
+  };
+}
+
+function recordToSession(record: SessionRecord): Session {
+  const blocks = Array.isArray(record.blocks)
+    ? record.blocks
+        .map((block) => sanitizeBlock(block, { hydrate: true }))
+        .filter((block): block is Block => block != null)
+    : [];
+  const linkedWorkItem = sanitizeLinkedWorkItem(record.linkedWorkItem);
+  const rewindHistory = sanitizeRewindHistory(record.rewindHistory);
+  return {
+    id: record.id,
+    cwd: record.cwd,
+    harness: asHarness(record.harness),
+    model: record.model,
+    modelSettings:
+      record.modelSettings && typeof record.modelSettings === "object" ? record.modelSettings : {},
+    runtimeMode: asRuntimeMode(record.runtimeMode),
+    title: record.title,
+    blocks,
+    busy: false,
+    orchestrationLeadId:
+      record.orchestrationLeadId ??
+      blocks.find((block) => block.orchestrationLeadId && block.orchestrationLeadId !== record.id)
+        ?.orchestrationLeadId,
+    ...(record.providerSessionId ? { providerSessionId: record.providerSessionId } : {}),
+    ...(record.providerAccountId ? { providerAccountId: record.providerAccountId } : {}),
+    ...(record.branch ? { branch: record.branch } : {}),
+    ...(record.worktreeCwd ? { worktreeCwd: record.worktreeCwd } : {}),
+    ...(record.worktreeRemoved ? { worktreeRemoved: true } : {}),
+    ...(linkedWorkItem ? { linkedWorkItem } : {}),
+    ...(record.automationId && isPersistableId(record.automationId)
+      ? { automationId: record.automationId }
+      : {}),
+    ...(rewindHistory ? { rewindHistory } : {}),
+    ...(typeof record.pendingContextReplay === "string" && record.pendingContextReplay
+      ? { pendingContextReplay: record.pendingContextReplay.slice(0, 24_000) }
+      : {}),
+    ...(contextFromRecord(record) ?? {}),
+  };
+}
+
+/**
+ * Last known reading from a stored session. The harness re-reports on the next
+ * turn, so this only has to survive until then.
+ */
+function contextFromRecord(record: SessionRecord): { context: ContextUsage } | undefined {
+  const used = record.contextUsed;
+  if (typeof used !== "number" || !Number.isFinite(used) || used <= 0) {
+    return undefined;
+  }
+  const window = record.contextWindow;
+  return {
+    context:
+      typeof window === "number" && Number.isFinite(window) && window > 0
+        ? { used, window }
+        : { used },
+  };
+}
+
+function asHarness(value: string): HarnessId {
+  return (HARNESSES as string[]).includes(value) ? (value as HarnessId) : "cursor";
+}
+
+const HANDOFF_STATUSES: HandoffStatus[] = ["preparing", "ready"];
+
+function sanitizeHandoff(value: Block["handoff"]): HandoffMeta | undefined {
+  if (!value) return undefined;
+  if (!(HARNESSES as string[]).includes(value.from)) return undefined;
+  if (!(HARNESSES as string[]).includes(value.to)) return undefined;
+  if (!HANDOFF_STATUSES.includes(value.status)) return undefined;
+  const interrupted = value.status === "preparing";
+  return {
+    from: value.from,
+    to: value.to,
+    status: "ready",
+    pending: interrupted || !!value.pending,
+  };
+}
+
+function sanitizeSecondOpinion(value: Block["secondOpinion"]): SecondOpinionMeta | undefined {
+  if (!value) return undefined;
+  if (!(HARNESSES as string[]).includes(value.from)) return undefined;
+  if (!(HARNESSES as string[]).includes(value.to)) return undefined;
+  const request = typeof value.request === "string" ? value.request.trim().slice(0, 240) : "";
+  const files =
+    typeof value.files === "number" && Number.isFinite(value.files)
+      ? Math.max(0, Math.round(value.files))
+      : 0;
+  return {
+    from: value.from,
+    to: value.to,
+    ...(request ? { request } : {}),
+    ...(files > 0 ? { files } : {}),
+    ...(value.kind === "handoff" ? { kind: "handoff" as const } : {}),
+  };
+}
+
+function sanitizeNoteCard(value: Block["noteCard"]): Block["noteCard"] {
+  if (!value || typeof value !== "object") return undefined;
+  const id = typeof value.id === "string" ? value.id.trim() : "";
+  if (!id) return undefined;
+  const slug = typeof value.slug === "string" ? value.slug.trim() : "";
+  const title = typeof value.title === "string" ? value.title.trim() : "";
+  const sourceCwd = typeof value.sourceCwd === "string" ? value.sourceCwd.trim() : "";
+  return {
+    id,
+    slug,
+    title,
+    ...(sourceCwd ? { sourceCwd } : {}),
+  };
+}
+
+function asRuntimeMode(value: string): RuntimeMode {
+  return (RUNTIME_MODES as string[]).includes(value) ? (value as RuntimeMode) : "supervised";
+}

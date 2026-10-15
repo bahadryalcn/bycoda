@@ -1,0 +1,294 @@
+.conflict-workspace {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-inline-size: 0;
+  min-block-size: 0;
+  container-type: inline-size;
+}
+.conflict-layout-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 4px 8px;
+  border-block-end: 1px solid var(--color-stroke);
+  font-size: 11px;
+  align-items: center;
+}
+.conflict-layout-panes {
+  display: grid;
+  flex: 1;
+  min-inline-size: 0;
+  min-block-size: 0;
+  gap: 1px;
+  background: var(--color-stroke);
+  position: relative;
+  grid-template-columns: minmax(0, var(--conflict-x, 50%)) minmax(0, 1fr);
+  grid-template-rows: minmax(0, var(--conflict-y, 50%)) minmax(0, 1fr);
+  grid-template-areas: "ours theirs" "result result";
+}
+.conflict-pane {
+  display: flex;
+  flex-direction: column;
+  min-inline-size: 0;
+  min-block-size: 0;
+  overflow: clip;
+  background: var(--ui-surface);
+}
+.conflict-pane-result {
+  grid-area: result;
+}
+.conflict-pane-ours {
+  grid-area: ours;
+  --conflict-tint: var(--color-conflict-ours);
+  --conflict-highlight: var(--ui-conflict-current-surface);
+  --conflict-word: var(--ui-conflict-current-word);
+}
+.conflict-pane-theirs {
+  grid-area: theirs;
+  --conflict-tint: var(--color-conflict-theirs);
+  --conflict-highlight: var(--ui-conflict-incoming-surface);
+  --conflict-word: var(--ui-conflict-incoming-word);
+}
+.conflict-pane-heading {
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  gap: 2px;
+  padding: 6px 12px;
+  border-block-end: 1px solid var(--color-stroke);
+  border-block-start: 2px solid var(--conflict-tint, var(--color-accent));
+  background: var(--ui-surface-raised);
+  font-size: 12px;
+}
+.conflict-pane-heading strong {
+  overflow: clip;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 500;
+}
+.conflict-pane-result .conflict-pane-heading {
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.conflict-pane-heading-text {
+  min-inline-size: 0;
+}
+.conflict-source-editor {
+  flex: 1;
+  min-block-size: 0;
+}
+.conflict-source-change {
+  background: var(--conflict-highlight);
+  border-inline-start: 2px solid var(--conflict-tint);
+}
+.conflict-source-word {
+  background: var(--conflict-word);
+  border-radius: 2px;
+}
+.conflict-progress {
+  padding-inline: 4px;
+  color: var(--color-warning);
+}
+.conflict-progress[data-complete="true"] {
+  color: var(--color-success);
+}
+.conflict-inline-actions {
+  display: flex;
+  flex-wrap: wrap;
+  /* Contribute no intrinsic width so the bar wraps inside the visible editor
+     instead of widening CodeMirror's max-content line box. */
+  box-sizing: border-box;
+  inline-size: 0;
+  min-inline-size: 100%;
+  align-items: center;
+  gap: 2px;
+  padding: 2px 8px;
+  border-inline-start: 2px solid var(--color-warning);
+  background: var(--ui-surface-raised);
+  font-family: var(--font-sans);
+  font-size: 11px;
+  color: var(--ui-text-secondary);
+}
+.conflict-inline-actions:not([data-state="pending"]) {
+  border-inline-start-color: var(--color-accent);
+}
+.conflict-inline-actions[data-active="true"] {
+  box-shadow: inset 0 1px var(--ui-border-accent);
+  color: var(--color-content);
+}
+.conflict-inline-label {
+  margin-inline-end: 8px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+.conflict-inline-choice {
+  padding: 1px 6px;
+  border-radius: 4px;
+  color: inherit;
+  background: transparent;
+  cursor: pointer;
+}
+.conflict-inline-choice:active {
+  background: var(--ui-surface-pressed);
+}
+.conflict-inline-choice[aria-pressed="true"] {
+  background: var(--ui-surface-selected);
+  color: var(--color-content);
+}
+.conflict-inline-choice:disabled {
+  color: var(--ui-text-disabled);
+  cursor: default;
+}
+/* Source bars take their side's tint; a pressed source shows it was accepted. */
+.conflict-source-actions,
+.conflict-source-actions:not([data-state="pending"]) {
+  border-inline-start-color: var(--conflict-tint);
+}
+.conflict-source-actions .conflict-inline-choice {
+  color: var(--conflict-tint);
+}
+.conflict-source-actions .conflict-inline-choice[aria-pressed="true"]::before {
+  content: "✓ ";
+}
+.conflict-inline-choice:focus-visible {
+  outline: 1px solid var(--color-accent);
+  outline-offset: -1px;
+}
+.merge-conflict-editor,
+.conflict-result-editor {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-inline-size: 0;
+  min-block-size: 0;
+}
+.conflict-source-editor > .cm-editor,
+.conflict-result-editor > .cm-editor {
+  block-size: 100%;
+}
+.conflict-source-title,
+.conflict-pane-actions,
+.conflict-navigation {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+  min-inline-size: 0;
+}
+.conflict-source-title {
+  justify-content: space-between;
+}
+.conflict-source-title strong {
+  flex: 1;
+  min-inline-size: 0;
+}
+.conflict-navigation {
+  margin-inline-start: auto;
+  font-variant-numeric: tabular-nums;
+}
+.conflict-source-active,
+.conflict-result-editor [data-merge-active="true"] {
+  box-shadow:
+    inset 0 1px var(--ui-border-accent),
+    inset 0 -1px var(--ui-border-accent);
+}
+.conflict-result-pending {
+  background: var(--ui-surface-muted);
+  border-inline-start: 2px solid var(--color-warning);
+}
+.conflict-result-resolved {
+  background: var(--ui-surface-selected);
+  border-inline-start: 2px solid var(--color-accent);
+}
+@media (hover: hover) and (pointer: fine) {
+  .conflict-inline-choice:not(:disabled):hover {
+    background: var(--ui-surface-hover);
+  }
+}
+.conflict-editor-error,
+.conflict-editor-status {
+  padding: 4px 12px;
+  font-size: 12px;
+  color: var(--ui-text-secondary);
+}
+.conflict-editor-error {
+  color: var(--color-danger);
+}
+.conflict-source-missing {
+  padding: 12px;
+  font-size: 12px;
+}
+.conflict-workspace[data-layout="columns"] .conflict-layout-panes {
+  grid-template-columns:
+    minmax(0, var(--conflict-c1, 33.333%)) minmax(0, 1fr)
+    minmax(0, var(--conflict-c3, 33.333%));
+  grid-template-rows: minmax(0, 1fr);
+  grid-template-areas: "ours result theirs";
+}
+.conflict-workspace[data-layout="inline"] .conflict-layout-panes {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+  grid-template-areas: "result";
+}
+.conflict-workspace[data-layout="inline"] :is(.conflict-pane-ours, .conflict-pane-theirs) {
+  display: none;
+}
+@container (inline-size < 600px) {
+  .conflict-workspace[data-layout] .conflict-layout-panes {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 2fr);
+    grid-template-areas: "ours" "theirs" "result";
+  }
+  .conflict-sash {
+    display: none;
+  }
+  .conflict-workspace[data-layout="inline"] .conflict-layout-panes {
+    grid-template-rows: minmax(0, 1fr);
+    grid-template-areas: "result";
+  }
+}
+
+/* Separators sit over the 1px grid gaps with a wider invisible hit area. */
+.conflict-sash {
+  position: absolute;
+  z-index: 2;
+  touch-action: none;
+}
+.conflict-sash[data-axis="x"] {
+  inline-size: 7px;
+  translate: -50% 0;
+  cursor: col-resize;
+}
+.conflict-sash[data-axis="y"] {
+  block-size: 7px;
+  translate: 0 -50%;
+  cursor: row-resize;
+}
+.conflict-sash::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  background: transparent;
+}
+.conflict-sash[data-axis="x"]::after {
+  inline-size: 2px;
+}
+.conflict-sash[data-axis="y"]::after {
+  block-size: 2px;
+}
+.conflict-sash[data-dragging]::after,
+.conflict-sash:focus-visible::after {
+  background: var(--color-accent);
+}
+.conflict-sash:focus-visible {
+  outline: none;
+}
+@media (hover: hover) and (pointer: fine) {
+  .conflict-sash:hover::after {
+    background: var(--color-accent);
+  }
+}

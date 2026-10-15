@@ -1,0 +1,170 @@
+.inbox-settings {
+  container-type: inline-size;
+  min-inline-size: 0;
+}
+
+.inbox-provider-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding-block-end: 12px;
+  margin-block-end: 20px;
+  border-block-end: 1px solid var(--color-stroke);
+}
+
+.bycoda-settings-workbench .bycoda-settings-form .inbox-settings .settings-group {
+  padding-block: 0;
+  border-block-end: 0;
+}
+
+.bycoda-settings-workbench
+  .bycoda-settings-form
+  .inbox-settings
+  .settings-group[data-settings-layout="full"]
+  > .settings-group-heading {
+  padding-block-end: 16px;
+}
+
+.bycoda-settings-workbench .bycoda-settings-form .inbox-settings .settings-group-content {
+  background: var(--ui-surface);
+  border: 1px solid var(--color-stroke);
+  border-radius: 8px;
+}
+
+.bycoda-settings-workbench .bycoda-settings-form .inbox-settings .settings-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr);
+  gap: 16px;
+  padding: 16px;
+}
+
+.bycoda-settings-workbench .bycoda-settings-form .inbox-settings .settings-row-control {
+  max-inline-size: 100%;
+  inline-size: 100%;
+  align-content: start;
+}
+
+.inbox-account-fields {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 12px;
+  inline-size: 100%;
+  min-inline-size: 0;
+}
+
+.inbox-account-fields > .bycoda-arc-field {
+  flex: 1 1 200px;
+  min-inline-size: 0;
+}
+
+.inbox-connection-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--ui-text-secondary);
+  font-size: var(--ui-font-caption);
+}
+
+.inbox-connection-status[data-state="configured"] {
+  color: var(--color-success);
+}
+
+.inbox-connection-status[data-state="error"] {
+  color: var(--color-danger);
+}
+
+.bycoda-settings-workbench .bycoda-settings-form .inbox-settings .settings-row:has(.inbox-scope) {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.inbox-scope {
+  inline-size: 100%;
+  min-inline-size: 0;
+  display: grid;
+  gap: 20px;
+}
+
+.inbox-scope-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-block-end: 8px;
+  font-size: var(--ui-font-secondary);
+  font-weight: 500;
+}
+
+.inbox-scope-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 260px), 1fr));
+  gap: 4px 16px;
+  margin-block-start: 12px;
+}
+
+.inbox-scope-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-block-size: 36px;
+  min-inline-size: 0;
+  padding: 6px 8px;
+  border-radius: 6px;
+  color: var(--color-content);
+  font-size: var(--ui-font-secondary);
+  overflow-wrap: anywhere;
+  cursor: pointer;
+}
+
+.inbox-scope-option:has(:checked) {
+  background: var(--ui-surface-selected);
+}
+
+.inbox-scope-option input {
+  flex-shrink: 0;
+  accent-color: var(--color-accent);
+}
+
+.inbox-scope-key,
+.inbox-scope-help {
+  color: var(--ui-text-secondary);
+  font-size: var(--ui-font-caption);
+}
+
+.inbox-scope-key {
+  margin-inline-start: auto;
+  flex-shrink: 0;
+}
+
+.inbox-scope-help {
+  margin-block-start: 8px;
+  line-height: 1.6;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .inbox-scope-option:hover {
+    background: var(--ui-surface-hover);
+  }
+}
+
+.inbox-scope-option:active {
+  background: var(--ui-surface-pressed);
+}
+
+@container (inline-size < 640px) {
+  .bycoda-settings-workbench .bycoda-settings-form .inbox-settings .settings-row {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 12px;
+  }
+
+  .bycoda-settings-workbench .bycoda-settings-form .inbox-settings .settings-row-control {
+    justify-content: start;
+  }
+}
+
+@media (pointer: coarse) {
+  .inbox-scope-option {
+    min-block-size: 44px;
+  }
+}

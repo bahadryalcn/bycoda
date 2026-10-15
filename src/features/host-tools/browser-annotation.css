@@ -1,0 +1,113 @@
+.host-browser-surface {
+  position: relative;
+  inline-size: 100%;
+  line-height: 0;
+  overflow: clip;
+  direction: ltr;
+}
+.host-browser-surface img {
+  display: block;
+  inline-size: 100%;
+}
+.host-browser-surface[data-selecting="true"] img {
+  cursor: crosshair;
+}
+.host-browser-surface img:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: -2px;
+}
+.host-browser-highlight {
+  position: absolute;
+  pointer-events: none;
+  border: 2px dashed var(--color-accent);
+  background: color-mix(in oklch, var(--color-accent) 12%, transparent);
+  box-sizing: border-box;
+}
+.host-browser-highlight[data-selected="true"] {
+  border-style: solid;
+  background: color-mix(in oklch, var(--color-accent) 22%, transparent);
+}
+.browser-annotation-details {
+  min-inline-size: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.browser-annotation-details dl {
+  display: grid;
+  gap: 4px;
+  margin-block: 8px;
+}
+.browser-annotation-details dt {
+  color: color-mix(in oklch, var(--color-content) 65%, transparent);
+}
+.browser-annotation-details dd {
+  margin-inline-start: 0;
+}
+.browser-annotation-details pre {
+  white-space: pre-wrap;
+  font: inherit;
+}
+.browser-annotation-details summary,
+.browser-annotation-chip > summary {
+  cursor: pointer;
+}
+.browser-annotation-details summary:focus-visible,
+.browser-annotation-chip > summary:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+.browser-annotation-details summary:active,
+.browser-annotation-chip > summary:active {
+  color: var(--color-accent);
+}
+.browser-annotation-chip {
+  font-size: 11px;
+  max-inline-size: min(100%, 520px);
+  padding: 8px;
+  border: 1px solid var(--color-stroke);
+  border-radius: 8px;
+}
+.host-browser-selection textarea {
+  min-block-size: 64px;
+  inline-size: 100%;
+  min-inline-size: 0;
+  resize: vertical;
+  border: 1px solid var(--color-stroke);
+  border-radius: 6px;
+  padding: 8px 10px;
+  color: var(--color-content);
+  background: var(--color-background-base);
+  font: inherit;
+  line-height: 1.5;
+}
+.host-browser-selection textarea:focus-visible {
+  outline: 2px solid var(--color-content);
+  outline-offset: -2px;
+}
+.host-browser-selection textarea:active {
+  border-color: var(--color-content);
+}
+.host-browser-selection textarea:disabled {
+  opacity: 0.55;
+}
+.browser-annotation-details .host-tool-muted {
+  color: color-mix(in oklch, var(--color-content) 65%, transparent);
+}
+.browser-annotation-attachment {
+  display: flex;
+  align-items: start;
+  gap: 8px;
+  min-inline-size: 0;
+  max-inline-size: min(100%, 568px);
+}
+.browser-annotation-attachment .browser-annotation-chip {
+  min-inline-size: 0;
+  flex: 1;
+}
+@media (hover: hover) and (pointer: fine) {
+  .browser-annotation-details summary:hover,
+  .browser-annotation-chip > summary:hover {
+    color: var(--color-accent);
+  }
+}

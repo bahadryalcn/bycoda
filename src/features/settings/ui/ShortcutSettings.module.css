@@ -1,0 +1,108 @@
+.toolbar {
+  display: grid;
+  grid-template-columns: minmax(100px, 1fr) auto auto auto;
+  align-items: center;
+  gap: 8px;
+  inline-size: clamp(300px, 30vw, 420px);
+  max-inline-size: 100%;
+}
+
+.toolbar > :first-child {
+  min-inline-size: 0;
+}
+
+.editor {
+  inline-size: 200px;
+  max-inline-size: 100%;
+  flex-shrink: 0;
+}
+
+.hint,
+.error {
+  margin-block-start: 4px;
+  font-size: var(--ui-font-caption);
+  overflow-wrap: anywhere;
+}
+
+.hint,
+.summary,
+.modified {
+  color: var(--ui-text-muted);
+}
+
+.error {
+  color: var(--color-danger);
+}
+
+.summary {
+  white-space: nowrap;
+  font-size: var(--ui-font-caption);
+  font-variant-numeric: tabular-nums;
+}
+
+.category {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-block: 20px 4px;
+  padding: 8px;
+  background: var(--ui-surface);
+  font-size: var(--ui-font-caption);
+  font-weight: 500;
+}
+
+.category span {
+  margin-inline-start: auto;
+  color: var(--ui-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.list > section:first-child .category {
+  margin-block-start: 0;
+}
+
+:global(.bycoda-settings-workbench .bycoda-settings-form) .list :global(.settings-row) {
+  min-block-size: 44px;
+  padding-block: 8px;
+  border-block-end: 0;
+  align-items: center;
+  gap: 12px;
+  flex-direction: row;
+}
+
+:global(.bycoda-settings-workbench .bycoda-settings-form) .list :global(.settings-row-label) {
+  flex-basis: 0;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .list :global(.settings-row):hover {
+    background: var(--ui-surface-hover);
+  }
+}
+
+.modified {
+  display: inline-block;
+  margin-inline-start: 8px;
+  font-size: var(--ui-font-caption);
+  font-weight: 400;
+}
+
+.disabled {
+  color: var(--ui-text-disabled);
+}
+
+.popover {
+  display: grid;
+  gap: 12px;
+  padding: 12px;
+  color: var(--ui-text-secondary);
+  font-size: var(--ui-font-caption);
+}
+
+.empty {
+  display: grid;
+  justify-items: start;
+  gap: 8px;
+  padding-block: 16px;
+  color: var(--ui-text-secondary);
+}
