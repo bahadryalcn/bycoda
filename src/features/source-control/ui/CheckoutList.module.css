@@ -1,0 +1,128 @@
+.list {
+  display: flex;
+  flex-direction: column;
+  min-block-size: 0;
+  overflow-y: auto;
+  padding: 4px;
+}
+
+.item {
+  display: flex;
+  align-items: center;
+  min-inline-size: 0;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  inline-size: 100%;
+  min-inline-size: 0;
+  min-block-size: 30px;
+  padding: 4px 8px;
+  text-align: start;
+  color: var(--color-content);
+}
+
+.row[data-session] {
+  background: var(--ui-surface-selected);
+}
+
+.identity {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 6px;
+  min-inline-size: 0;
+}
+
+.branch,
+.folder {
+  min-inline-size: 0;
+  overflow: clip;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: var(--ui-font-caption);
+}
+
+.branch {
+  flex-shrink: 1;
+  font-weight: 500;
+  color: var(--color-content);
+}
+
+.folder {
+  flex-shrink: 2;
+  color: var(--ui-text-muted);
+}
+
+.tag {
+  flex-shrink: 0;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--ui-surface-muted);
+  font-size: var(--ui-font-caption);
+  line-height: 18px;
+  white-space: nowrap;
+  color: var(--ui-text-secondary);
+}
+
+.tag[data-tone="accent"] {
+  color: var(--color-accent);
+}
+
+.badges {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 10px;
+  font-size: var(--ui-font-caption);
+  font-variant-numeric: tabular-nums;
+  color: var(--ui-text-secondary);
+}
+
+.stat {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 3px;
+  min-inline-size: 4.5ch;
+}
+
+.dirty {
+  inline-size: 6px;
+  block-size: 6px;
+  border-radius: 50%;
+  background: var(--color-warning);
+}
+
+/* Delete stays reachable but recedes until its row is hovered or focused. */
+.delete {
+  flex-shrink: 0;
+  opacity: 0.45;
+}
+
+.item:hover .delete,
+.item:focus-within .delete {
+  opacity: 1;
+}
+
+.deleteSlot {
+  flex-shrink: 0;
+  inline-size: var(--control-height-sm);
+}
+
+.heading {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 10px 8px 4px;
+  font-size: var(--ui-font-caption);
+  color: var(--ui-text-secondary);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .delete {
+    transition: opacity 120ms ease;
+  }
+}

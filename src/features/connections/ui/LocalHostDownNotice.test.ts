@@ -1,0 +1,82 @@
+// @vitest-environment happy-dom
+import { act, createElement } from "react";
+import { createRoot } from "react-dom/client";
+import { afterEach, expect, it, vi } from "vitest";
+
+const host = vi.hoisted(() => ({
+  state: "stopped",
+  start: vi.fn(async () => null as unknown),
+}));
+vi.mock("@tauri-apps/api/core", () => ({
+  invoke: async (command: string) =>
+    command === "local_host_status"
+      ? { state: host.state }
+      : command === "local_host_start"
+        ? host.start()
+        : null,
+}));
+
+import { LocalHostDownNotice } from "./LocalHostDownNotice";
+
+let cleanup: (() => void) | undefined;
+afterEach(() => {
+  cleanup?.();
+  vi.useRealTimers();
+  host.start.mockClear();
+});
+
+async function render() {
+  vi.useFakeTimers();
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  await act(async () => root.render(createElement(LocalHostDownNotice)));
+  cleanup = () => {
+    act(() => root.unmount());
+    container.remove();
+    vi.unstubAllGlobals();
+  };
+}
+
+const poll = () => act(async () => void (await vi.advanceTimersByTimeAsync(15_000)));
+const notice = () => document.body.querySelector('[role="alert"]');
+
+it("offers to start a host that stays stopped, and starts it on request", async () => {
+  host.state = "stopped";
+  await render();
+  // A host restarting itself is silent for one poll; that alone is not shown.
+  expect(notice()).toBeNull();
+  await poll();
+  expect(notice()?.textContent).toContain("not running");
+
+  const start = [...notice()!.querySelectorAll("button")].find((button) =>
+    button.textContent?.includes("Start host"),
+  )!;
+  await act(async () => start.click());
+  expect(host.start).toHaveBeenCalledTimes(1);
+  expect(notice()).toBeNull();
+});
+
+it("shows the reason when the host cannot be started", async () => {
+  host.state = "stopped";
+  host.start.mockRejectedValueOnce(new Error("The host on this computer did not start."));
+  await render();
+  await poll();
+  const start = [...notice()!.querySelectorAll("button")].find((button) =>
+    button.textContent?.includes("Start host"),
+  )!;
+  await act(async () => start.click());
+  expect(notice()?.textContent).toContain("did not start");
+});
+
+it("stays silent while the host runs or updates", async () => {
+  for (const state of ["running", "updating", "absent"]) {
+    host.state = state;
+    await render();
+    await poll();
+    expect(notice()).toBeNull();
+    cleanup?.();
+    cleanup = undefined;
+  }
+});

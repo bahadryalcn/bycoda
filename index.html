@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="icon" type="image/svg+xml" href="/brand/bycoda/favicon.svg" />
+    <link rel="alternate icon" href="/brand/bycoda/favicon.ico" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/brand/bycoda/favicon-32.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/brand/bycoda/apple-touch-icon.png" />
+    <link rel="manifest" href="/brand/bycoda/manifest.webmanifest" />
+    <title>bycoda</title>
+    <script>
+      (function () {
+        try {
+          var root = document.documentElement;
+          var hue = localStorage.getItem("bycoda.themeHue");
+          var sat = localStorage.getItem("bycoda.themeSaturation");
+          var darkLightness = localStorage.getItem("bycoda.themeDarkLightness");
+          var opacity = localStorage.getItem("bycoda.sidebarOpacity");
+          if (hue != null) {
+            var h = Math.max(0, Math.min(360, Number(hue) || 0));
+            root.style.setProperty("--theme-hue", String(h));
+          }
+          if (sat != null) {
+            var s = Math.max(0, Math.min(100, Number(sat) || 0));
+            root.style.setProperty("--theme-saturation", s + "%");
+          }
+          if (darkLightness != null) {
+            var l = Math.max(0, Math.min(30, Number(darkLightness) || 0));
+            root.style.setProperty("--theme-dark-lightness", l + "%");
+          }
+          if (opacity != null) {
+            var o = Math.max(0.15, Math.min(1, Number(opacity) || 0.85));
+            root.style.setProperty("--sidebar-opacity", String(o));
+          }
+          var scheme = localStorage.getItem("bycoda.colorScheme");
+          if (scheme === "system") {
+            scheme = window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+          }
+          if (scheme === "light") {
+            root.classList.add("theme-light");
+          }
+          var bodyGlass = localStorage.getItem("bycoda.bodyGlass");
+          if (bodyGlass == null || bodyGlass === "1" || bodyGlass === "true") {
+            root.classList.add("glass-body");
+          }
+          var isMac =
+            typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform);
+          if (isMac) {
+            root.classList.add("is-mac");
+          }
+        } catch (_) {}
+      })();
+    </script>
+    <style>
+      :root {
+        --theme-hue: 330;
+        --theme-saturation: 10%;
+        --theme-dark-lightness: 9%;
+        --sidebar-opacity: 0.85;
+        --background-lightness: var(--theme-dark-lightness);
+        --color-background-base: hsl(
+          var(--theme-hue) var(--theme-saturation) var(--background-lightness)
+        );
+      }
+
+      html.theme-light {
+        --background-lightness: 94%;
+      }
+
+      html,
+      body,
+      #boot-splash {
+        margin: 0;
+        background: #000000;
+      }
+
+      /* Opaque cover until React paints. The logo is in HTML so it is
+         visible during the Dock bounce, before the bundle runs. */
+      #boot-splash {
+        position: fixed;
+        inset: 0;
+        z-index: 2147483647;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        pointer-events: none;
+        transition: opacity 0.16s ease;
+      }
+
+      #boot-splash.boot-splash-out {
+        opacity: 0;
+      }
+
+      #boot-splash img {
+        inline-size: 72px;
+        block-size: 72px;
+        object-fit: contain;
+        display: block;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="boot-splash" aria-hidden="true">
+      <img src="/brand/bycoda/mark-tea-red-loading.svg" alt="" />
+    </div>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

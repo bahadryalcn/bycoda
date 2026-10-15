@@ -1,0 +1,41 @@
+.notification-permission-status {
+  color: var(--ui-text-secondary);
+  font-size: 12px;
+  line-height: 1.5;
+  padding-block: 8px 12px;
+}
+
+.notification-permission-status p {
+  margin-block-start: 4px;
+}
+
+.bycoda-settings-workbench .bycoda-settings-form .notification-alert-settings .settings-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  padding-block: 10px;
+  border-block-end: 0;
+}
+
+.bycoda-settings-workbench
+  .bycoda-settings-form
+  .notification-alert-settings
+  .settings-row-control {
+  flex: none;
+  max-inline-size: 100%;
+  align-self: center;
+  justify-content: flex-end;
+}
+
+.notification-alert-settings > .settings-group:first-child > .settings-group-content {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 400px), 1fr));
+  column-gap: 32px;
+}
+
+.notification-alert-settings .notification-permission-status {
+  grid-column: 1 / -1;
+}
+
+.notification-alert-settings .settings-group-title {
+  max-inline-size: 75ch;
+}
