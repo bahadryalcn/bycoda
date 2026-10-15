@@ -1,0 +1,50 @@
+name: Bug report
+description: Report a problem with bycoda
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Describe the issue with the information you have. Additional details are optional and can be added later.
+        Remove credentials and private project or conversation data from logs and screenshots.
+        Please report security vulnerabilities privately using the guidance in SECURITY.md.
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: Issue description
+      description: Describe what happened and, if possible, what you expected.
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce (optional)
+      description: Share steps, a small example, or how often the issue occurs. A reliable reproduction is helpful but not required.
+
+  - type: input
+    id: version
+    attributes:
+      label: App version or commit (optional)
+      placeholder: Release version or source commit, if known
+
+  - type: input
+    id: environment
+    attributes:
+      label: Environment (optional)
+      description: Include your OS and whether this happens locally or on a remote host.
+      placeholder: Windows 11, macOS, or Linux; desktop or browser; local or remote
+
+  - type: input
+    id: provider
+    attributes:
+      label: Provider CLI (optional)
+      description: Include the provider and CLI version if the issue involves an agent.
+      placeholder: Provider name and version, if known
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context (optional)
+      description: Relevant logs, screenshots, workarounds, or related issues can help.

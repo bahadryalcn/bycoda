@@ -1,0 +1,175 @@
+/* Appearance composes the shared settings controls without changing their behavior. */
+.appearance-settings {
+  container: appearance / inline-size;
+  display: grid;
+  gap: 24px;
+  min-inline-size: 0;
+}
+
+.appearance-settings .appearance-studio {
+  margin-block-start: 0;
+}
+
+.appearance-settings .appearance-studio-heading {
+  align-items: center;
+  margin-block-end: 20px;
+}
+
+.appearance-settings .appearance-studio-heading h2 {
+  margin: 0 0 8px;
+  font-size: 20px;
+  font-weight: 500;
+  letter-spacing: -0.025em;
+}
+
+.appearance-settings .appearance-studio-heading p {
+  max-inline-size: 52ch;
+  font-size: 13px;
+}
+
+.appearance-settings .appearance-studio-body {
+  grid-template-columns: minmax(0, 1fr) 260px;
+  align-items: start;
+  gap: 20px;
+}
+
+.appearance-settings .appearance-desk {
+  box-shadow: none;
+}
+
+.appearance-settings .appearance-desk-content {
+  min-block-size: 320px;
+}
+
+.appearance-settings .appearance-material-library {
+  padding: 16px;
+  border-radius: 8px;
+  background: var(--ui-surface);
+}
+
+.appearance-settings .appearance-library-heading h3 {
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.appearance-settings .appearance-library-heading p,
+.appearance-settings .appearance-material-name small,
+.appearance-settings .appearance-library-note {
+  font-size: 11px;
+}
+
+.appearance-settings .appearance-material-library > [role="group"] {
+  display: grid;
+  gap: 4px;
+}
+
+/* Selection, focus, hover and press presentation come from the shared Button. */
+.appearance-settings .appearance-palette {
+  min-block-size: 48px;
+  block-size: auto;
+  white-space: normal;
+  border: 0;
+}
+
+.appearance-settings .appearance-material-sample {
+  inline-size: 44px;
+  block-size: 32px;
+  border: 0;
+}
+
+.appearance-settings .appearance-material-name strong {
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.appearance-settings .appearance-studio-caption {
+  padding-block-start: 12px;
+}
+
+.appearance-settings .appearance-studio-caption > span {
+  color: var(--color-content);
+}
+
+.appearance-settings .appearance-tuning,
+.appearance-options {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 25rem), 1fr));
+  gap: 20px;
+  align-items: start;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.bycoda-settings-workbench .bycoda-settings-form .appearance-settings .settings-group {
+  display: block;
+  min-inline-size: 0;
+  padding: 20px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--ui-surface);
+}
+
+.bycoda-settings-workbench .bycoda-settings-form .appearance-settings .settings-group-heading,
+.bycoda-settings-workbench
+  .bycoda-settings-form
+  .appearance-settings
+  .settings-group[data-settings-layout="full"]
+  > .settings-group-heading {
+  flex-direction: column;
+  gap: 6px;
+  padding: 0 0 16px;
+}
+
+.bycoda-settings-workbench .bycoda-settings-form .appearance-settings .settings-group-heading h2 {
+  font-size: 15px;
+  font-weight: 500;
+}
+
+.bycoda-settings-workbench .bycoda-settings-form .appearance-settings .settings-row {
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 20px;
+  padding-block: 14px;
+  border: 0;
+}
+
+.appearance-settings .settings-row + .settings-row {
+  border-block-start: 1px solid var(--color-stroke);
+}
+
+.bycoda-settings-workbench .bycoda-settings-form .appearance-settings .settings-row-label {
+  flex: 1 1 180px;
+}
+
+.bycoda-settings-workbench .bycoda-settings-form .appearance-settings .settings-row-control {
+  max-inline-size: 100%;
+  align-self: center;
+  justify-content: flex-start;
+}
+
+.appearance-options > details {
+  grid-column: 1 / -1;
+}
+
+@container appearance (width < 760px) {
+  .appearance-settings .appearance-studio-body {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .appearance-settings .appearance-material-library > [role="group"] {
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr));
+  }
+
+  .appearance-settings .appearance-studio-heading {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  .appearance-settings .appearance-scheme-control {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}

@@ -1,0 +1,120 @@
+.connections {
+  container-type: inline-size;
+  display: grid;
+  gap: 12px;
+}
+.search {
+  max-inline-size: 28rem;
+}
+.providers,
+.actions,
+.pagination {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.providers {
+  gap: 4px;
+}
+.list {
+  border: 1px solid var(--color-stroke);
+  border-radius: 8px;
+  background: var(--ui-surface);
+  overflow: clip;
+}
+.row {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr) auto auto;
+  align-items: center;
+  column-gap: 12px;
+  padding-block: 8px;
+  padding-inline: 12px;
+}
+.row + .row {
+  border-block-start: 1px solid var(--color-stroke);
+}
+.providerIcon {
+  align-self: start;
+  padding-block-start: 4px;
+}
+.identity {
+  min-inline-size: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  column-gap: 12px;
+}
+.name {
+  grid-column: 1 / -1;
+  font-size: var(--ui-font-secondary);
+  font-weight: 500;
+  overflow: clip;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.metadata,
+.status,
+.details,
+.pagination {
+  font-size: var(--ui-font-caption);
+  color: var(--ui-text-secondary);
+}
+.metadata {
+  overflow-wrap: anywhere;
+}
+.status {
+  max-inline-size: 14rem;
+  overflow-wrap: anywhere;
+}
+.details {
+  grid-column: 2;
+  grid-row: 2;
+}
+.details[open] {
+  grid-column: 1 / -1;
+  grid-row: auto;
+}
+.details summary {
+  cursor: pointer;
+  inline-size: fit-content;
+  padding-block: 0;
+}
+.details summary:active {
+  color: var(--color-content);
+}
+.detailContent {
+  display: grid;
+  gap: 4px;
+  padding-block: 8px 4px;
+}
+.path {
+  font-family: var(--font-mono);
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+.pagination {
+  justify-content: space-between;
+  font-variant-numeric: tabular-nums;
+}
+@container (inline-size < 640px) {
+  .identity {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .details {
+    grid-column: 1;
+    grid-row: auto;
+  }
+  .row {
+    grid-template-columns: 16px minmax(0, 1fr);
+    row-gap: 4px;
+  }
+  .status,
+  .row > .actions {
+    grid-column: 2;
+  }
+}
+@media (hover: hover) and (pointer: fine) {
+  .details summary:hover {
+    color: var(--color-content);
+  }
+}

@@ -1,0 +1,159 @@
+import { t, useLocale } from "../../../shared/i18n";
+import { FilePlusCorner, MessageSquarePlus } from "../../../shared/ui/icons";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import { Popover } from "../../../shared/ui/Popover";
+import { type TranscriptSelection } from "../model/transcriptSelection";
+import { translationTargets, type TranslationTarget } from "../model/translation";
+
+type Props = {
+  selection: TranscriptSelection | null;
+  onAddToChat?: (text: string) => void;
+  onAddToNotes?: (text: string) => void | Promise<void>;
+  onDismiss: () => void;
+  onTranslate?: (target: TranslationTarget) => void;
+};
+
+export function TranscriptSelectionMenu({
+  selection,
+  onAddToChat,
+  onAddToNotes,
+  onDismiss,
+  onTranslate,
+}: Props) {
+  useLocale();
+  const onDismissRef = useRef(onDismiss);
+  onDismissRef.current = onDismiss;
+
+  const [targets, setTargets] = useState<{ text: string; values: TranslationTarget[] } | null>(
+    null,
+  );
+  useEffect(() => {
+    if (!selection || !onTranslate) return;
+    let cancelled = false;
+    void translationTargets(selection.text).then(
+      (values) => {
+        if (!cancelled) setTargets({ text: selection.text, values });
+      },
+      () => {
+        if (!cancelled) setTargets({ text: selection.text, values: ["en", "zh"] });
+      },
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [selection?.text, Boolean(onTranslate)]);
+
+  // Scrolling or resizing moves the text out from under the menu, so the
+  // selection it acts on is gone; drop it rather than chase the range.
+  useEffect(() => {
+    if (!selection) return;
+    const dismiss = () => onDismissRef.current();
+    window.addEventListener("scroll", dismiss, true);
+    window.addEventListener("resize", dismiss);
+    return () => {
+      window.removeEventListener("scroll", dismiss, true);
+      window.removeEventListener("resize", dismiss);
+    };
+  }, [selection]);
+
+  if (!selection) return null;
+
+  return (
+    <Popover
+      anchor={selection.rect}
+      side="top"
+      align="center"
+      onDismiss={(reason) => {
+        if (reason === "escape") window.getSelection()?.removeAllRanges();
+        onDismiss();
+      }}
+      role="toolbar"
+      aria-label={t("Selected text actions")}
+      className="p-1"
+    >
+      <div className="flex min-w-36 flex-col items-stretch gap-0.5">
+        {onTranslate
+          ? (targets?.text === selection.text ? targets.values : []).map((target) => (
+              <SelectionAction
+                key={target}
+                label={target === "en" ? t("Translate to English") : t("Translate to Chinese")}
+                onSelect={() => onTranslate(target)}
+                onDismiss={onDismiss}
+              >
+                <span aria-hidden="true" className="w-3.5 text-center text-xs">
+                  {target === "en" ? "EN" : "中"}
+                </span>
+              </SelectionAction>
+            ))
+          : null}
+        {onAddToChat ? (
+          <SelectionAction
+            label={t("Add to chat")}
+            onSelect={() => onAddToChat(selection.text)}
+            onDismiss={onDismiss}
+          >
+            <MessageSquarePlus aria-hidden="true" className="size-3.5" strokeWidth={1.75} />
+          </SelectionAction>
+        ) : null}
+        {onAddToNotes ? (
+          <SelectionAction
+            label={t("Add to notes")}
+            onSelect={() => onAddToNotes(selection.text)}
+            onDismiss={onDismiss}
+          >
+            <FilePlusCorner aria-hidden="true" className="size-3.5" strokeWidth={1.75} />
+          </SelectionAction>
+        ) : null}
+      </div>
+    </Popover>
+  );
+}
+
+function SelectionAction({
+  label,
+  children,
+  onSelect,
+  onDismiss,
+}: {
+  label: string;
+  children: ReactNode;
+  onSelect: () => void | Promise<void>;
+  onDismiss: () => void;
+}) {
+  useLocale();
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  return (
+    <>
+      <button
+        type="button"
+        disabled={pending}
+        onMouseDown={(event) => event.preventDefault()}
+        onClick={async () => {
+          setPending(true);
+          setError(null);
+          try {
+            const result = onSelect();
+            if (result) await result;
+            window.getSelection()?.removeAllRanges();
+            onDismiss();
+          } catch (error) {
+            setError(error instanceof Error ? error.message : String(error));
+          } finally {
+            setPending(false);
+          }
+        }}
+        className="flex h-8 w-full items-center gap-2 whitespace-nowrap rounded-lg px-2.5 font-sans text-[13px] leading-none text-content outline-none ring-accent/40 hover:bg-content/5 focus-visible:ring-2"
+      >
+        {children}
+        {label}
+      </button>
+      {error && (
+        <span role="alert" className="max-w-xs px-2.5 py-1 text-xs text-content/70">
+          {t("Could not save note. ")}
+          {error}
+        </span>
+      )}
+    </>
+  );
+}

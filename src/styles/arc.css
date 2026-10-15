@@ -1,0 +1,271 @@
+/* Arc roles are scoped to control roots. The global Arc foundation reset owns
+   a separate theme/focus system and must not change the rest of the workbench. */
+.bycoda-arc {
+  --background: var(--color-background-base);
+  --foreground: var(--color-content);
+  --surface: var(--ui-surface);
+  --surface-raised: var(--ui-surface-raised);
+  --surface-muted: var(--ui-surface-muted);
+  --text-secondary: var(--ui-text-secondary);
+  --text-muted: var(--ui-text-disabled);
+  --border: var(--color-stroke);
+  --border-subtle: color-mix(in oklch, var(--color-content) 5%, transparent);
+  --border-strong: color-mix(in oklch, var(--color-content) 16%, transparent);
+  --accent: var(--user-accent-color, var(--color-accent));
+  --accent-strong: var(--accent);
+  --accent-subtle: var(--color-selection-subtle);
+  --accent-foreground: var(--user-accent-foreground, var(--ui-text-on-active));
+  --danger: var(--color-danger);
+  --warning: var(--color-warning);
+  --success: var(--color-success);
+  --control-on: var(--color-active);
+  --control-fill: var(--color-active);
+  --control-glyph: var(--color-on-solid);
+  --control-track: color-mix(in oklch, var(--color-content) 20%, transparent);
+  --control-track-hover: color-mix(in oklch, var(--color-content) 28%, transparent);
+  --control-thumb: var(--ui-control-thumb);
+  --control-thumb-on: var(--ui-control-thumb);
+  --control-thumb-shadow: none;
+  --shadow-resting: none;
+  --shadow-raised: none;
+  --radius-control: 0.375rem;
+  --radius-panel: 0.75rem;
+  --radius-surface: 0.75rem;
+  --radius-pill: 9999px;
+  --space-1: 0.25rem;
+  --space-2: 0.375rem;
+  --space-3: 0.625rem;
+  --space-4: 0.875rem;
+  --space-5: 1rem;
+  --space-6: 1.25rem;
+  --space-8: 1.5rem;
+  --space-10: 2rem;
+  --space-12: 2.5rem;
+  --space-16: 3rem;
+  --text-xs: var(--ui-font-caption);
+  --text-sm: var(--ui-font-caption);
+  --text-base: var(--ui-font-secondary);
+  --text-lg: 0.875rem;
+  --text-xl: 1rem;
+  --font-body: var(--font-sans);
+  --font-display: var(--font-sans);
+  --leading-body: 1.4;
+  --tracking-body: normal;
+  --control-height-sm: var(--ui-control-height-compact);
+  --control-height-md: var(--ui-control-height);
+  --control-height-lg: 2.5rem;
+  --duration-instant: 80ms;
+  --duration-fast: var(--motion-feedback-duration);
+  --duration-standard: var(--motion-reorder-duration);
+  --ease-standard: var(--motion-ease-out);
+  --ease-enter: var(--motion-ease-out);
+  --focus-ring: transparent;
+  --shadow-floating: none;
+  font-family: var(--font-sans);
+}
+
+/* The camera island stays black in both themes to join the physical cutout. */
+.bycoda-arc[data-ui-appearance="island"],
+.bycoda-arc[data-ui-appearance="island"] .bycoda-arc {
+  --surface: var(--ui-island-surface);
+  --surface-muted: var(--ui-island-hover);
+  --foreground: var(--ui-island-text);
+  --text-secondary: var(--ui-island-text-secondary);
+  --border: var(--ui-island-border);
+  --border-subtle: var(--ui-island-border);
+  --accent-subtle: var(--ui-island-hover);
+}
+.bycoda-arc[data-ui-appearance="island"] .bycoda-arc[data-button-variant="ghost"] {
+  --surface-muted: var(--ui-island-surface);
+}
+
+/* Preserve bycoda keyboard focus even for upstream border-only controls. */
+:is(button, input, textarea, [tabindex]).bycoda-arc:focus-visible,
+.bycoda-arc :is(button, input, textarea, [tabindex]):focus-visible {
+  outline: var(--ui-focus-width) solid var(--color-accent);
+  outline-offset: var(--ui-focus-offset);
+}
+
+.bycoda-arc-switch,
+.bycoda-arc-slider {
+  --control-height-md: var(--ui-control-height-compact);
+}
+
+.bycoda-arc-segmented {
+  --control-height-sm: 1.5rem;
+  --surface: var(--color-selection);
+  --surface-muted: transparent;
+}
+
+.bycoda-arc-field {
+  min-inline-size: 0;
+  inline-size: 100%;
+}
+
+.bycoda-arc[data-select-variant="pill"],
+.bycoda-arc[data-select-variant="row"] {
+  --control-height-md: var(--ui-control-height-compact);
+}
+
+.bycoda-arc[data-select-variant="panel"] {
+  --control-height-md: 3.5rem;
+}
+
+.bycoda-arc[data-select-variant="transparent"] {
+  --surface: transparent;
+}
+
+.bycoda-arc-menu {
+  --control-height-md: 2rem;
+  --surface: var(--surface-raised);
+  --surface-muted: var(--color-selection);
+}
+
+/* The open menu already frames its header search; a second ring would double the outline. */
+.bycoda-arc-menu [data-menu-search] input:focus-visible {
+  outline: none;
+}
+
+.bycoda-arc-menu [role="option"] {
+  min-block-size: var(--ui-control-height-compact);
+}
+
+.bycoda-arc-card {
+  --text-lg: var(--ui-font-secondary);
+  --space-5: 0.75rem;
+  --space-6: 0.875rem;
+}
+
+.bycoda-arc.bycoda-arc-morph {
+  --control-height-md: var(--ui-control-height-compact);
+  --duration-spring: var(--motion-reorder-duration);
+  --ease-spring: var(--motion-ease-out);
+  --ease-enter: var(--motion-ease-out);
+  --shadow-floating: none;
+}
+
+.bycoda-arc.bycoda-arc-morph[data-open] {
+  z-index: 80;
+}
+
+/* MorphSelect expands its own surface rather than spawning a second portal. */
+.settings-group-content:has(.bycoda-arc-morph[data-open]) {
+  overflow: visible;
+}
+
+.bycoda-arc-field--search {
+  --control-height-md: var(--ui-control-height-compact);
+}
+
+.bycoda-arc-field--search input {
+  padding-inline-start: 1.75rem;
+  background: transparent;
+  border-color: transparent;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bycoda-arc {
+    --duration-instant: 0ms;
+    --duration-fast: 0ms;
+    --duration-standard: 0ms;
+  }
+}
+
+/* Additional Arc data/action surfaces inherit the workbench's theme and focus. */
+.bycoda-arc:is(
+  .bycoda-arc-json,
+  .bycoda-arc-filters,
+  .bycoda-arc-table,
+  .bycoda-arc-date-range,
+  .bycoda-arc-inline-edit,
+  .bycoda-arc-usage,
+  .bycoda-arc-shortcut,
+  .bycoda-arc-confirm,
+  .bycoda-arc-image-compare
+) {
+  --text-3xl: var(--ui-font-heading, 1.25rem);
+  --leading-display: 1.2;
+  --tracking-display: normal;
+  --duration-considered: var(--motion-reorder-duration);
+  --ease-in-out: var(--motion-ease-out);
+  --ease-spring: var(--motion-ease-out);
+  --focus-outline: var(--ui-focus-ring-color, var(--foreground));
+  --focus-outline-width: 1px;
+  min-inline-size: 0;
+  max-inline-size: 100%;
+}
+.bycoda-arc-filters {
+  padding: var(--space-2);
+}
+.bycoda-arc-filters [data-chip-remove] {
+  flex-shrink: 0;
+}
+.bycoda-arc-filters [role="group"] {
+  min-inline-size: 0;
+}
+.bycoda-arc-table {
+  padding: var(--space-2);
+}
+.bycoda-arc-table table {
+  font-variant-numeric: tabular-nums;
+}
+.bycoda-arc-shortcut {
+  --control-height-md: var(--ui-control-height-compact);
+  flex: 1;
+}
+.bycoda-note-inline-title {
+  padding: var(--space-2) var(--space-3);
+  border-block-end: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.bycoda-image-comparison {
+  inline-size: min(100%, 80rem);
+  block-size: 100%;
+  padding-block: 3rem;
+}
+.bycoda-image-comparison .bycoda-arc-image-compare {
+  block-size: 100%;
+}
+.bycoda-image-compare-actions {
+  position: absolute;
+  inset-block-end: 1rem;
+  inset-inline: 1rem;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: center;
+  gap: 0.5rem;
+}
+.bycoda-image-compare-picker {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  min-block-size: 2.5rem;
+  padding-inline: 0.75rem;
+  border: 1px solid var(--color-stroke);
+  border-radius: 0.375rem;
+  background: var(--color-background-base);
+  color: var(--color-content);
+  font-size: var(--ui-font-secondary);
+  cursor: pointer;
+}
+.bycoda-image-compare-picker input {
+  position: absolute;
+  inset: 0;
+  inline-size: 100%;
+  block-size: 100%;
+  opacity: 0;
+  cursor: pointer;
+}
+.bycoda-image-compare-picker:has(input:focus-visible) {
+  outline: 1px solid var(--color-content);
+  outline-offset: 2px;
+}
+.bycoda-image-compare-picker:active {
+  background: var(--color-selection-subtle);
+}
+@media (hover: hover) and (pointer: fine) {
+  .bycoda-image-compare-picker:hover {
+    background: var(--color-selection-subtle);
+  }
+}
