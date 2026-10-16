@@ -1,0 +1,78 @@
+.tool-navigation {
+  container: tool-navigation / inline-size;
+  display: flex;
+  align-items: center;
+  flex: 1;
+  min-inline-size: 0;
+  block-size: 100%;
+  gap: 8px;
+  padding-inline: 8px;
+  font-size: 12px;
+}
+@container tool-navigation (inline-size < 36rem) {
+  .tool-tabs button span,
+  .tool-action-label {
+    display: none;
+  }
+}
+.tool-tabs {
+  display: flex;
+  flex: 1;
+  min-inline-size: 0;
+  block-size: 100%;
+  overflow-x: auto;
+  overscroll-behavior-inline: contain;
+  scrollbar-width: thin;
+}
+.tool-tabs button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  gap: 6px;
+  padding-inline: 10px;
+  min-block-size: 32px;
+  color: var(--color-content);
+  border-radius: 5px;
+  white-space: nowrap;
+}
+.tool-tabs button {
+  border-block-end: 2px solid transparent;
+  border-radius: 0;
+}
+.tool-tabs button[aria-selected="true"] {
+  border-block-end-color: var(--color-content);
+  background: var(--ui-surface-selected);
+}
+.tool-tabs button:focus-visible {
+  outline: 2px solid var(--color-content);
+  outline-offset: -3px;
+}
+.tool-tabs button:active {
+  background: var(--ui-surface-pressed);
+}
+.tool-window-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.tool-window-error {
+  position: fixed;
+  inset-block-start: 44px;
+  inset-inline-end: 12px;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-inline-size: min(600px, calc(100vi - 24px));
+  padding: 12px;
+  background: var(--color-background-base);
+  border: 1px solid var(--color-stroke);
+  border-radius: 8px;
+  overflow-wrap: anywhere;
+}
+@media (hover: hover) and (pointer: fine) {
+  .tool-tabs button:hover {
+    background: var(--ui-surface-hover);
+  }
+}

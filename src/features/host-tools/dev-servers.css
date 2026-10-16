@@ -1,0 +1,260 @@
+.dev-servers-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  min-inline-size: 0;
+}
+.dev-servers-title {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-inline-size: 0;
+}
+.dev-servers-location {
+  overflow: hidden;
+  max-inline-size: 40ch;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dev-servers-title h3 {
+  font-size: 14px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.dev-server-search {
+  flex: 1 1 220px;
+  min-inline-size: 0;
+}
+.dev-server-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  min-inline-size: 0;
+}
+.dev-server-actions-gap {
+  inline-size: 1px;
+  block-size: 18px;
+  margin-inline: 2px;
+  background: var(--color-stroke);
+}
+.dev-server-workspace {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(300px, 400px);
+  align-items: start;
+  gap: 12px;
+  min-inline-size: 0;
+}
+.dev-server-list {
+  display: grid;
+  min-inline-size: 0;
+  margin: 0;
+  padding: 4px;
+  list-style: none;
+  border: 1px solid var(--color-stroke);
+  border-radius: 8px;
+  background: var(--ui-surface);
+}
+.dev-server-row {
+  min-inline-size: 0;
+}
+.dev-servers-panel .dev-server-row-button {
+  display: grid;
+  grid-template-columns: 12px minmax(0, 1fr) minmax(0, auto) auto;
+  align-items: center;
+  gap: 10px;
+  min-block-size: 32px;
+  padding: 6px 8px;
+  font-size: 12px;
+}
+.dev-server-name,
+.dev-server-ports,
+.dev-server-meta {
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dev-server-name {
+  font-weight: 500;
+}
+.dev-server-ports {
+  color: var(--host-tool-muted);
+  font-size: 11px;
+}
+.dev-server-meta {
+  font-size: 11px;
+}
+/* The row shows only the dot; its text stays available to assistive technology. */
+.dev-server-row .dev-server-state {
+  overflow: hidden;
+  inline-size: 8px;
+  block-size: 8px;
+  border-radius: 50%;
+  background: var(--ui-text-muted);
+  color: transparent;
+  font-size: 0;
+}
+.dev-server-state[data-state="running"] {
+  --dev-server-state: var(--color-success);
+}
+.dev-server-state[data-state="starting"],
+.dev-server-state[data-state="stopping"] {
+  --dev-server-state: var(--color-warning);
+}
+.dev-server-state[data-state="error"] {
+  --dev-server-state: var(--color-danger);
+}
+.dev-server-row .dev-server-state[data-state] {
+  background: var(--dev-server-state, var(--ui-text-muted));
+}
+.dev-server-selection .dev-server-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--host-tool-muted);
+  font-size: 12px;
+}
+.dev-server-selection .dev-server-state::before {
+  content: "";
+  inline-size: 6px;
+  block-size: 6px;
+  border-radius: 50%;
+  background: var(--dev-server-state, var(--ui-text-muted));
+}
+.dev-server-selection,
+.dev-server-conflict,
+.dev-server-scan-error,
+.dev-server-form {
+  display: grid;
+  gap: 10px;
+  min-inline-size: 0;
+  padding: 12px;
+  border: 1px solid var(--color-stroke);
+  border-radius: 8px;
+  background: var(--ui-surface);
+}
+.dev-server-selection {
+  position: sticky;
+  inset-block-start: 0;
+}
+.dev-server-selection p,
+.dev-server-scan-error p,
+.dev-server-details p {
+  margin: 0;
+}
+.dev-server-heading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-inline-size: 0;
+}
+.dev-server-heading > :is(h4, h5) {
+  flex: 1 1 auto;
+  min-inline-size: 0;
+  overflow-wrap: anywhere;
+  font-weight: 600;
+}
+.dev-server-heading > h4 {
+  font-size: 14px;
+}
+.dev-server-heading > h5 {
+  font-size: 12px;
+}
+.dev-server-url,
+.dev-server-command,
+.dev-server-metadata dd {
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+  font-size: 12px;
+}
+.dev-server-details,
+.dev-server-confirm {
+  display: grid;
+  gap: 8px;
+  min-inline-size: 0;
+}
+.dev-server-details {
+  border-block-start: 1px solid var(--color-stroke);
+  padding-block-start: 10px;
+}
+.dev-server-details > button {
+  justify-self: start;
+}
+.dev-server-metadata {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 6px 12px;
+  margin: 0;
+}
+.dev-server-metadata dt {
+  color: var(--host-tool-muted);
+  font-size: 12px;
+}
+.dev-server-metadata dd {
+  margin: 0;
+}
+.dev-server-scan-error details > p {
+  margin-block-start: 8px;
+  overflow-wrap: anywhere;
+  font-size: 12px;
+}
+.dev-servers-panel summary {
+  padding-block: 4px;
+  cursor: pointer;
+  color: var(--host-tool-muted);
+  font-size: 12px;
+}
+.dev-server-form {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 210px), 1fr));
+}
+.dev-server-form > p,
+.dev-server-form > button {
+  grid-column: 1 / -1;
+}
+.dev-server-form > button,
+.dev-server-conflict > button,
+.dev-server-preview > button {
+  justify-self: start;
+}
+.dev-server-logs {
+  max-block-size: 240px;
+  overflow: auto;
+  padding: 10px;
+  border-radius: 6px;
+  background: var(--color-selection-subtle);
+  font-size: 11px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.dev-server-preview {
+  display: grid;
+  gap: 8px;
+  min-inline-size: 0;
+  border-block-start: 1px solid var(--color-stroke);
+  padding-block-start: 12px;
+}
+.dev-servers-panel
+  :is(button, input, summary):not(.bycoda-arc, [data-ui-focus]):focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+@container (max-width: 760px) {
+  .dev-server-workspace {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  /* Narrow layouts keep the selected server's actions above the list. */
+  .dev-server-selection {
+    position: static;
+    order: -1;
+  }
+}
+@container (max-width: 480px) {
+  .dev-servers-panel .dev-server-row-button {
+    grid-template-columns: 12px minmax(0, 1fr) auto;
+  }
+  .dev-server-meta {
+    display: none;
+  }
+}

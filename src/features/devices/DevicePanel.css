@@ -1,0 +1,251 @@
+.host-tools-content-devices {
+  display: flex;
+  flex-direction: column;
+}
+
+/* The machine picker is a compact control, not a page-wide field. */
+.host-tools-content-devices .host-tools-machine {
+  flex: none;
+  padding-block: 6px;
+}
+
+.host-tools-content-devices .host-tools-machine-toolbar {
+  flex-wrap: nowrap;
+  gap: 6px;
+}
+
+.host-tools-content-devices .host-tools-machine-field {
+  flex: 0 1 360px;
+  min-inline-size: 0;
+}
+
+.host-tools-content-devices .host-tools-machine-field > span {
+  display: none;
+}
+
+.host-tools-content-devices .host-tools-machine-field > div {
+  flex-basis: 0;
+}
+
+.host-tool-panel.device-panel {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  gap: 10px;
+  padding: 10px var(--host-tool-gutter) var(--host-tool-gutter);
+  min-block-size: min-content;
+}
+
+.device-panel > :not(.device-panel-preview) {
+  flex-shrink: 0;
+}
+
+/* One action row: the device, its frequent actions, then the two opt-in switches. */
+.device-panel-bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+}
+
+.device-panel-choice {
+  flex: 1 1 220px;
+  max-inline-size: 420px;
+  min-inline-size: 0;
+}
+
+.device-panel-choice > div {
+  inline-size: 100%;
+  min-inline-size: 0;
+}
+
+.device-panel-bar-text {
+  flex: 1 1 260px;
+  margin: 0;
+  min-inline-size: 0;
+}
+
+.device-panel-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.device-panel-actions > .device-panel-boot {
+  margin-inline-end: 4px;
+}
+
+.device-panel-toggles {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  margin-inline-start: auto;
+}
+
+.device-panel-toggle {
+  font-size: 12px;
+}
+
+.device-panel-note {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.device-panel-setup-control {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+}
+
+.device-panel-state {
+  display: grid;
+  gap: 8px;
+  justify-items: start;
+  margin: 0;
+  padding: 24px 0;
+  font-size: 12px;
+  color: var(--host-tool-muted);
+}
+
+.device-panel-state-title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-content);
+}
+
+.device-panel-state .host-tool-muted {
+  margin: 0;
+  max-inline-size: 60ch;
+  text-wrap: pretty;
+}
+
+.device-panel-error {
+  display: grid;
+  gap: 4px;
+}
+
+.device-panel-error > p {
+  margin: 0;
+  white-space: normal;
+}
+
+.device-panel-error summary {
+  cursor: pointer;
+  color: var(--host-tool-muted);
+}
+
+.device-panel-error pre,
+.device-panel-output {
+  max-block-size: 180px;
+  margin-block: 6px 0;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 11px;
+}
+
+/* The screen is the page: a flat tone step, no frame, as much height as the panel gives. */
+.device-panel .device-panel-preview {
+  flex: 1 0 240px;
+  min-block-size: 240px;
+  container-type: size;
+  display: grid;
+  place-items: center;
+  overflow: clip;
+  border: 0;
+  background: var(--ui-surface);
+  padding: 12px;
+  min-inline-size: 0;
+}
+
+.device-panel-preview > img {
+  display: block;
+  max-inline-size: 100%;
+  inline-size: auto;
+  block-size: auto;
+  max-block-size: 100cqh;
+  object-fit: contain;
+}
+
+.device-panel-waiting {
+  color: var(--host-tool-muted);
+  font-size: 12px;
+  text-align: center;
+  padding-inline: 24px;
+}
+
+.device-panel-manual {
+  display: grid;
+  gap: 8px;
+}
+
+.device-panel-manual .host-tool-help {
+  padding-block-start: 0;
+  border: 0;
+}
+
+.device-panel-manual > p,
+.device-panel-setup-body > p {
+  margin: 0;
+}
+
+.device-panel-setup {
+  order: 10;
+  margin-block-start: auto;
+}
+
+.device-panel-setup > summary {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 2px 10px;
+}
+
+.device-panel-setup-summary {
+  font-size: 11px;
+  overflow: clip;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-inline-size: 0;
+}
+
+.device-panel-setup-body {
+  display: grid;
+  gap: 10px;
+  padding-block-start: 10px;
+}
+
+.device-panel-setup-body > p {
+  max-inline-size: 75ch;
+  text-wrap: pretty;
+}
+
+@container (width < 600px) {
+  .host-tools:has(.host-tools-content-devices)
+    button:not([aria-selected="true"])
+    > .host-tools-tab-label {
+    position: absolute;
+    inline-size: 1px;
+    block-size: 1px;
+    overflow: clip;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  .host-tools:has(.host-tools-content-devices) .host-tools-tabs {
+    justify-content: space-between;
+  }
+
+  .device-panel-choice {
+    max-inline-size: none;
+    flex-basis: 100%;
+  }
+
+  .device-panel-toggles {
+    margin-inline-start: 0;
+  }
+}

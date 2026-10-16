@@ -1,0 +1,28 @@
+name: Feature request
+description: Suggest an improvement to bycoda
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Share an idea, a use case, or a limitation you would like to address. You do not need a complete design or implementation plan.
+
+  - type: textarea
+    id: idea
+    attributes:
+      label: Idea or use case
+      description: What would you like to improve, and how would it help?
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: Suggested approach (optional)
+      description: If you have a solution in mind, describe it here. Open-ended ideas are welcome.
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context (optional)
+      description: Examples, alternatives, screenshots, or related issues are welcome.

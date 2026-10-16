@@ -1,0 +1,64 @@
+.session-notes-layout {
+  container: session-notes / inline-size;
+}
+
+.session-notes-layout > [data-notes-panel] {
+  min-inline-size: 0;
+  max-inline-size: 50%;
+}
+
+.session-pane-header {
+  display: flex;
+  flex-wrap: wrap;
+  min-block-size: 2.25rem;
+}
+
+.session-pane-header .session-header-title {
+  flex: 1 1 4rem;
+}
+
+.session-pane-header > [data-working-machine] {
+  flex: 0 1 auto;
+  max-inline-size: 40%;
+}
+
+.session-pane-header-actions {
+  display: flex;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  justify-content: end;
+  align-items: center;
+  gap: 0.375rem;
+  max-inline-size: 100%;
+  margin-inline-start: auto;
+}
+
+@container session-notes (inline-size >= 600px) {
+  [data-pane-can-maximize] [data-notes-header] {
+    padding-inline-end: 2.5rem;
+  }
+}
+
+@container session-notes (inline-size < 600px) {
+  .session-notes-layout > [data-notes-panel] {
+    inline-size: 100% !important; /* Override the drag-resize inline width in stacked mode. */
+    max-inline-size: 100%;
+    block-size: 50%;
+    border-inline-start: 0;
+    border-block-start: 1px solid var(--color-stroke);
+  }
+
+  .session-notes-layout:has(> [data-notes-panel]) > [data-session-drop] {
+    flex-basis: 100%;
+    block-size: 50%;
+    max-block-size: 50%;
+  }
+
+  .session-notes-layout > [data-notes-panel] > [role="separator"] {
+    display: none;
+  }
+}
+
+.session-notes-layout:has(> [data-notes-panel]) {
+  flex-wrap: wrap;
+}

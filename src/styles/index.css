@@ -1,0 +1,3796 @@
+@import "tailwindcss";
+@import "./palette.css";
+@import "./bycoda.css";
+@import "./arc.css";
+
+/* Desktop UI classes come from product code; explicit Streamdown sources remain below. */
+@source not "../../host";
+@source not "../../src-tauri";
+@source not "../../scripts";
+@source not "../../tests";
+@source not "../../docs";
+@source not "../../mobile";
+@source "../../node_modules/streamdown/dist/*.js";
+@source "../../node_modules/@streamdown/code/dist/*.js";
+@source "../../node_modules/@streamdown/mermaid/dist/*.js";
+
+@custom-variant dark (&:where(html:not(.theme-light), html:not(.theme-light) *));
+
+html [data-transcript-content],
+html [data-session-composer].max-w-4xl {
+  max-width: var(--appearance-chat-width, 56rem);
+}
+html .cm-editor .cm-content,
+html .cm-editor .cm-gutters,
+html .agent-markdown [data-streamdown="code-block-body"] code {
+  font-family: var(--font-mono);
+  font-size: var(--appearance-code-size, 13px);
+}
+/* Ctrl+wheel code zoom (editorZoom.ts) on top of the Appearance code size. */
+html .cm-editor .cm-content,
+html .cm-editor .cm-gutters {
+  font-size: clamp(
+    8px,
+    calc(var(--appearance-code-size, 13px) + var(--code-zoom-offset, 0px)),
+    32px
+  );
+}
+html.appearance-word-wrap .agent-markdown [data-streamdown="code-block-body"] pre,
+html.appearance-word-wrap .agent-markdown [data-streamdown="code-block-body"] code > span {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  width: auto;
+  min-width: 0;
+}
+
+@container settings (width < 560px) {
+  .settings-row {
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+
+  .settings-row-control {
+    max-width: 100%;
+    justify-content: flex-start;
+  }
+
+  .settings-row:has(> .settings-row-control > [role="switch"]:only-child) {
+    flex-direction: row;
+    gap: 1.5rem;
+  }
+}
+
+@theme {
+  /* Preserve descenders in compact labels, including two 10px lines in a 30px tab. */
+  --leading-label: 1.4;
+  --color-background-base: hsl(
+    var(--theme-hue) var(--theme-saturation) var(--background-lightness)
+  );
+  --color-content: hsl(var(--theme-hue) var(--theme-saturation) var(--content-lightness));
+  /* Structural separators: use border-stroke, divide-stroke, or bg-stroke. */
+  --color-stroke: color-mix(
+    in srgb,
+    var(--color-content) var(--appearance-stroke-strength, 7%),
+    transparent
+  );
+  /* Interactive fills keep their dark-theme contrast but use gentler ink in
+     light mode. Prefer these over content opacity for selected/raised UI. */
+  --color-selection-subtle: color-mix(
+    in srgb,
+    var(--color-content) var(--selection-subtle-strength),
+    transparent
+  );
+  --color-selection: color-mix(
+    in srgb,
+    var(--color-content) var(--selection-strength),
+    transparent
+  );
+  --color-selection-strong: color-mix(
+    in srgb,
+    var(--color-content) var(--selection-strong-strength),
+    transparent
+  );
+  --color-selection-hover: color-mix(
+    in srgb,
+    var(--color-content) var(--selection-hover-strength),
+    transparent
+  );
+  --color-selection-emphasis: color-mix(
+    in srgb,
+    var(--color-content) var(--selection-emphasis-strength),
+    transparent
+  );
+  --color-accent: var(--palette-accent);
+  /* One hue for every "on / running / working" state (switches, Working labels, spinners). */
+  --color-active: var(--palette-active);
+  --color-skill: var(--palette-hexb0b8c4);
+  --color-mention: var(--palette-hexa2b5c8);
+  --font-mono:
+    ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New",
+    monospace;
+  --font-sans:
+    "Segoe UI Variable", "Aptos", "Segoe UI", system-ui, -apple-system, BlinkMacSystemFont, Roboto,
+    Oxygen, Ubuntu, Cantarell, "Fira Sans", "Droid Sans", "Helvetica Neue", sans-serif;
+  /* Diff colors. `diff-add`/`diff-del` are the solid marker hues, `-fg` is
+     readable text on the theme background, `-bg`/`-gutter` are row tints.
+     Palettes below swap them; diff UI must also show a +/- glyph so color is
+     never the only cue. */
+  --color-diff-add: var(--palette-hex10b981);
+  --color-diff-add-fg: var(--palette-hex6ee7b7);
+  --color-diff-add-bg: color-mix(in srgb, var(--color-diff-add) 15%, transparent);
+  --color-diff-add-gutter: color-mix(in srgb, var(--color-diff-add) 25%, transparent);
+  --color-diff-del: var(--palette-hexf43f5e);
+  --color-diff-del-fg: var(--palette-hexfda4af);
+  --color-diff-del-bg: color-mix(in srgb, var(--color-diff-del) 15%, transparent);
+  --color-diff-del-gutter: color-mix(in srgb, var(--color-diff-del) 25%, transparent);
+}
+
+:root {
+  --ui-font-secondary: 0.8125rem;
+  --ui-font-caption: 0.75rem;
+  --ui-text-on-active: var(--palette-oklch_0_29_0_066_243);
+  --ui-text-secondary: color-mix(
+    in srgb,
+    var(--color-content) var(--appearance-secondary-strength, 85%),
+    var(--color-background-base)
+  );
+  --ui-text-disabled: color-mix(in srgb, var(--color-content) 50%, var(--color-background-base));
+  --ui-text-muted: color-mix(in oklab, var(--ui-text-secondary) 72%, var(--color-background-base));
+  /* Cartesian mixing preserves the cool theme hue across light/dark surfaces. */
+  --ui-surface: color-mix(in oklab, var(--color-content) 3%, var(--color-background-base));
+  --ui-surface-raised: color-mix(in oklab, var(--color-content) 6%, var(--color-background-base));
+  --ui-conflict-current-surface: color-mix(
+    in oklab,
+    var(--color-conflict-ours) 12%,
+    var(--color-background-base)
+  );
+  --ui-conflict-incoming-surface: color-mix(
+    in oklab,
+    var(--color-conflict-theirs) 12%,
+    var(--color-background-base)
+  );
+  /* Intra-conflict differences sit on top of the side's line tint. */
+  --ui-conflict-current-word: color-mix(in oklab, var(--color-conflict-ours) 30%, transparent);
+  --ui-conflict-incoming-word: color-mix(in oklab, var(--color-conflict-theirs) 30%, transparent);
+  --ui-surface-muted: color-mix(in oklab, var(--color-content) 8%, var(--color-background-base));
+  --ui-surface-hover: color-mix(in oklab, var(--color-content) 7%, var(--color-background-base));
+  --ui-surface-pressed: color-mix(in oklab, var(--color-content) 16%, var(--color-background-base));
+  --ui-surface-selected: color-mix(
+    in oklab,
+    var(--color-content) var(--selection-strength),
+    var(--bycoda-panel)
+  );
+  --ui-border-accent: color-mix(in oklab, var(--color-accent) 45%, var(--color-stroke));
+  --ui-primary-hover: color-mix(in oklab, var(--color-content) 85%, var(--color-background-base));
+  --ui-primary-pressed: color-mix(in oklab, var(--color-content) 75%, var(--color-background-base));
+  --ui-control-thumb: var(--color-on-solid);
+  --ui-control-thumb-border: color-mix(in oklab, var(--color-scrim) 5%, transparent);
+  --ui-control-thumb-shadow: 0 1px 4px color-mix(in oklab, var(--color-scrim) 20%, transparent);
+  --ui-control-height: 2.25rem;
+  --ui-control-height-compact: 1.75rem;
+  --ui-focus-width: 2px;
+  --ui-focus-offset: 2px;
+  --motion-reorder-duration: 160ms;
+  --motion-tab-close-duration: 200ms;
+  --motion-feedback-duration: 120ms;
+  --motion-ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --motion-tab-ease-out: cubic-bezier(0.3333, 0.6667, 0.6667, 1);
+  --theme-hue: 216;
+  --theme-saturation: 24%;
+  --theme-dark-lightness: 4%;
+  --sidebar-opacity: 0.85;
+  --main-opacity: 0.85;
+  --chat-background-empty-opacity: 0.24;
+  --chat-background-session-opacity: 0.24;
+  --chat-background-blur: 0px;
+  --selection-subtle-strength: 8%;
+  --selection-strength: 10%;
+  --selection-strong-strength: 12%;
+  --selection-hover-strength: 15%;
+  --selection-emphasis-strength: 20%;
+  --background-lightness: var(--theme-dark-lightness);
+  --content-lightness: 92%;
+  --link-color: var(--palette-hex7dd3fc);
+  --color-skill: var(--palette-hexe8c547);
+  --color-mention: var(--palette-active);
+  --color-markdown-heading: var(--palette-hexf9a8c9);
+}
+
+.ui-secondary-text {
+  font-size: var(--ui-font-secondary);
+  color: var(--ui-text-secondary);
+}
+
+.ui-caption-text {
+  font-size: var(--ui-font-caption);
+  color: var(--ui-text-secondary);
+}
+
+/* Enlarge isolated icons without changing the visual size or moving their label. */
+.ui-icon-hit::after {
+  content: "";
+  position: absolute;
+  inset: min(0px, (100% - 44px) / 2);
+}
+
+@layer base {
+  :where(button:not(:disabled), a[href], [role="button"]):active {
+    opacity: 0.85;
+  }
+}
+
+@media (pointer: coarse) {
+  html .agent-markdown .markdown-code-copy {
+    width: 44px;
+    height: 44px;
+    inset-block-start: 0;
+    inset-inline-end: 0;
+  }
+  html .agent-markdown .markdown-code-toggle {
+    inset-inline-end: 44px;
+  }
+  html .agent-markdown .markdown-code-summary {
+    inset-inline-end: 88px;
+  }
+  html .agent-markdown .markdown-code-shell {
+    min-block-size: 44px;
+  }
+}
+
+@layer base {
+  /* A fallback only: component outline/ring utilities must take precedence.
+     Text fields can match :focus-visible even when focused with the mouse. */
+  :where(button, input, select, textarea, a[href], [tabindex]):focus-visible {
+    outline: var(--ui-focus-width) solid var(--color-accent);
+    outline-offset: var(--ui-focus-offset);
+  }
+}
+
+/* Native checkboxes share the active-state color, including older accent utilities. */
+input[type="checkbox"] {
+  accent-color: var(--color-active) !important;
+}
+input[type="checkbox"]:not([class*="appearance-none"]) {
+  min-width: 15px;
+  min-height: 15px;
+  flex-shrink: 0;
+  cursor: pointer;
+}
+input[type="checkbox"]:disabled {
+  cursor: default;
+}
+
+html {
+  color-scheme: dark;
+}
+
+html.theme-light {
+  --ui-text-on-active: var(--palette-oklch_1_0_none);
+  --background-lightness: 94%;
+  --content-lightness: 18%;
+  --link-color: var(--palette-hsl_211_92pct_40pct);
+  --color-skill: var(--palette-hexa07c10);
+  --color-mention: var(--palette-hex0284c7);
+  --color-markdown-heading: var(--palette-hexbe185d);
+  --selection-subtle-strength: 5%;
+  --selection-strength: 6%;
+  --selection-strong-strength: 7%;
+  --selection-hover-strength: 10%;
+  --selection-emphasis-strength: 14%;
+  --color-diff-add-fg: var(--palette-hex047857);
+  --color-diff-del-fg: var(--palette-hexbe123c);
+  color-scheme: light;
+}
+
+/* Blue/orange stays distinguishable for protanopia, deuteranopia and
+   tritanopia (same pairing as GitHub's colorblind themes). */
+html.diff-palette-colorblind {
+  --color-diff-add: var(--palette-hex388bfd);
+  --color-diff-add-fg: var(--palette-hex79c0ff);
+  --color-diff-del: var(--palette-hexdb6d28);
+  --color-diff-del-fg: var(--palette-hexffa657);
+}
+
+html.diff-palette-colorblind.theme-light {
+  --color-diff-add: var(--palette-hex0969da);
+  --color-diff-add-fg: var(--palette-hex0550ae);
+  --color-diff-del: var(--palette-hexbc4c00);
+  --color-diff-del-fg: var(--palette-hex953800);
+}
+
+/* Colorblind-safe hues with heavier tints and maximum-contrast text. */
+html.diff-palette-high-contrast {
+  --color-diff-add: var(--palette-hex58a6ff);
+  --color-diff-add-fg: var(--palette-hexcae8ff);
+  --color-diff-add-bg: color-mix(in srgb, var(--color-diff-add) 28%, transparent);
+  --color-diff-add-gutter: color-mix(in srgb, var(--color-diff-add) 45%, transparent);
+  --color-diff-del: var(--palette-hexf0883e);
+  --color-diff-del-fg: var(--palette-hexffdfb6);
+  --color-diff-del-bg: color-mix(in srgb, var(--color-diff-del) 28%, transparent);
+  --color-diff-del-gutter: color-mix(in srgb, var(--color-diff-del) 45%, transparent);
+}
+
+html.diff-palette-high-contrast.theme-light {
+  --color-diff-add: var(--palette-hex0550ae);
+  --color-diff-add-fg: var(--palette-hex032563);
+  --color-diff-del: var(--palette-hex953800);
+  --color-diff-del-fg: var(--palette-hex471700);
+}
+
+html,
+body,
+#root {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  background: var(--color-background-base);
+  color: var(--color-content);
+  overflow: hidden;
+  overscroll-behavior: none;
+  user-select: none;
+  transition: background-color var(--motion-feedback-duration) var(--motion-ease-out);
+}
+
+/* Linux/Windows: explicit sans + thin scrollbars. macOS keeps native overlay
+   scrollbars and default text rendering. */
+html:not(.is-mac),
+html:not(.is-mac) body,
+html:not(.is-mac) #root {
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+html.theme-light {
+  --color-active: var(--palette-hex0284c7);
+}
+
+html:not(.is-mac) ::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+html:not(.is-mac) ::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+html:not(.is-mac) ::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--color-content) 16%, transparent);
+  border-radius: 9999px;
+}
+
+html:not(.is-mac) ::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in srgb, var(--color-content) 32%, transparent);
+}
+
+html:not(.is-mac) ::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+/* Tint-less transparent rather than `transparent`, which browsers interpolate
+   through black and would dim the page on the way in and out of glass. */
+html.has-native-glass:not(.theme-light),
+html.has-native-glass:not(.theme-light) body,
+html.has-native-glass:not(.theme-light) #root {
+  background: color-mix(in srgb, var(--color-background-base) 0%, transparent);
+}
+
+/* Layers are promoted only while moving. */
+.reorder-item:is([data-dragging], [data-settling]) {
+  will-change: transform;
+  z-index: 10;
+}
+
+.tab-motion,
+.tab-motion > button {
+  transition:
+    background-color var(--motion-feedback-duration) var(--motion-ease-out),
+    color var(--motion-feedback-duration) var(--motion-ease-out),
+    opacity var(--motion-feedback-duration) var(--motion-ease-out);
+}
+
+.tab-motion[data-reordering] [data-no-drag] {
+  visibility: hidden;
+}
+
+.tab-closing,
+.tab-opening {
+  overflow: hidden;
+  flex-basis: auto;
+  flex-grow: 0;
+  width: var(--tab-slot-width, 14rem);
+  min-width: var(--tab-slot-min-width, 0);
+  margin-right: 0;
+  box-sizing: border-box;
+  transition:
+    width var(--motion-tab-close-duration) var(--motion-tab-ease-out),
+    min-width var(--motion-tab-close-duration) var(--motion-tab-ease-out),
+    margin-right var(--motion-tab-close-duration) var(--motion-tab-ease-out);
+}
+
+.tab-opening {
+  --tab-slot-min-width: 7rem;
+  flex-shrink: 1;
+}
+
+.tab-closing {
+  flex-shrink: 0;
+  pointer-events: none;
+}
+
+.tab-closing[data-collapsed],
+.tab-opening[data-collapsed] {
+  width: 0;
+  min-width: 0;
+  margin-right: -0.125rem;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tab-motion,
+  .tab-motion > button {
+    transition: none;
+  }
+
+  .tab-closing,
+  .tab-opening {
+    transition: none;
+  }
+
+  .tab-closing {
+    display: none;
+  }
+}
+
+.workspace-tab:not([data-reordering]) > button:not([aria-selected="true"]):hover,
+.workspace-tab[data-dragging] > button:not([aria-selected="true"]),
+.project-reorder-item:not([data-reordering], [data-selected]):hover,
+.project-reorder-item[data-dragging]:not([data-selected]) {
+  background: color-mix(in srgb, var(--color-content) 5%, transparent);
+  color: var(--color-content);
+}
+
+/* Keep project controls from appearing as rows pass beneath the pointer. */
+.project-reorder-item[data-reordering] [data-no-drag] {
+  visibility: hidden;
+}
+
+.project-reorder-item[data-reordering] > button:first-of-type {
+  padding-right: 0;
+}
+
+.project-reorder-item[data-reordering] .project-card-logo {
+  opacity: 1;
+}
+
+.project-reorder-item[data-reordering] .project-card-stats {
+  display: flex;
+}
+
+.sidebar-glass {
+  background: color-mix(in srgb, var(--color-background-base) 90%, var(--palette-scrim));
+  transition: background-color var(--motion-feedback-duration) var(--motion-ease-out);
+}
+
+html.theme-light .sidebar-glass {
+  background: var(--color-background-base);
+}
+
+html.has-native-glass:not(.theme-light) .sidebar-glass {
+  background: hsl(
+    var(--theme-hue) var(--theme-saturation) var(--background-lightness) / var(--sidebar-opacity)
+  );
+}
+
+/* The activity dot sits at (23px, 9px) in a 32px button. Its icon is
+   centered at (8px, 8px), so this cuts a 2px gap around the 6px dot. */
+.compact-rail-icon-with-dot {
+  -webkit-mask-image: radial-gradient(circle at 15px 1px, transparent 5px, var(--palette-scrim) 5.5px);
+  mask-image: radial-gradient(circle at 15px 1px, transparent 5px, var(--palette-scrim) 5.5px);
+}
+
+.body-glass {
+  background: var(--color-background-base);
+  transition: background-color var(--motion-feedback-duration) var(--motion-ease-out);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html,
+  body,
+  #root,
+  .sidebar-glass,
+  .body-glass {
+    transition: none;
+  }
+}
+
+.chat-pane-background::before {
+  content: "";
+  position: absolute;
+  left: var(--chat-background-left, 0);
+  top: var(--chat-background-top, 0);
+  width: var(--chat-background-width, 100%);
+  height: var(--chat-background-height, 100%);
+  z-index: -1;
+  background-image: var(--chat-background-image, none);
+  background-position: center;
+  background-size: cover;
+  background-repeat: no-repeat;
+  opacity: 0;
+  transition: opacity var(--motion-feedback-duration) var(--motion-ease-out);
+  pointer-events: none;
+}
+
+/* Blur fades the image toward its edges, so grow it past the pane on every
+   side. The pane clips the overflow. */
+html.chat-background-blurred .chat-pane-background::before {
+  left: calc(var(--chat-background-left, 0%) - 2 * var(--chat-background-blur));
+  top: calc(var(--chat-background-top, 0%) - 2 * var(--chat-background-blur));
+  width: calc(var(--chat-background-width, 100%) + 4 * var(--chat-background-blur));
+  height: calc(var(--chat-background-height, 100%) + 4 * var(--chat-background-blur));
+  filter: blur(var(--chat-background-blur));
+}
+
+/* One masked copy samples the artwork; the soft copy stays hidden. */
+.gradient-blur-background {
+  --gradient-blur-strong: 18px;
+  --gradient-blur-strong-mask: linear-gradient(to bottom, transparent 28%, var(--palette-hex000) 76%);
+  --gradient-blur-overlay: linear-gradient(
+    to bottom,
+    transparent 16%,
+    color-mix(in srgb, var(--color-background-base) 26%, transparent) 38%,
+    color-mix(in srgb, var(--color-background-base) 55%, transparent) 55%,
+    color-mix(in srgb, var(--color-background-base) 78%, transparent) 75%
+  );
+  --gradient-blur-mask: linear-gradient(
+    to bottom,
+    var(--palette-hex000) 0 19%,
+    var(--palette-rgb_0_0_0_94pct) 30%,
+    var(--palette-rgb_0_0_0_72pct) 42%,
+    var(--palette-rgb_0_0_0_42pct) 54%,
+    var(--palette-rgb_0_0_0_16pct) 66%,
+    var(--palette-rgb_0_0_0_4pct) 78%,
+    transparent 90%
+  );
+  overflow: hidden;
+  pointer-events: none;
+  background-image: var(--chat-background-image, none);
+  background-position: center;
+  background-size: cover;
+  background-repeat: no-repeat;
+  -webkit-mask-image: var(--gradient-blur-mask);
+  mask-image: var(--gradient-blur-mask);
+}
+
+.gradient-blur-preview {
+  --gradient-blur-strong: 5px;
+}
+
+.gradient-blur-background > span {
+  position: absolute;
+  inset: 0;
+  background-image: var(--chat-background-image, none);
+  background-position: center;
+  background-size: cover;
+  background-repeat: no-repeat;
+}
+
+.gradient-blur-background-soft {
+  display: none;
+}
+
+.gradient-blur-background-strong {
+  filter: blur(var(--gradient-blur-strong));
+  -webkit-mask-image: var(--gradient-blur-strong-mask);
+  mask-image: var(--gradient-blur-strong-mask);
+}
+
+.gradient-blur-background::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image:
+    repeating-linear-gradient(
+      to bottom,
+      color-mix(in srgb, var(--color-background-base) 36%, transparent) 0 1px,
+      transparent 1px 3px
+    ),
+    var(--gradient-blur-overlay);
+}
+
+.chat-pane-background > .gradient-blur-background {
+  display: none;
+  position: absolute;
+  left: var(--chat-background-left, 0);
+  top: var(--chat-background-top, 0);
+  width: var(--chat-background-width, 100%);
+  height: var(--chat-background-height, 100%);
+  z-index: -1;
+  opacity: 0;
+  transition: opacity var(--motion-feedback-duration) var(--motion-ease-out);
+}
+
+/* Keep the active transcript clear of the wide blurred haze used by the empty hero. */
+.chat-pane-background[data-session-empty="false"] > .gradient-blur-background {
+  --gradient-blur-strong: 12px;
+  --gradient-blur-strong-mask: linear-gradient(to bottom, transparent 22%, var(--palette-hex000) 76%);
+  --gradient-blur-overlay: linear-gradient(
+    to bottom,
+    transparent 15%,
+    color-mix(in srgb, var(--color-background-base) 70%, transparent) 76%
+  );
+  --gradient-blur-mask: linear-gradient(to bottom, var(--palette-hex000) 0 18%, transparent 76%);
+}
+
+html.chat-background-gradient-blur
+  .chat-pane-background[data-project-chat-background="false"]
+  > .gradient-blur-background,
+.chat-pane-background[data-project-background-effect="gradient-blur"] > .gradient-blur-background {
+  display: block;
+}
+
+html.has-chat-background.chat-background-effect-ready.chat-background-gradient-blur
+  .chat-pane-background[data-project-chat-background="false"]
+  > .gradient-blur-background,
+.chat-pane-background[data-project-background-effect="gradient-blur"] > .gradient-blur-background {
+  opacity: var(--chat-background-empty-opacity);
+}
+
+html.has-chat-background.chat-background-effect-ready.chat-background-gradient-blur
+  .chat-pane-background[data-project-chat-background="false"][data-session-empty="false"]
+  > .gradient-blur-background,
+.chat-pane-background[data-project-background-effect="gradient-blur"][data-session-empty="false"]
+  > .gradient-blur-background {
+  opacity: var(--chat-background-session-opacity);
+}
+
+html.has-chat-background.chat-background-effect-ready:not(.chat-background-gradient-blur)
+  .chat-pane-background[data-project-chat-background="false"]::before,
+.chat-pane-background[data-project-chat-background="true"]:not(
+    [data-project-background-effect="gradient-blur"]
+  )::before {
+  opacity: var(--chat-background-empty-opacity);
+}
+
+html.has-chat-background.chat-background-effect-ready:not(.chat-background-gradient-blur)
+  .chat-pane-background[data-project-chat-background="false"][data-session-empty="false"]::before,
+.chat-pane-background[data-project-chat-background="true"]:not(
+    [data-project-background-effect="gradient-blur"]
+  )[data-session-empty="false"]::before {
+  opacity: var(--chat-background-session-opacity);
+}
+
+/*
+ * Sending the first message eases the background into its session look (or
+ * out entirely when it only shows on empty sessions) alongside the composer.
+ */
+.chat-pane-background[data-session-empty="false"]::before {
+  transition-duration: 600ms;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chat-pane-background::before,
+  .chat-pane-background[data-session-empty="false"]::before {
+    transition-duration: 0ms;
+  }
+}
+
+html.has-chat-background.chat-background-effect-ready:not(
+    .chat-background-gradient-blur
+  ).chat-background-empty-only
+  .chat-pane-background[data-project-chat-background="false"][data-session-empty="false"]::before,
+.chat-pane-background[data-project-chat-background="true"][data-project-background-scope="empty"][data-session-empty="false"]::before {
+  opacity: 0;
+}
+
+/* Scope and visibility follow the same rules as the existing image layer. */
+html.has-chat-background.chat-background-effect-ready.chat-background-gradient-blur.chat-background-empty-only
+  .chat-pane-background[data-project-chat-background="false"][data-session-empty="false"]
+  > .gradient-blur-background,
+.chat-pane-background[data-project-background-scope="empty"][data-session-empty="false"]
+  > .gradient-blur-background {
+  opacity: 0;
+}
+
+.chat-pane-background[data-session-empty="false"] > .gradient-blur-background {
+  transition-duration: 600ms;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chat-pane-background > .gradient-blur-background {
+    transition-duration: 0ms;
+  }
+}
+
+.transcript-turn {
+  /* Loaded history must retain real heights: estimated offscreen placeholders
+     change the scroll range during upward gestures, even with auto sizing. */
+  content-visibility: visible;
+}
+
+::highlight(bycoda-transcript-search-match) {
+  background-color: color-mix(in srgb, var(--color-search) 46%, transparent);
+}
+
+::highlight(bycoda-transcript-search-current) {
+  background-color: color-mix(in srgb, var(--color-accent) 62%, transparent);
+}
+
+/* Match the Mono transcript's soft edge fade on overflowing tab text. */
+.tab-label[data-overflow="true"] {
+  --tab-label-mask: linear-gradient(to right, var(--palette-hex000), var(--palette-hex000) calc(100% - 2.5rem), transparent);
+  -webkit-mask-image: var(--tab-label-mask);
+  mask-image: var(--tab-label-mask);
+}
+
+/* Fade a stationary layer, leaving the scroll surface unmasked. */
+.sidebar-session-scroll::after,
+.transcript-composer-fade:has(.agent-transcript)::after {
+  content: "";
+  display: block;
+  block-size: 2.5rem;
+  pointer-events: none;
+  background: linear-gradient(to bottom, transparent, var(--scroll-fade-surface));
+  z-index: 4;
+}
+.sidebar-session-scroll::after {
+  position: sticky;
+  inset-block-end: 0;
+  margin-block-start: -2.5rem;
+}
+.transcript-composer-fade:has(.agent-transcript)::after {
+  position: absolute;
+  inset-inline: 0;
+  inset-block-end: 0;
+}
+
+/* Let the latest reply scroll fully clear of the composer's fade. */
+.transcript-composer-fade [data-transcript-content] {
+  padding-bottom: 2.5rem;
+}
+
+.agent-transcript [data-transcript-search-current="true"] .user-message-bubble pre.line-clamp-4 {
+  display: block;
+  overflow: visible;
+  -webkit-line-clamp: unset;
+}
+
+/*
+ * The live turn is still growing. Size containment would flash the 240px
+ * intrinsic fallback when the first step arrives, which bounces Working
+ * down and then back up.
+ */
+.transcript-turn-live {
+  content-visibility: visible;
+}
+
+/* Touch layouts keep actions in flow. Desktop places them in the existing
+ * turn gap so revealing the controls never shifts or over-spaces the chat. */
+.user-message-actions {
+  width: fit-content;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .user-message-hover-zone {
+    position: relative;
+    isolation: isolate;
+  }
+
+  .user-message-actions {
+    position: absolute;
+    top: 100%;
+    right: 0;
+    z-index: 1;
+    opacity: 0;
+    transition: opacity 120ms ease;
+  }
+
+  .user-message-row:hover .user-message-actions,
+  .user-message-row:focus-within .user-message-actions {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .user-message-actions {
+    transition: none;
+  }
+}
+
+.user-message-with-link {
+  display: block;
+}
+
+html.has-user-accent .user-message-bubble {
+  background: color-mix(in srgb, var(--user-accent-color) 24%, transparent);
+  border-color: color-mix(in srgb, var(--user-accent-color) 30%, transparent);
+}
+
+/*
+ * A freshly sent /operator turn lights up once: the bubble blooms with a warm
+ * halo, a golden sheen sweeps across it, and sparkles drift up from a glow at
+ * its base, twinkling as they rise and fading out past the top edge.
+ */
+.bycoda-sparkles {
+  --sparkle-color: var(--palette-hexfde68a);
+  --sparkle-glow: var(--palette-rgb_251_191_36_0_9);
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  border-radius: inherit;
+  pointer-events: none;
+  animation: bycoda-halo 2400ms 150ms ease-out both;
+}
+
+html.theme-light .bycoda-sparkles {
+  --sparkle-color: var(--palette-hexf59e0b);
+  --sparkle-glow: var(--palette-rgb_217_119_6_0_55);
+}
+
+.bycoda-sparkles::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    105deg,
+    transparent 30%,
+    var(--palette-rgb_254_243_199_0_5) 48%,
+    var(--palette-rgb_251_191_36_0_35) 52%,
+    transparent 70%
+  );
+  transform: translateX(-120%);
+  animation: bycoda-sheen 1100ms 300ms cubic-bezier(0.4, 0, 0.2, 1) both;
+}
+
+.bycoda-sparkles::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(120% 70% at 50% 100%, var(--palette-rgb_251_191_36_0_35), transparent 70%);
+  animation: bycoda-ember-glow 2200ms 100ms ease-out both;
+}
+
+.bycoda-sparkle {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: var(--x);
+  z-index: 1;
+  width: 0;
+  animation: bycoda-rise var(--duration) var(--delay) cubic-bezier(0.3, 0.6, 0.4, 1) both;
+}
+
+.bycoda-sparkle-glyph {
+  position: absolute;
+  bottom: calc(var(--size) * -1);
+  left: calc(var(--size) / -2);
+  width: var(--size);
+  height: var(--size);
+  color: var(--sparkle-color);
+  filter: drop-shadow(0 0 3px var(--sparkle-glow));
+  animation: bycoda-twinkle var(--duration) var(--delay) ease-in-out both;
+}
+
+.bycoda-sparkle-ember {
+  border-radius: 9999px;
+  background: radial-gradient(circle, var(--palette-hexfffbeb), var(--sparkle-color) 70%);
+}
+
+@keyframes bycoda-rise {
+  from {
+    transform: translate(0, 0);
+  }
+  to {
+    transform: translate(var(--drift), calc(-100% - 6px));
+  }
+}
+
+@keyframes bycoda-twinkle {
+  0% {
+    opacity: 0;
+    transform: scale(0.2) rotate(0deg);
+  }
+  18% {
+    opacity: 1;
+    transform: scale(1) rotate(calc(var(--spin) * 0.3));
+  }
+  42% {
+    opacity: 0.75;
+    transform: scale(0.65) rotate(calc(var(--spin) * 0.5));
+  }
+  62% {
+    opacity: 1;
+    transform: scale(1.1) rotate(calc(var(--spin) * 0.7));
+  }
+  100% {
+    opacity: 0;
+    transform: scale(0.3) rotate(var(--spin));
+  }
+}
+
+@keyframes bycoda-halo {
+  0% {
+    box-shadow:
+      0 0 0 0 var(--palette-rgb_245_158_11_0),
+      0 0 0 0 var(--palette-rgb_245_158_11_0);
+  }
+  25% {
+    box-shadow:
+      0 0 0 1px var(--palette-rgb_245_158_11_0_55),
+      0 0 24px 3px var(--palette-rgb_245_158_11_0_35);
+  }
+  100% {
+    box-shadow:
+      0 0 0 0 var(--palette-rgb_245_158_11_0),
+      0 0 0 0 var(--palette-rgb_245_158_11_0);
+  }
+}
+
+@keyframes bycoda-sheen {
+  to {
+    transform: translateX(120%);
+  }
+}
+
+@keyframes bycoda-ember-glow {
+  0% {
+    opacity: 0;
+  }
+  30% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bycoda-sparkles {
+    display: none;
+  }
+}
+
+/*
+ * Plan and Orchestrator turns share the /operator bloom and upward exit.
+ * Numbered plan marks and a small agent network keep their own shapes and
+ * colors as they travel from the bottom of the bubble past its top edge.
+ */
+.plan-steps,
+.orchestrator-constellation {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  border-radius: inherit;
+  pointer-events: none;
+  animation: turn-mode-halo 2400ms 150ms ease-out both;
+}
+
+.plan-steps::before,
+.orchestrator-constellation::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    105deg,
+    transparent 30%,
+    color-mix(in srgb, var(--mode-color) 32%, transparent) 48%,
+    color-mix(in srgb, var(--mode-glow) 28%, transparent) 52%,
+    transparent 70%
+  );
+  transform: translateX(-120%);
+}
+
+.plan-steps::after,
+.orchestrator-constellation::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(
+    120% 70% at 50% 100%,
+    color-mix(in srgb, var(--mode-glow) 35%, transparent),
+    transparent 70%
+  );
+  animation: bycoda-ember-glow 2200ms 100ms ease-out both;
+}
+
+@keyframes turn-mode-halo {
+  0% {
+    box-shadow:
+      0 0 0 0 transparent,
+      0 0 0 0 transparent;
+  }
+  25% {
+    box-shadow:
+      0 0 0 1px color-mix(in srgb, var(--mode-glow) 60%, transparent),
+      0 0 24px 3px color-mix(in srgb, var(--mode-glow) 38%, transparent);
+  }
+  100% {
+    box-shadow:
+      0 0 0 0 transparent,
+      0 0 0 0 transparent;
+  }
+}
+
+@keyframes turn-mode-sheen {
+  to {
+    transform: translateX(120%);
+  }
+}
+
+.plan-steps {
+  --mode-color: var(--palette-hexfde047);
+  --mode-glow: var(--palette-rgb_250_204_21_0_85);
+  --mode-ink: var(--palette-hex422006);
+}
+
+html.theme-light .plan-steps {
+  --mode-color: var(--palette-hexca8a04);
+  --mode-glow: var(--palette-rgb_202_138_4_0_55);
+  --mode-ink: var(--palette-hexfff);
+}
+
+.plan-steps::before {
+  animation: turn-mode-sheen 1100ms 300ms cubic-bezier(0.4, 0, 0.2, 1) both;
+}
+
+.plan-step {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: var(--x);
+  z-index: 2;
+  width: 0;
+  animation: bycoda-rise var(--duration) var(--delay) cubic-bezier(0.3, 0.6, 0.4, 1) both;
+}
+
+.plan-step-dot {
+  position: absolute;
+  bottom: -16px;
+  left: -8px;
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  border: 1.5px solid var(--mode-color);
+  border-radius: 9999px;
+  color: var(--mode-color);
+  font-size: 8.5px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  box-shadow: 0 0 8px var(--mode-glow);
+  animation: plan-step-dot var(--duration) var(--delay) ease-out both;
+}
+
+.plan-step-number,
+.plan-step-check {
+  grid-area: 1 / 1;
+}
+
+.plan-step-number {
+  animation: plan-step-number var(--duration) var(--delay) ease-out both;
+}
+
+.plan-step-check {
+  width: 10px;
+  height: 10px;
+  fill: none;
+  stroke: var(--mode-ink);
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-dasharray: 10;
+  animation: plan-step-check var(--duration) var(--delay) ease-out both;
+}
+
+.plan-step-ember {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: var(--x);
+  z-index: 1;
+  width: 0;
+  animation: bycoda-rise var(--duration) var(--delay) cubic-bezier(0.3, 0.6, 0.4, 1) both;
+}
+
+.plan-step-ember-glyph {
+  --spin: 0deg;
+  position: absolute;
+  bottom: calc(var(--size) * -1);
+  left: calc(var(--size) / -2);
+  width: var(--size);
+  height: var(--size);
+  border-radius: 9999px;
+  background: radial-gradient(circle, var(--palette-hexfefce8), var(--mode-color) 70%);
+  box-shadow: 0 0 5px var(--mode-glow);
+  animation: bycoda-twinkle var(--duration) var(--delay) ease-in-out both;
+}
+
+@keyframes plan-step-dot {
+  0% {
+    opacity: 0;
+    transform: scale(0.3);
+    background: color-mix(in srgb, var(--mode-color) 12%, transparent);
+  }
+  10% {
+    opacity: 1;
+    transform: scale(1.2);
+  }
+  20%,
+  38% {
+    transform: scale(1);
+  }
+  34% {
+    background: color-mix(in srgb, var(--mode-color) 12%, transparent);
+  }
+  44% {
+    transform: scale(1.14);
+    background: var(--mode-color);
+  }
+  52% {
+    transform: scale(1);
+  }
+  85% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: scale(0.8);
+    background: var(--mode-color);
+  }
+}
+
+@keyframes plan-step-number {
+  0%,
+  34% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  42%,
+  100% {
+    opacity: 0;
+    transform: scale(0.5);
+  }
+}
+
+@keyframes plan-step-check {
+  0%,
+  36% {
+    opacity: 0;
+    stroke-dashoffset: 10;
+  }
+  50%,
+  100% {
+    opacity: 1;
+    stroke-dashoffset: 0;
+  }
+}
+
+.orchestrator-constellation {
+  --mode-color: var(--palette-orchestrationDark);
+  --mode-glow: var(--palette-rgb_232_121_249_0_85);
+  --mode-spark: var(--palette-hexfdf4ff);
+}
+
+html.theme-light .orchestrator-constellation {
+  --mode-color: var(--palette-hexc026d3);
+  --mode-glow: var(--palette-rgb_192_38_211_0_5);
+  --mode-spark: var(--palette-hexf5d0fe);
+}
+
+.orchestrator-constellation::before {
+  animation: turn-mode-sheen 1100ms 300ms cubic-bezier(0.4, 0, 0.2, 1) both;
+}
+
+.orchestrator-network {
+  position: absolute;
+  inset: 0;
+  animation: orchestrator-network-rise 2200ms 300ms cubic-bezier(0.3, 0.6, 0.4, 1) both;
+}
+
+.orchestrator-edges {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  overflow: visible;
+}
+
+.orchestrator-edge,
+.orchestrator-pulse {
+  fill: none;
+  stroke-linecap: round;
+}
+
+.orchestrator-edge {
+  stroke: color-mix(in srgb, var(--mode-color) 60%, transparent);
+  stroke-width: 1.25;
+  stroke-dasharray: var(--length);
+  animation: orchestrator-edge-draw var(--draw) var(--delay) cubic-bezier(0.3, 0.6, 0.4, 1) both;
+}
+
+/* A bright head rides the tip of each edge as it draws out. */
+.orchestrator-pulse {
+  stroke: var(--mode-spark);
+  stroke-width: 2.5;
+  stroke-dasharray: 6 var(--length);
+  filter: drop-shadow(0 0 3px var(--mode-glow));
+  animation: orchestrator-pulse var(--draw) var(--delay) cubic-bezier(0.3, 0.6, 0.4, 1) both;
+}
+
+.orchestrator-hub,
+.orchestrator-node {
+  position: absolute;
+  z-index: 2;
+  width: var(--size);
+  height: var(--size);
+  margin: calc(var(--size) / -2) 0 0 calc(var(--size) / -2);
+  border-radius: 9999px;
+  background: radial-gradient(circle, var(--mode-spark), var(--mode-color) 70%);
+  box-shadow: 0 0 8px var(--mode-glow);
+}
+
+.orchestrator-hub::after,
+.orchestrator-node::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border: 1.5px solid var(--mode-color);
+  border-radius: inherit;
+  opacity: 0;
+}
+
+.orchestrator-hub {
+  --size: 8px;
+  animation: orchestrator-hub 600ms 120ms ease-out both;
+}
+
+.orchestrator-hub::after {
+  animation: orchestrator-ring 700ms 220ms ease-out both;
+}
+
+.orchestrator-node {
+  --size: 6px;
+  animation: orchestrator-node 600ms var(--delay) ease-out both;
+}
+
+.orchestrator-node[data-child="true"] {
+  --size: 4.5px;
+}
+
+.orchestrator-node::after {
+  animation: orchestrator-ring 500ms var(--delay) ease-out both;
+}
+
+@keyframes orchestrator-edge-draw {
+  from {
+    stroke-dashoffset: var(--length);
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+@keyframes orchestrator-network-rise {
+  0% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  85% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(calc(-100% - 12px));
+  }
+}
+
+@keyframes orchestrator-pulse {
+  0% {
+    opacity: 1;
+    stroke-dashoffset: 6;
+  }
+  85% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    stroke-dashoffset: calc(var(--length) * -1);
+  }
+}
+
+@keyframes orchestrator-hub {
+  0% {
+    opacity: 0;
+    transform: scale(0.3);
+  }
+  30% {
+    opacity: 1;
+    transform: scale(1.35);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes orchestrator-node {
+  0% {
+    opacity: 0;
+    transform: scale(0.2);
+  }
+  30% {
+    opacity: 1;
+    transform: scale(1.4);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes orchestrator-ring {
+  0% {
+    opacity: 0.8;
+    transform: scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(3.5);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .plan-steps,
+  .orchestrator-constellation {
+    display: none;
+  }
+}
+
+.edit-last-turn-composer {
+  border-style: dashed;
+  border-color: color-mix(in srgb, var(--user-accent-color, var(--color-accent)) 32%, transparent);
+}
+
+.edit-last-turn-bubble {
+  outline: 1px dashed
+    color-mix(in srgb, var(--user-accent-color, var(--color-accent)) 45%, transparent);
+  outline-offset: 1px;
+}
+
+.edit-last-turn-button {
+  color: var(--user-accent-color, var(--color-accent));
+  background: color-mix(in srgb, var(--user-accent-color, var(--color-accent)) 10%, transparent);
+}
+
+.user-message-bubble[data-draft="true"] {
+  background: color-mix(in srgb, var(--color-content) 4%, transparent);
+}
+
+html.has-user-accent .user-message-bubble[data-draft="true"] {
+  background: color-mix(in srgb, var(--user-accent-color) 8%, transparent);
+  border-color: color-mix(in srgb, var(--user-accent-color) 38%, transparent);
+}
+
+.user-link-preview {
+  display: inline;
+  white-space: normal;
+}
+
+.user-link-preview-title {
+  display: inline;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+/*
+ * After a send, the live turn fills the transcript viewport so the prompt sits
+ * at the top. Switching tabs keeps this. Closing the tab drops it, so opening
+ * that conversation again uses the true bottom (latest reply on the composer).
+ */
+.transcript-turn-anchor {
+  min-height: var(--transcript-viewport, 0px);
+}
+
+/* While a sent prompt rises into place, the rest of its turn waits for it. */
+.transcript-turn[data-prompt-rise="rising"] > :not(:has([data-prompt-anchor])) {
+  opacity: 0;
+}
+
+.transcript-turn[data-prompt-rise="revealing"] > :not(:has([data-prompt-anchor])) {
+  animation: prompt-turn-reveal 320ms var(--motion-ease-out) both;
+}
+
+@keyframes prompt-turn-reveal {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+html.has-native-glass.glass-body:not(.theme-light) .body-glass {
+  background: color-mix(
+    in srgb,
+    var(--color-background-base) calc(var(--main-opacity) * 100%),
+    transparent
+  );
+}
+
+/* The session sidebar keeps the main pane's opaque look, but its glass follows
+   the sidebar setting and does not depend on the main pane glass toggle. */
+html.has-native-glass:not(.theme-light) .body-glass.sidebar-pane {
+  background: color-mix(
+    in srgb,
+    var(--color-background-base) calc(var(--sidebar-opacity) * 100%),
+    transparent
+  );
+}
+
+textarea,
+input,
+.agent-transcript,
+.markdown-preview,
+.whats-new-md,
+.inbox-pr-diff,
+.unified-diff,
+.inbox-comment-md,
+.bycoda-terminal,
+.bycoda-terminal .xterm,
+.bycoda-terminal .xterm-viewport {
+  user-select: text;
+}
+
+/* Clip without creating a scroll container between sticky find panels and the
+   shared vertical merge scroller. Each editor keeps its horizontal scroller. */
+.cm-mergeView .cm-mergeViewEditor {
+  overflow: clip;
+}
+
+/* Per-hunk controls in the gutter between the side-by-side editor panes. */
+.cm-mergeView .cm-merge-revert .cm-split-hunk {
+  position: absolute;
+  left: 0;
+  right: 0;
+  display: flex;
+  justify-content: center;
+  height: 1.35rem;
+}
+
+.cm-mergeView .cm-merge-revert .cm-split-hunk button {
+  position: static;
+  display: grid;
+  place-items: center;
+  width: 1.2rem;
+  height: 100%;
+  padding: 0;
+  color: color-mix(in srgb, var(--color-content) 55%, transparent);
+  border-radius: 4px;
+}
+
+.cm-mergeView .cm-merge-revert .cm-split-hunk button:hover {
+  color: var(--color-content);
+  background: color-mix(in srgb, var(--color-content) 12%, transparent);
+}
+
+.cm-mergeView .cm-merge-revert .cm-split-hunk button:focus-visible {
+  outline: 1px solid var(--color-accent);
+  outline-offset: -1px;
+}
+
+.cm-mergeView .cm-merge-revert .cm-split-hunk button.cm-split-hunk-stage {
+  display: none;
+}
+
+.cm-split-can-stage.cm-mergeView .cm-merge-revert {
+  width: 2.8rem;
+}
+
+.cm-split-can-stage.cm-mergeView .cm-merge-revert .cm-split-hunk button.cm-split-hunk-stage {
+  display: grid;
+}
+
+.inbox-comment-md.agent-markdown p:first-child,
+.inbox-comment-md.agent-markdown li:first-child,
+.inbox-comment-md.agent-markdown blockquote:first-child {
+  margin-top: 0;
+}
+
+.inbox-comment-md.agent-markdown p:last-child,
+.inbox-comment-md.agent-markdown li:last-child,
+.inbox-comment-md.agent-markdown blockquote:last-child {
+  margin-bottom: 0;
+}
+
+.agent-markdown [data-streamdown="blockquote"] {
+  padding-left: 0;
+  padding-inline-start: 1rem;
+  border-left: 0;
+  border-inline-start: 4px solid color-mix(in srgb, var(--color-content) 20%, transparent);
+}
+
+.agent-markdown [data-streamdown="ordered-list"],
+.agent-markdown [data-streamdown="unordered-list"] {
+  list-style-position: outside;
+  padding-left: 0;
+  padding-inline-start: 1.5rem;
+}
+
+.agent-markdown li > [data-streamdown="ordered-list"],
+.agent-markdown li > [data-streamdown="unordered-list"] {
+  padding-left: 0;
+  padding-inline-start: 1.5rem;
+}
+
+.inbox-comment-md.agent-markdown blockquote {
+  margin: 0.4em 0;
+  padding: 0.15em 0;
+  padding-inline-start: 0.75em;
+  border: 0;
+  border-inline-start: 2px solid color-mix(in srgb, var(--color-content) 16%, transparent);
+  color: color-mix(in srgb, var(--color-content) 55%, transparent);
+}
+
+.workspace-surface[aria-hidden="true"] {
+  visibility: hidden;
+  pointer-events: none;
+}
+
+html.is-reordering {
+  -webkit-user-select: none !important;
+  user-select: none !important;
+}
+
+html.is-explorer-file-dragging {
+  cursor: grabbing !important;
+}
+
+.explorer-file-drag-preview {
+  position: fixed !important;
+  inset: 0 auto auto 0 !important;
+  z-index: 2147483647;
+  display: flex !important;
+  width: max-content !important;
+  max-width: min(280px, calc(100vw - 16px));
+  height: 26px !important;
+  align-items: center;
+  gap: 6px;
+  margin: 0 !important;
+  padding: 0 9px 0 7px !important;
+  overflow: hidden;
+  pointer-events: none !important;
+  border: 1px solid color-mix(in srgb, var(--color-content) 12%, transparent);
+  border-radius: 5px;
+  background: color-mix(
+    in srgb,
+    var(--color-background-base) 96%,
+    var(--color-content) 4%
+  ) !important;
+  box-shadow:
+    0 4px 12px var(--palette-rgb_0_0_0_18pct),
+    0 1px 2px var(--palette-rgb_0_0_0_20pct);
+  color: var(--color-content) !important;
+  font-size: 12px !important;
+  line-height: 1 !important;
+  white-space: nowrap;
+  opacity: 0.94 !important;
+  will-change: transform;
+  contain: paint;
+}
+
+.explorer-file-drag-preview > span {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+}
+
+html.theme-light .explorer-file-drag-preview {
+  background: var(--color-background-base) !important;
+  opacity: 1 !important;
+}
+
+html.is-resizing {
+  cursor: col-resize !important;
+  -webkit-user-select: none !important;
+  user-select: none !important;
+}
+
+.composer-toolbar {
+  container: composer-toolbar / inline-size;
+}
+
+@container composer-toolbar (width < 220px) {
+  [data-access-picker-trigger] > span,
+  [data-access-picker-trigger] > svg:last-child {
+    display: none;
+  }
+}
+
+/* The whole controls row narrows in steps: secondary text goes first, then
+   labels collapse to their icons. The chips still wrap as a last resort. */
+.composer-controls {
+  container: composer-controls / inline-size;
+}
+@container composer-controls (width < 560px) {
+  [data-model-effort],
+  [data-extras-summary] {
+    display: none;
+  }
+}
+@container composer-controls (width < 480px) {
+  [data-session-dirs-label],
+  [data-extras-label] {
+    display: none;
+  }
+}
+@container composer-controls (width < 400px) {
+  [data-access-picker-trigger] > span,
+  [data-access-picker-trigger] > svg:last-child {
+    display: none;
+  }
+}
+
+html.theme-light [data-composer-box] {
+  background: var(--color-background-base);
+  box-shadow:
+    0 6px 24px color-mix(in srgb, var(--color-content) 9%, transparent),
+    0 2px 6px color-mix(in srgb, var(--color-content) 6%, transparent);
+}
+
+/* Solid primary actions share the composer submit treatment. */
+.primary-action:not(:disabled) {
+  background: var(--color-content);
+  color: var(--color-background-base);
+}
+
+.primary-action:not(:disabled):hover {
+  background: var(--ui-primary-hover);
+}
+
+.primary-action:disabled {
+  background: var(--color-selection);
+  color: var(--ui-text-disabled);
+}
+
+html.theme-light .primary-action:not(:disabled) {
+  background: var(--color-content);
+  color: var(--color-background-base);
+}
+
+html.theme-light .primary-action:not(:disabled):hover {
+  background: var(--ui-primary-hover);
+}
+
+html.theme-light .primary-action:disabled {
+  background: var(--color-selection);
+  color: var(--ui-text-disabled);
+}
+
+html.has-user-accent .primary-action:not(:disabled) {
+  background: var(--user-accent-color);
+  color: var(--user-accent-foreground);
+}
+
+html.has-user-accent .primary-action:not(:disabled):hover {
+  background: color-mix(in srgb, var(--user-accent-color) 88%, var(--color-content));
+}
+
+html.has-user-accent .primary-action:disabled {
+  background: color-mix(in srgb, var(--user-accent-color) 28%, transparent);
+  color: color-mix(in srgb, var(--color-content) 35%, transparent);
+}
+
+.composer-field {
+  color: transparent;
+  caret-color: var(--color-content);
+  -webkit-text-fill-color: transparent;
+}
+
+/* Keep selected text hidden so the styled highlight layer still shows through,
+   rather than the raw `/command` and `@path` text. */
+.composer-field::selection {
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+  background: color-mix(in srgb, var(--user-accent-color, var(--color-accent)) 30%, transparent);
+}
+
+.composer-field[data-composer-plain="true"],
+.composer-field[data-composer-plain="true"]::selection {
+  color: var(--color-content);
+  -webkit-text-fill-color: var(--color-content);
+}
+
+.composer-field::placeholder {
+  color: color-mix(in srgb, var(--color-content) 40%, transparent);
+  -webkit-text-fill-color: color-mix(in srgb, var(--color-content) 40%, transparent);
+}
+
+.markdown-source-heading {
+  color: var(--color-markdown-heading);
+}
+
+.markdown-source-field {
+  color: transparent;
+  caret-color: var(--color-content);
+  -webkit-text-fill-color: transparent;
+}
+
+.markdown-source-field::placeholder {
+  color: color-mix(in srgb, var(--color-content) 35%, transparent);
+  -webkit-text-fill-color: color-mix(in srgb, var(--color-content) 35%, transparent);
+}
+
+.composer-toolbar::-webkit-scrollbar,
+.scrollbar-none::-webkit-scrollbar {
+  display: none;
+}
+
+.scrollbar-none {
+  scrollbar-width: none;
+}
+
+[data-tauri-drag-region] button {
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
+}
+
+[data-tauri-drag-region="false"] {
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
+}
+
+/* Window drag regions use a grab cursor; keep title-bar controls on the arrow. */
+header[data-tauri-drag-region] [data-tauri-drag-region="false"],
+header[data-tauri-drag-region] [data-tauri-drag-region="false"] *,
+header[data-tauri-drag-region] button {
+  cursor: default !important;
+}
+
+header[data-tauri-drag-region] [data-tab-draggable="true"],
+header[data-tauri-drag-region] [data-tab-draggable="true"] * {
+  cursor: grab !important;
+}
+
+header[data-tauri-drag-region] [data-tab-draggable="true"] [data-no-drag],
+header[data-tauri-drag-region] [data-tab-draggable="true"] [data-no-drag] * {
+  cursor: default !important;
+}
+
+html.is-grabbing {
+  cursor: var(--workspace-drag-cursor, grabbing) !important;
+  --interaction-cursor: var(--workspace-drag-cursor, grabbing);
+}
+
+.pointer-drop-hint {
+  position: fixed;
+  z-index: 2147483647;
+  pointer-events: none;
+  padding: 6px 10px;
+  border: 1px solid var(--color-accent);
+  border-radius: 6px;
+  background: var(--color-background-base);
+  color: var(--color-content, var(--palette-hexfff));
+  box-shadow: 0 3px 12px var(--palette-hex0005);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.pointer-drop-hint[data-action="blocked"] {
+  border-color: var(--color-stroke, var(--palette-hex666));
+  opacity: 0.85;
+}
+
+.material-icon svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.sidebar-opacity-slider {
+  appearance: none;
+  height: 4px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--color-content) 15%, transparent);
+  outline: 2px solid transparent;
+}
+
+.sidebar-opacity-slider::-webkit-slider-thumb {
+  appearance: none;
+  width: 12px;
+  height: 12px;
+  border-radius: 999px;
+  background: var(--color-content);
+  cursor: pointer;
+}
+
+.agent-markdown [data-streamdown="code-block"],
+.agent-markdown [data-streamdown="table-wrapper"] {
+  gap: 0;
+  padding: 0;
+  border-color: color-mix(in srgb, var(--color-content) 10%, transparent);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--color-content) 6%, transparent);
+}
+
+.agent-markdown [data-streamdown="code-block"] {
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+}
+
+.agent-markdown [data-streamdown="table-wrapper"] {
+  overflow: hidden;
+}
+
+.agent-markdown .markdown-code-shell {
+  position: relative;
+  margin-block: 16px;
+  min-width: 0;
+  max-width: 100%;
+  unicode-bidi: isolate;
+}
+
+.agent-markdown a[dir],
+.agent-markdown code[dir] {
+  unicode-bidi: isolate;
+}
+
+.agent-markdown .markdown-code-shell [data-streamdown="code-block"] {
+  margin-block: 0;
+  background: color-mix(in srgb, var(--color-background-base) 94%, var(--color-content) 6%);
+}
+
+.agent-markdown .markdown-code-copy.is-failed {
+  color: var(--color-danger, var(--palette-dangerDark));
+}
+
+.agent-markdown .markdown-code-copy {
+  appearance: none;
+  position: absolute;
+  z-index: 2;
+  top: 6px;
+  right: 8px;
+  display: grid;
+  width: 24px;
+  height: 24px;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  outline: 2px solid transparent;
+  background: transparent;
+  box-shadow: none;
+  color: color-mix(in srgb, var(--color-content) 45%, transparent);
+  transition:
+    color 160ms ease,
+    background-color 160ms ease;
+}
+
+.agent-markdown .markdown-code-copy:hover {
+  background: color-mix(in srgb, var(--color-content) 10%, transparent);
+  color: var(--color-content);
+}
+
+.sidebar-opacity-slider:focus-visible {
+  outline: var(--ui-focus-width) solid var(--color-accent);
+  outline-offset: 3px;
+}
+
+.agent-markdown .markdown-code-copy:focus-visible {
+  outline-color: var(--color-accent);
+  background: color-mix(in srgb, var(--color-content) 10%, transparent);
+  color: var(--color-content);
+}
+
+.agent-markdown .markdown-code-copy svg {
+  width: 15px;
+  height: 15px;
+  overflow: visible;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.6;
+}
+
+.agent-markdown .markdown-code-toggle {
+  right: 36px;
+}
+
+.agent-markdown .markdown-code-summary {
+  position: absolute;
+  z-index: 1;
+  inset: 0 68px 0 10px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: color-mix(in srgb, var(--color-content) 65%, transparent);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.agent-markdown .markdown-code-shell:has(.markdown-code-icon) .markdown-code-summary {
+  left: 34px;
+}
+
+.agent-markdown .markdown-code-summary:hover {
+  color: var(--color-content);
+}
+
+.agent-markdown .markdown-code-summary-preview {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agent-markdown .markdown-code-summary-count {
+  flex-shrink: 0;
+  font-family: var(--font-sans);
+  font-size: 11px;
+  opacity: 0.7;
+}
+
+.agent-markdown .markdown-code-resizable[data-collapsed="true"] .markdown-code-path,
+.agent-markdown .markdown-code-resizable[data-collapsed="true"] .markdown-code-fallback-label,
+.agent-markdown
+  .markdown-code-resizable[data-collapsed="true"]
+  [data-streamdown="code-block-header"]
+  > span {
+  visibility: hidden;
+}
+
+.agent-markdown .markdown-code-resizable [data-streamdown="code-block-header"] {
+  padding-right: 68px;
+}
+
+.agent-markdown .markdown-code-resizable [data-streamdown="code-block-body"] {
+  resize: vertical;
+  overflow: auto;
+  min-height: 40px;
+  max-height: min(480px, 60dvh);
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+.agent-markdown
+  .markdown-code-resizable[data-collapsed="true"]
+  [data-streamdown="code-block-body"] {
+  display: none;
+}
+
+.agent-markdown .markdown-code-resizable[data-collapsed="true"] [data-streamdown="code-block"] {
+  min-height: 36px;
+}
+
+.agent-markdown .markdown-code-resizable:has(.markdown-code-toggle) .markdown-code-path,
+.agent-markdown .markdown-code-resizable .markdown-code-fallback-label {
+  right: 68px;
+}
+
+.agent-markdown .markdown-code-copy-pages,
+.agent-markdown .markdown-code-copy-check {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+.agent-markdown .markdown-code-copy-pages {
+  transition:
+    opacity 120ms ease 100ms,
+    transform 260ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.agent-markdown .markdown-code-copy-check {
+  opacity: 0;
+  stroke-dasharray: 16;
+  stroke-dashoffset: 16;
+  transform: scale(0.65) rotate(-12deg);
+  transition:
+    opacity 80ms ease 180ms,
+    transform 260ms cubic-bezier(0.22, 1, 0.36, 1),
+    stroke-dashoffset 260ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.agent-markdown .markdown-code-copy.is-copied .markdown-code-copy-pages {
+  opacity: 0;
+  transform: scale(0.55) rotate(12deg);
+  transition:
+    opacity 120ms ease,
+    transform 260ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.agent-markdown .markdown-code-copy.is-copied .markdown-code-copy-check {
+  opacity: 1;
+  stroke-dashoffset: 0;
+  transform: scale(1) rotate(0);
+  transition:
+    opacity 80ms ease,
+    transform 260ms cubic-bezier(0.22, 1, 0.36, 1),
+    stroke-dashoffset 260ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.agent-markdown .markdown-code-icon {
+  position: absolute;
+  z-index: 1;
+  top: 10px;
+  left: 10px;
+  display: flex;
+  align-items: center;
+  height: 16px;
+}
+
+.agent-markdown .markdown-code-path {
+  position: absolute;
+  z-index: 1;
+  top: 10px;
+  left: 34px;
+  right: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 500;
+  color: color-mix(in srgb, var(--color-content) 65%, transparent);
+  pointer-events: none;
+}
+
+.agent-markdown .markdown-code-shell:has(.markdown-code-copy) .markdown-code-path {
+  right: 42px;
+}
+
+.agent-markdown .markdown-code-path-link {
+  pointer-events: auto;
+  max-width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.agent-markdown .markdown-code-path-link:hover {
+  color: var(--link-color);
+  text-decoration: underline;
+}
+
+.agent-markdown
+  .markdown-code-shell:has(.markdown-code-path)
+  [data-streamdown="code-block-header"]
+  > span {
+  visibility: hidden;
+}
+
+.agent-markdown .markdown-code-fallback-label {
+  position: absolute;
+  z-index: 1;
+  top: 10px;
+  left: 34px;
+  right: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 500;
+  text-transform: lowercase;
+  color: color-mix(in srgb, var(--color-content) 65%, transparent);
+  pointer-events: none;
+}
+
+/* highlightLanguageFor swaps text/plaintext/txt/untagged fences to the "js"
+   grammar so Shiki still colors them, but Streamdown's own header reuses
+   that same value as its visible label. Hide the vendor label here and show
+   the real fence language via .markdown-code-fallback-label instead. */
+.agent-markdown
+  .markdown-code-shell:has(.markdown-code-fallback-label)
+  [data-streamdown="code-block-header"]
+  > span {
+  visibility: hidden;
+}
+
+.agent-markdown
+  .markdown-code-shell:has(.markdown-code-fallback-label:empty)
+  [data-streamdown="code-block-header"] {
+  display: none;
+}
+
+.agent-markdown
+  .markdown-code-shell:has(.markdown-code-fallback-label:empty)
+  [data-streamdown="code-block-header"]
+  + [data-streamdown="code-block-body"] {
+  border-top: 0;
+}
+
+.agent-markdown [data-streamdown="heading-1"] {
+  font-size: 22px;
+}
+
+.agent-markdown [data-streamdown="heading-2"] {
+  font-size: 18px;
+}
+
+.whats-new-md.agent-markdown [data-streamdown="heading-3"] {
+  margin-top: 1.15rem;
+  margin-bottom: 0.35rem;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: color-mix(in srgb, var(--color-content) 55%, transparent);
+}
+
+.whats-new-md.agent-markdown [data-streamdown="heading-3"]:first-child {
+  margin-top: 0;
+}
+
+.whats-new-md.agent-markdown ul {
+  margin-top: 0.15rem;
+}
+
+.agent-markdown [data-streamdown="code-block-header"] {
+  height: auto;
+  min-height: 36px;
+  padding: 8px 10px;
+  color: color-mix(in srgb, var(--color-content) 65%, transparent);
+}
+
+.agent-markdown [data-streamdown="code-block-header"] > span {
+  margin-left: 0;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.agent-markdown .markdown-code-shell [data-streamdown="code-block-header"] {
+  padding-left: 34px;
+}
+
+.agent-markdown [data-streamdown="code-block-header"]:has(span:empty) {
+  display: none;
+}
+
+.agent-markdown
+  .markdown-code-shell:has(.markdown-code-copy)
+  [data-streamdown="code-block-header"]:has(span:empty) {
+  display: flex;
+}
+
+.agent-markdown
+  .markdown-code-resizable[data-collapsed]:has(.markdown-code-toggle)
+  [data-streamdown="code-block-header"] {
+  display: flex;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .agent-markdown .markdown-code-copy-pages,
+  .agent-markdown .markdown-code-copy-check {
+    transition: none;
+  }
+}
+
+.agent-markdown [data-streamdown="code-block-body"] {
+  padding: 10px 8px 10px 0;
+  border: 0;
+  border-top: 1px solid color-mix(in srgb, var(--color-content) 10%, transparent);
+  border-radius: 0;
+  background: transparent;
+  font-size: 12px;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+}
+
+.agent-markdown
+  [data-streamdown="code-block-header"]:has(span:empty)
+  + [data-streamdown="code-block-body"] {
+  border-top: 0;
+}
+
+.agent-markdown [data-streamdown="code-block-body"] pre {
+  margin: 0;
+  white-space: pre;
+  width: max-content;
+  min-width: 100%;
+}
+
+.agent-markdown [data-streamdown="code-block-body"] code > span {
+  display: block;
+  width: max-content;
+  min-width: 100%;
+  white-space: pre;
+}
+
+.agent-markdown [data-streamdown="code-block-body"] code > span::before {
+  width: 24px;
+  margin-right: 8px;
+  color: color-mix(in srgb, var(--color-content) 35%, transparent);
+  font-size: 10px;
+}
+
+.markdown-code-token {
+  color: var(--sdm-c);
+  background-color: var(--sdm-tbg, transparent);
+}
+html:not(.theme-light) .markdown-code-token {
+  color: var(--shiki-dark, var(--sdm-c));
+  background-color: var(--shiki-dark-bg, var(--sdm-tbg, transparent));
+  font-style: var(--shiki-dark-font-style, inherit);
+  font-weight: var(--shiki-dark-font-weight, inherit);
+  text-decoration: var(--shiki-dark-text-decoration, inherit);
+}
+.markdown-code-numbered-line::before {
+  counter-increment: line;
+  content: counter(line);
+  display: inline-block;
+  text-align: end;
+}
+
+.agent-markdown [data-streamdown="table-wrapper"] > div {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  max-inline-size: 100%;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+}
+
+.agent-markdown [data-streamdown="table-wrapper"] {
+  min-inline-size: 0;
+  max-inline-size: 100%;
+}
+
+.agent-markdown [data-streamdown="table"] > :not(:last-child),
+.agent-markdown [data-streamdown="table-body"] > :not(:last-child) {
+  border-color: color-mix(in srgb, var(--color-content) 5%, transparent);
+}
+
+.agent-markdown [data-streamdown="table-header-cell"],
+.agent-markdown [data-streamdown="table-cell"] {
+  padding: 8px 10px;
+  font-size: 12px;
+  min-inline-size: 10rem;
+  vertical-align: top;
+}
+
+.agent-markdown [data-streamdown="horizontal-rule"] {
+  border: 0;
+  border-top: 1px solid color-mix(in srgb, var(--color-content) 10%, transparent);
+}
+
+.agent-markdown p,
+.agent-markdown li {
+  color: color-mix(in srgb, var(--color-content) 78%, transparent);
+}
+
+/* AgentMarkdown passes dir="auto", so every block sits in its own
+   <div dir="..." class="agent-markdown-block"> wrapper (a real block box, not
+   Streamdown's display:contents one, so triple-click stops at the block; #496).
+   The wrapper carries no margin of its own: Streamdown's `space-y-4` on the
+   root would otherwise space every wrapper, including empty ones, and override
+   the tighter list gap below. Headings, blockquotes and rules keep their
+   spacing because their margin sits on the element itself (mt-6/mb-2, my-4,
+   my-6) and collapses through the wrapper; paragraphs and lists carry none, so
+   every "\n\n" would start a new <p> with no visible gap.
+   Put the gap back on the block inside the wrapper, top side only, so a reply
+   never ends with a trailing gap. Ignore empty wrappers before the first
+   visible block, and keep lists closer to the paragraph that introduces them. */
+.agent-markdown > .agent-markdown-block {
+  margin: 0;
+}
+
+.agent-markdown > div:not(:empty) ~ div > p {
+  margin-top: 1rem;
+}
+
+/* Nested blocks do not get Streamdown's root spacing. Keep blank-line
+   paragraphs inside a quote distinct without adding space above the first. */
+.agent-markdown [data-streamdown="blockquote"] > p:not(:first-child) {
+  margin-top: 1rem;
+}
+
+.agent-markdown > div:not(:empty) ~ div > [data-streamdown="unordered-list"],
+.agent-markdown > div:not(:empty) ~ div > [data-streamdown="ordered-list"] {
+  margin-top: 0.5rem;
+}
+
+.agent-markdown p strong,
+.agent-markdown p em,
+.agent-markdown p [data-streamdown="strong"] {
+  color: var(--color-content) !important;
+  opacity: 1;
+}
+
+.agent-markdown li strong,
+.agent-markdown li em,
+.agent-markdown li [data-streamdown="strong"] {
+  color: var(--color-content) !important;
+  opacity: 1;
+}
+
+.agent-reasoning.agent-markdown p,
+.agent-reasoning.agent-markdown li {
+  color: color-mix(in srgb, var(--color-content) 48%, transparent);
+}
+
+.agent-reasoning.agent-markdown p strong,
+.agent-reasoning.agent-markdown p em,
+.agent-reasoning.agent-markdown p [data-streamdown="strong"],
+.agent-reasoning.agent-markdown li strong,
+.agent-reasoning.agent-markdown li em,
+.agent-reasoning.agent-markdown li [data-streamdown="strong"] {
+  color: color-mix(in srgb, var(--color-content) 62%, transparent) !important;
+}
+
+.agent-markdown .mermaid-block svg {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  margin-inline: auto;
+}
+
+.agent-markdown .inbox-media {
+  vertical-align: middle;
+}
+
+.agent-markdown .inbox-media img,
+.agent-markdown .inbox-media video {
+  vertical-align: middle;
+}
+
+@keyframes approval-toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(-8px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.approval-toast {
+  animation: approval-toast-in 180ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@keyframes linked-activity-notice-in {
+  from {
+    transform: translateY(-8px);
+  }
+  to {
+    transform: none;
+  }
+}
+
+.linked-activity-notice {
+  animation: linked-activity-notice-in 180ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .linked-activity-notice {
+    animation: none;
+  }
+}
+
+/* Composer activity dock: the finished state lights up once and stays put. */
+@keyframes activity-dock-done {
+  from {
+    background-color: color-mix(in srgb, var(--color-success) 22%, transparent);
+    transform: translateY(4px);
+  }
+  to {
+    transform: none;
+  }
+}
+
+@keyframes activity-dock-check {
+  from {
+    opacity: 0;
+    transform: scale(0.4) rotate(-20deg);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* Calmer than the working pulse: the agent is idle, only its tasks are not. */
+@keyframes activity-dock-waiting {
+  0%,
+  100% {
+    opacity: 0.3;
+    transform: scale(0.8);
+  }
+  50% {
+    opacity: 0.9;
+    transform: scale(1);
+  }
+}
+
+.activity-dock-done {
+  animation: activity-dock-done 1200ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.activity-dock-check {
+  animation: activity-dock-check 420ms cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+
+.activity-dock-waiting {
+  animation: activity-dock-waiting 3.2s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .activity-dock-done,
+  .activity-dock-check,
+  .activity-dock-waiting,
+  [data-activity-dock] .shimmer-text {
+    animation: none;
+  }
+}
+
+@keyframes linked-panel-slide {
+  from {
+    transform: translateX(100%);
+  }
+  to {
+    transform: none;
+  }
+}
+
+.linked-panel-slide {
+  animation: linked-panel-slide 260ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* New split panes; same motion as the linked panel's slide. */
+@keyframes pane-enter {
+  from {
+    opacity: var(--pane-enter-opacity, 1);
+    transform: translate(var(--pane-enter-x, 0), var(--pane-enter-y, 0));
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+[data-pane-enter] {
+  animation: pane-enter 260ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+[data-pane-enter="right"] {
+  --pane-enter-x: 100%;
+}
+
+[data-pane-enter="left"] {
+  --pane-enter-x: -100%;
+}
+
+[data-pane-enter="bottom"] {
+  --pane-enter-y: 100%;
+}
+
+[data-pane-enter="top"] {
+  --pane-enter-y: -100%;
+}
+
+[data-pane-enter="fade"] {
+  --pane-enter-opacity: 0;
+}
+
+@keyframes linked-panel-reveal {
+  from {
+    opacity: 0;
+    transform: translateX(12px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.linked-panel-reveal {
+  animation: linked-panel-reveal 240ms cubic-bezier(0.22, 1, 0.36, 1) 90ms both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .linked-panel-slide,
+  .linked-panel-reveal,
+  [data-pane-enter] {
+    animation: none;
+  }
+}
+
+.shimmer-text {
+  /* Working labels stay readable and still while their adjacent status updates. */
+  color: inherit;
+}
+
+/* One light sweep across a composer mode command as it appears. */
+/* Opt-in diagnostic A/B controls. Default appearance and reduced motion remain. */
+:root[data-performance-no-shimmer] .shimmer-text,
+:root[data-performance-no-shimmer] .composer-mode-shimmer {
+  animation: none;
+}
+:root[data-performance-no-blur] .chat-pane-background::before,
+:root[data-performance-no-blur] .gradient-blur-background-soft,
+:root[data-performance-no-blur] .gradient-blur-background-strong {
+  filter: none;
+}
+.composer-mode-shimmer {
+  background-image: linear-gradient(
+    100deg,
+    currentColor 0 40%,
+    color-mix(in srgb, currentColor 25%, var(--palette-solidInk)) 50%,
+    currentColor 60% 100%
+  );
+  background-size: 300% 100%;
+  background-position: 0% 0;
+  background-clip: text;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: composer-mode-shimmer 900ms ease-out;
+}
+
+@keyframes composer-mode-shimmer {
+  from {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: 0% 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .composer-mode-shimmer {
+    animation: none;
+  }
+}
+
+.bycoda-terminal {
+  box-sizing: border-box;
+  overflow: hidden;
+  /* Shell padding; full-screen TUIs use the alt buffer and drop to 0. */
+  padding: 8px 10px;
+}
+
+.bycoda-terminal--alt-screen {
+  padding: 0;
+}
+
+.bycoda-terminal--alt-screen .bycoda-terminal-host,
+.bycoda-terminal--alt-screen .xterm,
+.bycoda-terminal--alt-screen .xterm-viewport,
+.bycoda-terminal--alt-screen .xterm-scrollable-element {
+  width: 100%;
+  height: 100%;
+}
+
+.bycoda-terminal--alt-screen .xterm .xterm-scrollable-element > .scrollbar {
+  display: none !important;
+}
+
+.bycoda-terminal .xterm {
+  padding: 0;
+}
+
+.bycoda-terminal .xterm-viewport {
+  background: transparent !important;
+  overflow: hidden;
+}
+
+.bycoda-terminal .xterm-scrollable-element > .shadow {
+  display: none !important;
+}
+
+.bycoda-terminal .xterm-screen {
+  user-select: text;
+}
+
+/* The existing toggle lifecycle retains content through close; CSS owns the reveal.
+   Ignore its legacy measured height so only the grid track interpolates. */
+.project-group-body {
+  display: grid;
+  height: auto !important;
+  grid-template-rows: 0fr;
+  overflow: hidden;
+  contain: layout paint;
+  transition: grid-template-rows 220ms cubic-bezier(0.25, 0.1, 0.25, 1);
+}
+.project-group-body[data-open="true"] { grid-template-rows: 1fr; }
+.project-group-body-clip {
+  min-height: 0;
+  overflow: hidden;
+  display: flow-root;
+  contain: layout style;
+}
+
+/* Rasterize expensive SVG glyphs once during motion, then release the layer. */
+.project-group-body[data-animating="true"] > .project-group-body-clip {
+  transform: translateZ(0);
+  will-change: transform;
+}
+
+.project-group-body[data-animating="true"] .bycoda-sigil-active {
+  animation-play-state: paused;
+}
+
+.project-group-section[data-folded="true"],
+.project-group-body[data-folded="true"] {
+  transition: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .project-group-section,
+  .project-group-body {
+    transition: none;
+  }
+}
+
+/*
+ * Zen mode's activity phases: a run of related tool calls under the line the
+ * agent wrote to introduce it, on a rail, folding back to that line when the
+ * agent moves on.
+ */
+.zen-phase-body {
+  display: grid;
+  grid-template-rows: 1fr;
+  transition:
+    grid-template-rows 320ms cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 220ms ease;
+}
+
+.zen-phase-body[data-open="false"] {
+  grid-template-rows: 0fr;
+  opacity: 0;
+}
+
+.zen-phase-body > * {
+  min-height: 0;
+  overflow: hidden;
+}
+
+/*
+ * Live phase: a short window so a long run does not push the turn off
+ * the screen. `overflow: auto` must override the hidden shorthand above —
+ * WebKit will not scroll if overflow-x stays hidden and only overflow-y
+ * flips to auto. The class stays on while the group is closed so settling
+ * a turn collapses from the window, not a flash of the full list.
+ */
+.zen-phase-body > .zen-phase-live {
+  max-height: min(17.5rem, 45vh);
+}
+
+.zen-phase-body[data-open="true"] > .zen-phase-live {
+  overflow: auto;
+  overscroll-behavior: contain;
+  overflow-anchor: none;
+}
+
+/* Explicit inspection is a reading view: keep the selected step and its copy
+   header clear of the live window's automatic bottom pinning. */
+.zen-phase-body[data-open="true"] > .zen-phase-live:has([data-tool-inspection]) {
+  max-height: none;
+}
+
+/*
+ * The rail: a spine down the group with a step branching off it on a curve,
+ * drawn on the step itself so it follows however tall that step turns out to
+ * be. The curve is a quarter circle, tangent to the spine at the top and to
+ * the row at the bottom, so nothing turns a hard corner.
+ */
+.zen-phase-step {
+  position: relative;
+  padding-left: 20px;
+  /*
+   * Opaque, not translucent: the curve leaves the spine on a tangent, so the
+   * two run along each other for a pixel or two. A translucent rail stacks
+   * there and lights up; the same colour painted twice does not.
+   */
+  --zen-rail: color-mix(in srgb, var(--color-content) 14%, var(--color-background-base));
+}
+
+.zen-phase-step::before,
+.zen-phase-step::after {
+  content: "";
+  position: absolute;
+  left: 6px;
+}
+
+/*
+ * A height, not top/bottom, so the spine can grow down past a step when the
+ * next one lands under it.
+ */
+.zen-phase-step::before {
+  top: 0;
+  height: 100%;
+  width: 1px;
+  background: var(--zen-rail);
+}
+
+/* The last step is where the spine leaves off, curve and all. */
+.zen-phase-step:last-child::before {
+  height: 7px;
+}
+
+.zen-phase-step::after {
+  top: 6px;
+  width: 8px;
+  height: 8px;
+  border-left: 1px solid var(--zen-rail);
+  border-bottom: 1px solid var(--zen-rail);
+  border-bottom-left-radius: 8px;
+}
+
+/*
+ * The connector: a line dropping out of the chevron and curving into the first
+ * thing the fold holds, so opened work reads as hanging off that line rather
+ * than running on from the answer below it. Same geometry as the phase rail —
+ * 23px is the chevron's own centre (16px of row padding plus half a 14px
+ * icon), and the curve is a quarter circle tangent to both.
+ */
+.zen-fold-drop,
+.zen-fold-rail {
+  position: relative;
+  --zen-rail: color-mix(in srgb, var(--color-content) 14%, var(--color-background-base));
+}
+
+/* Out of the chevron, down through the gap to the row below. */
+.zen-fold-drop::after {
+  content: "";
+  position: absolute;
+  left: 23px;
+  top: 22px;
+  bottom: -4px;
+  width: 1px;
+  background: var(--zen-rail);
+}
+
+/* The spine, carried by every row so it follows however tall they turn out. */
+.zen-fold-rail::before {
+  content: "";
+  position: absolute;
+  left: 23px;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--zen-rail);
+}
+
+/* The last row is where the spine ends, at its final branch. */
+.zen-fold-tail::before {
+  bottom: auto;
+  height: 7px;
+}
+
+/* Every row branches off the spine on the same curve as an activity step. */
+.zen-fold-rail::after {
+  content: "";
+  position: absolute;
+  left: 23px;
+  top: 6px;
+  width: 8px;
+  height: 8px;
+  border-left: 1px solid var(--zen-rail);
+  border-bottom: 1px solid var(--zen-rail);
+  border-bottom-left-radius: 8px;
+}
+
+/*
+ * Prose the fold holds is the agent talking while it works — process, not
+ * result. It stays readable at one notch quieter: muted ink, headings
+ * demoted to bold lines, and tighter spacing, so a mid-run note never poses
+ * as the answer it led to.
+ */
+.zen-fold-prose .agent-markdown > :not(:last-child) {
+  margin-block-end: 0.5rem;
+}
+
+.zen-fold-prose .agent-markdown p,
+.zen-fold-prose .agent-markdown li {
+  color: color-mix(in srgb, var(--color-content) 65%, transparent);
+}
+
+.zen-fold-prose .agent-markdown p strong,
+.zen-fold-prose .agent-markdown p em,
+.zen-fold-prose .agent-markdown p [data-streamdown="strong"],
+.zen-fold-prose .agent-markdown li strong,
+.zen-fold-prose .agent-markdown li em,
+.zen-fold-prose .agent-markdown li [data-streamdown="strong"] {
+  color: color-mix(in srgb, var(--color-content) 80%, transparent) !important;
+}
+
+/* A heading in a work note is a bold line, not a display size. */
+.zen-fold-prose .agent-markdown [data-streamdown="heading-1"],
+.zen-fold-prose .agent-markdown [data-streamdown="heading-2"],
+.zen-fold-prose .agent-markdown [data-streamdown="heading-3"],
+.zen-fold-prose .agent-markdown [data-streamdown="heading-4"],
+.zen-fold-prose .agent-markdown [data-streamdown="heading-5"],
+.zen-fold-prose .agent-markdown [data-streamdown="heading-6"] {
+  margin-top: 0.75rem;
+  margin-bottom: 0.25rem;
+  font-size: 14px;
+  font-weight: 600;
+  color: color-mix(in srgb, var(--color-content) 80%, transparent);
+}
+
+.zen-fold-prose .agent-markdown [data-streamdown="blockquote"],
+.zen-fold-prose .agent-markdown .markdown-code-shell {
+  margin-block: 0.5rem;
+}
+
+.zen-fold-prose .agent-markdown [data-streamdown="code-block"],
+.zen-fold-prose .agent-markdown [data-streamdown="table-wrapper"] {
+  border-color: color-mix(in srgb, var(--color-content) 8%, transparent);
+  background: color-mix(in srgb, var(--color-content) 4%, transparent);
+}
+
+.zen-fold-prose .agent-markdown [data-streamdown="table-header-cell"],
+.zen-fold-prose .agent-markdown [data-streamdown="table-cell"] {
+  color: color-mix(in srgb, var(--color-content) 65%, transparent);
+}
+
+.zen-fold-prose .agent-markdown [data-streamdown="horizontal-rule"] {
+  margin-block: 0.75rem;
+}
+
+.zen-fold-item[data-fold-state="closed"] {
+  display: grid;
+  grid-template-rows: 0fr;
+  opacity: 0;
+  pointer-events: none;
+  user-select: none;
+}
+
+.zen-fold-item[data-fold-state="open"] {
+  /* Match Grid's non-collapsing margins without participating in Grid sizing. */
+  display: flow-root;
+}
+
+/*
+ * Expanded rows stay in ordinary block flow so text rewraps naturally when a
+ * pane is resized. Grid exists only during the fold animation, then gets out
+ * of the layout again.
+ */
+.zen-fold-item[data-fold-state="opening"],
+.zen-fold-item[data-fold-state="closing"] {
+  display: grid;
+}
+
+.zen-fold-item[data-fold-state="opening"] {
+  animation: zen-fold-open 340ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.zen-fold-item[data-fold-state="closing"] {
+  pointer-events: none;
+  user-select: none;
+  animation: zen-fold-close 340ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.zen-fold-item:is([data-fold-state="opening"], [data-fold-state="closing"]) > *,
+.zen-fold-item[data-fold-state="closed"] > * {
+  min-height: 0;
+  overflow: hidden;
+}
+
+@keyframes zen-fold-open {
+  from {
+    grid-template-rows: 0fr;
+    opacity: 0;
+  }
+  to {
+    grid-template-rows: 1fr;
+    opacity: 1;
+  }
+}
+
+@keyframes zen-fold-close {
+  from {
+    grid-template-rows: 1fr;
+    opacity: 1;
+  }
+  to {
+    grid-template-rows: 0fr;
+    opacity: 0;
+  }
+}
+
+/*
+ * A live step arrives in beats over its --step-ms: its slot opens and pushes
+ * what is below down while the spine runs on past the step above into the
+ * gap and the branch curves off it. Only once the branch is drawn does the
+ * row rise into the room, revealed from the bottom up by a soft-edged mask. The next step in a burst
+ * waits for the last beat. The slot clips while it opens, so the row's rise
+ * never adds scrollable overflow to the pinned live window.
+ */
+@keyframes zen-step-open {
+  from {
+    grid-template-rows: 0fr;
+  }
+  to {
+    grid-template-rows: 1fr;
+  }
+}
+
+@keyframes zen-rail-grow {
+  from {
+    transform: scaleY(0);
+  }
+}
+
+/* A wipe from the top-left traces the quarter curve in order. */
+@keyframes zen-branch-draw {
+  from {
+    clip-path: inset(0 100% 100% 0);
+  }
+  to {
+    clip-path: inset(0);
+  }
+}
+
+/*
+ * The mask is three times the row's height: clear on top, a soft ramp, then
+ * solid. Sliding it up from the clear third to the solid one sweeps the ramp
+ * over the row from its bottom edge to its top.
+ */
+@keyframes zen-step-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+    -webkit-mask-position: 0 0;
+    mask-position: 0 0;
+  }
+  to {
+    opacity: 1;
+    transform: none;
+    -webkit-mask-position: 0 100%;
+    mask-position: 0 100%;
+  }
+}
+
+/*
+ * The step above lengthening its spine once it is no longer the last, at its
+ * own pace: steps next to each other in a burst are paced alike.
+ */
+.zen-phase-step[data-live]::before {
+  transition: clip-path calc(var(--step-ms, 320ms) * 0.3) var(--motion-ease-out);
+  clip-path: inset(0);
+}
+
+/*
+ * A step queued behind others is out of the layout until its turn, and the
+ * step above keeps the short spine of a last step until then too, so no rail
+ * hangs into a gap that is not there yet.
+ */
+.zen-phase-step[data-waiting] {
+  display: none;
+}
+
+.zen-phase-step:has(+ .zen-phase-step[data-waiting])::before {
+  clip-path: inset(0 0 calc(100% - 7px) 0);
+}
+
+.zen-phase-step[data-entering] {
+  display: grid;
+  overflow: clip;
+  animation: zen-step-open calc(var(--step-ms) * 0.4) cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.zen-phase-step[data-entering]:is(:last-child, :has(+ .zen-phase-step[data-waiting]))::before {
+  transform-origin: top;
+  animation: zen-rail-grow calc(var(--step-ms) * 0.15) ease-in-out calc(var(--step-ms) * 0.15) both;
+}
+
+.zen-phase-step[data-entering]::after {
+  animation: zen-branch-draw calc(var(--step-ms) * 0.2) ease-out calc(var(--step-ms) * 0.3) both;
+}
+
+.zen-phase-step[data-entering] > * {
+  min-height: 0;
+  -webkit-mask-image: linear-gradient(to top, var(--palette-hex000) 33.3%, transparent 66.7%);
+  mask-image: linear-gradient(to top, var(--palette-hex000) 33.3%, transparent 66.7%);
+  -webkit-mask-size: 100% 300%;
+  mask-size: 100% 300%;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  animation: zen-step-in calc(var(--step-ms) * 0.5) cubic-bezier(0.16, 1, 0.3, 1)
+    calc(var(--step-ms) * 0.5) both;
+}
+
+/*
+ * A streamed word fading in as the paced reveal lets it out (wordFade.tsx).
+ * Opacity only: a word that moved would jostle the line it is set on. The
+ * fade plays as a word's span is added, and words already on screen keep
+ * theirs while the reply is coming in. The spans come off once the fade
+ * ends, so a finished reply hidden and shown again never replays.
+ */
+@keyframes word-fade-in {
+  from {
+    opacity: 0;
+  }
+}
+
+.agent-markdown.word-fading [data-word-fade]:where(:not([data-word-settled])) {
+  animation: word-fade-in 320ms ease-out both;
+}
+
+@keyframes zen-thinking-pulse {
+  0%,
+  100% {
+    opacity: 0.35;
+  }
+  50% {
+    opacity: 0.9;
+  }
+}
+
+/* The thinking line breathes while reasoning streams in. */
+.zen-thinking-pulse {
+  animation: zen-thinking-pulse 1.8s ease-in-out infinite;
+}
+
+@keyframes zen-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* The dashed ring on a running tool turns slowly, so the line reads as live. */
+.zen-tool-spin {
+  animation: zen-spin 3.6s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .agent-markdown.word-fading [data-word-fade],
+  .zen-phase-step[data-entering],
+  .zen-phase-step[data-entering]::before,
+  .zen-phase-step[data-entering]::after,
+  .zen-tool-spin,
+  .zen-thinking-pulse {
+    animation: none;
+  }
+
+  .zen-phase-step[data-live]::before,
+  .zen-phase-body {
+    transition: none;
+  }
+
+  /*
+   * No fade means no animationend to settle on, so the arriving step drops
+   * straight into its settled layout.
+   */
+  .zen-phase-step[data-entering] {
+    display: block;
+    overflow: visible;
+  }
+
+  .zen-phase-step[data-entering] > * {
+    -webkit-mask-image: none;
+    mask-image: none;
+    animation: none;
+  }
+
+  .zen-fold-item[data-fold-state="opening"] {
+    display: flow-root;
+    animation: none;
+  }
+
+  .zen-fold-item[data-fold-state="closing"] {
+    grid-template-rows: 0fr;
+    opacity: 0;
+    animation: none;
+  }
+}
+
+/* Menus need a stable surface above bright buttons and custom backgrounds. */
+.popover-backdrop {
+  background: color-mix(in srgb, var(--color-background-base) 95%, transparent);
+}
+
+html.theme-light .popover-backdrop {
+  background: var(--color-background-base);
+}
+
+/* Animate content only; its sibling glass stays still. Finish at `none` and
+   do not retain the animation's transform/opacity compositing state with a
+   forwards fill. Hover repaints should happen in the ordinary resting state. */
+@keyframes popover-open {
+  from {
+    opacity: 0;
+    transform: translate(var(--popover-shift, 0), var(--popover-lift, 0)) scale(0.94);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.popover-open {
+  animation: popover-open 170ms cubic-bezier(0.16, 1, 0.3, 1) backwards;
+}
+
+.popover-open[data-popover-side="bottom"] {
+  --popover-lift: -8px;
+}
+
+.popover-open[data-popover-side="top"] {
+  --popover-lift: 8px;
+}
+
+.popover-open[data-popover-side="right"] {
+  --popover-shift: -8px;
+}
+
+.popover-open[data-popover-side="left"] {
+  --popover-shift: 8px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .popover-open {
+    animation: none;
+  }
+}
+
+/* /btw: a sheet that morphs out of the composer box over the transcript
+   (the clip is animated from BtwSheet). Its surface is the popover glass:
+   the same tint, blur, border, and shadow. */
+/* The session composer steps aside while the glass sheet's own composer
+   sits over it, so the two never show through each other. BtwSheet fades it
+   in step with the morph; this is its resting state under an open sheet. */
+[data-session-composer][inert] {
+  opacity: 0;
+}
+
+/* Held on the first frame until the freshly mounted sheet has painted. */
+.btw-overlay[data-morph="pending"] .btw-sheet-body,
+.btw-overlay[data-morph="pending"] .btw-burst,
+.btw-overlay[data-morph="pending"] .btw-burst * {
+  animation-play-state: paused;
+}
+
+/* The composer's outline, carried between the session composer's box and
+   the side composer's box while their contents cross-fade inside it. */
+.btw-morph-frame {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 0;
+  height: 0;
+  opacity: 0;
+  pointer-events: none;
+  border: 1px solid color-mix(in srgb, var(--color-content) 12%, transparent);
+  border-radius: var(--radius-lg, 0.5rem);
+  background: color-mix(in srgb, var(--color-content) 3%, transparent);
+}
+
+html.theme-light .btw-morph-frame {
+  background: var(--color-background-base);
+  box-shadow:
+    0 6px 24px color-mix(in srgb, var(--color-content) 9%, transparent),
+    0 2px 6px color-mix(in srgb, var(--color-content) 6%, transparent);
+}
+
+/*
+ * Opening a side question: question marks drift up out of the composer into
+ * the panel, wobbling as they rise, while the composer box glows and a sheen
+ * crosses it. The /operator sparkles' cousin, in the accent color.
+ */
+.btw-burst {
+  --burst-color: color-mix(in srgb, var(--user-accent-color, var(--color-accent)) 70%, var(--palette-solidInk));
+  --burst-glow: color-mix(in srgb, var(--user-accent-color, var(--color-accent)) 75%, transparent);
+  position: absolute;
+  pointer-events: none;
+  border-radius: var(--radius-lg, 0.5rem);
+  animation: btw-burst-halo 1100ms 60ms ease-out both;
+}
+
+html.theme-light .btw-burst {
+  --burst-color: var(--user-accent-color, var(--color-accent));
+  --burst-glow: color-mix(in srgb, var(--user-accent-color, var(--color-accent)) 45%, transparent);
+}
+
+.btw-burst-sheen {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  border-radius: inherit;
+}
+
+.btw-burst-sheen::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    105deg,
+    transparent 30%,
+    color-mix(in srgb, var(--burst-color) 30%, transparent) 50%,
+    transparent 70%
+  );
+  transform: translateX(-120%);
+  animation: btw-burst-sheen 900ms 140ms cubic-bezier(0.4, 0, 0.2, 1) both;
+}
+
+.btw-burst-mark {
+  position: absolute;
+  bottom: 45%;
+  left: var(--x);
+  width: 0;
+  height: 0;
+  animation: btw-mark-rise var(--duration) var(--delay) cubic-bezier(0.2, 0.7, 0.3, 1) both;
+}
+
+.btw-burst-glyph {
+  position: absolute;
+  bottom: 0;
+  left: calc(var(--size) / -2);
+  width: var(--size);
+  color: var(--burst-color);
+  font-size: var(--size);
+  font-weight: 700;
+  line-height: 1;
+  text-align: center;
+  text-shadow: 0 0 6px var(--burst-glow);
+  transform-origin: 50% 80%;
+  animation: btw-mark-wobble var(--duration) var(--delay) ease-in-out both;
+}
+
+.btw-burst-ember {
+  left: calc(var(--size) / -2);
+  height: var(--size);
+  border-radius: 9999px;
+  background: radial-gradient(circle, var(--palette-solidInk), var(--burst-color) 70%);
+  box-shadow: 0 0 6px var(--burst-glow);
+}
+
+@keyframes btw-mark-rise {
+  from {
+    transform: translate(0, 0);
+  }
+  to {
+    transform: translate(var(--drift), calc(var(--rise) * -1));
+  }
+}
+
+@keyframes btw-mark-wobble {
+  0% {
+    opacity: 0;
+    transform: scale(0.3) rotate(0deg);
+  }
+  15% {
+    opacity: 1;
+    transform: scale(1.15) rotate(var(--tilt));
+  }
+  45% {
+    transform: scale(0.9) rotate(calc(var(--tilt) * -0.6));
+  }
+  70% {
+    opacity: 0.9;
+    transform: scale(1) rotate(calc(var(--tilt) * 0.4));
+  }
+  100% {
+    opacity: 0;
+    transform: scale(0.6) rotate(0deg);
+  }
+}
+
+@keyframes btw-burst-halo {
+  0% {
+    box-shadow:
+      0 0 0 0 transparent,
+      0 0 0 0 transparent;
+  }
+  30% {
+    box-shadow:
+      0 0 0 1px var(--burst-glow),
+      0 0 28px 4px color-mix(in srgb, var(--burst-glow) 45%, transparent);
+  }
+  100% {
+    box-shadow:
+      0 0 0 0 transparent,
+      0 0 0 0 transparent;
+  }
+}
+
+@keyframes btw-burst-sheen {
+  to {
+    transform: translateX(120%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .btw-burst {
+    display: none;
+  }
+}
+
+.btw-sheet {
+  top: clamp(2.5rem, 18%, 12rem);
+}
+
+/* Match the composer box it morphs out of. */
+.btw-sheet-glass {
+  border: 1px solid color-mix(in srgb, var(--color-content) 10%, transparent);
+  border-bottom: 0;
+  border-radius: var(--radius-lg, 0.5rem) var(--radius-lg, 0.5rem) 0 0;
+  box-shadow:
+    0 20px 25px -5px var(--palette-rgb_0_0_0_0_1),
+    0 8px 10px -6px var(--palette-rgb_0_0_0_0_1);
+}
+
+/* Tabs and messages arrive once the panel has mostly opened; the composer
+   is where the morph starts, so it stays put. */
+.btw-sheet-body {
+  animation: btw-body-in 240ms 100ms cubic-bezier(0.22, 1, 0.36, 1) backwards;
+}
+
+.btw-overlay[data-state="closed"] {
+  pointer-events: none;
+}
+
+/* On close the side composer gives way to the session composer beneath
+   right away, while the panel is still folding down. */
+.btw-overlay[data-state="closed"] .btw-sheet-body,
+.btw-overlay[data-state="closed"] .btw-sheet-composer {
+  animation: btw-fade-out 120ms ease-in both;
+}
+
+@keyframes btw-body-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes btw-fade-out {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .btw-sheet-body,
+  .btw-overlay[data-state="closed"] .btw-sheet-body,
+  .btw-overlay[data-state="closed"] .btw-sheet-composer {
+    animation: none;
+  }
+}
+
+.btw-error {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 11px;
+  border: 1px solid color-mix(in srgb, var(--palette-dangerDark) 24%, transparent);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--palette-dangerDark) 7%, transparent);
+}
+
+/* The selected project mascot turns banked resets into a tiny status scene. */
+.reset-mascot-scene {
+  position: absolute;
+  right: 8px;
+  bottom: 5px;
+  width: 68px;
+  height: 68px;
+  display: grid;
+  place-items: center;
+  isolation: isolate;
+  pointer-events: none;
+}
+
+.reset-mascot-glow {
+  position: absolute;
+  inset: 14px 8px 3px;
+  z-index: -1;
+  border-radius: 999px;
+  background: currentColor;
+  opacity: 0.14;
+  filter: blur(12px);
+}
+
+.reset-mascot-sprite {
+  width: 56px;
+  height: 56px;
+  overflow: visible;
+  filter: drop-shadow(0 5px 6px var(--palette-rgb_0_0_0_0_18));
+  transform-origin: 50% 100%;
+}
+
+.reset-mascot-scene[data-reset-mascot-mood="happy"] .reset-mascot-sprite {
+  animation: reset-mascot-happy-in 720ms cubic-bezier(0.2, 0.9, 0.25, 1) both;
+}
+
+.reset-mascot-spark {
+  position: absolute;
+  width: 5px;
+  height: 5px;
+  background: currentColor;
+  box-shadow: 0 0 8px currentColor;
+  transform: rotate(45deg);
+  animation: reset-mascot-spark-in 620ms 260ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.reset-mascot-spark-a {
+  top: 8px;
+  right: 7px;
+}
+
+.reset-mascot-spark-b {
+  top: 19px;
+  left: 3px;
+  width: 3px;
+  height: 3px;
+  animation-delay: 360ms;
+}
+
+@keyframes reset-mascot-happy-in {
+  0% {
+    opacity: 0;
+    transform: translateY(9px) scale(0.82);
+  }
+  30% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  50% {
+    transform: translateY(-10px) rotate(-3deg) scaleY(1.05);
+  }
+  68% {
+    transform: translateY(0) scaleX(1.08) scaleY(0.92);
+  }
+  84% {
+    transform: translateY(-4px) rotate(2deg);
+  }
+  100% {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes reset-mascot-spark-in {
+  from {
+    opacity: 0;
+    transform: rotate(45deg) scale(0);
+  }
+  to {
+    opacity: 0.7;
+    transform: rotate(45deg) scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .reset-mascot-sprite,
+  .reset-mascot-spark {
+    animation: none !important;
+  }
+}
+
+/* Centered modals: lift the content inside the stationary glass frame. */
+@keyframes modal-backdrop-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes modal-panel-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.modal-backdrop {
+  animation: modal-backdrop-in 160ms ease-out both;
+}
+
+.modal-panel {
+  animation: modal-panel-in 200ms cubic-bezier(0.16, 1, 0.3, 1) backwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .modal-backdrop,
+  .modal-panel {
+    animation: none;
+  }
+}
+
+/* Status-bar mark for a running terminal: three orange bars that light
+   one after another. */
+.terminal-live {
+  display: inline-flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 10px;
+}
+
+.terminal-live-bar {
+  display: block;
+  width: 4px;
+  height: 8px;
+  border-radius: 0;
+  background: currentColor;
+  opacity: 0.4;
+}
+
+.terminal-live-bar:nth-child(1) {
+  animation: terminal-live-bar-1 3.2s linear infinite;
+}
+
+.terminal-live-bar:nth-child(2) {
+  animation: terminal-live-bar-2 3.2s linear infinite;
+}
+
+.terminal-live-bar:nth-child(3) {
+  animation: terminal-live-bar-3 3.2s linear infinite;
+}
+
+@keyframes terminal-live-bar-1 {
+  0%,
+  24.99%,
+  100% {
+    opacity: 0.4;
+  }
+  25%,
+  99.99% {
+    opacity: 0.85;
+  }
+}
+
+@keyframes terminal-live-bar-2 {
+  0%,
+  49.99%,
+  100% {
+    opacity: 0.4;
+  }
+  50%,
+  99.99% {
+    opacity: 0.85;
+  }
+}
+
+@keyframes terminal-live-bar-3 {
+  0%,
+  74.99%,
+  100% {
+    opacity: 0.4;
+  }
+  75%,
+  99.99% {
+    opacity: 0.85;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .terminal-live-bar {
+    animation: none;
+    opacity: 0.7;
+  }
+}
+
+/* Graph node cutouts so lane strokes do not show through the circles. */
+.git-history-item svg {
+  display: block;
+  overflow: visible;
+}
+.git-history-item svg circle {
+  stroke: var(--color-background-base);
+}
+.git-history-item:hover svg circle:first-of-type {
+  stroke: transparent;
+}
+.git-history-item:hover svg circle:nth-of-type(2) {
+  stroke: color-mix(in srgb, var(--color-content) 5%, var(--color-background-base));
+}
+.git-history-item.is-selected svg circle:nth-of-type(2) {
+  stroke: color-mix(in srgb, var(--color-content) 10%, var(--color-background-base));
+}
+.git-history-item.is-head svg circle:last-child {
+  fill: var(--color-background-base);
+}
+.git-history-item.is-head:hover svg circle:last-child {
+  fill: color-mix(in srgb, var(--color-content) 5%, var(--color-background-base));
+}
+.git-history-item.is-head.is-selected svg circle:last-child {
+  fill: color-mix(in srgb, var(--color-content) 10%, var(--color-background-base));
+}
+
+/* Sidebar graph rows: the row is the container, so the author avatar and the
+   date drop out as the pane narrows (date first) without any resize listeners. */
+.git-graph-row {
+  container-type: inline-size;
+}
+.git-graph-author,
+.git-graph-date {
+  display: none;
+}
+@container (min-width: 230px) {
+  .git-graph-author {
+    display: grid;
+  }
+}
+@container (min-width: 290px) {
+  .git-graph-date {
+    display: block;
+  }
+}
+
+/* Subagent panel: a right-hand sheet over the session pane, as the side
+   conversation sheet is a bottom one. */
+.subagent-sheet-glass {
+  border-left: 1px solid color-mix(in srgb, var(--color-content) 10%, transparent);
+  border-radius: var(--radius-lg, 0.5rem) 0 0 var(--radius-lg, 0.5rem);
+  box-shadow:
+    0 20px 25px -5px var(--palette-rgb_0_0_0_0_1),
+    0 8px 10px -6px var(--palette-rgb_0_0_0_0_1);
+}
+
+.subagent-sheet {
+  animation: subagent-sheet-in 220ms cubic-bezier(0.22, 1, 0.36, 1) backwards;
+}
+
+@keyframes subagent-sheet-in {
+  from {
+    opacity: 0;
+    transform: translateX(16px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .subagent-sheet {
+    animation: none;
+  }
+}
+
+/* Hover card for the editor's blame gutter. It sits on <body>, outside the
+   editor's own theme scope, because the gutter clips its children. */
+.cm-blameCard {
+  position: fixed;
+  z-index: 60;
+  max-width: 320px;
+  padding: 8px 10px;
+  border: 1px solid color-mix(in srgb, var(--color-content) 12%, transparent);
+  border-radius: 6px;
+  background: var(--color-background-base);
+  color: var(--color-content);
+  box-shadow:
+    0 10px 15px -3px var(--palette-rgb_0_0_0_0_12),
+    0 4px 6px -4px var(--palette-rgb_0_0_0_0_12);
+  font-size: 12px;
+  line-height: 1.45;
+  pointer-events: none;
+}
+
+.cm-blameCardSha {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: color-mix(in srgb, var(--color-content) 50%, transparent);
+}
+
+.cm-blameCardAuthor {
+  font-weight: 600;
+}
+
+.cm-blameCardDate {
+  color: color-mix(in srgb, var(--color-content) 55%, transparent);
+}
+
+.cm-blameCardSubject {
+  margin-top: 4px;
+  overflow-wrap: anywhere;
+}
+
+/* Rail sections and groups move as blocks: keep their controls out of the way. */
+.rail-reorder-block[data-reordering] [data-no-drag] {
+  visibility: hidden;
+}
+
+.rail-reorder-block[data-dragging] {
+  background: color-mix(in srgb, var(--color-content) 8%, transparent);
+}
+
+@keyframes linked-work-item-slide-in {
+  from {
+    opacity: 0;
+    transform: translateX(16px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.linked-work-item-enter {
+  animation: linked-work-item-slide-in 180ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+@keyframes linked-work-item-reveal {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.linked-work-item-content-enter {
+  animation: linked-work-item-reveal 180ms ease-out;
+}
+/* Quiet work-state accents. */
+
+.bycoda-sparkles {
+  animation: none;
+  box-shadow: inset 2px 0 var(--color-accent);
+}
+.bycoda-sparkles::before,
+.bycoda-sparkles::after {
+  content: none;
+}
+.bycoda-sparkle {
+  display: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .linked-work-item-enter,
+  .linked-work-item-content-enter {
+    animation: none;
+  }
+}
+
+html[data-decorative-motion="off"] :is(.activity-dock-waiting, .zen-thinking-pulse, .terminal-live-bar, .bycoda-sigil-active) {
+  animation-play-state: paused !important;
+}
+@media (prefers-reduced-motion: reduce) {
+  :is(.activity-dock-waiting, .zen-thinking-pulse, .terminal-live-bar, .bycoda-sigil-active) { animation-play-state: paused !important; }
+}
+/* A terminal mark is live only inside its existing active terminal control. */
+.terminal-live:not(button[aria-pressed] .terminal-live, [data-active="true"]) .terminal-live-bar { animation: none; }
+html.is-resizing { --interaction-cursor: col-resize; }
+html.is-explorer-file-dragging { --interaction-cursor: grabbing; }
+html:is(.is-grabbing, .is-resizing, .is-explorer-file-dragging) :is(button, a, input, textarea, select, [role="button"], [data-tab-draggable], [data-tauri-drag-region], [class*="cursor-"]) {
+  cursor: var(--interaction-cursor) !important;
+}
+html:is(.is-reordering, .is-resizing) :is(input, textarea, [contenteditable], .select-text, .cm-content, .xterm-screen) {
+  -webkit-user-select: inherit !important;
+  user-select: inherit !important;
+}
+/* All glass strengths inherit the shared theme budget, including custom themes. */
+:is(.backdrop-blur-xl, .backdrop-blur-2xl, .backdrop-blur-lg, .backdrop-blur-md) {
+  --tw-backdrop-blur: blur(var(--glass-blur));
+}
+.popover-backdrop { -webkit-backdrop-filter: blur(var(--glass-blur)); backdrop-filter: blur(var(--glass-blur)); }
+/* A nested glass surface samples the already blurred parent only once. */
+.popover-backdrop ~ * :is(.backdrop-blur-xl, .backdrop-blur-2xl, .backdrop-blur-lg, .backdrop-blur-md) {
+  --tw-backdrop-blur: none;
+}
+/* Effort tiles are short feedback effects, never retained compositor layers. */
+.codex-effort-option .codex-effort-tile--filled,
+.codex-effort-option::after { will-change: auto !important; }
