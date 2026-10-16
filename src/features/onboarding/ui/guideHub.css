@@ -1,0 +1,187 @@
+.guide-hub {
+  display: grid;
+  grid-template-columns: minmax(176px, 13rem) minmax(0, 1fr);
+  block-size: min(560px, calc(100dvh - 120px));
+  border-block-start: 1px solid var(--border-subtle);
+  margin-block-start: var(--space-3);
+  font-family: var(--font-body);
+  font-size: var(--text-sm);
+  line-height: 1.5;
+  color: var(--foreground);
+}
+.guide-hub-nav {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-block-size: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: var(--space-3) var(--space-2);
+  border-inline-end: 1px solid var(--border-subtle);
+}
+.guide-hub-group {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.guide-hub-group h3 {
+  margin: 0;
+  padding: 0 var(--space-2) var(--space-1);
+  font-size: var(--text-xs);
+  font-weight: 500;
+  color: var(--text-muted);
+}
+.guide-hub-nav-label {
+  flex: 1;
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: start;
+}
+.guide-hub-seen {
+  flex-shrink: 0;
+  color: var(--text-muted);
+}
+.guide-hub-content {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-block-size: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: var(--space-4) var(--space-6) var(--space-6);
+  overflow-wrap: anywhere;
+}
+.guide-hub-content h2 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: var(--text-xl);
+  font-weight: 500;
+  line-height: 1.25;
+}
+.guide-hub-summary {
+  margin: calc(-1 * var(--space-2)) 0 0;
+  color: var(--text-secondary);
+}
+.guide-hub-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+.guide-hub-blocker {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin: calc(-1 * var(--space-2)) 0 0;
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+}
+.guide-hub-section h3 {
+  margin: 0 0 var(--space-2);
+  font-size: var(--text-xs);
+  font-weight: 500;
+  color: var(--text-muted);
+}
+.guide-hub-steps {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: guide-step;
+}
+.guide-hub-steps li {
+  display: flex;
+  gap: var(--space-3);
+  counter-increment: guide-step;
+}
+.guide-hub-steps li::before {
+  content: counter(guide-step);
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  inline-size: 20px;
+  block-size: 20px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  font-size: var(--text-xs);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-secondary);
+}
+.guide-hub-advanced {
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-control);
+}
+.guide-hub-advanced summary {
+  padding: var(--space-2) var(--space-3);
+  cursor: pointer;
+  font-weight: 500;
+  border-radius: var(--radius-control);
+}
+.guide-hub-advanced summary:focus-visible {
+  outline: var(--focus-outline-width) solid var(--focus-outline);
+}
+.guide-hub-advanced ul {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0 var(--space-3) var(--space-3) var(--space-6);
+  color: var(--text-secondary);
+}
+.guide-hub-shortcuts {
+  display: grid;
+  gap: var(--space-1);
+  margin: 0;
+}
+.guide-hub-shortcuts div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+.guide-hub-shortcuts dt {
+  color: var(--text-secondary);
+}
+.guide-hub-shortcuts dd {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+}
+.guide-hub-shortcuts kbd {
+  padding: 1px var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: var(--surface-muted);
+  color: var(--foreground);
+  font-family: var(--font-body);
+  font-size: var(--text-xs);
+  white-space: nowrap;
+}
+.guide-hub-next {
+  display: flex;
+  justify-content: flex-end;
+  margin-block-start: auto;
+}
+@media (max-width: 640px) {
+  .guide-hub {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+  .guide-hub-nav {
+    flex-direction: row;
+    overflow-x: auto;
+    overflow-y: hidden;
+    border-inline-end: 0;
+    border-block-end: 1px solid var(--border-subtle);
+  }
+  .guide-hub-group {
+    flex-direction: row;
+  }
+  .guide-hub-group h3 {
+    display: none;
+  }
+}

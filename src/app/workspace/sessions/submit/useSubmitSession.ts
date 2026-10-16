@@ -9,6 +9,7 @@ import { steerBusySubmit } from "./submitBusySteer";
 import { startSubmittedTurn } from "./submitTurnRun";
 import { prepareSubmittedTurn } from "./submitTurnSetup";
 import type { SubmitDeps, SubmitInput } from "./submitTypes";
+import { gateUsageBudget, isUsageBudgetChecking } from "./submitUsageBudget";
 
 /**
  * `submitSession` and `onSubmit` for the workspace composer. The body of the
@@ -34,6 +35,7 @@ export function useSubmitSession(deps: SubmitDeps) {
       options?: SubmitOptions,
     ): SubmissionAcceptance => {
       const input: SubmitInput = { sessionId, text, attachments, options };
+      if (isUsageBudgetChecking(sessionId, deps.refs.turnGen.current.get(sessionId))) return false;
       const routed = routeSubmitSession(deps, input);
       if (routed !== undefined) return routed;
       const preflight = prepareSubmitPreflight(deps, input);
@@ -43,10 +45,13 @@ export function useSubmitSession(deps: SubmitDeps) {
       if (busy !== undefined) return busy;
       const located = gateProjectLocation(deps, input, pre);
       if (located !== undefined) return located;
-      const setup = prepareSubmittedTurn(deps, input, pre);
-      if (setup.settled) return setup.value;
-      startSubmittedTurn(deps, input, pre, setup.setup);
-      return true;
+      const dispatch = () => {
+        const setup = prepareSubmittedTurn(deps, input, pre);
+        if (setup.settled) return setup.value;
+        startSubmittedTurn(deps, input, pre, setup.setup);
+        return true;
+      };
+      return gateUsageBudget(deps, input, pre, dispatch) ?? dispatch();
     },
     [
       applyProjectLocationChange,

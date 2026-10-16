@@ -137,3 +137,44 @@ it("marks a host restart as reset even when the server omitted the reset hint", 
   expect(listener.mock.calls[1]?.[0].reset).toBe(true);
   stop();
 });
+
+it("carries inline opt-in and delivers the same delta to independent subscribers", async () => {
+  vi.useFakeTimers();
+  let finish!: (value: unknown) => void;
+  vi.mocked(remoteRequest).mockImplementation(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+  );
+  const first = vi.fn();
+  const second = vi.fn();
+  const stopA = subscribeRemoteMachineChannel(
+    "m",
+    { inlineSync: true, sessions: [{ sessionId: "s", revision: 1 }] },
+    first,
+  );
+  const stopB = subscribeRemoteMachineChannel(
+    "m",
+    { sessions: [{ sessionId: "s", revision: 2 }] },
+    second,
+  );
+  await vi.advanceTimersByTimeAsync(0);
+  expect(remoteRequest).toHaveBeenCalledWith(
+    "m",
+    "machine.changes",
+    expect.objectContaining({ inlineSync: true, sessions: [{ sessionId: "s", revision: 1 }] }),
+  );
+  const changes = {
+    instanceId: "boot",
+    reset: false,
+    sessions: [{ sessionId: "s", revision: 2, sync: { kind: "delta", base: 1 } }],
+    projects: [],
+  };
+  finish(changes);
+  await Promise.resolve();
+  expect(first).toHaveBeenCalledWith(changes);
+  expect(second).toHaveBeenCalledWith(changes);
+  stopA();
+  stopB();
+});

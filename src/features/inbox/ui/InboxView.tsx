@@ -84,6 +84,7 @@ import {
   type InboxSource,
 } from "../model/inboxFilters";
 import { projectKey, projectName } from "../../../shared/lib/paths";
+import { useRetainedState } from "../../../shared/hooks/useRetainedState";
 import { IS_MAC } from "../../../platform/tauri/platform";
 import { type RecentProject } from "../../projects/model/recents";
 import { type LinkedWorkItem } from "../../sessions/model/session";
@@ -266,7 +267,8 @@ export function InboxView({
   const [groupColors] = useState(loadTabGroupColors);
   const [groupCustomColors] = useState(loadTabGroupCustomColors);
 
-  const [searchInput, setSearchInput] = useState("");
+  const viewStateKey = `inbox:${pullRequestsOnly ? "pull-requests" : "all"}:${projectKey(cwd)}`;
+  const [searchInput, setSearchInput] = useRetainedState(`${viewStateKey}:search`, "");
   const deferredSearch = useDeferredValue(searchInput);
   const queryClient = useQueryClient();
   const queryVisible = useQueryVisible();
@@ -281,7 +283,10 @@ export function InboxView({
     () => peekInboxForRail(recents, cwd)?.errors ?? {},
   );
   const [refresh, setRefresh] = useState(0);
-  const [jiraView, setJiraView] = useState<"list" | "board">("list");
+  const [jiraView, setJiraView] = useRetainedState<"list" | "board">(
+    `${viewStateKey}:jira-view`,
+    "list",
+  );
   const [boardIssue, setBoardIssue] = useState<JiraBoardIssue | null>(null);
   const [jiraAutomaticSync, setJiraAutomaticSync] = useState(jiraBackgroundSyncEnabled);
   useEffect(() => {
@@ -298,7 +303,7 @@ export function InboxView({
       ? { ...saved, hiddenKinds: saved.hiddenKinds.filter((kind) => kind !== "pr") }
       : saved;
   });
-  const [prSort, setPrSort] = useState("updated");
+  const [prSort, setPrSort] = useRetainedState(`${viewStateKey}:pr-sort`, "updated");
   const [connections, setConnections] = useState(loadInboxConnections);
   const [source, setSource] = useState(() =>
     pullRequestsOnly

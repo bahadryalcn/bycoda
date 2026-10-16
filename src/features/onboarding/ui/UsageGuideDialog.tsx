@@ -28,7 +28,7 @@ const steps = [
   {
     title: "Send now or queue for later",
     description:
-      "While the agent is working, sending a message follows your Chat settings: steer the current turn or queue the message. Agent capabilities can affect this behavior.",
+      "Send steers the active turn. Use the queue button to send after it finishes. If steering is unavailable, the message waits in the queue.",
     tips: [
       "To explicitly queue a follow-up, write it and use the queue button or the queue shortcut while a turn is running.",
       "Queued messages run in order after the current turn. You can edit, remove or reorder them above the message box.",
@@ -60,7 +60,7 @@ const steps = [
   {
     title: "Keep essential shortcuts nearby",
     description:
-      "These are your current shortcuts, including custom bindings. Change or disable them in Settings → Shortcuts. You can reopen this guide from View or Settings → Workspace.",
+      "These are your current shortcuts, including custom bindings. Change or disable them in Settings → Keybindings. You can reopen this guide from View or Settings → General.",
     tips: ["Queue and Stop shortcuts apply in the message box; close suggestion menus first."],
     shortcuts: [
       "App: Search",

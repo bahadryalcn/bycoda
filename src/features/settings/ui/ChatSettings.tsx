@@ -10,14 +10,11 @@ import {
 } from "../model/appearance";
 import {
   loadAutoContinueInterrupted,
-  loadFollowUpBehavior,
   loadModelControls,
   loadResumeAtReset,
   saveAutoContinueInterrupted,
-  saveFollowUpBehavior,
   saveModelControls,
   saveResumeAtReset,
-  type FollowUpBehavior,
   type ModelControls,
 } from "../model/settings";
 import { AdvancedSettings, Group, Row, Segmented, Toggle } from "./settingsControls";
@@ -36,7 +33,6 @@ export function ChatPage() {
   const gitGenerationChoice = useDefaultGitGenerationChoice();
   const [transcriptLayout, setTranscriptLayout] = useState<TranscriptLayout>(loadTranscriptLayout);
   const [transcriptAnchor, setTranscriptAnchor] = useState(loadTranscriptAnchor);
-  const [followUpBehavior, setFollowUpBehavior] = useState<FollowUpBehavior>(loadFollowUpBehavior);
   const [resumeAtReset, setResumeAtReset] = useState(loadResumeAtReset);
   const [autoContinue, setAutoContinue] = useState(loadAutoContinueInterrupted);
   const [modelControls, setModelControls] = useState<ModelControls>(loadModelControls);
@@ -47,10 +43,6 @@ export function ChatPage() {
   const onTranscriptAnchor = (next: boolean) => {
     saveTranscriptAnchor(next);
     setTranscriptAnchor(next);
-  };
-  const onFollowUpBehavior = (next: FollowUpBehavior) => {
-    saveFollowUpBehavior(next);
-    setFollowUpBehavior(next);
   };
   const onResumeAtReset = (next: boolean) => {
     saveResumeAtReset(next);
@@ -158,31 +150,11 @@ export function ChatPage() {
         </Row>
         <Row
           id="follow-up"
-          label={t("Follow-up behavior")}
+          label={t("Sending while working")}
           description={t(
-            "Queue follow-ups until the active turn finishes, or steer the active turn immediately.",
+            "Send steers the active turn. Use the queue button to send after it finishes. If steering is unavailable, the message waits in the queue.",
           )}
-        >
-          <Segmented
-            label={t("Follow-up behavior")}
-            value={followUpBehavior}
-            options={[
-              {
-                value: "queue",
-                get label() {
-                  return t("Queue");
-                },
-              },
-              {
-                value: "steer",
-                get label() {
-                  return t("Steer");
-                },
-              },
-            ]}
-            onChange={onFollowUpBehavior}
-          />
-        </Row>
+        />
       </Group>
       <AdvancedSettings
         title={t("Advanced conversation settings")}

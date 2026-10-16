@@ -27,8 +27,11 @@ import {
   CodeBlock,
   Streamdown,
   defaultRehypePlugins,
+  defaultComponents,
   defaultRemarkPlugins,
   detectTextDirection,
+  extractTableDataFromElement,
+  tableDataToMarkdown,
   useIsCodeFenceIncomplete,
   type BlockProps,
   type Components,
@@ -627,7 +630,20 @@ function MarkdownCodeShell({ code, children }: { code: string; children: ReactNo
   );
 }
 
-function CodeCopyButton({ code }: { code: string }) {
+function CodeCopyButton({
+  code,
+  getText,
+  label = t("Copy code"),
+  copiedMessage = t("Code copied."),
+  className = "",
+}: {
+  code: string;
+  /** Read the text at click time, for content that only exists in the DOM. */
+  getText?: () => string;
+  label?: string;
+  copiedMessage?: string;
+  className?: string;
+}) {
   useLocale();
   const [copied, setCopied] = useTransientFlag(1500);
   const [failed, setFailed] = useState(false);
@@ -640,12 +656,13 @@ function CodeCopyButton({ code }: { code: string }) {
   return (
     <button
       type="button"
-      title={failed ? t("Copy failed — try again") : copied ? t("Copied") : t("Copy code")}
-      aria-label={failed ? t("Copy failed — try again") : copied ? t("Copied") : t("Copy code")}
-      className={`markdown-code-copy ${copied ? "is-copied" : ""} ${failed ? "is-failed" : ""}`}
+      title={failed ? t("Copy failed — try again") : copied ? t("Copied") : label}
+      aria-label={failed ? t("Copy failed — try again") : copied ? t("Copied") : label}
+      className={`markdown-code-copy ${copied ? "is-copied" : ""} ${failed ? "is-failed" : ""} ${className}`}
       onClick={() => {
         setFailed(false);
-        void copyText(code.replace(/\r?\n$/, "")).then(
+        const text = getText ? getText() : code.replace(/\r?\n$/, "");
+        void copyText(text).then(
           () => {
             setCopied(true);
           },
@@ -654,7 +671,7 @@ function CodeCopyButton({ code }: { code: string }) {
       }}
     >
       <span className="sr-only" role="status" aria-live="polite">
-        {failed ? t("Copy failed. Try again.") : copied ? t("Code copied.") : ""}
+        {failed ? t("Copy failed. Try again.") : copied ? copiedMessage : ""}
       </span>
       <svg viewBox="0 0 20 20" aria-hidden="true">
         <g className="markdown-code-copy-pages">
@@ -747,10 +764,33 @@ function MarkdownImage({ src, alt, node: _node, ...props }: MarkdownImageProps) 
   return <InboxMedia src={url} alt={alt} />;
 }
 
+function MarkdownTable(props: ComponentProps<typeof defaultComponents.table>) {
+  useLocale();
+  const shell = useRef<HTMLDivElement>(null);
+  // Read the rendered table on click so a table still streaming in is copied
+  // as it is shown, and links and inline code come out as their text.
+  const getMarkdown = useCallback(() => {
+    const table = shell.current?.querySelector<HTMLElement>('table[data-streamdown="table"]');
+    return table ? tableDataToMarkdown(extractTableDataFromElement(table)) : "";
+  }, []);
+  return (
+    <div ref={shell} className="markdown-table-shell">
+      <CodeCopyButton
+        code=""
+        getText={getMarkdown}
+        label={t("Copy table as Markdown")}
+        copiedMessage={t("Table copied.")}
+      />
+      <defaultComponents.table {...props} />
+    </div>
+  );
+}
+
 const MARKDOWN_COMPONENTS = {
   a: MarkdownLink,
   code: MarkdownCode,
   img: MarkdownImage,
+  table: MarkdownTable,
 } satisfies Components;
 
 /**

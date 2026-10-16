@@ -1,3 +1,4 @@
+import { ChangeSignal } from "./changeSignal";
 import { expect, it, vi } from "vitest";
 import { RevisionWaits } from "./revisionWait";
 
@@ -5,7 +6,8 @@ it("releases a pending read as soon as its revision changes", async () => {
   vi.useFakeTimers();
   try {
     let revision = 1;
-    const waits = new RevisionWaits();
+    const signal = new ChangeSignal();
+    const waits = new RevisionWaits(64, signal);
     let complete = false;
     const pending = waits
       .wait(() => revision, 1, 10_000)
@@ -16,6 +18,7 @@ it("releases a pending read as soon as its revision changes", async () => {
     expect(complete).toBe(false);
     // Command dispatch is independent of waiting readers.
     revision = 2;
+    signal.notify();
     await vi.advanceTimersByTimeAsync(100);
     await pending;
     expect(complete).toBe(true);
@@ -38,7 +41,7 @@ it("caps waiters and releases capacity after disconnected requests", async () =>
     await waits.wait(() => 1, 1, 10_000);
     expect(vi.getTimerCount()).toBe(1);
     cancelled = true;
-    await vi.advanceTimersByTimeAsync(100);
+    await vi.advanceTimersByTimeAsync(1000);
     await first;
     const next = waits.wait(() => 1, 1, 100);
     expect(vi.getTimerCount()).toBe(1);

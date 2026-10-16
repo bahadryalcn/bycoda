@@ -7,7 +7,6 @@ import { appendQueuedMessage, holdUndeliveredFollowUp, queuedModelTarget, resolv
 import { preparePrompt } from "../../../../features/sessions/model/promptPreparation";
 import { type Session } from "../../../../features/sessions/model/session";
 import { sessionsRef, setSessions } from "../../../../features/sessions/model/sessionsStore";
-import { loadFollowUpBehavior } from "../../../../features/settings/model/settings";
 import { appendSteerUser, canSteerHarness, isLiveHarness, steerHarnessTurn } from "../../../../integrations/harness";
 import { t } from "../../../../shared/i18n";
 import { type SubmissionAcceptance } from "../../../model/submissionAcceptance";
@@ -49,7 +48,6 @@ export function steerBusySubmit(
         current.backgroundAgents,
       ),
       requested: options?.followUpBehavior,
-      setting: loadFollowUpBehavior(),
     });
     if (followUpRoute === "queue" || !canSteerHarness(current.harness)) {
       // A queue-row action already owns retained content. Falling back to

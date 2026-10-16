@@ -217,22 +217,19 @@ describe("resolveFollowUpRoute", () => {
     operatorCommand: false,
     backgroundTaskCount: 0,
     backgroundOnly: false,
-    setting: "steer" as const,
   };
 
   it("dispatches when the session is idle, whatever else is set", () => {
     expect(resolveFollowUpRoute({ ...base, busy: false, requested: "queue" })).toBe("dispatch");
-    expect(resolveFollowUpRoute({ ...base, busy: false, setting: "queue" })).toBe("dispatch");
   });
 
-  it("follows the global setting while busy", () => {
-    expect(resolveFollowUpRoute({ ...base, setting: "steer" })).toBe("steer");
-    expect(resolveFollowUpRoute({ ...base, setting: "queue" })).toBe("queue");
+  it("steers by default while busy", () => {
+    expect(resolveFollowUpRoute(base)).toBe("steer");
   });
 
-  it("lets an explicit request override the setting either way", () => {
-    expect(resolveFollowUpRoute({ ...base, setting: "steer", requested: "queue" })).toBe("queue");
-    expect(resolveFollowUpRoute({ ...base, setting: "queue", requested: "steer" })).toBe("steer");
+  it("honours explicit steer and queue actions", () => {
+    expect(resolveFollowUpRoute({ ...base, requested: "queue" })).toBe("queue");
+    expect(resolveFollowUpRoute({ ...base, requested: "steer" })).toBe("steer");
   });
 
   it("always queues while a worktree prepares and for plan, orchestrate and operator", () => {
@@ -251,13 +248,12 @@ describe("resolveFollowUpRoute", () => {
   });
 
   it("steers when background tasks are open and nothing asked for a queue", () => {
-    expect(resolveFollowUpRoute({ ...base, setting: "queue", backgroundTaskCount: 1 })).toBe(
+    expect(resolveFollowUpRoute({ ...base, backgroundTaskCount: 1 })).toBe(
       "steer",
     );
     expect(
       resolveFollowUpRoute({
         ...base,
-        setting: "steer",
         backgroundTaskCount: 2,
         backgroundOnly: true,
       }),

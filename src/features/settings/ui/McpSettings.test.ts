@@ -2,6 +2,7 @@
 import { act, createElement, StrictMode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { resetRetainedState } from "../../../shared/hooks/useRetainedState";
 import { McpSettings } from "./McpSettings";
 import { clearMcpSettingsCache } from "../model/mcpSettingsCache";
 
@@ -23,6 +24,7 @@ let container: HTMLDivElement;
 let root: Root;
 
 beforeEach(() => {
+  resetRetainedState();
   clearMcpSettingsCache();
   const storage = new Map<string, string>();
   vi.stubGlobal("localStorage", {
@@ -109,6 +111,34 @@ it("filters connections by provider", async () => {
     provider: "codex",
     name: "docs",
   });
+});
+
+it("keeps a saved provider filter during a cold delayed discovery after returning to Settings", async () => {
+  const render = () => act(async () => root.render(createElement(McpSettings, { cwd: "/repo" })));
+  const codexButton = () =>
+    [...container.querySelectorAll("button")].find((button) =>
+      button.textContent?.startsWith("Codex"),
+    )!;
+  await render();
+  await act(async () => codexButton().click());
+  await act(async () => root.unmount());
+  clearMcpSettingsCache();
+  root = createRoot(container);
+  const configured = invoke.getMockImplementation()!;
+  let finish!: (rows: unknown) => void;
+  invoke.mockImplementation((command, ...args) =>
+    command === "mcp_discover"
+      ? new Promise((resolve) => {
+          finish = resolve;
+        })
+      : configured(command, ...args),
+  );
+  await render();
+  expect(codexButton().getAttribute("aria-pressed")).toBe("true");
+  await act(async () => finish(await configured("mcp_discover")));
+  expect(codexButton().getAttribute("aria-pressed")).toBe("true");
+  expect(container.textContent).toContain("docs");
+  expect(container.textContent).not.toContain("sentry");
 });
 
 it("shows configured rows while Claude health is still pending", async () => {

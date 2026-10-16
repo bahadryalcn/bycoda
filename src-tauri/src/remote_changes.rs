@@ -169,7 +169,9 @@ fn union<'a>(requests: impl Iterator<Item = &'a Value>) -> Result<Value, String>
     let mut git: HashMap<String, Option<String>> = HashMap::new();
     let mut instances = Vec::new();
     let mut tasks: Option<String> = None;
+    let mut inline_sync = false;
     for request in requests {
+        inline_sync |= request.get("inlineSync").and_then(Value::as_bool) == Some(true);
         if let Some(known) = request.get("tasksKnown").and_then(Value::as_str) {
             match &mut tasks {
                 Some(previous) if previous != known => *previous = String::new(),
@@ -261,6 +263,9 @@ fn union<'a>(requests: impl Iterator<Item = &'a Value>) -> Result<Value, String>
             if let Some(known)=known {project["known"]=Value::String(known);}
             project
         }).collect::<Vec<_>>() });
+    if inline_sync {
+        result["inlineSync"] = Value::Bool(true);
+    }
     if !git.is_empty() {
         result["git"] = Value::Array(
             git.into_iter()
@@ -283,6 +288,16 @@ fn union<'a>(requests: impl Iterator<Item = &'a Value>) -> Result<Value, String>
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn inline_sync_survives_window_union_with_the_minimum_revision() {
+        let a =
+            json!({"sessions":[{"sessionId":"s","revision":2}],"projects":[],"inlineSync":true});
+        let b = json!({"sessions":[{"sessionId":"s","revision":1}],"projects":[]});
+        let result = union([&a, &b].into_iter()).unwrap();
+        assert_eq!(result["inlineSync"], true);
+        assert_eq!(result["sessions"][0]["revision"], 1);
+        assert!(union([&b].into_iter()).unwrap().get("inlineSync").is_none());
+    }
     #[test]
     fn stale_release_keeps_the_new_registration_and_tasks_only_is_a_demand() {
         let changes = Changes::default();

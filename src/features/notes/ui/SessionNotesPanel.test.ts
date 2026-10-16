@@ -2,6 +2,7 @@
 import { act, createElement, StrictMode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { resetRetainedState } from "../../../shared/hooks/useRetainedState";
 import {
   ADD_NOTE_TO_CHAT_EVENT,
   invalidateNotes,
@@ -30,6 +31,7 @@ const projectNote: Note = {
 };
 
 beforeEach(() => {
+  resetRetainedState();
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   localStorage.clear();
   invalidateNotes();

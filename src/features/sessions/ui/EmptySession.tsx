@@ -12,6 +12,10 @@ import { loadCrewSceneEnabled, subscribeCrewSceneEnabled } from "../../settings/
 import { useLockOverscroll } from "../../../shared/hooks/useLockOverscroll";
 import { CrewScene } from "./crewSurface";
 import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
+import { Button } from "../../../shared/ui/Button";
+import { FolderOpen } from "../../../shared/ui/icons";
+import { runGuideAction } from "../../onboarding/model/guide";
+import { openUsageGuide } from "../../onboarding/model/usageGuide";
 import "./BycodaSession.css";
 
 type Props = {
@@ -53,6 +57,20 @@ export function EmptySession({ cwd, composer, hasChatBackground }: Props) {
               <h1 className="text-content" title={project ? cwd : undefined}>
                 {title}
               </h1>
+              {project ? null : (
+                <div className="bycoda-entry-actions bycoda-arc">
+                  <Button
+                    variant="primary"
+                    startIcon={<FolderOpen size={14} />}
+                    onClick={() => runGuideAction("open-project")}
+                  >
+                    {t("Open a project")}
+                  </Button>
+                  <Button variant="ghost" onClick={openUsageGuide}>
+                    {t("Guide")}
+                  </Button>
+                </div>
+              )}
             </div>
           </div>
 

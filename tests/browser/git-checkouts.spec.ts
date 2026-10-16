@@ -1,5 +1,41 @@
 import { test, expect } from "@playwright/test";
 
+test("repository choice survives sidebar remount and reload before delayed submodule discovery", async ({
+  page,
+}) => {
+  await page.addInitScript(() => localStorage.setItem("bycoda.language.git", "en"));
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.goto("/tests/browser/git-workspace.html?submodules&slow-discovery");
+  const selector = page.getByRole("button", { name: /^Repository:/ });
+  await expect(page.locator('[data-git-repository="/fixture/core-pack"]')).toBeVisible();
+  await selector.click();
+  await page.getByRole("option", { name: "Submodule · core-pack", exact: true }).click();
+  await expect(selector).toContainText("Submodule · core-pack");
+  await page.evaluate(async () => {
+    await (window as unknown as { gitFixtureRemount: () => Promise<void> }).gitFixtureRemount();
+  });
+  await expect(selector).toContainText("Submodule · core-pack");
+  await expect(page.getByRole("textbox", { name: "Commit message", exact: true })).toHaveCount(1);
+  await expect(page.locator("[data-git-repository]")).toHaveCount(0);
+  await page.reload();
+  await expect(selector).toContainText("core-pack");
+  await expect(page.getByRole("textbox", { name: "Commit message", exact: true })).toHaveCount(1);
+  await page.waitForTimeout(650);
+  await expect(selector).toContainText("Submodule · core-pack");
+  await expect(page.getByRole("textbox", { name: "Commit message", exact: true })).toHaveCount(1);
+  await page.getByRole("button", { name: "Refresh source control", exact: true }).first().click();
+  await expect
+    .poll(() =>
+      page.evaluate(() => {
+        const calls = (
+          window as unknown as { gitFixtureCalls: { command: string; args: { cwd?: string } }[] }
+        ).gitFixtureCalls;
+        return calls.filter((call) => call.command === "git_diff_index").at(-1)?.args.cwd;
+      }),
+    )
+    .toBe("/fixture/core-pack");
+});
+
 test("submodules keep independent drafts, staging, commits and pushes", async ({
   page,
 }, testInfo) => {

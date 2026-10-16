@@ -1,4 +1,5 @@
 import { SearchInput } from "../../../shared/ui/SearchInput";
+import { useRetainedState } from "../../../shared/hooks/useRetainedState";
 import { useEffect, useRef, useState, type PointerEvent } from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { t, useLocale } from "../../../shared/i18n";
@@ -51,12 +52,15 @@ export function JiraBoardView({
 }) {
   useLocale();
   const [boards, setBoards] = useState<JiraBoard[]>([]);
-  const [boardId, setBoardId] = useState(0);
+  const [boardId, setBoardId] = useRetainedState("jira-board:id", 0);
   const [configuration, setConfiguration] = useState<JiraBoardConfiguration | null>(null);
-  const [mode, setMode] = useState<"kanban" | "planning">("kanban");
-  const [scope, setScope] = useState("board");
+  const [mode, setMode] = useRetainedState<"kanban" | "planning">(
+    `jira-board:${boardId}:mode`,
+    "kanban",
+  );
+  const [scope, setScope] = useRetainedState(`jira-board:${boardId}:scope`, "board");
   const [groups, setGroups] = useState<Group[]>([]);
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useRetainedState(`jira-board:${boardId}:search`, "");
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);

@@ -24,6 +24,8 @@ import {
   type ProjectSearchResult,
 } from "../../search/model/search";
 import { FileTypeIcon } from "../../files/ui/FileTypeIcon";
+import { useRetainedState } from "../../../shared/hooks/useRetainedState";
+import { pathKey } from "../../../shared/lib/paths";
 
 type Props = {
   cwd: string;
@@ -47,7 +49,11 @@ type MatchGroup = {
   matches: ProjectSearchMatch[];
 };
 
-export function ProjectSearch({
+export function ProjectSearch(props: Props) {
+  return <ProjectSearchContent key={pathKey(props.cwd)} {...props} />;
+}
+
+function ProjectSearchContent({
   cwd,
   focusToken = 0,
   showHeader = true,
@@ -60,12 +66,13 @@ export function ProjectSearch({
   const inputRef = useRef<HTMLInputElement>(null);
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
-  const [query, setQuery] = useState("");
-  const [include, setInclude] = useState("");
-  const [exclude, setExclude] = useState("");
-  const [caseSensitive, setCaseSensitive] = useState(false);
-  const [wholeWord, setWholeWord] = useState(false);
-  const [regex, setRegex] = useState(false);
+  const stateKey = `find-in-files:${pathKey(cwd)}`;
+  const [query, setQuery] = useRetainedState(`${stateKey}:query`, "");
+  const [include, setInclude] = useRetainedState(`${stateKey}:include`, "");
+  const [exclude, setExclude] = useRetainedState(`${stateKey}:exclude`, "");
+  const [caseSensitive, setCaseSensitive] = useRetainedState(`${stateKey}:case`, false);
+  const [wholeWord, setWholeWord] = useRetainedState(`${stateKey}:word`, false);
+  const [regex, setRegex] = useRetainedState(`${stateKey}:regex`, false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [matches, setMatches] = useState<ProjectSearchMatch[]>([]);

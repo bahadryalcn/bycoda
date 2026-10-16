@@ -16,7 +16,7 @@ import {
   withDockSize,
   type DockSide,
 } from "../../../features/projects/model/projectTerminal";
-import { isLocalProject } from "../../../features/projects/model/recents";
+import { canOpenTerminalIn } from "../../../features/projects/model/recents";
 import {
   confirmCloseTerminal,
   confirmCloseTerminals,
@@ -69,7 +69,7 @@ export function useProjectTerminalDockActions(deps: ProjectTerminalDockActionDep
   } = dock;
 
   const onToggleProjectTerminal = useCallback(() => {
-    if (!isLocalProject(projectCwd)) return;
+    if (!canOpenTerminalIn(projectCwd)) return;
     const dock = findProjectTerminal(projectTerminalsRef.current, projectCwd);
     if (!dock) {
       openProjectTerminal(terminalCwd);

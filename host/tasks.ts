@@ -461,6 +461,7 @@ export class HostTasks {
 
   /** Bumped by every task write or delete made through this board. */
   private revisionCounter = 0;
+  onChange?: () => void;
   private etagCache?: { revision: number; etag: string };
   private listCache?: { revision: number; byId: Map<string, HostTask> };
   /** Live task state for one scheduler pass, maintained by write/delete. */
@@ -917,6 +918,7 @@ export class HostTasks {
     }
     this.store.db.prepare("DELETE FROM tasks WHERE id=?").run(id);
     this.revisionCounter++;
+    this.onChange?.();
     this.listCache = undefined;
     this.schedulerTasks?.delete(id);
   }
@@ -1045,9 +1047,7 @@ export class HostTasks {
       });
     // A newly failed task remains visibly blocked until the next scheduler tick.
     const takeoverCandidates = new Set(
-      initial
-        .filter(canTakeOverBlockedTask)
-        .map((task) => task.id),
+      initial.filter(canTakeOverBlockedTask).map((task) => task.id),
     );
     for (const task of initial) {
       try {
@@ -1245,6 +1245,7 @@ export class HostTasks {
       .prepare("INSERT INTO tasks VALUES (?, ?) ON CONFLICT(id) DO UPDATE SET value=excluded.value")
       .run(task.id, JSON.stringify(task));
     this.revisionCounter++;
+    this.onChange?.();
     this.listCache = undefined;
     this.schedulerTasks?.set(task.id, task);
     return task;
@@ -1603,7 +1604,12 @@ export class HostTasks {
     // `git()` trims the output, so the first line may have lost its leading space.
     const files = status
       .split(/\r?\n/)
-      .map((line) => line.trim().replace(/^\S{1,2}\s+/, "").replace(/^.* -> /, ""))
+      .map((line) =>
+        line
+          .trim()
+          .replace(/^\S{1,2}\s+/, "")
+          .replace(/^.* -> /, ""),
+      )
       .filter(Boolean);
     return files.length > SHARED_EDITS_LIMIT
       ? [...files.slice(0, SHARED_EDITS_LIMIT), `and ${files.length - SHARED_EDITS_LIMIT} more`]

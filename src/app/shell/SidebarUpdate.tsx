@@ -1,3 +1,6 @@
+import { t, useLocale } from "../../shared/i18n";
+import { Button } from "../../shared/ui/Button";
+import { Modal } from "../../shared/ui/Modal";
 import { ArrowDownCircle, Loader } from "../../shared/ui/icons";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
@@ -26,6 +29,10 @@ export function SidebarUpdateFooter({
   onOpenWhatsNew?: (version: string) => void;
   onDismissUpdate?: () => void;
 }) {
+  useLocale();
+  const [promptOpen, setPromptOpen] = useState(false);
+  const [notes, setNotes] = useState("");
+  const prompted = useRef(false);
   const [snapshot, setSnapshot] = useState<UpdaterSnapshot>({
     phase: "idle",
     currentVersion: "…",
@@ -42,18 +49,23 @@ export function SidebarUpdateFooter({
     let checking = false;
 
     const probe = async () => {
-      if (checking || phaseRef.current === "available" || phaseRef.current === "downloading")
+      if (checking || phaseRef.current === "downloading")
         return;
       checking = true;
       try {
         const currentVersion = await readAppVersion();
         if (cancelled) return;
-        setSnapshot({ phase: "checking", currentVersion });
+        if (phaseRef.current !== "available") setSnapshot({ phase: "checking", currentVersion });
 
         try {
           const update = await probeForUpdate();
           if (cancelled) return;
           if (update) {
+            setNotes(update.body?.trim() ?? "");
+            if (!prompted.current) {
+              prompted.current = true;
+              setPromptOpen(true);
+            }
             setSnapshot({
               phase: "available",
               currentVersion,
@@ -64,7 +76,7 @@ export function SidebarUpdateFooter({
           setSnapshot({ phase: "current", currentVersion });
         } catch {
           if (cancelled) return;
-          setSnapshot({ phase: "idle", currentVersion });
+          setSnapshot((previous) => previous.phase === "available" ? previous : { phase: "idle", currentVersion });
         }
       } finally {
         checking = false;
@@ -92,6 +104,23 @@ export function SidebarUpdateFooter({
   // against the scrolling list above it.
   return (
     <div className="flex flex-col gap-1.5 p-2 pb-0">
+      {promptOpen && actionable ? (
+        <Modal title={t("Update available")} size="sm" onClose={() => setPromptOpen(false)}>
+          <div className="flex flex-col gap-3 p-4">
+            <p className="text-sm text-content">v{snapshot.currentVersion} → v{snapshot.availableVersion}</p>
+            {notes ? (
+              <details className="text-sm text-content">
+                <summary className="cursor-pointer">{t("Release notes")}</summary>
+                <pre className="max-h-48 overflow-y-auto whitespace-pre-wrap break-words font-sans text-sm [margin-block-start:0.5rem]">{notes}</pre>
+              </details>
+            ) : null}
+            <div className="flex flex-wrap justify-end gap-2">
+              <Button onClick={() => setPromptOpen(false)}>{t("Later")}</Button>
+              <SidebarUpdate snapshot={snapshot} onSnapshot={setSnapshot} />
+            </div>
+          </div>
+        </Modal>
+      ) : null}
       {card}
       {actionable ? <SidebarUpdate snapshot={snapshot} onSnapshot={setSnapshot} /> : null}
     </div>
@@ -105,6 +134,7 @@ export function SidebarUpdate({
   snapshot: UpdaterSnapshot;
   onSnapshot: (next: UpdaterSnapshot) => void;
 }) {
+  useLocale();
   const busy = snapshot.phase === "downloading";
   // `busy` only flips after installPendingUpdate awaits readAppVersion, so a
   // second click can still land. The ref closes that window immediately.
@@ -121,20 +151,11 @@ export function SidebarUpdate({
   }, [busy, onSnapshot]);
 
   const label = busy
-    ? `Downloading${snapshot.progress != null ? ` ${snapshot.progress}%` : "…"}`
-    : `Update to ${snapshot.availableVersion}`;
+    ? `${t("Downloading")}${snapshot.progress != null ? ` ${snapshot.progress}%` : "…"}`
+    : t("Update to {p0}", { p0: snapshot.availableVersion ?? "" });
 
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      disabled={busy}
-      className={`flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left transition-colors ${
-        busy
-          ? "bg-content/5 text-content/75 hover:bg-content/10 hover:text-content"
-          : "bg-accent/15 text-content hover:bg-accent/20"
-      } disabled:cursor-default disabled:opacity-70`}
-    >
+    <Button onClick={onClick} disabled={busy} variant="secondary" fullWidth motion="none">
       <span className="grid size-[18px] shrink-0 place-items-center">
         {busy ? (
           <Loader className="size-4 motion-safe:animate-spin opacity-70" aria-hidden />
@@ -148,6 +169,6 @@ export function SidebarUpdate({
           v{snapshot.currentVersion}
         </span>
       </span>
-    </button>
+    </Button>
   );
 }

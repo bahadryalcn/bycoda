@@ -28,6 +28,7 @@ import {
 } from "../../providers/model/providerAccountIdentity";
 import { ProviderAccountSubtitle } from "../../providers/ui/ProviderAccountSubtitle";
 import { SecondaryButton } from "../../../shared/ui/SecondaryButton";
+import { UsageBudgets } from "./UsageBudgets";
 
 export function UsagePage() {
   useLocale();
@@ -42,7 +43,11 @@ export function UsagePage() {
     return () => window.removeEventListener(WORKSPACE_REFRESH_EVENT, reload);
   }, []);
   return (
-    <div id="setting-account-limits" data-setting-id="account-limits" data-accounts-version={version}>
+    <div
+      id="setting-account-limits"
+      data-setting-id="account-limits"
+      data-accounts-version={version}
+    >
       <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
         <p className="text-xs text-content/50">
           {t(
@@ -84,6 +89,7 @@ export function UsagePage() {
           </div>
         </section>
       ))}
+      <UsageBudgets refresh={refresh} />
       <UsageOverview refresh={refresh} />
       <ProviderUsageSettings refresh={refresh} showSummary={false} />
       <UsageDisplaySettings />
@@ -151,7 +157,15 @@ function AccountLimits({
           >
             <div>
               <h4 className="text-xs font-medium">
-                {t(kind === "session" ? "Session" : kind === "weekly" ? "Weekly" : "Monthly")}
+                {t(
+                  kind === "session" && window.windowMinutes === 300
+                    ? "5 hours"
+                    : kind === "session"
+                      ? "Session"
+                      : kind === "weekly"
+                        ? "Weekly"
+                        : "Monthly",
+                )}
               </h4>
               <p className="mt-2">
                 <strong className="text-3xl font-semibold tabular-nums">

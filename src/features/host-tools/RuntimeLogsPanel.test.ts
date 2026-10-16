@@ -2,6 +2,7 @@
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { resetRetainedState } from "../../shared/hooks/useRetainedState";
 import { save } from "@tauri-apps/plugin-dialog";
 import { writeTextFile } from "../../platform/tauri/fs";
 import { hostFeatureRequest, hostToolRequest } from "../connections/model/hostFeatureClient";
@@ -13,11 +14,11 @@ import type { OpenFileFn } from "../search/model/search";
 
 vi.mock("@tauri-apps/plugin-dialog", () => ({ save: vi.fn() }));
 vi.mock("../../platform/tauri/fs", async (importOriginal) => ({
-  ...await importOriginal<typeof import("../../platform/tauri/fs")>(),
+  ...(await importOriginal<typeof import("../../platform/tauri/fs")>()),
   writeTextFile: vi.fn(),
 }));
 vi.mock("../../platform/tauri/platform", async (importOriginal) => ({
-  ...await importOriginal<typeof import("../../platform/tauri/platform")>(),
+  ...(await importOriginal<typeof import("../../platform/tauri/platform")>()),
   IS_WIN: false,
 }));
 vi.mock("../connections/model/hostFeatureClient", () => ({
@@ -123,6 +124,7 @@ const expand = async (index = 0) => {
 };
 
 beforeEach(() => {
+  resetRetainedState();
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   vi.spyOn(document, "hidden", "get").mockReturnValue(false);
   vi.useFakeTimers();
@@ -137,6 +139,25 @@ beforeEach(() => {
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
+});
+
+it("restores log view filters on remount and keeps a different machine's view independent", async () => {
+  await mount();
+  await act(async () => edit("Search logs", "failure"));
+  await act(async () => root.unmount());
+  root = createRoot(container);
+  await mount();
+  expect(container.querySelector<HTMLInputElement>('input[aria-label="Search logs"]')!.value).toBe(
+    "failure",
+  );
+  await mount({ target: { kind: "machine", machineId: "other" } });
+  expect(container.querySelector<HTMLInputElement>('input[aria-label="Search logs"]')!.value).toBe(
+    "",
+  );
+  await mount();
+  expect(container.querySelector<HTMLInputElement>('input[aria-label="Search logs"]')!.value).toBe(
+    "failure",
+  );
 });
 
 afterEach(async () => {

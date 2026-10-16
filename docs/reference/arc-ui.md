@@ -1,5 +1,10 @@
 # Arc UI integration
 
+The shared design policy is [bycoda UI design system](ui-design-system.md).
+Use [component selection](ui-component-catalog.md) to choose free Arc capabilities.
+This document describes the current implementation; target APIs in the design
+policy are not available until their foundation wave is implemented and verified.
+
 Arc source is installed with the project-pinned shadcn CLI into `src/shared/ui/arc/`.
 `components.json` registers `@uiarc` and maps components to `src/shared/ui`.
 
@@ -10,10 +15,39 @@ pnpm exec shadcn add @uiarc/<component>
 Review the registry item and its dependencies before installing. Do not pass
 `--overwrite` to an adapted item without reviewing the local changes below.
 
+## Agent tooling
+
+The repository `.mcp.json` declares Arc's HTTP server for project-aware clients.
+Codex uses its own MCP configuration; inspect with `codex mcp get arc --json` and,
+when missing, add it with `codex mcp add arc --url https://uiarc.dev/api/mcp`.
+The server requires Arc account sign-in, including for free access. Complete
+`codex mcp login arc` locally, then start/reconnect a session so its tools load.
+Configuration alone does not establish authenticated MCP access. Do not store
+tokens or authorization callback URLs in project files or development logs.
+
+Use `search_components`, then compare `get_component` guidance, and request
+`get_install_command` before adding missing controls. Pass `tier: "free"` when
+searching. If authentication is unavailable, the official public
+[catalog](https://uiarc.dev/r/catalog.json), [index](https://uiarc.dev/llms.txt)
+and each component's `/markdown` page provide the documented fallback.
+
+The project `.claude/skills/arc/` contains the official free skill and references.
+Codex can use the installed `arc` skill from its available skill directories.
+Do not overwrite the project's reuse/theme/native contracts with generic Arc
+examples. Registry installation uses the pinned project CLI and existing
+`components.json`; the product does not need another UI framework dependency.
+
 ## Reuse decision rules
 
 The root `AGENTS.md` defines the mandatory UI reuse policy. This guide describes
 how to apply it. Existing feature behavior remains authoritative during migration.
+
+First identify the user's task and compare suitable interaction patterns. The old
+HTML tag, number of controls and grouping do not prescribe the replacement. A row
+of actions may need a segmented choice, radio group, split action or menu; small
+stable option lists may use Select, while long/growing searchable lists need
+Combobox/autocomplete or searchable MultiSelect. Preserve behavior and capabilities
+while improving the interaction. A shared import alone does not prove task fit.
 
 1. Find the owning screen and search shared adapters and similar consumers for the
    needed interaction. Read the component's current props, local adaptations and

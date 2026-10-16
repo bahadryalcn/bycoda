@@ -1,3 +1,4 @@
+import { applySessionSync } from "../model/protocol";
 import { mergePreviewBlocks } from "../model/mergePreviewBlocks";
 import { t, useLocale } from "../../../shared/i18n";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
@@ -52,7 +53,7 @@ import { registerRemoteSessionActions } from "../model/remoteSessionActions";
 import { HOST_UPDATE_NOTICE, SESSION_REWIND, SESSION_SHELL } from "../model/remoteCapabilities";
 import { canRewindConversation } from "../../sessions/model/conversationRewind";
 import { parseShellCommand, SHELL_FOLLOW_UP_PROMPT } from "../../sessions/model/shellRun";
-import { loadResumeAtReset, loadFollowUpBehavior } from "../../settings/model/settings";
+import { loadResumeAtReset } from "../../settings/model/settings";
 import {
   clearPendingRemoteCommand,
   loadRemoteBlock,
@@ -603,7 +604,14 @@ function ConnectedRemoteSession({
           ) {
             unsubscribeChannel = subscribeRemoteMachineChannel(
               machine.id,
-              () => ({ sessions: [{ sessionId, revision: snapshotRef.current?.revision ?? 0 }] }),
+              () => ({
+                sessions: [{ sessionId, revision: snapshotRef.current?.revision ?? 0 }],
+                inlineSync:
+                  host.capabilities.includes("machine.changes.inlineSync") &&
+                  !!snapshotRef.current &&
+                  !snapshotRef.current.history &&
+                  !snapshotRef.current.historyLoading,
+              }),
               (changes) => {
                 if (stale()) return;
                 const recoveredControlChannel = controlChannelFailed;
@@ -637,6 +645,46 @@ function ConnectedRemoteSession({
                   snapshotRef.current = undefined;
                   setRemoteHistoryLoading(false);
                 }
+                const current = snapshotRef.current;
+                if (
+                  !changes.reset &&
+                  !recoveredControlChannel &&
+                  failed === 0 &&
+                  hint?.sync?.kind === "delta" &&
+                  current &&
+                  !polling &&
+                  !forceTailRead.current
+                ) {
+                  if (hint.sync.value.revision <= current.revision) return;
+                  if (
+                    !current.history &&
+                    !current.historyLoading &&
+                    hint.sync.base === current.revision
+                  ) {
+                    try {
+                      const next = applySessionSync(current, hint.sync);
+                      if (next.projectId !== project.projectId || next.session.id !== sessionId)
+                        throw new Error("Inline sync does not match this host session");
+                      snapshotRef.current = next;
+                      setSnapshot(next);
+                      rememberSessionSnapshot(
+                        snapshotKey(machine.id, sessionId),
+                        next,
+                        machine.environmentId,
+                      );
+                      onSnapshot?.(shell.id, next);
+                      setOnline(true);
+                      reportRemoteMachineStatus(machine.id, true);
+                      publishRemoteDataState({
+                        phase: next.session.blocks.length ? "ready" : "empty",
+                        updatedAt: Date.now(),
+                      });
+                      return;
+                    } catch {
+                      /* A history/window mismatch uses the normal sync path. */
+                    }
+                  }
+                }
                 const ownerReadNeeded =
                   recoveredControlChannel ||
                   changes.reset ||
@@ -668,6 +716,8 @@ function ConnectedRemoteSession({
               (reason) => {
                 if (stale()) return;
                 controlChannelFailed = true;
+                setOnline(false);
+                reportRemoteMachineStatus(machine.id, false, reason);
                 const currentData = remoteDataStateRef.current;
                 publishRemoteDataState({
                   phase: currentData.updatedAt ? "stale" : "error",
@@ -1694,7 +1744,7 @@ function ConnectedRemoteSession({
       !planBlockId &&
       (!options?.intent || options.intent === "default") &&
       !consumeOperatorCommand(text).matched &&
-      (options?.followUpBehavior ?? loadFollowUpBehavior()) === "steer" &&
+      options?.followUpBehavior !== "queue" &&
       hostSession &&
       snapshot?.runId &&
       (text.trim() || attachments.length)

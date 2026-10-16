@@ -5,6 +5,7 @@ import { EditorView } from "@codemirror/view";
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { resetRetainedState } from "../../../shared/hooks/useRetainedState";
 import {
   invalidateNotes,
   loadNotes,
@@ -47,6 +48,7 @@ const recents = [
 ];
 
 beforeEach(() => {
+  resetRetainedState();
   drafts.clear();
   invalidateNotes();
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
@@ -342,6 +344,15 @@ function tab(label: string) {
     (button) => button.textContent === label,
   )!;
 }
+
+it("restores a note's editor mode after returning to the library", async () => {
+  await render();
+  await act(async () => tab("Source").click());
+  await act(async () => root.unmount());
+  root = createRoot(container);
+  await render();
+  expect(tab("Source").getAttribute("aria-selected")).toBe("true");
+});
 
 it("replaces regex matches with their groups in the note source", async () => {
   vi.useFakeTimers();

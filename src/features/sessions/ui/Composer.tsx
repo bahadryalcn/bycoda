@@ -160,6 +160,7 @@ import { InboxMiniCard } from "../../inbox/ui/InboxMiniCard";
 import { NoteMiniCard } from "../../notes/ui/NoteMiniCard";
 import { HandoffMiniCard } from "./HandoffMiniCard";
 import { ModelPicker } from "./ModelPicker";
+import { Button } from "../../../shared/ui/Button";
 import { QuestionForm } from "./QuestionForm";
 import { ComposerSuggestions } from "./ComposerSuggestions";
 import { SkillPicker } from "../../skills/ui/SkillPicker";
@@ -171,9 +172,6 @@ import {
   keybindingPressed,
   keybindingShortcutLabel,
   loadNotesEnabled,
-  loadFollowUpBehavior,
-  subscribeFollowUpBehavior,
-  FOLLOW_UP_BEHAVIOR_DEFAULT,
   subscribeNotesEnabled,
 } from "../../settings/model/settings";
 import {
@@ -207,7 +205,13 @@ import {
 } from "./modeCommands";
 import { BTW_COMMAND, consumeBtwCommand, consumeBtwPrefix, supportsBtwHarness } from "../model/btw";
 import { COMPACT_COMMAND, isCompactCommand } from "../model/compact";
-import { NEW_SESSION_COMMAND, isNewSessionCommand } from "../model/newSessionCommand";
+import {
+  CLEAR_SESSION_COMMAND,
+  NEW_SESSION_COMMAND,
+  isClearSessionCommand,
+  isNewSessionCommand,
+  type NewSessionOptions,
+} from "../model/newSessionCommand";
 import { RESUME_COMMAND, isResumeCommand } from "../model/resumeCommand";
 import {
   consumeSessionFolderCommand,
@@ -312,7 +316,7 @@ type Props = {
   backgroundOnly?: boolean;
   backgroundTaskCount?: number;
   worktreePreparing?: boolean;
-  /** Allow typed text to replace Stop with Send while a turn is running. */
+  /** Allow typed text to be sent alongside Stop while a turn is running. */
   allowBusySubmit?: boolean;
   editLastTurnSupported?: boolean;
   lastTurnRecall?: LastTurnRecall | null;
@@ -354,7 +358,7 @@ type Props = {
   onSaveDraft?: (text: string, attachments: Attachment[]) => boolean | void;
   onStop?: () => void;
   onCompactContext?: () => boolean;
-  onNewSession?: () => void;
+  onNewSession?: (options?: NewSessionOptions) => void;
   onPlaceInFolder?: (target: SessionFolderTarget) => void;
   /** Open the picker of conversations Claude Code stored for this project. */
   onResumeProviderSession?: () => void;
@@ -857,11 +861,6 @@ export const Composer = memo(function Composer({
   const [files, setFiles] = useState<ProjectFile[]>(() => peekProjectFiles(localCwd) ?? []);
   const notesEnabled = useSyncExternalStore(subscribeNotesEnabled, loadNotesEnabled, () => true);
   const spelling = useComposerSpelling();
-  const followUpBehavior = useSyncExternalStore(
-    subscribeFollowUpBehavior,
-    loadFollowUpBehavior,
-    () => FOLLOW_UP_BEHAVIOR_DEFAULT,
-  );
   const promptTemplates = useSyncExternalStore(
     subscribePromptTemplates,
     loadPromptTemplates,
@@ -904,6 +903,7 @@ export const Composer = memo(function Composer({
           PLAN_COMMAND,
           COMPACT_COMMAND,
           NEW_SESSION_COMMAND,
+          CLEAR_SESSION_COMMAND,
           SESSION_FOLDER_COMMAND,
           MCP_COMMAND,
           OPERATOR_COMMAND,
@@ -928,7 +928,7 @@ export const Composer = memo(function Composer({
   });
   const slashItems = useMemo(
     () => [
-      ...(onNewSession ? [NEW_SESSION_COMMAND] : []),
+      ...(onNewSession ? [NEW_SESSION_COMMAND, CLEAR_SESSION_COMMAND] : []),
       ...(remote
         ? [
             ...(remoteFeatures?.plan ? [PLAN_COMMAND] : []),
@@ -936,6 +936,7 @@ export const Composer = memo(function Composer({
             ...skills.filter(
               (skill) =>
                 skill.name !== NEW_SESSION_COMMAND.name &&
+                skill.name !== CLEAR_SESSION_COMMAND.name &&
                 (skill.kind === "file" || skill.kind === "native"),
             ),
             ...cliCommands.slashCommands,
@@ -957,9 +958,13 @@ export const Composer = memo(function Composer({
               : []),
             ...skills.filter(
               (skill) =>
-                ![NEW_SESSION_COMMAND.name, OPERATOR_COMMAND.name, "mono", "bycoda"].includes(
-                  skill.name,
-                ) &&
+                ![
+                  NEW_SESSION_COMMAND.name,
+                  CLEAR_SESSION_COMMAND.name,
+                  OPERATOR_COMMAND.name,
+                  "mono",
+                  "bycoda",
+                ].includes(skill.name) &&
                 (skill.kind === "native" ||
                   (skill.name !== PLAN_COMMAND.name &&
                     skill.name !== COMPACT_COMMAND.name &&
@@ -1930,7 +1935,11 @@ export const Composer = memo(function Composer({
     }
     const value = ref.current?.value ?? submittedValue;
     if (disabled || worktreeRemoved || sendHeldReason) return;
-    if (isNewSessionCommand(value) && onNewSession) {
+    if (isClearSessionCommand(value) && !onNewSession) {
+      setPasteError(t("Starting a fresh conversation is unavailable in this composer."));
+      return;
+    }
+    if ((isNewSessionCommand(value) || isClearSessionCommand(value)) && onNewSession) {
       // Retain attachments and context cards in the old session. Clear only
       // the navigation command before switching tabs so it cannot reappear.
       if (ref.current) ref.current.value = "";
@@ -1938,7 +1947,8 @@ export const Composer = memo(function Composer({
       onDraftChange?.("");
       setSlash(null);
       syncHasValue("", attachmentsRef.current);
-      onNewSession();
+      if (isClearSessionCommand(value)) onNewSession({ preserveSettings: true });
+      else onNewSession();
       return;
     }
     if (isResumeCommand(value)) {
@@ -2076,7 +2086,8 @@ export const Composer = memo(function Composer({
         : mcpContextText(taggedMcpServers(submittedText, selectedMcp), submittedText),
       files,
       {
-        ...(queue ? { followUpBehavior: "queue" as const } : {}),
+        // The primary action steers; only the explicit queue action defers.
+        ...(busy ? { followUpBehavior: queue ? ("queue" as const) : ("steer" as const) } : {}),
         intent: shellLine
           ? "default"
           : planSelected || command.planning
@@ -2241,7 +2252,9 @@ export const Composer = memo(function Composer({
     if (
       e.key === "Enter" &&
       !e.shiftKey &&
-      (isCompactCommand(e.currentTarget.value) ||
+      (isNewSessionCommand(e.currentTarget.value) ||
+        isClearSessionCommand(e.currentTarget.value) ||
+        isCompactCommand(e.currentTarget.value) ||
         isResumeCommand(e.currentTarget.value) ||
         isMcpCommand(e.currentTarget.value) ||
         isSessionFolderCommand(e.currentTarget.value))
@@ -3218,26 +3231,24 @@ export const Composer = memo(function Composer({
                 busyLabel={
                   draftActive
                     ? undefined
-                    : remote
-                      ? t("Send now or queue for later")
-                      : t(
-                          !canSteerHarness(harness) ||
-                            resolveFollowUpRoute({
-                              busy,
-                              worktreePreparing,
-                              intent: planActive
-                                ? "plan"
-                                : orchestrationActive
-                                  ? "orchestrate"
-                                  : "default",
-                              operatorCommand: operatorActive,
-                              backgroundTaskCount,
-                              backgroundOnly,
-                              setting: followUpBehavior,
-                            }) === "queue"
-                            ? "Queue message"
-                            : "Steer",
-                        )
+                    : t(
+                        !(remote ? remoteFeatures?.steer : canSteerHarness(harness)) ||
+                          resolveFollowUpRoute({
+                            busy,
+                            worktreePreparing,
+                            intent: planActive
+                              ? "plan"
+                              : orchestrationActive
+                                ? "orchestrate"
+                                : "default",
+                            operatorCommand: operatorActive,
+                            backgroundTaskCount,
+                            backgroundOnly,
+                            requested: "steer",
+                          }) === "queue"
+                          ? "Queue message"
+                          : "Steer",
+                      )
                 }
                 blockedReason={sendHeldReason ?? sendBlockedReason}
                 onSend={() => submit(ref.current?.value ?? "")}
@@ -3259,6 +3270,7 @@ export const Composer = memo(function Composer({
                   QUEUE_MESSAGE_COMMAND,
                   IS_MAC ? "⇧Tab" : "Shift+Tab",
                 )}
+                stopShortcut={keybindingShortcutLabel(STOP_TURN_COMMAND, "Esc")}
                 onStop={() => onStop?.()}
               />
             </div>
@@ -3446,6 +3458,7 @@ export function ComposerAction({
   onSend,
   onQueue,
   queueShortcut,
+  stopShortcut = "Esc",
   onStop,
 }: {
   busy: boolean;
@@ -3461,84 +3474,86 @@ export function ComposerAction({
   /** Queue the message behind the running turn; only offered while one runs. */
   onQueue?: () => void;
   queueShortcut?: string | null;
+  stopShortcut?: string | null;
   onStop: () => void;
 }) {
   useLocale();
-  if (disabled) {
+  if (disabled && !busy) {
     return (
-      <button
-        type="button"
-        title={label}
-        aria-label={label}
+      <Button
+        variant="primary"
+        motion="none"
+        iconOnly
+        label={label}
+        tooltip={`${label} (Enter)`}
         disabled
-        className="composer-send primary-action grid size-6.5 place-items-center rounded-md disabled:cursor-default"
       >
         <ArrowUp className="size-3.5" strokeWidth={2.25} />
-      </button>
+      </Button>
     );
   }
   if (busy) {
-    return hasValue && allowBusySubmit ? (
+    return (
       <>
-        {onQueue ? (
-          <button
-            type="button"
-            title={
-              queueShortcut
-                ? t("Queue message for when this turn finishes ({p0})", { p0: queueShortcut })
-                : t("Queue message for when this turn finishes")
-            }
-            aria-label={t("Queue message")}
-            data-usage-guide="queue-button"
-            onClick={onQueue}
-            className="grid size-6.5 place-items-center rounded-md bg-selection text-content hover:bg-selection-hover"
-          >
-            <ListEnd className="size-3.5" strokeWidth={1.75} />
-          </button>
+        {hasValue && allowBusySubmit && !disabled ? (
+          <>
+            {onQueue ? (
+              <Button
+                motion="none"
+                iconOnly
+                label={t("Queue message")}
+                tooltip={
+                  queueShortcut
+                    ? t("Queue message for when this turn finishes ({p0})", { p0: queueShortcut })
+                    : t("Queue message for when this turn finishes")
+                }
+                data-usage-guide="queue-button"
+                onClick={onQueue}
+              >
+                <ListEnd className="size-3.5" strokeWidth={1.75} />
+              </Button>
+            ) : null}
+            <Button
+              variant="primary"
+              motion="none"
+              iconOnly={!busyLabel}
+              label={label}
+              tooltip={`${busyLabel ?? label} (Enter)`}
+              aria-description={busyLabel}
+              onClick={onSend}
+            >
+              {busyLabel ? <span>{busyLabel}</span> : null}
+              <ArrowUp className="size-3.5" strokeWidth={2.25} />
+            </Button>
+          </>
         ) : null}
-        <button
-          type="button"
-          title={
-            onQueue && queueShortcut
-              ? t("{p0} ({p1} queues instead)", { p0: busyLabel ?? label, p1: queueShortcut })
-              : (busyLabel ?? label)
-          }
-          aria-label={label}
-          aria-description={busyLabel}
-          onClick={onSend}
-          className={`composer-send primary-action rounded-md ${busyLabel ? "composer-busy-send" : "grid size-6.5 place-items-center"}`}
+        <Button
+          motion="none"
+          iconOnly
+          label={t("Stop")}
+          tooltip={stopShortcut ? `${t("Stop")} (${stopShortcut})` : t("Stop")}
+          data-usage-guide="stop-button"
+          onClick={onStop}
         >
-          {busyLabel ? <span>{busyLabel}</span> : null}
-          <ArrowUp className="size-3.5" strokeWidth={2.25} />
-        </button>
+          <Square className="size-2.5 fill-current" strokeWidth={0} />
+        </Button>
       </>
-    ) : (
-      <button
-        type="button"
-        title={t("Stop")}
-        aria-label={t("Stop")}
-        data-usage-guide="stop-button"
-        onClick={onStop}
-        className="grid size-6.5 place-items-center rounded-md bg-on-solid text-scrim hover:bg-on-solid/90"
-      >
-        <Square className="size-2.5 fill-current" strokeWidth={0} />
-      </button>
     );
   }
 
   return (
-    <button
-      type="button"
-      title={blockedReason ?? label}
-      aria-label={blockedReason ? `${label}. ${blockedReason}` : label}
+    <Button
+      variant="primary"
+      motion="none"
+      iconOnly
+      label={blockedReason ? `${label}. ${blockedReason}` : label}
+      tooltip={blockedReason ?? `${label} (Enter)`}
       disabled={!hasValue}
       onClick={onSend}
-      className={`composer-send primary-action grid size-6.5 place-items-center rounded-md disabled:cursor-default ${
-        blockedReason ? "opacity-50" : ""
-      }`}
+      aria-description={blockedReason}
     >
       <ArrowUp className="size-3.5" strokeWidth={2.25} />
-    </button>
+    </Button>
   );
 }
 

@@ -76,6 +76,37 @@ test("translation selection menu opens above text and survives unavailable geome
   await expect(toolbar).toBeVisible();
 });
 
+test("busy composer keeps Send, Queue and Stop visible with shortcut hints", async ({ page }) => {
+  await initializeChatLayout(page);
+  await page.goto("/tests/browser/composer-extras.html?chat-layout&accounts");
+  await page.getByRole("button", { name: "Toggle busy", exact: true }).click();
+  const send = page.getByRole("button", { name: "Send", exact: true });
+  const queue = page.getByRole("button", { name: "Queue message", exact: true });
+  const stop = page.getByRole("button", { name: "Stop", exact: true });
+  await expect(send).toHaveAttribute("title", "Steer (Enter)");
+  await expect(queue).toHaveAttribute("title", /Shift\+Tab/);
+  await expect(stop).toHaveAttribute("title", "Stop (Esc)");
+  for (const theme of ["light", "dark"]) {
+    await page.evaluate(
+      (value) => document.documentElement.classList.toggle("theme-light", value === "light"),
+      theme,
+    );
+    for (const width of [390, 768, 1024, 1440]) {
+      await page.setViewportSize({ width, height: 800 });
+      for (const control of [send, queue, stop]) await expect(control).toBeInViewport();
+      const bounds = await Promise.all([queue, send, stop].map((control) => control.boundingBox()));
+      expect(bounds[0]!.x + bounds[0]!.width).toBeLessThanOrEqual(bounds[1]!.x);
+      expect(bounds[1]!.x + bounds[1]!.width).toBeLessThanOrEqual(bounds[2]!.x);
+    }
+  }
+  await stop.focus();
+  await page.keyboard.press("Enter");
+  await expect(stop).toHaveCount(0);
+  await expect(page.getByRole("textbox", { name: "Message", exact: true })).toHaveValue(
+    "Keep this chat draft",
+  );
+});
+
 async function initializeChatLayout(page: import("@playwright/test").Page) {
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.addInitScript(() => {
@@ -272,13 +303,22 @@ test("chat busy actions explain steering and queuing without losing the draft", 
   const send = page.getByRole("button", { name: "Send", exact: true });
   await expect(send).toContainText("Steer");
   await page.getByRole("button", { name: "Use queue", exact: true }).click();
-  await expect(send).toContainText("Queue message");
+  await expect(send).toContainText("Steer");
   await page.getByRole("button", { name: "Use steer", exact: true }).click();
   await expect(send).toContainText("Steer");
   await input.fill("/plan Review this change");
   await expect(send).toContainText("Queue message");
   await input.fill("Keep my work");
   await expect(send).toContainText("Steer");
+  await expect(send).toHaveAttribute("title", "Steer (Enter)");
+  await expect(page.getByRole("button", { name: "Queue message", exact: true })).toHaveAttribute(
+    "title",
+    /Shift\+Tab/,
+  );
+  await expect(page.getByRole("button", { name: "Stop", exact: true })).toHaveAttribute(
+    "title",
+    "Stop (Esc)",
+  );
   for (const width of [320, 420, 1000]) {
     await page.setViewportSize({ width, height: 800 });
     await expect(send).toBeInViewport();
@@ -300,7 +340,12 @@ test("chat busy actions explain steering and queuing without losing the draft", 
   await input.fill("");
   const stop = page.getByRole("button", { name: "Stop", exact: true });
   await expect(stop).toBeVisible();
+  await input.fill("Keep my work");
+  await page.getByRole("button", { name: "Toggle disabled", exact: true }).click();
+  await expect(stop).toBeEnabled();
+  await expect(input).toHaveValue("Keep my work");
   await stop.click();
+  await page.getByRole("button", { name: "Toggle disabled", exact: true }).click();
   await expect(page.locator("[data-activity-dock]")).toHaveAttribute("data-activity-dock", "done");
   await input.fill("My next request");
   await page.getByRole("button", { name: "Toggle disabled", exact: true }).click();

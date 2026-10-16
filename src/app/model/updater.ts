@@ -52,7 +52,7 @@ export async function readAppVersion(): Promise<string> {
 
 export async function probeForUpdate(): Promise<Update | null> {
   if (!(await isUpdaterEnabled())) return null;
-  const update = await check();
+  const update = await check({ headers: { "Cache-Control": "no-cache" } });
   pendingUpdate = update;
   if (update) announceUpdateAvailable(update.version);
   return update;
@@ -76,7 +76,7 @@ export async function runUpdateFlow(
   onProgress?.(base);
 
   try {
-    const update = await check();
+    const update = await check({ headers: { "Cache-Control": "no-cache" } });
     if (!update) {
       pendingUpdate = null;
       const current: UpdaterSnapshot = { phase: "current", currentVersion };

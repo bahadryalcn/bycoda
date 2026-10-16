@@ -27,6 +27,7 @@ import {
 import { useProjectTerminalDockState } from "./workspace/terminal/useProjectTerminalDockState";
 import { useProjectTerminalOpen } from "./workspace/terminal/useProjectTerminalOpen";
 import { useProjectTerminalDockActions } from "./workspace/terminal/useProjectTerminalDockActions";
+import { useGuideActions } from "./workspace/control/useGuideActions";
 import { useDockGridSizing } from "./workspace/terminal/useDockGridSizing";
 import {
   useBusySessionIds,
@@ -2389,6 +2390,20 @@ function Workspace({
     onOpenAutomations,
   };
   const { actions, run } = useWorkspaceActions(workspaceActions);
+  useGuideActions({
+    actions,
+    projectCwd,
+    closeSurfaces: () => {
+      setSettingsOpen(false);
+      setSearchViewOpen(false);
+      setInboxViewOpen(false);
+      setNotesViewOpen(false);
+      setAutomationsViewOpen(false);
+    },
+    setSidebarTab,
+    setSessionSidebarOpen,
+    onShowProjectTerminal,
+  });
 
   useWorkspaceKeyboardShortcuts({
     actions,
@@ -3061,6 +3076,7 @@ function Workspace({
               transferred: !!windowTransfer || !!toolWindow,
             }}
             onSelectProject={onSelectProject}
+            projectCwd={projectCwd}
             remoteProjectDialogOpen={remoteProjectDialogOpen}
             setRemoteProjectDialogOpen={setRemoteProjectDialogOpen}
             nameConflicts={nameConflicts}

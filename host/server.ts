@@ -1,3 +1,4 @@
+import { inlineSessionSync } from "./inlineSessionSync";
 import { execFileAsync as exec } from "../src/shared/lib/processExecution.node";
 import { sessionConversationPage } from "../src/features/agent-app/model/sessionConversation";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
@@ -487,10 +488,20 @@ export function createHostServer(
     { binaries: string; probed: number; catalog: Promise<HostModelCatalog> }
   >();
   const transfers = new SyncTransfers();
-  const revisionWaits = new RevisionWaits();
+  const desktopRecheckMs = (id: string): number => {
+    const hosted = engine.store.sessionStateMetadata(id);
+    return (!hosted || (hosted.desktop && hosted.status !== "running")) &&
+      desktop.stamp(id, WATCH_STAMP_MS)?.running
+      ? WATCH_STAMP_MS
+      : 1000;
+  };
+  const signal = engine.store.changes;
+  desktop.live.onChange = () => signal.notify();
+  tasks.onChange = () => signal.notify();
+  const revisionWaits = new RevisionWaits(64, signal);
   const transcriptPages = new TranscriptPages();
-  const remoteChanges = new RemoteChanges();
-  const gitWatches = new GitWatches();
+  const remoteChanges = new RemoteChanges(signal);
+  const gitWatches = new GitWatches({ onChange: () => signal.notify() });
   const workspace = new WorkspaceCommands(
     engine.store,
     (projectId, action) => engine.withIdleProject(projectId, action),
@@ -682,8 +693,14 @@ export function createHostServer(
     };
   }
   const mcpHttp = new McpHttp({
-    store: engine.store, social, conversationAccess, runtimeLogAccess,
-    runtimeLogs, refreshLogSources, conversationWorkspace, projectSessions: projectSessionList,
+    store: engine.store,
+    social,
+    conversationAccess,
+    runtimeLogAccess,
+    runtimeLogs,
+    refreshLogSources,
+    conversationWorkspace,
+    projectSessions: projectSessionList,
   });
   const server = createServer(
     { requestTimeout: 20_000, headersTimeout: 10_000, maxHeaderSize: 8192 },
@@ -1075,15 +1092,18 @@ export function createHostServer(
           case "terminals.close": {
             const project = engine.store.project(String(params.projectId ?? ""));
             if (input.method === "terminals.list") result = terminals.list(project.id);
-            else if (input.method === "terminals.create") result = await terminals.create(
-              project,
-              params,
-              createHash("sha256").update(token).digest("hex"),
-              () => engine.store.authenticated(token),
-            );
+            else if (input.method === "terminals.create")
+              result = await terminals.create(
+                project,
+                params,
+                createHash("sha256").update(token).digest("hex"),
+                () => engine.store.authenticated(token),
+              );
             else if (input.method === "terminals.read") result = terminals.read(project.id, params);
-            else if (input.method === "terminals.write") result = await terminals.write(project.id, params);
-            else if (input.method === "terminals.interrupt") result = await terminals.interrupt(project.id, params.id);
+            else if (input.method === "terminals.write")
+              result = await terminals.write(project.id, params);
+            else if (input.method === "terminals.interrupt")
+              result = await terminals.interrupt(project.id, params.id);
             else result = await terminals.remove(project.id, params.id);
             break;
           }
@@ -1292,6 +1312,7 @@ export function createHostServer(
                 "sessions.lazyHistory",
                 "sessions.block",
                 "machine.changes",
+                "machine.changes.inlineSync",
                 "git.watch",
                 "commands.status",
                 "sessions.harnessSwitch",
@@ -1508,6 +1529,7 @@ export function createHostServer(
           case "machine.changes": {
             result = await remoteChanges.read(
               {
+                inlineSync: params.inlineSync === true,
                 instanceId: typeof params.instanceId === "string" ? params.instanceId : undefined,
                 sessions: Array.isArray(params.sessions)
                   ? (params.sessions as {
@@ -1538,6 +1560,40 @@ export function createHostServer(
               () => response.destroyed || !engine.store.authenticated(token),
               taskChangeEtag,
               (cwd) => gitWatches.read(cwd),
+              () =>
+                Array.isArray(params.sessions) &&
+                params.sessions.some(
+                  (entry: { sessionId: string }) =>
+                    desktopRecheckMs(entry.sessionId) === WATCH_STAMP_MS,
+                )
+                  ? WATCH_STAMP_MS
+                  : 1000,
+            );
+            result = inlineSessionSync(
+              {
+                inlineSync: params.inlineSync === true,
+                sessions: params.sessions as { sessionId: string; revision: number }[],
+                projects: [],
+              },
+              result as Awaited<ReturnType<RemoteChanges["read"]>>,
+              (id, revision) => {
+                // Desktop rows may require transcript IO. Keep those on sessions.sync.
+                const metadata = engine.store.sessionStateMetadata(id);
+                if (!metadata || desktopWatch(id, true)) return undefined;
+                const sync = engine.store.sync(id, revision);
+                return sync.kind === "delta"
+                  ? {
+                      ...sync,
+                      value: {
+                        ...sync.value,
+                        session: {
+                          ...sync.value.session,
+                          ...previewRewindHistory(sync.value.session),
+                        },
+                      },
+                    }
+                  : undefined;
+              },
             );
             if (!engine.store.authenticated(token))
               throw new Error("Device authorization was revoked");
@@ -1662,6 +1718,7 @@ export function createHostServer(
                 revision,
                 Number(params.waitMs),
                 () => response.destroyed || !engine.store.authenticated(token),
+                () => desktopRecheckMs(sessionId),
               );
               if (!engine.store.authenticated(token))
                 throw new Error("Device authorization was revoked");
@@ -1877,7 +1934,9 @@ export function createHostServer(
           case "commands.dispatch": {
             const sessionId = String(params.sessionId ?? "");
             if (
-              ["send", "steer", "compact", "configure", "plan", "rewind"].includes(String(params.type)) &&
+              ["send", "steer", "compact", "configure", "plan", "rewind"].includes(
+                String(params.type),
+              ) &&
               sessionQueues.get(sessionId).claim &&
               !engine.store.receiptStatus(String(params.commandId ?? ""))
             )
@@ -1933,7 +1992,10 @@ export function createHostServer(
               )
                 throw new Error("Queued message attachments or intent changed.");
             }
-            if ((params.type === "steer" || params.type === "rewind") && desktopWatch(sessionId)?.running)
+            if (
+              (params.type === "steer" || params.type === "rewind") &&
+              desktopWatch(sessionId)?.running
+            )
               throw new Error(
                 params.type === "rewind"
                   ? "This desktop-owned turn must finish before its conversation can be rewound."
@@ -2404,5 +2466,11 @@ export function createHostServer(
     void mobileLan.close();
   });
   server.on("close", () => conversationDesktop.close());
-  return Object.assign(server, { social, tunnels, terminals, runtimeLogAccess, conversationAccess });
+  return Object.assign(server, {
+    social,
+    tunnels,
+    terminals,
+    runtimeLogAccess,
+    conversationAccess,
+  });
 }

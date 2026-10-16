@@ -1,7 +1,7 @@
 import type { ComponentProps, Dispatch, SetStateAction } from "react";
 import type { Session } from "../../../features/sessions/model/session";
 import type { SettingsSectionId } from "../../../features/settings/model/settings";
-import { isLocalProject } from "../../../features/projects/model/recents";
+import { canOpenTerminalIn } from "../../../features/projects/model/recents";
 import { ProjectTerminalDock } from "../../../features/terminal/ui/ProjectTerminalDock";
 import { ApprovalToasts } from "../../../features/sessions/ui/ApprovalToasts";
 import { UsageFooter } from "../../shell/UsageFooter";
@@ -99,8 +99,8 @@ export function WorkspaceFooter({
           terminals={runningTerminals}
           terminalOpen={runningTerminalOpen}
           onToggleTerminal={onToggleRunningTerminal}
-          onNewTerminal={isLocalProject(projectCwd) ? onNewTerminal : undefined}
-          onShowTerminal={isLocalProject(projectCwd) ? onShowProjectTerminal : undefined}
+          onNewTerminal={canOpenTerminalIn(projectCwd) ? onNewTerminal : undefined}
+          onShowTerminal={canOpenTerminalIn(projectCwd) ? onShowProjectTerminal : undefined}
           projectTerminalActive={
             !!currentProjectDock && currentProjectDock.pane.files.length > 0
           }

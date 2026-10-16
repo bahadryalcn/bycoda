@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.95]
+
+### Workspace and session tools
+
+- Add usage budgets, a guide hub and subagent relay controls.
+- Improve remote session synchronization, change notifications and repository selection.
+- Refine shared controls, search, notes and Inbox views.
+- Refresh automatic update checks without cached responses.
+
 ## [0.5.90]
 
 ### Host tools and workspace

@@ -5,6 +5,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { ask } from "@tauri-apps/plugin-dialog";
 import { EditorView } from "@codemirror/view";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { resetRetainedState } from "../../../shared/hooks/useRetainedState";
 import { SkillsPage } from "./SkillsPage";
 import { SettingsView } from "../../settings/ui/SettingsView";
 import type { DiscoveredSkill } from "../../../platform/tauri/fs";
@@ -93,6 +94,7 @@ function deferred<T>() {
 }
 
 beforeEach(() => {
+  resetRetainedState();
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   localStorage.clear();
   vi.mocked(invoke).mockReset();

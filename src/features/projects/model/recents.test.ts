@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   archiveProject,
+  canOpenTerminalIn,
   forgetProject,
   loadArchivedProjects,
   loadPinnedProjects,
@@ -40,6 +41,18 @@ function mockLocalStorage() {
     configurable: true,
   });
 }
+
+describe("canOpenTerminalIn", () => {
+  it("allows the home folder and local projects, not roots or remote projects", () => {
+    expect(canOpenTerminalIn("~")).toBe(true);
+    expect(canOpenTerminalIn("/Users/me")).toBe(true);
+    expect(canOpenTerminalIn("C:\Users\me")).toBe(true);
+    expect(canOpenTerminalIn("/Users/me/code/app")).toBe(true);
+    expect(canOpenTerminalIn("")).toBe(false);
+    expect(canOpenTerminalIn("/")).toBe(false);
+    expect(canOpenTerminalIn("remote://env-mac/Users/me/code/app")).toBe(false);
+  });
+});
 
 describe("looksLikeProject", () => {
   it("rejects plugin links while preserving remote filesystem projects", () => {

@@ -23,8 +23,8 @@ const SLASH_HARNESSES: readonly HarnessId[] = ["claude"];
 /**
  * Built-ins that run over Claude Code's stream-json transport: the CLI marks
  * them `supportsNonInteractive` (or they are prompt commands). Terminal-only
- * ones (/clear, /vim, /login, ...) and ones Bycoda has its own UI for
- * (/compact, /model, /mcp) are left out on purpose. Codex commands here are
+ * ones (/vim, /login, ...) and ones Bycoda has its own UI for
+ * (/clear, /compact, /model, /mcp) are left out on purpose. Codex commands here are
  * implemented through app-server RPC rather than passed to its terminal UI.
  */
 const CURATED: Partial<Record<HarnessId, NativeCommand[]>> = {

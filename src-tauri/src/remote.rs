@@ -277,7 +277,12 @@ fn rpc(
                 "Machine is unreachable. Check the host and SSH tunnel, then reconnect.".into(),
             )
         }
-        Err(ureq::Error::Transport(error)) => return Err(rpc_transport_failure(&error, method)),
+        Err(ureq::Error::Transport(error)) => {
+            return Err(rpc_transport_failure(
+                &error,
+                &rpc_operation(method, &params),
+            ))
+        }
     };
     let status = response.status();
     if status == 401 || status == 403 {
@@ -321,9 +326,113 @@ fn connection_refused(error: &ureq::Transport) -> bool {
     false
 }
 
+/// Only action identifiers from the host workspace contract may enter diagnostics.
+fn rpc_operation(method: &str, params: &Value) -> String {
+    if method == "workspace.run" {
+        if let Some(action) = params.get("command").and_then(Value::as_str) {
+            if matches!(
+                action,
+                "browse_dir"
+                    | "copy_path"
+                    | "create_path"
+                    | "delete_path"
+                    | "format_text_file"
+                    | "git_blame"
+                    | "git_branches"
+                    | "git_checkout"
+                    | "git_checkout_commit"
+                    | "git_cherry_pick"
+                    | "git_commit"
+                    | "git_commit_file_diff"
+                    | "git_commit_files"
+                    | "git_commit_message"
+                    | "git_conflict_stages"
+                    | "git_conflicts"
+                    | "git_create_branch"
+                    | "git_create_branch_at"
+                    | "git_create_branch_from"
+                    | "git_create_tag"
+                    | "git_delete_branch"
+                    | "git_delete_remote_branch"
+                    | "git_delete_tag"
+                    | "git_diff_files"
+                    | "git_diff_index"
+                    | "git_diff_stats"
+                    | "git_discard_all"
+                    | "git_discard_file"
+                    | "git_fetch"
+                    | "git_file_diff"
+                    | "git_file_history"
+                    | "git_head_message"
+                    | "git_history"
+                    | "git_merge"
+                    | "git_operation_abort"
+                    | "git_operation_continue"
+                    | "git_operation_state"
+                    | "git_operation_status"
+                    | "git_pr_create"
+                    | "git_pr_status"
+                    | "git_pull"
+                    | "git_push"
+                    | "git_range_context"
+                    | "git_rebase"
+                    | "git_remote_add"
+                    | "git_remote_remove"
+                    | "git_remotes"
+                    | "git_rename_branch"
+                    | "git_reset"
+                    | "git_resolve_conflict"
+                    | "git_revert"
+                    | "git_stage_all"
+                    | "git_stage_contents"
+                    | "git_stage_file"
+                    | "git_staged_context"
+                    | "git_stash"
+                    | "git_stash_action"
+                    | "git_stash_clear"
+                    | "git_stash_list"
+                    | "git_submodules"
+                    | "git_sync"
+                    | "git_tags"
+                    | "git_trust_repository"
+                    | "git_undo_last_commit"
+                    | "git_unstage_all"
+                    | "git_unstage_file"
+                    | "git_worktrees"
+                    | "list_claude_commands"
+                    | "list_dir"
+                    | "list_project_files"
+                    | "list_skills"
+                    | "move_path"
+                    | "read_binary_file"
+                    | "read_file_chunk"
+                    | "read_file_info"
+                    | "read_file_preview"
+                    | "read_folder_entry"
+                    | "read_text_file"
+                    | "rename_path"
+                    | "search_project"
+                    | "session_checkpoint_file_diff"
+                    | "session_checkpoint_keep"
+                    | "session_checkpoint_status"
+                    | "session_checkpoint_undo"
+                    | "skill_delete"
+                    | "skill_export"
+                    | "skill_import"
+                    | "stat_files"
+                    | "write_text_file"
+            ) {
+                return format!("{method}:{action}");
+            }
+        }
+    }
+    method.to_owned()
+}
+
 fn rpc_transport_failure(error: &ureq::Transport, method: &str) -> String {
     let mut source: Option<&(dyn std::error::Error + 'static)> = Some(error);
     let mut timeout = false;
+    let mut unavailable = false;
     while let Some(cause) = source {
         timeout |= cause.downcast_ref::<std::io::Error>().is_some_and(|io| {
             matches!(
@@ -331,10 +440,21 @@ fn rpc_transport_failure(error: &ureq::Transport, method: &str) -> String {
                 std::io::ErrorKind::TimedOut | std::io::ErrorKind::WouldBlock
             )
         });
+        unavailable |= cause.downcast_ref::<std::io::Error>().is_some_and(|io| {
+            matches!(
+                io.kind(),
+                std::io::ErrorKind::ConnectionRefused
+                    | std::io::ErrorKind::ConnectionReset
+                    | std::io::ErrorKind::ConnectionAborted
+                    | std::io::ErrorKind::UnexpectedEof
+            )
+        });
         source = cause.source();
     }
     let (code, remedy) = if timeout {
         ("RPC_TIMEOUT", "The host exceeded the request deadline. Check its status before retrying an action; its outcome is unknown.")
+    } else if unavailable {
+        ("RPC_HOST_UNAVAILABLE", "The host connection closed or refused the request. The host may be restarting or the SSH tunnel may be down. Reconnect before retrying an action; its outcome is unknown.")
     } else {
         match error.kind() {
             ureq::ErrorKind::Dns => ("RPC_DNS", "The machine address could not be resolved. Check the saved connection address."),
@@ -1657,6 +1777,28 @@ mod tests {
         ] {
             assert!(super::supported_remote_method(method));
         }
+    }
+    #[test]
+    fn interrupted_diagnostics_include_only_known_actions_and_no_credentials() {
+        let params =
+            serde_json::json!({"command":"read_text_file","path":"secret-path","token":"secret"});
+        let operation = super::rpc_operation("workspace.run", &params);
+        assert_eq!(operation, "workspace.run:read_text_file");
+        assert_eq!(
+            super::rpc_operation("workspace.run", &serde_json::json!({"command":"secret"})),
+            "workspace.run"
+        );
+        let error = ureq::Error::from(std::io::Error::new(
+            std::io::ErrorKind::ConnectionReset,
+            "https://user:secret@host",
+        ));
+        let ureq::Error::Transport(error) = error else {
+            panic!("Expected transport error")
+        };
+        let message = super::rpc_transport_failure(&error, &operation);
+        assert!(message.contains("RPC_HOST_UNAVAILABLE"));
+        assert!(message.contains("read_text_file"));
+        assert!(!message.contains("secret"));
     }
     #[test]
     fn shared_session_queue_methods_reach_the_host() {

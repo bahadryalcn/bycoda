@@ -1,4 +1,5 @@
 import { SearchInput, SearchInputGroup } from "../../shared/ui/SearchInput";
+import { useRetainedState } from "../../shared/hooks/useRetainedState";
 import {
   memo,
   useCallback,
@@ -122,12 +123,16 @@ function ScopedRuntimeLogsPanel({
   const [notice, setNotice] = useState("");
   const [exporting, setExporting] = useState(false);
   const exportingRef = useRef(false);
-  const [search, setSearch] = useState("");
-  const [source, setSource] = useState<RuntimeLogEntry["source"] | "all">("all");
-  const [sourceIds, setSourceIds] = useState<string[]>([]);
-  const [level, setLevel] = useState("all");
-  const [grouped, setGrouped] = useState(true);
-  const [follow, setFollow] = useState(true);
+  const stateKey = `runtime-logs:${JSON.stringify([cwd, sessionId, hostToolTargetKey(target)])}`;
+  const [search, setSearch] = useRetainedState(`${stateKey}:search`, "");
+  const [source, setSource] = useRetainedState<RuntimeLogEntry["source"] | "all">(
+    `${stateKey}:source`,
+    "all",
+  );
+  const [sourceIds, setSourceIds] = useRetainedState<string[]>(`${stateKey}:source-ids`, []);
+  const [level, setLevel] = useRetainedState(`${stateKey}:level`, "all");
+  const [grouped, setGrouped] = useRetainedState(`${stateKey}:grouped`, true);
+  const [follow, setFollow] = useRetainedState(`${stateKey}:follow`, true);
   const [selected, setSelected] = useState<Set<string>>(() => new Set());
   const alive = useRef(false);
   const pending = useRef(false);

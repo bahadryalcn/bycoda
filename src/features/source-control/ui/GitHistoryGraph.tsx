@@ -1,5 +1,7 @@
 import { errorText } from "../../../shared/lib/errors";
 import { t, useLocale } from "../../../shared/i18n/git";
+import { pathKey } from "../../../shared/lib/paths";
+import { useRetainedState } from "../../../shared/hooks/useRetainedState";
 import {
   useCallback,
   useEffect,
@@ -67,9 +69,6 @@ type Props = {
 
 const HISTORY_PAGE = 200;
 
-/** Remembered across remounts, like the panel height. */
-let graphShowAll = false;
-
 const HEADER_BUTTON =
   "mr-1 grid size-5 shrink-0 place-items-center rounded-md text-content/50 hover:bg-content/8 hover:text-content aria-pressed:bg-content/10 aria-pressed:text-content";
 
@@ -84,10 +83,11 @@ export function GitHistoryGraph({
   useLocale();
   // Commit actions and the wider scope need this computer or a host with `git.actions`.
   const actions = useRemoteSupports(cwd, GIT_ACTIONS) === true;
-  const [showAll, setShowAll] = useState(graphShowAll);
-  const [limit, setLimit] = useState(HISTORY_PAGE);
-  const [searchOpen, setSearchOpen] = useState(false);
-  const [query, setQuery] = useState("");
+  const stateKey = `git-history:${pathKey(cwd)}`;
+  const [showAll, setShowAll] = useRetainedState(`${stateKey}:all`, false);
+  const [limit, setLimit] = useRetainedState(`${stateKey}:limit:${showAll}`, HISTORY_PAGE);
+  const [searchOpen, setSearchOpen] = useRetainedState(`${stateKey}:search`, false);
+  const [query, setQuery] = useRetainedState(`${stateKey}:query`, "");
   const [fullOpen, setFullOpen] = useState(false);
   const [fullCommit, setFullCommit] = useState<GitHistoryCommit | null>(null);
   const [commitMode, setCommitMode] = useState<"changes" | "blame">("changes");
@@ -115,8 +115,6 @@ export function GitHistoryGraph({
     });
   }, [commits, query, searching, rowBySha]);
   const hasMore = commits.length >= limit;
-
-  useEffect(() => setLimit(HISTORY_PAGE), [cwd, showAll]);
 
   const [menu, setMenu] = useState<{
     x: number;
@@ -231,8 +229,7 @@ export function GitHistoryGraph({
       aria-label={t("Show all branches")}
       aria-pressed={showAll}
       onClick={() => {
-        graphShowAll = !showAll;
-        setShowAll(graphShowAll);
+        setShowAll(!showAll);
       }}
       className={HEADER_BUTTON}
     >

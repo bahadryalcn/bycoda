@@ -19,7 +19,9 @@ import { GitChangesPanel } from "./GitChangesPanel";
 import type { HarnessId } from "../../sessions/model/session";
 import type { RepositoryReviewRequest } from "../model/workspaceRepositories";
 import { loadTabGroupLabels, resolveTabGroupLabel } from "../../workspace/model/tabGroups";
-import { projectKey } from "../../../shared/lib/paths";
+import { isEqualOrInside, projectKey } from "../../../shared/lib/paths";
+import { useRetainedState } from "../../../shared/hooks/useRetainedState";
+import { loadRepositorySelection, saveRepositorySelection } from "../model/repositorySelection";
 import { subscribeProjectPathsChanged } from "../../projects/model/recents";
 import type { Worktree } from "../model/worktrees";
 import { Button } from "../../../shared/ui/Button";
@@ -57,16 +59,21 @@ export function WorkspaceSourceControl({
   onOpen: (request: RepositoryReviewRequest) => void;
 }) {
   useLocale();
-  const scope = checkoutSelectionScope(cwd, paths);
+  const scope = checkouts ? checkoutSelectionScope(cwd, paths) : projectKey(cwd);
   // Checkouts: null until the user (or storage) chooses; "" is the explicit "All checkouts".
-  const [selected, setSelected] = useState<string | null>(() =>
-    checkouts ? loadCheckoutSelection(scope) : "",
+  const stateKey = `source-control:${checkouts ? "checkouts" : "repositories"}:${scope}`;
+  const [selected, setSelected] = useRetainedState<string | null>(`${stateKey}:selected`, () =>
+    checkouts ? loadCheckoutSelection(scope) : loadRepositorySelection(scope),
   );
   const choose = (value: string) => {
     setSelected(value);
     if (checkouts) saveCheckoutSelection(scope, value);
+    else saveRepositorySelection(scope, value);
   };
-  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+  const [expanded, setExpanded] = useRetainedState<Record<string, boolean>>(
+    `${stateKey}:expanded`,
+    {},
+  );
   const [savedLabels, setSavedLabels] = useState(loadTabGroupLabels);
   useEffect(() => subscribeProjectPathsChanged(() => setSavedLabels(loadTabGroupLabels())), []);
   const checkout = checkouts ? resolveCheckoutSelection(selected, cwd, paths, worktrees) : "";
@@ -98,11 +105,20 @@ export function WorkspaceSourceControl({
       ),
     ),
   );
+  // A saved submodule may precede discovery. Keep its target while its parent
+  // is loading instead of briefly rendering every repository.
+  const pendingSelection =
+    !checkouts &&
+    selected &&
+    paths.some((path) => isEqualOrInside(selected, path) && modules[path] === undefined)
+      ? selected
+      : "";
   const active = checkouts
     ? checkout
-    : selected === cwd || repositories.includes(selected ?? "")
-      ? (selected ?? "")
-      : "";
+    : selected && projectKey(selected) === projectKey(cwd)
+      ? cwd
+      : (repositories.find((path) => projectKey(path) === projectKey(selected ?? "")) ??
+        pendingSelection);
   const own = (path: string) => {
     const session = checkouts ? sessionCheckout(cwd, paths) : undefined;
     return session
@@ -122,7 +138,7 @@ export function WorkspaceSourceControl({
     onOpenCommit: (commit: GitHistoryCommit, pin?: boolean) =>
       onOpen({ type: "commit", cwd: path, commit, pin }),
   });
-  const plain = singleRepository && repositories.length === 1;
+  const plain = singleRepository && repositories.length === 1 && !pendingSelection;
   return (
     <div
       className="flex h-full min-h-0 flex-1 flex-col overflow-hidden"
@@ -150,6 +166,16 @@ export function WorkspaceSourceControl({
                   label: name(path),
                   keywords: path,
                 })),
+                ...(pendingSelection &&
+                !repositories.some((path) => projectKey(path) === projectKey(pendingSelection))
+                  ? [
+                      {
+                        value: pendingSelection,
+                        label: name(pendingSelection),
+                        keywords: pendingSelection,
+                      },
+                    ]
+                  : []),
                 ...(!checkouts && !repositories.includes(cwd)
                   ? [{ value: cwd, label: `${name(cwd)} · ${t("Workspace")}` }]
                   : []),
@@ -229,8 +255,9 @@ export function WorkspaceSourceControl({
               embedded
               repository={{
                 name: name(path),
-                expanded: expanded[path],
-                onToggle: (value) => setExpanded((current) => ({ ...current, [path]: value })),
+                expanded: expanded[projectKey(path)],
+                onToggle: (value) =>
+                  setExpanded((current) => ({ ...current, [projectKey(path)]: value })),
               }}
               {...callbacks(path)}
             />

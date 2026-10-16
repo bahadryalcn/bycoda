@@ -5,6 +5,7 @@ export default defineConfig({
   outputDir: "./temp/test-results/browser",
   // The full Composer is tested with its bundled fixture config.
   testIgnore: [
+    "subagent-relay.spec.ts",
     "git-checkouts.spec.ts",
     "composer-extras.spec.ts",
     "social.spec.ts",

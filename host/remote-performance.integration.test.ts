@@ -538,3 +538,74 @@ it("releases a disconnected long poll without blocking the command lane", async 
   await vi.waitFor(() => expect(s.send).toHaveBeenCalledTimes(1));
   s.finish();
 });
+
+it("wakes machine readers on store writes and inlines only bounded opted-in deltas", async () => {
+  const s = await setup();
+  const created = s.engine.command({
+    type: "create",
+    commandId: "inline-create",
+    projectId: s.project.id,
+    harness: "codex",
+    model: "codex:test",
+    runtimeMode: "supervised",
+  });
+  const known = s.store.session(created.sessionId);
+  const initial = (
+    await s.call("machine.changes", {
+      sessions: [{ sessionId: created.sessionId, revision: known.revision }],
+      projects: [],
+    })
+  ).value.result;
+  const params = {
+    instanceId: initial.instanceId,
+    sessions: [{ sessionId: created.sessionId, revision: known.revision }],
+    projects: [],
+    inlineSync: true,
+    waitMs: 5000,
+  };
+  const pending = s.call("machine.changes", params);
+  await new Promise((resolve) => setTimeout(resolve, 25));
+  const started = performance.now();
+  s.store.transaction(() =>
+    s.store.save(
+      {
+        ...known,
+        revision: known.revision + 1,
+        session: {
+          ...known.session,
+          blocks: [{ id: "inline-block", role: "assistant", text: "inline text" }],
+        },
+      },
+      { type: "fixture" },
+    ),
+  );
+  // Host-created sessions also have a desktop mirror; that is not ownership.
+  expect(s.store.sessionStateMetadata(created.sessionId)?.desktop).toBe(true);
+  expect(s.store.sync(created.sessionId, known.revision).kind).toBe("delta");
+  const changed = (await pending).value.result;
+  expect(changed.reset).toBe(false);
+  expect(performance.now() - started).toBeLessThan(500);
+  expect(changed.sessions[0].sync).toMatchObject({ kind: "delta", base: known.revision });
+  expect(applySessionSync(known, changed.sessions[0].sync).session.blocks[0].text).toBe(
+    "inline text",
+  );
+  const legacy = (await s.call("machine.changes", { ...params, inlineSync: false, waitMs: 0 }))
+    .value.result;
+  expect(legacy.sessions[0].sync).toBeUndefined();
+  const small = s.store.session(created.sessionId);
+  s.store.transaction(() =>
+    s.store.save(
+      {
+        ...small,
+        revision: small.revision + 1,
+        session: {
+          ...small.session,
+          blocks: [{ id: "inline-block", role: "assistant", text: "x".repeat(70000) }],
+        },
+      },
+      { type: "fixture" },
+    ),
+  );
+  const large = (await s.call("machine.changes", { ...params, waitMs: 0 })).value.result;
+  expect(large.sessions[0].sync).toBeUndefined();
+});

@@ -14,6 +14,7 @@ import {
   type PointerEvent as ReactPointerEvent,
 } from "react";
 import { Composer } from "./Composer";
+import type { NewSessionOptions } from "../model/newSessionCommand";
 import "./session-notes-layout.css";
 import { ProjectQuickActions } from "../../projects/ui/ProjectQuickActions";
 import type { ProjectAction } from "../../projects/model/projectActions";
@@ -71,6 +72,7 @@ import { ActivityDock } from "./ActivityDock";
 import { InterruptedNotice } from "./InterruptedNotice";
 import { CONTINUE_PROMPT } from "../model/inFlight";
 import { SubagentSheet, useSubagentSheet } from "./SubagentSheet";
+import { useSubagentRelay } from "./useSubagentRelay";
 import { isBackgroundOnly, type DockAgent } from "../model/activityDock";
 import { requestOpenSubagent, requestViewSubagent } from "./subagentFocus";
 import { AgentTranscript } from "./AgentTranscript";
@@ -175,7 +177,7 @@ export type SessionPaneProps = {
   onRemoveDraft: (sessionId: string, draftBlockId: string) => boolean | void;
   onStop: (sessionId: string) => void;
   onCompactContext: (sessionId: string) => boolean;
-  onNewSession?: (sessionId: string) => void;
+  onNewSession?: (sessionId: string, options?: NewSessionOptions) => void;
   /** Open the picker of conversations Claude Code stored for this project. */
   onResumeProviderSession?: (sessionId: string) => void;
   onPlaceSessionInFolder: (sessionId: string, target: SessionFolderTarget) => void;
@@ -789,6 +791,17 @@ const LocalSessionPane = memo(function LocalSessionPane({
     },
   );
   const composerBtwCommand = useStableCallback(btw.openWith);
+  const subagentRelayBlockedReason =
+    sendBlockedReason ||
+    (managed || remote || session.inboxAsk || session.worktreeRemoved || editingLastTurn
+      ? t("Messaging is unavailable in this conversation.")
+      : undefined);
+  const subagentRelay = useSubagentRelay({
+    sessionId: session.id,
+    block: subagentSheet.block,
+    blocked: !!subagentRelayBlockedReason,
+    onSubmit: (text, options) => onSubmit(session.id, text, [], options),
+  });
   const composerStop = useStableCallback(() => onStop(session.id));
   const composerCompactContext = useStableCallback(() => onCompactContext(session.id));
   const composerPlaceInFolder = useStableCallback((target: SessionFolderTarget) =>
@@ -1121,7 +1134,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
       onBtwCommand={composerBtwCommand}
       onStop={composerStop}
       onCompactContext={composerCompactContext}
-      onNewSession={onNewSession ? () => onNewSession(session.id) : undefined}
+      onNewSession={onNewSession ? (options) => onNewSession(session.id, options) : undefined}
       onPlaceInFolder={composerPlaceInFolder}
       onResumeProviderSession={composerResumeProviderSession}
       queuedMessages={session.queuedMessages}
@@ -1508,6 +1521,14 @@ const LocalSessionPane = memo(function LocalSessionPane({
             busy={!!session.busy}
             visible={visible}
             cwd={workCwd}
+            relay={{
+              ...subagentRelay,
+              blockedReason: subagentRelayBlockedReason,
+              onOpenConversation: () => {
+                closeSubagentSheet();
+                jumpToBottomRef.current?.();
+              },
+            }}
             onClose={closeSubagentSheet}
             onStop={
               perItemStop && subagentSheet.block.tool?.callId

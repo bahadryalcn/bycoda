@@ -845,7 +845,7 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
     id: "follow-up",
     section: "chat",
     get label() {
-      return t("Follow-up behavior");
+      return t("Sending while working");
     },
     keywords: "queue steer interrupt send while running",
   },
@@ -1466,9 +1466,6 @@ export function saveSettingsSection(id: SettingsSectionId) {
   }
 }
 
-const FOLLOW_UP_BEHAVIOR_KEY = "bycoda.followUpBehavior";
-const FOLLOW_UP_BEHAVIOR_CHANGE_EVENT = "bycoda:follow-up-behavior-change";
-
 const COMPOSER_EFFORT_VISIBLE_KEY = "bycoda.composerEffortVisible";
 
 const MODEL_CONTROLS_KEY = "bycoda.modelControls";
@@ -1480,34 +1477,6 @@ const TAB_ANIMATIONS_ENABLED_KEY = "bycoda.tabAnimationsEnabled";
 const COLLAPSED_PROJECT_RAIL_MODE_KEY = "bycoda.collapsedProjectRailMode";
 
 export type FollowUpBehavior = "steer" | "queue";
-
-export const FOLLOW_UP_BEHAVIOR_DEFAULT: FollowUpBehavior = "steer";
-
-export function loadFollowUpBehavior(): FollowUpBehavior {
-  try {
-    const raw = localStorage.getItem(FOLLOW_UP_BEHAVIOR_KEY);
-    return raw === "queue" || raw === "steer" ? raw : FOLLOW_UP_BEHAVIOR_DEFAULT;
-  } catch {
-    return FOLLOW_UP_BEHAVIOR_DEFAULT;
-  }
-}
-
-export function saveFollowUpBehavior(value: FollowUpBehavior) {
-  try {
-    localStorage.setItem(FOLLOW_UP_BEHAVIOR_KEY, value);
-  } catch {
-    // private mode / quota
-  }
-  if (typeof window !== "undefined") {
-    window.dispatchEvent(new Event(FOLLOW_UP_BEHAVIOR_CHANGE_EVENT));
-  }
-}
-
-export function subscribeFollowUpBehavior(onStoreChange: () => void) {
-  if (typeof window === "undefined") return () => {};
-  window.addEventListener(FOLLOW_UP_BEHAVIOR_CHANGE_EVENT, onStoreChange);
-  return () => window.removeEventListener(FOLLOW_UP_BEHAVIOR_CHANGE_EVENT, onStoreChange);
-}
 
 export type FileTabMode = "pane" | "workspace";
 

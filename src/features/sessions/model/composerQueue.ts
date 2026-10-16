@@ -2,6 +2,7 @@ import { consumeBtwCommand } from "./btw";
 import { isCompactCommand } from "./compact";
 import { consumeDraftCommand } from "./draftCommand";
 import { isMcpCommand } from "./mcpCommand";
+import { isClearSessionCommand, isNewSessionCommand } from "./newSessionCommand";
 import { isSessionFolderCommand } from "./sessionFolderCommand";
 
 export const QUEUE_MESSAGE_COMMAND = "Composer: Queue Message";
@@ -22,7 +23,7 @@ export function isDefaultQueueChord(event: {
  * key over while a turn is genuinely running and there is a message to queue;
  * in every other state the press is left alone, so Shift+Tab keeps moving focus
  * backwards. Commands handled inside the composer (/btw, /compact, /mcp,
- * /folder, /draft) are not messages, so they are never queued.
+ * /folder, /draft, /new, /clear) are not messages, so they are never queued.
  */
 export function queueShortcutApplies(input: {
   busy: boolean;
@@ -45,6 +46,8 @@ export function queueShortcutApplies(input: {
     consumeBtwCommand(text).matched ||
     consumeDraftCommand(text).matched ||
     isCompactCommand(text) ||
+    isClearSessionCommand(text) ||
+    isNewSessionCommand(text) ||
     isMcpCommand(text) ||
     isSessionFolderCommand(text)
   );

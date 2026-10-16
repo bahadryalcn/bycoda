@@ -1,4 +1,5 @@
 import { TextField } from "../../../shared/ui/TextField";
+import { useRetainedState } from "../../../shared/hooks/useRetainedState";
 import { Button } from "../../../shared/ui/Button";
 import { Popover } from "../../../shared/ui/Popover";
 import styles from "./ShortcutSettings.module.css";
@@ -274,9 +275,9 @@ export function KeybindingShortcutEditor({
 export function KeybindingsPage() {
   const locale = useLocale();
   const revealed = useContext(RevealedSetting);
-  const [query, setQuery] = useState("");
-  const [category, setCategory] = useState("all");
-  const [status, setStatus] = useState("all");
+  const [query, setQuery] = useRetainedState("keybindings:query", "");
+  const [category, setCategory] = useRetainedState("keybindings:category", "all");
+  const [status, setStatus] = useRetainedState("keybindings:status", "all");
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
   const filterAnchor = useRef<HTMLButtonElement>(null);

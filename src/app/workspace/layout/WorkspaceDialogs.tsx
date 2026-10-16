@@ -101,6 +101,7 @@ export interface WorkspacePickerDialogsProps {
   onSessionsImported: () => void;
   onboardingContext: ComponentProps<typeof OnboardingHost>["context"];
   onSelectProject: ComponentProps<typeof OnboardingHost>["onOpenProject"];
+  projectCwd: string;
   remoteProjectDialogOpen: boolean;
   setRemoteProjectDialogOpen: Dispatch<SetStateAction<boolean>>;
   nameConflicts: AutoNamedProject[];
@@ -141,6 +142,7 @@ export function WorkspacePickerDialogs({
   onSessionsImported,
   onboardingContext,
   onSelectProject,
+  projectCwd,
   remoteProjectDialogOpen,
   setRemoteProjectDialogOpen,
   nameConflicts,
@@ -174,6 +176,7 @@ export function WorkspacePickerDialogs({
         context={onboardingContext}
         onImported={onSessionsImported}
         onOpenProject={onSelectProject}
+        projectCwd={projectCwd}
       />
       {remoteProjectDialogOpen ? (
         <AddRemoteProjectDialog

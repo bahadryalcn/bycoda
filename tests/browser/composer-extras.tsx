@@ -3,7 +3,6 @@ import { createRoot } from "react-dom/client";
 import { Composer } from "../../src/features/sessions/ui/Composer";
 import { SessionAgentIdentity } from "../../src/features/sessions/ui/SessionAgentIdentity";
 import { ActivityDock } from "../../src/features/sessions/ui/ActivityDock";
-import { saveFollowUpBehavior } from "../../src/features/settings/model/settings";
 import { registerHarness } from "../../src/integrations/harness/core/registry";
 import { EmptySession } from "../../src/features/sessions/ui/EmptySession";
 import { Shimmer } from "../../src/shared/ui/Shimmer";
@@ -228,8 +227,12 @@ function Fixture() {
             <button onClick={() => setDisabled((v) => !v)}>Toggle disabled</button>
             {chatLayout ? (
               <>
-                <button onClick={() => saveFollowUpBehavior("queue")}>Use queue</button>
-                <button onClick={() => saveFollowUpBehavior("steer")}>Use steer</button>
+                <button onClick={() => localStorage.setItem("bycoda.followUpBehavior", "queue")}>
+                  Use queue
+                </button>
+                <button onClick={() => localStorage.setItem("bycoda.followUpBehavior", "steer")}>
+                  Use steer
+                </button>
               </>
             ) : null}
           </div>

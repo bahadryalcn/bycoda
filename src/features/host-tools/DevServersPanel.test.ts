@@ -2,6 +2,7 @@
 import { act, createElement, StrictMode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { resetRetainedState } from "../../shared/hooks/useRetainedState";
 import { DevServersPanel } from "./DevServersPanel";
 import { hostFeatureRequest } from "../connections/model/hostFeatureClient";
 import type { DevServer, DevServerDetails } from "./devServerTypes";
@@ -55,6 +56,7 @@ const setInput = (label: string, value: string) => {
   input.dispatchEvent(new Event("input", { bubbles: true }));
 };
 beforeEach(() => {
+  resetRetainedState();
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   vi.useFakeTimers();
   details = {
@@ -102,13 +104,16 @@ it("groups ports by process and discloses uncertain project association and unav
   expect(container.textContent).toContain("Logs are unavailable for this external process.");
 });
 
-it.each(["Process details", "Stop", "Restart"])("reveals the selected controls after clicking %s", async (label) => {
-  await mount();
-  await act(async () => button(label).click());
-  expect(document.activeElement).toBe(container.querySelector(".dev-server-details"));
-  if (label === "Stop") expect(button("Confirm graceful stop")).toBeDefined();
-  if (label === "Restart") expect(button("Confirm restart")).toBeDefined();
-});
+it.each(["Process details", "Stop", "Restart"])(
+  "reveals the selected controls after clicking %s",
+  async (label) => {
+    await mount();
+    await act(async () => button(label).click());
+    expect(document.activeElement).toBe(container.querySelector(".dev-server-details"));
+    if (label === "Stop") expect(button("Confirm graceful stop")).toBeDefined();
+    if (label === "Restart") expect(button("Confirm restart")).toBeDefined();
+  },
+);
 
 it("reveals a failed process request and restores the row after a failed stop", async () => {
   await mount();
@@ -125,12 +130,16 @@ it("reveals a failed process request and restores the row after a failed stop", 
 
 it("shares the chosen server address including its IPv6 loopback", async () => {
   vi.mocked(hostFeatureRequest).mockResolvedValueOnce({
-    status: "ok", servers: [{ ...server, endpoints: [server.endpoints[1]] }], scannedAt: 1,
+    status: "ok",
+    servers: [{ ...server, endpoints: [server.endpoints[1]] }],
+    scannedAt: 1,
   });
   await mount();
   const share = await menuItem("Share server");
   await act(async () => share.click());
-  expect(container.querySelector("[data-sharing-url]")?.getAttribute("data-sharing-url")).toBe("http://[::1]:4101/");
+  expect(container.querySelector("[data-sharing-url]")?.getAttribute("data-sharing-url")).toBe(
+    "http://[::1]:4101/",
+  );
 });
 
 it("distinguishes an empty successful scan from a failed scan", async () => {

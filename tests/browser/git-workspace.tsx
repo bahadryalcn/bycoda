@@ -80,8 +80,11 @@ Object.assign(window, {
     transformCallback: () => 1,
     invoke: async (command: string, args: Record<string, unknown> = {}) => {
       calls.push({ command, args });
-      if (command === "git_submodules")
+      if (command === "git_submodules") {
+        if (new URLSearchParams(location.search).has("slow-discovery"))
+          await new Promise((resolve) => setTimeout(resolve, 500));
         return submodules && args.cwd === "/fixture" ? ["core-pack", "core-pack/nested"] : [];
+      }
       if (command === "git_worktrees")
         return { worktrees: [checkoutTrees["/fixture"]], defaultRoot: "/trees" };
       if (submodules && ["git_stage_all", "git_unstage_all", "git_commit"].includes(command)) {
@@ -271,51 +274,62 @@ const checkoutTrees: Record<string, Worktree> = Object.fromEntries(
     ],
   ),
 );
-createRoot(document.getElementById("root")!).render(
-  <div
-    // Browser fixtures are excluded from Tailwind scanning; constrain the viewport explicitly.
-    style={{ height: "100vh" }}
-    className={
-      new URLSearchParams(location.search).has("checkouts")
-        ? "w-full max-w-[520px] border-r border-stroke"
-        : "w-80 border-r border-stroke"
-    }
-  >
-    {submodules ? (
-      <SourceControl
-        cwd="/fixture"
-        enabled
-        onOpenRepository={(request) => calls.push({ command: "fixture.open", args: request })}
-        onOpenFile={() => {}}
-        onOpenAllChanges={() => {}}
-        onOpenCommit={() => {}}
-      />
-    ) : new URLSearchParams(location.search).has("checkouts") ||
-      new URLSearchParams(location.search).has("repositories") ? (
-      <WorkspaceSourceControl
-        cwd="/fixture"
-        paths={Object.keys(checkoutTrees)}
-        worktrees={checkoutTrees}
-        labels={Object.fromEntries(
-          Object.values(checkoutTrees).map((tree) => [
-            tree.path,
-            `${tree.branch ?? "Detached"} · ${tree.path}`,
-          ]),
-        )}
-        checkouts={new URLSearchParams(location.search).has("checkouts")}
-        enabled
-        onOpen={() => {}}
-      />
-    ) : (
-      <GitHistoryGraph
-        cwd="/fixture"
-        enabled
-        expanded
-        onToggleExpanded={() => {}}
-        onOpenCommit={() => {
-          throw new Error("Workspace selections must stay in the graph");
-        }}
-      />
-    )}
-  </div>,
-);
+const root = createRoot(document.getElementById("root")!);
+const renderFixture = () =>
+  root.render(
+    <div
+      // Browser fixtures are excluded from Tailwind scanning; constrain the viewport explicitly.
+      style={{ height: "100vh" }}
+      className={
+        new URLSearchParams(location.search).has("checkouts")
+          ? "w-full max-w-[520px] border-r border-stroke"
+          : "w-80 border-r border-stroke"
+      }
+    >
+      {submodules ? (
+        <SourceControl
+          cwd="/fixture"
+          enabled
+          onOpenRepository={(request) => calls.push({ command: "fixture.open", args: request })}
+          onOpenFile={() => {}}
+          onOpenAllChanges={() => {}}
+          onOpenCommit={() => {}}
+        />
+      ) : new URLSearchParams(location.search).has("checkouts") ||
+        new URLSearchParams(location.search).has("repositories") ? (
+        <WorkspaceSourceControl
+          cwd="/fixture"
+          paths={Object.keys(checkoutTrees)}
+          worktrees={checkoutTrees}
+          labels={Object.fromEntries(
+            Object.values(checkoutTrees).map((tree) => [
+              tree.path,
+              `${tree.branch ?? "Detached"} · ${tree.path}`,
+            ]),
+          )}
+          checkouts={new URLSearchParams(location.search).has("checkouts")}
+          enabled
+          onOpen={() => {}}
+        />
+      ) : (
+        <GitHistoryGraph
+          cwd="/fixture"
+          enabled
+          expanded
+          onToggleExpanded={() => {}}
+          onOpenCommit={() => {
+            throw new Error("Workspace selections must stay in the graph");
+          }}
+        />
+      )}
+    </div>,
+  );
+Object.assign(window, {
+  // Model leaving and returning to the sidebar without navigating the document.
+  gitFixtureRemount: async () => {
+    root.render(null);
+    await new Promise((resolve) => requestAnimationFrame(resolve));
+    renderFixture();
+  },
+});
+renderFixture();

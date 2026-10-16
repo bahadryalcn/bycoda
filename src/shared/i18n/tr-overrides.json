@@ -952,5 +952,12 @@
   "Explorer": "Dosya gezgini",
   "Short cues for project activity, finished turns and available updates. Choose categories under Project notifications below.": "Proje etkinlikleri, tamamlanan yanıtlar ve güncellemeler için kısa sesler. Kategorileri aşağıdaki Proje bildirimleri bölümünden seçin.",
   "Archive settings": "Arşiv",
-  "Password is set": "Şifre ayarlandı"
+  "Password is set": "Şifre ayarlandı",
+  "Message for {p0}": "{p0} için mesaj",
+  "Via the main agent. Delivery depends on provider support; replies appear in the main conversation.": "Ana ajan üzerinden iletilir. Teslim, sağlayıcı desteğine bağlıdır; yanıtlar ana konuşmada görünür.",
+  "Request added to the main conversation. Delivery is not yet confirmed.": "İstek ana konuşmaya eklendi. Teslim henüz doğrulanmadı.",
+  "Request was not accepted. Your message is kept here; try again.": "İstek kabul edilmedi. Mesajınız burada saklanıyor; tekrar deneyin.",
+  "Open main conversation": "Ana konuşmayı aç",
+  "Relay via main agent": "Ana ajan üzerinden ilet",
+  "Messaging is unavailable in this conversation.": "Bu konuşmada mesaj gönderilemiyor."
 }

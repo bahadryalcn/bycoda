@@ -3,6 +3,7 @@ import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { WorkspaceSourceControl } from "./WorkspaceSourceControl";
+import { resetRetainedState } from "../../../shared/hooks/useRetainedState";
 import type { Worktree } from "../model/worktrees";
 import { saveWorkspaceProjectNames } from "../../workspace/model/tabGroups";
 import { OPEN_WORKTREE_MANAGEMENT } from "../model/worktreeManagement";
@@ -74,6 +75,7 @@ let host: HTMLDivElement;
 let root: Root;
 const opened = vi.fn();
 beforeEach(() => {
+  resetRetainedState();
   localStorage.clear();
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   opened.mockClear();
@@ -107,6 +109,69 @@ const choose = async (path: string) =>
     select.value = path;
     select.dispatchEvent(new Event("change", { bubbles: true }));
   });
+const remount = async () => {
+  await act(async () => root.unmount());
+  root = createRoot(host);
+};
+
+it("restores repository choice immediately after session navigation and app reload", async () => {
+  await render();
+  await choose("/wallet/mobile");
+  await remount();
+  await render();
+  expect(host.querySelector("select")!.value).toBe("/wallet/mobile");
+  expect(host.querySelectorAll("section")).toHaveLength(1);
+  await remount();
+  resetRetainedState();
+  await render();
+  expect(host.querySelector("select")!.value).toBe("/wallet/mobile");
+  await choose("");
+  await remount();
+  resetRetainedState();
+  await render();
+  expect(host.querySelector("select")!.value).toBe("");
+});
+
+it("keeps a selected submodule while discovery is pending and uses confirmed removal as fallback", async () => {
+  discovery.modules = { "/wallet/api": ["/wallet/api/core-pack"] };
+  await render();
+  await choose("/wallet/api/core-pack");
+  await remount();
+  discovery.modules = {};
+  await render();
+  expect(host.querySelector("select")!.value).toBe("/wallet/api/core-pack");
+  expect(host.querySelectorAll("section")).toHaveLength(1);
+  expect(host.querySelector("section")!.dataset.cwd).toBe("/wallet/api/core-pack");
+  discovery.modules = { "/wallet/api": [] };
+  await render();
+  expect(host.querySelector("select")!.value).toBe("");
+});
+
+it("retains row expansion and isolates choices when the same panel changes workspace", async () => {
+  await render();
+  await act(async () =>
+    host.querySelector<HTMLButtonElement>('[data-cwd="/wallet/api"] button')!.click(),
+  );
+  await choose("/wallet/mobile");
+  await act(async () =>
+    root.render(
+      createElement(WorkspaceSourceControl, {
+        cwd: "/other",
+        paths: ["/other/api", "/other/ui"],
+        enabled: true,
+        onOpen: opened,
+      }),
+    ),
+  );
+  expect(host.querySelector("select")!.value).toBe("");
+  await choose("/other/ui");
+  await render();
+  expect(host.querySelector("select")!.value).toBe("/wallet/mobile");
+  await choose("");
+  expect(host.querySelector('[data-cwd="/wallet/api"] button')!.getAttribute("aria-expanded")).toBe(
+    "true",
+  );
+});
 it("uses workspace aliases for repository rows and selection, preserving same-name paths", async () => {
   const paths = ["/wallet/pf-account/srv", "/wallet/pf-payment/srv"];
   saveWorkspaceProjectNames(paths, {

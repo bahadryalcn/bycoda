@@ -1,4 +1,6 @@
 import { SearchInput } from "../../../shared/ui/SearchInput";
+import { useRetainedState } from "../../../shared/hooks/useRetainedState";
+import { pathKey } from "../../../shared/lib/paths";
 import { useState } from "react";
 import { t, useLocale } from "../../../shared/i18n/git";
 import { Check, GitBranch, MoreHorizontal, Plus } from "../../../shared/ui/icons";
@@ -40,7 +42,7 @@ export function GitGraphBranches({
     true,
     read,
   );
-  const [query, setQuery] = useState("");
+  const [query, setQuery] = useRetainedState(`git-branches:${pathKey(cwd)}:query`, "");
   const [menu, setMenu] = useState<{
     branch: GitBranchInfo;
     anchor: HTMLElement;

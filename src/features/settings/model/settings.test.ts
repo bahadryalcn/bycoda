@@ -11,7 +11,6 @@ import {
   DIFF_VIEWER_DEFAULT,
   FORMAT_ON_SAVE_DEFAULT,
   FILE_TAB_MODE_DEFAULT,
-  FOLLOW_UP_BEHAVIOR_DEFAULT,
   CREW_SCENE_ENABLED_DEFAULT,
   KEYBINDINGS,
   LIVE_AGENTS_ENABLED_DEFAULT,
@@ -24,7 +23,6 @@ import {
   loadKeybindingOverrides,
   loadFormatOnSave,
   loadFileTabMode,
-  loadFollowUpBehavior,
   loadCrewSceneEnabled,
   loadLiveAgentsEnabled,
   loadNotesEnabled,
@@ -40,7 +38,6 @@ import {
   saveDiffViewer,
   saveFormatOnSave,
   saveFileTabMode,
-  saveFollowUpBehavior,
   saveCrewSceneEnabled,
   saveLiveAgentsEnabled,
   saveNotesEnabled,
@@ -69,31 +66,8 @@ const DIFF_LAYOUT_KEY = "bycoda.diffLayout";
 const FORMAT_ON_SAVE_KEY = "bycoda.formatOnSave";
 const AUTOSAVE_KEY = "bycoda.autosave";
 const FILE_TAB_MODE_KEY = "bycoda.fileTabMode";
-const FOLLOW_UP_BEHAVIOR_KEY = "bycoda.followUpBehavior";
 const TAB_ANIMATIONS_KEY = "bycoda.tabAnimationsEnabled";
 const COLLAPSED_PROJECT_RAIL_MODE_KEY = "bycoda.collapsedProjectRailMode";
-
-describe("follow-up behavior setting", () => {
-  beforeEach(mockLocalStorage);
-  afterEach(() => {
-    localStorage.removeItem(FOLLOW_UP_BEHAVIOR_KEY);
-  });
-
-  it("defaults to steer", () => {
-    expect(FOLLOW_UP_BEHAVIOR_DEFAULT).toBe("steer");
-    expect(loadFollowUpBehavior()).toBe("steer");
-  });
-
-  it("persists queue behavior", () => {
-    saveFollowUpBehavior("queue");
-    expect(loadFollowUpBehavior()).toBe("queue");
-  });
-
-  it("ignores unknown stored values", () => {
-    localStorage.setItem(FOLLOW_UP_BEHAVIOR_KEY, "interrupt");
-    expect(loadFollowUpBehavior()).toBe("steer");
-  });
-});
 
 function mockLocalStorage() {
   const data = new Map<string, string>();
@@ -713,7 +687,7 @@ describe("settings search", () => {
       section: "chat",
       sectionLabel: "Chat",
       settingId: "follow-up",
-      label: "Follow-up behavior",
+      label: "Sending while working",
     });
 
     expect(searchSettings("prettier")[0]).toMatchObject({

@@ -40,6 +40,13 @@
   overflow-wrap: anywhere;
   text-wrap: balance;
 }
+.bycoda-empty .bycoda-entry-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--space-2);
+  margin-block-start: var(--space-3);
+}
 .bycoda-entry-composer {
   position: relative;
   min-inline-size: 0;

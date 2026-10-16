@@ -1,4 +1,6 @@
 import { TextField } from "../../../shared/ui/TextField";
+import { useRetainedState } from "../../../shared/hooks/useRetainedState";
+import { pathKey } from "../../../shared/lib/paths";
 import { Button } from "../../../shared/ui/Button";
 import { NoteMarkdownEditor } from "../../notes/ui/NoteMarkdownEditor";
 import type { EditorView } from "@codemirror/view";
@@ -143,7 +145,7 @@ export function SkillsPage({ cwd, header }: { cwd: string; header?: ReactNode })
     skill: DiscoveredSkill;
     anchor: HTMLElement;
   } | null>(null);
-  const [query, setQuery] = useState("");
+  const [query, setQuery] = useRetainedState(`skills:${pathKey(cwd)}:query`, "");
   const [actionsMenu, setActionsMenu] = useState<{
     skill: DiscoveredSkill;
     machine: Machine | null;

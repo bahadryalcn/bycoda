@@ -224,17 +224,60 @@ describe("Shift+Tab queues while a turn runs", () => {
     expect(onSubmit).not.toHaveBeenCalled();
   });
 
-  it("leaves Enter to the follow-up setting", async () => {
+  it.each([false, true])(
+    "steers despite the queue preference (remote=%s)",
+    async (remoteSession) => {
+      localStorage.setItem("bycoda.followUpBehavior", "queue");
+      const onSubmit = vi.fn(() => true);
+      const textarea = await renderComposer(
+        {
+          busy: true,
+          remoteSession,
+          remoteFeatures: { attachments: true, plan: true, draft: true, steer: true },
+        },
+        onSubmit,
+      );
+      await type(textarea, "go on");
+      press(textarea, { key: "Enter", code: "Enter" });
+      await act(async () => {});
+      expect(onSubmit).toHaveBeenCalledWith(
+        "go on",
+        [],
+        expect.objectContaining({ followUpBehavior: "steer" }),
+      );
+    },
+  );
+
+  it("separates Send, Queue and Stop clicks while retaining a draft on Stop", async () => {
+    localStorage.setItem("bycoda.followUpBehavior", "queue");
     const onSubmit = vi.fn(() => true);
-    const textarea = await renderComposer({ busy: true }, onSubmit);
-    await type(textarea, "go on");
-    press(textarea, { key: "Enter", code: "Enter" });
-    await act(async () => {});
-    expect(onSubmit).toHaveBeenCalledWith(
-      "go on",
-      [],
-      expect.not.objectContaining({ followUpBehavior: "queue" }),
+    const onStop = vi.fn();
+    const textarea = await renderComposer({ busy: true, onStop }, onSubmit);
+    await type(textarea, "send now");
+    await act(async () =>
+      container.querySelector<HTMLButtonElement>('[aria-label="Send"]')!.click(),
     );
+    expect(onSubmit).toHaveBeenLastCalledWith(
+      "send now",
+      [],
+      expect.objectContaining({ followUpBehavior: "steer" }),
+    );
+    await type(textarea, "send later");
+    await act(async () =>
+      container.querySelector<HTMLButtonElement>('[aria-label="Queue message"]')!.click(),
+    );
+    expect(onSubmit).toHaveBeenLastCalledWith(
+      "send later",
+      [],
+      expect.objectContaining({ followUpBehavior: "queue" }),
+    );
+    await type(textarea, "keep this draft");
+    await act(async () =>
+      container.querySelector<HTMLButtonElement>('[aria-label="Stop"]')!.click(),
+    );
+    expect(onStop).toHaveBeenCalledTimes(1);
+    expect(onSubmit).toHaveBeenCalledTimes(2);
+    expect(textarea.value).toBe("keep this draft");
   });
 });
 
@@ -256,10 +299,31 @@ describe("ComposerAction queue entry", () => {
     expect(html).toContain('aria-label="Queue message"');
     expect(html).toContain("(Shift+Tab)");
     expect(html).toContain('aria-label="Send"');
+    expect(html).toContain('aria-label="Stop"');
   });
 
   it("omits Queue when queueing does not apply", () => {
     expect(render(undefined)).not.toContain("Queue message");
+  });
+
+  it("keeps Stop available when sending is disabled during a turn", () => {
+    const html = renderToStaticMarkup(
+      createElement(ComposerAction, {
+        busy: true,
+        disabled: true,
+        hasValue: true,
+        allowBusySubmit: true,
+        onSend: vi.fn(),
+        onQueue: vi.fn(),
+        onStop: vi.fn(),
+        stopShortcut: "Ctrl+.",
+      }),
+    );
+    expect(html).toContain('aria-label="Stop"');
+    expect(html).toContain('title="Stop (Ctrl+.)"');
+    expect(html).not.toContain('aria-label="Send"');
+    expect(html).not.toContain('aria-label="Queue message"');
+    expect(html).not.toContain("disabled");
   });
 });
 

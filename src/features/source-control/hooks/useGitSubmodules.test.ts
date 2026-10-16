@@ -2,7 +2,7 @@
 import { act, createElement, useLayoutEffect } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { useGitSubmodules } from "./useGitSubmodules";
+import { resetGitSubmoduleCache, useGitSubmodules } from "./useGitSubmodules";
 
 const bridge = vi.hoisted(() => ({ invoke: vi.fn(), subscribe: vi.fn(() => () => {}) }));
 vi.mock("../../../platform/tauri/fs", () => ({
@@ -20,6 +20,7 @@ function Harness({ cwd, enabled = true }: { cwd: string; enabled?: boolean }) {
   return createElement("span", null, JSON.stringify(value.modules));
 }
 beforeEach(() => {
+  resetGitSubmoduleCache();
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   bridge.invoke.mockReset();
   bridge.subscribe.mockClear();
@@ -32,6 +33,25 @@ afterEach(async () => {
 });
 const render = (cwd: string, enabled = true) =>
   act(async () => root.render(createElement(Harness, { cwd, enabled })));
+
+it("renders known submodules synchronously on remount while revalidating and survives failed revalidation", async () => {
+  bridge.invoke.mockResolvedValueOnce(["core-pack"]);
+  await render("/repo");
+  await act(async () => root.unmount());
+  root = createRoot(host);
+  let reject!: (reason: Error) => void;
+  bridge.invoke.mockImplementationOnce(
+    () =>
+      new Promise<string[]>((_resolve, no) => {
+        reject = no;
+      }),
+  );
+  await render("/repo");
+  expect(current!.modules["/repo"]).toEqual(["/repo/core-pack"]);
+  await act(async () => reject(new Error("offline")));
+  expect(current!.modules["/repo"]).toEqual(["/repo/core-pack"]);
+  expect(current!.error).toContain("offline");
+});
 
 it("keeps connected-machine identity and last good results on refresh failure or while disabled", async () => {
   bridge.invoke.mockResolvedValueOnce(["core-pack", "core-pack/nested"]);

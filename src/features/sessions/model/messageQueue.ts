@@ -178,7 +178,7 @@ export type FollowUpRoute = "dispatch" | "queue" | "steer";
  * preparing; plan, orchestrate and /operator start their own turn), steered
  * when only background tasks keep the turn open (they may never end, so a
  * queued message would be parked behind them), and otherwise follows
- * `requested` (an explicit per-send choice) or the global `setting`.
+ * `requested` (an explicit per-send choice), defaulting to steer.
  *
  * An explicit "queue" beats the background-task steer unless the agent has
  * truly yielded (`backgroundOnly`), because with the agent still working the
@@ -192,7 +192,6 @@ export function resolveFollowUpRoute(input: {
   backgroundTaskCount: number;
   backgroundOnly: boolean;
   requested?: FollowUpBehavior;
-  setting: FollowUpBehavior;
 }): FollowUpRoute {
   if (!input.busy) return "dispatch";
   if (
@@ -205,5 +204,5 @@ export function resolveFollowUpRoute(input: {
   }
   if (input.requested === "queue" && !input.backgroundOnly) return "queue";
   if (input.backgroundTaskCount > 0) return "steer";
-  return input.requested ?? input.setting;
+  return input.requested ?? "steer";
 }

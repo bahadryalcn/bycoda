@@ -1,15 +1,8 @@
-import {
-  useCallback,
-  type Dispatch,
-  type MutableRefObject,
-  type SetStateAction,
-} from "react";
+import { useCallback, type Dispatch, type MutableRefObject, type SetStateAction } from "react";
 import { newTab, type WorkspaceTab } from "../../../features/workspace/model/layout";
-import { newWorkspaceSession } from "../../model/newWorkspaceSession";
-import {
-  newDefaultSession,
-  type Session,
-} from "../../../features/sessions/model/session";
+import { clearedWorkspaceSession, newWorkspaceSession } from "../../model/newWorkspaceSession";
+import type { NewSessionOptions } from "../../../features/sessions/model/newSessionCommand";
+import { newDefaultSession, type Session } from "../../../features/sessions/model/session";
 import {
   rememberRemoteSession,
   remoteSessionFor,
@@ -49,7 +42,7 @@ export interface NewSessionActionDeps {
 
 export interface NewSessionActions {
   createWorkspaceTab: (cwd: string, focus?: WorktreeFocus) => string;
-  onNewSession: (sourceSessionId?: string) => string;
+  onNewSession: (sourceSessionId?: string, options?: NewSessionOptions) => string;
   onNew: () => string;
   onSelectRemoteSession: (project: string, remoteSessionId: string) => void;
   onStartInboxItem: (item: InboxItem, body?: string) => Promise<void>;
@@ -91,7 +84,7 @@ export function useNewSessionActions(deps: NewSessionActionDeps): NewSessionActi
   );
 
   const onNewSession = useCallback(
-    (sourceSessionId?: string) => {
+    (sourceSessionId?: string, options?: NewSessionOptions) => {
       setSearchViewOpen(false);
       setInboxViewOpen(false);
       setNotesViewOpen(false);
@@ -101,7 +94,10 @@ export function useNewSessionActions(deps: NewSessionActionDeps): NewSessionActi
         : undefined;
       const cwd = source?.cwd ?? sidebarCwd;
       const focus = worktreeFocus(cwd);
-      const session = newWorkspaceSession(cwd, sessionDefaults?.runtimeMode, focus);
+      const session =
+        options?.preserveSettings && source
+          ? clearedWorkspaceSession(source)
+          : newWorkspaceSession(cwd, sessionDefaults?.runtimeMode, focus);
       const tab = newTab(session.id);
       setSessions((prev) => [...prev, session]);
       appendTab(tab, cwd);

@@ -3,6 +3,7 @@ import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { beforeEach, afterEach, it, expect, vi } from "vitest";
 import { GitHistoryGraph } from "./GitHistoryGraph";
+import { resetRetainedState } from "../../../shared/hooks/useRetainedState";
 import { GitStashSection } from "./GitStashSection";
 import { gitHistory, gitStashList } from "../../../platform/tauri/fs";
 import { resetGitResourceCache } from "../hooks/useGitResource";
@@ -62,6 +63,7 @@ function deferred<T>() {
   return { promise, resolve, reject };
 }
 beforeEach(() => {
+  resetRetainedState();
   vi.clearAllMocks();
   resetGitResourceCache();
   resetGitPanelState();
@@ -99,6 +101,34 @@ async function click(label: string) {
       .click(),
   );
 }
+
+it("retains history search and branch scope on remount without leaking them to another repository", async () => {
+  await graph();
+  await click("Show all branches");
+  await click("Search commits");
+  await act(async () => {
+    const input = container.querySelector("input")!;
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
+      input,
+      "Existing",
+    );
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  await act(async () => root.unmount());
+  root = createRoot(container);
+  await graph();
+  expect(container.querySelector("input")!.value).toBe("Existing");
+  expect(
+    container.querySelector('[aria-label="Show all branches"]')!.getAttribute("aria-pressed"),
+  ).toBe("true");
+  await graph("/other");
+  expect(container.querySelector("input")).toBeNull();
+  expect(
+    container.querySelector('[aria-label="Show all branches"]')!.getAttribute("aria-pressed"),
+  ).toBe("false");
+  await graph();
+  expect(container.querySelector("input")!.value).toBe("Existing");
+});
 
 it("shows loading before an empty graph and settles to the real empty state", async () => {
   const request = deferred<Awaited<ReturnType<typeof gitHistory>>>();

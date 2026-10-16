@@ -1,4 +1,6 @@
 import { SearchInput } from "../../shared/ui/SearchInput";
+import { useRetainedState } from "../../shared/hooks/useRetainedState";
+import { pathKey } from "../../shared/lib/paths";
 import { useEffect, useRef, useState } from "react";
 import { t, useLocale } from "../../shared/i18n/technical";
 import { hostFeatureRequest } from "../connections/model/hostFeatureClient";
@@ -72,7 +74,7 @@ function ProjectDevServersPanel({ cwd, launch }: { cwd: string; launch?: Launch 
   const [scanning, setScanning] = useState(true);
   const [scanError, setScanError] = useState("");
   const [autoRefresh, setAutoRefresh] = useState(true);
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useRetainedState(`dev-servers:${pathKey(cwd)}:search`, "");
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [selectedId, setSelectedId] = useState<string>();
@@ -270,10 +272,13 @@ function ProjectDevServersPanel({ cwd, launch }: { cwd: string; launch?: Launch 
       } catch (cause) {
         // A failed request must not leave the row stuck in its optimistic state.
         if (alive.current) {
-          setScan((value) => value && {
-            ...value,
-            servers: value.servers.map((item) => item.id === server.id ? server : item),
-          });
+          setScan(
+            (value) =>
+              value && {
+                ...value,
+                servers: value.servers.map((item) => (item.id === server.id ? server : item)),
+              },
+          );
         }
         throw cause;
       }
@@ -414,10 +419,9 @@ function ProjectDevServersPanel({ cwd, launch }: { cwd: string; launch?: Launch 
         <dd>{current.server.cwd ?? current.server.process?.cwd ?? t("Unavailable")}</dd>
         <dt>{t("Affected ports")}</dt>
         <dd>
-          {(tree
-            ? current.affectedPorts
-            : current.server.endpoints.map((item) => item.port)
-          ).join(", ") || t("No listening ports")}
+          {(tree ? current.affectedPorts : current.server.endpoints.map((item) => item.port)).join(
+            ", ",
+          ) || t("No listening ports")}
         </dd>
       </dl>
       {current.descendants.length ? (

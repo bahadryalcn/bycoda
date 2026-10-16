@@ -2253,6 +2253,33 @@ html:not(.theme-light) .markdown-code-token {
   max-inline-size: 100%;
 }
 
+.agent-markdown .markdown-table-shell {
+  position: relative;
+  min-width: 0;
+}
+
+.agent-markdown .markdown-table-shell > .markdown-code-copy:not(:hover, :focus-visible) {
+  background: var(--ui-surface);
+}
+
+/* The button sits over the header row, so a pointer device only shows it while
+   the table is hovered or focused. Touch devices always show it. */
+@media (hover: hover) and (pointer: fine) {
+  .agent-markdown .markdown-table-shell > .markdown-code-copy:not(.is-copied, .is-failed) {
+    opacity: 0;
+    transition:
+      opacity 120ms ease,
+      color 160ms ease,
+      background-color 160ms ease;
+  }
+
+  .agent-markdown
+    .markdown-table-shell:is(:hover, :focus-within)
+    > .markdown-code-copy:not(.is-copied, .is-failed) {
+    opacity: 1;
+  }
+}
+
 .agent-markdown [data-streamdown="table"] > :not(:last-child),
 .agent-markdown [data-streamdown="table-body"] > :not(:last-child) {
   border-color: color-mix(in srgb, var(--color-content) 5%, transparent);

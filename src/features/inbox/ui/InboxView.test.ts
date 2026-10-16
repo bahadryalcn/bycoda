@@ -2,6 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { resetRetainedState } from "../../../shared/hooks/useRetainedState";
 import { clearInboxCache, githubWorkItemDetails, type InboxItem } from "../model/githubTasks";
 import type { LinkedWorkItem } from "../../sessions/model/session";
 import type { SessionSummary } from "../../sessions/data/sessionStore";
@@ -345,6 +346,7 @@ describe("InboxDetail layout", () => {
 
 describe("InboxDetail PR branch row", () => {
   beforeEach(() => {
+    resetRetainedState();
     vi.mocked(invoke).mockReset();
     clearInboxCache();
   });

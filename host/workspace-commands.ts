@@ -144,7 +144,9 @@ export class WorkspaceCommands {
       projectId: string,
       action: () => Promise<T>,
     ) => Promise<T>,
-    private readonly checkpoints = new HostCheckpoints(resolve(dirname(store.attachmentDir), "checkpoints")),
+    private readonly checkpoints = new HostCheckpoints(
+      resolve(dirname(store.attachmentDir), "checkpoints"),
+    ),
   ) {}
 
   run(command: unknown, args: unknown): Promise<unknown> {
@@ -287,24 +289,32 @@ export class WorkspaceCommands {
   private async allowedRoots(): Promise<string[]> {
     const generation = this.rootsGeneration;
     const out: string[] = [];
-    for (const project of this.store.projects()) {
-      const cached = this.roots.get(project.cwd);
-      if (cached && Date.now() - cached.at < ROOTS_TTL_MS) {
-        out.push(...cached.roots);
-        continue;
-      }
-      const roots = await hostWorktrees(project.cwd)
-        .then((listed) => [
-          project.cwd,
-          ...listed.worktrees
-            .filter((tree) => !tree.missing && tree.path !== project.cwd)
-            .map((tree) => tree.path),
-        ])
-        .catch(() => [project.cwd]);
-      if (generation === this.rootsGeneration)
-        this.roots.set(project.cwd, { at: Date.now(), roots });
-      out.push(...roots);
-    }
+    const projects = this.store.projects();
+    let cursor = 0;
+    // hostWorktrees already bounds each git subprocess with a 10 s timeout.
+    await Promise.all(
+      Array.from({ length: Math.min(4, projects.length) }, async () => {
+        while (cursor < projects.length) {
+          const project = projects[cursor++];
+          const cached = this.roots.get(project.cwd);
+          if (cached && Date.now() - cached.at < ROOTS_TTL_MS) {
+            out.push(...cached.roots);
+            continue;
+          }
+          const roots = await hostWorktrees(project.cwd)
+            .then((listed) => [
+              project.cwd,
+              ...listed.worktrees
+                .filter((tree) => !tree.missing && tree.path !== project.cwd)
+                .map((tree) => tree.path),
+            ])
+            .catch(() => [project.cwd]);
+          if (generation === this.rootsGeneration)
+            this.roots.set(project.cwd, { at: Date.now(), roots });
+          out.push(...roots);
+        }
+      }),
+    );
     return out;
   }
 
@@ -335,11 +345,16 @@ export class WorkspaceCommands {
     // A project nested in another belongs to the innermost one, so its root
     // keeps the root protections instead of passing as the outer's subfolder.
     let found: Located | undefined;
-    for (const root of await this.allowedRoots()) {
-      const rel = relative(root, actual);
-      if (rel !== "" && (rel.startsWith("..") || isAbsolute(rel))) continue;
-      if (!found || rel.length < found.relative.length) found = { root, relative: rel };
-    }
+    const find = (roots: string[]) => {
+      for (const root of roots) {
+        const rel = relative(root, actual);
+        if (rel !== "" && (rel.startsWith("..") || isAbsolute(rel))) continue;
+        if (!found || rel.length < found.relative.length) found = { root, relative: rel };
+      }
+    };
+    find(this.store.projects().map((project) => project.cwd));
+    if (found) return found;
+    find(await this.allowedRoots());
     if (found) return found;
     throw new Error("Path is outside this machine’s projects");
   }
@@ -686,12 +701,18 @@ export class WorkspaceCommands {
     const cwd = await this.gitRoot(input.cwd);
     if (typeof input.sessionId !== "string") throw new Error("Invalid checkpoint session");
     const path = input.relative == null ? undefined : String(input.relative);
-    if (command === "session_checkpoint_status") return this.checkpoints.status(input.sessionId, cwd);
+    if (command === "session_checkpoint_status")
+      return this.checkpoints.status(input.sessionId, cwd);
     if (command === "session_checkpoint_file_diff") {
       if (path === undefined) throw new Error("Choose a checkpoint file");
       return this.checkpoints.fileDiff(input.sessionId, cwd, path);
     }
-    return this.checkpoints.change(input.sessionId, cwd, path, command === "session_checkpoint_undo");
+    return this.checkpoints.change(
+      input.sessionId,
+      cwd,
+      path,
+      command === "session_checkpoint_undo",
+    );
   }
 
   /** This machine's skills for a project folder here; the desktop drops

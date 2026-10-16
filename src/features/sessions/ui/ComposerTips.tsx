@@ -21,7 +21,7 @@ export const COMPOSER_TIPS = [
   "Above the message box, edit a queued message or drag it to change the sending order.",
   "Stop pauses the message queue too. Review pending messages and use Resume when ready.",
   "Stopping the agent leaves existing file edits in place; review them in Changes before continuing.",
-  "In Settings → Chat, choose whether messages sent during a turn steer the work or join the queue.",
+  "Send steers the active turn. Use the queue button to send after it finishes. If steering is unavailable, the message waits in the queue.",
   "Use Connections to set up another machine, then select its project to work remotely.",
   "When creating a task, check its machine, branch and worktree to choose where the work runs.",
   "Use Goals to plan a larger job as tasks; review the proposed plan before approving it.",

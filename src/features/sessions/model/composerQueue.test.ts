@@ -46,7 +46,15 @@ describe("queueShortcutApplies", () => {
   });
 
   it("never queues composer-only commands", () => {
-    for (const text of ["/compact", "/btw why", "/mcp", "/draft hi", "/add-to-folder"]) {
+    for (const text of [
+      "/compact",
+      "/clear",
+      "/new",
+      "/btw why",
+      "/mcp",
+      "/draft hi",
+      "/add-to-folder",
+    ]) {
       expect(queueShortcutApplies({ ...running, text })).toBe(false);
     }
   });

@@ -1,10 +1,12 @@
 import { randomUUID } from "node:crypto";
-import type { HostSessionSummary } from "../src/features/connections/model/protocol";
+import { ChangeSignal } from "./changeSignal";
+import type { HostSessionSummary, SessionSync } from "../src/features/connections/model/protocol";
 
 export type SessionRef = {
   sessionId: string;
   revision: number;
   deleted?: boolean;
+  sync?: SessionSync;
 };
 export type ProjectRef = {
   projectId: string;
@@ -15,6 +17,7 @@ export type ProjectRef = {
   removed?: string[];
 };
 export type RemoteChangesInput = {
+  inlineSync?: boolean;
   instanceId?: string;
   sessions: { sessionId: string; revision: number }[];
   projects: { projectId: string; known?: string }[];
@@ -40,6 +43,7 @@ export type RemoteChangesValue = {
 
 /** One bounded metadata poll for a set of session and project cursors. */
 export class RemoteChanges {
+  constructor(private readonly signal = new ChangeSignal()) {}
   readonly instanceId = randomUUID();
   private active = 0;
   private sessionCache = new Map<string, { at: number; revision: number | undefined }>();
@@ -52,6 +56,7 @@ export class RemoteChanges {
     cancelled: () => boolean = () => false,
     readTasks?: () => Promise<string>,
     readGit?: (cwd: string) => Promise<{ etag: string; watching: boolean }>,
+    recheckMs: () => number = () => 1000,
   ): Promise<RemoteChangesValue> {
     if (!Array.isArray(input.sessions) || input.sessions.length > 64)
       throw new Error("At most 64 session subscriptions are allowed");
@@ -92,6 +97,10 @@ export class RemoteChanges {
       return entry;
     });
     const reset = input.instanceId !== this.instanceId;
+    if (this.cacheVersion !== this.signal.version) {
+      this.sessionCache.clear();
+      this.cacheVersion = this.signal.version;
+    }
     const readCachedSession = (id: string) => {
       const now = Date.now();
       const cached = this.sessionCache.get(id);
@@ -202,6 +211,7 @@ export class RemoteChanges {
         ...(gitValues.length ? { git: gitValues } : {}),
       };
     };
+    let version = this.signal.version;
     const first = await changed();
     if (
       reset ||
@@ -217,9 +227,9 @@ export class RemoteChanges {
     const deadline = Date.now() + Math.min(10_000, Math.max(0, Number(input.waitMs) || 0));
     try {
       while (!cancelled() && Date.now() < deadline) {
-        await new Promise<void>((resolve) =>
-          setTimeout(resolve, Math.min(100, deadline - Date.now())),
-        );
+        await this.signal.wait(Math.min(deadline, Date.now() + recheckMs()), cancelled, version);
+        version = this.signal.version;
+        this.sessionCache.clear();
         const next = await changed();
         if (next.sessions.length || next.projects.length || next.tasks || next.git) return next;
       }
@@ -228,6 +238,8 @@ export class RemoteChanges {
       this.active--;
     }
   }
+
+  private cacheVersion = -1;
 
   private summaryId(value: unknown): string | undefined {
     return value && typeof value === "object" && typeof (value as { id?: unknown }).id === "string"

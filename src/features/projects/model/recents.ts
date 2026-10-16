@@ -433,6 +433,12 @@ export function isLocalProject(path: string): boolean {
   return looksLikeProject(path) && !isRemoteProjectPath(path);
 }
 
+/** A local folder the project terminal can start in. Home is not a project
+ * (never indexed), but a shell there needs no indexing. */
+export function canOpenTerminalIn(path: string): boolean {
+  return isLocalProject(path) || (!!path && prettyCwd(path) === "~");
+}
+
 export function looksLikeProject(path: string): boolean {
   if (!path || path === "/" || path === "~") return false;
   // Provider plugin references are links, not filesystem projects. Keep the

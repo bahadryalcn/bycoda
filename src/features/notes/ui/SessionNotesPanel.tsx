@@ -1,4 +1,5 @@
 import { SearchInput } from "../../../shared/ui/SearchInput";
+import { useRetainedState } from "../../../shared/hooks/useRetainedState";
 import { InlineEdit } from "../../../shared/ui/InlineEdit";
 import { Button } from "../../../shared/ui/Button";
 import { SurfaceSelection } from "../../sessions/ui/SurfaceSelection";
@@ -133,7 +134,7 @@ function SessionNotesContent({ sessionId, cwd }: Props) {
     () => lastNoteBySession.get(sessionId) ?? null,
   );
   const [listOpen, setListOpen] = useState(false);
-  const [query, setQuery] = useState("");
+  const [query, setQuery] = useRetainedState(`session-notes:${sessionId}:query`, "");
   const [listLimit, setListLimit] = useState(40);
   const [creating, setCreating] = useState(false);
   const [wantFocus, setWantFocus] = useState(notesPanelFocusRequested);
@@ -294,7 +295,10 @@ function SessionNotesContent({ sessionId, cwd }: Props) {
         onPointerDown={resize.onPointerDown}
         onDoubleClick={resize.onDoubleClick}
       />
-      <div data-notes-header className="flex h-9 shrink-0 items-center gap-1 border-b border-stroke px-2">
+      <div
+        data-notes-header
+        className="flex h-9 shrink-0 items-center gap-1 border-b border-stroke px-2"
+      >
         <Button
           variant="ghost"
           motion="none"
@@ -303,7 +307,6 @@ function SessionNotesContent({ sessionId, cwd }: Props) {
           title={selected?.title ?? t("Switch note")}
           onClick={() => {
             setListOpen((open) => !open);
-            setQuery("");
             setListLimit(40);
           }}
           className="min-w-0 flex-1"

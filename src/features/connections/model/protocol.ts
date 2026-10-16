@@ -188,6 +188,7 @@ export function applySessionSync(known: HostSession | undefined, sync: SessionSy
 /** Machine-level invalidations share one authenticated control lane. Revisions
  * recover state through sessions.sync; notifications need no unbounded replay log. */
 export type MachineChangesRequest = {
+  inlineSync?: boolean;
   /** Native per-window registration token, not a host identity. */
   subscriptionId?: string;
   tasksKnown?: string;
@@ -202,7 +203,7 @@ export type MachineChanges = {
   tasks?: { etag: string };
   instanceId: string;
   reset: boolean;
-  sessions: { sessionId: string; revision: number; deleted?: boolean }[];
+  sessions: { sessionId: string; revision: number; deleted?: boolean; sync?: SessionSync }[];
   projects: {
     projectId: string;
     etag: string;

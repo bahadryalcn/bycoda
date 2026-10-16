@@ -1,4 +1,6 @@
 import { t, useLocale } from "../../../shared/i18n";
+import { useRetainedState } from "../../../shared/hooks/useRetainedState";
+import { pathKey } from "../../../shared/lib/paths";
 import { invoke } from "@tauri-apps/api/core";
 import { ask } from "@tauri-apps/plugin-dialog";
 import {
@@ -344,10 +346,14 @@ function McpConnections({ cwd, projectPicker }: { cwd: string; projectPicker: Re
   useLocale();
   const cached = getCachedMcpSettings(cwd);
   const [servers, setServers] = useState<ServerRow[]>(cached?.servers ?? []);
-  const [filter, setFilter] = useState<Filter>("all");
-  const [query, setQuery] = useState("");
+  const stateKey = `mcp-connections:${pathKey(cwd)}`;
+  const [filter, setFilter] = useRetainedState<Filter>(`${stateKey}:filter`, "all");
+  const [query, setQuery] = useRetainedState(`${stateKey}:query`, "");
   const [page, setPage] = useState(0);
-  const [showAllProviders, setShowAllProviders] = useState(false);
+  const [showAllProviders, setShowAllProviders] = useRetainedState(
+    `${stateKey}:all-providers`,
+    false,
+  );
   const [loading, setLoading] = useState(!cached);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState(cached?.error ?? "");
@@ -414,11 +420,16 @@ function McpConnections({ cwd, projectPicker }: { cwd: string; projectPicker: Re
   const pageServers = visible.slice(currentPage * PAGE_SIZE, (currentPage + 1) * PAGE_SIZE);
   const filterProviders = showAllProviders
     ? PROVIDERS
-    : PROVIDERS.filter((provider) => servers.some((server) => server.provider === provider));
+    : PROVIDERS.filter(
+        (provider) =>
+          servers.some((server) => server.provider === provider) ||
+          (provider === filter && (loading || !!error || !!claudeError)),
+      );
 
   useEffect(() => {
+    if (loading || error || claudeError) return;
     if (filter !== "all" && !filterProviders.includes(filter)) setFilter("all");
-  }, [filter, filterProviders]);
+  }, [filter, filterProviders, loading, error, claudeError]);
 
   async function login(server: ServerRow) {
     setBusy(server.name);

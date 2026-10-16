@@ -10,6 +10,7 @@ import { inboxItemKey, type InboxItem } from "../model/githubTasks";
 import { isInboxEntryUnseen, seedInboxSeenIfNeeded } from "../model/inboxSeen";
 import { saveInboxConnections, saveInboxSource } from "../model/inboxFilters";
 import { updateNotificationPreferences } from "../../notifications/model/notificationPreferences";
+import { resetRetainedState } from "../../../shared/hooks/useRetainedState";
 
 const { listInboxItems } = vi.hoisted(() => ({ listInboxItems: vi.fn() }));
 vi.mock("../model/githubTasks", async (importOriginal) => ({
@@ -32,6 +33,7 @@ vi.mock("@tauri-apps/api/window", () => ({
 let root: Root;
 let container: HTMLDivElement;
 beforeEach(() => {
+  resetRetainedState();
   vi.mocked(invoke).mockRejectedValue(new Error("No native bridge"));
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   vi.useFakeTimers();
@@ -99,7 +101,9 @@ it("filters the cached Inbox locally and reuses fresh data when reopened", async
   root = createRoot(container);
   await render();
   expect(listInboxItems.mock.calls).toHaveLength(reads);
-  expect(container.querySelector('button[title="Beta issue"]')).not.toBeNull();
+  expect(container.querySelector<HTMLInputElement>('input[aria-label="Filter inbox"]')?.value).toBe("Alpha");
+  expect(container.querySelector('button[title="Alpha issue"]')).not.toBeNull();
+  expect(container.querySelector('button[title="Beta issue"]')).toBeNull();
 });
 
 it("reports a failed mark-all write in Inbox and clears the error after retry", async () => {

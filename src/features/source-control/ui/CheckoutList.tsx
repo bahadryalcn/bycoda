@@ -1,4 +1,5 @@
-import { useState, type ReactNode } from "react";
+import { type ReactNode } from "react";
+import { useRetainedState } from "../../../shared/hooks/useRetainedState";
 import { t, useLocale } from "../../../shared/i18n/git";
 import { Button } from "../../../shared/ui/Button";
 import {
@@ -10,7 +11,12 @@ import {
   Trash2,
 } from "../../../shared/ui/icons";
 import { requestWorktreeManagement } from "../model/worktreeManagement";
-import { checkoutRowLabels, groupCheckouts, sessionCheckout } from "../model/checkoutSelection";
+import {
+  checkoutRowLabels,
+  checkoutSelectionScope,
+  groupCheckouts,
+  sessionCheckout,
+} from "../model/checkoutSelection";
 import type { Worktree } from "../model/worktrees";
 import { pathKey } from "../../../shared/lib/paths";
 import styles from "./CheckoutList.module.css";
@@ -28,7 +34,11 @@ export function CheckoutList({
   enabled?: boolean;
 }) {
   useLocale();
-  const [idleOpen, setIdleOpen] = useState(false);
+  const scope = checkoutSelectionScope(
+    cwd,
+    worktrees.map((tree) => tree.path),
+  );
+  const [idleOpen, setIdleOpen] = useRetainedState(`checkout-list:${scope}:idle`, false);
   const groups = groupCheckouts(worktrees, cwd);
   const current = sessionCheckout(
     cwd,
@@ -52,7 +62,11 @@ export function CheckoutList({
           <span className={styles.identity}>
             <span className={styles.branch}>{title}</span>
             {detail ? <span className={styles.folder}>{detail}</span> : null}
-            {isSession ? <span className={styles.tag} data-tone="accent">{t("This session")}</span> : null}
+            {isSession ? (
+              <span className={styles.tag} data-tone="accent">
+                {t("This session")}
+              </span>
+            ) : null}
             {tree.isMain ? <span className={styles.tag}>{t("Main folder")}</span> : null}
           </span>
           <span className={styles.badges}>

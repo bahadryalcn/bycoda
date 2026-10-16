@@ -12,18 +12,21 @@ import { t } from "../../../shared/i18n";
 
 const OnboardingDialog = lazy(() => import("./OnboardingDialog"));
 const UsageGuideDialog = lazy(() => import("./UsageGuideDialog"));
+const GuideHub = lazy(() => import("./GuideHub"));
 
 export function OnboardingHost({
   context,
   onImported,
   onOpenProject,
+  projectCwd,
 }: {
   context: OnboardingContext;
   onImported: () => void;
   onOpenProject: (path: string) => void;
+  projectCwd: string;
 }) {
   const [open, setOpen] = useState(() => shouldShowOnboarding(context));
-  const [guideOpen, setGuideOpen] = useState(false);
+  const [guide, setGuide] = useState<"hub" | "tour" | null>(null);
   const [accessError, setAccessError] = useState("");
   const [accessBusy, setAccessBusy] = useState(false);
   const setupAccess = () => {
@@ -40,12 +43,12 @@ export function OnboardingHost({
     // Record existing installations too: deleting their last project isn't a first run.
     if (!shouldShowOnboarding(context)) finishOnboarding();
     const show = () => {
-      setGuideOpen(false);
+      setGuide(null);
       setOpen(true);
     };
     const showGuide = () => {
       setOpen(false);
-      setGuideOpen(true);
+      setGuide("hub");
     };
     window.addEventListener(OPEN_ONBOARDING_EVENT, show);
     window.addEventListener(OPEN_USAGE_GUIDE_EVENT, showGuide);
@@ -62,9 +65,17 @@ export function OnboardingHost({
         {t("Retry")}
       </button>
     </Modal>
-  ) : guideOpen ? (
+  ) : guide === "tour" ? (
     <Suspense fallback={null}>
-      <UsageGuideDialog onClose={() => setGuideOpen(false)} />
+      <UsageGuideDialog onClose={() => setGuide(null)} />
+    </Suspense>
+  ) : guide === "hub" ? (
+    <Suspense fallback={null}>
+      <GuideHub
+        projectCwd={projectCwd}
+        onClose={() => setGuide(null)}
+        onStartTour={() => setGuide("tour")}
+      />
     </Suspense>
   ) : open ? (
     <Suspense fallback={null}>

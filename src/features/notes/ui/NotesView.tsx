@@ -68,6 +68,7 @@ import {
   type NoteImageAsset,
 } from "../noteImages";
 import { projectKey } from "../../../shared/lib/paths";
+import { useRetainedState } from "../../../shared/hooks/useRetainedState";
 import { IS_MAC } from "../../../platform/tauri/platform";
 import { pickImageFiles } from "../../../platform/tauri/fs";
 import { filesFromClipboard } from "../../sessions/model/attachments";
@@ -1092,7 +1093,10 @@ function NoteEditor({
   useLocale();
   const lockOverscroll = useLockOverscroll<HTMLDivElement>();
   const blank = !note.body.trim() && note.title === "Untitled";
-  const [mode, setModeState] = useState<NoteViewMode>("split");
+  const [mode, setModeState] = useRetainedState<NoteViewMode>(
+    `note-editor:${note.id}:mode`,
+    "split",
+  );
   const setMode = (next: NoteViewMode) => {
     setModeState(next);
     setToolbarTarget("source");

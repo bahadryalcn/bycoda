@@ -7,6 +7,8 @@ describe("classifyRemoteError", () => {
     "SSH connection failed: Permission denied. Open Settings → Connections and reconnect to check access.",
     "SSH timed out. Open Settings → Connections and reconnect to authenticate.",
     "Could not start OpenSSH: not found",
+    "The host request did not complete [RPC_HOST_UNAVAILABLE] (workspace.run:read_text_file).",
+    "The host request did not complete [RPC_CONNECTION_INTERRUPTED] (workspace.run).",
     "Machine is no longer connected",
     "This project’s machine isn’t connected on this computer.",
     "Connect this project’s machine to open its files.",

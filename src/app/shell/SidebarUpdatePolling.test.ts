@@ -29,9 +29,11 @@ it("checks periodically, preserves available updates, and clears its timer on un
     expect(mocks.probe).toHaveBeenCalledTimes(2);
     expect(container.textContent).toContain("Update to 0.8.34");
     await act(async () => vi.advanceTimersByTimeAsync(30 * 60 * 1000));
-    expect(mocks.probe).toHaveBeenCalledTimes(2);
+    expect(mocks.probe).toHaveBeenCalledTimes(3);
   } finally {
     await act(async () => root.unmount());
   }
-  expect(vi.getTimerCount()).toBe(0);
+  // The update prompt can schedule exit animations; only update polling must stop.
+  await act(async () => vi.advanceTimersByTimeAsync(30 * 60 * 1000));
+  expect(mocks.probe).toHaveBeenCalledTimes(3);
 });

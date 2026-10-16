@@ -90,3 +90,31 @@ it("copies a long fence completely, reports failure and supports retry and selec
     vi.unstubAllGlobals();
   }
 });
+
+it("copies a rendered table as Markdown from its top-right button", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  try {
+    await act(async () =>
+      root.render(
+        createElement(AgentMarkdown, {
+          text: "| Uyarı | Adet |\n| --- | --- |\n| `then` isimli alan | 18 |\n| Kullanılmayan **import** | 90 |",
+        }),
+      ),
+    );
+    const shell = container.querySelector<HTMLElement>(".markdown-table-shell")!;
+    expect(shell.querySelector('[data-streamdown="table-wrapper"]')).not.toBeNull();
+    await act(async () =>
+      shell.querySelector<HTMLButtonElement>('[aria-label="Copy table as Markdown"]')!.click(),
+    );
+    expect(copy).toHaveBeenLastCalledWith(
+      "| Uyarı | Adet |\n| --- | --- |\n| then isimli alan | 18 |\n| Kullanılmayan import | 90 |",
+    );
+  } finally {
+    act(() => root.unmount());
+    container.remove();
+    vi.unstubAllGlobals();
+  }
+});

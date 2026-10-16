@@ -44,6 +44,7 @@ import { reportSessionCommands } from "../../../integrations/harness/core/report
 import { clearMcpSettingsCache, loadMcpSettings } from "../../settings/model/mcpSettingsCache";
 import type { ComposerTurnOptions, Attachment } from "../model/session";
 import { clearComposerDraft, getComposerDraft, setComposerDraft } from "../model/draftCache";
+import type { NewSessionOptions } from "../model/newSessionCommand";
 import type { UserQuestionPrompt } from "../model/userQuestion";
 import { registerHarness } from "../../../integrations/harness/core/registry";
 import { codexAdapter } from "../../../integrations/harness/providers/codex/codexAdapter";
@@ -62,16 +63,17 @@ function renderAction(busy: boolean, hasValue: boolean, allowBusySubmit = true) 
 }
 
 describe("ComposerAction", () => {
-  it("replaces Stop with Send when typing during a running turn", () => {
+  it("keeps Stop alongside Send when typing during a running turn", () => {
     const empty = renderAction(true, false);
     expect(empty).toContain('aria-label="Stop"');
     expect(empty).not.toContain('aria-label="Send"');
 
     const typed = renderAction(true, true);
     expect(typed).toContain('aria-label="Send"');
-    expect(typed).toContain("composer-send");
-    expect(typed).toContain("primary-action");
-    expect(typed).not.toContain('aria-label="Stop"');
+    expect(typed).toContain('data-button-variant="primary"');
+    expect(typed).toContain('aria-label="Stop"');
+    expect(typed).toContain('title="Send (Enter)"');
+    expect(typed).toContain('title="Stop (Esc)"');
   });
 
   it("keeps Stop while busy when submitting follow-up text is disabled", () => {
@@ -286,7 +288,7 @@ describe("Composer question focus", () => {
     harness: "claude" | "codex" | "antigravity" = "claude",
     cwd?: string,
     remoteSession = false,
-    onNewSession?: () => void,
+    onNewSession?: (options?: NewSessionOptions) => void,
   ) {
     await act(async () =>
       root.render(
@@ -412,6 +414,55 @@ describe("Composer question focus", () => {
     const textarea = document.querySelector("textarea")!;
     await typeInto(textarea, "/ne");
     expect(document.body.textContent).toContain("/new");
+  });
+
+  it.each([false, true])(
+    "starts fresh without sending /clear to Claude (busy=%s)",
+    async (busy) => {
+      const onNewSession = vi.fn();
+      const onSubmit = vi.fn();
+      await renderComposer(
+        undefined,
+        vi.fn(),
+        busy,
+        0,
+        undefined,
+        undefined,
+        onSubmit,
+        "clear-command",
+        "claude",
+        "/repo",
+        false,
+        onNewSession,
+      );
+      const textarea = document.querySelector("textarea")!;
+      // Keep the picker open: Enter on the full command must execute, not select it again.
+      await typeInto(textarea, "/clear");
+      expect(document.body.textContent).toContain("/clear");
+      await act(async () =>
+        textarea.dispatchEvent(
+          new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }),
+        ),
+      );
+      expect(onNewSession).toHaveBeenCalledExactlyOnceWith({ preserveSettings: true });
+      expect(onSubmit).not.toHaveBeenCalled();
+      expect(textarea.value).toBe("");
+      expect(getComposerDraft("clear-command")?.text ?? "").toBe("");
+    },
+  );
+
+  it("keeps /clear unsent when fresh conversations are unavailable", async () => {
+    const onSubmit = vi.fn();
+    await renderComposer(undefined, vi.fn(), false, 0, "/clear", undefined, onSubmit);
+    const textarea = document.querySelector("textarea")!;
+    await act(async () =>
+      textarea.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }),
+      ),
+    );
+    expect(onSubmit).not.toHaveBeenCalled();
+    expect(textarea.value).toBe("/clear");
+    expect(document.body.textContent).toContain("Starting a fresh conversation is unavailable");
   });
 
   async function typeInto(textarea: HTMLTextAreaElement, value: string) {
@@ -1635,8 +1686,14 @@ describe("Composer question focus", () => {
 
     expect(document.querySelector("textarea")!.value).toBe("Recovered prompt");
     expect(onRecalledMessageApplied).toHaveBeenCalledWith("rewind-1");
-    await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Send"]')!.click());
-    expect(onSubmit).toHaveBeenCalledWith("Recovered prompt", recalled.attachments, expect.not.objectContaining({ resendEdited: true }));
+    await act(async () =>
+      container.querySelector<HTMLButtonElement>('[aria-label="Send"]')!.click(),
+    );
+    expect(onSubmit).toHaveBeenCalledWith(
+      "Recovered prompt",
+      recalled.attachments,
+      expect.not.objectContaining({ resendEdited: true }),
+    );
   });
 
   it("does not restore a failed resend over newer composer text", async () => {

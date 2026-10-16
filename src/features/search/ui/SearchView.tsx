@@ -38,7 +38,8 @@ import {
   rankProjectFiles,
   recentOpenedFiles,
 } from "../../files/model/fileIndex";
-import { prettyCwd } from "../../../shared/lib/paths";
+import { pathKey, prettyCwd } from "../../../shared/lib/paths";
+import { useRetainedState } from "../../../shared/hooks/useRetainedState";
 import { IS_MAC } from "../../../platform/tauri/platform";
 import { isLocalProject, type RecentProject } from "../../projects/model/recents";
 import { useLockSnapshot } from "../../group-lock/hooks/useGroupLock";
@@ -126,22 +127,23 @@ export function SearchView({
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
   const lockOverscroll = useLockOverscroll<HTMLDivElement>();
-  const [query, setQuery] = useState("");
-  const [scope, setScope] = useState<SearchScope>("all");
+  const stateKey = `workspace-search:${pathKey(cwd)}`;
+  const [query, setQuery] = useRetainedState(`${stateKey}:query`, "");
+  const [scope, setScope] = useRetainedState<SearchScope>(`${stateKey}:scope`, "all");
   const [active, setActive] = useState(0);
   const [fileIndex, setFileIndex] = useState(() => ({ cwd, files: peekProjectFiles(cwd) ?? [] }));
   const files = fileIndex.cwd === cwd ? fileIndex.files : [];
-  const [chatFilters, setChatFilters] = useState<ChatFilters>(DEFAULT_CHAT_FILTERS);
+  const [chatFilters, setChatFilters] = useRetainedState<ChatFilters>(
+    `${stateKey}:filters`,
+    DEFAULT_CHAT_FILTERS,
+  );
 
   const trimmed = query.trim();
 
   useEffect(() => {
     if (!open) return;
-    setQuery("");
-    setScope("all");
     setActive(0);
-    setChatFilters(DEFAULT_CHAT_FILTERS);
-  }, [open]);
+  }, [open, cwd]);
 
   useEffect(() => {
     if (!open) return;

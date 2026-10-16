@@ -21,7 +21,16 @@ vi.mock("../../../platform/tauri/fileAccess", () => ({
 }));
 vi.mock("./UsageGuideDialog", () => ({
   default: ({ onClose }: { onClose: () => void }) =>
-    createElement("button", { onClick: onClose }, "Close guide"),
+    createElement("button", { onClick: onClose }, "Close tour"),
+}));
+vi.mock("./GuideHub", () => ({
+  default: ({ onClose, onStartTour }: { onClose: () => void; onStartTour: () => void }) =>
+    createElement(
+      "div",
+      null,
+      createElement("button", { onClick: onClose }, "Close guide"),
+      createElement("button", { onClick: onStartTour }, "Quick tour"),
+    ),
 }));
 const fresh = { projects: 0, sessions: 0, restored: false, transferred: false };
 let root: Root;
@@ -45,6 +54,7 @@ async function render(projects = 0) {
         context: { ...fresh, projects },
         onImported: vi.fn(),
         onOpenProject: vi.fn(),
+        projectCwd: "~",
       }),
     ),
   );
@@ -57,6 +67,14 @@ it("finishes fresh setup directly and allows reopening from Settings", async () 
   expect(shouldShowOnboarding(fresh)).toBe(false);
   await act(async () => window.dispatchEvent(new Event(OPEN_ONBOARDING_EVENT)));
   expect(container.textContent).toContain("Finish setup");
+  await act(async () => container.querySelector("button")!.click());
+  expect(container.textContent).toBe("");
+});
+it("starts the spotlight tour from the guide and closes it independently", async () => {
+  await render(1);
+  await act(async () => window.dispatchEvent(new Event(OPEN_USAGE_GUIDE_EVENT)));
+  await act(async () => container.querySelectorAll("button")[1].click());
+  expect(container.textContent).toBe("Close tour");
   await act(async () => container.querySelector("button")!.click());
   expect(container.textContent).toBe("");
 });
@@ -81,7 +99,7 @@ it("opens the guide on demand for existing users and can reopen it after closing
 it("offers the guide after setup without overlapping the setup dialog", async () => {
   await render();
   await act(async () => container.querySelectorAll("button")[1].click());
-  expect(container.textContent).toBe("Close guide");
+  expect(container.textContent).toBe("Close guideQuick tour");
   expect(shouldShowOnboarding(fresh)).toBe(false);
 });
 
@@ -100,7 +118,7 @@ it("broadcasts a guide request after setup so the shell can reveal its targets",
 it("replaces an open guide with setup and keeps dismissal independent", async () => {
   await render(1);
   await act(async () => window.dispatchEvent(new Event(OPEN_USAGE_GUIDE_EVENT)));
-  expect(container.textContent).toBe("Close guide");
+  expect(container.textContent).toContain("Close guide");
   await act(async () => window.dispatchEvent(new Event(OPEN_ONBOARDING_EVENT)));
   expect(container.textContent).toContain("Finish setup");
   expect(container.textContent).not.toContain("Close guide");

@@ -31,7 +31,16 @@ documentation. Update dependent paths when moving maintained files and run
 For UI work, read `docs/reference/arc-ui.md` and inspect the relevant shared
 components before editing. The application's design is compact, minimal and modern;
 use Arc through bycoda's existing adapters and theme, not as a separate visual system.
+Read `docs/reference/ui-design-system.md` for design ownership and migration
+contracts, and `docs/reference/ui-component-catalog.md` for free Arc selection.
+Distinguish target APIs in those documents from the currently implemented adapters.
 
+- Choose controls from the user's task and Arc's use-case guidance before mapping
+  existing markup. Reconsider entire control groups; preserve capabilities, not
+  the old HTML tag or button count. Compare segmented/radio choices, split actions,
+  menus and other suitable patterns. Short stable lists may use Select; long,
+  growing or name-searchable lists need Combobox/autocomplete, and multiple values
+  need the appropriate searchable MultiSelect. Preserve any existing free-entry contract.
 - Search `src/shared/ui/`, the existing settings controls, and the affected feature
   for an existing component or interaction before writing another one. Reuse the
   existing component first; extend its shared API when the missing capability is

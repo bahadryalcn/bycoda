@@ -120,6 +120,7 @@ export class DesktopLive {
 
   private lastChange = 0;
 
+  onChange?: () => void;
   constructor(private readonly now: () => number = Date.now) {}
 
   /** Strictly increasing, so two changes in one millisecond still differ. */
@@ -196,6 +197,11 @@ export class DesktopLive {
           fingerprint: "[[],{}]",
           changedAt: this.changeStamp(),
         });
+    if (
+      [...next].some(([id, value]) => this.sessions.get(id)?.changedAt !== value.changedAt) ||
+      next.size !== this.sessions.size
+    )
+      this.onChange?.();
     this.sessions = next;
     // ACKs are scoped to the owner too, including retries sent by old clients.
     this.commands = this.commands.filter(

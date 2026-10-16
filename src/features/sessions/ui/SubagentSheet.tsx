@@ -21,6 +21,17 @@ import { ActivityRow, agentStepBlock } from "./AgentTranscript";
 import { AgentMarkdown } from "./AgentMarkdown";
 import { VIEW_SUBAGENT_EVENT } from "./subagentFocus";
 import { useStopRequests } from "./useStopRequests";
+import { Button } from "../../../shared/ui/Button";
+import { TextareaField } from "../../../shared/ui/TextareaField";
+
+export type SubagentRelay = {
+  draft: string;
+  status?: "accepted" | "rejected";
+  blockedReason?: string;
+  setDraft: (draft: string) => void;
+  send: () => void;
+  onOpenConversation: () => void;
+};
 
 /**
  * Which delegated run's panel is open in a session pane. The pane that owns the
@@ -107,7 +118,7 @@ const STEP_PAGE = 60;
  * the prompt it was given, what it said, each call with what it returned, and
  * its report. It reads the same block the transcript row does, so it fills in
  * live, and renders calls and thoughts through the transcript's own rows. There
- * is no composer: subagents cannot be messaged.
+ * Requests to message an agent use the parent's normal submission path.
  */
 export function SubagentSheet({
   block,
@@ -119,6 +130,7 @@ export function SubagentSheet({
   onShowInTranscript,
   onOpenFile,
   onOpenDiff,
+  relay,
 }: {
   block: Block;
   busy: boolean;
@@ -130,6 +142,7 @@ export function SubagentSheet({
   onShowInTranscript: (blockId: string) => void;
   onOpenFile?: (path: string) => void;
   onOpenDiff?: (path: string) => void;
+  relay?: SubagentRelay;
 }) {
   useLocale();
   const sheetRef = useRef<HTMLElement>(null);
@@ -229,9 +242,7 @@ export function SubagentSheet({
               </button>
             </div>
             <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-content/45">
-              <span
-                className={state === "rejected" ? "text-danger" : running ? "text-accent" : ""}
-              >
+              <span className={state === "rejected" ? "text-danger" : running ? "text-accent" : ""}>
                 {runLabel(block, busy)}
               </span>
               {run?.agentType ? <span>{run.agentType}</span> : null}
@@ -253,9 +264,59 @@ export function SubagentSheet({
               onOpenDiff={onOpenDiff}
             />
           )}
-          {!command ? (
+          {!command && relay ? (
+            <form
+              className="flex shrink-0 flex-col gap-2 border-t border-stroke bg-[var(--ui-surface)] px-4 py-3"
+              onSubmit={(event) => {
+                event.preventDefault();
+                if (!relay.blockedReason && relay.draft.trim()) relay.send();
+              }}
+            >
+              <TextareaField
+                label={t("Message for {p0}", { p0: name })}
+                description={t(
+                  "Via the main agent. Delivery depends on provider support; replies appear in the main conversation.",
+                )}
+                rows={3}
+                value={relay.draft}
+                onChange={(event) => relay.setDraft(event.target.value)}
+                onKeyDown={(event) => {
+                  if (
+                    event.key === "Enter" &&
+                    (event.ctrlKey || event.metaKey) &&
+                    !event.nativeEvent.isComposing
+                  ) {
+                    event.preventDefault();
+                    if (!relay.blockedReason && relay.draft.trim()) relay.send();
+                  }
+                }}
+              />
+              {relay.blockedReason ? (
+                <p className="text-xs text-[var(--ui-text-muted)]">{relay.blockedReason}</p>
+              ) : null}
+              <p role="status" className="text-xs text-[var(--ui-text-muted)]">
+                {relay.status === "accepted"
+                  ? t("Request added to the main conversation. Delivery is not yet confirmed.")
+                  : relay.status === "rejected"
+                    ? t("Request was not accepted. Your message is kept here; try again.")
+                    : null}
+              </p>
+              <div className="flex flex-wrap items-center justify-end gap-2">
+                <Button variant="ghost" onClick={relay.onOpenConversation}>
+                  {t("Open main conversation")}
+                </Button>
+                <Button
+                  type="submit"
+                  variant="primary"
+                  disabled={!!relay.blockedReason || !relay.draft.trim()}
+                >
+                  {t("Relay via main agent")}
+                </Button>
+              </div>
+            </form>
+          ) : !command ? (
             <p className="shrink-0 border-t border-content/8 px-4 py-2 text-xs text-content/40">
-              {t("Read-only. Subagents cannot be messaged.")}
+              {t("Messaging is unavailable in this conversation.")}
             </p>
           ) : null}
         </div>

@@ -1,6 +1,23 @@
 import { t } from "../../../shared/i18n";
 import type { BuiltinSkill } from "../../skills/model/skills";
 
+export type NewSessionOptions = { preserveSettings?: boolean };
+
+export const CLEAR_SESSION_COMMAND: BuiltinSkill = {
+  kind: "builtin",
+  name: "clear",
+  invocation: "clear",
+  get description() {
+    return t("Start fresh");
+  },
+  scope: "builtin",
+  source: "bycoda",
+};
+
+export function isClearSessionCommand(text: string): boolean {
+  return /^\s*\/clear\s*$/i.test(text);
+}
+
 export const NEW_SESSION_COMMAND: BuiltinSkill = {
   kind: "builtin",
   name: "new",

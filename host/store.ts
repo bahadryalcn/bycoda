@@ -1,3 +1,4 @@
+import { ChangeSignal } from "./changeSignal";
 import { isSessionErrorBlock, sessionIssue } from "../src/features/sessions/model/sessionIssue";
 import { DatabaseSync } from "node:sqlite";
 import { randomUUID, createHash, randomBytes } from "node:crypto";
@@ -159,6 +160,7 @@ export class HostStore {
   snapshotWrites = 0;
   /** Incremented whenever session metadata or content changes in this process. */
   changeVersion = 0;
+  readonly changes = new ChangeSignal();
   private projectVersions = new Map<string, number>();
 
   /** Like `changeVersion`, but only moves for changes inside one project. */
@@ -168,6 +170,7 @@ export class HostStore {
 
   private touchProject(projectId: string): void {
     this.projectVersions.set(projectId, this.projectVersion(projectId) + 1);
+    this.changes.notify();
   }
 
   constructor(path: string) {
@@ -348,6 +351,7 @@ export class HostStore {
   }
 
   addProject(cwd: string, name: string): HostProject {
+    this.changes.notify();
     this.db.prepare("INSERT OR IGNORE INTO projects VALUES (?, ?, ?)").run(randomUUID(), cwd, name);
     return this.db.prepare("SELECT * FROM projects WHERE cwd=?").get(cwd) as unknown as HostProject;
   }

@@ -4,6 +4,7 @@ import { remoteRequest } from "./connections";
 import { startPerformanceSpan } from "../../../shared/lib/performanceTrace";
 
 export type MachineChannelDemand = {
+  inlineSync?: boolean;
   sessions?: readonly { sessionId: string; revision: number }[];
   projects?: readonly { projectId: string; known?: string }[];
   git?: readonly { cwd: string; known?: string }[];
@@ -35,8 +36,10 @@ function mergedDemand(channel: Channel): MachineChangesRequest {
   const projects = new Map<string, string | undefined>();
   const git = new Map<string, string | undefined>();
   const taskEtags = new Set<string>();
+  let inlineSync = false;
   for (const { demand: source } of channel.subscribers) {
     const demand = typeof source === "function" ? source() : source;
+    inlineSync ||= demand.inlineSync === true;
     for (const session of demand.sessions ?? [])
       sessions.set(
         session.sessionId,
@@ -55,6 +58,7 @@ function mergedDemand(channel: Channel): MachineChangesRequest {
   }
   return {
     subscriptionId: channel.subscriptionId,
+    ...(inlineSync ? { inlineSync: true } : {}),
     ...(channel.instanceId ? { instanceId: channel.instanceId } : {}),
     sessions: [...sessions].map(([sessionId, revision]) => ({
       sessionId,

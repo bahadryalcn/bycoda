@@ -13,7 +13,7 @@ export type RemoteFailure = { kind: RemoteFailureKind; message: string };
 
 /** Messages from `remote.rs`, `remote_ssh.rs`, `remoteCommands.ts` and the host. */
 const UNREACHABLE =
-  /Machine is unreachable|Host is not running on the machine|SSH connection failed|SSH timed out|Could not start OpenSSH|Machine is no longer connected|machine isn.t connected on this computer|Connect this project.s machine/i;
+  /RPC_HOST_UNAVAILABLE|RPC_CONNECTION_INTERRUPTED|RPC_DNS|RPC_PROXY|Machine is unreachable|Host is not running on the machine|SSH connection failed|SSH timed out|Could not start OpenSSH|Machine is no longer connected|machine isn.t connected on this computer|Connect this project.s machine/i;
 const OUTDATED =
   /Unsupported (host method|remote operation|workspace command)|Update bycoda Host in Connections settings/i;
 const UNSUPPORTED = /isn.t available for projects on another machine/i;

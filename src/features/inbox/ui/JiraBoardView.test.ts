@@ -2,6 +2,7 @@
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { resetRetainedState } from "../../../shared/hooks/useRetainedState";
 import { JiraBoardView } from "./JiraBoardView";
 import type { JiraBoardIssue } from "../model/jiraBoard";
 import { setLanguagePreference } from "../../../shared/i18n";
@@ -44,6 +45,7 @@ let root: Root;
 let container: HTMLDivElement;
 const changed = vi.fn();
 beforeEach(async () => {
+  resetRetainedState();
   localStorage.clear();
   saveAllowedJiraBoardIds([7]);
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
@@ -79,6 +81,32 @@ async function click(text: string) {
   expect(button).toBeDefined();
   await act(async () => button!.click());
 }
+
+it("restores the board mode and search after leaving the board and returning", async () => {
+  await click("Backlog & sprints");
+  await act(async () => {
+    const input = container.querySelector<HTMLInputElement>('input[type="search"]')!;
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, "login");
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  await act(async () => root.unmount());
+  root = createRoot(container);
+  await act(async () =>
+    root.render(
+      createElement(JiraBoardView, {
+        revision: 0,
+        onSelect: vi.fn(),
+        onChanged: changed,
+      }),
+    ),
+  );
+  expect(container.querySelector<HTMLInputElement>('input[type="search"]')!.value).toBe("login");
+  expect(
+    [...container.querySelectorAll("button")]
+      .find((button) => button.textContent === "Backlog & sprints")!
+      .getAttribute("aria-pressed"),
+  ).toBe("true");
+});
 it("requires board permission and clears a revoked board without fetching it again", async () => {
   invoke.mockClear();
   await act(async () => saveAllowedJiraBoardIds([]));

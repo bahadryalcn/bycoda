@@ -2,7 +2,7 @@ import { useEffect, useRef, type Dispatch, type SetStateAction } from "react";
 import { SOCIAL_PANEL_EVENT } from "../../../features/social/ui/SocialShortcut";
 import { getGroupLockView } from "../../../features/group-lock/model/groupLock";
 import { isProjectLockedIn } from "../../../features/group-lock/model/lockState";
-import { isLocalProject } from "../../../features/projects/model/recents";
+import { canOpenTerminalIn } from "../../../features/projects/model/recents";
 import { loadNotesEnabled } from "../../../features/settings/model/settings";
 import type { SidebarTabId } from "../../../features/settings/model/appearance";
 import { sessionsRef } from "../../../features/sessions/model/sessionsStore";
@@ -107,7 +107,7 @@ export function useAppUiControl({ surface, actions, focusOpenSession, isDetached
       filesOpen: ownProject && !isDetachedSessionWindow() && sessionSidebarOpen && sidebarTab === "files" && visible('[data-side-pane="workspace"]'),
       terminalOpen: ownProject && dockVisible && visible('[data-project-terminal-dock]') });
     if (action === "ui.workspace.list") return { views: APP_UI_VIEWS.map(id => ({ id,
-      available: id === "notes" ? loadNotesEnabled() : id === "terminal" ? isLocalProject(source.cwd) : id === "files" ? !isDetachedSessionWindow() : true,
+      available: id === "notes" ? loadNotesEnabled() : id === "terminal" ? canOpenTerminalIn(source.cwd) : id === "files" ? !isDetachedSessionWindow() : true,
       operations: id === "conversation" ? ["open", "status"] : ["open", "close", "status"] })), settingsSections: APP_UI_SETTINGS };
     if (action === "ui.workspace.status") return state();
     if (action === "ui.workspace.close") {
@@ -121,7 +121,7 @@ export function useAppUiControl({ surface, actions, focusOpenSession, isDetached
     } else {
       if (input.view === "notes" && !loadNotesEnabled()) throw new Error("Notes is disabled; enable it in settings first.");
       if (input.view === "files" && isDetachedSessionWindow()) throw new Error("The project file sidebar is unavailable in this detached conversation window.");
-      if (input.view === "terminal" && !isLocalProject(source.cwd)) throw new Error("The desktop terminal panel does not support this remote project; use the explicit machine terminal API.");
+      if (input.view === "terminal" && !canOpenTerminalIn(source.cwd)) throw new Error("The desktop terminal panel does not support this remote project; use the explicit machine terminal API.");
       const needsFocus = !ownProject || activeTab?.kind !== "session" || activeTab.focusedId !== source.id;
       if (needsFocus && !focusOpenSession(source.id)) throw new Error("The calling conversation has no open workspace tab.");
       // Focus updates project routing first; never navigate using a stale callback from another project.

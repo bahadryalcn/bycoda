@@ -14,7 +14,7 @@ import {
   splitTerminalInDock,
   withDockOpen,
 } from "../../../features/projects/model/projectTerminal";
-import { isLocalProject } from "../../../features/projects/model/recents";
+import { canOpenTerminalIn, isLocalProject } from "../../../features/projects/model/recents";
 import { sessionWorkCwd, type Session } from "../../../features/sessions/model/session";
 import { type ProjectAction } from "../../../features/projects/model/projectActions";
 import { loadTerminalProfile } from "../../../features/terminal/model/terminalProfiles";
@@ -78,7 +78,7 @@ export function useProjectTerminalOpen(deps: ProjectTerminalOpenDeps) {
     (cwd: string, profile?: string) => {
       const workdir = cwd || projectCwdRef.current;
       const projectPath = projectCwdRef.current;
-      if (!isLocalProject(projectPath)) return false;
+      if (!canOpenTerminalIn(projectPath)) return false;
       // Chosen once, so the terminal keeps its shell when the default changes.
       const shellProfile = profile ?? loadTerminalProfile();
       setProjectTerminals((prev) => {
@@ -106,7 +106,7 @@ export function useProjectTerminalOpen(deps: ProjectTerminalOpenDeps) {
   const onOpenTerminal = useCallback(
     (cwd: string, asWorkspaceTab = false, occupySessionId?: string, profile?: string) => {
       const workdir = cwd || terminalCwd;
-      if (!isLocalProject(projectCwdRef.current) || !isLocalProject(workdir)) return;
+      if (!canOpenTerminalIn(projectCwdRef.current) || !canOpenTerminalIn(workdir)) return;
       if (openProjectTerminal(workdir, profile)) return;
       const shellProfile = profile ?? loadTerminalProfile();
 
@@ -160,7 +160,7 @@ export function useProjectTerminalOpen(deps: ProjectTerminalOpenDeps) {
   const onSplitProjectTerminal = useCallback(
     (fileId: string) => {
       const projectPath = projectCwdRef.current;
-      if (!isLocalProject(projectPath)) return;
+      if (!canOpenTerminalIn(projectPath)) return;
       setProjectTerminals((prev) =>
         mapProjectTerminal(prev, projectPath, (dock) => {
           const source = dock.pane.files.find((file) => file.id === fileId);

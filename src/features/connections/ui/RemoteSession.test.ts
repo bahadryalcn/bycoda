@@ -45,6 +45,7 @@ import type {
   HostDescriptor,
   HostModelCatalog,
   HostSession,
+  SessionSync,
   RemoteMachine,
 } from "../model/protocol";
 
@@ -172,6 +173,8 @@ let providers: HostDescriptor["providers"];
 let harnessSwitchSupported = false;
 let steerSupported = false;
 let lazyHistorySupported = false;
+let inlineSyncSupported = false;
+let inlineDelta: SessionSync | undefined;
 let conversationRewindSupported = false;
 let machineSessionDeleted = false;
 let machineSessionRevisionHint: number | undefined;
@@ -221,6 +224,8 @@ beforeEach(() => {
   conversationRewindSupported = false;
   machineSessionDeleted = false;
   machineSessionRevisionHint = undefined;
+  inlineSyncSupported = false;
+  inlineDelta = undefined;
   machineChangesFailure = undefined;
   machineChangesReset = false;
   historyReadDelay = undefined;
@@ -302,6 +307,7 @@ beforeEach(() => {
           ...(steerSupported ? ["sessions.steer"] : []),
           ...(harnessSwitchSupported ? ["sessions.harnessSwitch"] : []),
           ...(lazyHistorySupported ? ["sessions.lazyHistory", "machine.changes"] : []),
+          ...(inlineSyncSupported ? ["machine.changes", "machine.changes.inlineSync"] : []),
           ...(conversationRewindSupported ? ["sessions.rewind"] : []),
           ...(shellSupported ? ["sessions.shell"] : []),
         ],
@@ -334,6 +340,7 @@ beforeEach(() => {
                 .map((entry) => ({
                   sessionId: entry.sessionId,
                   revision: machineSessionRevisionHint!,
+                  ...(inlineDelta ? { sync: inlineDelta } : {}),
                 })),
         projects: [],
       };
@@ -1923,6 +1930,8 @@ it("coalesces revision hints received during a tail read into one follow-up", as
     await new Promise((resolve) => setTimeout(resolve, 250));
   });
   machineSessionRevisionHint = undefined;
+  inlineSyncSupported = false;
+  inlineDelta = undefined;
   await act(async () => {
     tailReadDelay = undefined;
     release();
@@ -2481,6 +2490,19 @@ slow(
   },
 );
 
+slow("steers an implicit remote follow-up despite the retired queue preference", async () => {
+  localStorage.setItem("bycoda.followUpBehavior", "queue");
+  steerSupported = true;
+  openRunningChat();
+  await renderRemoteProbe();
+  await act(async () => {
+    expect(remoteOverrides.onSubmit!("shell", "Please change direction", [])).toBe(true);
+  });
+  await settle();
+  expect(commands.filter((command) => command.type === "steer")).toHaveLength(1);
+  expect(queueWrites).toEqual([]);
+});
+
 slow("redirects a running host turn when steering is supported", async () => {
   steerSupported = true;
   openRunningChat();
@@ -2905,3 +2927,56 @@ slow("does not continue a lost turn it never saw running, only offers Continue",
   expect(commands).toHaveLength(0);
   expect(container.querySelector("[data-interrupted-turn]")).not.toBeNull();
 });
+
+it.each(["inline", "mismatched", "legacy"] as const)(
+  "uses %s change delivery with a verified full snapshot",
+  async (mode) => {
+    inlineSyncSupported = true;
+    openExistingChat();
+    await render();
+    await vi.waitFor(() => expect(remoteDataPhase()).toBe("ready"));
+    const syncReads = () =>
+      vi
+        .mocked(invoke)
+        .mock.calls.filter(
+          ([, input]) => (input as { method?: string })?.method === "sessions.sync",
+        ).length;
+    const before = syncReads();
+    const base = host!.revision;
+    host = {
+      ...host!,
+      revision: base + 1,
+      session: {
+        ...host!.session,
+        blocks: [
+          ...host!.session.blocks,
+          { id: "inline-reply", role: "assistant", text: "Inline host update" },
+        ],
+      },
+    };
+    const {
+      session: { blocks, ...session },
+      blockRevisions: _blockRevisions,
+      ...value
+    } = host;
+    inlineDelta =
+      mode === "legacy"
+        ? undefined
+        : {
+            kind: "delta",
+            base: mode === "mismatched" ? base + 10 : base,
+            value: { ...value, session },
+            blocks: [blocks.at(-1)!],
+            blockIds: blocks.map((block) => block.id),
+          };
+    machineSessionRevisionHint = host.revision;
+    await vi.waitFor(() => expect(container.textContent).toContain("Inline host update"));
+    expect(syncReads()).toBe(mode === "inline" ? before : before + 1);
+    if (mode === "inline") {
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 250));
+      });
+      expect(syncReads()).toBe(before);
+    }
+  },
+);
