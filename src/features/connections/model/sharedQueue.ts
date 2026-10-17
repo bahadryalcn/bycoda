@@ -1,5 +1,6 @@
 import type { QueuedMessage } from "../../sessions/model/session";
 import type { RemoteQueue } from "./remoteQueue";
+import { canonicalJson } from "../../sync/model/canonicalJson";
 
 export const SHARED_QUEUE_CAPABILITY = "sessions.queue";
 /** Native queue keys accept only letters, numbers, underscores and hyphens. */
@@ -17,7 +18,7 @@ export type QueueChange = {
   consumer?: string;
 };
 export const sameQueueValue = (a: unknown, b: unknown): boolean =>
-  JSON.stringify(a) === JSON.stringify(b);
+  a === undefined || b === undefined ? a === b : canonicalJson(a) === canonicalJson(b);
 
 /** Merge changes to distinct rows; reject competing edits to the same row. */
 export function mergeQueueChange(current: SharedQueue, change: QueueChange): SharedQueue {
