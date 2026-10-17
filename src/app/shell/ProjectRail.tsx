@@ -216,6 +216,7 @@ type Props = {
   liveAgents?: LiveAgent[];
   activeSessionId?: string;
   onSelectAgent?: (sessionId: string) => void;
+  onPreviewSession?: (sessionId: string, options?: { keepOpen?: boolean }) => void;
   recentSessions?: RecentSessionsSource;
   settingsOpen?: boolean;
   settingsSection?: SettingsSectionId;
@@ -260,6 +261,7 @@ export function ProjectRail({
   liveAgents = [],
   activeSessionId,
   onSelectAgent,
+  onPreviewSession,
   recentSessions,
   settingsOpen = false,
   onOpenSettings,
@@ -649,7 +651,7 @@ export function ProjectRail({
           enabled={visible}
           activeSessionId={activeSessionId}
           searchActive={searchOrPageActive}
-          onOpenSession={onSelectAgent}
+          onOpenSession={onPreviewSession ?? onSelectAgent}
           onOpenProject={onSelectProject}
           drag={rail.drag("last-sessions")}
           onShownChange={setLastSessionsShown}

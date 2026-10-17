@@ -1,5 +1,9 @@
 import { useCallback, type Dispatch, type MutableRefObject, type SetStateAction } from "react";
 import { newTab, type WorkspaceTab } from "../../../features/workspace/model/layout";
+import {
+  keepSessionTab,
+  openSessionPreview,
+} from "../../../features/workspace/model/sessionPreview";
 import { clearedWorkspaceSession, newWorkspaceSession } from "../../model/newWorkspaceSession";
 import type { NewSessionOptions } from "../../../features/sessions/model/newSessionCommand";
 import { newDefaultSession, type Session } from "../../../features/sessions/model/session";
@@ -20,6 +24,7 @@ import { type NoteComposerCard } from "../../../features/notes";
 import { type SidebarTabId } from "../../../features/settings/model/appearance";
 
 export interface NewSessionActionDeps {
+  setTabs: (update: WorkspaceTab[] | ((previous: WorkspaceTab[]) => WorkspaceTab[])) => void;
   active: Session | undefined;
   sessionDefaults: Session | undefined;
   projectCwd: string;
@@ -44,7 +49,11 @@ export interface NewSessionActions {
   createWorkspaceTab: (cwd: string, focus?: WorktreeFocus) => string;
   onNewSession: (sourceSessionId?: string, options?: NewSessionOptions) => string;
   onNew: () => string;
-  onSelectRemoteSession: (project: string, remoteSessionId: string) => void;
+  onSelectRemoteSession: (
+    project: string,
+    remoteSessionId: string,
+    options?: { preview?: boolean },
+  ) => void;
   onStartInboxItem: (item: InboxItem, body?: string) => Promise<void>;
   onAddNoteToChat: (card: NoteComposerCard) => void;
 }
@@ -52,6 +61,7 @@ export interface NewSessionActions {
 /** Callbacks that create a session and a workspace tab for it. */
 export function useNewSessionActions(deps: NewSessionActionDeps): NewSessionActions {
   const {
+    setTabs,
     active,
     sessionDefaults,
     projectCwd,
@@ -111,7 +121,7 @@ export function useNewSessionActions(deps: NewSessionActionDeps): NewSessionActi
   const onNew = useCallback(() => onNewSession(), [onNewSession]);
 
   const onSelectRemoteSession = useCallback(
-    (project: string, remoteSessionId: string) => {
+    (project: string, remoteSessionId: string, options?: { preview?: boolean }) => {
       setSearchViewOpen(false);
       setInboxViewOpen(false);
       setNotesViewOpen(false);
@@ -125,16 +135,28 @@ export function useNewSessionActions(deps: NewSessionActionDeps): NewSessionActi
         remoteSessionFor,
       );
       if (existing) {
+        if (!options?.preview)
+          setTabs((tabs) =>
+            tabs.map((tab) => (tab.id === existing.tab.id ? keepSessionTab(tab) : tab)),
+          );
         activateTab(existing.tab.id, existing.shellId);
         return;
       }
-      // Reserve a dedicated tab immediately. An apparently blank remote tab
-      // may hold composer text or a create/upload that the host has not accepted.
+      // Never reuse a blank remote composer: it may hold a create/upload in flight.
       const session = newDefaultSession(project, sessionDefaults?.runtimeMode);
-      const tab = newTab(session.id);
+      const replacement = options?.preview
+        ? openSessionPreview(tabsRef.current, session, sessionsRef.current)
+        : undefined;
+      const tab = replacement?.tab ?? {
+        ...newTab(session.id),
+        ...(options?.preview ? { previewSessionId: session.id } : {}),
+      };
       rememberRemoteSession(session.id, remoteSessionId);
       setSessions((prev) => [...prev, session]);
-      appendTab(tab, project);
+      if (replacement) {
+        tabsRef.current = replacement.tabs;
+        setTabs(replacement.tabs);
+      } else appendTab(tab, project);
       setActiveTabId(tab.id);
       followProject(project);
     },

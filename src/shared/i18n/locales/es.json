@@ -1,4 +1,5 @@
 {
+  "Keep open": "Mantener abierto",
   "Default translation model": "Modelo de traducción predeterminado",
   "Used for text translations across conversations. Without a selection, uses the conversation model.": "Se utiliza para traducir texto en todas las conversaciones. Sin selección, se utiliza el modelo de la conversación.",
   "Use conversation model": "Usar el modelo de la conversación",
@@ -2239,7 +2240,7 @@
   "No archived conversations in this project.": "No hay conversaciones archivadas en este proyecto.",
   "Transcript": "Transcripción",
   "How a conversation reads as it grows.": "Cómo se lee una conversación a medida que crece.",
-  "Full width keeps user prompts as a spanning card. Chat aligns them to the right with a max width, like a messaging app.": "El ancho completo mantiene las indicaciones del usuario como una tarjeta de expansión. Chat los alinea a la derecha con un ancho máximo, como una aplicación de mensajería.",
+  "User messages stay right aligned and fit their content. Full width gives longer messages more room; Chat limits their width.": "Los mensajes del usuario se alinean a la derecha y se ajustan a su contenido. El ancho completo da más espacio a los mensajes largos; Chat limita su ancho.",
   "When you send, the new prompt sits at the top of the transcript and the reply grows into the space below. Turn this off to keep the classic layout, with the latest message resting on the composer.": "Cuando envías, el nuevo mensaje se ubica en la parte superior de la transcripción y la respuesta crece en el espacio a continuación. Desactívelo para mantener el diseño clásico, con el último mensaje reposando en el compositor.",
   "Composer": "Compositor",
   "What the composer does with what you type.": "Qué hace el compositor con lo que escribes.",

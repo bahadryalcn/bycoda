@@ -1,4 +1,5 @@
 {
+  "Keep open": "Açık tut",
   "Starting a fresh conversation is unavailable in this composer.": "Bu alanda yeni bir konuşma başlatılamıyor.",
   "External MCP access": "Dış MCP erişimi",
   "Create token": "Token oluştur",
@@ -2286,7 +2287,7 @@
   "No archived conversations in this project.": "Bu projede arşivlenmiş görüşme yok.",
   "Transcript": "Konuşma kaydı",
   "How a conversation reads as it grows.": "Bir konuşma büyüdükçe nasıl okunur?",
-  "Full width keeps user prompts as a spanning card. Chat aligns them to the right with a max width, like a messaging app.": "Tam genişlik, kullanıcı mesajlarını panel boyunca uzanan kartlarda gösterir. Sohbet görünümü ise bir mesajlaşma uygulaması gibi genişliği sınırlayarak sağa hizalar.",
+  "User messages stay right aligned and fit their content. Full width gives longer messages more room; Chat limits their width.": "Mesajların sağa hizalanır ve içeriğin kadar yer kaplar. Tam genişlik uzun mesajlara daha fazla alan verir; Sohbet görünümü genişliklerini sınırlar.",
   "When you send, the new prompt sits at the top of the transcript and the reply grows into the space below. Turn this off to keep the classic layout, with the latest message resting on the composer.": "Mesaj gönderdiğinizde yeni istem konuşmanın üstüne yerleşir; yanıt altındaki alana yazılır. En son mesajın mesaj alanının hemen üstünde kaldığı klasik düzen için kapatın.",
   "Composer": "Mesaj alanı",
   "What the composer does with what you type.": "Yazdığınız mesajların nasıl işlendiği.",

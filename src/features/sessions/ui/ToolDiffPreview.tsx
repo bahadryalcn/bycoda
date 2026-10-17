@@ -82,8 +82,9 @@ export function ToolDiffPreview({
   return (
     <>
       <Button
-        className={className}
-        variant="ghost"
+        className={`w-auto ${className ?? ""}`}
+        variant="item"
+        motion="none"
         ref={trigger}
         type="button"
 

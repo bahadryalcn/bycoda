@@ -59,7 +59,7 @@ describe("buildRecentSessions", () => {
     expect(rows[0].title).toBe("new");
   });
 
-  it("keeps every pinned session on top and limits only the rest", () => {
+  it("keeps pinned sessions first within the total row limit", () => {
     const rows = build(
       [
         stored("p-old", 1, { pinned: true }),
@@ -69,10 +69,19 @@ describe("buildRecentSessions", () => {
         stored("c", 20),
       ],
       [],
-      2,
+      3,
     );
-    expect(rows.map((row) => row.id)).toEqual(["p-new", "p-old", "a", "b"]);
+    expect(rows.map((row) => row.id)).toEqual(["p-new", "p-old", "a"]);
     expect(rows.slice(0, 2).every((row) => row.pinned)).toBe(true);
+  });
+
+  it("caps the list even when pinned sessions exceed the limit", () => {
+    const rows = build(
+      Array.from({ length: 15 }, (_, i) => stored(`p-${i}`, i, { pinned: true })),
+      [],
+      5,
+    );
+    expect(rows.map((row) => row.id)).toEqual(["p-14", "p-13", "p-12", "p-11", "p-10"]);
   });
 
   it("leaves out sessions of projects that are not on the rail", () => {
@@ -188,6 +197,8 @@ describe("recent sessions preferences", () => {
   });
 
   it("round-trips and ignores a count that is not offered", () => {
+    saveRecentSessionsPrefs({ collapsed: false, count: 3 });
+    expect(loadRecentSessionsPrefs()).toEqual({ collapsed: false, count: 3 });
     saveRecentSessionsPrefs({ collapsed: true, count: 20 });
     expect(loadRecentSessionsPrefs()).toEqual({ collapsed: true, count: 20 });
     localStorage.setItem("bycoda.lastSessions", JSON.stringify({ collapsed: false, count: 7 }));

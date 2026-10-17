@@ -944,6 +944,7 @@ function Workspace({
     onStartInboxItem,
     onAddNoteToChat,
   } = useNewSessionActions({
+    setTabs,
     active,
     sessionDefaults,
     projectCwd,
@@ -1362,7 +1363,13 @@ function Workspace({
     setComposerFocused,
   });
 
-  const { onSelectHistorySession, onOpenSessionsSideBySide } = useOpenSessionActions({
+  const {
+    onSelectHistorySession,
+    onPreviewHistorySession,
+    onKeepSession,
+    onOpenSessionsSideBySide,
+  } = useOpenSessionActions({
+    sessions,
     tabsRef,
     setTabs,
     setActiveTabId,
@@ -2091,17 +2098,18 @@ function Workspace({
     setSearchFocusToken,
     dirtyFilesRef,
   });
-  const { onCloseCurrentTab, onOpenSearch, onLeaveSearch, searchDialogOpen, onExpandSearch } = useSearchActions({
-    activeTabId,
-    onCloseTab,
-    setFilePickerOpen,
-    setSettingsOpen,
-    setInboxViewOpen,
-    setNotesViewOpen,
-    setAutomationsViewOpen,
-    setSearchViewOpen,
-    setSearchViewFocusToken,
-  });
+  const { onCloseCurrentTab, onOpenSearch, onLeaveSearch, searchDialogOpen, onExpandSearch } =
+    useSearchActions({
+      activeTabId,
+      onCloseTab,
+      setFilePickerOpen,
+      setSettingsOpen,
+      setInboxViewOpen,
+      setNotesViewOpen,
+      setAutomationsViewOpen,
+      setSearchViewOpen,
+      setSearchViewFocusToken,
+    });
 
   const {
     onOpenInbox,
@@ -2430,6 +2438,7 @@ function Workspace({
   const { onManageWorktrees } = useManageWorktrees({ openSettings });
 
   const { sessionPaneProps } = useSessionPaneProps({
+    onKeepSession,
     tabs,
     movingWindows,
     windowTransferPending,
@@ -2535,6 +2544,7 @@ function Workspace({
     onToggleMaximizePane,
   });
   const workspaceTitleBar = useWorkspaceTitleBar({
+    onKeepSession,
     windowTransfer,
     detachedSessionWindow,
     onMoveTabsToNewWindow,
@@ -2615,7 +2625,7 @@ function Workspace({
     onTabChange: setSidebarTab,
     onFilesSearchOpenChange: setFilesSearchOpen,
     onOpenFilesSearch: onFindInProject,
-    onSelectSession: onSelectHistorySession,
+    onSelectSession: onPreviewHistorySession,
     onSelectRemoteSession: onSelectRemoteSession,
     onRemoteSessionDeleted: onRemoteSessionDeleted,
     onPrefetchSession: onPrefetchHistorySession,
@@ -2643,6 +2653,19 @@ function Workspace({
     onOpenCommit: onOpenCommit,
     onOpenRepository: onOpenRepository,
     onSelectAgent: onSelectLiveAgent,
+    onPreviewSession: (sessionId: string, options?: { keepOpen?: boolean }) => {
+      if (liveAgents.some((agent) => agent.id === sessionId && agent.ownerWindowLabel)) {
+        onSelectLiveAgent(sessionId);
+        return;
+      }
+      setSearchViewOpen(false);
+      setInboxViewOpen(false);
+      setNotesViewOpen(false);
+      setAutomationsViewOpen(false);
+      const remote = unopenedRemoteRef.current.find(({ session }) => session.id === sessionId);
+      if (remote) onSelectRemoteSession(remote.project, sessionId, { preview: !options?.keepOpen });
+      else void onPreviewHistorySession(sessionId, options);
+    },
     onSelectProject: onSelectProject,
     onOpenProject: pickProject,
     onOpenSyncedProject: openSyncedProject,
@@ -2742,6 +2765,7 @@ function Workspace({
                 busyProjectPaths={busyProjectPaths}
                 liveAgents={liveAgents}
                 onSelectAgent={sidebarActions.onSelectAgent}
+                onPreviewSession={sidebarActions.onPreviewSession}
                 recentSessions={recentSessions}
                 onSelectProject={sidebarActions.onSelectProject}
                 onOpenProject={sidebarActions.onOpenProject}

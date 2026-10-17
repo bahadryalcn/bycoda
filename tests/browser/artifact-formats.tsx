@@ -2,6 +2,10 @@ import { useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { AttachmentChip } from "../../src/features/sessions/ui/AttachmentChip";
 import { GeneratedImage } from "../../src/features/sessions/ui/GeneratedImage";
+import { AgentMarkdown } from "../../src/features/sessions/ui/AgentMarkdown";
+import { ToolDiffPreview } from "../../src/features/sessions/ui/ToolDiffPreview";
+import { UserTextPreview } from "../../src/features/sessions/ui/UserTextPreview";
+import { mockIPC } from "@tauri-apps/api/mocks";
 import type { Attachment } from "../../src/features/sessions/model/session";
 import "../../src/styles/index.css";
 
@@ -239,8 +243,102 @@ function GeneratedImagesFixture() {
   );
 }
 
+function ChatOverflowFixture() {
+  const [opened, setOpened] = useState("");
+  const path = `/workspace/${"long-directory-name/".repeat(18)}changes.ts`;
+  return (
+    <main className="mx-auto w-full max-w-2xl min-w-0 p-4">
+      <section aria-label="File change" className="flex min-w-0 items-center gap-2">
+        <span>Edit</span>
+        <ToolDiffPreview
+          preview={{ kind: "write", path, lines: [{ kind: "add", text: "added" }] }}
+          label={path}
+          status="accepted"
+          onOpen={() => setOpened(path)}
+          className="flex min-w-0 flex-1 items-center gap-1 text-left"
+        >
+          <span className="shrink-0">TS</span>
+          <span data-file-label className="min-w-0 truncate">
+            {path}
+          </span>
+        </ToolDiffPreview>
+      </section>
+      <section aria-label="User text">
+        <UserTextPreview
+          parts={[{ kind: "text", text: "unbroken".repeat(200), compact: true }]}
+          messageId="overflow-user"
+          renderActions={() => null}
+        />
+      </section>
+      <AgentMarkdown
+        text={[
+          "```ts",
+          ...Array.from(
+            { length: 16 },
+            (_, i) => `const value${i} = '${"long-value".repeat(20)}';`,
+          ),
+          "```",
+          "",
+          "| Name | Value |",
+          "| --- | --- |",
+          `| ${"long-cell".repeat(80)} | result |`,
+          "",
+          "Message after wide content.",
+        ].join("\n")}
+      />
+      <output aria-label="Opened file">{opened ? "opened" : ""}</output>
+    </main>
+  );
+}
+
+function LocalImageFixture() {
+  const [opened, setOpened] = useState("");
+  const [ready] = useState(() => {
+    const canvas = document.createElement("canvas");
+    canvas.width = 1440;
+    canvas.height = 900;
+    const context = canvas.getContext("2d")!;
+    context.fillStyle = "white";
+    context.fillRect(0, 0, canvas.width, canvas.height);
+    context.fillStyle = "black";
+    context.font = "48px sans-serif";
+    context.fillText("LEFT EDGE", 20, 80);
+    context.fillText("RIGHT EDGE", 1100, 80);
+    context.fillText("BOTTOM EDGE", 560, 860);
+    const data = canvas.toDataURL("image/png").split(",")[1];
+    mockIPC((command) => {
+      if (command === "read_binary_file") return data;
+      throw new Error(`Unsupported fixture command: ${command}`);
+    });
+    return true;
+  });
+  return ready ? (
+    <main
+      style={{
+        inlineSize: "100%",
+        maxInlineSize: 864,
+        marginInline: "auto",
+        padding: 16,
+        boxSizing: "border-box",
+      }}
+    >
+      <AgentMarkdown
+        text={"![Chat preview](/fixture/chat-preview.png)\n\nThe complete message after the image."}
+        cwd="/fixture"
+        localMedia
+        onOpenFile={setOpened}
+      />
+      <output aria-label="Opened image">{opened}</output>
+    </main>
+  ) : null;
+}
+
 createRoot(document.getElementById("root")!).render(
-  new URLSearchParams(location.search).has("generated-images") ? (
+  new URLSearchParams(location.search).has("chat-overflow") ? (
+    <ChatOverflowFixture />
+  ) : new URLSearchParams(location.search).has("local-image") ? (
+    <LocalImageFixture />
+  ) : new URLSearchParams(location.search).has("generated-images") ? (
     <GeneratedImagesFixture />
   ) : (
     <Fixture />

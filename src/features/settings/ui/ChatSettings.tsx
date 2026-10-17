@@ -91,7 +91,7 @@ export function ChatPage() {
           id="transcript-layout"
           label={t("Transcript layout")}
           description={t(
-            "Full width keeps user prompts as a spanning card. Chat aligns them to the right with a max width, like a messaging app.",
+            "User messages stay right aligned and fit their content. Full width gives longer messages more room; Chat limits their width.",
           )}
         >
           <Segmented

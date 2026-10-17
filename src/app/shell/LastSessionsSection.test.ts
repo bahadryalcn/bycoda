@@ -93,10 +93,12 @@ it("keeps selected session open, independent pin and keyboard context actions", 
   expect(session.getAttribute("data-button-selected")).toBe("true");
   await act(async () => session.click());
   expect(open).toHaveBeenCalledExactlyOnceWith("recent-one");
+  await act(async () => session.dispatchEvent(new MouseEvent("dblclick", { bubbles: true })));
+  expect(open).toHaveBeenLastCalledWith("recent-one", { keepOpen: true });
   const pinButton = container.querySelector<HTMLButtonElement>('button[aria-label="Pin session"]')!;
   await act(async () => pinButton.click());
   expect(pin).toHaveBeenCalledTimes(1);
-  expect(open).toHaveBeenCalledTimes(1);
+  expect(open).toHaveBeenCalledTimes(2);
   await act(async () =>
     session.dispatchEvent(
       new KeyboardEvent("keydown", { key: "F10", shiftKey: true, bubbles: true, cancelable: true }),
@@ -104,4 +106,42 @@ it("keeps selected session open, independent pin and keyboard context actions", 
   );
   expect(document.querySelector('[role="menu"]')).toBeTruthy();
   expect(document.querySelector('[role="menu"]')?.textContent).toContain("Open project");
+});
+
+it("applies the selected total count to pinned rows and persists the new three-row option", async () => {
+  const original = data.stored;
+  data.stored = Array.from({ length: 18 }, (_, index) => ({
+    ...original[0],
+    id: `session-${index}`,
+    updatedAt: index + 1,
+    pinned: index < 13,
+  }));
+  localStorage.setItem("bycoda.lastSessions", JSON.stringify({ count: 5 }));
+  try {
+    await act(async () =>
+      root.render(
+        createElement(LastSessionsSection, {
+          ...appearance,
+          source: { history: [], live: [], onPin: vi.fn(async () => {}) },
+          projectKeys: new Set([pathKey("/work/project")]),
+          enabled: true,
+          searchActive: false,
+          onOpenProject: vi.fn(),
+        }),
+      ),
+    );
+    expect(container.querySelectorAll('[role="listitem"]')).toHaveLength(5);
+    const count = container.querySelector<HTMLButtonElement>('button[aria-haspopup="menu"]')!;
+    await act(async () => count.click());
+    const three = Array.from(
+      document.querySelectorAll<HTMLButtonElement>('[role="menuitemradio"]'),
+    ).find((node) => node.textContent === "Last 3")!;
+    expect(three).toBeTruthy();
+    await act(async () => three.click());
+    expect(container.querySelectorAll('[role="listitem"]')).toHaveLength(3);
+    expect(JSON.parse(localStorage.getItem("bycoda.lastSessions")!).count).toBe(3);
+    expect(document.activeElement).toBe(count);
+  } finally {
+    data.stored = original;
+  }
 });

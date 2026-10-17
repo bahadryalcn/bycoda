@@ -1,5 +1,47 @@
 import { expect, test, type Locator } from "@playwright/test";
 
+test("session preview replaces browsing tabs and keeps drafts across themes and narrow layouts", async ({
+  page,
+}, testInfo) => {
+  await page.goto("/tests/browser/project-workspace-navigation.html?session-preview=1");
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  const tabs = page.locator("[data-title-tab-id]");
+  const discussions = page.locator("aside").getByRole("button", { name: /^Discussion / });
+  for (let i = 0; i < 10; i++) await discussions.nth(i).click();
+  await expect(tabs).toHaveCount(1);
+  await expect(page.getByLabel("Active discussion")).toHaveText("Discussion 10");
+  await expect(tabs.locator(".italic")).toHaveCount(1);
+  await page.getByLabel("Draft", { exact: true }).fill("Keep this draft");
+  await discussions.nth(0).click();
+  await expect(tabs).toHaveCount(2);
+  await discussions.nth(1).dblclick();
+  await discussions.nth(2).click();
+  await expect(tabs).toHaveCount(3);
+  await discussions.nth(9).click();
+  await expect(page.getByLabel("Draft", { exact: true })).toHaveValue("Keep this draft");
+  // Intentional kept tabs should scroll rather than collapse their labels.
+  for (let i = 0; i < 8; i++) await discussions.nth(i).dblclick();
+  for (const theme of ["dark", "light"]) {
+    await page.evaluate(
+      (light) => document.documentElement.classList.toggle("theme-light", light),
+      theme === "light",
+    );
+    for (const width of [390, 1000]) {
+      await page.setViewportSize({ width, height: 800 });
+      await discussions.nth(9).click();
+      const activeTab = tabs.filter({ has: page.locator('button[data-button-selected="true"]') });
+      await expect(activeTab).toBeInViewport();
+      expect(
+        await tabs.first().evaluate((node) => node.getBoundingClientRect().width),
+      ).toBeGreaterThanOrEqual(159);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+        true,
+      );
+      await page.screenshot({ path: testInfo.outputPath(`session-preview-${theme}-${width}.png`) });
+    }
+  }
+});
+
 test("working sessions and usage meters stay contained in narrow and short workspaces", async ({
   page,
 }, testInfo) => {

@@ -294,7 +294,7 @@ describe("sidebar session multiselection", () => {
       ),
     ).toEqual(["session-1", "session-2", "session-3"]);
     expect(props.onSelectSession).toHaveBeenCalledTimes(1);
-    expect(props.onSelectSession).toHaveBeenCalledWith("session-40");
+    expect(props.onSelectSession).toHaveBeenCalledWith("session-40", { keepOpen: false });
   });
 
   it.each(["ctrlKey", "metaKey"] as const)(
@@ -404,7 +404,7 @@ describe("sidebar session multiselection", () => {
     act(() => title.focus());
     expect(document.activeElement).toBe(title);
     pressKey(title, "Enter");
-    expect(props.onSelectSession).toHaveBeenCalledWith("session-1");
+    expect(props.onSelectSession).toHaveBeenCalledWith("session-1", { keepOpen: false });
   });
 
   it("selects the visible range from a plain click with Shift-click", () => {
@@ -714,7 +714,7 @@ describe("sidebar session rename", () => {
       expect(renameInput()).toBeNull();
       expect(card().textContent).toContain("Renamed conversation");
       act(() => card().click());
-      expect(props.onSelectSession).toHaveBeenCalledWith("session-1");
+      expect(props.onSelectSession).toHaveBeenCalledWith("session-1", { keepOpen: false });
     },
   );
 
@@ -1130,7 +1130,7 @@ describe("sidebar orchestration card", () => {
     act(() => selection.focus());
     expect(document.activeElement).toBe(selection);
     expect(pressKey(selection, "Enter").defaultPrevented).toBe(true);
-    expect(props.onSelectSession).toHaveBeenCalledWith(lead.id);
+    expect(props.onSelectSession).toHaveBeenCalledWith(lead.id, { keepOpen: false });
     vi.mocked(props.onSelectSession).mockClear();
     expect(pressKey(agentRow, "Enter").defaultPrevented).toBe(false);
     expect(props.onSelectSession).not.toHaveBeenCalled();
@@ -1718,7 +1718,7 @@ describe("collapsed rail Inbox actions", () => {
 
     act(() => compactTab("Sessions").click());
     act(() => card().click());
-    expect(props.onSelectSession).toHaveBeenCalledWith("session-1");
+    expect(props.onSelectSession).toHaveBeenCalledWith("session-1", { keepOpen: false });
     expectDrawerDismissed();
 
     // Pinning the sidebar open replaces the drawer at once.
@@ -2096,7 +2096,7 @@ describe("long-press selection", () => {
     let gesture = press();
     act(() => vi.advanceTimersByTime(200));
     gesture.release();
-    expect(props.onSelectSession).toHaveBeenCalledWith("session-1");
+    expect(props.onSelectSession).toHaveBeenCalledWith("session-1", { keepOpen: false });
     expect(card().querySelector("[data-session-checkbox]")).toBeNull();
 
     gesture = press();
@@ -2325,7 +2325,7 @@ describe("opening a session", () => {
     act(() => render());
     const second = () => container.querySelector<HTMLElement>('[data-session-card="session-2"]')!;
     act(() => second().click());
-    expect(props.onSelectSession).toHaveBeenCalledWith("session-2");
+    expect(props.onSelectSession).toHaveBeenCalledWith("session-2", { keepOpen: false });
     expect(second().textContent).toContain("Opening…");
 
     props = { ...props, activeSessionId: "session-2" };

@@ -37,6 +37,11 @@ export function useWorkspaceNavigation(options: Options) {
   const latest = useRef(options);
   latest.current = options;
   const request = useRef<Request | null>(null);
+  const navigationEpoch = useRef(0);
+  const captureRequest = useCallback(() => {
+    const epoch = navigationEpoch.current;
+    return () => epoch === navigationEpoch.current;
+  }, []);
   const running = useRef(false);
   const mounted = useRef(true);
   const moving = useRef(new Set<string>());
@@ -49,6 +54,7 @@ export function useWorkspaceNavigation(options: Options) {
   } | null>(null);
 
   const cancel = useCallback(() => {
+    navigationEpoch.current++;
     request.current = null;
     setPending(null);
     setError(null);
@@ -56,6 +62,7 @@ export function useWorkspaceNavigation(options: Options) {
 
   const select = useCallback((next: Request) => {
     if (!next.project || next.project === "~" || isRemoteProjectPath(next.project)) return;
+    navigationEpoch.current++;
     request.current = next;
     setError(null);
     setPending(next);
@@ -237,6 +244,7 @@ export function useWorkspaceNavigation(options: Options) {
   }, []);
 
   return {
+    captureRequest,
     selectWorkspace,
     selectProject,
     cancel,

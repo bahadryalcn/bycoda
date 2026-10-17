@@ -43,6 +43,7 @@ export interface WorkspaceTitleBarDeps {
   onCancelMoveToNewWindow: TitleBarProps["onCancelMoveToNewWindow"];
   onGoToFile: TitleBarProps["onGoToFile"];
   onPinFile: TitleBarProps["onPinFile"];
+  onKeepSession: TitleBarProps["onKeepSession"];
   visibleRecents: TitleBarProps["recents"];
   onSelectProject: TitleBarProps["onSelectProject"];
 }
@@ -82,6 +83,7 @@ export function useWorkspaceTitleBar({
   onCancelMoveToNewWindow,
   onGoToFile,
   onPinFile,
+  onKeepSession,
   visibleRecents,
   onSelectProject,
 }: WorkspaceTitleBarDeps) {
@@ -124,13 +126,19 @@ export function useWorkspaceTitleBar({
       onCloseMany={onCloseTabs}
       onArchiveTab={onArchiveTitleTab}
       onDeleteTab={onDeleteTitleTab}
-      onReorder={onReorderTabs}
+      onReorder={(ids) => {
+        for (const tab of tabsRef.current) {
+          if (ids.includes(tab.id) && tab.previewSessionId) onKeepSession?.(tab.previewSessionId);
+        }
+        onReorderTabs(ids);
+      }}
       onPlaceOnPane={onPlaceTabOnPane}
       layout={layoutControl}
       onMoveToNewWindow={onMoveTabToNewWindow}
       onCancelMoveToNewWindow={onCancelMoveToNewWindow}
       onGoToFile={onGoToFile}
       onPinFile={onPinFile}
+      onKeepSession={onKeepSession}
       recents={visibleRecents}
       onSelectProject={onSelectProject}
     />

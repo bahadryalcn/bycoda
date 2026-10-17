@@ -1,4 +1,5 @@
 {
+  "Keep open": "Garder ouvert",
   "Default translation model": "Modèle de traduction par défaut",
   "Used for text translations across conversations. Without a selection, uses the conversation model.": "Utilisé pour les traductions de texte dans toutes les conversations. Sans sélection, le modèle de la conversation est utilisé.",
   "Use conversation model": "Utiliser le modèle de la conversation",
@@ -2239,7 +2240,7 @@
   "No archived conversations in this project.": "Aucune conversation archivée dans ce projet.",
   "Transcript": "Transcription",
   "How a conversation reads as it grows.": "Comment se lit une conversation à mesure qu’elle se développe.",
-  "Full width keeps user prompts as a spanning card. Chat aligns them to the right with a max width, like a messaging app.": "La pleine largeur conserve les invites de l'utilisateur sous forme de carte étendue. Chat les aligne vers la droite avec une largeur maximale, comme une application de messagerie.",
+  "User messages stay right aligned and fit their content. Full width gives longer messages more room; Chat limits their width.": "Les messages de l'utilisateur restent alignés à droite et s'adaptent à leur contenu. La pleine largeur offre plus de place aux longs messages ; Chat limite leur largeur.",
   "When you send, the new prompt sits at the top of the transcript and the reply grows into the space below. Turn this off to keep the classic layout, with the latest message resting on the composer.": "Lorsque vous envoyez, la nouvelle invite se trouve en haut de la transcription et la réponse s'étend dans l'espace ci-dessous. Désactivez cette option pour conserver la mise en page classique, le dernier message reposant sur le compositeur.",
   "Composer": "Compositeur",
   "What the composer does with what you type.": "Ce que le compositeur fait avec ce que vous tapez.",

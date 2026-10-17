@@ -122,6 +122,7 @@ export type Tab = {
   movingWindow?: boolean;
   /** File id when the whole tab is one preview file; double-click pins it. */
   previewFileId?: string;
+  previewSessionId?: string;
 };
 
 type Props = {
@@ -168,6 +169,7 @@ type Props = {
   onCancelMoveToNewWindow?: (tabId: string) => void;
   onGoToFile?: () => void;
   onPinFile?: (fileId: string) => void;
+  onKeepSession?: (sessionId: string) => void;
   recents?: RecentProject[];
   onSelectProject?: (path: string) => void;
   layout?: TitleBarLayout;
@@ -327,6 +329,7 @@ function TitleTabItem({
   onSelect,
   onClose,
   onPinFile,
+  onKeepSession,
   onContextMenu,
   itemRef,
 }: {
@@ -338,14 +341,18 @@ function TitleTabItem({
   onSelect: (id: string) => void;
   onClose: (id: string) => void;
   onPinFile?: (fileId: string) => void;
+  onKeepSession?: (sessionId: string) => void;
   onContextMenu: (id: string, event: ReactMouseEvent<HTMLDivElement>) => void;
   itemRef?: (el: HTMLDivElement | null) => void;
 }) {
   useLocale();
   const { headline, meta, tooltip } = tabCopy(tab);
   const fileIcon = tab.files[0];
-  const accessibleTooltip =
-    (tab.doneHarnesses?.length ?? 0) > 0 ? `${tooltip} · Response complete` : tooltip;
+  const accessibleTooltip = [
+    tooltip,
+    ...(tab.previewSessionId || tab.previewFileId ? [t("Preview")] : []),
+    ...((tab.doneHarnesses?.length ?? 0) > 0 ? ["Response complete"] : []),
+  ].join(" · ");
 
   return (
     <div
@@ -393,6 +400,13 @@ function TitleTabItem({
         }}
         onDoubleClick={() => {
           if (tab.previewFileId) onPinFile?.(tab.previewFileId);
+          if (tab.previewSessionId) onKeepSession?.(tab.previewSessionId);
+        }}
+        onKeyDown={(event) => {
+          if (event.key === "Enter" && (tab.previewFileId || tab.previewSessionId)) {
+            if (tab.previewFileId) onPinFile?.(tab.previewFileId);
+            if (tab.previewSessionId) onKeepSession?.(tab.previewSessionId);
+          }
         }}
         className={`relative min-w-0 flex-1 self-center ${closable ? "pe-[var(--ui-control-height-compact)]" : ""}`}
       >
@@ -417,7 +431,7 @@ function TitleTabItem({
         <span className="flex min-w-0 flex-1 flex-col justify-center">
           <span className="flex min-w-0 items-center gap-1">
             <TabLabel
-              className={`leading-tight ${tab.previewFileId ? "italic" : ""} ${
+              className={`leading-tight ${tab.previewFileId || tab.previewSessionId ? "italic" : ""} ${
                 meta
                   ? "text-[13px] @min-[11rem]:text-[10px] @min-[11rem]:font-medium"
                   : "text-[13px]"
@@ -689,6 +703,7 @@ function TitleBarComponent({
   onCancelMoveToNewWindow,
   onGoToFile,
   onPinFile,
+  onKeepSession,
   recents = [],
   onSelectProject,
   layout,
@@ -986,6 +1001,15 @@ function TitleBarComponent({
     : null;
   const contextMenuItems: ExplorerMenuItem[] = contextTab
     ? [
+        ...(contextTab.previewSessionId || contextTab.previewFileId
+          ? [
+              {
+                kind: "item" as const,
+                id: "keep-open",
+                label: t("Keep open"),
+              },
+            ]
+          : []),
         ...(detached && onReturnTabToMain
           ? [
               {
@@ -1102,6 +1126,11 @@ function TitleBarComponent({
   const onPickTabMenu = (id: string) => {
     if (!contextTab || !contextCloseIds) return;
     setTabMenu(null);
+    if (id === "keep-open") {
+      if (contextTab.previewSessionId) onKeepSession?.(contextTab.previewSessionId);
+      if (contextTab.previewFileId) onPinFile?.(contextTab.previewFileId);
+      return;
+    }
     if (id === "close") {
       onClose(contextTab.id);
       return;
@@ -1301,7 +1330,7 @@ function TitleBarComponent({
                   className={
                     entry.closing || entry.opening
                       ? "relative flex h-full w-full min-w-0 overflow-hidden items-center"
-                      : "relative flex h-full w-56 min-w-28 shrink cursor-default items-center"
+                      : "relative flex h-full w-56 min-w-40 shrink cursor-default items-center"
                   }
                   data-title-tab-id={entry.closing ? undefined : tab.id}
                   data-tab-slot-id={entry.closing ? undefined : tab.id}
@@ -1324,6 +1353,7 @@ function TitleBarComponent({
                     onSelect={onSelect}
                     onClose={onClose}
                     onPinFile={onPinFile}
+                    onKeepSession={onKeepSession}
                     onContextMenu={(tabId, event) =>
                       setTabMenu({
                         tabId,

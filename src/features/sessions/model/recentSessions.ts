@@ -43,7 +43,7 @@ export type RecentSessionRow = {
 };
 
 /** Row counts the header offers. The last one is "All recent". */
-export const RECENT_SESSION_COUNTS = [5, 10, 20, 50] as const;
+export const RECENT_SESSION_COUNTS = [3, 5, 10, 20, 50] as const;
 export type RecentSessionCount = (typeof RECENT_SESSION_COUNTS)[number];
 export const DEFAULT_RECENT_SESSION_COUNT: RecentSessionCount = 10;
 /** Rows the store query returns; pinned sessions come on top of it. */
@@ -161,8 +161,8 @@ function comparePinnedThenRecent(a: RecentSessionRow, b: RecentSessionRow) {
 
 /**
  * Stored rows overlaid with what is running now, restricted to the projects on
- * the rail. Pinned sessions come first (most recent first) and are always
- * shown; the `limit` newest of the rest follow.
+ * the rail. Pinned sessions come first (most recent first), within the same
+ * total row limit as the remaining recent sessions.
  */
 export function buildRecentSessions({
   stored,
@@ -217,8 +217,7 @@ export function buildRecentSessions({
     });
   }
   const sorted = [...rows.values()].sort(comparePinnedThenRecent);
-  const pinned = sorted.filter((row) => row.pinned);
-  return [...pinned, ...sorted.filter((row) => !row.pinned).slice(0, limit)];
+  return sorted.slice(0, limit);
 }
 
 /** Compact age: "now", "5m", "3h 20m", "2d", then a short date. */

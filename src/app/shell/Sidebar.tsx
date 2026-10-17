@@ -332,8 +332,12 @@ type Props = {
   status: "idle" | "error";
   /** First listing for this project has not arrived yet. */
   pending: boolean;
-  onSelectSession: (sessionId: string) => void;
-  onSelectRemoteSession?: (project: string, sessionId: string) => void;
+  onSelectSession: (sessionId: string, options?: { keepOpen?: boolean }) => void;
+  onSelectRemoteSession?: (
+    project: string,
+    sessionId: string,
+    options?: { preview?: boolean },
+  ) => void;
   onRemoteSessionDeleted?: (sessionId: string) => void;
   onSessionNavigationOrder?: (ids: readonly string[]) => void;
   onPrefetchSession?: (sessionId: string) => void;
@@ -381,6 +385,7 @@ type Props = {
   busyProjectPaths?: Iterable<string>;
   liveAgents?: LiveAgent[];
   onSelectAgent?: (sessionId: string) => void;
+  onPreviewSession?: (sessionId: string, options?: { keepOpen?: boolean }) => void;
   recentSessions?: RecentSessionsSource;
   onSelectProject?: (path: string) => void;
   onOpenProject?: () => void;
@@ -487,6 +492,7 @@ function SidebarComponent({
   busyProjectPaths,
   liveAgents = EMPTY_AGENTS,
   onSelectAgent,
+  onPreviewSession,
   recentSessions,
   onSelectProject,
   onOpenProject,
@@ -591,7 +597,8 @@ function SidebarComponent({
     }
   };
   const onSelectSession = remoteProject
-    ? (sessionId: string) => onSelectRemoteSession?.(cwd, sessionId)
+    ? (sessionId: string, options?: { keepOpen?: boolean }) =>
+        onSelectRemoteSession?.(cwd, sessionId, { preview: !options?.keepOpen })
     : onSelectLocalSession;
   const onPrefetchSession = remoteProject ? undefined : onPrefetchLocalSession;
   const onPlaceSessionOnPane = remoteProject ? undefined : onPlaceLocalSessionOnPane;
@@ -1971,7 +1978,7 @@ function SidebarComponent({
 
   const onSessionCardSelect = (
     sessionId: string,
-    event: { shiftKey: boolean; ctrlKey: boolean; metaKey: boolean },
+    event: { shiftKey: boolean; ctrlKey: boolean; metaKey: boolean; detail?: number },
   ) => {
     contextSelectionRef.current = false;
     setSessionMenu(null);
@@ -2007,7 +2014,7 @@ function SidebarComponent({
     // Opening reads the conversation first (from disk, or over SSH for a
     // remote one); the card says so until it is the open session.
     if (sessionId !== activeListedSessionId) setOpeningSessionId(sessionId);
-    onSelectSession(sessionId);
+    onSelectSession(sessionId, { keepOpen: (event.detail ?? 0) > 1 });
   };
 
   // Cards are memoized. Their handlers go through one stable set that calls
@@ -2064,7 +2071,7 @@ function SidebarComponent({
     () => ({
       select: (
         sessionId: string,
-        event: { shiftKey: boolean; ctrlKey: boolean; metaKey: boolean },
+        event: { shiftKey: boolean; ctrlKey: boolean; metaKey: boolean; detail?: number },
       ) => cardHandlers.current.onSessionCardSelect(sessionId, event),
       longPress: (sessionId: string) => cardHandlers.current.onSessionCardLongPress(sessionId),
       openWorkItem: (item: LinkedWorkItem, sessionId: string) =>
@@ -3161,6 +3168,7 @@ function SidebarComponent({
     >
       {compactRailVisible ? (
         <CompactProjectRail
+          onPreviewSession={onPreviewSession}
           recoveryControl={recoveryControl}
           cwd={cwd}
           workingSessionsBadge={workingSessionsBadge}
@@ -3199,6 +3207,7 @@ function SidebarComponent({
       ) : null}
       {railMounted.current && onSelectProject && onOpenProject ? (
         <ProjectRail
+          onPreviewSession={onPreviewSession}
           onRenameProjectFolder={onRenameProjectFolder}
           recoveryControl={recoveryControl}
           visible={railVisible}
@@ -3438,6 +3447,7 @@ function SidebarProjectPicker({
 }
 
 function CompactProjectRail({
+  onPreviewSession,
   recoveryControl,
   cwd,
   workingSessionsBadge,
@@ -3507,6 +3517,7 @@ function CompactProjectRail({
   recentSessions?: RecentSessionsSource;
   activeSessionId?: string;
   onSelectAgent?: (sessionId: string) => void;
+  onPreviewSession?: (sessionId: string, options?: { keepOpen?: boolean }) => void;
 }) {
   useLocale();
   const [inboxMenu, setInboxMenu] = useState<{ x: number; y: number } | null>(null);
@@ -3570,7 +3581,7 @@ function CompactProjectRail({
             source={recentSessions}
             activeSessionId={activeSessionId}
             searchActive={searchActive}
-            onOpenSession={onSelectAgent}
+            onOpenSession={onPreviewSession ?? onSelectAgent}
             onOpenProject={onSelectProject}
           />
         ) : null}

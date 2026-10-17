@@ -1,4 +1,5 @@
 {
+  "Keep open": "保持打开",
   "Default translation model": "默认翻译模型",
   "Used for text translations across conversations. Without a selection, uses the conversation model.": "用于所有对话中的文本翻译。未选择时使用对话的模型。",
   "Use conversation model": "使用对话模型",
@@ -2239,7 +2240,7 @@
   "No archived conversations in this project.": "此项目中没有存档的对话。",
   "Transcript": "成绩单",
   "How a conversation reads as it grows.": "对话随着内容的发展如何阅读。",
-  "Full width keeps user prompts as a spanning card. Chat aligns them to the right with a max width, like a messaging app.": "全宽将用户提示保留为一张跨越卡。聊天将它们以最大宽度向右对齐，就像消息传递应用程序一样。",
+  "User messages stay right aligned and fit their content. Full width gives longer messages more room; Chat limits their width.": "用户消息始终右对齐，宽度随内容调整。全宽为长消息提供更多空间；聊天模式会限制消息宽度。",
   "When you send, the new prompt sits at the top of the transcript and the reply grows into the space below. Turn this off to keep the classic layout, with the latest message resting on the composer.": "当您发送时，新的提示位于文字记录的顶部，并且回复会扩展到下面的空间。关闭此功能可保留经典布局，并由作曲家提供最新消息。",
   "Composer": "作曲家",
   "What the composer does with what you type.": "作曲家如何处理你输入的内容。",

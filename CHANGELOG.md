@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.11]
+
+### Session previews and workspace navigation
+
+- Reuse session preview tabs while preserving drafts, active work and intentional layouts.
+- Refine recent sessions, pinned-session limits and workspace navigation.
+- Improve title bar actions and update notifications.
+- Improve transcript layouts, local media previews and diff presentation.
+- Refresh translations and expand browser regression coverage.
+
 ## [0.6.1]
 
 ### Search, notes and workspace controls

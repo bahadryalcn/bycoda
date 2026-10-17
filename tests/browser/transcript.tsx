@@ -10,7 +10,7 @@ import {
 import "../../src/styles/index.css";
 
 saveTranscriptAnchor(false);
-saveTranscriptLayout("chat");
+saveTranscriptLayout(new URLSearchParams(location.search).has("full-width") ? "full" : "chat");
 
 // Settled plain text isolates layout during scrolling from streaming, image
 // loading and asynchronous syntax highlighting. Turns deliberately vary in size.
@@ -37,7 +37,8 @@ if (
   new URLSearchParams(window.location.search).has("artifacts") ||
   new URLSearchParams(window.location.search).has("rewind") ||
   new URLSearchParams(location.search).has("streaming") ||
-  new URLSearchParams(location.search).has("chat-layout")
+  new URLSearchParams(location.search).has("chat-layout") ||
+  new URLSearchParams(location.search).has("message-bubbles")
 ) {
   root.style.width = "100%";
   root.style.height = "100dvh";
@@ -231,6 +232,31 @@ function ChatLayoutFixture() {
   );
 }
 
+function MessageBubblesFixture() {
+  return (
+    <div className="h-full min-w-0">
+      <AgentTranscript
+        blocks={[
+          { id: "short-user", role: "user", text: "Merhaba" },
+          { id: "short-reply", role: "assistant", text: "Merhaba, nasıl yardımcı olabilirim?" },
+          {
+            id: "long-user",
+            role: "user",
+            text: "Bu uzun mesaj ekran genişliğine göre satırlara bölünmeli. ".repeat(8),
+          },
+          { id: "long-reply", role: "assistant", text: "Uzun mesajı aldım." },
+        ]}
+      />
+    </div>
+  );
+}
+
 createRoot(host).render(
-  new URLSearchParams(location.search).has("chat-layout") ? <ChatLayoutFixture /> : <Fixture />,
+  new URLSearchParams(location.search).has("message-bubbles") ? (
+    <MessageBubblesFixture />
+  ) : new URLSearchParams(location.search).has("chat-layout") ? (
+    <ChatLayoutFixture />
+  ) : (
+    <Fixture />
+  ),
 );

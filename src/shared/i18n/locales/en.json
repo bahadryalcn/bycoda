@@ -1,4 +1,5 @@
 {
+  "Keep open": "Keep open",
   "Starting a fresh conversation is unavailable in this composer.": "Starting a fresh conversation is unavailable in this composer.",
   "External MCP access": "External MCP access",
   "Create token": "Create token",
@@ -2286,7 +2287,7 @@
   "No archived conversations in this project.": "No archived conversations in this project.",
   "Transcript": "Transcript",
   "How a conversation reads as it grows.": "How a conversation reads as it grows.",
-  "Full width keeps user prompts as a spanning card. Chat aligns them to the right with a max width, like a messaging app.": "Full width keeps user prompts as a spanning card. Chat aligns them to the right with a max width, like a messaging app.",
+  "User messages stay right aligned and fit their content. Full width gives longer messages more room; Chat limits their width.": "User messages stay right aligned and fit their content. Full width gives longer messages more room; Chat limits their width.",
   "When you send, the new prompt sits at the top of the transcript and the reply grows into the space below. Turn this off to keep the classic layout, with the latest message resting on the composer.": "When you send, the new prompt sits at the top of the transcript and the reply grows into the space below. Turn this off to keep the classic layout, with the latest message resting on the composer.",
   "Composer": "Composer",
   "What the composer does with what you type.": "What the composer does with what you type.",

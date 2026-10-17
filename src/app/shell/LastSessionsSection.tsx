@@ -124,7 +124,7 @@ export function LastSessionsSection({
   enabled: boolean;
   activeSessionId?: string;
   searchActive: boolean;
-  onOpenSession?: (sessionId: string) => void;
+  onOpenSession?: (sessionId: string, options?: { keepOpen?: boolean }) => void;
   onOpenProject: (path: string) => void;
   /** Lets the rail move this section by its header. */
   drag?: RailSectionDrag;
@@ -206,7 +206,7 @@ export function LastSessionsRows({
   rows: RecentSessionRow[];
   activeSessionId?: string;
   searchActive: boolean;
-  onOpenSession?: (sessionId: string) => void;
+  onOpenSession?: (sessionId: string, options?: { keepOpen?: boolean }) => void;
   onOpenProject: (path: string) => void;
   onTogglePin: (row: RecentSessionRow) => void;
   className?: string;
@@ -234,6 +234,7 @@ export function LastSessionsRows({
             now={now}
             selected={!searchActive && row.id === activeSessionId}
             onOpen={() => onOpenSession?.(row.id)}
+            onKeepOpen={() => onOpenSession?.(row.id, { keepOpen: true })}
             onTogglePin={() => onTogglePin(row)}
             onOpenMenu={(x, y) => setMenu({ x, y, row })}
             {...appearance}
@@ -339,6 +340,7 @@ function SessionRow({
   now,
   selected,
   onOpen,
+  onKeepOpen,
   onTogglePin,
   onOpenMenu,
   groupLabels,
@@ -351,6 +353,7 @@ function SessionRow({
   now: number;
   selected: boolean;
   onOpen: () => void;
+  onKeepOpen: () => void;
   onTogglePin: () => void;
   onOpenMenu: (x: number, y: number) => void;
 } & Appearance) {
@@ -400,79 +403,79 @@ function SessionRow({
           .filter(Boolean)
           .join(", ")}
         onClick={onOpen}
+        onDoubleClick={onKeepOpen}
         onKeyDown={(event) => {
           if (event.key !== "ContextMenu" && !(event.shiftKey && event.key === "F10")) return;
           event.preventDefault();
           const rect = event.currentTarget.getBoundingClientRect();
           onOpenMenu(rect.left, rect.bottom);
         }}
+        layout="stacked"
         className="min-w-0 flex-1"
       >
-        <span className="grid size-4 shrink-0 place-items-center">
-          {logoPath && status !== "working" ? (
-            <ProjectLogoIcon
-              path={logoPath}
-              className="size-4 rounded-sm"
-              imageClassName="size-4"
-            />
-          ) : (
-            <ProjectMascot
-              project={seed}
-              color={color}
-              name={resolveTabGroupMascot(key, groupMascots)}
-              className="size-3"
-              active={status === "working"}
-            />
-          )}
-        </span>
-        <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-          <span className="flex min-w-0 items-center gap-1">
-            {row.pinned ? (
-              <Pin
-                aria-label={t("Pinned")}
-                className="size-3 shrink-0 text-(--ui-text-secondary)"
-                strokeWidth={1.75}
-              />
-            ) : null}
-            <span className="min-w-0 flex-1 truncate text-[13px] font-medium leading-tight">
-              {row.title}
-            </span>
+        <span className="flex min-w-0 items-center gap-2">
+          <span className="min-w-0 flex-1 truncate text-[13px] font-medium leading-5">
+            {row.title}
           </span>
-          <span className="flex min-w-0 items-center gap-1 text-[11px] leading-tight text-(--ui-text-secondary)">
-            {row.remote ? (
-              <Internet
-                aria-label={t("On another machine")}
-                className="size-3 shrink-0"
-                strokeWidth={1.75}
-              />
-            ) : null}
-            <span className="min-w-0 truncate">{project}</span>
-            <span className="flex shrink-0 items-center gap-1">
-              <span aria-hidden="true">·</span>
-              <HarnessIcon harness={row.harness} className="size-3 shrink-0" />
-              <span>{agent}</span>
-              {time ? (
-                <>
-                  <span aria-hidden="true">·</span>
-                  <span className="tabular-nums">{time}</span>
-                </>
-              ) : null}
+          {status ? (
+            <span
+              role="img"
+              aria-label={STATUS_LABEL[status]}
+              title={STATUS_LABEL[status]}
+              className={`size-1.5 shrink-0 rounded-full ${STATUS_DOT[status]}`}
+            />
+          ) : null}
+          {time ? (
+            <span className="shrink-0 text-[11px] tabular-nums text-(--ui-text-secondary)">
+              {time}
             </span>
+          ) : null}
+        </span>
+        <span
+          className={`flex min-w-0 items-center gap-1.5 text-[11px] leading-4 text-(--ui-text-secondary) ${row.pinnable ? "pe-7" : ""}`}
+        >
+          <span className="grid size-3 shrink-0 place-items-center" aria-hidden="true">
+            {logoPath && status !== "working" ? (
+              <ProjectLogoIcon
+                path={logoPath}
+                className="size-3 rounded-sm"
+                imageClassName="size-3"
+              />
+            ) : (
+              <ProjectMascot
+                project={seed}
+                color={color}
+                name={resolveTabGroupMascot(key, groupMascots)}
+                className="size-3"
+                active={status === "working"}
+              />
+            )}
+          </span>
+          {row.pinned ? (
+            <Pin
+              aria-label={t("Pinned")}
+              className="size-3 shrink-0 text-(--ui-text-secondary)"
+              strokeWidth={1.75}
+            />
+          ) : null}
+          {row.remote ? (
+            <Internet
+              aria-label={t("On another machine")}
+              className="size-3 shrink-0"
+              strokeWidth={1.75}
+            />
+          ) : null}
+          <span className="min-w-0 flex-1 truncate">{project}</span>
+          <span className="flex shrink-0 items-center gap-1">
+            <span aria-hidden="true">·</span>
+            <HarnessIcon harness={row.harness} className="size-3 shrink-0" />
+            <span>{agent}</span>
           </span>
         </span>
-        {status ? (
-          <span
-            role="img"
-            aria-label={STATUS_LABEL[status]}
-            title={STATUS_LABEL[status]}
-            className={`size-1.5 shrink-0 rounded-full ${STATUS_DOT[status]}`}
-          />
-        ) : null}
-        {row.pinnable ? <span className="size-7 shrink-0" aria-hidden="true" /> : null}
       </Button>
       {row.pinnable ? (
         <Button
-          variant="item"
+          variant="ghost"
           motion="none"
           type="button"
           iconOnly
@@ -484,7 +487,7 @@ function SessionRow({
             event.stopPropagation();
             onTogglePin();
           }}
-          className="absolute right-1 top-1/2 hidden -translate-y-1/2 group-hover:flex group-has-[button:focus-visible]:flex"
+          className="absolute end-1 bottom-1 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 [@media(hover:none)]:opacity-100"
         >
           {row.pinned ? (
             <PinOff className="size-3.5" strokeWidth={1.75} />

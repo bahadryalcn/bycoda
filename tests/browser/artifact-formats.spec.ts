@@ -1,5 +1,96 @@
 import { expect, test } from "@playwright/test";
 
+test("chat file changes and long content fit a narrow column", async ({ page }, info) => {
+  await page.goto("/tests/browser/artifact-formats.html?chat-overflow");
+  const row = page.getByRole("region", { name: "File change" });
+  const trigger = row.getByRole("button");
+  await expect(trigger).toBeVisible();
+  for (const reducedMotion of ["no-preference", "reduce"] as const) {
+    await page.emulateMedia({ reducedMotion });
+    for (const theme of ["dark", "light"]) {
+      await page.evaluate(
+        (light) => document.documentElement.classList.toggle("theme-light", light),
+        theme === "light",
+      );
+      for (const width of [320, 390, 768]) {
+        await page.setViewportSize({ width, height: 800 });
+        const box = (await trigger.boundingBox())!;
+        const label = (await trigger.locator("[data-file-label]").boundingBox())!;
+        expect(label.x + label.width).toBeLessThanOrEqual(box.x + box.width + 1);
+        expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
+          width,
+        );
+        await page.getByRole("button", { name: "Collapse code block", exact: true }).click();
+        const summary = page.locator(".markdown-code-summary");
+        const count = summary.locator(".markdown-code-summary-count");
+        const summaryBox = (await summary.boundingBox())!;
+        const countBox = (await count.boundingBox())!;
+        expect(countBox.x + countBox.width).toBeLessThanOrEqual(
+          summaryBox.x + summaryBox.width + 1,
+        );
+        await summary.click();
+      }
+    }
+  }
+  await page.setViewportSize({ width: 320, height: 800 });
+  await trigger.focus();
+  const preview = page.getByRole("dialog");
+  await expect(preview).toBeVisible();
+  const previewBox = (await preview.boundingBox())!;
+  expect(previewBox.x).toBeGreaterThanOrEqual(0);
+  expect(previewBox.x + previewBox.width).toBeLessThanOrEqual(320);
+  await page.keyboard.press("Tab");
+  await page.keyboard.press("Escape");
+  await expect(preview).toHaveCount(0);
+  await expect(trigger).toBeFocused();
+  await page.getByRole("button", { name: "Show full long text", exact: true }).click();
+  await expect(preview.locator("pre")).toHaveText("unbroken".repeat(200));
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(320);
+  await page.keyboard.press("Escape");
+  await trigger.focus();
+  await page.keyboard.press("Enter");
+  await expect(page.getByLabel("Opened file", { exact: true })).toHaveText("opened");
+  await page.screenshot({ path: info.outputPath("chat-overflow.png"), fullPage: true });
+});
+
+test("a Markdown local image fits its preview frame without clipping or stretching the message", async ({
+  page,
+}, info) => {
+  await page.goto("/tests/browser/artifact-formats.html?local-image");
+  const frame = page.locator("[data-local-media]");
+  const image = frame.locator("img");
+  await expect(image).toBeVisible();
+  for (const reducedMotion of ["no-preference", "reduce"] as const) {
+    await page.emulateMedia({ reducedMotion });
+    for (const theme of ["dark", "light"]) {
+      await page.evaluate(
+        (light) => document.documentElement.classList.toggle("theme-light", light),
+        theme === "light",
+      );
+      for (const width of [390, 768, 1440]) {
+        await page.setViewportSize({ width, height: 800 });
+        const outer = (await frame.boundingBox())!;
+        const inner = (await image.boundingBox())!;
+        expect(outer.height).toBeLessThanOrEqual(181);
+        expect(inner.x).toBeGreaterThanOrEqual(outer.x);
+        expect(inner.y).toBeGreaterThanOrEqual(outer.y);
+        expect(inner.x + inner.width).toBeLessThanOrEqual(outer.x + outer.width + 1);
+        expect(inner.y + inner.height).toBeLessThanOrEqual(outer.y + outer.height + 1);
+        await expect(image).toHaveCSS("object-fit", "contain");
+        expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+          true,
+        );
+        await expect(page.getByText("The complete message after the image.")).toBeInViewport();
+      }
+    }
+  }
+  const button = frame.getByRole("button", { name: "Chat preview", exact: true });
+  await button.focus();
+  await button.press("Enter");
+  await expect(page.getByLabel("Opened image")).toHaveText("/fixture/chat-preview.png");
+  await page.screenshot({ path: info.outputPath("local-image-fitted.png") });
+});
+
 for (const [shape, ratio] of [
   ["wide", 1440 / 900],
   ["tall", 900 / 2400],

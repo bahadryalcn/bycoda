@@ -1,4 +1,5 @@
 import { useMemo } from "react";
+import { useStableCallback } from "../../../shared/hooks/useStableCallback";
 import { leafIds, type WorkspaceTab } from "../../../features/workspace/model/layout";
 import type { ActiveWorkspaceContext } from "../derived/useActiveWorkspaceContext";
 import type { useWorkspaceNavigation } from "../../hooks/useWorkspaceNavigation";
@@ -9,6 +10,7 @@ import type { WorkspaceSessionPaneProps } from "./WorkspaceMainArea";
 type P = WorkspaceSessionPaneProps;
 
 export interface SessionPaneDeps {
+  onKeepSession: (sessionId: string) => void;
   tabs: WorkspaceTab[];
   movingWindows: ReturnType<typeof useMovingWindowsState>["movingWindows"];
   windowTransferPending: boolean;
@@ -73,6 +75,7 @@ export interface SessionPaneDeps {
 }
 
 export function useSessionPaneProps({
+  onKeepSession,
   tabs,
   movingWindows,
   windowTransferPending,
@@ -151,32 +154,32 @@ export function useSessionPaneProps({
     hideProjectPicker: true,
     onFocus: onFocusPane,
     onClose: onClosePane,
-    onCwdChange,
-    onBranchChange,
+    onCwdChange: useKeepSessionAction(onCwdChange, onKeepSession)!,
+    onBranchChange: useKeepSessionAction(onBranchChange, onKeepSession)!,
     onWorktreeChange: onComposerWorktreeChange,
     onRemoteSnapshot,
     onRefreshAdoptedSession,
-    onWorkspaceModeChange,
+    onWorkspaceModeChange: useKeepSessionAction(onWorkspaceModeChange, onKeepSession)!,
     onWorktreeBaseChange,
     onManageWorktrees,
-    onModelChange,
-    onModelSettingsChange,
-    onRuntimeModeChange,
-    onSaveDraft,
-    onRemoveDraft,
-    onSubmit,
-    onStop,
-    onRewindMessage,
-    onCompactContext,
+    onModelChange: useKeepSessionAction(onModelChange, onKeepSession)!,
+    onModelSettingsChange: useKeepSessionAction(onModelSettingsChange, onKeepSession)!,
+    onRuntimeModeChange: useKeepSessionAction(onRuntimeModeChange, onKeepSession)!,
+    onSaveDraft: useKeepSessionAction(onSaveDraft, onKeepSession)!,
+    onRemoveDraft: useKeepSessionAction(onRemoveDraft, onKeepSession)!,
+    onSubmit: useKeepSessionAction(onSubmit, onKeepSession)!,
+    onStop: useKeepSessionAction(onStop, onKeepSession)!,
+    onRewindMessage: useKeepSessionAction(onRewindMessage, onKeepSession)!,
+    onCompactContext: useKeepSessionAction(onCompactContext, onKeepSession)!,
     onNewSession,
     onPlaceSessionInFolder,
-    onResumeProviderSession,
-    onDeleteQueuedMessage,
-    onEditQueuedMessage,
+    onResumeProviderSession: useKeepSessionAction(onResumeProviderSession, onKeepSession)!,
+    onDeleteQueuedMessage: useKeepSessionAction(onDeleteQueuedMessage, onKeepSession)!,
+    onEditQueuedMessage: useKeepSessionAction(onEditQueuedMessage, onKeepSession)!,
     onQueuedMessageEditingChange,
-    onReorderQueuedMessages,
-    onSteerQueuedMessage,
-    onResumeQueue,
+    onReorderQueuedMessages: useKeepSessionAction(onReorderQueuedMessages, onKeepSession)!,
+    onSteerQueuedMessage: useKeepSessionAction(onSteerQueuedMessage, onKeepSession)!,
+    onResumeQueue: useKeepSessionAction(onResumeQueue, onKeepSession)!,
     onUsageLimitResume,
     onUsageLimitResumeAtReset,
     onUsageLimitDismiss,
@@ -188,23 +191,38 @@ export function useSessionPaneProps({
     onOpenLinkedWorkItem,
     onArchiveSession: onArchiveHistorySession,
     onDeleteSession: onDeleteHistorySession,
-    onApproval,
-    onQuestionReply,
-    onQuestionInteraction,
+    onApproval: useKeepSessionAction(onApproval, onKeepSession)!,
+    onQuestionReply: useKeepSessionAction(onQuestionReply, onKeepSession)!,
+    onQuestionInteraction: useKeepSessionAction(onQuestionInteraction, onKeepSession),
     onOpenFile,
     onOpenDiff,
     onOpenPlan,
-    onBuildPlan,
-    onSecondOpinion,
-    onHandoff,
-    onBtwSubmit,
-    onBtwRetry,
-    onBtwDelete,
-    onBtwStop,
-    onBtwModelChange,
+    onBuildPlan: useKeepSessionAction(onBuildPlan, onKeepSession)!,
+    onSecondOpinion: useKeepSessionAction(onSecondOpinion, onKeepSession)!,
+    onHandoff: useKeepSessionAction(onHandoff, onKeepSession)!,
+    onBtwSubmit: useKeepSessionAction(onBtwSubmit, onKeepSession),
+    onBtwRetry: useKeepSessionAction(onBtwRetry, onKeepSession),
+    onBtwDelete: useKeepSessionAction(onBtwDelete, onKeepSession),
+    onBtwStop: useKeepSessionAction(onBtwStop, onKeepSession),
+    onBtwModelChange: useKeepSessionAction(onBtwModelChange, onKeepSession),
     onNewTerminal: onNewTerminalInSession,
     onRunProjectAction: onRunSessionProjectAction,
   };
 
   return { sessionPaneProps };
+}
+
+/** Preserve callback identity and optionality while committing intentional session actions. */
+function useKeepSessionAction<A extends unknown[], R>(
+  action: ((id: string, ...args: A) => R) | undefined,
+  keep: (id: string) => void,
+): ((id: string, ...args: A) => R) | undefined {
+  return useStableCallback(
+    action
+      ? (id: string, ...args: A) => {
+          keep(id);
+          return action(id, ...args);
+        }
+      : undefined,
+  );
 }

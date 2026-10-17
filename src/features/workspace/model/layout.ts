@@ -98,6 +98,8 @@ export type SurfaceKind = "editor" | "terminal";
 export type WorkspaceTab = {
   kind: "session";
   id: string;
+  /** Browsing slot. Cleared as soon as the owner works in or keeps this session. */
+  previewSessionId?: string;
   layout: LayoutNode;
   focusedId: string;
   editorPanes: EditorPane[];

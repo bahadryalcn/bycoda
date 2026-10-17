@@ -2433,9 +2433,7 @@ function UserMessageBlock({
     !note &&
     !block.ciContext;
 
-  // Only the chat layout rounds a single line; the document layout always uses
-  // the square corners, so it never needs the measurement at all.
-  const roundsSingleLine = chat && textOnly;
+  const roundsSingleLine = textOnly;
 
   useLayoutEffect(() => {
     const el = textRef.current;
@@ -2555,13 +2553,9 @@ function UserMessageBlock({
     <div
       data-prompt-anchor={block.id}
       data-editing-last-turn={editing ? "true" : undefined}
-      className={`user-message-row group/usermsg overflow-visible ${
-        chat ? "flex flex-col items-end pt-1.5 pr-4 pb-5 pl-14" : "p-1.5 pb-4"
-      }`}
+      className="user-message-row group/usermsg flex flex-col items-end overflow-visible pbs-1.5 pe-4 pbe-5 ps-14"
     >
-      <div
-        className={`user-message-hover-zone min-w-0 overflow-visible ${chat ? "flex w-fit max-w-full flex-col items-end" : "w-full"}`}
-      >
+      <div className="user-message-hover-zone flex w-fit min-w-0 max-w-full flex-col items-end overflow-visible">
         <div
           data-draft={block.draft ? "true" : undefined}
           data-follow-up-delivery={delivery}
@@ -2570,11 +2564,7 @@ function UserMessageBlock({
             block.draft
               ? "border border-dashed border-(--ui-tone-neutral-border) bg-(--ui-surface-raised)"
               : "bg-(--ui-surface-raised)"
-          } ${editing ? "edit-last-turn-bubble" : ""} ${
-            chat
-              ? `w-fit max-w-[min(100%,36rem)] ${singleLine ? "rounded-full" : "rounded-xl"}`
-              : "rounded-lg border border-(--ui-tone-neutral-border)"
-          }`}
+          } ${editing ? "edit-last-turn-bubble" : ""} w-fit ${chat ? "max-w-[min(100%,36rem)]" : "max-w-full"} ${singleLine ? "rounded-full" : "rounded-xl"}`}
           style={{ zIndex: stickyIndex }}
         >
           {block.turnOutcome === "stopped" ? (

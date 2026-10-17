@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { SessionPreviewFixture } from "./session-preview";
 import { createRoot } from "react-dom/client";
 import { ProjectRail } from "../../src/app/shell/ProjectRail";
 import { SourceControl } from "../../src/features/source-control/ui/SourceControl";
@@ -185,7 +186,9 @@ if (new URL(location.href).searchParams.has("inbox-layout")) {
   saveInboxSource("jira");
 }
 createRoot(document.getElementById("root")!).render(
-  new URL(location.href).searchParams.has("inbox-layout") ? (
+  new URL(location.href).searchParams.has("session-preview") ? (
+    <SessionPreviewFixture />
+  ) : new URL(location.href).searchParams.has("inbox-layout") ? (
     <InboxLayoutFixture />
   ) : new URL(location.href).searchParams.has("layout") ? (
     <ShellLayoutFixture />

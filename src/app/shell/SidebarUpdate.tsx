@@ -121,7 +121,7 @@ export function SidebarUpdateFooter({
             ) : null}
             <div className="flex flex-wrap justify-end gap-2">
               <Button onClick={() => setPromptOpen(false)}>{t("Later")}</Button>
-              <SidebarUpdate snapshot={snapshot} onSnapshot={setSnapshot} />
+              <SidebarUpdate snapshot={snapshot} onSnapshot={setSnapshot} compact />
             </div>
           </div>
         </Modal>
@@ -135,9 +135,11 @@ export function SidebarUpdateFooter({
 export function SidebarUpdate({
   snapshot,
   onSnapshot,
+  compact = false,
 }: {
   snapshot: UpdaterSnapshot;
   onSnapshot: (next: UpdaterSnapshot) => void;
+  compact?: boolean;
 }) {
   useLocale();
   const busy = snapshot.phase === "downloading";
@@ -160,7 +162,13 @@ export function SidebarUpdate({
     : t("Update to {p0}", { p0: snapshot.availableVersion ?? "" });
 
   return (
-    <Button onClick={onClick} disabled={busy} variant="secondary" fullWidth motion="none">
+    <Button
+      onClick={onClick}
+      disabled={busy}
+      variant="secondary"
+      fullWidth={!compact}
+      motion="none"
+    >
       <span className="grid size-[18px] shrink-0 place-items-center">
         {busy ? (
           <Loader className="size-4 motion-safe:animate-spin opacity-70" aria-hidden />
@@ -170,9 +178,11 @@ export function SidebarUpdate({
       </span>
       <span className="min-w-0 flex-1 flex items-center">
         <span className="block truncate text-[12px] font-medium leading-tight">{label}</span>
-        <span className="ml-auto block text-[11px] text-content/40">
-          v{snapshot.currentVersion}
-        </span>
+        {!compact ? (
+          <span className="ml-auto block text-[11px] text-content/40">
+            v{snapshot.currentVersion}
+          </span>
+        ) : null}
       </span>
     </Button>
   );

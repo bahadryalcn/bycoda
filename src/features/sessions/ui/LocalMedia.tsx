@@ -96,7 +96,7 @@ export function LocalMedia({
       <span
         ref={box}
         data-local-media={path}
-        className="[margin-block:0.5rem] block aspect-video w-80 max-w-full overflow-clip rounded-xl border border-(--ui-tone-neutral-border) bg-(--ui-surface-raised)"
+        className="[margin-block:0.5rem] grid aspect-video w-80 max-w-full grid-cols-[minmax(0,1fr)] grid-rows-[minmax(0,1fr)] overflow-clip rounded-xl border border-(--ui-tone-neutral-border) bg-(--ui-surface-raised)"
       >
         {url && video ? (
           <video
@@ -110,12 +110,14 @@ export function LocalMedia({
           />
         ) : onOpen && image ? (
           <Button
-            variant="ghost"
+            variant="item"
+            motion="none"
+            fullWidth
             type="button"
             aria-label={label}
             onClick={onOpen}
             onContextMenu={onContextMenu}
-            className="block"
+            className="size-full min-h-0 min-w-0 p-0"
           >
             {image}
           </Button>

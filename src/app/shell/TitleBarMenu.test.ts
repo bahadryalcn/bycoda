@@ -58,6 +58,35 @@ afterEach(() => {
 });
 
 describe("title tab context menu", () => {
+  it("keeps a preview session by menu, double click or keyboard without pinning history", () => {
+    const onKeepSession = vi.fn();
+    act(() =>
+      root.render(
+        createElement(TitleBar, {
+          tabs: [{ ...tab("preview"), previewSessionId: "session-one" }],
+          activeId: "preview",
+          cwd: "/project",
+          onKeepSession,
+          onToggleSidebar: vi.fn(),
+          onNew: vi.fn(),
+          onSelect: vi.fn(),
+          onClose: vi.fn(),
+          onCloseMany: vi.fn(),
+          onReorder: vi.fn(),
+        }),
+      ),
+    );
+    const button = container.querySelector<HTMLButtonElement>(
+      '[data-title-tab-id="preview"] button',
+    )!;
+    expect(button.querySelector(".italic")).not.toBeNull();
+    pick(openMenu("preview"), "Keep open");
+    act(() => button.dispatchEvent(new MouseEvent("dblclick", { bubbles: true })));
+    act(() => button.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })));
+    expect(onKeepSession).toHaveBeenCalledTimes(3);
+    expect(onKeepSession).toHaveBeenLastCalledWith("session-one");
+  });
+
   it("returns only the chosen detached tab to the main window", () => {
     const onReturnTabToMain = vi.fn();
     act(() =>

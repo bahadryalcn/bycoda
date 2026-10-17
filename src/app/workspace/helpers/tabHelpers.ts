@@ -1,8 +1,27 @@
-import { remotePendingWorktree, remoteSessionFor } from "../../../features/connections/model/connections";
+import {
+  remotePendingWorktree,
+  remoteSessionFor,
+} from "../../../features/connections/model/connections";
 import { isBlankSession } from "../../../features/projects/model/projectReturn";
-import { sessionNeedsInput, type HarnessId, type Session } from "../../../features/sessions/model/session";
+import {
+  sessionNeedsInput,
+  type HarnessId,
+  type Session,
+} from "../../../features/sessions/model/session";
 import { terminalTabLabel } from "../../../features/terminal/model/terminalTab";
-import { firstLeafId, focusedFileTab, isFilesystemTab, isTerminalTab, leafIds, previewWorkspaceFile, removePane, siblingLeafId, type EditorPane, type FilePaneTab, type WorkspaceTab } from "../../../features/workspace/model/layout";
+import {
+  firstLeafId,
+  focusedFileTab,
+  isFilesystemTab,
+  isTerminalTab,
+  leafIds,
+  previewWorkspaceFile,
+  removePane,
+  siblingLeafId,
+  type EditorPane,
+  type FilePaneTab,
+  type WorkspaceTab,
+} from "../../../features/workspace/model/layout";
 import { basename } from "../../../platform/tauri/fs";
 import { projectName } from "../../../shared/lib/paths";
 import { releaseNotesTitle } from "../../model/releaseNotes";
@@ -40,6 +59,7 @@ export function titleTabsEqual(a: TitleTab[], b: TitleTab[]): boolean {
       tab.pendingWindowMove === other.pendingWindowMove &&
       tab.movingWindow === other.movingWindow &&
       tab.previewFileId === other.previewFileId &&
+      tab.previewSessionId === other.previewSessionId &&
       tab.groupId === other.groupId
     );
   });
@@ -174,11 +194,15 @@ export function toTitleTab(
     hasTerminal,
     pendingWindowMove: pendingWindowMove || undefined,
     previewFileId: previewWorkspaceFile(tab)?.id,
+    previewSessionId: tab.previewSessionId,
     groupId: tab.groupId,
   };
 }
 
-export function dropOpenFiles(tab: WorkspaceTab, shouldDrop: (path: string) => boolean): WorkspaceTab {
+export function dropOpenFiles(
+  tab: WorkspaceTab,
+  shouldDrop: (path: string) => boolean,
+): WorkspaceTab {
   let layout = tab.layout;
   let focusedId = tab.focusedId;
   const editorPanes: EditorPane[] = [];

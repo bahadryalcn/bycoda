@@ -1,7 +1,12 @@
 import { useCallback, useState, type Dispatch, type SetStateAction } from "react";
 import { newDefaultSession } from "../../../features/sessions/model/session";
 import { lastProjectPath } from "../../../features/projects/model/recents";
-import { isolateTerminalPanes, newTab, type WorkspaceTab } from "../../../features/workspace/model/layout";
+import {
+  isolateTerminalPanes,
+  newTab,
+  type WorkspaceTab,
+} from "../../../features/workspace/model/layout";
+import { normalizeSessionPreview } from "../../../features/workspace/model/sessionPreview";
 import type { ToolWindow } from "../../model/toolWindows";
 import type { WindowTransferPayload } from "../../model/windowTransfer";
 import type { ResumedWorkspace } from "../../model/appLifecycle";
@@ -37,7 +42,7 @@ export function useTabState({ seed, windowTransfer, resumed }: TabStateDeps) {
       setTabsState((previous) => {
         const next = typeof update === "function" ? update(previous) : update;
         if (next === previous) return previous;
-        return next.map(isolateTerminalPanes);
+        return next.map((tab) => normalizeSessionPreview(isolateTerminalPanes(tab)));
       });
     },
     [],

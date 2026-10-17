@@ -1,5 +1,39 @@
 import { expect, test } from "@playwright/test";
 
+for (const layout of ["chat", "full"] as const) {
+  test(`${layout} layout keeps short user messages compact and right aligned`, async ({
+    page,
+  }, info) => {
+    await page.goto(
+      `/tests/browser/transcript.html?message-bubbles${layout === "full" ? "&full-width" : ""}`,
+    );
+    const short = page.locator('[data-prompt-anchor="short-user"] .user-message-bubble');
+    const long = page.locator('[data-prompt-anchor="long-user"] .user-message-bubble');
+    await expect(short).toBeVisible();
+    for (const width of [390, 1440]) {
+      await page.setViewportSize({ width, height: 900 });
+      for (const theme of ["dark", "light"]) {
+        await page.evaluate(
+          (light) => document.documentElement.classList.toggle("theme-light", light),
+          theme === "light",
+        );
+        const shortBox = (await short.boundingBox())!;
+        const longBox = (await long.boundingBox())!;
+        const row = (await page.locator('[data-prompt-anchor="short-user"]').boundingBox())!;
+        expect(shortBox.width).toBeLessThan(130);
+        expect(shortBox.x + shortBox.width).toBeCloseTo(row.x + row.width - 16, 0);
+        expect(longBox.x + longBox.width).toBeCloseTo(shortBox.x + shortBox.width, 0);
+        expect(longBox.width).toBeGreaterThan(shortBox.width);
+        expect(longBox.width).toBeLessThanOrEqual(row.width - 70);
+        expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
+          width,
+        );
+      }
+    }
+    await page.screenshot({ path: info.outputPath(`${layout}-message-bubbles.png`) });
+  });
+}
+
 test("chat messages, attachment references and running work keep a readable hierarchy", async ({
   page,
 }, info) => {

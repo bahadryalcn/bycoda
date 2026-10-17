@@ -1,4 +1,5 @@
 {
+  "Keep open": "開いたままにする",
   "Default translation model": "既定の翻訳モデル",
   "Used for text translations across conversations. Without a selection, uses the conversation model.": "すべての会話でテキストの翻訳に使用します。未選択の場合は会話のモデルを使用します。",
   "Use conversation model": "会話のモデルを使用",
@@ -2239,7 +2240,7 @@
   "No archived conversations in this project.": "このプロジェクトにはアーカイブされた会話はありません。",
   "Transcript": "成績証明書",
   "How a conversation reads as it grows.": "会話が成長するにつれてどのように読まれるか。",
-  "Full width keeps user prompts as a spanning card. Chat aligns them to the right with a max width, like a messaging app.": "全幅では、ユーザー プロンプトがスパン カードとして保持されます。チャットでは、メッセージング アプリと同様に、最大幅で右に配置されます。",
+  "User messages stay right aligned and fit their content. Full width gives longer messages more room; Chat limits their width.": "ユーザーメッセージは右寄せで、内容に合った幅になります。全幅では長いメッセージに広い領域を使い、チャットでは幅を制限します。",
   "When you send, the new prompt sits at the top of the transcript and the reply grows into the space below. Turn this off to keep the classic layout, with the latest message resting on the composer.": "送信すると、新しいプロンプトがトランスクリプトの先頭に表示され、返信がその下のスペースに拡大されます。これをオフにすると、クラシックなレイアウトが維持され、最新のメッセージがコンポーザーに表示されます。",
   "Composer": "作曲家",
   "What the composer does with what you type.": "あなたが入力した内容に対して作曲家が何をするか。",
