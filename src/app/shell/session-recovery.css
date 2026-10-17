@@ -49,6 +49,7 @@
 }
 .bycoda-rail-brand .recovery-rail-control {
   flex: none;
+  inline-size: auto;
 }
 .bycoda-rail-brand .recovery-rail-label {
   display: none;
