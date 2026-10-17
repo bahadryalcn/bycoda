@@ -57,7 +57,7 @@ export function SectionMenuButton({
         const rect = event.currentTarget.getBoundingClientRect();
         onOpen(rect.left, rect.bottom);
       }}
-      className="hidden size-5 shrink-0 place-items-center group-hover:grid group-has-[:focus-visible]:grid"
+      className="hidden size-5 shrink-0 place-items-center group-hover:grid group-has-[button:focus-visible]:grid"
     >
       <MoreHorizontal className="size-3.5" strokeWidth={1.75} />
     </Button>

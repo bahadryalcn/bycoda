@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { modelsForClaudeVersion, modelsFromClaudeListModels } from "./claudeCatalog";
+
+it("records the concrete version behind a moving Claude alias", () => {
+  const models = modelsFromClaudeListModels([{ value: "opus", resolvedModel: "claude-opus-5-5", displayName: "Opus" }]);
+  expect(models[0]).toMatchObject({ nativeId: "opus", aliasTarget: "claude-opus-5-5" });
+});
 import {
   applyClaudePromptEffortPrefix,
   claudeInitCommands,
@@ -300,6 +305,23 @@ describe("usage limits", () => {
         },
       }),
     ).toEqual({ resetsAt: 1_790_000_000_000 });
+  });
+
+  it("does not stop the session when only fast mode's extra usage runs out", () => {
+    // Out of credits refuses fast mode until the monthly reset, while the plan
+    // still serves the session at standard speed.
+    expect(
+      usageLimitFromRateLimitEvent({
+        rate_limit_info: {
+          status: "rejected",
+          resetsAt: 1_793_491_200,
+          rateLimitType: "overage",
+          overageStatus: "rejected",
+          overageDisabledReason: "out_of_credits",
+          isUsingOverage: false,
+        },
+      }),
+    ).toBeNull();
   });
 
   it("ignores allowed windows and extra usage", () => {

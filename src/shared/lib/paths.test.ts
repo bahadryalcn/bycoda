@@ -1,4 +1,14 @@
 import { describe, expect, it } from "vitest";
+import { resolveDocumentImage } from "./paths";
+
+it("resolves document images relative to the document or project and rejects escaped references", () => {
+  expect(resolveDocumentImage("../assets/hero.png", "/repo/docs/guide.md", "/repo")).toEqual({ path: "/repo/assets/hero.png", relative: "assets/hero.png" });
+  expect(resolveDocumentImage("/assets/a%20b.svg", "/repo/docs/guide.md", "/repo")).toEqual({ path: "/repo/assets/a b.svg", relative: "assets/a b.svg" });
+  expect(resolveDocumentImage("logo.png", "remote://mac/repo/docs/guide.md", "remote://mac/repo")).toEqual({ path: "remote://mac/repo/docs/logo.png", relative: "docs/logo.png" });
+  for (const src of ["../../private.png", "%2e%2e/%2e%2e/private.png", "https://example.com/a.png", "file:///secret.png", "//host/a.png", "data:image/png;base64,AA", "%5c%5chost/a.png", "notes.txt", "a.png%00.txt"]) {
+    expect(resolveDocumentImage(src, "/repo/README.md", "/repo"), src).toBeUndefined();
+  }
+});
 import {
   displayPath,
   isEqualOrInside,

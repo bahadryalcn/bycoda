@@ -1660,6 +1660,15 @@ describe("claude subagents", () => {
     expect(settled).toBe(true);
   });
 
+  it("does not carry a replayed task's rate limit into the real turn", async () => {
+    const { events, turn } = await startTurn("s1");
+    emit({ type: "rate_limit_event", rate_limit_info: { status: "rejected", resetsAt: 1_800_000_000 } });
+    emit({ type: "result", subtype: "success", num_turns: 0, origin: { kind: "task-notification" }, result: "" });
+    emit({ type: "result", subtype: "error_during_execution", is_error: true, errors: ["Temporary provider error"], result: "Temporary provider error" });
+    await turn;
+    expect(events.some((event) => event.type === "usage.limited")).toBe(false);
+  });
+
   it("does not end the turn on a subagent result", async () => {
     const { events, turn } = await startTurn("s1");
     let settled = false;

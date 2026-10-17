@@ -3,9 +3,18 @@ import { expect, it, vi } from "vitest";
 import {
   openRemoteProject,
   remotePath,
+  remoteSessionGitCwd,
   remoteProjectFor,
   verifyRemoteProjectAlias,
 } from "./remoteProjects";
+
+it("uses a remote tab's linked checkout for Git even when the file cwd points elsewhere", () => {
+  const project = { environmentId: "mac", cwd: "/repo" };
+  expect(remoteSessionGitCwd(project, "remote://mac/repo", "remote://mac/repo", "/worktrees/fix")).toBe("remote://mac/worktrees/fix");
+  expect(remoteSessionGitCwd(project, "/worktrees/fix", "remote://mac/repo")).toBe("remote://mac/worktrees/fix");
+  expect(remoteSessionGitCwd(project, "remote://mac/other", "remote://mac/repo", "remote://mac/worktrees/fix")).toBe("remote://mac/worktrees/fix");
+  expect(remoteSessionGitCwd(project, "remote://mac/repo", "remote://mac/repo")).toBe("remote://mac/repo");
+});
 
 const binding = {
   key: "remote://env/G:/repo",

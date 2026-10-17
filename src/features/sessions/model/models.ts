@@ -26,6 +26,8 @@ export type AgentModel = {
   harness: HarnessId;
   name: string;
   nativeId?: string;
+  /** Concrete native model launched by a moving provider alias. */
+  aliasTarget?: string;
   /** Upstream provider inside a multi-provider harness such as OpenCode. */
   provider?: {
     id: string;
@@ -471,6 +473,19 @@ function lookupModel(id: string): AgentModel | undefined {
   return findModel(id) ?? bundledById.get(id);
 }
 
+function withAliasSettings(model: AgentModel, available: AgentModel[]): AgentModel {
+  if (model.settings) return model;
+  const native = comparableNativeId(model.harness, model.nativeId ?? nativeIdFrom(model.id));
+  const alias = available.find(
+    (item) =>
+      item.harness === model.harness &&
+      item.settings &&
+      item.aliasTarget != null &&
+      comparableNativeId(item.harness, item.aliasTarget) === native,
+  );
+  return alias ? { ...model, settings: alias.settings } : model;
+}
+
 export function resolveModel(harness: HarnessId, id?: string): AgentModel {
   const available = catalogModelsFor(harness);
   if (id) {
@@ -516,14 +531,14 @@ export function resolveModel(harness: HarnessId, id?: string): AgentModel {
       return hits[0];
     }
     const bundled = bundledById.get(id);
-    if (bundled && bundled.harness === harness) return bundled;
+    if (bundled && bundled.harness === harness) return withAliasSettings(bundled, available);
 
     // A saved concrete Claude version may be absent from both catalogs.
     // Keep the requested id so a new session does not silently switch models.
     const requested = id.trim();
     if (harness === "claude" && /^claude:[a-z][a-z0-9-]*-\d/.test(requested)) {
       const nativeId = nativeIdForUnknownKey(requested);
-      return { id: requested, harness, name: nativeId, nativeId };
+      return withAliasSettings({ id: requested, harness, name: nativeId, nativeId }, available);
     }
   }
   // Codex has no built-in catalog. During startup, retain the saved model

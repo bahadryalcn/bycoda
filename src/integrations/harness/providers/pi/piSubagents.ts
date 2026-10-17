@@ -107,7 +107,7 @@ export function piSubagentEvents(
         const stepId = `${rowId}:message:${messageIndex}:${partIndex}`;
         if (part.type === "text" || part.type === "thinking") {
           const text = stringField(part, part.type === "text" ? "text" : "thinking");
-          if (text)
+          if (text && (part.type === "thinking" || hasReadableText(text)))
             emit({
               stepId,
               kind: part.type === "text" ? "message" : "reasoning",
@@ -187,3 +187,4 @@ function records(value: unknown): Record<string, unknown>[] {
     ? value.flatMap<Record<string, unknown>>((item) => asRecord(item) ?? [])
     : [];
 }
+import { hasReadableText } from "../../../../features/sessions/model/transcriptActivity";

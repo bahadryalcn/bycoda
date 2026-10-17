@@ -12,6 +12,20 @@ function responseIdForNode(node: Node | null, root: HTMLElement): string | null 
   return response.getAttribute(SELECTABLE_AGENT_RESPONSE_ATTR);
 }
 
+function clampToResponse(range: Range, root: HTMLElement): Range {
+  const element = range.startContainer instanceof Element ? range.startContainer : range.startContainer.parentElement;
+  const response = element?.closest<HTMLElement>(`[${SELECTABLE_AGENT_RESPONSE_ATTR}]`);
+  if (!response || !root.contains(response) || response.contains(range.endContainer)) return range;
+  // Whole-paragraph selections may end at the start of the following action row.
+  // Only accept that boundary if no text outside the reply was selected.
+  const overflow = range.cloneRange();
+  overflow.setStart(response, response.childNodes.length);
+  if (overflow.toString().trim()) return range;
+  const clamped = range.cloneRange();
+  clamped.setEnd(response, response.childNodes.length);
+  return clamped;
+}
+
 function firstRangeRect(range: Range): DOMRect | null {
   const rects = range.getClientRects();
   for (let index = 0; index < rects.length; index += 1) {
@@ -54,17 +68,17 @@ export function useTranscriptSelection(
         setSelection(null);
         return;
       }
+      const range = clampToResponse(nativeSelection.getRangeAt(0), root);
       const text = validateTranscriptSelection({
         text: nativeSelection.toString(),
         collapsed: nativeSelection.isCollapsed,
-        anchorResponseId: responseIdForNode(nativeSelection.anchorNode, root),
-        focusResponseId: responseIdForNode(nativeSelection.focusNode, root),
+        anchorResponseId: responseIdForNode(range.startContainer, root),
+        focusResponseId: responseIdForNode(range.endContainer, root),
       });
-      const rect = text ? firstRangeRect(nativeSelection.getRangeAt(0)) : null;
+      const rect = text ? firstRangeRect(range) : null;
       let occurrence = 0;
       let responseText: string | undefined;
       if (text && rect) {
-        const range = nativeSelection.getRangeAt(0);
         const node =
           range.startContainer instanceof Element
             ? range.startContainer

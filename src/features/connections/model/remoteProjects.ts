@@ -28,6 +28,12 @@ export function remotePath(environmentId: string, hostPath: string): string {
   return `${REMOTE_PROJECT_PREFIX}${environmentId}/${path.startsWith("//") ? path.slice(1) : path.replace(/^\/+/, "")}`;
 }
 
+/** Git follows the tab's selected checkout, independently of the file/terminal cwd. */
+export function remoteSessionGitCwd(project: Pick<RemoteProject, "environmentId" | "cwd">, gitCwd: string, projectCwd: string, tabCwd?: string): string {
+  const cwd = tabCwd ?? (gitCwd !== projectCwd ? gitCwd : project.cwd);
+  return isRemoteProjectPath(cwd) ? cwd : remotePath(project.environmentId, cwd);
+}
+
 /** The machine and host path behind a `remote://` path. */
 export function parseRemotePath(
   path: string,

@@ -160,11 +160,11 @@ export function LastSessionsSection({
           className={`min-w-0 flex-1 ${drag ? "cursor-grab" : ""}`}
         >
           <Clock
-            className="size-3.5 shrink-0 group-hover:hidden group-has-[:focus-visible]:hidden"
+            className="size-3.5 shrink-0 group-hover:hidden group-has-[button:focus-visible]:hidden"
             strokeWidth={1.75}
           />
           <ChevronDown
-            className={`hidden size-3.5 shrink-0 group-hover:block group-has-[:focus-visible]:block ${
+            className={`hidden size-3.5 shrink-0 group-hover:block group-has-[button:focus-visible]:block ${
               prefs.collapsed ? "-rotate-90" : ""
             }`}
             strokeWidth={1.75}
@@ -484,7 +484,7 @@ function SessionRow({
             event.stopPropagation();
             onTogglePin();
           }}
-          className="absolute right-1 top-1/2 hidden -translate-y-1/2 group-hover:flex group-has-[:focus-visible]:flex"
+          className="absolute right-1 top-1/2 hidden -translate-y-1/2 group-hover:flex group-has-[button:focus-visible]:flex"
         >
           {row.pinned ? (
             <PinOff className="size-3.5" strokeWidth={1.75} />

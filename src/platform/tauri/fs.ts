@@ -2,12 +2,21 @@ import { invoke as invokeLocal } from "@tauri-apps/api/core";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { withGithubRead } from "../../shared/lib/githubReadGate";
 import { open } from "@tauri-apps/plugin-dialog";
-import { parentPath, slash } from "../../shared/lib/paths";
+import { parentPath, slash, joinPath } from "../../shared/lib/paths";
 import { REMOTE_PATH_PREFIX } from "../../shared/lib/remotePaths";
 import { localExplorerPath } from "../../shared/lib/remoteExplorerPaths";
 import type { InterjectionMeta } from "../../features/sessions/model/session";
 
 export { REMOTE_PATH_PREFIX } from "../../shared/lib/remotePaths";
+
+/** Read only a project-contained image; the backend checks symlink containment. */
+export async function readProjectImage(root: string, path: string): Promise<Uint8Array> {
+  const bytes = root.startsWith(REMOTE_PATH_PREFIX)
+    ? await readBinaryFile(joinPath(root, path))
+    : new Uint8Array(await invokeLocal<ArrayBuffer>("read_project_image", { root, path }));
+  if (bytes.byteLength > 20 * 1024 * 1024) throw new Error("Document image exceeds 20 MB");
+  return bytes;
+}
 
 type RemoteCommandRunner = (command: string, args: Record<string, unknown>) => Promise<unknown>;
 let remoteRunner: RemoteCommandRunner | undefined;

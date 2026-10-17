@@ -66,6 +66,11 @@ describe("newSessionForProject", () => {
 });
 
 describe("retargetSessionToProject", () => {
+  it("clears the old project's account for a blank session but preserves it in the same project", () => {
+    const blank: Session = { ...newSession("claude", "/old"), providerAccountId: "old-account" };
+    expect(retargetSessionToProject(blank, "/new").providerAccountId).toBeUndefined();
+    expect(retargetSessionToProject(blank, "/old").providerAccountId).toBe("old-account");
+  });
   beforeEach(() => {
     const storage = new Map<string, string>();
     vi.stubGlobal("localStorage", {

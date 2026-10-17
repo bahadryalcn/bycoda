@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { newSession, type Session } from "../../../features/sessions/model/session";
 import { planTurnKey } from "../../../features/sessions/model/plan";
+import { changedBlocks } from "../../../features/sessions/model/blockChanges";
 import { sanitizeSessionForPersist } from "../../../features/sessions/data/sessionStore";
 import { previewFromTool } from "../providers/claude/claudeProtocol";
 import {
@@ -13,6 +14,19 @@ import {
 import type { HarnessEvent } from "./types";
 
 let now = 0;
+
+it.each(["...", " — ", "!!!"])("drops punctuation-only assistant streams (%s) without removing user messages", (text) => {
+  const session = { ...newSession("claude", "/repo"), blocks: [{ id: "u", role: "user" as const, text }, { id: "a", role: "assistant" as const, text, streaming: true }] };
+  expect(stopStreaming(session).blocks.map((block) => block.id)).toEqual(["u"]);
+  const completed = applyHarnessEvent(session, { type: "message.completed" });
+  expect(completed.blocks.map((block) => block.id)).toEqual(["u"]);
+  expect(changedBlocks(session.blocks, completed.blocks)?.get("a")).toBeNull();
+});
+
+it.each(["✅", "はい。", "1", "=", "Done."])("preserves meaningful assistant output (%s)", (text) => {
+  const session = { ...newSession("claude", "/repo"), blocks: [{ id: "a", role: "assistant" as const, text, streaming: true }] };
+  expect(stopStreaming(session).blocks[0].text).toBe(text);
+});
 
 beforeEach(() => {
   now = 0;

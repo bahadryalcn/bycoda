@@ -28,6 +28,10 @@ import { initializeProviderBinaryPaths } from "./features/providers/model/provid
 import "./features/connections/model/remoteCommands";
 import "./features/connections/model/remoteGitWatch";
 import "./styles/index.css";
+import { installNativeContextMenuGuard } from "./shared/lib/nativeContextMenu";
+
+const removeContextMenuGuard = installNativeContextMenuGuard();
+if (import.meta.hot) import.meta.hot.dispose(removeContextMenuGuard);
 import { bootstrap } from "./app/model/bootstrap";
 import { BootFailure } from "./app/shell/BootFailure";
 import { BootGate } from "./app/shell/BootGate";

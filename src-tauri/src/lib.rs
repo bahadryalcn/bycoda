@@ -590,6 +590,7 @@ pub fn run() {
             fs::read_attachment_chunk,
             fs::hash_attachment_prefix,
             fs::read_binary_file,
+            fs::read_project_image,
             fs::write_attachment,
             fs::save_generated_image,
             fs::delete_generated_images,

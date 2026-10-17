@@ -31,6 +31,7 @@ pub struct Worktrees {
 
 fn git(root: &Path, args: &[&str]) -> Result<String, String> {
     let mut command = Command::new("git");
+    command.env("PATH", crate::harness::cached_gui_search_path());
     crate::hide_window_console(&mut command);
     let output = command
         .arg("-C")

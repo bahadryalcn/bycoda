@@ -583,6 +583,7 @@ export function FileEditor({
                 <FilePreviewSearch active={active && mode === "preview"} contentVersion={draft}>
                   <MarkdownDocumentPreview
                     text={draft}
+                    documentPath={path}
                     metadataLabel="Properties"
                     cwd={cwd}
                     onOpenFile={onOpenFile}

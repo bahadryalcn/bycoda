@@ -30,6 +30,10 @@ import { QuickComposer } from "./ui/QuickComposer";
 import { PrivacyLaunchGate } from "../group-lock/ui/PrivacyLaunchGate";
 import { getGroupLockView } from "../group-lock/model/groupLock";
 import "../../styles/index.css";
+import { installNativeContextMenuGuard } from "../../shared/lib/nativeContextMenu";
+
+const removeContextMenuGuard = installNativeContextMenuGuard();
+if (import.meta.hot) import.meta.hot.dispose(removeContextMenuGuard);
 
 /**
  * Theme, shared control geometry and typography, without workspace glass, backgrounds or scale: the panel

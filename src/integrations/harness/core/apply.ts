@@ -1,4 +1,5 @@
 import { trimAndCapText } from "../../../shared/lib/cappedText";
+import { hasReadableText } from "../../../features/sessions/model/transcriptActivity";
 import { boundedToolPreview } from "../../../features/sessions/model/toolInspection";
 import { knownToolKindTitle } from "../../../shared/lib/toolKindTitles";
 import { looksLikeCallId as isCallId } from "../../../shared/lib/records";
@@ -606,9 +607,9 @@ export function stopStreaming(session: Session, endedAt = Date.now()): Session {
     retryMessage: undefined,
     pendingQuestion: undefined,
     blocks: stampTurnDuration(
-      settled.blocks.map((block) =>
-        stopBlockProgress(block.streaming ? endOpenAgentRun(block, endedAt) : block),
-      ),
+      settled.blocks
+        .filter((block) => !isBareProseStream(block))
+        .map((block) => stopBlockProgress(block.streaming ? endOpenAgentRun(block, endedAt) : block)),
       endedAt,
     ),
   };
@@ -842,13 +843,14 @@ function appendImage(
 
 function appendBlock(session: Session, block: Block): Session {
   const changed: Block[] = [];
+  const removed: string[] = [];
   const blocks =
     block.role === "system" && !block.interjection
       ? session.blocks.slice()
-      : sealLastStream(session.blocks, changed);
+      : sealLastStream(session.blocks, changed, removed);
   blocks.push(block);
   changed.push(block);
-  registerBlockChanges(session.blocks, blocks, changed);
+  registerBlockChanges(session.blocks, blocks, changed, removed);
   return { ...session, blocks };
 }
 
@@ -1310,7 +1312,7 @@ function findToolIndex(session: Session, patch: { callId: string; title?: string
   });
 }
 
-function sealLastStream(blocks: Block[], changed?: Block[]): Block[] {
+function sealLastStream(blocks: Block[], changed?: Block[], removed?: string[]): Block[] {
   let index = blocks.length - 1;
   while (index >= 0 && blocks[index].role === "system" && !blocks[index].interjection) index--;
   const last = blocks[index];
@@ -1318,9 +1320,18 @@ function sealLastStream(blocks: Block[], changed?: Block[]): Block[] {
     return blocks.slice();
   }
   const next = blocks.slice();
-  next[index] = { ...last, streaming: false };
-  changed?.push(next[index]);
+  if (isBareProseStream(last)) {
+    next.splice(index, 1);
+    removed?.push(last.id);
+  } else {
+    next[index] = { ...last, streaming: false };
+    changed?.push(next[index]);
+  }
   return next;
+}
+
+function isBareProseStream(block: Block): boolean {
+  return block.role === "assistant" && !!block.streaming && !hasReadableText(block.text);
 }
 
 function displayLabel(patch: { title?: string; kind?: string }, prev?: Block): string {
@@ -1382,12 +1393,19 @@ function kindTitle(kind?: string): string {
 
 function finishRole(session: Session, role: Block["role"]): Session {
   const changed: Block[] = [];
-  const blocks = session.blocks.map((block) => {
-    if (block.role !== role || !block.streaming) return block;
-    const next = { ...block, streaming: false };
-    changed.push(next);
-    return next;
-  });
-  registerBlockChanges(session.blocks, blocks, changed);
+  const removed: string[] = [];
+  const blocks = session.blocks
+    .filter((block) => {
+      if (role !== "assistant" || !isBareProseStream(block)) return true;
+      removed.push(block.id);
+      return false;
+    })
+    .map((block) => {
+      if (block.role !== role || !block.streaming) return block;
+      const next = { ...block, streaming: false };
+      changed.push(next);
+      return next;
+    });
+  registerBlockChanges(session.blocks, blocks, changed, removed);
   return { ...session, blocks };
 }

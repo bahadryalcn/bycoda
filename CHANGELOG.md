@@ -16,6 +16,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Refine session composition, conversation clearing and transcript recovery.
 - Improve host session storage, remote projects and workspace feedback.
 - Expand UI boundary checks and browser coverage for the shared design system.
+- Render project-local Markdown images safely and preserve native text context menus.
+- Improve provider model discovery, deleted-worktree recovery and literal Git file paths.
 
 ## [0.5.95]
 

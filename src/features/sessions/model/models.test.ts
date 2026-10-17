@@ -1,5 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { newSession, type HarnessId } from "./session";
+
+it("restores saved Claude version controls only from the alias targeting that exact version", () => {
+  const settings: AgentModel["settings"] = [{ id: "fast", label: "Fast", kind: "toggle", value: "false", options: [{ value: "true", label: "On" }, { value: "false", label: "Off" }] }];
+  try {
+    setHarnessModels("claude", [{ id: "claude:opus", nativeId: "opus", aliasTarget: "claude-opus-5-5", harness: "claude", name: "Opus", settings }]);
+    expect(resolveModel("claude", "claude:opus-5-5")).toMatchObject({ id: "claude:opus-5-5", nativeId: "claude-opus-5-5", settings: expect.arrayContaining(settings!) });
+    expect(resolveModel("claude", "claude:opus-5-6").settings?.some((setting) => setting.id === "fast")).not.toBe(true);
+  } finally { resetHarnessModelOverlays(); }
+});
 import {
   MODELS,
   allModels,

@@ -1473,7 +1473,7 @@ function ProjectGroupSection({
               <>
                 <span
                   data-group-mascot
-                  className="grid size-4 place-items-center group-hover:hidden group-has-[:focus-visible]:hidden"
+                  className="grid size-4 place-items-center group-hover:hidden group-has-[button:focus-visible]:hidden"
                 >
                   <ProjectMascot
                     project={group.id}
@@ -1484,7 +1484,7 @@ function ProjectGroupSection({
                 </span>
                 <ChevronRight
                   data-group-chevron
-                  className="hidden size-3.5 group-hover:block group-has-[:focus-visible]:block"
+                  className="hidden size-3.5 group-hover:block group-has-[button:focus-visible]:block"
                   strokeWidth={1.75}
                 />
               </>
@@ -1593,7 +1593,7 @@ function ProjectGroupSection({
               onToggleLock();
             }}
             className={`size-6 shrink-0 place-items-center ${
-              locked ? "grid" : "hidden group-hover:grid group-has-[:focus-visible]:grid"
+              locked ? "grid" : "hidden group-hover:grid group-has-[button:focus-visible]:grid"
             }`}
           >
             {locked ? (
@@ -1617,7 +1617,7 @@ function ProjectGroupSection({
               event.stopPropagation();
               openMenu(event.currentTarget);
             }}
-            className="hidden size-6 shrink-0 place-items-center group-hover:grid group-has-[:focus-visible]:grid"
+            className="hidden size-6 shrink-0 place-items-center group-hover:grid group-has-[button:focus-visible]:grid"
           >
             <MoreHorizontal className="size-4" strokeWidth={1.75} />
           </Button>
@@ -1875,7 +1875,7 @@ function ProjectCard({
         title={muteStatus ? `${cardTitle}\n${muteStatus}` : cardTitle}
         aria-label={muteStatus ? `${cardAriaLabel}, ${muteStatus}` : cardAriaLabel}
         aria-current={selected ? "true" : undefined}
-        className="flex min-w-0 flex-1 cursor-default items-center gap-2 text-left transition-[padding] duration-150 motion-reduce:transition-none group-hover:pr-6 group-has-[:focus-visible]:pr-6 @max-[140px]/rail:justify-center @max-[140px]/rail:pr-0!"
+        className="flex min-w-0 flex-1 cursor-default items-center gap-2 text-left transition-[padding] duration-150 motion-reduce:transition-none group-hover:pr-6 group-has-[button:focus-visible]:pr-6 @max-[140px]/rail:justify-center @max-[140px]/rail:pr-0!"
       >
         <div
           className={`project-card-logo grid size-4 shrink-0 place-items-center ${multi?.active ? "" : "transition-opacity group-hover:opacity-0"} @max-[140px]/rail:opacity-100!`}
@@ -1920,7 +1920,7 @@ function ProjectCard({
           </span>
         ) : null}
         {hasChanges ? (
-          <span className="project-card-stats shrink-0 group-hover:hidden group-has-[:focus-visible]:hidden @max-[140px]/rail:hidden!">
+          <span className="project-card-stats shrink-0 group-hover:hidden group-has-[button:focus-visible]:hidden @max-[140px]/rail:hidden!">
             <ProjectDiffStat additions={additions} deletions={deletions} />
           </span>
         ) : null}
@@ -1999,7 +1999,7 @@ function ProjectCard({
                 multi && item.path !== "~" ? () => multi.toggle(item.path) : undefined,
               );
             }}
-            className="absolute right-1 top-1/2 hidden size-6 -translate-y-1/2 place-items-center group-hover:grid group-has-[:focus-visible]:grid @max-[140px]/rail:hidden!"
+            className="absolute right-1 top-1/2 hidden size-6 -translate-y-1/2 place-items-center group-hover:grid group-has-[button:focus-visible]:grid @max-[140px]/rail:hidden!"
           >
             <MoreHorizontal className="size-4" strokeWidth={1.75} />
           </Button>
@@ -2018,7 +2018,7 @@ function ProjectCard({
               event.stopPropagation();
               onTogglePin(item.path);
             }}
-            className="absolute left-2 top-1/2 grid -translate-y-1/2 place-items-center opacity-0 pointer-events-none transition-opacity group-hover:pointer-events-auto group-hover:opacity-100 group-has-[:focus-visible]:pointer-events-auto group-has-[:focus-visible]:opacity-100 @max-[140px]/rail:hidden!"
+            className="absolute left-2 top-1/2 grid -translate-y-1/2 place-items-center opacity-0 pointer-events-none transition-opacity group-hover:pointer-events-auto group-hover:opacity-100 group-has-[button:focus-visible]:pointer-events-auto group-has-[button:focus-visible]:opacity-100 @max-[140px]/rail:hidden!"
           >
             {pinned ? (
               <PinOff className="size-3.5" strokeWidth={1.75} />

@@ -1,8 +1,8 @@
 import { invoke } from "@tauri-apps/api/core";
 import { appendReadyHandoff, buildDeterministicHandoff } from "../../sessions/model/handoff";
-import { invokeWorkspace, notifyGitChanged } from "../../../platform/tauri/fs";
+import { invokeWorkspace, notifyGitChanged, resolveProjectLocation } from "../../../platform/tauri/fs";
 import { isFilesystemTab, type FilePaneTab } from "../../workspace/model/layout";
-import { isEqualOrInside, pathKey } from "../../../shared/lib/paths";
+import { isEqualOrInside, pathKey, parentPath } from "../../../shared/lib/paths";
 import { isBlankSession } from "../../projects/model/projectReturn";
 import { newSession, sessionWorkCwd, type Session } from "../../sessions/model/session";
 
@@ -21,6 +21,12 @@ export type Worktree = {
 export type Worktrees = { worktrees: Worktree[]; defaultRoot: string };
 
 export const listWorktrees = (cwd: string) => invokeWorkspace<Worktrees>("git_worktrees", { cwd });
+
+/** A missing parent may be an unmounted volume, not a deleted worktree. */
+export async function worktreeDeletedExternally(path: string): Promise<boolean> {
+  const [tree, parent] = await Promise.all([resolveProjectLocation(path), resolveProjectLocation(parentPath(path))]);
+  return !tree && !!parent;
+}
 
 export async function createWorktree(cwd: string, branch: string, base: string, existing: boolean) {
   const tree = await invoke<Worktree>("git_worktree_create", {

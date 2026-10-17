@@ -787,6 +787,7 @@ export function retargetSessionToProject(session: Session, cwd: string): Session
     ...(harness === session.harness
       ? {}
       : { providerSessionId: undefined, providerAccountId: undefined }),
+    ...(blank && cwd !== session.cwd ? { providerAccountId: undefined } : {}),
     ...(resolved.id === session.model ? {} : { context: dropContextWindow(session.context) }),
   };
 }

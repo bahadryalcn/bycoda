@@ -1468,7 +1468,7 @@ export const FileTree = memo(function FileTree({
         <div className="flex h-full min-h-0 flex-col">
           <div
             className="flex min-h-[calc(var(--ui-control-height-compact)+0.5rem)] shrink-0 items-center gap-px overflow-visible border-b border-stroke px-2"
-            onContextMenu={(e) => e.stopPropagation()}
+            onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); }}
           >
             <HeaderIcon
               label={t("New File")}

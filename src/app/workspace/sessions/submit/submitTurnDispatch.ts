@@ -20,6 +20,8 @@ import { prepareBudgetedHandoff } from "../../../model/prepareHandoff";
 import { lastAssistantTextInTurn, withPlanStatus } from "../../helpers/sessionHelpers";
 import { notifyFinishedWorkspace } from "../../helpers/workspaceNotify";
 import { invoke } from "@tauri-apps/api/core";
+import { detachSessionWorktree, worktreeDeletedExternally } from "../../../../features/source-control/model/worktrees";
+import { isRemoteProjectPath } from "../../../../features/projects/model/recents";
 
 export async function runSubmitDispatch(
   ctx: SubmitDeps,
@@ -282,6 +284,20 @@ export async function runSubmitDispatch(
         ),
     });
     if (finalizedCurrentTurn) {
+      const worktreePath = current.worktreeCwd;
+      if (turn.providerFailureSeen && worktreePath && !isRemoteProjectPath(current.cwd)) {
+        void worktreeDeletedExternally(worktreePath)
+          .then((deleted) => {
+            if (!deleted || ctx.refs.switchingWorktrees.current.has(sessionId) || turnGen.current.get(sessionId) !== gen) return;
+            setSessions((prev) => prev.map((session) =>
+              session.id === sessionId && !session.busy && !session.worktreeRemoved && session.worktreeCwd === worktreePath
+                ? detachSessionWorktree(session, session.cwd, worktreePath)
+                : session,
+            ));
+          })
+          // An inaccessible checkout must never be mistaken for a deleted one.
+          .catch(() => {});
+      }
       // Next tick: the flush above has rendered by then, so the banner
       // quotes the reply's final text rather than the previous batch.
       deferWorkspaceWork(() => {

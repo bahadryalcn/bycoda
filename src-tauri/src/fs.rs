@@ -2854,12 +2854,22 @@ fn add_numstat_z(text: &str, files: &mut HashMap<String, FileAcc>) {
 }
 
 fn add_numstat_map(text: &str, files: &mut HashMap<String, FileAcc>) {
-    for line in text.lines() {
-        let mut parts = line.splitn(3, '\t');
+    let mut records = text.split('\0');
+    while let Some(record) = records.next() {
+        let mut parts = record.splitn(3, '\t');
         let Some(add) = parts.next() else { continue };
         let Some(del) = parts.next() else { continue };
         let Some(path) = parts.next() else { continue };
-        let relative = normalize_diff_path(path);
+        let path = if path.is_empty() {
+            let _old = records.next();
+            let Some(destination) = records.next() else {
+                continue;
+            };
+            destination
+        } else {
+            path
+        };
+        let relative = path_to_js(Path::new(path));
         if relative.is_empty() {
             continue;
         }
@@ -2872,34 +2882,20 @@ fn add_numstat_map(text: &str, files: &mut HashMap<String, FileAcc>) {
 }
 
 fn add_name_status(text: &str, statuses: &mut HashMap<String, &'static str>) {
-    for line in text.lines() {
-        let Some((code, rest)) = line.split_once('\t') else {
-            continue;
-        };
+    let mut records = text.split('\0');
+    while let Some(code) = records.next() {
+        let Some(path) = records.next() else { break };
         let status = match code.as_bytes().first() {
             Some(b'A') => "added",
             Some(b'D') => "deleted",
             Some(b'M' | b'T') => "modified",
             _ => continue,
         };
-        let relative = normalize_diff_path(rest);
+        let relative = path_to_js(Path::new(path));
         if !relative.is_empty() {
             statuses.insert(relative, status);
         }
     }
-}
-
-fn normalize_diff_path(path: &str) -> String {
-    let path = path.trim();
-    if path.is_empty() {
-        return String::new();
-    }
-    let path = if let Some((_, new)) = path.split_once(" => ") {
-        new.trim_end_matches('}')
-    } else {
-        path
-    };
-    path_to_js(Path::new(path))
 }
 
 const MAX_UNTRACKED_BYTES: u64 = 1024 * 1024;
@@ -3239,6 +3235,7 @@ fn git_commit_files_for(root: &Path, sha: &str) -> Result<Vec<GitChangedFile>, S
             "--root",
             "--no-renames",
             "--numstat",
+            "-z",
             &sha,
         ],
     ) {
@@ -3253,6 +3250,7 @@ fn git_commit_files_for(root: &Path, sha: &str) -> Result<Vec<GitChangedFile>, S
             "--root",
             "--no-renames",
             "--name-status",
+            "-z",
             &sha,
         ],
     ) {
@@ -5283,7 +5281,9 @@ fn git_launcher_cmd() -> Command {
 
 pub(crate) fn git_cmd() -> Command {
     let Some(direct) = direct_git() else {
-        return git_launcher_cmd();
+        let mut cmd = git_launcher_cmd();
+        cmd.env("PATH", crate::harness::cached_gui_search_path());
+        return cmd;
     };
     let mut cmd = Command::new(&direct.exe);
     cmd.env("PATH", &direct.path);
@@ -7221,6 +7221,58 @@ fn read_binary_file_sync(path: &str) -> Result<Vec<u8>, String> {
     std::fs::read(&path).map_err(|e| format!("{}: {e}", path.display()))
 }
 
+fn document_image_path(root: &Path, relative: &str) -> Result<PathBuf, String> {
+    let relative_path = Path::new(relative);
+    if relative.is_empty()
+        || relative.contains('\\')
+        || relative.contains(':')
+        || relative_path.is_absolute()
+        || relative_path
+            .components()
+            .any(|part| !matches!(part, std::path::Component::Normal(_)))
+    {
+        return Err("Image path must be project-relative".into());
+    }
+    let root = root.canonicalize().map_err(|e| e.to_string())?;
+    let path = root
+        .join(relative_path)
+        .canonicalize()
+        .map_err(|e| e.to_string())?;
+    if !path.starts_with(&root) || !path.is_file() {
+        return Err("Image must be a file inside the project".into());
+    }
+    Ok(path)
+}
+
+#[tauri::command]
+pub async fn read_project_image(
+    app: AppHandle,
+    root: String,
+    path: String,
+) -> Result<tauri::ipc::Response, String> {
+    let bytes = tauri::async_runtime::spawn_blocking(move || {
+        use std::io::Read;
+        let path = document_image_path(&expand_home(&root), &path)?;
+        crate::file_access::require(&app, &path, false)?;
+        const LIMIT: u64 = 20 * 1024 * 1024;
+        let file = std::fs::File::open(&path).map_err(|e| e.to_string())?;
+        if file.metadata().map_err(|e| e.to_string())?.len() > LIMIT {
+            return Err("Document image exceeds 20 MB".into());
+        }
+        let mut bytes = Vec::new();
+        file.take(LIMIT + 1)
+            .read_to_end(&mut bytes)
+            .map_err(|e| e.to_string())?;
+        if bytes.len() as u64 > LIMIT {
+            return Err("Document image exceeds 20 MB".into());
+        }
+        Ok::<_, String>(bytes)
+    })
+    .await
+    .map_err(|e| e.to_string())??;
+    Ok(tauri::ipc::Response::new(bytes))
+}
+
 /// Persist a pasted blob so non-image attachments have a real path.
 #[tauri::command]
 pub async fn write_attachment(
@@ -7904,6 +7956,48 @@ fn normalize_native_separators(path: &std::path::Path) -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn commit_stats_keep_literal_paths_and_rename_destinations() {
+        let mut counts = HashMap::new();
+        add_numstat_map(
+            "1\t2\t 한글 => \"name\".md \0-\t-\tbinary.png\x001\t0\t\0old\0new\tname.md\0",
+            &mut counts,
+        );
+        assert_eq!(counts[" 한글 => \"name\".md "].additions, 1);
+        assert_eq!(counts[" 한글 => \"name\".md "].deletions, 2);
+        assert!(counts.contains_key("binary.png"));
+        assert!(counts.contains_key("new\tname.md"));
+        let mut statuses = HashMap::new();
+        add_name_status("M\0 한글 => \"name\".md \0D\0new\tname.md\0", &mut statuses);
+        assert_eq!(statuses[" 한글 => \"name\".md "], "modified");
+        assert_eq!(statuses["new\tname.md"], "deleted");
+    }
+
+    #[test]
+    fn document_images_reject_traversal_and_nonfiles() {
+        let dir = tmp("document-images");
+        let project = dir.0.join("project");
+        std::fs::create_dir(&project).unwrap();
+        std::fs::write(project.join("image.png"), b"image").unwrap();
+        std::fs::write(dir.0.join("outside.png"), b"private").unwrap();
+        assert!(document_image_path(&project, "image.png").is_ok());
+        for path in [
+            "../outside.png",
+            "/outside.png",
+            "C:/outside.png",
+            "image.png:stream",
+            "",
+            ".",
+        ] {
+            assert!(document_image_path(&project, path).is_err(), "{path}");
+        }
+        #[cfg(unix)]
+        {
+            std::os::unix::fs::symlink(dir.0.join("outside.png"), project.join("escape.png"))
+                .unwrap();
+            assert!(document_image_path(&project, "escape.png").is_err());
+        }
+    }
     use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
     use std::sync::Arc;
 
@@ -11070,10 +11164,16 @@ mod tests {
     // directories added in front of the inherited PATH.
     #[cfg(not(windows))]
     #[test]
-    fn read_only_git_cmd_uses_inherited_path() {
-        assert!(!git_cmd()
+    fn read_only_git_cmd_includes_gui_install_dirs() {
+        let cmd = git_cmd();
+        let path = cmd
             .get_envs()
-            .any(|(key, _)| key == std::ffi::OsStr::new("PATH")));
+            .find(|(key, _)| *key == std::ffi::OsStr::new("PATH"))
+            .and_then(|(_, value)| value)
+            .unwrap();
+        let dirs: Vec<_> = std::env::split_paths(path).collect();
+        assert!(dirs.contains(&PathBuf::from("/opt/homebrew/bin")));
+        assert!(dirs.contains(&PathBuf::from("/usr/local/bin")));
     }
 
     #[test]
@@ -11082,12 +11182,9 @@ mod tests {
             let cmd = git_cmd_for_args_with_path(&[action], || {
                 panic!("read-only git must not resolve the login-shell PATH")
             });
-            assert!(
-                cfg!(windows)
-                    || !cmd
-                        .get_envs()
-                        .any(|(key, _)| key == std::ffi::OsStr::new("PATH"))
-            );
+            assert!(cmd
+                .get_envs()
+                .any(|(key, value)| key == std::ffi::OsStr::new("PATH") && value.is_some()));
         }
     }
 

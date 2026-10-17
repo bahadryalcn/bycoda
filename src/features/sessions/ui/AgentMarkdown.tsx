@@ -81,6 +81,9 @@ import { isNoteImagePath } from "../../notes";
 import { IS_MAC, IS_WIN } from "../../../platform/tauri/platform";
 import { InboxMedia } from "../../inbox/ui/InboxMedia";
 import { isLocalMediaPath, LocalMedia } from "./LocalMedia";
+import { DocumentImage, ImageAltText } from "./DocumentImage";
+import { resolveDocumentImage } from "../../../shared/lib/paths";
+import { rehypeHoldImageSources, rehypeRestoreImageSources } from "./documentImageSources";
 import { rehypeHardBreaks } from "./hardBreaks";
 import {
   ADAPTIVE_FADE_MAX_MS,
@@ -142,6 +145,14 @@ const INBOX_MEDIA_REHYPE_PLUGINS: PluggableList = [
   ],
 ];
 
+const DOCUMENT_REHYPE_PLUGINS: PluggableList = [
+  defaultRehypePlugins.raw,
+  defaultRehypePlugins.sanitize,
+  rehypeHoldImageSources,
+  MARKDOWN_REHYPE_PLUGINS[2],
+  rehypeRestoreImageSources,
+];
+
 type FileLinkMenu = {
   x: number;
   y: number;
@@ -151,6 +162,7 @@ type FileLinkMenu = {
 
 const FileOpenContext = createContext<{
   cwd?: string;
+  documentPath?: string;
   onOpenFile?: OpenFileFn;
   onRevealFile?: (path: string) => void;
   onFileContextMenu?: (event: ReactMouseEvent, path: string, navigation?: EditorNavigation) => void;
@@ -775,8 +787,13 @@ function MarkdownImage({ src, alt, node: _node, ...props }: MarkdownImageProps) 
   useLocale();
   const allowRemoteMedia = useContext(RemoteMediaContext);
   const localMedia = useContext(LocalMediaContext);
-  const { cwd, onOpenFile, onFileContextMenu } = useContext(FileOpenContext);
+  const { cwd, documentPath, onOpenFile, onFileContextMenu } = useContext(FileOpenContext);
   const url = typeof src === "string" ? src.trim() : "";
+  if (documentPath) {
+    const image = cwd ? resolveDocumentImage(url, documentPath, cwd) : undefined;
+    const align = (_node as { properties?: { align?: unknown } } | undefined)?.properties?.align;
+    return image && cwd ? <DocumentImage key={image.path} root={cwd} {...image} alt={alt} title={props.title} width={props.width} height={props.height} align={typeof align === "string" ? align : undefined} /> : <ImageAltText alt={alt} title={props.title} />;
+  }
   if (url.startsWith("data:image/")) {
     return <img {...props} src={url} alt={alt ?? ""} />;
   }
@@ -887,6 +904,7 @@ export const AgentMarkdown = memo(function AgentMarkdown({
   onOpenFile,
   allowRemoteMedia,
   localMedia,
+  documentPath,
   hardBreaks,
 }: {
   text: string;
@@ -899,6 +917,7 @@ export const AgentMarkdown = memo(function AgentMarkdown({
   allowRemoteMedia?: boolean;
   /** Inline workspace media only when explicitly enabled by an agent response. */
   localMedia?: boolean;
+  documentPath?: string;
   /** Show a newline inside a block as a line break, as a document does. */
   hardBreaks?: boolean;
 }) {
@@ -967,11 +986,12 @@ export const AgentMarkdown = memo(function AgentMarkdown({
   const fileOpen = useMemo(
     () => ({
       cwd,
+      documentPath,
       onOpenFile: onOpenFile ? openFile : undefined,
       onFileContextMenu,
       onRevealFile,
     }),
-    [cwd, onOpenFile, openFile, onFileContextMenu, onRevealFile],
+    [cwd, documentPath, onOpenFile, openFile, onFileContextMenu, onRevealFile],
   );
   const remarkPlugins = useMemo<PluggableList>(
     () => [...Object.values(defaultRemarkPlugins), [remarkWorkspaceFileLinks, { cwd }]],
@@ -1061,7 +1081,7 @@ export const AgentMarkdown = memo(function AgentMarkdown({
   // again. Streamdown keeps a block's elements while its text is unchanged, so
   // the few spans on a finished reply stay, inert: the fade rule needs
   // `.word-fading`, which comes off with the fade.
-  const rehypePlugins = remoteMedia ? INBOX_MEDIA_REHYPE_PLUGINS : MARKDOWN_REHYPE_PLUGINS;
+  const rehypePlugins = documentPath ? DOCUMENT_REHYPE_PLUGINS : remoteMedia ? INBOX_MEDIA_REHYPE_PLUGINS : MARKDOWN_REHYPE_PLUGINS;
   // Publish the tail index with the context value. A mutable ref would let a
   // memoized former tail retain its fading plugin after a new block arrives.
   const markdownBlocks = useMemo(() => {
@@ -1191,6 +1211,7 @@ export const MarkdownPreview = memo(function MarkdownPreview({
   text,
   streaming,
   cwd,
+  documentPath,
   onOpenFile,
   header,
   hardBreaks,
@@ -1198,6 +1219,7 @@ export const MarkdownPreview = memo(function MarkdownPreview({
   text: string;
   streaming?: boolean;
   cwd?: string;
+  documentPath?: string;
   onOpenFile?: OpenFileFn;
   header?: ReactNode;
   hardBreaks?: boolean;
@@ -1219,6 +1241,7 @@ export const MarkdownPreview = memo(function MarkdownPreview({
           text={text}
           streaming={streaming}
           cwd={cwd}
+          documentPath={documentPath}
           onOpenFile={onOpenFile}
           hardBreaks={hardBreaks}
         />

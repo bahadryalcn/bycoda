@@ -3617,6 +3617,15 @@ pub(crate) fn gui_search_path() -> String {
     gui_search_path_from(login_shell_path(), dirs_home(), std::env::var("PATH").ok())
 }
 
+/// Never starts or waits for the login shell on frequent Git status/diff calls.
+pub(crate) fn cached_gui_search_path() -> String {
+    let login_path = LOGIN_SHELL_ENV
+        .try_lock()
+        .ok()
+        .and_then(|cache| cache.as_ref().and_then(|env| env.get("PATH").cloned()));
+    gui_search_path_from(login_path, dirs_home(), std::env::var("PATH").ok())
+}
+
 fn gui_search_path_from(
     login_path: Option<String>,
     home: Option<String>,
