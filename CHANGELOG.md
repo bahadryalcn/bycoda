@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.13]
+
+### Recovery controls and synchronization
+
+- Keep the recovered-session control compact beside search.
+- Omit deleted worktree paths from remote file pickers.
+- Avoid shared queue conflicts caused by JSON key ordering.
+
 ## [0.6.12]
 
 ### Workspace rail and recovery controls
