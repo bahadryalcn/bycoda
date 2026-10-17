@@ -64,7 +64,8 @@ export async function safeGitPath(root: string, input: unknown): Promise<string>
       await lstat(ancestor);
       const actual = await realpath(ancestor);
       const rel = relative(canonicalRoot, actual);
-      if (rel === ".." || rel.startsWith(`..${sep}`) || isAbsolute(rel)) throw new Error("Path is outside the checkout");
+      if (rel === ".." || rel.startsWith(`..${sep}`) || isAbsolute(rel))
+        throw new Error("Path is outside the checkout");
       return path;
     } catch (e) {
       if ((e as NodeJS.ErrnoException).code !== "ENOENT") throw e;
@@ -237,15 +238,16 @@ async function scanHostFilePaths(root: string): Promise<string[]> {
       throw error;
   }
   if (repository) {
-    paths = (
-      await git(
-        root,
-        ["ls-files", "-z", "--cached", "--others", "--exclude-standard"],
-        8 * 1024 * 1024,
-      )
-    )
-      .split("\0")
-      .filter(Boolean);
+    const listed = await git(
+      root,
+      ["ls-files", "-z", "--cached", "--others", "--exclude-standard"],
+      8 * 1024 * 1024,
+    );
+    const deleted = await git(root, ["ls-files", "-z", "--deleted"], 8 * 1024 * 1024);
+    // Cached entries include worktree deletions. Keep those in Changes, but not
+    // in file-opening results; both Git lists use the same relative coordinates.
+    const deletedPaths = new Set(deleted.split("\0"));
+    paths = listed.split("\0").filter((path) => path.length > 0 && !deletedPaths.has(path));
   } else {
     paths = [];
     const pending = [""];
@@ -887,7 +889,9 @@ async function runHostGitAction(
   };
   switch (action) {
     case "stageContents": {
-      const path = relative(root, await safeGitPath(root, input)).split(sep).join("/");
+      const path = relative(root, await safeGitPath(root, input))
+        .split(sep)
+        .join("/");
       if (typeof contents !== "string" || Buffer.byteLength(contents) > MAX_FILE)
         throw new Error("File too large or invalid");
       const hash = (
@@ -947,7 +951,9 @@ async function runHostGitAction(
       return;
     }
     case "discard": {
-      const path = relative(root, await safeGitPath(root, input)).split(sep).join("/");
+      const path = relative(root, await safeGitPath(root, input))
+        .split(sep)
+        .join("/");
       const file = (await hostChangedEntries(root, [path])).find(
         (entry) => entry.relative === path && entry.unstaged,
       );
