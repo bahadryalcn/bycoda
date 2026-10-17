@@ -43,6 +43,20 @@
   flex-shrink: 0;
 }
 
+.bycoda-rail-brand .recovery-rail-row {
+  min-inline-size: 0;
+  max-inline-size: 100%;
+}
+.bycoda-rail-brand .recovery-rail-control {
+  flex: none;
+}
+.bycoda-rail-brand .recovery-rail-label {
+  display: none;
+}
+.bycoda-rail-brand .recovery-rail-clear {
+  opacity: 1;
+}
+
 [data-compact-project-rail] .recovery-rail-control {
   flex: none;
   justify-content: center;

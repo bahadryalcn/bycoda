@@ -391,8 +391,7 @@ html.theme-light .project-sigil {
     display: flex;
   }
 }
-/* Recovery and live-agent rows share the navigation rhythm and collapse
-   entirely when neither has anything to show. */
+/* Active agents follow workspace tools and disappear when none are visible. */
 .bycoda-rail-status {
   display: flex;
   flex-direction: column;

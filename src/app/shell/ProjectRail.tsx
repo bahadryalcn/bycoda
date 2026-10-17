@@ -789,6 +789,7 @@ export function ProjectRail({
               />
             </div>
           )}
+          {settingsOpen ? null : recoveryControl}
         </div>
         {settingsOpen ? (
           <Button
@@ -802,31 +803,6 @@ export function ProjectRail({
           </Button>
         ) : (
           <>
-            {/* Session status first, then compact tool navigation. */}
-            <div className="bycoda-rail-status shrink-0">
-              {recoveryControl}
-              <div className="shrink-0 @max-[140px]/rail:hidden">
-                <LiveAgentsPreview
-                  agents={visibleLiveAgents}
-                  activeSessionId={activeSessionId}
-                  onSelect={onSelectAgent}
-                  collapsible
-                  groupLabels={groupLabels}
-                  groupColors={groupColors}
-                  groupCustomColors={groupCustomColors}
-                  groupMascots={groupMascots}
-                />
-              </div>
-              <CompactLiveAgents
-                agents={visibleLiveAgents}
-                activeSessionId={activeSessionId}
-                onSelect={onSelectAgent}
-                groupLabels={groupLabels}
-                groupColors={groupColors}
-                groupCustomColors={groupCustomColors}
-                groupMascots={groupMascots}
-              />
-            </div>
             <nav
               aria-label={t("Workspace tools")}
               className="bycoda-rail-tools bycoda-rail-tools--expanding shrink-0"
@@ -835,6 +811,7 @@ export function ProjectRail({
                 label={t("Workspace tools")}
                 size="sm"
                 fit
+                fullWidth
                 defaultExpanded={
                   inboxActive
                     ? "inbox"
@@ -993,6 +970,29 @@ export function ProjectRail({
                 />
               </WorkspaceFeatureGate>
             </nav>
+            <div className="bycoda-rail-status shrink-0">
+              <div className="shrink-0 @max-[140px]/rail:hidden">
+                <LiveAgentsPreview
+                  agents={visibleLiveAgents}
+                  activeSessionId={activeSessionId}
+                  onSelect={onSelectAgent}
+                  collapsible
+                  groupLabels={groupLabels}
+                  groupColors={groupColors}
+                  groupCustomColors={groupCustomColors}
+                  groupMascots={groupMascots}
+                />
+              </div>
+              <CompactLiveAgents
+                agents={visibleLiveAgents}
+                activeSessionId={activeSessionId}
+                onSelect={onSelectAgent}
+                groupLabels={groupLabels}
+                groupColors={groupColors}
+                groupCustomColors={groupCustomColors}
+                groupMascots={groupMascots}
+              />
+            </div>
             <ProjectMultiSelect
               paths={selectionPaths}
               groups={projectGroups.filter(

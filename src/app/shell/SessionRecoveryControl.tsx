@@ -44,7 +44,7 @@ export function SessionRecoveryControl({
         onClick={onOpen}
       >
         <Clock className="size-4 shrink-0" aria-hidden="true" />
-        <span className="min-w-0 flex-1 truncate @max-[140px]/rail:hidden [[data-compact-project-rail]_&]:hidden">
+        <span className="recovery-rail-label min-w-0 flex-1 truncate @max-[140px]/rail:hidden [[data-compact-project-rail]_&]:hidden">
           {label}
         </span>
         <Badge className="recovery-rail-count" aria-hidden="true">

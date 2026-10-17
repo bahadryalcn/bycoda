@@ -40,6 +40,8 @@ export interface ExpandingButtonGroupProps {
   size?: ExpandingButtonGroupSize;
   /** Shrink the revealed label to fit its container, preserving the icon minimum. */
   fit?: boolean;
+  /** Fill the container and distribute spare space across the actions. */
+  fullWidth?: boolean;
   /** Id of the action whose label shows at rest, usually the primary one. Defaults to the first enabled action: one action is always
    *  expanded. Pointing at or focusing another moves the expansion there, and it returns here when the pointer and focus leave. */
   defaultExpanded?: string | null;
@@ -318,6 +320,7 @@ function Item({
  */
 export function ExpandingButtonGroup({
   fit = false,
+  fullWidth = false,
   items,
   label,
   size = "md",
@@ -533,6 +536,7 @@ export function ExpandingButtonGroup({
       ref={root}
       role="toolbar"
       data-fit={fit || undefined}
+      data-full-width={fullWidth || undefined}
       aria-label={label}
       aria-orientation="horizontal"
       className={[styles.group, styles[size], className].filter(Boolean).join(" ")}

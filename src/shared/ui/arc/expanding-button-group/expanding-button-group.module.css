@@ -28,6 +28,21 @@
 .group[data-fit] .item {
   flex-shrink: 1;
 }
+.group[data-full-width] {
+  inline-size: 100%;
+}
+.group[data-full-width] .item {
+  flex-grow: 1;
+  justify-content: center;
+  padding-inline: var(--ebg-start);
+}
+.group[data-full-width] .item:not([data-expanded]) > span {
+  gap: 0;
+}
+.group[data-full-width] .item:not([data-expanded]) .label {
+  inline-size: 0;
+  overflow: clip;
+}
 .icon {
   position: relative;
   display: grid;

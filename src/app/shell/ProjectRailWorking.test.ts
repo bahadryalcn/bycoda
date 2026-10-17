@@ -3,6 +3,7 @@ import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { expect, it, vi } from "vitest";
 import { ProjectRail } from "./ProjectRail";
+import { SessionRecoveryControl } from "./SessionRecoveryControl";
 import { workingProjectPaths } from "../../features/sessions/model/liveAgents";
 
 vi.mock("@tauri-apps/api/core", () => ({
@@ -14,7 +15,7 @@ vi.mock("../../features/source-control/hooks/useProjectDiffStats", () => ({
 }));
 vi.mock("./SidebarUpdate", () => ({ SidebarUpdateFooter: () => null }));
 
-it("places Working between Search and Inbox and preserves project navigation when collapsed", async () => {
+it("places recovery beside Search and Working below Inbox, preserving navigation when collapsed", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   localStorage.clear();
   const container = document.createElement("div");
@@ -31,6 +32,7 @@ it("places Working between Search and Inbox and preserves project navigation whe
           onOpenProject: vi.fn(),
           onSearch: vi.fn(),
           onOpenInbox: vi.fn(),
+          recoveryControl: createElement(SessionRecoveryControl, { count: 28, onOpen: vi.fn() }),
           liveAgents: [
             {
               id: "background",
@@ -48,8 +50,14 @@ it("places Working between Search and Inbox and preserves project navigation whe
     const search = container.querySelector('button[aria-label^="Search ("]')!;
     const preview = container.querySelector('[data-live-agents-preview="full"]')!;
     const inbox = container.querySelector('button[aria-label="Inbox"]')!;
-    expect(search.compareDocumentPosition(preview) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(preview.compareDocumentPosition(inbox) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    const recovery = container.querySelector('button[aria-label="Recovered sessions (28)"]')!;
+    expect(search.closest(".bycoda-rail-brand")?.contains(recovery)).toBe(true);
+    expect(
+      search.compareDocumentPosition(recovery) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(recovery.compareDocumentPosition(inbox) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(inbox.compareDocumentPosition(preview) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(inbox.closest('[role="toolbar"]')?.hasAttribute("data-full-width")).toBe(true);
     expect(container.querySelectorAll('[data-live-agents-preview="full"]')).toHaveLength(1);
     const header = preview.querySelector<HTMLButtonElement>("button[aria-expanded]")!;
     act(() => header.click());

@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.12]
+
+### Workspace rail and recovery controls
+
+- Place recovered-session access beside search and working sessions below workspace tools.
+- Distribute workspace tool actions across the available rail width.
+- Keep recovery controls compact and readable in narrow layouts.
+- Update maintainer attribution and rail regression coverage.
+
 ## [0.6.11]
 
 ### Session previews and workspace navigation

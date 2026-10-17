@@ -170,7 +170,7 @@ Thank you to Nick, the MonoCode developers, and community contributors for the
 foundation, code, and integrations they shared as open source. Their work made
 this project possible, and their contributions remain credited to their authors.
 
-This fork is independently maintained by [bahadryalcn](https://github.com/bahadryalcn).
+This fork is independently maintained by [Bahadır Halil Yalçın](https://github.com/bahadryalcn).
 Original and imported contributions retain their authorship. See
 [CREDITS.md](CREDITS.md) and [NOTICE](NOTICE).
 
