@@ -1,3 +1,7 @@
+import { Alert } from "../../../shared/ui/Alert";
+import { NativeSelect } from "../../../shared/ui/Select";
+import { TextField } from "../../../shared/ui/TextField";
+import { Button } from "../../../shared/ui/Button";
 import { useEffect, useRef, useState } from "react";
 import { Notice } from "./socialShared";
 import { REMOTE_PROVIDERS } from "../../connections/model/protocol";
@@ -126,7 +130,7 @@ export function SocialPolicySettings({
       </p>
       <label className="social-policy-scope">
         Ayar kapsamı
-        <select
+        <NativeSelect
           value={scope}
           disabled={saving}
           onChange={(event) => {
@@ -141,7 +145,7 @@ export function SocialPolicySettings({
               {platforms[platform]}
             </option>
           ))}
-        </select>
+        </NativeSelect>
       </label>
       <p className="social-policy-effective">
         Kayıtlı ajan:{" "}
@@ -151,10 +155,10 @@ export function SocialPolicySettings({
         {scope !== "global" && !policies.platforms[scope]?.agent ? " · ortak ayar" : ""}
       </p>
       {conflict ? (
-        <p role="alert" className="social-error">
+        <Alert tone="danger">
           Bu ayarlar başka bir oturumda güncellendi. Düzenlediğiniz değerler korunuyor. Devam etmek
           için kayıtlı ayarları yükleyin.
-        </p>
+        </Alert>
       ) : null}
       <form
         className="social-form"
@@ -232,7 +236,7 @@ export function SocialPolicySettings({
         <fieldset className="social-workspace" disabled={saving}>
           <label>
             AI ajanı
-            <select
+            <NativeSelect
               value={draft.provider}
               onChange={(event) => update({ provider: event.target.value, model: "" })}
             >
@@ -246,13 +250,15 @@ export function SocialPolicySettings({
                   {HARNESS_TITLE[id]}
                 </option>
               ))}
-            </select>
+            </NativeSelect>
           </label>
           <details className="social-settings">
             <summary>Model seçimi (isteğe bağlı)</summary>
             <label>
               AI modeli
-              <input
+              <TextField
+                hideLabel
+                label=""
                 value={draft.model}
                 disabled={!draft.provider}
                 maxLength={200}
@@ -265,7 +271,9 @@ export function SocialPolicySettings({
             {SOCIAL_LIMIT_FIELDS.map((field) => (
               <label key={field}>
                 {labels[field]}
-                <input
+                <TextField
+                  hideLabel
+                  label=""
                   name={field}
                   type="number"
                   min={1}
@@ -293,21 +301,17 @@ export function SocialPolicySettings({
             ))}
           </div>
           <div className="social-actions">
-            <button type="submit" className="social-primary" disabled={conflict}>
+            <Button variant="primary" type="submit" disabled={conflict} loading={saving}>
               {saving ? "Kaydediliyor…" : "Ayarları kaydet"}
-            </button>
+            </Button>
             {isEdited(draft) || conflict ? (
-              <button type="button" onClick={reset}>
+              <Button variant="secondary" type="button" onClick={reset}>
                 Kayıtlı ayarları yükle
-              </button>
+              </Button>
             ) : null}
           </div>
         </fieldset>
-        {error ? (
-          <p className="social-error" role="alert">
-            {error}
-          </p>
-        ) : null}
+        {error ? <Alert tone="danger">{error}</Alert> : null}
         {notice ? <Notice kind="success" title={notice} /> : null}
         <p className="social-muted">
           Platformun kendi sınırları ve gönderim onayı geçerliliğini korur. Ajan kullanılamadığında

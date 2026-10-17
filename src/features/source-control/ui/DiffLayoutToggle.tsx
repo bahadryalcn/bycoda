@@ -1,3 +1,4 @@
+import { Button } from "../../../shared/ui/Button";
 import { t, useLocale } from "../../../shared/i18n/git";
 import { useSyncExternalStore } from "react";
 import { SplitSquare } from "../../../shared/ui/icons";
@@ -18,7 +19,11 @@ export function DiffLayoutToggle({ className = "" }: { className?: string }) {
   useLocale();
   const split = useDiffLayout() === "split";
   return (
-    <button
+    <Button
+      iconOnly
+      label={t("Side-by-side view")}
+      variant="ghost"
+      motion="none"
       type="button"
       title={t("Side-by-side view")}
       aria-label={t("Side-by-side view")}
@@ -26,11 +31,9 @@ export function DiffLayoutToggle({ className = "" }: { className?: string }) {
       // Keep the caret where it is when this sits next to an editor.
       onMouseDown={(event) => event.preventDefault()}
       onClick={() => saveDiffLayout(split ? "inline" : "split")}
-      className={`grid size-6 place-items-center rounded hover:bg-content/10 hover:text-content ${
-        split ? "bg-content/10 text-content" : "text-content/70"
-      } ${className}`}
+      className={`  grid size-6 place-items-center  ${className}   `}
     >
       <SplitSquare className="size-3.5" strokeWidth={1.75} />
-    </button>
+    </Button>
   );
 }

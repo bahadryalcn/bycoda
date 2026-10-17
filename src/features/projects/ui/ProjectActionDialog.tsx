@@ -1,6 +1,13 @@
 import { t, useLocale } from "../../../shared/i18n";
 import { useId, useState } from "react";
 import { Modal } from "../../../shared/ui/Modal";
+import { Button } from "../../../shared/ui/Button";
+import { TextField } from "../../../shared/ui/TextField";
+import { TextareaField } from "../../../shared/ui/TextareaField";
+import { Checkbox } from "../../../shared/ui/Checkbox";
+import { Switch } from "../../../shared/ui/Switch";
+import { Select } from "../../../shared/ui/Select";
+import { Alert } from "../../../shared/ui/Alert";
 import { CodeBlock, FolderOpen, Globe, Play, Terminal, Wrench } from "../../../shared/ui/icons";
 import { prettyCwd } from "../../../shared/lib/paths";
 import {
@@ -44,10 +51,8 @@ const presets = [
     url: "",
   },
 ];
-const input =
-  "w-full rounded-lg border border-stroke bg-content/5 px-3 py-2.5 text-sm text-content placeholder:text-content/35 outline-none focus:border-accent focus:ring-2 focus:ring-accent/15";
 const heading = "block text-[13px] font-medium text-content";
-const help = "text-xs leading-relaxed text-content/55";
+const help = "text-xs leading-relaxed text-(--ui-text-secondary)";
 
 export function ProjectActionDialog({
   action,
@@ -76,7 +81,6 @@ export function ProjectActionDialog({
     devServer: action.devServer ?? false,
   }));
   const [shortcutHint, setShortcutHint] = useState("");
-  const [choosingIcon, setChoosingIcon] = useState(false);
   const uid = useId();
   const shortcutError = projectActionShortcutError(draft.shortcut, actions, draft.id);
   const missing = !draft.name.trim()
@@ -90,7 +94,6 @@ export function ProjectActionDialog({
           : !draft.command.trim() && !draft.openUrlOnRun
             ? "Enable the web address option so this action has something to run."
             : shortcutError;
-  const Icon = icons[draft.icon];
   return (
     <Modal
       title={editing ? t("Edit action") : t("Add action")}
@@ -114,11 +117,11 @@ export function ProjectActionDialog({
         }}
       >
         <div className="space-y-4 px-6 pb-5 pt-4">
-          <div className="flex items-center gap-2.5 rounded-lg border border-stroke bg-content/3 px-3 py-2">
-            <FolderOpen className="mt-0.5 size-4 shrink-0 text-content/50" />
+          <div className="flex items-center gap-2.5 rounded-lg border border-stroke bg-(--ui-surface) px-3 py-2">
+            <FolderOpen className="mt-0.5 size-4 shrink-0 text-(--ui-text-muted)" />
             <div className="min-w-0">
-              <p title={cwd} className="truncate text-xs text-content/65">
-                <span className="mr-2 text-content/45">{t("Working folder")}</span>
+              <p title={cwd} className="truncate text-xs text-(--ui-text-secondary)">
+                <span className="mr-2 text-(--ui-text-muted)">{t("Working folder")}</span>
                 <span className="font-mono">{prettyCwd(cwd)}</span>
               </p>
             </div>
@@ -126,43 +129,52 @@ export function ProjectActionDialog({
           {!editing ? (
             <div>
               <div className="flex flex-wrap items-center gap-2">
-                <span className="text-xs text-content/50">{t("Examples")}</span>
+                <span className="text-xs text-(--ui-text-muted)">{t("Examples")}</span>
                 {presets.map((preset) => (
-                  <button
+                  <Button
                     type="button"
                     key={preset.name}
-                    className="rounded-md border border-stroke px-2.5 py-1.5 text-xs text-content/75 hover:border-accent/50 hover:bg-accent/5 focus-visible:outline-accent"
+                    variant="secondary"
                     onClick={() =>
                       setDraft({ ...draft, devServer: false, ...preset, openUrlOnRun: true })
                     }
                   >
                     {preset.name}
-                  </button>
+                  </Button>
                 ))}
               </div>
             </div>
           ) : null}
           <div className="space-y-2">
             <label htmlFor={`${uid}-name`} className={heading}>
-              {t("Name")} <span className="font-normal text-content/45">{t("(required)")}</span>
+              {t("Name")}{" "}
+              <span className="font-normal text-(--ui-text-muted)">{t("(required)")}</span>
             </label>
             <div className="flex gap-2">
-              <button
-                type="button"
-                aria-label={t("Choose icon: {p0}", { p0: labels[draft.icon] })}
-                aria-expanded={choosingIcon}
-                onClick={() => setChoosingIcon(!choosingIcon)}
-                className="grid size-10 shrink-0 place-items-center rounded-lg border border-stroke bg-content/5 text-accent hover:border-accent focus-visible:outline-accent"
+              <Select
+                label={t("Icon")}
+                value={draft.icon}
+                options={ACTION_ICONS.map((icon) => {
+                  const Choice = icons[icon];
+                  return {
+                    value: icon,
+                    label: t(labels[icon]),
+                    icon: <Choice className="size-4" aria-hidden="true" />,
+                  };
+                })}
+                onValueChange={(icon) =>
+                  setDraft({ ...draft, icon: icon as ProjectAction["icon"] })
+                }
                 title={t("Choose action icon")}
-              >
-                <Icon className="size-5" />
-              </button>
-              <input
+              />
+              <TextField
+                label=""
+                hideLabel
                 id={`${uid}-name`}
                 autoFocus
                 required
                 maxLength={80}
-                className={input}
+                fieldClassName="min-w-0 flex-1"
                 placeholder={t("e.g. Start development server")}
                 value={draft.name}
                 onChange={(event) => setDraft({ ...draft, name: event.target.value })}
@@ -173,43 +185,18 @@ export function ProjectActionDialog({
               {t("Shown in the top bar. Click the icon to choose its symbol.")}
             </p>
           </div>
-          {choosingIcon ? (
-            <fieldset className="space-y-2">
-              <legend className={`${heading} mb-2`}>{t("Icon")}</legend>
-              <div className="grid grid-cols-5 gap-2">
-                {ACTION_ICONS.map((icon) => {
-                  const Choice = icons[icon];
-                  return (
-                    <button
-                      type="button"
-                      key={icon}
-                      aria-label={t("{p0} icon", { p0: labels[icon] })}
-                      aria-pressed={draft.icon === icon}
-                      className={`flex flex-col items-center gap-1.5 rounded-lg border px-1 py-2.5 text-xs focus-visible:outline-accent ${draft.icon === icon ? "border-accent bg-accent/10 text-accent" : "border-stroke text-content/60 hover:bg-content/5"}`}
-                      onClick={() => {
-                        setDraft({ ...draft, icon });
-                        setChoosingIcon(false);
-                      }}
-                    >
-                      <Choice className="size-4" />
-                      <span>{labels[icon]}</span>
-                    </button>
-                  );
-                })}
-              </div>
-              <p className={help}>{t("Choose the symbol shown beside this action.")}</p>
-            </fieldset>
-          ) : null}
           <div className="space-y-2">
             <label htmlFor={`${uid}-shortcut`} className={heading}>
               {t("Keybinding")}{" "}
-              <span className="font-normal text-content/45">{t("(optional)")}</span>
+              <span className="font-normal text-(--ui-text-muted)">{t("(optional)")}</span>
             </label>
             <div className="flex gap-2">
-              <input
+              <TextField
+                label=""
+                hideLabel
                 id={`${uid}-shortcut`}
                 readOnly
-                className={`${input} cursor-pointer`}
+                fieldClassName="min-w-0 flex-1"
                 placeholder={t("Click here and press a shortcut")}
                 value={draft.shortcut ? quickComposerShortcutLabel(draft.shortcut) : ""}
                 aria-describedby={`${uid}-shortcut-help`}
@@ -231,17 +218,17 @@ export function ProjectActionDialog({
                     setShortcutHint("Include Ctrl, Alt or Command with another key.");
                 }}
               />
-              <button
+              <Button
                 type="button"
                 disabled={!draft.shortcut}
-                className="rounded-lg border border-stroke px-3 text-xs text-content/60 hover:bg-content/5 disabled:opacity-35"
+                variant="secondary"
                 onClick={() => {
                   setDraft({ ...draft, shortcut: "" });
                   setShortcutHint("");
                 }}
               >
                 {t("Clear")}
-              </button>
+              </Button>
             </div>
             <p id={`${uid}-shortcut-help`} className={help}>
               {t(
@@ -258,10 +245,12 @@ export function ProjectActionDialog({
             <label htmlFor={`${uid}-command`} className={heading}>
               {t("Command")}
             </label>
-            <textarea
+            <TextareaField
+              label=""
+              hideLabel
               id={`${uid}-command`}
               rows={2}
-              className={`${input} resize-y font-mono leading-relaxed`}
+              className="resize-y font-mono leading-relaxed"
               placeholder={t("e.g. pnpm dev, npm run dev, or bun test")}
               value={draft.command}
               onChange={(event) => setDraft({ ...draft, command: event.target.value })}
@@ -274,9 +263,8 @@ export function ProjectActionDialog({
                   : "Runs in a new terminal in this folder using your default shell. Leave empty for a web link action.",
               )}
             </p>
-            <label className="flex items-center gap-2 text-xs text-content/75">
-              <input
-                type="checkbox"
+            <label className="flex items-center gap-2 text-xs text-(--ui-text-secondary)">
+              <Checkbox
                 checked={draft.devServer}
                 onChange={(event) => setDraft({ ...draft, devServer: event.target.checked })}
               />
@@ -286,12 +274,13 @@ export function ProjectActionDialog({
           <div className="space-y-2">
             <label htmlFor={`${uid}-url`} className={heading}>
               {t("Web address")}{" "}
-              <span className="font-normal text-content/45">{t("(optional)")}</span>
+              <span className="font-normal text-(--ui-text-muted)">{t("(optional)")}</span>
             </label>
-            <input
+            <TextField
+              label=""
+              hideLabel
               id={`${uid}-url`}
               type="url"
-              className={input}
               placeholder="http://localhost:5173"
               value={draft.url}
               onChange={(event) => setDraft({ ...draft, url: event.target.value })}
@@ -307,7 +296,7 @@ export function ProjectActionDialog({
             </p>
           </div>
           {!draft.devServer ? (
-            <div className="flex items-center justify-between gap-4 rounded-lg bg-content/5 p-3">
+            <div className="flex items-center justify-between gap-4 rounded-lg bg-(--ui-surface) p-3">
               <div>
                 <span id={`${uid}-open-label`} className="text-[13px] font-medium text-content">
                   {t("Open web address when this action runs")}
@@ -316,20 +305,13 @@ export function ProjectActionDialog({
                   {t("Opens immediately; a dev server may still be starting.")}
                 </p>
               </div>
-              <button
-                type="button"
-                role="switch"
+              <Switch
                 aria-labelledby={`${uid}-open-label`}
                 aria-describedby={`${uid}-open-help`}
-                aria-checked={draft.openUrlOnRun}
+                checked={draft.openUrlOnRun}
                 disabled={!draft.url.trim()}
-                className={`relative h-6 w-10 shrink-0 rounded-full transition-colors focus-visible:outline-accent disabled:opacity-35 ${draft.openUrlOnRun && draft.url.trim() ? "bg-active" : "bg-content/20"}`}
-                onClick={() => setDraft({ ...draft, openUrlOnRun: !draft.openUrlOnRun })}
-              >
-                <span
-                  className={`absolute top-1 size-4 rounded-full bg-on-solid transition-transform ${draft.openUrlOnRun ? "left-1 translate-x-4" : "left-1"}`}
-                />
-              </button>
+                onCheckedChange={(openUrlOnRun) => setDraft({ ...draft, openUrlOnRun })}
+              />
             </div>
           ) : (
             <p className={help}>
@@ -338,23 +320,15 @@ export function ProjectActionDialog({
               )}
             </p>
           )}
-          {error ? (
-            <p role="alert" className="text-xs text-danger">
-              {error}
-            </p>
-          ) : null}
+          {error ? <Alert tone="danger">{error}</Alert> : null}
         </div>
         <div className="sticky bottom-0 flex flex-wrap items-center gap-3 border-t border-stroke bg-background-base px-6 py-4">
           {editing ? (
-            <button
-              type="button"
-              className="text-xs text-danger hover:underline"
-              onClick={onDelete}
-            >
+            <Button type="button" variant="link" tone="danger" onClick={onDelete}>
               {t("Delete action")}
-            </button>
+            </Button>
           ) : null}
-          <p aria-live="polite" className="min-w-0 flex-1 text-xs text-content/50">
+          <p aria-live="polite" className="min-w-0 flex-1 text-xs text-(--ui-text-muted)">
             {missing ||
               (draft.devServer
                 ? t("Starts a managed development server on this project's host.")
@@ -366,20 +340,12 @@ export function ProjectActionDialog({
                     )
                   : t("Opens the web address in your browser."))}
           </p>
-          <button
-            type="button"
-            className="rounded-lg border border-stroke px-3 py-2 text-xs text-content/75 hover:bg-content/5"
-            onClick={onClose}
-          >
+          <Button type="button" variant="secondary" onClick={onClose}>
             {t("Cancel")}
-          </button>
-          <button
-            type="submit"
-            disabled={Boolean(missing)}
-            className="rounded-lg bg-accent px-4 py-2 text-xs font-medium text-background-base hover:brightness-110 disabled:opacity-40"
-          >
+          </Button>
+          <Button type="submit" disabled={Boolean(missing)} variant="primary">
             {t("Save action")}
-          </button>
+          </Button>
         </div>
       </form>
     </Modal>

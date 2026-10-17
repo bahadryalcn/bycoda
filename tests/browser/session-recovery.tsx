@@ -1,3 +1,4 @@
+import { applyThemePreference } from "../../src/features/settings/model/appearance";
 import { useState } from "react";
 import { createRoot } from "react-dom/client";
 import { SessionRecoveryPanel } from "../../src/app/shell/SessionRecoveryPanel";
@@ -11,7 +12,10 @@ import {
   captureSessionRecovery,
   removeRecoverySessions,
 } from "../../src/features/workspace/model/sessionRecovery";
-import "../../src/styles/index.css";
+import "./w7-shell.css";
+applyThemePreference(
+  new URLSearchParams(location.search).get("theme") === "light" ? "light" : "dark",
+);
 
 // Navigation-only fixture: no native commands, providers or real host sessions.
 const sessions = Array.from({ length: 24 }, (_, index) => {

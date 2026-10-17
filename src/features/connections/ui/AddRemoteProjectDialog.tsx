@@ -1,3 +1,6 @@
+import { Alert } from "../../../shared/ui/Alert";
+import { TextField } from "../../../shared/ui/TextField";
+import { Button } from "../../../shared/ui/Button";
 import { t, useLocale } from "../../../shared/i18n";
 import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
 import { useEffect, useRef, useState } from "react";
@@ -151,7 +154,11 @@ export function AddRemoteProjectDialog({
   return createPortal(
     <OverlayParent.Provider value={overlayId}>
       <div className="fixed inset-0" style={{ zIndex: LAYER.dialog }}>
-        <div className="absolute inset-0 bg-scrim/30" onMouseDown={cancel} />
+        <div
+          className="absolute inset-0"
+          style={{ background: "var(--ui-overlay-backdrop)" }}
+          onMouseDown={cancel}
+        />
         <form
           ref={dialogRoot}
           role="dialog"
@@ -169,7 +176,7 @@ export function AddRemoteProjectDialog({
             <h2 className="text-[13px] font-medium leading-tight text-content">
               {t("Open folder on a machine")}
             </h2>
-            <p className="text-[12px] leading-snug text-content/55">
+            <p className="text-[12px] leading-snug text-(--ui-text-muted)">
               {t(
                 "Sessions in this project run on that machine, using its checkout and its Codex or Claude Code sign-in. They keep running when you close ",
               )}
@@ -189,29 +196,25 @@ export function AddRemoteProjectDialog({
           ) : null}
           {!loaded || (machinesError && !machine) ? null : !machine ? (
             <>
-              <p className="text-[12px] leading-snug text-content/55">
+              <p className="text-[12px] leading-snug text-(--ui-text-muted)">
                 {t(
                   "No machines are connected yet. Add one in Settings, then open a folder on it here.",
                 )}
               </p>
               <div className="flex justify-end gap-2">
-                <button
-                  type="button"
-                  onClick={cancel}
-                  className="rounded-md px-3 py-1.5 text-[12px] text-content/70 hover:bg-content/8 hover:text-content"
-                >
+                <Button type="button" onClick={cancel} variant="secondary">
                   {t("Cancel")}
-                </button>
-                <button
+                </Button>
+                <Button
                   type="button"
                   onClick={() => {
                     cancel();
                     window.dispatchEvent(new Event(OPEN_CONNECTIONS_EVENT));
                   }}
-                  className="rounded-md bg-selection px-3 py-1.5 text-[12px] font-medium hover:bg-selection-hover"
+                  variant="secondary"
                 >
                   {t("Add a machine")}
-                </button>
+                </Button>
               </div>
             </>
           ) : (
@@ -229,14 +232,14 @@ export function AddRemoteProjectDialog({
                   searchable={false}
                 />
               ) : (
-                <p className="text-[12px] text-content/55">
+                <p className="text-[12px] text-(--ui-text-muted)">
                   {t("On ")}
-                  <span className="text-content/80">{machine.name}</span>
+                  <span className="text-content">{machine.name}</span>
                 </p>
               )}
-              <input
+              <TextField
                 aria-label={t("Folder path on the machine")}
-                className="h-8 shrink-0 rounded-md border border-content/10 bg-content/3 px-2.5 font-mono text-[12px] text-content outline-none focus:border-content/25"
+
                 placeholder="/home/me/code/my-app"
                 value={path}
                 spellCheck={false}
@@ -251,75 +254,82 @@ export function AddRemoteProjectDialog({
                   }
                 }}
                 onChange={(event) => setPath(event.target.value)}
+                label=""
+                hideLabel
+                fieldClassName="min-w-0 flex-1"
               />
               <nav
                 aria-label={t("Locations")}
                 className="flex flex-wrap items-center gap-1 border-b border-stroke pb-2"
               >
-                <button
+                <Button
                   type="button"
                   aria-label={t("Parent folder")}
                   disabled={!directory?.parent || loading || creating || opening}
                   onClick={() => void browse(directory?.parent ?? undefined)}
-                  className="rounded-md p-2 hover:bg-content/8 disabled:opacity-40"
+                  variant="secondary"
+                  iconOnly
+                  label={t("Parent folder")}
                 >
                   <ArrowUp className="size-4" />
-                </button>
-                <button
+                </Button>
+                <Button
                   type="button"
                   disabled={loading || creating || opening}
                   onClick={() => void browse(directory?.home)}
-                  className="rounded-md px-2 py-1.5 text-xs hover:bg-content/8"
+                  variant="secondary"
                 >
                   {t("Home folder")}
-                </button>
+                </Button>
                 {directory?.roots?.map((root) => (
-                  <button
+                  <Button
                     key={root.path}
                     type="button"
                     disabled={loading || creating || opening}
                     onClick={() => void browse(root.path)}
-                    className="rounded-md border border-stroke px-2 py-1.5 font-mono text-xs hover:bg-content/8"
+                    variant="secondary"
                   >
                     {root.name}
-                  </button>
+                  </Button>
                 ))}
-                <button
+                <Button
                   type="button"
                   disabled={!directory || loading || creating || opening || !!browseError}
                   onClick={() => setNewName("")}
-                  className="ml-auto flex items-center gap-1.5 rounded-md px-2 py-1.5 text-xs hover:bg-content/8 disabled:opacity-40"
+                  variant="secondary"
                 >
                   <FolderPlus className="size-4" />
                   {t("New folder")}
-                </button>
+                </Button>
               </nav>
               {newName !== null ? (
                 <div className="flex items-center gap-2">
-                  <input
+                  <TextField
                     autoFocus
                     aria-label={t("New folder name")}
                     value={newName}
                     disabled={creating}
                     onChange={(event) => setNewName(event.target.value)}
-                    className="min-w-0 flex-1 rounded-md border border-stroke bg-transparent px-2 py-1.5 text-xs"
+                    label=""
+                    hideLabel
+                    fieldClassName="min-w-0 flex-1"
                   />
-                  <button
+                  <Button
                     type="button"
                     disabled={creating || !newName.trim()}
                     onClick={() => void createFolder()}
-                    className="rounded-md bg-selection px-3 py-1.5 text-xs"
+                    variant="secondary"
                   >
                     {t("Create")}
-                  </button>
-                  <button
+                  </Button>
+                  <Button
                     type="button"
                     disabled={creating}
                     onClick={() => setNewName(null)}
-                    className="px-2 text-xs"
+                    variant="secondary"
                   >
                     {t("Cancel")}
-                  </button>
+                  </Button>
                 </div>
               ) : null}
               <RemoteDataStatus
@@ -343,14 +353,14 @@ export function AddRemoteProjectDialog({
                 disabled={opening || creating}
               />
               {directory && (loading || browseError) ? (
-                <p className="text-[12px] text-content/55">
+                <p className="text-[12px] text-(--ui-text-muted)">
                   {t("Showing last loaded folder: ")}
                   {directory.path}
                 </p>
               ) : null}
               <div
                 aria-label={t("Folders")}
-                className="h-[min(340px,45vh)] min-h-24 overflow-y-auto overscroll-contain rounded-md border border-content/10"
+                className="h-[min(340px,45vh)] min-h-24 overflow-y-auto overscroll-contain rounded-md border border-stroke"
               >
                 <div className="p-1">
                   {directory?.parent ? (
@@ -369,32 +379,27 @@ export function AddRemoteProjectDialog({
                     />
                   ))}
                   {directory && !directory.entries.length ? (
-                    <p className="px-2 py-1.5 text-[12px] text-content/45">{t("No subfolders")}</p>
+                    <p className="px-2 py-1.5 text-[12px] text-(--ui-text-muted)">
+                      {t("No subfolders")}
+                    </p>
                   ) : null}
                   {!directory && loading ? (
-                    <p className="px-2 py-1.5 text-[12px] text-content/45">
+                    <p className="px-2 py-1.5 text-[12px] text-(--ui-text-muted)">
                       {t("Loading folders…")}
                     </p>
                   ) : null}
                 </div>
               </div>
               {error ? (
-                <p
-                  role="alert"
-                  className="whitespace-pre-wrap break-words text-[12px] leading-snug text-danger/90"
-                >
+                <Alert role="alert" tone="danger">
                   {error}
-                </p>
+                </Alert>
               ) : null}
               <div className="flex justify-end gap-2">
-                <button
-                  type="button"
-                  onClick={cancel}
-                  className="rounded-md px-3 py-1.5 text-[12px] text-content/70 hover:bg-content/8 hover:text-content"
-                >
+                <Button type="button" onClick={cancel} variant="secondary">
                   {t("Cancel")}
-                </button>
-                <button
+                </Button>
+                <Button
                   type="submit"
                   disabled={
                     opening ||
@@ -405,10 +410,10 @@ export function AddRemoteProjectDialog({
                     !!machinesError ||
                     !path.trim()
                   }
-                  className="rounded-md bg-selection px-3 py-1.5 text-[12px] font-medium hover:bg-selection-hover disabled:opacity-40"
+                  variant="primary"
                 >
                   {opening ? t("Opening…") : t("Open")}
-                </button>
+                </Button>
               </div>
             </>
           )}
@@ -430,15 +435,10 @@ function FolderRow({
 }) {
   useLocale();
   return (
-    <button
-      type="button"
-      onClick={onOpen}
-      disabled={disabled}
-      className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[12px] text-content/75 hover:bg-content/8 hover:text-content"
-    >
-      <Folder className="size-3.5 shrink-0 text-content/45" strokeWidth={1.75} />
+    <Button type="button" onClick={onOpen} disabled={disabled} variant="item" fullWidth>
+      <Folder className="size-3.5 shrink-0 text-(--ui-text-muted)" strokeWidth={1.75} />
       <span className="min-w-0 flex-1 truncate">{name}</span>
-      <ChevronRight className="size-3 shrink-0 text-content/30" />
-    </button>
+      <ChevronRight className="size-3 shrink-0 text-(--ui-text-muted)" />
+    </Button>
   );
 }

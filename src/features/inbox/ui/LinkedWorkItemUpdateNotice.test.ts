@@ -210,7 +210,6 @@ describe("linked work item update notice", () => {
       notice?.querySelector('button[aria-label="Dismiss updates for Pull request 42"]'),
     ).not.toBeNull();
     expect(button("Open PR").classList.contains("truncate")).toBe(true);
-    expect(button("Address with agent").classList).toContain("whitespace-nowrap");
     act(() => button("Open PR").click());
     expect(onAcknowledge).toHaveBeenCalledTimes(1);
     expect(onOpenDiscussion).toHaveBeenCalledTimes(1);
@@ -275,7 +274,7 @@ describe("linked work item update notice", () => {
     });
 
     expect(document.body.textContent).toContain("Pull request merged");
-    expect(button("Archive session").querySelector("span")?.classList).toContain("truncate");
+    expect(button("Archive session").querySelector("span.truncate")).not.toBeNull();
     await act(async () => button("Delete…").click());
     expect(onDeleteSession).toHaveBeenCalledTimes(1);
     expect(onAcknowledge).not.toHaveBeenCalled();

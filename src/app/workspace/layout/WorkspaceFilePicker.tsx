@@ -51,9 +51,7 @@ export function WorkspaceFilePicker({
       openPaths={openFilePaths}
       initialQuery={filePickerInitialQuery}
       stopBackgroundWork={
-        !!active &&
-        canStopHarnessBackgroundWork(active.harness) &&
-        sessionHasBackgroundWork(active)
+        !!active && canStopHarnessBackgroundWork(active.harness) && sessionHasBackgroundWork(active)
       }
       arrangeLayout={Boolean(activeTab)}
       onOpenFile={onOpenFile}

@@ -28,6 +28,64 @@ afterEach(() => {
 });
 
 describe("TranscriptSelectionMenu", () => {
+  it("does not attach an old note failure to a reopened selection", async () => {
+    let rejectSave!: (error: Error) => void;
+    const onAddToNotes = vi.fn(
+      () =>
+        new Promise<void>((_, reject) => {
+          rejectSave = reject;
+        }),
+    );
+    const props = { onAddToNotes, onDismiss: vi.fn() };
+    act(() =>
+      root.render(
+        createElement(TranscriptSelectionMenu, {
+          ...props,
+          selection: { text: "Old selection", rect: new DOMRect(10, 20, 100, 20) },
+        }),
+      ),
+    );
+    await act(async () =>
+      document.querySelector<HTMLButtonElement>('[role="toolbar"] button')!.click(),
+    );
+    act(() => root.render(createElement(TranscriptSelectionMenu, { ...props, selection: null })));
+    act(() =>
+      root.render(
+        createElement(TranscriptSelectionMenu, {
+          ...props,
+          selection: { text: "New selection", rect: new DOMRect(10, 20, 100, 20) },
+        }),
+      ),
+    );
+    await act(async () => rejectSave(new Error("Old failure")));
+    expect(document.querySelector('[role="alert"]')).toBeNull();
+    expect(document.querySelector('button[aria-busy="true"]')).toBeNull();
+    expect(props.onDismiss).not.toHaveBeenCalled();
+  });
+
+  it("keeps one toolbar and clears the DOM selection only on Escape dismissal", () => {
+    const onDismiss = vi.fn();
+    const clearSelection = vi.spyOn(window.getSelection()!, "removeAllRanges");
+    act(() =>
+      root.render(
+        createElement(TranscriptSelectionMenu, {
+          selection: { text: "Preserve selected text", rect: new DOMRect(10, 20, 100, 20) },
+          onAddToChat: vi.fn(),
+          onDismiss,
+        }),
+      ),
+    );
+    expect(document.querySelectorAll('[role="toolbar"]')).toHaveLength(1);
+    act(() => window.dispatchEvent(new Event("scroll")));
+    act(() => window.dispatchEvent(new Event("resize")));
+    expect(onDismiss).toHaveBeenCalledTimes(2);
+    expect(clearSelection).not.toHaveBeenCalled();
+    act(() => window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })));
+    expect(onDismiss).toHaveBeenCalledTimes(3);
+    expect(clearSelection).toHaveBeenCalledOnce();
+    clearSelection.mockRestore();
+  });
+
   it("keeps selected text available when saving a note fails", async () => {
     let rejectSave!: (reason: Error) => void;
     const onDismiss = vi.fn();

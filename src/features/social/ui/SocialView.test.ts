@@ -1,3 +1,4 @@
+import { chooseSocialValue } from "./socialTestControls";
 // @vitest-environment happy-dom
 import { focusManager } from "@tanstack/react-query";
 import { withQueryClient } from "../../../../tests/browser/queryTest";
@@ -138,12 +139,18 @@ async function mount() {
     );
   });
 }
+function buttonName(button: HTMLButtonElement) {
+  const copy = button.cloneNode(true) as HTMLButtonElement;
+  copy.querySelectorAll('[aria-hidden="true"]').forEach((node) => node.remove());
+  return copy.textContent?.trim();
+}
 async function click(text: string) {
   const button = Array.from(container.querySelectorAll("button")).find(
     (item) =>
       !item.disabled &&
       (item.querySelector(".social-nav-label")?.textContent === text ||
-        item.firstChild?.textContent === text),
+        buttonName(item) === text ||
+        item.getAttribute("aria-label") === text),
   );
   expect(button).toBeTruthy();
   await act(async () => button!.click());
@@ -398,6 +405,11 @@ describe("Sosyal Medya ürün ekranı", () => {
     }
     expect(container.textContent).toContain("Host kapalıyken işler yürütülmez");
     expect(container.textContent).toContain("Taslak modu · gönderim kapalı");
+    await click("Gönderim kontrolleri");
+    expect(container.querySelector('[aria-current="page"] .social-nav-label')?.textContent).toBe(
+      "Otomasyonlar",
+    );
+    expect(container.textContent).toContain("Taslak modu · gönderim kapalı");
     expect(mocks.request).not.toHaveBeenCalled();
     expect(mocks.openUrl).not.toHaveBeenCalled();
     expect(
@@ -454,16 +466,12 @@ describe("Sosyal Medya ürün ekranı", () => {
       );
       input.dispatchEvent(new Event("input", { bubbles: true }));
     });
-    const select = container.querySelector<HTMLSelectElement>('select[aria-label="Yetkili host"]')!;
-    await act(async () => {
-      select.value = "two";
-      select.dispatchEvent(new Event("change", { bubbles: true }));
-    });
+    const select = container.querySelector<HTMLButtonElement>(
+      'button[aria-label^="Yetkili host:"]',
+    )!;
+    await chooseSocialValue(select, "two");
     expect(input.closest("[hidden]")).toBeTruthy();
-    await act(async () => {
-      select.value = "one";
-      select.dispatchEvent(new Event("change", { bubbles: true }));
-    });
+    await chooseSocialValue(select, "one");
     expect(input.closest("[hidden]")).toBeNull();
     expect(input.value).toBe("Host bir taslağı");
     expect(container.querySelector('[aria-current="page"] .social-nav-label')?.textContent).toBe(
@@ -664,11 +672,10 @@ describe("Sosyal Medya ürün ekranı", () => {
         : Promise.resolve(empty()),
     );
     await mount();
-    const select = container.querySelector<HTMLSelectElement>('select[aria-label="Yetkili host"]')!;
-    await act(async () => {
-      select.value = "two";
-      select.dispatchEvent(new Event("change", { bubbles: true }));
-    });
+    const select = container.querySelector<HTMLButtonElement>(
+      'button[aria-label^="Yetkili host:"]',
+    )!;
+    await chooseSocialValue(select, "two");
     const old = empty();
     old.campaigns = [
       {
@@ -759,7 +766,9 @@ it("does not commit a connection panel render for equal browser and OAuth poll p
   mocks.oauthStatus.mockImplementation(async () => ({ status: "waiting", candidates: [] }));
   mocks.browserStatus.mockImplementation(async () => ({ status: "waiting" }));
   await mount();
-  await act(async () => vi.advanceTimersByTimeAsync(10));
+  // Finish initial query notifications and control mounting before measuring
+  // a subsequent full cycle of equal poll results.
+  await act(async () => vi.advanceTimersByTimeAsync(6_010));
   socialCommits.mockClear();
   const oauthReads = mocks.oauthStatus.mock.calls.length,
     browserReads = mocks.browserStatus.mock.calls.length;

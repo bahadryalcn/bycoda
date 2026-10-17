@@ -27,15 +27,22 @@ afterEach(() => {
 it("retains saved data and the draft on storage failure, then reports successful retry", async () => {
   const input = container.querySelector<HTMLInputElement>('[aria-label="Template name"]')!;
   await act(async () => {
-    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, "Updated draft");
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
+      input,
+      "Updated draft",
+    );
     input.dispatchEvent(new Event("input", { bubbles: true }));
   });
   const write = vi.spyOn(localStorage, "setItem").mockImplementationOnce(() => {
     throw new Error("Storage unavailable");
   });
   await act(async () => button("Save templates").click());
-  expect(container.querySelector('[role="alert"]')?.textContent).toContain("Could not save templates");
-  expect(container.querySelector('[role="status"]')?.textContent).toContain("Could not save templates");
+  expect(container.querySelector('[role="alert"]')?.textContent).toContain(
+    "Could not save templates",
+  );
+  expect(container.querySelector('[role="status"]')?.textContent).toContain(
+    "Could not save templates",
+  );
   expect(loadPromptTemplates()[0].name).toBe("Review");
   expect(input.value).toBe("Updated draft");
   write.mockRestore();

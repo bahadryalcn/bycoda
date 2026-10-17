@@ -1,3 +1,4 @@
+import { Alert } from "../../../shared/ui/Alert";
 import { useState } from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { t, useLocale } from "../../../shared/i18n";
@@ -53,9 +54,9 @@ export function PoliciesSettings() {
         </p>
       </Group>
       {contactError ? (
-        <p role="alert" className="policy-intro">
+        <Alert tone="danger" role="alert">
           {t("Could not open your email app. Copy info@bahadrhllyalcn.com into your email app.")}
-        </p>
+        </Alert>
       ) : null}
       <nav className="policy-navigation" aria-label={t("Policy documents")}>
         {POLICIES.map((policy) => (

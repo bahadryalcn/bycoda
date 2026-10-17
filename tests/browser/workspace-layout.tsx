@@ -16,7 +16,7 @@ import { TitleBar } from "../../src/app/shell/TitleBar";
 import { DetachedWorkingBar } from "../../src/app/shell/DetachedWorkingBar";
 import { newSession } from "../../src/features/sessions/model/session";
 import { languageReady } from "../../src/shared/i18n";
-import "../../src/styles/index.css";
+import "./w7-shell.css";
 
 // Real pane tree and chat content. Provider/native callbacks stay inert.
 const sessions = ["Alpha", "Beta", "Gamma"].map((title) => ({

@@ -1,5 +1,7 @@
+import { Alert } from "../../../shared/ui/Alert";
+import { Button } from "../../../shared/ui/Button";
 import { t, useLocale } from "../../../shared/i18n";
-import { useContext, useEffect, useState, useSyncExternalStore } from "react";
+import { useContext, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { findModel } from "../../sessions/model/models";
 import { orchestrator } from "../model/orchestration";
 import { orchestrationTaskLabel, type OrchestrationSummary } from "../model/orchestrationSummary";
@@ -26,6 +28,7 @@ export function OrchestrationSidebarAgents({
   );
   const [error, setError] = useState<string>();
   const [pending, setPending] = useState(false);
+  const inFlight = useRef(false);
   // Rows expand independently, so several agents can be watched side by side.
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set());
   // Revealing a worker from its toast opens that row without closing others.
@@ -51,6 +54,8 @@ export function OrchestrationSidebarAgents({
   const resumeBlocker = run?.status === "paused" ? orchestrator.resumeBlocker(leadId) : undefined;
   const leadBusy = run?.status === "paused" && orchestrator.resumeLeadBusy(leadId);
   const perform = async (operation: () => Promise<void>) => {
+    if (inFlight.current) return;
+    inFlight.current = true;
     setPending(true);
     setError(undefined);
     try {
@@ -58,19 +63,16 @@ export function OrchestrationSidebarAgents({
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason));
     } finally {
+      inFlight.current = false;
       setPending(false);
     }
   };
   const done = summary.tasks.filter((task) => task.status === "completed").length;
-  const action =
-    "rounded px-1.5 py-0.5 text-[11px] text-content/55 hover:bg-content/10 hover:text-content disabled:opacity-35";
   // Sits inside an already-lit row, so it needs its own surface to read as a
   // button rather than as another line of text.
-  const solidAction =
-    "rounded bg-content/15 px-1.5 py-0.5 text-[11px] text-content/75 hover:bg-content/25 hover:text-content disabled:opacity-35";
   return (
     <div className="relative mt-1.5">
-      <div className="mb-0.5 px-0.5 flex items-center justify-between text-[11px] text-content/45">
+      <div className="mb-0.5 px-0.5 flex items-center justify-between text-[11px] text-(--ui-text-secondary)">
         <span>
           {summary.tasks.length} {summary.tasks.length === 1 ? t("agent") : t("agents")}
         </span>
@@ -109,20 +111,21 @@ export function OrchestrationSidebarAgents({
               // Expanding lights the whole row, header and detail together.
               className={`rounded-md ${open ? "bg-selection" : ""}`}
             >
-              <button
+              <Button
+                variant="item"
                 type="button"
                 title={`${task.title} · ${HARNESS_TITLE[task.harness]} · ${model} · ${label}`}
                 aria-label={t("Agent details: {p0}", { p0: task.title })}
+                fullWidth
+                className="group/agent min-w-0"
+                selected={open}
                 aria-expanded={open}
                 onClick={() => toggle(task.sessionId, open)}
                 // Named, because the whole session card is already a `group`.
-                className={`group/agent flex w-full min-w-0 items-center gap-1.5 rounded-md px-2 py-1.5 text-left ${
-                  open ? "" : "hover:bg-content/10"
-                }`}
               >
                 {/* One slot: the chevron stands in for the harness mark
                     whenever this row is open or under the pointer. */}
-                <span className="grid size-3.5 shrink-0 place-items-center text-content/45">
+                <span className="grid size-3.5 shrink-0 place-items-center text-(--ui-text-secondary)">
                   {open ? (
                     <ChevronDown className="size-3" strokeWidth={1.75} />
                   ) : (
@@ -138,7 +141,7 @@ export function OrchestrationSidebarAgents({
                     </>
                   )}
                 </span>
-                <span className="min-w-0 flex-1 truncate text-[12px] leading-snug text-content/80">
+                <span className="min-w-0 flex-1 truncate text-[12px] leading-snug text-(--ui-text-secondary)">
                   {task.title}
                 </span>
                 <span
@@ -147,12 +150,12 @@ export function OrchestrationSidebarAgents({
                     task.status === "failed" ||
                     task.status === "blocked" ||
                     task.status === "interrupted"
-                      ? "text-warning"
+                      ? "text-(--ui-tone-warning-fg)"
                       : working
-                        ? "text-accent"
+                        ? "text-(--ui-tone-accent-fg)"
                         : task.status === "completed"
-                          ? "text-success"
-                          : "text-content/45"
+                          ? "text-(--ui-tone-success-fg)"
+                          : "text-(--ui-text-secondary)"
                   }`}
                 >
                   {task.needsInput ||
@@ -161,30 +164,33 @@ export function OrchestrationSidebarAgents({
                   task.status === "interrupted" ? (
                     <CircleAlert className="size-3" strokeWidth={1.75} />
                   ) : working ? (
-                    <TerminalSpinner className="inline-block w-3 select-none text-center text-[11px] leading-none text-accent" />
+                    <TerminalSpinner className="inline-block w-3 select-none text-center text-[11px] leading-none text-(--ui-tone-accent-fg)" />
                   ) : task.status === "completed" ? (
                     <Check className="size-3" strokeWidth={2.25} />
                   ) : null}
                   <span>{label}</span>
                 </span>
-              </button>
+              </Button>
               {/* Indented to the title's column: the icon slot and its gap. */}
               {open && (
                 <div className="space-y-2 pb-3 pl-6.5 pr-2">
                   <p
-                    className="flex min-w-0 items-center gap-1.5 text-[11px] text-content/45"
+                    className="flex min-w-0 items-center gap-1.5 text-[11px] text-(--ui-text-secondary)"
                     title={`${model} · ${HARNESS_TITLE[task.harness]}`}
                   >
                     <HarnessIcon harness={task.harness} className="size-3.5 shrink-0" />
                     <span className="min-w-0 truncate">{model}</span>
                   </p>
-                  {live?.error && <p className="text-[11px] text-danger">{live.error}</p>}
+                  {live?.error && (
+                    <p className="text-[11px] text-(--ui-tone-danger-fg)">{live.error}</p>
+                  )}
                   <div className="flex flex-wrap items-center gap-1">
                     {workers.openDetails && (
-                      <button
+                      <Button
+                        variant="ghost"
                         type="button"
                         title={t("Open this agent beside the orchestrator")}
-                        className={solidAction}
+
                         onClick={() =>
                           workers.openDetails?.({
                             sessionId: task.sessionId,
@@ -195,17 +201,18 @@ export function OrchestrationSidebarAgents({
                         }
                       >
                         {t("See details")}
-                      </button>
+                      </Button>
                     )}
                     {live && ["queued", "running"].includes(live.status) && (
-                      <button
+                      <Button
+                        variant="ghost"
                         type="button"
-                        className={solidAction}
+
                         disabled={pending}
                         onClick={() => void perform(() => orchestrator.cancelTask(leadId, live.id))}
                       >
                         {t("Cancel task")}
-                      </button>
+                      </Button>
                     )}
                   </div>
                 </div>
@@ -215,15 +222,15 @@ export function OrchestrationSidebarAgents({
         })}
       </div>
       {(error || run?.error) && (
-        <p role="alert" className="py-1 text-[11px] text-danger">
+        <Alert tone="danger" role="alert">
           {error ?? run?.error}
-        </p>
+        </Alert>
       )}
       {/* Stopping a run belongs to the composer, which stops the lead and its
           agents together. Resume has no other home, so it stays. */}
       {run?.status === "paused" && (
-        <div className="mt-1.5 space-y-1.5 border-t border-stroke pt-1.5">
-          <p className="px-0.5 text-[11px] leading-relaxed text-content/45">
+        <div className="mt-1.5 space-y-1.5 border-t border-(--ui-tone-neutral-border) pt-1.5">
+          <p className="px-0.5 text-[11px] leading-relaxed text-(--ui-text-secondary)">
             {stopping
               ? t("Stopping interrupted work before this run can resume.")
               : leadBusy
@@ -233,25 +240,27 @@ export function OrchestrationSidebarAgents({
                   )}
           </p>
           {resumeBlocker && (
-            <p className="px-0.5 text-[11px] leading-relaxed text-warning">
+            <p className="px-0.5 text-[11px] leading-relaxed text-(--ui-tone-warning-fg)">
               {resumeBlocker.title || t("Another conversation")}
               {t(" is still running in this project.")}
             </p>
           )}
           <div className="-mr-1.5 flex items-center justify-end gap-1">
             {resumeBlocker && actions && (
-              <button
+              <Button
+                variant="ghost"
                 type="button"
-                className={action}
+
                 disabled={pending}
                 onClick={() => actions.open(resumeBlocker.id)}
               >
                 {t("Open blocker")}
-              </button>
+              </Button>
             )}
-            <button
+            <Button
+              variant="ghost"
               type="button"
-              className={action}
+
               disabled={pending || stopping || leadBusy || !!resumeBlocker}
               title={
                 stopping
@@ -269,7 +278,7 @@ export function OrchestrationSidebarAgents({
               }
             >
               {t("Resume")}
-            </button>
+            </Button>
           </div>
         </div>
       )}

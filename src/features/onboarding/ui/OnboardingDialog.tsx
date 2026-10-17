@@ -1,3 +1,9 @@
+import { Alert } from "../../../shared/ui/Alert";
+import { Checkbox } from "../../../shared/ui/Checkbox";
+import { Stepper } from "../../../shared/ui/Stepper";
+import { Progress } from "../../../shared/ui/Progress";
+import { Button } from "../../../shared/ui/Button";
+import { NativeSelect } from "../../../shared/ui/Select";
 import {
   t,
   useLocale,
@@ -8,7 +14,7 @@ import {
 } from "../../../shared/i18n";
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { Modal } from "../../../shared/ui/Modal";
-import { AppWindow, Check, Globe, ChevronRight, ArrowLeft } from "../../../shared/ui/icons";
+import { AppWindow, Globe, ChevronRight, ArrowLeft } from "../../../shared/ui/icons";
 import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
 const ConnectionsSettings = lazy(() =>
   import("../../connections/ui/ConnectionsSettings").then((module) => ({
@@ -106,7 +112,7 @@ export default function OnboardingDialog({
             </div>
             <label className="onboarding-language">
               <span className="sr-only">{t("Language")}</span>
-              <select
+              <NativeSelect
                 aria-label={t("Language")}
                 value={getLanguagePreference()}
                 onChange={(event) => {
@@ -121,46 +127,27 @@ export default function OnboardingDialog({
                     {label}
                   </option>
                 ))}
-              </select>
+              </NativeSelect>
             </label>
           </div>
-          <nav aria-label={t("Getting started")}>
-            <ol className="onboarding-steps">
-              {STEPS.map((label, index) => (
-                <li key={label} aria-current={index === step ? "step" : undefined}>
-                  <button
-                    disabled={busy}
-                    aria-label={`${index + 1} ${t(label)}`}
-                    title={t(label)}
-                    onClick={() => goTo(index)}
-                  >
-                    <span
-                      className={
-                        visited.has(index) && index !== step
-                          ? "onboarding-number complete"
-                          : "onboarding-number"
-                      }
-                    >
-                      {visited.has(index) && index !== step ? (
-                        <Check className="size-3" />
-                      ) : (
-                        index + 1
-                      )}
-                    </span>
-                    <span>{t(label)}</span>
-                  </button>
-                </li>
-              ))}
-            </ol>
-          </nav>
+          <Stepper
+            label={t("Getting started")}
+            steps={STEPS.map((label) => ({ id: label, label: t(label) }))}
+            current={step}
+            completed={[...visited].filter((index) => index !== step).map((index) => STEPS[index])}
+            selectable="all"
+            disabled={busy}
+            onStepSelect={goTo}
+            details="current"
+          />
         </header>
         {step < 4 ? (
           <div className="onboarding-stage">
             <div className="onboarding-body" key={step}>
               {error ? (
-                <p className="onboarding-error" role="alert">
+                <Alert role="alert" tone="danger">
                   {error}
-                </p>
+                </Alert>
               ) : null}
               {step === 0 ? <OnboardingWorkspace /> : null}
               {step === 1 ? <OnboardingAppearance /> : null}
@@ -197,22 +184,23 @@ export default function OnboardingDialog({
                         <strong>{machine.name}</strong>
                         <small>{t("Remote computer")}</small>
                       </div>
-                      <button className="onboarding-small" onClick={() => setConnections(true)}>
+                      <Button
+                        onClick={() => setConnections(true)}
+                        variant="secondary"
+                        type="button"
+                      >
                         {t("Manage")}
-                      </button>
+                      </Button>
                     </div>
                   ))}
-                  <button
-                    className="onboarding-connection-action"
-                    onClick={() => setConnections(true)}
-                  >
+                  <Button onClick={() => setConnections(true)} variant="secondary" type="button">
                     <Globe aria-hidden className="size-5" />
                     <div>
                       <strong>{t("Manage connections")}</strong>
                       <small>{t("Computers, phone pairing and sharing")}</small>
                     </div>
                     <ChevronRight className="size-4" />
-                  </button>
+                  </Button>
                   <p className="onboarding-hint">
                     {t(
                       "Your remote agents stay on their own computer. You can add connections later in Settings.",
@@ -222,9 +210,10 @@ export default function OnboardingDialog({
               ) : null}
             </div>
             <footer className="onboarding-footer">
-              <button
-                className="onboarding-muted"
+              <Button
                 onClick={step === 0 ? onFinish : () => goTo(step - 1)}
+                variant="secondary"
+                type="button"
               >
                 {step === 0 ? (
                   t("Set up later")
@@ -234,12 +223,12 @@ export default function OnboardingDialog({
                     {t("Back")}
                   </>
                 )}
-              </button>
+              </Button>
               <span className="onboarding-save-note">{t("Changes save automatically")}</span>
-              <button className="onboarding-primary" onClick={() => goTo(step + 1)}>
+              <Button onClick={() => goTo(step + 1)} variant="primary" type="button">
                 {t("Continue")}
                 <ChevronRight className="size-3.5" />
-              </button>
+              </Button>
             </footer>
           </div>
         ) : null}
@@ -399,10 +388,10 @@ function Projects({
           </p>
         </div>
         {error ? (
-          <p className="onboarding-error" role="alert">
+          <Alert role="alert" tone="danger">
             {t("Could not complete this action: ")}
             {error}
-          </p>
+          </Alert>
         ) : null}
         {loading ? (
           <p role="status">{t("Scanning this computer’s conversation history…")}</p>
@@ -417,22 +406,28 @@ function Projects({
                 {t(" selected")}
               </span>
               <div>
-                <button
+                <Button
                   disabled={busy}
                   onClick={() => setSelected(new Set(folders.map((folder) => folder.key)))}
+                  variant="secondary"
+                  type="button"
                 >
                   {t("Select all")}
-                </button>
-                <button disabled={busy} onClick={() => setSelected(new Set())}>
+                </Button>
+                <Button
+                  disabled={busy}
+                  onClick={() => setSelected(new Set())}
+                  variant="secondary"
+                  type="button"
+                >
                   {t("Select none")}
-                </button>
+                </Button>
               </div>
             </div>
             <div className="onboarding-projects">
               {folders.map((folder) => (
                 <label className="onboarding-project" key={folder.key}>
-                  <input
-                    type="checkbox"
+                  <Checkbox
                     checked={selected.has(folder.key)}
                     disabled={busy}
                     onChange={(event) => {
@@ -465,13 +460,19 @@ function Projects({
         ) : null}
         {importing ? (
           <div role="status" aria-live="polite">
+            <Progress
+              label={t("Importing conversations: ")}
+              value={progress?.total ? progress.done : undefined}
+              max={progress?.total || 1}
+              compact
+            />
             <p>
               {t("Importing conversations: ")}
               {progress?.done ?? 0} / {progress?.total ?? 0}
             </p>
-            <button className="onboarding-muted" onClick={() => abort.current?.abort()}>
+            <Button onClick={() => abort.current?.abort()} variant="secondary" type="button">
               {t("Cancel import")}
-            </button>
+            </Button>
           </div>
         ) : null}
         {summary ? (
@@ -483,7 +484,7 @@ function Projects({
               {summary.cancelled ? t(" Import cancelled.") : ""}
             </p>
             {summary.failed.length ? (
-              <div role="alert">
+              <Alert role="alert" tone="danger">
                 <p>
                   {summary.failed.length}
                   {t(" conversations could not be imported.")}
@@ -493,7 +494,7 @@ function Projects({
                     {failure.candidate.cwd}: {failure.error}
                   </p>
                 ))}
-              </div>
+              </Alert>
             ) : null}
             {summary.readOnly || summary.truncated ? (
               <p>
@@ -522,40 +523,46 @@ function Projects({
           </div>
         ) : null}
         <div className="onboarding-project-actions">
-          <button className="onboarding-muted" disabled={busy} onClick={() => void addFolders()}>
+          <Button
+            disabled={busy}
+            onClick={() => void addFolders()}
+            variant="secondary"
+            type="button"
+          >
             {t("+ Choose project folders")}
-          </button>
+          </Button>
           {onOpenRemote ? (
-            <button className="onboarding-muted" disabled={busy} onClick={onOpenRemote}>
+            <Button disabled={busy} onClick={onOpenRemote} variant="secondary" type="button">
               {t("+ Open a remote project")}
-            </button>
+            </Button>
           ) : null}
         </div>
       </div>
       <footer className="onboarding-footer">
-        <button className="onboarding-muted" disabled={busy} onClick={onBack}>
+        <Button disabled={busy} onClick={onBack} variant="secondary" type="button">
           {t("← Back")}
-        </button>
+        </Button>
         <div className="onboarding-footer-actions">
           {onStartGuide && !busy ? (
-            <button className="onboarding-muted" onClick={onStartGuide}>
+            <Button onClick={onStartGuide} variant="secondary" type="button">
               {t("Usage guide")}
-            </button>
+            </Button>
           ) : null}
           {!summary ? (
-            <button className="onboarding-muted" disabled={busy} onClick={onFinish}>
+            <Button disabled={busy} onClick={onFinish} variant="secondary" type="button">
               {t("Skip import")}
-            </button>
+            </Button>
           ) : null}
-          <button
-            className="onboarding-primary"
+          <Button
             disabled={busy}
             onClick={summary || !selected.size ? onFinish : () => void start()}
+            variant="secondary"
+            type="button"
           >
             {summary || !selected.size
               ? t("Finish setup")
               : t("Import {p0} projects", { p0: selected.size })}
-          </button>
+          </Button>
         </div>
       </footer>
     </>

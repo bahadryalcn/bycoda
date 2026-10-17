@@ -1,3 +1,5 @@
+import { Checkbox } from "../../../shared/ui/Checkbox";
+import { Button } from "../../../shared/ui/Button";
 import { t, useLocale } from "../../../shared/i18n";
 import { useState } from "react";
 import { prettyCwd } from "../../../shared/lib/paths";
@@ -31,37 +33,36 @@ export function DeleteSessionDialog({
           {t("” will be permanently deleted.")}
         </p>
         <label className="flex items-start gap-2">
-          <input
-            type="checkbox"
+          <Checkbox
             checked={deleteWorktree}
             onChange={(e) => setDeleteWorktree(e.target.checked)}
-            className="mt-0.5 accent-accent"
+            className="mt-0.5"
           />
           <span>
             {t("Also delete the unused worktree")}
-            <span className="mt-1 block break-all text-[11px] text-content/45">
+            <span className="mt-1 block break-all text-[11px] text-(--ui-text-secondary)">
               {prettyCwd(unusedWorktree)}
             </span>
-            <span className="mt-1 block text-[11px] text-content/45">
+            <span className="mt-1 block text-[11px] text-(--ui-text-secondary)">
               {t("The branch is kept. If files have uncommitted changes, the worktree stays.")}
             </span>
           </span>
         </label>
         <div className="flex justify-end gap-2">
-          <button
+          <Button
+            variant="ghost"
             type="button"
             onClick={() => onClose({ confirmed: false, deleteWorktree: false })}
-            className="rounded-md px-3 py-1.5 hover:bg-content/8 active:scale-[0.97]"
           >
             {t("Cancel")}
-          </button>
-          <button
+          </Button>
+          <Button
+            variant="ghost"
             type="button"
             onClick={() => onClose({ confirmed: true, deleteWorktree })}
-            className="rounded-md bg-danger/20 px-3 py-1.5 font-medium text-danger hover:bg-danger/30 active:scale-[0.97]"
           >
             {t("Delete session")}
-          </button>
+          </Button>
         </div>
       </div>
     </Modal>

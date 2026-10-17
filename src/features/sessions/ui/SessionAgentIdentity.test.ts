@@ -16,5 +16,5 @@ it("names the running harness and model independently of composer selection", ()
   expect(markup).toContain("Running agent");
   expect(markup).toContain("Claude Code");
   expect(markup).toContain("Default account");
-  expect(markup).toContain("bg-success");
+  expect(markup).toContain("--ui-tone-success-fg");
 });

@@ -1,3 +1,4 @@
+import { Alert } from "../../../shared/ui/Alert";
 import { TextField } from "../../../shared/ui/TextField";
 import { useRetainedState } from "../../../shared/hooks/useRetainedState";
 import { Button } from "../../../shared/ui/Button";
@@ -197,9 +198,9 @@ export function ShortcutEditor({
         </p>
       ) : null}
       {error ? (
-        <p role="alert" className={styles.error}>
+        <Alert tone="danger" role="alert">
           {error}
-        </p>
+        </Alert>
       ) : null}
     </div>
   );

@@ -1,5 +1,6 @@
 import {
   forwardRef,
+  useEffect,
   useImperativeHandle,
   useRef,
   useState,
@@ -14,25 +15,38 @@ type SearchInputProps = ComponentPropsWithoutRef<"input"> & {
   standalone?: boolean;
   containerClassName?: string;
   clearable?: boolean;
-  /** Composite fields and menu headers delegate focus presentation to their owner. */
+  /** Composite fields and menu headers delegate focus presentation to their owner.
+   *  Defaults to the input only when it draws its own frame (`field` or `standalone`). */
   focusOwner?: "input" | "group" | "menu";
+  /** A bordered common field, or an unframed input inside a composite/menu owner. */
+  appearance?: "bare" | "field";
 };
 
 /** The bordered container owns the search field's single focus indicator. */
-export const SearchInputGroup = forwardRef<HTMLDivElement, ComponentPropsWithoutRef<"div">>(
-  function SearchInputGroup(props, ref) {
-    return <div {...props} ref={ref} data-ui-focus-group="" />;
-  },
-);
+export const SearchInputGroup = forwardRef<
+  HTMLDivElement,
+  ComponentPropsWithoutRef<"div"> & { appearance?: "bare" | "field" }
+>(function SearchInputGroup({ appearance = "bare", className, ...props }, ref) {
+  return (
+    <div
+      {...props}
+      ref={ref}
+      data-ui-focus-group=""
+      data-search-appearance={appearance}
+      className={[styles.group, className].filter(Boolean).join(" ")}
+    />
+  );
+});
 
 /** Preserves the caller's input events, ref and keyboard navigation when cleared. */
 export const SearchInput = forwardRef<HTMLInputElement, SearchInputProps>(function SearchInput(
   {
     standalone = false,
+    appearance = "bare",
     containerClassName,
     className,
     clearable = true,
-    focusOwner = "input",
+    focusOwner,
     onChange,
     ...props
   },
@@ -44,17 +58,41 @@ export const SearchInput = forwardRef<HTMLInputElement, SearchInputProps>(functi
   const [uncontrolledValue, setUncontrolledValue] = useState(props.defaultValue ?? "");
   const hasValue = String(props.value ?? uncontrolledValue).length > 0;
   const canClear = clearable && hasValue && !props.disabled && !props.readOnly;
+  const insetClear = standalone || appearance === "field";
+  // An unframed input lives inside a header, row or menu; a ring around the bare
+  // text box would draw a second rectangle inside that owner.
+  const focus = focusOwner ?? (insetClear ? "input" : "menu");
+  useEffect(() => {
+    if (props.value !== undefined) return;
+    const node = input.current;
+    const form = node?.form;
+    if (!node || !form) return;
+    let timer: number | undefined;
+    const reset = (event: Event) => {
+      window.clearTimeout(timer);
+      // Reset listeners precede the native default action. Read its result afterwards.
+      timer = window.setTimeout(() => {
+        if (!event.defaultPrevented && node.isConnected) setUncontrolledValue(node.value);
+      }, 0);
+    };
+    form.addEventListener("reset", reset);
+    return () => {
+      form.removeEventListener("reset", reset);
+      window.clearTimeout(timer);
+    };
+  }, [props.value, props.form]);
   const control = (
     <>
       <input
         {...props}
-        data-ui-focus={focusOwner}
+        data-ui-focus={focus}
+        data-search-appearance={appearance}
         onChange={(event) => {
           if (props.value === undefined) setUncontrolledValue(event.target.value);
           onChange?.(event);
         }}
         ref={input}
-        className={[className, styles.input, standalone && styles.standaloneInput]
+        className={[className, styles.input, insetClear && styles.standaloneInput]
           .filter(Boolean)
           .join(" ")}
         data-search-filled={canClear || undefined}
@@ -91,7 +129,7 @@ export const SearchInput = forwardRef<HTMLInputElement, SearchInputProps>(functi
       ) : null}
     </>
   );
-  return standalone ? (
+  return insetClear ? (
     <span className={[styles.standalone, containerClassName].filter(Boolean).join(" ")}>
       {control}
     </span>

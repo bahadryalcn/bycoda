@@ -3,6 +3,8 @@ import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { LAYER } from "../../../shared/lib/layers";
 import { SYNC_MERGED_MESSAGE, subscribeSyncMerged } from "../model/syncClient";
+import { Button } from "../../../shared/ui/Button";
+import { Alert } from "../../../shared/ui/Alert";
 
 const VISIBLE_MS = 5000;
 const FADE_MS = 300;
@@ -35,16 +37,21 @@ export function SyncMergedNotice() {
 
   if (!visible) return null;
   return createPortal(
-    <button
+    <Button
       type="button"
       role="status"
       aria-label={t("Dismiss sync notice")}
       style={{ zIndex: LAYER.toast }}
-      className={`fixed right-3 bottom-3 w-[min(340px,calc(100vw-24px))] rounded-xl border border-content/15 bg-background-base/95 px-3 py-2.5 text-left text-[12px] text-content shadow-xl backdrop-blur-xl transition-opacity duration-300 ${fading ? "opacity-0" : "opacity-100"}`}
+      variant="item"
+      motion="none"
+      layout="stacked"
+      className={`fixed right-3 bottom-3 w-[min(340px,calc(100vw-24px))] text-left transition-opacity duration-300 motion-reduce:transition-none ${fading ? "opacity-0" : "opacity-100"}`}
       onClick={() => setVisible(false)}
     >
-      {SYNC_MERGED_MESSAGE}
-    </button>,
+      <Alert tone="info" role="presentation">
+        {SYNC_MERGED_MESSAGE}
+      </Alert>
+    </Button>,
     document.body,
   );
 }

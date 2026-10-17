@@ -158,7 +158,9 @@ export default function SegmentedControl({
               )}
               <span className={styles.label}>
                 {option.label}
-                {option.accessory}
+                {option.accessory != null ? (
+                  <span className={styles.accessory}>{option.accessory}</span>
+                ) : null}
               </span>
             </button>
           ))}

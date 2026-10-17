@@ -1,4 +1,6 @@
 import { useState } from "react";
+import { t, useLocale } from "../i18n";
+import { Button } from "./Button";
 import { useMaskEmails } from "../../features/settings/model/displayPrefs";
 
 /**
@@ -6,6 +8,7 @@ import { useMaskEmails } from "../../features/settings/model/displayPrefs";
  * explicitly revealed; otherwise show them as plain text.
  */
 export function PrivateEmail({ email }: { email: string }) {
+  useLocale();
   const masked = useMaskEmails();
   const [revealed, setRevealed] = useState(false);
   const [wasMasked, setWasMasked] = useState(masked);
@@ -21,15 +24,17 @@ export function PrivateEmail({ email }: { email: string }) {
       </span>
     );
   }
-  const action = revealed ? "Hide email" : "Reveal email";
+  const action = revealed ? t("Hide email") : t("Reveal email");
 
   return (
-    <button
+    <Button
+      variant="link"
+      motion="none"
       type="button"
       aria-label={action}
       aria-pressed={revealed}
       title={action}
-      className="pointer-events-auto relative min-w-0 truncate rounded-sm text-left focus-visible:outline-2 focus-visible:outline-accent"
+      className="pointer-events-auto relative min-w-0 truncate text-left"
       onClick={(event) => {
         event.stopPropagation();
         setRevealed((value) => !value);
@@ -38,6 +43,6 @@ export function PrivateEmail({ email }: { email: string }) {
       <span aria-hidden={!revealed} className={revealed ? undefined : "select-none blur-[5px]"}>
         {email}
       </span>
-    </button>
+    </Button>
   );
 }

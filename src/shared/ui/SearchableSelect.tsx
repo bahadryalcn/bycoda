@@ -3,13 +3,15 @@ import { t, useLocale } from "../i18n";
 import {
   useEffect,
   useId,
+  useImperativeHandle,
   useLayoutEffect,
   useMemo,
   useRef,
   useState,
   type KeyboardEvent as ReactKeyboardEvent,
+  type ComponentPropsWithRef,
 } from "react";
-import { Check, ChevronDown, Search } from "./icons";
+import { Check, ChevronDown, Search, X } from "./icons";
 import { LAYER } from "../lib/layers";
 import type { PopoverAlign } from "../lib/popover";
 import { Popover } from "./Popover";
@@ -22,6 +24,8 @@ export type SearchableSelectOption = {
   value: string;
   label: string;
   keywords?: string;
+  description?: string;
+  disabled?: boolean;
 };
 
 type SingleSelectProps = {
@@ -37,6 +41,26 @@ type MultiSelectProps = {
   onChange: (value: string[]) => void;
 };
 
+type SelectionOptions = {
+  /** Locale used for case folding, independently of the UI language. */
+  searchLocale?: string;
+  triggerProps?: Omit<
+    ComponentPropsWithRef<"button">,
+    "children" | "value" | "onChange" | "disabled"
+  >;
+  showSelectedValues?: boolean;
+  loopNavigation?: boolean;
+  selectionLabels?: {
+    menu?: string;
+    summary?: (count: number) => string;
+    missing?: string;
+    remove?: (label: string) => string;
+    selected?: string;
+    clear?: string;
+    done?: string;
+  };
+};
+
 export function SearchableSelect(
   props: {
     label: string;
@@ -49,19 +73,26 @@ export function SearchableSelect(
     variant?: "field" | "transparent" | "row" | "panel" | "pill";
     searchable?: boolean;
     align?: PopoverAlign;
-  } & (SingleSelectProps | MultiSelectProps),
+  } & SelectionOptions &
+    (SingleSelectProps | MultiSelectProps),
 ) {
+  useLocale();
   const {
     label,
     options,
-    placeholder = "Choose an option…",
-    searchPlaceholder = "Search options…",
-    emptyLabel = "No matching options",
+    placeholder = t("Choose an option…"),
+    searchPlaceholder = t("Search options…"),
+    emptyLabel = t("No matching options"),
     disabled = false,
     layer,
     variant = "field",
     searchable = true,
     align = "start",
+    searchLocale,
+    triggerProps,
+    showSelectedValues,
+    selectionLabels,
+    loopNavigation,
   } = props;
   return (
     <SearchableSelectMenu
@@ -76,6 +107,11 @@ export function SearchableSelect(
         variant,
         searchable,
         align,
+        searchLocale,
+        triggerProps,
+        showSelectedValues,
+        selectionLabels,
+        loopNavigation,
       }}
       values={props.multiple ? props.value : [props.value]}
       multiple={!!props.multiple}
@@ -87,6 +123,11 @@ export function SearchableSelect(
             : [...props.value, next],
         );
       }}
+      onRemove={
+        props.multiple
+          ? (next) => props.onChange(props.value.filter((item) => item !== next))
+          : undefined
+      }
       onClear={props.multiple ? () => props.onChange([]) : undefined}
     />
   );
@@ -99,14 +140,20 @@ function SearchableSelectMenu({
   options,
   onPick,
   onClear,
-  placeholder = "Choose an option…",
-  searchPlaceholder = "Search options…",
-  emptyLabel = "No matching options",
+  placeholder = t("Choose an option…"),
+  searchPlaceholder = t("Search options…"),
+  emptyLabel = t("No matching options"),
   disabled = false,
   layer,
   variant = "field",
   searchable = true,
   align = "start",
+  searchLocale,
+  triggerProps,
+  showSelectedValues,
+  selectionLabels,
+  loopNavigation,
+  onRemove,
 }: {
   label: string;
   values: readonly string[];
@@ -114,6 +161,7 @@ function SearchableSelectMenu({
   options: readonly SearchableSelectOption[];
   onPick: (value: string) => void;
   onClear?: () => void;
+  onRemove?: (value: string) => void;
   placeholder?: string;
   searchPlaceholder?: string;
   emptyLabel?: string;
@@ -122,7 +170,7 @@ function SearchableSelectMenu({
   variant?: "field" | "transparent" | "row" | "panel" | "pill";
   searchable?: boolean;
   align?: PopoverAlign;
-}) {
+} & SelectionOptions) {
   useLocale();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -130,25 +178,33 @@ function SearchableSelectMenu({
   const [menuWidth, setMenuWidth] = useState<number>();
   const root = useRef<HTMLDivElement>(null);
   const trigger = useRef<HTMLButtonElement>(null);
+  useImperativeHandle(triggerProps?.ref, () => trigger.current!, []);
   const search = useRef<HTMLInputElement>(null);
   const list = useRef<HTMLDivElement>(null);
   const activeOption = useRef<HTMLButtonElement>(null);
   const listId = useId();
-  const chosen = options.filter((option) => values.includes(option.value));
+  const optionLookup = useMemo(
+    () => new Map(options.map((option) => [option.value, option])),
+    [options],
+  );
   const value = values.join("\n");
   const selectedLabel =
-    chosen.length > 1 ? t("{p0} selected", { p0: chosen.length }) : chosen[0]?.label;
-  const normalizedQuery = query.trim().toLocaleLowerCase();
+    values.length && selectionLabels?.summary
+      ? selectionLabels.summary(values.length)
+      : values.length > 1
+        ? t("{p0} selected", { p0: values.length })
+        : (optionLookup.get(values[0])?.label ?? (values[0] || undefined));
+  const normalizedQuery = query.trim().toLocaleLowerCase(searchLocale);
   const filtered = useMemo(
     () =>
       normalizedQuery
         ? options.filter((option) =>
-            `${option.label}\n${option.keywords ?? ""}`
-              .toLocaleLowerCase()
+            `${option.label}\n${option.description ?? ""}\n${option.keywords ?? ""}`
+              .toLocaleLowerCase(searchLocale)
               .includes(normalizedQuery),
           )
         : [...options],
-    [normalizedQuery, options],
+    [normalizedQuery, options, searchLocale],
   );
   const activeId = filtered[active] != null ? `${listId}-option-${active}` : undefined;
   const popoverLayer =
@@ -161,7 +217,7 @@ function SearchableSelectMenu({
   };
 
   const openMenu = () => {
-    if (disabled) return;
+    if (disabled || trigger.current?.matches(":disabled")) return;
     setMenuWidth(
       variant === "pill" || variant === "row"
         ? Math.max(240, root.current?.getBoundingClientRect().width ?? 0)
@@ -211,6 +267,7 @@ function SearchableSelectMenu({
   }, [disabled]);
 
   const pick = (next: string) => {
+    if (disabled || optionLookup.get(next)?.disabled) return;
     onPick(next);
     if (!multiple) close(true);
   };
@@ -222,14 +279,18 @@ function SearchableSelectMenu({
     if (event.key === "ArrowDown") {
       event.preventDefault();
       if (filtered.length > 0) {
-        setActive((index) => Math.min(filtered.length - 1, index + 1));
+        setActive((index) =>
+          loopNavigation ? (index + 1) % filtered.length : Math.min(filtered.length - 1, index + 1),
+        );
       }
       return;
     }
     if (event.key === "ArrowUp") {
       event.preventDefault();
       if (filtered.length > 0) {
-        setActive((index) => Math.max(0, index - 1));
+        setActive((index) =>
+          loopNavigation ? (index - 1 + filtered.length) % filtered.length : Math.max(0, index - 1),
+        );
       }
       return;
     }
@@ -264,22 +325,32 @@ function SearchableSelectMenu({
       }
     >
       <SelectTrigger
+        {...triggerProps}
         ref={trigger}
         data-select-variant={variant}
         data-state={open ? "open" : "closed"}
         data-disabled={disabled || undefined}
-        type="button"
+        type={triggerProps?.type ?? "button"}
         disabled={disabled}
-        aria-label={`${label}: ${selectedLabel ?? placeholder}`}
+        aria-label={triggerProps?.["aria-label"] ?? `${label}: ${selectedLabel ?? placeholder}`}
         aria-expanded={open}
         aria-haspopup="dialog"
-        onClick={() => (open ? close() : openMenu())}
+        aria-controls={open ? `${listId}-menu` : undefined}
+        onClick={(event) => {
+          triggerProps?.onClick?.(event);
+          if (event.defaultPrevented) return;
+          if (open) close();
+          else openMenu();
+        }}
         onKeyDown={(event) => {
+          triggerProps?.onKeyDown?.(event);
+          if (event.defaultPrevented || isImeComposition(event.nativeEvent)) return;
           if (open || (event.key !== "ArrowDown" && event.key !== "ArrowUp")) return;
           event.preventDefault();
           openMenu();
         }}
-        className={
+        className={[
+          triggerProps?.className,
           variant === "row"
             ? "inline-flex h-[var(--ui-control-height-compact)] max-w-full items-center gap-1 rounded-md bg-content/10 py-0 pr-1.5 pl-2 text-left text-[12px] focus-visible:outline-2 focus-visible:outline-accent hover:bg-content/[0.14] focus-visible:bg-content/[0.14] disabled:opacity-50"
             : variant === "panel"
@@ -288,8 +359,10 @@ function SearchableSelectMenu({
                 ? "inline-flex h-[var(--ui-control-height-compact)] max-w-full items-center gap-1 rounded-md bg-content/10 py-0 pr-1.5 pl-2 text-left text-[12px] focus-visible:outline-2 focus-visible:outline-accent hover:bg-content/[0.14] focus-visible:bg-content/[0.14] disabled:opacity-50"
                 : variant === "transparent"
                   ? "flex h-[var(--ui-control-height)] w-full items-center justify-between gap-2 rounded-md border border-content/10 bg-transparent px-2.5 text-left text-[13px] focus-visible:outline-2 focus-visible:outline-accent hover:border-content/20 focus:border-content/25 disabled:opacity-50 active:scale-[0.99]"
-                  : "flex h-[var(--ui-control-height)] w-full items-center justify-between gap-2 rounded-md border border-content/10 bg-background-base px-2.5 text-left text-[13px] focus-visible:outline-2 focus-visible:outline-accent hover:border-content/20 focus:border-content/25 disabled:opacity-50 active:scale-[0.99]"
-        }
+                  : "flex h-[var(--ui-control-height)] w-full items-center justify-between gap-2 rounded-md border border-content/10 bg-background-base px-2.5 text-left text-[13px] focus-visible:outline-2 focus-visible:outline-accent hover:border-content/20 focus:border-content/25 disabled:opacity-50 active:scale-[0.99]",
+        ]
+          .filter(Boolean)
+          .join(" ")}
       >
         <span
           className={`min-w-0 truncate ${variant === "panel" ? "flex-1 text-right" : variant === "pill" || variant === "row" ? "" : "flex-1"} ${selectedLabel ? "text-content" : "text-content/40"}`}
@@ -301,9 +374,39 @@ function SearchableSelectMenu({
           strokeWidth={1.75}
         />
       </SelectTrigger>
+      {showSelectedValues && multiple && values.length ? (
+        <div className="bycoda-selection-values" aria-label={selectionLabels?.selected ?? label}>
+          {values.map((value) => {
+            const option = optionLookup.get(value);
+            const name = option?.label ?? selectionLabels?.missing ?? value;
+            return (
+              <span
+                key={value}
+                className="bycoda-selection-value"
+                title={option?.description ?? value}
+              >
+                <span>{name}</span>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  iconOnly
+                  label={selectionLabels?.remove?.(name) ?? `${t("Remove")}: ${name}`}
+                  disabled={disabled}
+                  onClick={() => {
+                    if (!disabled) onRemove?.(value);
+                  }}
+                >
+                  <X aria-hidden="true" />
+                </Button>
+              </span>
+            );
+          })}
+        </div>
+      ) : null}
       {open ? (
         <Popover
-          anchor={root}
+          id={`${listId}-menu`}
+          anchor={trigger}
           side="bottom"
           align={align}
           gap={4}
@@ -312,7 +415,7 @@ function SearchableSelectMenu({
           constrainHeight={longMenu}
           layer={popoverLayer}
           role="dialog"
-          aria-label={t("{p0} options", { p0: label })}
+          aria-label={selectionLabels?.menu ?? t("{p0} options", { p0: label })}
           data-dialog-popover
           onDismiss={(reason) => close(reason === "escape")}
           className="bycoda-arc bycoda-arc-menu flex flex-col overflow-hidden"
@@ -361,18 +464,30 @@ function SearchableSelectMenu({
                 return (
                   <ComboboxItem
                     key={option.value}
+                    data-value={option.value}
                     ref={highlighted ? activeOption : undefined}
                     id={`${listId}-option-${index}`}
                     type="button"
                     role="option"
                     tabIndex={-1}
                     aria-selected={isSelected}
+                    aria-disabled={option.disabled || undefined}
+                    disabled={disabled || option.disabled}
+                    aria-describedby={
+                      option.description ? `${listId}-description-${index}` : undefined
+                    }
+                    title={option.description}
                     data-active={highlighted || undefined}
+                    data-highlighted={highlighted || undefined}
                     onMouseDown={(event) => event.preventDefault()}
                     onMouseEnter={() => setActive(index)}
                     onClick={() => pick(option.value)}
-                    className={`flex w-full items-center gap-2 rounded-md px-2 text-left leading-none ${
-                      compact ? "h-7 text-[12px]" : "h-8 text-[13px]"
+                    className={`bycoda-arc-select-option flex w-full items-center gap-2 rounded-md px-2 text-left leading-none ${
+                      option.description
+                        ? "min-h-8 py-1.5 text-[13px]"
+                        : compact
+                          ? "h-7 text-[12px]"
+                          : "h-8 text-[13px]"
                     } ${
                       highlighted
                         ? "bg-selection text-content"
@@ -382,24 +497,44 @@ function SearchableSelectMenu({
                     <span className="grid size-3.5 shrink-0 place-items-center">
                       {isSelected ? <Check className="size-3" strokeWidth={2} /> : null}
                     </span>
-                    <span className="min-w-0 flex-1 truncate">{option.label}</span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate">{option.label}</span>
+                      {option.description ? (
+                        <span
+                          id={`${listId}-description-${index}`}
+                          className="bycoda-select-description block"
+                        >
+                          {option.description}
+                        </span>
+                      ) : null}
+                    </span>
                   </ComboboxItem>
                 );
               })
             ) : (
-              <p className="px-2 py-3 text-center text-[12px] text-content/45">{emptyLabel}</p>
+              <p role="status" className="px-2 py-3 text-center text-[12px] text-content/45">
+                {emptyLabel}
+              </p>
             )}
           </ComboboxList>
-          {onClear && chosen.length ? (
+          {onClear && (values.length > 0 || selectionLabels?.done) ? (
             <div className="flex shrink-0 justify-end border-t border-stroke p-1">
               <Button
                 variant="ghost"
                 size="sm"
                 onMouseDown={(event) => event.preventDefault()}
-                onClick={onClear}
+                disabled={disabled || !values.length}
+                onClick={() => {
+                  if (!disabled) onClear();
+                }}
               >
-                {t("Clear selection")}
+                {selectionLabels?.clear ?? t("Clear selection")}
               </Button>
+              {selectionLabels?.done ? (
+                <Button variant="ghost" size="sm" onClick={() => close(true)}>
+                  {selectionLabels.done}
+                </Button>
+              ) : null}
             </div>
           ) : null}
         </Popover>

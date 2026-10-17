@@ -107,7 +107,7 @@
   margin: 0;
   padding: 24px 0;
   font-size: 12px;
-  color: var(--host-tool-muted);
+  color: var(--ui-text-muted);
 }
 
 .device-panel-state-title {
@@ -135,7 +135,7 @@
 
 .device-panel-error summary {
   cursor: pointer;
-  color: var(--host-tool-muted);
+  color: var(--ui-text-muted);
 }
 
 .device-panel-error pre,
@@ -172,7 +172,7 @@
 }
 
 .device-panel-waiting {
-  color: var(--host-tool-muted);
+  color: var(--ui-text-muted);
   font-size: 12px;
   text-align: center;
   padding-inline: 24px;
@@ -225,17 +225,6 @@
 }
 
 @container (width < 600px) {
-  .host-tools:has(.host-tools-content-devices)
-    button:not([aria-selected="true"])
-    > .host-tools-tab-label {
-    position: absolute;
-    inline-size: 1px;
-    block-size: 1px;
-    overflow: clip;
-    clip-path: inset(50%);
-    white-space: nowrap;
-  }
-
   .host-tools:has(.host-tools-content-devices) .host-tools-tabs {
     justify-content: space-between;
   }

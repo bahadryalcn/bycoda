@@ -19,7 +19,7 @@ export function ExternalEditorIcon({ id }: { id: string }) {
     return (
       <span
         aria-hidden="true"
-        className="grid size-4 place-items-center rounded-sm border border-content/30 bg-content/10 text-[8px] font-bold text-content"
+        className="grid size-4 place-items-center rounded-sm border border-[var(--color-stroke)] bg-[var(--ui-surface-hover)] text-[8px] font-bold text-content"
       >
         {jetbrains[id as keyof typeof jetbrains]}
       </span>

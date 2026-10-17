@@ -1,3 +1,6 @@
+import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
+import { Alert } from "../../../shared/ui/Alert";
+import { Button } from "../../../shared/ui/Button";
 import { t, useLocale, getLocale } from "../../../shared/i18n";
 import { RefreshCw } from "../../../shared/ui/icons";
 import { useEffect, useMemo, useState } from "react";
@@ -29,7 +32,7 @@ import {
 
 import { identityKey } from "../../providers/model/providerAccountIdentity";
 
-import { Group, Segmented, Select } from "./settingsControls";
+import { Group, Segmented } from "./settingsControls";
 
 export type UsageRange = "7d" | "30d";
 export type UsageMetric = "tokens" | "cost";
@@ -187,7 +190,7 @@ export function ProviderUsageSettings({
       )}
       action={
         <div className="flex flex-wrap items-center justify-end gap-2">
-          <Select
+          <SearchableSelect
             label={t("Usage account")}
             value={selected ? accountKey : ALL_USAGE_ACCOUNTS}
             options={accountOptions}
@@ -212,20 +215,21 @@ export function ProviderUsageSettings({
             ]}
             onChange={setRange}
           />
-          <button
+          <Button
+            variant="ghost"
+            size="sm"
             type="button"
             aria-label={t("Reload usage")}
             title={t("Reload usage")}
             disabled={refreshing}
             onClick={() => setReload((value) => value + 1)}
-            className="grid size-[26px] place-items-center rounded-md border border-content/10 text-content/50 hover:bg-content/10 hover:text-content disabled:opacity-40"
           >
             <RefreshCw
               className={`size-3.5${refreshing ? " animate-spin" : ""}`}
               strokeWidth={1.75}
               aria-hidden
             />
-          </button>
+          </Button>
         </div>
       }
     >
@@ -240,9 +244,9 @@ export function ProviderUsageSettings({
             {t("Reading session logs…")}
           </div>
         ) : noReadableLogs ? (
-          <p role="alert" className="px-4 py-6 text-[12px] text-danger">
+          <Alert tone="danger" role="alert">
             {t("Usage could not be read for the selected accounts. Reload usage to try again.")}
-          </p>
+          </Alert>
         ) : summary.tokens === 0 ? (
           <div className="px-4 py-6 text-[12px] leading-relaxed text-content/45">
             {t("No usage in the last ")}

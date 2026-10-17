@@ -1,3 +1,6 @@
+import { Alert } from "../../../shared/ui/Alert";
+import { Button } from "../../../shared/ui/Button";
+import { Checkbox } from "../../../shared/ui/Checkbox";
 import { SearchInput } from "../../../shared/ui/SearchInput";
 import { t, useLocale } from "../../../shared/i18n";
 import { useRef, useState, useSyncExternalStore } from "react";
@@ -147,7 +150,8 @@ export function SessionDirsPicker({
 
   return (
     <div ref={root} className="relative shrink-0">
-      <button
+      <Button
+        variant="ghost"
         type="button"
         title={effective.map(prettyCwd).join("\n")}
         aria-label={t("Folders for this session")}
@@ -164,16 +168,16 @@ export function SessionDirsPicker({
             setOpen(true);
           }
         }}
-        className="flex h-6.5 max-w-40 items-center gap-1 rounded-md bg-selection px-1.5 text-content hover:bg-selection-hover disabled:opacity-50"
+        className="max-w-40"
       >
         <Folder
-          className={`size-3.5 shrink-0 ${overridden ? "text-accent" : ""}`}
+          className={`size-3.5 shrink-0 ${overridden ? "text-(--ui-tone-accent-fg)" : ""}`}
           strokeWidth={1.75}
         />
         <span data-session-dirs-label className="min-w-0 truncate text-[11px]">
           {label}
         </span>
-      </button>
+      </Button>
       {open ? (
         <Popover
           anchor={root}
@@ -189,11 +193,12 @@ export function SessionDirsPicker({
           className="flex min-h-0 flex-col p-1.5"
         >
           <div className="flex items-center justify-between gap-2 px-2 pb-1 pt-0.5">
-            <p className="text-[10px] font-medium uppercase tracking-wide text-content/50">
+            <p className="text-[10px] font-medium uppercase tracking-wide text-(--ui-text-secondary)">
               {mode === "project" ? t("Change project") : t("Folders for this session")}
             </p>
             {onProjectChange ? (
-              <button
+              <Button
+                variant="ghost"
                 type="button"
                 disabled={picking || !enabled}
                 onClick={() => {
@@ -201,61 +206,62 @@ export function SessionDirsPicker({
                   setQuery("");
                   setError(undefined);
                 }}
-                className="rounded-md px-1.5 py-0.5 text-[11px] text-content/70 hover:bg-content/10 disabled:opacity-50"
               >
                 {mode === "folders" ? t("Change project…") : t("Back")}
-              </button>
+              </Button>
             ) : null}
           </div>
           <SearchInput
-            standalone
+            appearance="field"
             type="search"
             aria-label={t("Search projects and folders")}
             placeholder={t("Search projects and folders…")}
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             containerClassName="mx-2 my-1"
-            className="rounded-md border border-content/10 bg-content/5 px-2 py-1.5 text-[12px] text-content outline-none focus:border-accent/50"
           />
           <div className="min-h-0 max-h-64 shrink overflow-y-auto overscroll-contain">
             {matching.map((path) => {
               const working = pathKey(path) === pathKey(workingDirectory);
               const details = (
                 <span className="flex min-w-0 flex-1 flex-col" title={path}>
-                  <span className="truncate text-[13px] text-content">
+                  <span className="truncate text-[13px] text-(--ui-tone-neutral-fg)">
                     {basename(path) || prettyCwd(path)}
                   </span>
-                  <span className="truncate text-[11px] text-content/50">{prettyCwd(path)}</span>
+                  <span className="truncate text-[11px] text-(--ui-text-secondary)">
+                    {prettyCwd(path)}
+                  </span>
                 </span>
               );
               return mode === "project" ? (
-                <button
+                <Button
+                  fullWidth
+                  variant="item"
                   key={pathKey(path)}
                   type="button"
                   disabled={picking || !enabled || pathKey(path) === pathKey(project)}
                   onClick={() => changeProject(path)}
-                  className="flex w-full items-center gap-2.5 rounded-md px-2 py-1.5 text-left hover:bg-content/5 disabled:opacity-50"
+                  className="w-full text-left"
                 >
                   <Folder className="size-3.5 shrink-0" />
                   {details}
                   {pathKey(path) === pathKey(project) ? (
-                    <span className="text-[10px] text-content/50">{t("Current")}</span>
+                    <span className="text-[10px] text-(--ui-text-secondary)">{t("Current")}</span>
                   ) : null}
-                </button>
+                </Button>
               ) : (
                 <label
                   key={pathKey(path)}
-                  className="flex cursor-pointer items-center gap-2.5 rounded-md px-2 py-1.5 hover:bg-content/5"
+                  className="flex cursor-pointer items-center gap-2.5 rounded-md px-2 py-1.5 hover:bg-(--ui-surface-raised)"
                 >
-                  <input
-                    type="checkbox"
+                  <Checkbox
                     checked={effectiveKeys.has(pathKey(path))}
                     disabled={working || picking || !enabled}
                     onChange={() => toggle(path)}
                   />
                   {details}
                   {working ? (
-                    <span className="shrink-0 text-[10px] text-content/50">
+                    <span className="shrink-0 text-[10px] text-(--ui-text-secondary)">
                       {t("Working folder")}
                     </span>
                   ) : null}
@@ -263,25 +269,28 @@ export function SessionDirsPicker({
               );
             })}
             {matching.length === 0 ? (
-              <p className="px-2 py-2 text-[12px] text-content/50">{t("No matching folders")}</p>
+              <p className="px-2 py-2 text-[12px] text-(--ui-text-secondary)">
+                {t("No matching folders")}
+              </p>
             ) : null}
           </div>
-          <button
+          <Button
+            variant="ghost"
             type="button"
             disabled={picking || !enabled}
             onClick={() => void browse()}
-            className="mt-1 flex items-center gap-2 rounded-md border-t border-content/10 px-2 py-2 text-left text-[12px] text-content/80 hover:bg-content/5 disabled:opacity-50"
+            className="mt-1 text-left"
           >
             <Plus className="size-3.5 shrink-0" />
             {picking ? t("Choosing folders…") : t("Choose from {p0}…", { p0: browserLabel })}
-          </button>
+          </Button>
           {error ? (
-            <p role="alert" className="px-2 py-1 text-[11px] text-error">
+            <Alert tone="info" role="alert">
               {error}
-            </p>
+            </Alert>
           ) : null}
           <div className="flex items-center gap-2 px-2 pb-0.5 pt-1.5">
-            <p className="min-w-0 flex-1 text-[11px] leading-4 text-content/50">
+            <p className="min-w-0 flex-1 text-[11px] leading-4 text-(--ui-text-secondary)">
               {mode === "project"
                 ? t("Existing conversations open a new session in the chosen project.")
                 : overridden
@@ -289,14 +298,15 @@ export function SessionDirsPicker({
                   : t("Working folder included. Extra folders follow the project setting.")}
             </p>
             {overridden && mode === "folders" ? (
-              <button
+              <Button
+                variant="ghost"
                 type="button"
                 disabled={picking || !enabled}
                 onClick={() => saveSessionAdditionalDirs(sessionId, project, null)}
-                className="shrink-0 rounded-md px-1.5 py-0.5 text-[11px] text-content/70 hover:bg-content/10 hover:text-content disabled:opacity-50"
+                className="shrink-0"
               >
                 {t("Reset")}
-              </button>
+              </Button>
             ) : null}
           </div>
         </Popover>

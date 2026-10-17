@@ -1,3 +1,7 @@
+import { Alert } from "../../../shared/ui/Alert";
+import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
+import { Button } from "../../../shared/ui/Button";
+import { TextField } from "../../../shared/ui/TextField";
 import { invoke } from "@tauri-apps/api/core";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { HostProject, RemoteMachine } from "../../connections/model/protocol";
@@ -172,15 +176,17 @@ export function SocialAuthority({
         bu ayarı değiştirmeniz gerekmez.
       </p>
       {loading ? <p role="status">Host ayarı yükleniyor…</p> : null}
-      {error ? (
-        <p className="social-error" role="alert">
-          {error}
-        </p>
-      ) : null}
+      {error ? <Alert tone="danger">{error}</Alert> : null}
       {!status && !loading ? (
-        <button type="button" disabled={busy} onClick={() => void loadStatus()}>
+        <Button
+          variant="secondary"
+          loading={busy}
+          type="button"
+          disabled={busy}
+          onClick={() => void loadStatus()}
+        >
           Tekrar dene
-        </button>
+        </Button>
       ) : null}
       {status ? (
         <>
@@ -215,7 +221,9 @@ export function SocialAuthority({
                 </p>
                 <label>
                   Bu bilgisayarın host HTTPS adresi
-                  <input
+                  <TextField
+                    hideLabel
+                    label=""
                     required
                     type="url"
                     value={current.sourceEndpoint}
@@ -238,49 +246,55 @@ export function SocialAuthority({
                 {status.projects.map((project) => (
                   <label key={project.id}>
                     {project.name}
-                    <select
+                    <SearchableSelect
                       value={validMapping[project.id] ?? ""}
-                      onChange={(event) =>
+                      label={"Seçim"}
+                      options={[
+                        { value: "", label: "Bu projeyi paylaşma" },
+                        ...projects.map((target) => ({
+                          value: target.id,
+                          label: target.name,
+                        })),
+                      ]}
+                      onChange={(nextValue) =>
                         update({
                           mapping: {
                             ...validMapping,
-                            [project.id]: event.target.value,
+                            [project.id]: nextValue,
                           },
                         })
                       }
-                    >
-                      <option value="">Bu projeyi paylaşma</option>
-                      {projects.map((target) => (
-                        <option key={target.id} value={target.id}>
-                          {target.name}
-                        </option>
-                      ))}
-                    </select>
+                      searchLocale="tr"
+                    />
                   </label>
                 ))}
                 {staleMappings ? (
-                  <p role="alert" className="social-error">
+                  <Alert tone="danger">
                     Bazı kayıtlı projeler artık bulunamıyor. Eşleştirmeleri yeniden seçin.
-                  </p>
+                  </Alert>
                 ) : null}
-                <button
-                  className="social-primary"
+                <Button
+                  type="submit"
+                  variant="primary"
+
                   disabled={!Object.keys(validMapping).length || staleMappings}
                 >
                   {busy ? "Kaydediliyor…" : `${target.name} host'unu kullan`}
-                </button>
+                </Button>
               </fieldset>
             </form>
           ) : null}
           {status.authority ? (
             <div className="social-actions">
-              <button
+              <Button
+                variant="secondary"
+                loading={busy}
                 type="button"
                 disabled={busy || loading}
                 onClick={() => changeAuthority(null, {}, null)}
               >
                 Yerel host'a dön ve gönderimleri durdur
-              </button>
+              </Button>
             </div>
           ) : null}
           <p className="social-muted">

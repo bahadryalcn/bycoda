@@ -1,6 +1,13 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useQueryVisible } from "../../../shared/hooks/useQueryVisible";
-import { SearchInput } from "../../../shared/ui/SearchInput";
+import { Button } from "../../../shared/ui/Button";
+import { TextField } from "../../../shared/ui/TextField";
+import { Switch } from "../../../shared/ui/Switch";
+import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
+import { Badge, type BadgeTone } from "../../../shared/ui/Badge";
+import { Alert } from "../../../shared/ui/Alert";
+import { EmptyState } from "../../../shared/ui/EmptyState";
+import { DropdownMenu } from "../../../shared/ui/DropdownMenu";
 import { ToolHeader } from "../../../app/shell/ToolNavigation";
 import { t, useLocale, getLocale } from "../../../shared/i18n";
 import {
@@ -21,7 +28,6 @@ import {
   AlertCircle,
   CheckCircle,
   ChevronDown,
-  ChevronRight,
   Clock,
   File,
   Gauge,
@@ -102,7 +108,6 @@ import { AZUREDEVOPS_CHANGE_EVENT, azureDevOpsConnected } from "../../inbox/mode
 import { gitBranches } from "../../../platform/tauri/fs";
 import { formatRelativeTime, githubStatus } from "../../inbox/model/githubTasks";
 import { GITLAB_CHANGE_EVENT, gitlabConnected } from "../../inbox/model/gitlab";
-import { LAYER } from "../../../shared/lib/layers";
 import { LINEAR_CHANGE_EVENT, linearConnected } from "../../inbox/model/linear";
 import { JIRA_CHANGE_EVENT, jiraConnected } from "../../inbox/model/jira";
 import {
@@ -145,11 +150,6 @@ type Props = {
   onOpenBackgroundSession: (target: BackgroundSessionTarget) => void | Promise<void>;
 };
 
-const ACTION =
-  "inline-flex items-center gap-1.5 rounded-md px-3 text-[12px] disabled:cursor-default disabled:opacity-40";
-const ACTION_FILLED = `${ACTION} h-6.5 bg-content font-medium text-background-base hover:bg-content/80`;
-const ACTION_OUTLINE = `${ACTION} h-7 border border-content/15 text-content/80 hover:border-content/30 hover:bg-content/10 hover:text-content`;
-
 let rememberedAutomationId: string | null = null;
 
 export function AutomationsView({
@@ -169,10 +169,10 @@ export function AutomationsView({
       role="region"
       aria-label={t("Automations")}
       data-app-automations
-      className="flex min-h-0 min-w-0 flex-1 flex-col text-content"
+      className="flex min-h-0 min-w-0 flex-1 flex-col text-(--ui-tone-neutral-fg)"
     >
       <div
-        className="flex h-10 shrink-0 select-none items-center border-b border-stroke"
+        className="flex h-10 shrink-0 select-none items-center border-b border-(--ui-tone-neutral-border)"
         data-tauri-drag-region="deep"
       >
         {IS_MAC && compactRail ? <div className="w-4 shrink-0" /> : null}
@@ -180,8 +180,8 @@ export function AutomationsView({
         {besideRail ? null : <OverlayNav onBack={onClose} onToggleSidebar={onToggleSidebar} />}
         <ToolHeader>
           <div className="flex min-w-0 flex-1 items-center gap-2 px-3 text-[13px]">
-            <Zap className="size-3.5 shrink-0 text-content/45" strokeWidth={1.75} />
-            <span className="min-w-0 truncate text-content">{t("Automations")}</span>
+            <Zap className="size-3.5 shrink-0 text-(--ui-text-muted)" strokeWidth={1.75} />
+            <span className="min-w-0 truncate text-(--ui-tone-neutral-fg)">{t("Automations")}</span>
           </div>
         </ToolHeader>
         {IS_MAC ? null : <WindowControls />}
@@ -256,6 +256,8 @@ function AutomationsContent({
   const [historyRevision, setHistoryRevision] = useState(0);
   const [selectedId, setSelectedId] = useState<string | null>(rememberedAutomationId);
   const [query, setQuery] = useState("");
+  const [filterOpen, setFilterOpen] = useState(false);
+  const filterButton = useRef<HTMLButtonElement>(null);
   const deferredQuery = useDeferredValue(query);
   const [error, setError] = useState<string | null>(null);
   const [draft, setDraft] = useState<AutomationDraft | null>(null);
@@ -394,7 +396,7 @@ function AutomationsContent({
   const beginFromTemplate = (template: AutomationTemplate) => {
     const { project, harness, model } = defaultDraftTarget();
     setPickerOpen(false);
-    setDraft(draftFromTemplate(project, harness, model, template));
+    setDraft(draftFromTemplate(project, harness, model, { ...template, name: t(template.name) }));
   };
 
   const onSave = async (event: FormEvent, nextDraft: AutomationDraft) => {
@@ -489,44 +491,70 @@ function AutomationsContent({
   const listLock = useLockOverscroll<HTMLDivElement>();
 
   return (
-    <div className="flex min-h-0 min-w-0 flex-1 text-content">
-      <aside className="flex w-[280px] shrink-0 flex-col border-r border-stroke">
-        <div className="flex h-9 shrink-0 items-center gap-1 border-b border-stroke px-2">
-          <label className="relative flex h-7 min-w-0 flex-1 items-center">
-            <Search className="pointer-events-none absolute left-2 size-3 shrink-0 text-content/40" />
-            <span className="sr-only">{t("Filter automations")}</span>
-            <SearchInput
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              placeholder={t("Filter automations")}
-              spellCheck={false}
-              autoComplete="off"
-              className="h-7 w-full rounded-md bg-transparent pl-7 pr-2 text-[12px] outline-none placeholder:text-content/40"
-            />
-          </label>
-          <button
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col sm:flex-row text-(--ui-tone-neutral-fg)">
+      <aside className="flex w-full max-h-48 sm:max-h-none sm:w-[280px] shrink-0 flex-col border-r border-(--ui-tone-neutral-border)">
+        <div className="flex h-9 shrink-0 items-center gap-1 border-b border-(--ui-tone-neutral-border) px-2">
+          <Button
+            ref={filterButton}
+            type="button"
+            size="sm"
+            variant="ghost"
+            iconOnly
+            label={t("Filter automations")}
+            selected={!!query.trim()}
+            aria-haspopup="dialog"
+            aria-expanded={filterOpen}
+            onClick={() => setFilterOpen((open) => !open)}
+          >
+            <Search className="size-3.5" strokeWidth={1.75} />
+          </Button>
+          {filterOpen ? (
+            <Popover
+              anchor={filterButton}
+              role="dialog"
+              aria-label={t("Filter automations")}
+              onDismiss={() => setFilterOpen(false)}
+              width={280}
+              className="space-y-2 p-3"
+            >
+              <TextField
+                label={t("Filter automations")}
+                type="search"
+                autoFocus
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                spellCheck={false}
+                autoComplete="off"
+              />
+              <Button onClick={() => setQuery("")} disabled={!query}>
+                {t("Reset")}
+              </Button>
+            </Popover>
+          ) : null}
+          <span className="flex-1" />
+          <Button
             type="button"
             title={t("New automation")}
             aria-label={t("New automation")}
             onClick={beginCreate}
-            className="grid size-6 shrink-0 place-items-center rounded-md text-content/45 hover:bg-content/10 hover:text-content"
+            variant="ghost"
+            iconOnly
+            label={t("New automation")}
+            size="sm"
           >
             <Plus className="size-3.5" strokeWidth={1.75} />
-          </button>
+          </Button>
         </div>
         <div ref={listLock} className="min-h-0 flex-1 overflow-y-auto overscroll-none p-1.5">
           {unreachableNames.length ? (
-            <div className="mb-1.5 flex items-start gap-2 rounded-lg border border-content/10 bg-content/4 px-2.5 py-2 text-[11px] text-content/60">
-              <AlertCircle className="mt-0.5 size-3 shrink-0" />
-              <span>
-                {unreachableNames.join(", ")}{" "}
-                {unreachableNames.length === 1 ? t("isn’t") : t("aren’t")}
-                {t(" reachable right now, so its automations may be out of date.")}
-              </span>
-            </div>
+            <Alert tone="warning" className="mb-1.5">
+              {unreachableNames.join(", ")}{" "}
+              {unreachableNames.length === 1 ? t("isn’t") : t("aren’t")}
+              {t(" reachable right now, so its automations may be out of date.")}
+            </Alert>
           ) : null}
           {loading ? (
-            <div className="grid place-items-center py-12 text-content/35">
+            <div className="grid place-items-center py-12 text-(--ui-text-muted)">
               <LoaderCircle className="size-4 animate-spin" />
             </div>
           ) : visible.length > 0 ? (
@@ -556,25 +584,21 @@ function AutomationsContent({
               ))}
             </ul>
           ) : (
-            <p className="px-3 py-8 text-center text-[12px] text-content/45">
-              {query.trim() ? t("No matching automations") : t("No automations yet")}
-            </p>
+            <EmptyState
+              description={query.trim() ? t("No matching automations") : t("No automations yet")}
+            />
           )}
         </div>
       </aside>
 
       <main className="flex min-h-0 min-w-0 flex-1 flex-col">
         {error ? (
-          <div
-            role="alert"
-            className="m-4 flex shrink-0 items-start gap-2 rounded-lg border border-danger/20 bg-danger/8 px-3 py-2 text-[12px] text-danger"
-          >
-            <AlertCircle className="mt-0.5 size-3.5 shrink-0" />
-            <span>{error}</span>
-          </div>
+          <Alert tone="danger" className="m-4 shrink-0">
+            {error}
+          </Alert>
         ) : null}
         {loading && !editorDraft ? (
-          <div className="grid min-h-0 flex-1 place-items-center text-content/35">
+          <div className="grid min-h-0 flex-1 place-items-center text-(--ui-text-muted)">
             <LoaderCircle className="size-4 animate-spin" />
           </div>
         ) : editorDraft ? (
@@ -676,18 +700,19 @@ function AutomationCard({
   const model = resolveModel(automation.harness, automation.model);
   return (
     <div
-      className={`group relative rounded-md border ${
-        active ? "border-transparent bg-selection" : "border-transparent hover:bg-content/5"
-      }`}
+      className="group relative rounded-md border border-(--ui-tone-neutral-border)"
+      style={{ background: "var(--ui-surface)" }}
     >
-      <button
+      <Button
         type="button"
         aria-current={active ? "true" : undefined}
         aria-label={t("Open {p0}", { p0: automation.name })}
         onClick={onSelect}
-        className="block w-full rounded-md px-2.5 py-2 text-left"
+        variant="item"
+        selected={active}
+        layout="stacked"
       >
-        <span className="flex min-w-0 items-center gap-1.5 pr-8 text-[10px] text-content/45">
+        <span className="flex min-w-0 items-center gap-1.5 pr-8 text-[10px] text-(--ui-text-muted)">
           <TriggerMark
             kind={automationTriggers(automation)[0]?.kind ?? automation.triggerKind}
             className="size-3"
@@ -698,10 +723,10 @@ function AutomationCard({
             {automation.host?.stale ? t(" (offline, last known)") : ""}
           </span>
         </span>
-        <span className="mt-1 block truncate text-[13px] font-semibold text-content">
+        <span className="mt-1 block truncate text-[13px] font-semibold text-(--ui-tone-neutral-fg)">
           {automation.name}
         </span>
-        <span className="mt-1 flex min-w-0 items-center gap-1.5 text-[11px] text-content/45">
+        <span className="mt-1 flex min-w-0 items-center gap-1.5 text-[11px] text-(--ui-text-muted)">
           {logoPath ? (
             <ProjectLogoIcon
               path={logoPath}
@@ -725,13 +750,13 @@ function AutomationCard({
           ) : null}
           <span
             title={model.name}
-            className="ml-auto flex min-w-0 max-w-28 items-center gap-1 text-content/50"
+            className="ml-auto flex min-w-0 max-w-28 items-center gap-1 text-(--ui-text-muted)"
           >
             <HarnessIcon harness={automation.harness} className="size-3.5 shrink-0" />
             <span className="min-w-0 truncate">{model.name}</span>
           </span>
         </span>
-      </button>
+      </Button>
       <span className="absolute right-2.5 top-2 flex">
         <ToggleSwitch
           label={`${automation.enabled ? "Pause" : "Enable"} ${automation.name}`}
@@ -758,79 +783,75 @@ function AutomationPicker({
 
   return (
     <div ref={lockOverscroll} className="min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-none">
-      <div className="mx-auto w-full max-w-5xl px-8 pt-5 pb-10">
-        <h1 className="text-[20px] font-semibold leading-tight text-content">
+      <div className="mx-auto w-full max-w-5xl px-3 sm:px-6 pt-5 pb-10">
+        <h1 className="text-[20px] font-semibold leading-tight text-(--ui-tone-neutral-fg)">
           {t("New automation")}
         </h1>
-        <p className="mt-1.5 text-[13px] text-content/50">
+        <p className="mt-1.5 text-[13px] text-(--ui-text-muted)">
           {t("Pick an example or start from scratch.")}
         </p>
-        <div className="mt-4 flex flex-wrap gap-1.5">
-          {AUTOMATION_TEMPLATE_CATEGORIES.map((option) => {
-            const selected = option.id === category;
-            return (
-              <button
-                key={option.id}
-                type="button"
-                onClick={() => setCategory(option.id)}
-                className={`h-7 rounded-full px-3 text-[12px] font-medium ${
-                  selected
-                    ? "bg-content text-background-base"
-                    : "text-content/55 hover:bg-content/8 hover:text-content"
-                }`}
-              >
-                {option.label}
-              </button>
-            );
-          })}
-        </div>
+        <SegmentedControl
+          className="mt-4 max-w-full"
+          label={t("Template category")}
+          options={AUTOMATION_TEMPLATE_CATEGORIES.map((option) => ({
+            value: option.id,
+            label: t(option.label),
+          }))}
+          value={category}
+          onValueChange={(value) => setCategory(value as AutomationTemplateCategoryId)}
+        />
         <div className="mt-4 grid grid-cols-1 gap-3 min-[780px]:grid-cols-2">
-          <button
+          <Button
             type="button"
             onClick={onBlank}
-            className="flex min-h-37 flex-col rounded-xl border border-dashed border-content/15 p-4 text-left hover:border-content/25 hover:bg-content/5"
+            variant="item"
+            layout="stacked"
+            className="flex h-full min-w-0 flex-col"
           >
             <div className="flex gap-3">
-              <span className="grid size-9 shrink-0 place-items-center rounded-full bg-content/8 text-content/70">
+              <span className="grid size-9 shrink-0 place-items-center rounded-full bg-(--ui-surface-raised) text-(--ui-tone-neutral-fg)">
                 <Plus className="size-4" strokeWidth={1.75} />
               </span>
               <span className="min-w-0">
-                <span className="block text-[13px] font-medium text-content">
+                <span className="line-clamp-2 min-h-[2.5em] text-[13px] font-medium text-(--ui-tone-neutral-fg)">
                   {t("Start from scratch")}
                 </span>
-                <span className="mt-1 block text-[12px] leading-snug text-content/50">
+                <span className="mt-1 line-clamp-3 text-[12px] leading-snug text-(--ui-text-muted)">
                   {t("Write your own instructions and choose a trigger.")}
                 </span>
               </span>
             </div>
-          </button>
+          </Button>
           {templates.map((template) => {
             const Icon = TEMPLATE_ICONS[template.icon];
             return (
-              <button
+              <Button
                 key={template.id}
                 type="button"
                 onClick={() => onPick(template)}
-                className="flex min-h-37 flex-col rounded-xl border border-content/10 p-4 text-left hover:border-content/16 hover:bg-content/5"
+                variant="item"
+                layout="stacked"
+                className="flex h-full min-w-0 flex-col"
+                title={t(template.description)}
               >
                 <div className="flex gap-3">
-                  <span className="grid size-9 shrink-0 place-items-center rounded-full bg-content/8 text-content/70">
+                  <span className="grid size-9 shrink-0 place-items-center rounded-full bg-(--ui-surface-raised) text-(--ui-tone-neutral-fg)">
                     <Icon className="size-4" strokeWidth={1.75} />
                   </span>
                   <span className="min-w-0">
-                    <span className="block text-[13px] font-medium text-content">
-                      {template.name}
+                    <span className="line-clamp-2 min-h-[2.5em] text-[13px] font-medium text-(--ui-tone-neutral-fg)">
+                      {t(template.name)}
                     </span>
-                    <span className="mt-1 block text-[12px] leading-snug text-content/50">
-                      {template.description}
+                    <span className="mt-1 line-clamp-3 text-[12px] leading-snug text-(--ui-text-muted)">
+                      {t(template.description)}
                     </span>
                   </span>
                 </div>
-                <span className="mt-auto flex min-w-0 items-center gap-1.5 pt-3 text-[11px] text-content/45">
+                <span className="mt-auto flex min-w-0 items-center gap-1.5 pt-3 text-[11px] text-(--ui-text-muted)">
                   <TriggerMark kind={template.trigger.kind} className="size-3" />
-                  <span className="min-w-0 truncate">{template.triggerLabel}</span>
+                  <span className="min-w-0 truncate">{t(template.triggerLabel)}</span>
                 </span>
-              </button>
+              </Button>
             );
           })}
         </div>
@@ -855,7 +876,7 @@ function RunRow({
   const sessionId = run.sessionId;
   return (
     <li>
-      <button
+      <Button
         type="button"
         disabled={!sessionId}
         title={sessionId ? t("Open session") : (run.error ?? t("This run has no session yet"))}
@@ -863,48 +884,43 @@ function RunRow({
           if (!sessionId) return;
           void onOpenSession(sessionId);
         }}
-        className={`${RUN_GRID} h-11 w-full text-left text-[13px] disabled:opacity-100 ${
-          sessionId ? "cursor-pointer hover:bg-content/5" : "cursor-default"
-        }`}
+        variant="item"
+        className={`${RUN_GRID} min-w-[560px] w-full`}
+        style={{ display: "grid" }}
       >
-        <span className="flex min-w-0 items-center gap-2 text-content">
-          <TriggerMark kind={trigger.kind} className="size-3.5 shrink-0 text-content/40" />
+        <span className="flex min-w-0 items-center gap-2 text-(--ui-tone-neutral-fg)">
+          <TriggerMark kind={trigger.kind} className="size-3.5 shrink-0 text-(--ui-text-muted)" />
           <span className="min-w-0 truncate">{trigger.label}</span>
         </span>
-        <span className="truncate text-content/70">
+        <span className="truncate text-(--ui-tone-neutral-fg)">
           {formatAutomationRunAt(run.scheduledFor || run.createdAt)}
         </span>
         <span>
           {/* Still running, but stuck until the owner answers. */}
           {run.status === "running" && run.needsInput ? (
-            <span
-              title={t("The session is waiting on an approval or a question")}
-              className="inline-flex h-5 max-w-full items-center rounded-full bg-warning/12 px-2 text-[11px] font-medium text-warning"
-            >
+            <Badge tone="warning" title={t("The session is waiting on an approval or a question")}>
               {t("Needs input")}
-            </span>
+            </Badge>
           ) : (
             <RunStatusPill status={run.status} />
           )}
         </span>
-        <span className="text-right tabular-nums text-content/55">
+        <span className="text-right tabular-nums text-(--ui-text-muted)">
           {formatAutomationRunDuration(run)}
         </span>
-      </button>
+      </Button>
     </li>
   );
 }
 
 function RunStatusPill({ status }: { status: AutomationRun["status"] }) {
-  useLocale();
-  const running = status === "running";
   return (
-    <span
-      className={`inline-flex h-5 max-w-full items-center gap-1 rounded-full px-2 text-[11px] font-medium ${runStatusTone(status)}`}
+    <Badge
+      tone={runStatusTone(status)}
+      icon={status === "running" ? <LoaderCircle className="size-3 animate-spin" /> : undefined}
     >
-      {running ? <LoaderCircle className="size-2.5 shrink-0 animate-spin" /> : null}
       {runStatusLabel(status)}
-    </span>
+    </Badge>
   );
 }
 
@@ -917,12 +933,12 @@ function runStatusLabel(status: AutomationRun["status"]): string {
   return "Pending";
 }
 
-function runStatusTone(status: AutomationRun["status"]): string {
-  if (status === "succeeded") return "bg-success/12 text-success";
-  if (status === "failed") return "bg-danger/12 text-danger";
-  if (status === "skipped") return "bg-warning/12 text-warning";
-  if (status === "cancelled") return "bg-content/8 text-content/50";
-  return "bg-info/12 text-info";
+function runStatusTone(status: AutomationRun["status"]): BadgeTone {
+  if (status === "succeeded") return "success";
+  if (status === "failed") return "danger";
+  if (status === "skipped") return "warning";
+  if (status === "cancelled") return "neutral";
+  return "info";
 }
 
 function runTriggerMeta(
@@ -1009,14 +1025,7 @@ function AutomationEditor({
   const historyTabId = useId();
   const tabPanelId = useId();
   const [menuOpen, setMenuOpen] = useState(false);
-  const [triggerOpen, setTriggerOpen] = useState(false);
-  const [triggerQuery, setTriggerQuery] = useState("");
-  const [triggerCategory, setTriggerCategory] = useState<AutomationTriggerKind | null>(null);
-  const triggerButton = useRef<HTMLButtonElement>(null);
   const menuButton = useRef<HTMLButtonElement>(null);
-  const triggerCategoryAnchors = useRef<Partial<Record<AutomationTriggerKind, HTMLButtonElement>>>(
-    {},
-  );
   const [providerConnected, setProviderConnected] = useState({
     github: false,
     linear: false,
@@ -1111,28 +1120,23 @@ function AutomationEditor({
   }, [getLocale(), draft.sessionFolderId, sessionFolders]);
   const update = <K extends keyof AutomationDraft>(key: K, value: AutomationDraft[K]) =>
     onChange({ ...draft, [key]: value });
-  const triggerCategories = useMemo(
-    () =>
-      TRIGGER_CATEGORIES.filter((option) =>
-        option.label.toLocaleLowerCase().includes(triggerQuery.toLocaleLowerCase()),
-      ),
-    [triggerQuery],
-  );
-  useEffect(() => {
-    if (triggerCategory && !triggerCategories.some((option) => option.value === triggerCategory)) {
-      setTriggerCategory(null);
-    }
-  }, [triggerCategories, triggerCategory]);
   const setTriggers = (triggers: AutomationTrigger[]) => onChange(applyTriggers(draft, triggers));
-  const selectTrigger = (kind: AutomationTriggerKind, event: TriggerEvent) => {
-    if (draft.triggers.length >= 20 || !triggerReady(kind)) {
-      setTriggerCategory(null);
-      setTriggerOpen(false);
-      return;
-    }
-    setTriggers([...draft.triggers, createAutomationTrigger(kind, event.value)]);
-    setTriggerCategory(null);
-    setTriggerOpen(false);
+  const triggerOptions = TRIGGER_CATEGORIES.flatMap((category) =>
+    TRIGGER_EVENTS[category.value].map((event) => ({
+      value: category.value + ":" + event.value,
+      label: event.label,
+      keywords: category.label,
+      description: triggerReady(category.value)
+        ? category.label
+        : t("Connect {p0} in Settings", { p0: category.label }),
+      disabled: !triggerReady(category.value),
+    })),
+  );
+  const selectTrigger = (value: string) => {
+    const option = triggerOptions.find((entry) => entry.value === value);
+    if (!option || option.disabled || draft.triggers.length >= 20) return;
+    const [kind, event] = value.split(":") as [AutomationTriggerKind, string];
+    setTriggers([...draft.triggers, createAutomationTrigger(kind, event)]);
   };
   const updateTrigger = (next: AutomationTrigger) =>
     setTriggers(draft.triggers.map((trigger) => (trigger.id === next.id ? next : trigger)));
@@ -1142,50 +1146,48 @@ function AutomationEditor({
 
   return (
     <form className="flex min-h-0 min-w-0 flex-1 flex-col" onSubmit={onSubmit}>
-      <div className="relative w-full shrink-0 border-b border-stroke">
-        <div className="mx-auto flex w-full max-w-5xl flex-col gap-2.5 px-8 pt-5">
+      <div className="relative w-full shrink-0 border-b border-(--ui-tone-neutral-border)">
+        <div className="mx-auto flex w-full max-w-5xl flex-col gap-2.5 px-3 sm:px-6 pt-5">
           <header className="flex flex-col gap-2.5">
-            <div className="flex items-start gap-6">
-              <input
+            <div className="flex flex-wrap items-start gap-3">
+              <TextField
+                label={t("Automation name")}
+                hideLabel
                 autoFocus
                 aria-label={t("Automation name")}
                 value={draft.name}
                 onChange={(event) => update("name", event.target.value)}
                 placeholder={t("Untitled")}
-                className="min-w-0 flex-1 bg-transparent text-[20px] font-semibold leading-tight text-content outline-none placeholder:text-content/35"
+                fieldClassName="min-w-0 flex-1"
               />
               <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
                 {!draft.id || dirty ? (
-                  <button type="button" onClick={onClose} className={ACTION_OUTLINE}>
+                  <Button type="button" onClick={onClose} variant="secondary">
                     {draft.id ? t("Reset") : t("Cancel")}
-                  </button>
+                  </Button>
                 ) : null}
                 {onRun ? (
-                  <button
-                    type="button"
-                    onClick={onRun}
-                    disabled={running}
-                    className={ACTION_OUTLINE}
-                  >
+                  <Button type="button" onClick={onRun} disabled={running} variant="secondary">
                     {running ? (
                       <LoaderCircle className="size-3.5 animate-spin" />
                     ) : (
                       <Play className="size-3.5" />
                     )}
                     {t("Run now")}
-                  </button>
+                  </Button>
                 ) : null}
-                <button
+                <Button
                   type="submit"
                   disabled={!valid || saving || (!!draft.id && !dirty)}
-                  className={ACTION_FILLED}
+                  variant="primary"
+                  loading={saving}
                 >
                   {saving ? <LoaderCircle className="size-3.5 animate-spin" /> : null}
                   {draft.id ? t("Save") : t("Create")}
-                </button>
+                </Button>
               </div>
             </div>
-            <div className="flex min-w-0 items-center gap-2 overflow-hidden whitespace-nowrap text-[12px] text-content/50">
+            <div className="flex min-w-0 items-center gap-2 overflow-hidden whitespace-nowrap text-[12px] text-(--ui-text-muted)">
               <ToggleSwitch
                 label={draft.enabled ? t("Pause automation") : t("Enable automation")}
                 on={draft.enabled}
@@ -1193,7 +1195,7 @@ function AutomationEditor({
                 compact
               />
               <span className="shrink-0">{draft.enabled ? t("Active") : t("Inactive")}</span>
-              <span aria-hidden className="h-3 ml-2 w-px shrink-0 bg-content/15" />
+              <span aria-hidden className="h-3 ml-2 w-px shrink-0 bg-(--ui-surface-raised)" />
               <SearchableProjectPicker
                 cwd={draft.cwd}
                 recents={recents}
@@ -1201,8 +1203,8 @@ function AutomationEditor({
               />
               {onDelete ? (
                 <>
-                  <span aria-hidden className="h-3 w-px shrink-0 bg-content/15" />
-                  <button
+                  <span aria-hidden className="h-3 w-px shrink-0 bg-(--ui-surface-raised)" />
+                  <Button
                     ref={menuButton}
                     type="button"
                     title={t("Automation actions")}
@@ -1210,48 +1212,35 @@ function AutomationEditor({
                     aria-haspopup="menu"
                     aria-expanded={menuOpen}
                     onClick={() => setMenuOpen((open) => !open)}
-                    className={`grid size-6.5 shrink-0 place-items-center rounded-md ${
-                      menuOpen
-                        ? "bg-selection text-content"
-                        : "text-content/50 hover:bg-content/5 hover:text-content"
-                    }`}
+                    variant="ghost"
+                    iconOnly
+                    label={t("Automation actions")}
                   >
                     <MoreHorizontal className="size-3.5" strokeWidth={1.75} />
-                  </button>
+                  </Button>
                   {menuOpen ? (
-                    <Popover
+                    <DropdownMenu
                       anchor={menuButton}
-                      side="bottom"
-                      align="start"
-                      gap={4}
-                      width={200}
-                      constrainHeight={false}
-                      role="menu"
-                      aria-label={t("Automation actions")}
-                      onDismiss={() => setMenuOpen(false)}
-                      className="p-1"
-                    >
-                      <button
-                        type="button"
-                        role="menuitem"
-                        disabled={deleteDisabled}
-                        title={
-                          deleteDisabled
+                      label={t("Automation actions")}
+                      onClose={() => setMenuOpen(false)}
+                      returnFocusRef={menuButton}
+                      items={[
+                        {
+                          kind: "item",
+                          id: "delete",
+                          label: t("Delete automation"),
+                          icon: <Trash2 />,
+                          danger: true,
+                          disabled: deleteDisabled,
+                          title: deleteDisabled
                             ? t(
                                 "Wait for the current operation to finish before deleting this automation.",
                               )
-                            : undefined
-                        }
-                        onClick={() => {
-                          setMenuOpen(false);
-                          onDelete();
-                        }}
-                        className="flex h-8 w-full items-center gap-2 rounded-lg px-2 text-left text-[13px] text-danger/90 hover:bg-danger/15 disabled:opacity-40"
-                      >
-                        <Trash2 className="size-3.5" strokeWidth={1.75} />
-                        {t("Delete automation")}
-                      </button>
-                    </Popover>
+                            : undefined,
+                        },
+                      ]}
+                      onPick={() => onDelete()}
+                    />
                   ) : null}
                 </>
               ) : null}
@@ -1261,7 +1250,7 @@ function AutomationEditor({
             <div
               role="tablist"
               aria-label={t("Automation view")}
-              className="flex h-9 items-stretch gap-4"
+              className="flex h-9 items-stretch gap-1"
             >
               <PageTab
                 id={settingsTabId}
@@ -1294,10 +1283,10 @@ function AutomationEditor({
         className="min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-none"
       >
         {!showingHistory ? (
-          <div className="mx-auto w-full max-w-5xl space-y-8 px-8 py-5 pb-10">
+          <div className="mx-auto w-full max-w-5xl space-y-5 px-3 sm:px-6 py-5 pb-10">
             <section>
               <SectionTitle>{t("Triggers")}</SectionTitle>
-              <div className="mt-3 rounded-md border border-content/10">
+              <div className="mt-3 rounded-md border border-(--ui-tone-neutral-border)">
                 {draft.triggers.length > 0 ? (
                   <ul className="px-3 py-1.5">
                     {draft.triggers.map((trigger) => (
@@ -1314,144 +1303,27 @@ function AutomationEditor({
                     ))}
                   </ul>
                 ) : null}
-                {draft.triggers.length > 0 ? <div className="border-t border-content/8" /> : null}
-                <button
-                  ref={triggerButton}
-                  type="button"
-                  aria-haspopup="menu"
-                  aria-expanded={triggerOpen}
+                {draft.triggers.length > 0 ? (
+                  <div className="border-t border-(--ui-tone-neutral-border)" />
+                ) : null}
+                <SearchableSelect
+                  label={t("Add Trigger")}
+                  value=""
+                  placeholder={t("Add Trigger")}
+                  options={triggerOptions}
+                  onChange={selectTrigger}
                   disabled={draft.triggers.length >= 20}
-                  onClick={() => {
-                    setTriggerQuery("");
-                    setTriggerCategory(null);
-                    setTriggerOpen((open) => !open);
-                  }}
-                  className={`flex h-12 w-full items-center gap-2 px-3 text-left text-[13px] text-content/55 transition-colors duration-150 ease-out hover:bg-content/4 hover:text-content disabled:pointer-events-none disabled:opacity-40 ${
-                    draft.triggers.length > 0 ? "rounded-b-md" : "rounded-md"
-                  }`}
-                >
-                  <Plus className="size-3.5" />
-                  {t("Add Trigger")}
-                </button>
+                  searchPlaceholder={t("Search triggers")}
+                />
               </div>
-              {triggerOpen ? (
-                <Popover
-                  anchor={triggerButton}
-                  side="bottom"
-                  align="start"
-                  gap={4}
-                  width={250}
-                  role="menu"
-                  aria-label={t("Choose automation trigger")}
-                  layer={LAYER.popover}
-                  ignore="[data-trigger-submenu]"
-                  onDismiss={() => {
-                    setTriggerCategory(null);
-                    setTriggerOpen(false);
-                  }}
-                  className="overflow-hidden"
-                >
-                  <label className="flex h-11 items-center gap-2.5 border-b border-stroke px-3 text-content/45 focus-within:text-content/70">
-                    <Search className="size-3.5 shrink-0" strokeWidth={1.75} />
-                    <span className="sr-only">{t("Search triggers")}</span>
-                    <SearchInput
-                      autoFocus
-                      value={triggerQuery}
-                      onChange={(event) => setTriggerQuery(event.target.value)}
-                      placeholder={t("Search triggers")}
-                      className="min-w-0 flex-1 bg-transparent text-[13px] text-content outline-none placeholder:text-content/35"
-                    />
-                  </label>
-                  <div className="p-1">
-                    {triggerCategories.map((option) => {
-                      const ready = triggerReady(option.value);
-                      return (
-                        <button
-                          key={option.value}
-                          ref={(node) => {
-                            if (node) triggerCategoryAnchors.current[option.value] = node;
-                            else delete triggerCategoryAnchors.current[option.value];
-                          }}
-                          type="button"
-                          role="menuitem"
-                          aria-haspopup={ready ? "menu" : undefined}
-                          aria-expanded={triggerCategory === option.value}
-                          aria-disabled={ready ? undefined : true}
-                          title={
-                            ready ? undefined : t("Connect {p0} in Settings", { p0: option.label })
-                          }
-                          onMouseEnter={() => setTriggerCategory(ready ? option.value : null)}
-                          onFocus={() => setTriggerCategory(ready ? option.value : null)}
-                          onClick={() => {
-                            if (!ready) return;
-                            setTriggerCategory(option.value);
-                          }}
-                          className={`flex h-9 w-full items-center gap-2 rounded-lg px-2 text-left text-[13px] ${
-                            !ready
-                              ? "cursor-default text-content/35"
-                              : triggerCategory === option.value
-                                ? "bg-selection text-content"
-                                : "text-content/70 hover:bg-content/5 hover:text-content"
-                          }`}
-                        >
-                          <TriggerMark kind={option.value} className="size-3.5 shrink-0" />
-                          <span className="min-w-0 flex-1 truncate">{option.label}</span>
-                          {ready ? (
-                            <ChevronRight className="size-3.5 text-content/45" />
-                          ) : (
-                            <span className="shrink-0 text-[11px] text-content/35">
-                              {t("Not connected")}
-                            </span>
-                          )}
-                        </button>
-                      );
-                    })}
-                    {triggerCategories.length === 0 ? (
-                      <p className="px-2 py-5 text-center text-[12px] text-content/40">
-                        {t("No matching triggers")}
-                      </p>
-                    ) : null}
-                  </div>
-                </Popover>
-              ) : null}
-              {triggerOpen &&
-              triggerCategory &&
-              triggerCategories.some((option) => option.value === triggerCategory) &&
-              triggerReady(triggerCategory) ? (
-                <Popover
-                  anchor={triggerCategoryAnchors.current[triggerCategory] ?? null}
-                  side="right"
-                  align="start"
-                  gap={4}
-                  width={220}
-                  maxHeight={360}
-                  role="menu"
-                  aria-label={t("{p0} events", { p0: triggerName(triggerCategory) })}
-                  layer={LAYER.submenu}
-                  data-trigger-submenu
-                  onDismiss={(reason) => {
-                    if (reason === "escape") setTriggerCategory(null);
-                  }}
-                  className="overflow-y-auto p-1"
-                >
-                  {TRIGGER_EVENTS[triggerCategory].map((event) => (
-                    <button
-                      key={event.value}
-                      type="button"
-                      role="menuitem"
-                      onClick={() => selectTrigger(triggerCategory, event)}
-                      className="flex h-9 w-full items-center rounded-lg px-2 text-left text-[13px] text-content/75 hover:bg-content/5 hover:text-content"
-                    >
-                      {event.label}
-                    </button>
-                  ))}
-                </Popover>
-              ) : null}
             </section>
 
             <section>
               <SectionTitle>{t("Instructions")}</SectionTitle>
-              <div className="relative mt-3 rounded-md border border-content/10 bg-content/3 backdrop-blur-sm has-focus:border-content/20">
+              <div
+                data-ui-focus-group=""
+                className="relative mt-3 rounded-md border border-(--ui-tone-neutral-border) bg-(--ui-surface-raised) backdrop-blur-sm has-focus:border-(--ui-tone-neutral-border)"
+              >
                 <PromptField
                   value={draft.prompt}
                   harness={draft.harness}
@@ -1490,14 +1362,14 @@ function AutomationEditor({
                   </div>
                 </div>
               </div>
-              <p className="mt-2 px-1 text-[11px] text-content/35">
+              <p className="mt-2 px-1 text-[11px] text-(--ui-text-muted)">
                 {t("Skills, @file references, and built-in commands work here.")}
               </p>
             </section>
 
             <section>
               <SectionTitle>{t("Session")}</SectionTitle>
-              <div className="mt-3 divide-y divide-content/7 rounded-md border border-content/10">
+              <div className="mt-3 divide-y divide-stroke rounded-md border border-(--ui-tone-neutral-border)">
                 <SettingsRow
                   label={t("Runs")}
                   hint={
@@ -1564,7 +1436,7 @@ function AutomationEditor({
                     >
                       <SearchableSelect
                         variant="pill"
-                        searchable={folderOptions.length > 6}
+                        searchable
                         align="end"
                         label={t("Session folder")}
                         value={draft.sessionFolderId}
@@ -1577,19 +1449,19 @@ function AutomationEditor({
               </div>
             </section>
 
-            <details className="rounded-md border border-content/10">
+            <details className="rounded-md border border-(--ui-tone-neutral-border)">
               <summary className="flex min-h-14 cursor-default list-none items-center justify-between gap-3 px-4 active:opacity-75">
                 <span>
-                  <span className="block text-[13px] font-medium text-content/75">
+                  <span className="block text-[13px] font-medium text-(--ui-tone-neutral-fg)">
                     {t("Advanced")}
                   </span>
-                  <span className="mt-0.5 block text-[11px] text-content/40">
+                  <span className="mt-0.5 block text-[11px] text-(--ui-text-muted)">
                     {t("Catch-up window and run limits")}
                   </span>
                 </span>
-                <ChevronDown className="size-3.5 text-content/40" />
+                <ChevronDown className="size-3.5 text-(--ui-text-muted)" />
               </summary>
-              <div className="divide-y divide-content/7 border-t border-content/8">
+              <div className="divide-y divide-stroke border-t border-(--ui-tone-neutral-border)">
                 <SettingsRow
                   label={t("Missed-run grace")}
                   hint={
@@ -1632,44 +1504,44 @@ function AutomationEditor({
             </details>
           </div>
         ) : (
-          <section className="mx-auto w-full max-w-5xl px-8 py-5 pb-10">
+          <section className="mx-auto w-full max-w-5xl px-3 sm:px-6 py-5 pb-10">
             <SectionTitle>{t("Run history")}</SectionTitle>
             {historyLoading ? (
-              <p role="status" className="p-3 text-[12px] text-content/55">
+              <p role="status" className="p-3 text-[12px] text-(--ui-text-muted)">
                 {t("Loading…")}
               </p>
             ) : null}
             {historyError ? (
-              <div role="alert" className="p-3 text-[12px] text-danger">
+              <Alert tone="danger">
                 <p>{historyError}</p>
-                <button
+                <Button
                   type="button"
                   onClick={onRefreshHistory}
                   disabled={historyLoading}
-                  className="rounded px-2 py-1 text-content/70 active:bg-content/10 focus-visible:outline-2 focus-visible:outline-accent disabled:opacity-40"
+                  variant="ghost"
                 >
                   {t("Retry")}
-                </button>
-              </div>
+                </Button>
+              </Alert>
             ) : null}
             {runs.length > 0 ? (
-              <div className="mt-3 overflow-hidden rounded-md border border-content/10">
-                <div className={`${RUN_GRID} h-10 text-[11px] text-content/40`}>
+              <div className="mt-3 overflow-x-auto rounded-md border border-(--ui-tone-neutral-border)">
+                <div
+                  className={`${RUN_GRID} min-w-[560px] h-10 text-[11px] text-(--ui-text-muted)`}
+                >
                   <span>{t("Trigger")}</span>
                   <span>{t("Triggered")}</span>
                   <span>{t("Status")}</span>
                   <span className="text-right">{t("Duration")}</span>
                 </div>
-                <ul className="divide-y divide-content/8 border-t border-content/8">
+                <ul className="divide-y divide-stroke border-t border-(--ui-tone-neutral-border)">
                   {runs.slice(0, 100).map((run) => (
                     <RunRow key={run.id} run={run} draft={draft} onOpenSession={onOpenSession} />
                   ))}
                 </ul>
               </div>
             ) : !historyLoading && !historyError ? (
-              <div className="mt-3 rounded-md border border-dashed border-content/10 px-4 py-16 text-center text-[12px] text-content/40">
-                {t("This automation has not run yet.")}
-              </div>
+              <EmptyState description={t("This automation has not run yet.")} />
             ) : null}
           </section>
         )}
@@ -1690,12 +1562,20 @@ function PromptField({
   onChange: (value: string) => void;
 }) {
   useLocale();
-  return <SkillPromptField value={value} harness={harness} cwd={cwd} onChange={onChange} />;
+  return (
+    <SkillPromptField
+      value={value}
+      harness={harness}
+      cwd={cwd}
+      onChange={onChange}
+      focusOwner="group"
+    />
+  );
 }
 
 function SectionTitle({ children }: { children: ReactNode }) {
   useLocale();
-  return <h2 className="px-1 text-[12px] font-medium text-content/50">{children}</h2>;
+  return <h2 className="px-1 text-[12px] font-medium text-(--ui-text-muted)">{children}</h2>;
 }
 
 function SettingsRow({
@@ -1711,9 +1591,11 @@ function SettingsRow({
   return (
     <div className="flex items-center justify-between gap-4 px-4 py-2.5">
       <span className="min-w-0">
-        <span className="block text-[12px] text-content/75">{label}</span>
+        <span className="block text-[12px] text-(--ui-tone-neutral-fg)">{label}</span>
         {hint ? (
-          <span className="mt-0.5 block text-[11px] leading-snug text-content/40">{hint}</span>
+          <span className="mt-0.5 block text-[11px] leading-snug text-(--ui-text-muted)">
+            {hint}
+          </span>
         ) : null}
       </span>
       <span className="shrink-0">{children}</span>
@@ -1764,20 +1646,17 @@ function PageTab({
 }) {
   useLocale();
   return (
-    <button
+    <Button
       id={id}
       type="button"
       role="tab"
       aria-selected={selected}
       aria-controls={controls}
       onClick={onSelect}
-      className={`relative flex h-9 items-center text-[12px] leading-none ${
-        selected ? "text-content" : "text-content/50 hover:text-content"
-      }`}
+      variant="tab"
     >
       {label}
-      {selected ? <span className="absolute inset-x-0 bottom-0 h-0.5 bg-content" /> : null}
-    </button>
+    </Button>
   );
 }
 
@@ -1792,26 +1671,15 @@ function ToggleSwitch({
   onChange: (on: boolean) => void;
   compact?: boolean;
 }) {
-  useLocale();
   return (
-    <button
-      type="button"
-      role="switch"
+    <Switch
+      label={compact ? undefined : label}
       aria-label={label}
-      aria-checked={on}
-      onClick={() => onChange(!on)}
-      className={`relative shrink-0 rounded-full transition-colors duration-150 ease-out active:scale-[0.96] ${
-        compact ? "h-4 w-7" : "h-5 w-9"
-      } ${on ? "bg-active" : "bg-content/20"}`}
-    >
-      <span
-        className={`absolute top-0.5 left-0.5 rounded-full bg-on-solid transition-transform duration-150 ease-out ${
-          compact
-            ? `size-3 ${on ? "translate-x-3" : "translate-x-0"}`
-            : `size-4 ${on ? "translate-x-4" : "translate-x-0"}`
-        }`}
-      />
-    </button>
+      title={compact ? label : undefined}
+      checked={on}
+      onCheckedChange={onChange}
+      compact={compact}
+    />
   );
 }
 
@@ -2206,8 +2074,8 @@ function TriggerRow({
 
   return (
     <div className="group flex min-h-10 items-center gap-2.5 py-1">
-      <TriggerMark kind={trigger.kind} className="size-3.5 shrink-0 text-content/45" />
-      <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-1.5 gap-y-1 text-[13px] text-content/70">
+      <TriggerMark kind={trigger.kind} className="size-3.5 shrink-0 text-(--ui-text-muted)" />
+      <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-1.5 gap-y-1 text-[13px] text-(--ui-tone-neutral-fg)">
         {trigger.kind === "time" ? (
           <TimeTriggerSentence trigger={trigger} nextAt={nextAt} onChange={onChange} />
         ) : (
@@ -2219,14 +2087,17 @@ function TriggerRow({
           />
         )}
       </div>
-      <button
+      <Button
         type="button"
         aria-label={t("Remove trigger")}
         onClick={onRemove}
-        className="grid size-7 shrink-0 place-items-center rounded-md text-content/35 opacity-0 transition-opacity duration-150 ease-out group-hover:opacity-100 group-focus-within:opacity-100 hover:bg-content/8 hover:text-content focus-visible:opacity-100"
+        variant="ghost"
+        iconOnly
+        className="opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100 focus-visible:opacity-100"
+        label={t("Remove trigger")}
       >
         <X className="size-3.5" />
-      </button>
+      </Button>
     </div>
   );
 }
@@ -2286,8 +2157,8 @@ function TimeTriggerSentence({
           onChange={(value) => onChange({ ...trigger, time: value })}
         />
       )}
-      <span className="text-content/45">{gmtOffsetLabel()}</span>
-      <span className="ml-1 text-content/35">{nextRunPreview(nextAt)}</span>
+      <span className="text-(--ui-text-muted)">{gmtOffsetLabel()}</span>
+      <span className="ml-1 text-(--ui-text-muted)">{nextRunPreview(nextAt)}</span>
     </>
   );
 }
@@ -2315,14 +2186,16 @@ export function EventTriggerSentence({
       {labeled ? (
         <>
           <span>{t("Label")}</span>
-          <input
+          <TextField
+            label={t("Label")}
+            hideLabel
             aria-label={t("Label")}
             value={trigger.label ?? ""}
             onChange={(event) => onChange({ ...trigger, label: event.target.value })}
             placeholder={t("any label")}
             spellCheck={false}
             autoComplete="off"
-            className="h-7 w-32 rounded-md bg-content/10 px-2 text-[12px] text-content outline-none placeholder:text-content/40 hover:bg-content/[0.14] focus:bg-content/[0.14]"
+            fieldClassName="w-32"
           />
           <span>
             {t("added to")} {trigger.event === "issue_labeled" ? t("issue") : t("pull request")}
@@ -2391,7 +2264,7 @@ function TriggerPill({
       disabled={disabled}
       emptyLabel={emptyLabel}
       variant="pill"
-      searchable={options.length > 8}
+      searchable={label === t("Branch") || options.length > 8}
     />
   );
 }

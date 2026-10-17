@@ -172,6 +172,23 @@ describe("FilePreviewSearch", () => {
       );
     });
     expect(container.textContent).toContain("2 of 2");
+    expect(input.closest("[data-ui-focus-group]")?.getAttribute("data-search-appearance")).toBe(
+      "field",
+    );
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
+        input,
+        "missing",
+      );
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    expect(container.textContent).toContain("No results");
+    expect(input.getAttribute("aria-invalid")).toBe("true");
+    const clear = container.querySelector<HTMLButtonElement>("[data-search-clear]")!;
+    await act(async () => clear.click());
+    expect(input.value).toBe("");
+    expect(input.getAttribute("aria-invalid")).toBe("false");
+    expect(document.activeElement).toBe(input);
 
     await act(async () => {
       expect(

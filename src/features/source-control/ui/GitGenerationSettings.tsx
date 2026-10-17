@@ -119,7 +119,12 @@ export function GitGenerationSettings({
   const model = resolveModel(harness, choice?.model ?? automatic?.model ?? defaultModelId(harness));
   return (
     <>
-      <button
+      <Button
+        size="sm"
+        iconOnly
+        label={t("AI generation settings")}
+        variant="ghost"
+        motion="none"
         type="button"
         ref={anchor}
         aria-label={t("AI generation settings")}
@@ -128,11 +133,11 @@ export function GitGenerationSettings({
         aria-expanded={open}
         disabled={disabled}
         onClick={() => setOpen((v) => !v)}
-        className="relative grid h-5 w-4 shrink-0 place-items-center rounded-r-md border-l border-content/15 text-content/70 hover:bg-content/10 hover:text-content focus-visible:outline focus-visible:outline-1 disabled:opacity-40"
+        className="relative shrink-0"
       >
         {choice && <span className="absolute right-0.5 top-0.5 size-1 rounded-full bg-accent" />}
         <ChevronDown className={`size-3 shrink-0 ${open ? "rotate-180" : ""}`} />
-      </button>
+      </Button>
       {open && (
         <Popover
           anchor={anchor}
@@ -160,7 +165,13 @@ export function GitGenerationSettings({
             disabled={disabled}
           />
           {hasOverride && (
-            <Button variant="link" className="self-start" disabled={disabled} onClick={() => onChange(undefined)}>
+            <Button
+              size="sm"
+              variant="link"
+              className="self-start"
+              disabled={disabled}
+              onClick={() => onChange(undefined)}
+            >
               {t("Use default selection")}
             </Button>
           )}

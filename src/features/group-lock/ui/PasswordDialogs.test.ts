@@ -31,6 +31,40 @@ const submit = () =>
     .querySelector("form")!
     .dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
 
+it("keeps an uncontrolled password and native ref through reveal before verification", async () => {
+  const verify = vi.fn().mockResolvedValue({ ok: true });
+  const onDone = vi.fn();
+  await act(async () =>
+    root.render(
+      createElement(PasswordPromptDialog, {
+        title: "Unlock",
+        description: "",
+        submitLabel: "Unlock",
+        verify,
+        onDone,
+        onClose: vi.fn(),
+      }),
+    ),
+  );
+  const input = document.querySelector<HTMLInputElement>('input[type="password"]')!;
+  input.value = "private draft";
+  input.focus();
+  input.setSelectionRange(3, 7);
+  await act(async () =>
+    document.querySelector<HTMLButtonElement>('[aria-label="Show password"]')!.click(),
+  );
+  expect(document.querySelector('input[type="text"]')).toBe(input);
+  expect(input.value).toBe("private draft");
+  expect(input.selectionStart).toBe(3);
+  expect(verify).not.toHaveBeenCalled();
+  await act(async () => {
+    submit();
+  });
+  expect(verify).toHaveBeenCalledExactlyOnceWith("private draft");
+  expect(input.value).toBe("");
+  expect(onDone).toHaveBeenCalledOnce();
+});
+
 it("recovers from verification failure after StrictMode effect replay", async () => {
   vi.mocked(changeLockPassword).mockResolvedValue({
     ok: false,

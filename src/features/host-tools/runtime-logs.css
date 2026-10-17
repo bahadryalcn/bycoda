@@ -73,19 +73,6 @@
   margin-block-end: 12px;
 }
 
-.runtime-logs-error pre {
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-  font-size: 11px;
-  max-block-size: 160px;
-  overflow: auto;
-}
-
-.runtime-logs-error summary {
-  cursor: pointer;
-  padding-block-start: 6px;
-}
-
 .runtime-logs-monitor-setup > strong,
 .runtime-logs-monitor-list strong {
   font-size: 12px;
@@ -116,8 +103,6 @@
 .runtime-logs-title,
 .runtime-logs-state,
 .runtime-logs-stream-actions,
-.runtime-logs-source-switch,
-.runtime-logs-view-controls,
 .runtime-logs-footer,
 .runtime-logs-footer-actions,
 .runtime-logs-selection {
@@ -186,16 +171,8 @@
 }
 
 .runtime-logs-search {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  padding-inline: 9px;
-  border: 1px solid var(--color-stroke);
-  border-radius: 6px;
   flex: 1 1 210px;
   min-inline-size: 0;
-  color: var(--runtime-log-muted);
-  background: var(--ui-surface);
 }
 
 .runtime-logs-search > svg {
@@ -204,33 +181,12 @@
 
 .runtime-logs-panel .runtime-logs-search input[type="search"] {
   flex: 1;
-  inline-size: 100%;
-  padding-inline: 0;
-  padding-block: 7px;
-  border: 0;
-  border-radius: 2px;
   min-inline-size: 0;
-  font-size: 12px;
-  background: transparent;
 }
 
 .runtime-logs-stream-actions,
 .runtime-logs-footer-actions {
   flex-wrap: wrap;
-}
-
-.runtime-logs-panel button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 5px;
-  white-space: nowrap;
-}
-
-.runtime-logs-panel .runtime-logs-stream-actions button,
-.runtime-logs-panel .runtime-logs-footer-actions button {
-  padding-block: 7px;
-  padding-inline: 9px;
 }
 
 .runtime-logs-filters {
@@ -240,65 +196,15 @@
   gap: 8px;
 }
 
-.runtime-logs-source-switch {
-  flex-shrink: 0;
-  gap: 2px;
-  border: 1px solid var(--color-stroke);
-  border-radius: 6px;
-  padding: 2px;
-}
-
-.runtime-logs-panel .runtime-logs-source-switch button {
-  padding-block: 5px;
-  padding-inline: 7px;
-  border-color: transparent;
-  background: transparent;
-  color: var(--runtime-log-muted);
-  font-size: 11px;
-  border-radius: 4px;
-}
-
-.runtime-logs-panel .runtime-logs-source-switch button[aria-pressed="true"] {
-  background: var(--color-selection);
-  color: var(--color-content);
-}
-
-.runtime-logs-source-switch button span {
-  font-size: 10px;
-  font-variant-numeric: tabular-nums;
-  color: var(--runtime-log-muted);
-}
-
 .runtime-logs-filter {
   flex: 1 1 180px;
   min-inline-size: 0;
   max-inline-size: 280px;
 }
 
-.runtime-logs-view-controls,
 .runtime-logs-footer,
 .runtime-logs-selection {
   flex-wrap: wrap;
-}
-
-.runtime-logs-view-controls {
-  gap: 8px 14px;
-}
-
-.runtime-logs-view-controls label {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 11px;
-  color: var(--runtime-log-muted);
-  cursor: pointer;
-}
-
-.runtime-logs-panel input[type="checkbox"] {
-  accent-color: var(--color-accent, var(--color-content));
-  inline-size: 13px;
-  block-size: 13px;
-  flex-shrink: 0;
 }
 
 .runtime-logs-totals {
@@ -339,7 +245,6 @@
   display: grid;
   grid-template-columns: 26px minmax(0, 1fr);
   border-block-end: 1px solid var(--color-stroke);
-  border-inline-start: 2px solid transparent;
   min-inline-size: 0;
   content-visibility: auto;
   contain-intrinsic-block-size: auto 51px;
@@ -347,14 +252,6 @@
 
 .runtime-log-row:last-child {
   border-block-end: 0;
-}
-
-.runtime-log-row[data-level="error"] {
-  border-inline-start-color: var(--runtime-log-error);
-}
-
-.runtime-log-row[data-level="warn"] {
-  border-inline-start-color: var(--runtime-log-warning);
 }
 
 .runtime-log-row[data-selected="true"] {
@@ -520,11 +417,6 @@
   white-space: normal;
   overflow-wrap: anywhere;
   justify-content: start;
-  padding-block: 3px;
-  padding-inline: 6px;
-  font-family: var(--font-mono);
-  font-size: 11px;
-  color: var(--color-accent, var(--color-content));
 }
 
 .runtime-log-object-tree {
@@ -607,17 +499,7 @@
   font-variant-numeric: tabular-nums;
 }
 
-.runtime-logs-panel .runtime-logs-selection button {
-  border-color: transparent;
-  background: transparent;
-  font-size: 11px;
-  padding-block: 3px;
-  padding-inline: 4px;
-}
-
-.runtime-logs-hint,
-.runtime-logs-notice,
-.runtime-logs-error {
+.runtime-logs-hint {
   margin: 0;
   font-size: 11px;
   line-height: 1.5;
@@ -626,14 +508,6 @@
 
 .runtime-logs-hint {
   color: var(--runtime-log-muted);
-}
-
-.runtime-logs-error {
-  color: var(--runtime-log-error);
-}
-
-.runtime-logs-notice {
-  color: var(--color-content);
 }
 
 .runtime-logs-sources {
@@ -680,18 +554,7 @@
   margin-block: 8px 0;
 }
 
-.runtime-logs-panel
-  :is(button, input, select, summary, [role="region"]):not([data-ui-focus]):focus-visible {
-  outline: 2px solid var(--color-accent, var(--color-content));
-  outline-offset: 1px;
-}
-
-.runtime-logs-panel :is(button, summary, label):active {
-  background: var(--color-selection);
-}
-
 @media (hover: hover) and (pointer: fine) {
-  .runtime-logs-panel button:hover:not(:disabled),
   .runtime-log-summary:hover {
     background: var(--color-selection-subtle);
   }
@@ -704,7 +567,6 @@
 /* Severity is carried by text and the gutter, never by a red log canvas. */
 .runtime-log-row {
   --runtime-row-color: var(--runtime-log-muted);
-  border-inline-start-color: var(--runtime-row-color);
 }
 .runtime-log-row[data-level="error"] {
   --runtime-row-color: var(--runtime-log-error);
@@ -737,28 +599,6 @@
 }
 
 /* Keep capture, source and level controls in the same surface as the stream. */
-.runtime-logs-levels {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 3px;
-}
-.runtime-logs-levels button {
-  font-size: 10px;
-  padding-block: 4px;
-  padding-inline: 7px;
-  min-block-size: 28px;
-}
-.runtime-logs-panel button[aria-pressed="true"] {
-  background: var(--color-selection);
-  color: var(--color-content);
-  border-color: var(--color-accent, var(--color-stroke));
-}
-.runtime-logs-levels [data-level="error"] {
-  color: var(--runtime-log-error);
-}
-.runtime-logs-levels [data-level="warn"] {
-  color: var(--runtime-log-warning);
-}
 .runtime-logs-panel .runtime-logs-monitor-setup {
   display: grid;
   gap: 4px;
@@ -791,13 +631,6 @@
   border-radius: 5px;
   background: var(--ui-surface-raised);
 }
-.runtime-logs-panel .runtime-logs-monitor-chips button {
-  border: 0;
-  background: transparent;
-  padding-block: 3px;
-  padding-inline: 6px;
-  font-size: 11px;
-}
 .runtime-logs-panel .runtime-logs-monitor-name {
   min-inline-size: 0;
   overflow: clip;
@@ -810,4 +643,14 @@
   overflow: clip;
   clip-path: inset(50%);
   white-space: nowrap;
+}
+.runtime-logs-filter-content {
+  display: grid;
+  gap: 12px;
+  padding: 12px;
+  min-inline-size: 0;
+}
+.runtime-logs-capture-form > .bycoda-arc-field {
+  flex: 1 1 120px;
+  min-inline-size: 0;
 }

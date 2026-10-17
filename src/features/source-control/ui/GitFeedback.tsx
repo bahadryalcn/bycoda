@@ -1,5 +1,6 @@
+import { Alert } from "../../../shared/ui/Alert";
+import { Progress } from "../../../shared/ui/Progress";
 import { t, useLocale } from "../../../shared/i18n/git";
-import { Loader } from "../../../shared/ui/icons";
 import { useEffect, useState } from "react";
 import { Button } from "../../../shared/ui/Button";
 import { Modal } from "../../../shared/ui/Modal";
@@ -11,10 +12,9 @@ import { requestWorktreeManagement } from "../model/worktreeManagement";
 export function GitLoading({ text }: { text: string }) {
   useLocale();
   return (
-    <p role="status" className="flex items-center gap-2 px-3 py-2 text-[12px] text-content/55">
-      <Loader aria-hidden className="size-3.5 shrink-0 animate-spin" />
-      {text}
-    </p>
+    <div role="status" className="px-3 py-2">
+      <Progress label={text} compact />
+    </div>
   );
 }
 
@@ -52,9 +52,10 @@ export function GitFeedback({
   const branchInWorktree =
     kind === "error" && !!detail && /cannot delete branch[\s\S]*used by worktree/i.test(detail);
   return (
-    <div
+    <Alert
+      tone={kind === "error" ? "danger" : kind}
       role={kind === "error" ? "alert" : "status"}
-      className="mx-2 my-1.5 min-w-0 shrink-0 rounded-md border border-stroke bg-(--ui-surface) px-2.5 py-2 text-[12px]"
+      className="mx-2 my-1.5 min-w-0 shrink-0"
     >
       <div className="flex min-w-0 flex-wrap items-center gap-2">
         <div
@@ -63,7 +64,7 @@ export function GitFeedback({
               ? "text-danger"
               : kind === "warning"
                 ? "text-warning"
-                : "text-content/80"
+                : "text-[var(--color-content)]"
           }
         >
           {detail ? (
@@ -90,7 +91,9 @@ export function GitFeedback({
           </Button>
         ) : null}
       </div>
-      {stale ? <p className="mt-1 text-content/55">{t("Showing what was last loaded.")}</p> : null}
+      {stale ? (
+        <p className="mt-1 text-[var(--ui-text-secondary)]">{t("Showing what was last loaded.")}</p>
+      ) : null}
       {open && detail ? (
         <Modal title={title} languageDomain="git" onClose={() => setOpen(false)}>
           <div className="flex min-w-0 flex-col gap-3 p-4">
@@ -173,6 +176,6 @@ export function GitFeedback({
           </div>
         </Modal>
       ) : null}
-    </div>
+    </Alert>
   );
 }

@@ -32,6 +32,8 @@ type Props = {
   /** Accessible name; defaults to "Instructions". */
   label?: string;
   placeholder?: string;
+  /** Use "group" when a bordered ancestor with `data-ui-focus-group` owns the focus ring. */
+  focusOwner?: "input" | "group";
 };
 
 /** Automation instructions field with the composer's slash-skill behavior. */
@@ -42,6 +44,7 @@ export function SkillPromptField({
   onChange,
   label = "Instructions",
   placeholder = "Tell the agent what to do when this automation runs…",
+  focusOwner = "input",
 }: Props) {
   const fieldRef = useRef<HTMLTextAreaElement>(null);
   const slashAnchorRef = useRef<HTMLSpanElement>(null);
@@ -186,6 +189,7 @@ export function SkillPromptField({
         />
       </div>
       <textarea
+        data-ui-focus={focusOwner}
         ref={fieldRef}
         rows={1}
         spellCheck={false}

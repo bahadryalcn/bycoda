@@ -1,6 +1,13 @@
+import { Progress } from "../../../shared/ui/Progress";
+import { Button } from "../../../shared/ui/Button";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { basename, openPathWithDefaultApp, preparedFileSize, prepareLocalFile } from "../../../platform/tauri/fs";
+import {
+  basename,
+  openPathWithDefaultApp,
+  preparedFileSize,
+  prepareLocalFile,
+} from "../../../platform/tauri/fs";
 import { t, useLocale } from "../../../shared/i18n/technical";
 import { mediaKind } from "../model/mediaPreview";
 import { MediaVisibilityContext } from "../model/mediaVisibility";
@@ -27,8 +34,6 @@ type State =
       metadata?: VideoMetadata;
     }
   | { status: "error"; message: string; source?: object; size?: number };
-const BUTTON =
-  "rounded-md border border-stroke px-2.5 py-1 text-xs text-content/80 [@media(hover:hover)_and_(pointer:fine)]:hover:bg-content/10 active:bg-content/15 focus-visible:outline-2 focus-visible:outline-accent disabled:opacity-50";
 
 /** Native controls stream authorized local/cache files without loading video into the JS heap. */
 export function MediaView({
@@ -157,30 +162,46 @@ export function MediaView({
         ) : state.status === "error" ? (
           <DocumentMessage title={t("Couldn’t open {p0}", { p0: basename(path) })} error>
             <span role="alert">{state.message}</span>
-            <button type="button" onClick={() => setRetry((value) => value + 1)} className={BUTTON}>
+            <Button
+              variant="ghost"
+              motion="none"
+              type="button"
+              onClick={() => setRetry((value) => value + 1)}
+            >
               {t("Retry")}
-            </button>
+            </Button>
           </DocumentMessage>
         ) : (
-          <p role="status" className="text-sm text-content/60">
-            {t("Loading…")}
-            {state.total
-              ? ` ${formatFileSize(state.received ?? 0)} / ${formatFileSize(state.total)}`
-              : ""}
-          </p>
+          <div role="status">
+            <Progress
+              compact
+              value={state.total ? (state.received ?? 0) : undefined}
+              max={state.total ?? 1}
+              label={
+                t("Loading…") +
+                (state.total
+                  ? ` ${formatFileSize(state.received ?? 0)} / ${formatFileSize(state.total)}`
+                  : "")
+              }
+            />
+          </div>
         )}
       </div>
-      <footer className="flex shrink-0 flex-wrap items-center gap-2 border-t border-stroke px-3 py-2 text-xs text-content/60">
+      <footer className="flex shrink-0 flex-wrap items-center gap-2 border-t border-stroke px-3 py-2 text-xs text-[var(--ui-text-secondary)]">
         <span className="min-w-0 flex-1 truncate" title={path}>
           {basename(path)}
         </span>
         {isVideo ? (
           <>
             {metadata?.width && metadata.height ? (
-              <span className="whitespace-nowrap tabular-nums">{metadata.width} × {metadata.height}</span>
+              <span className="whitespace-nowrap tabular-nums">
+                {metadata.width} × {metadata.height}
+              </span>
             ) : null}
             {duration ? (
-              <span className="whitespace-nowrap tabular-nums" title={t("Duration")}>{duration}</span>
+              <span className="whitespace-nowrap tabular-nums" title={t("Duration")}>
+                {duration}
+              </span>
             ) : null}
             {currentVideo && state.size !== undefined ? (
               <span className="whitespace-nowrap tabular-nums">{formatFileSize(state.size)}</span>
@@ -189,9 +210,10 @@ export function MediaView({
           </>
         ) : null}
         {externalPath ? (
-          <button
+          <Button
+            variant="ghost"
+            motion="none"
             type="button"
-            className={BUTTON}
             title={
               localCopy
                 ? t("Changes to this local copy are not saved to the connected machine.")
@@ -206,7 +228,7 @@ export function MediaView({
             }}
           >
             {t(localCopy ? "Open local copy" : "Open in default app")}
-          </button>
+          </Button>
         ) : null}
         {actionError ? (
           <span role="alert" className="basis-full text-danger">
@@ -246,9 +268,12 @@ function MediaPlayer({
   const updateMetadata = (event: { currentTarget: HTMLMediaElement }) => {
     const element = event.currentTarget;
     if (
-      mediaKind(path) !== "video" || element.readyState < 1 ||
-      element.getAttribute("src") !== url || elementRef.current !== element
-    ) return;
+      mediaKind(path) !== "video" ||
+      element.readyState < 1 ||
+      element.getAttribute("src") !== url ||
+      elementRef.current !== element
+    )
+      return;
     const video = element as HTMLVideoElement;
     onMetadata({
       duration: Number.isFinite(video.duration) && video.duration > 0 ? video.duration : undefined,
@@ -308,6 +333,11 @@ function MediaPlayer({
   return mediaKind(path) === "audio" ? (
     <audio {...props} className="w-full max-w-xl" />
   ) : (
-    <video {...props} playsInline onResize={updateMetadata} className="max-h-full w-full object-contain" />
+    <video
+      {...props}
+      playsInline
+      onResize={updateMetadata}
+      className="max-h-full w-full object-contain"
+    />
   );
 }

@@ -7,6 +7,7 @@ export const APPEARANCE_DEFAULTS = {
   codeFont: "System",
   codeSize: 13,
   contrast: 100,
+  controlDensity: "compact",
   chatWidth: "comfortable",
   wordWrap: false,
 } as const;
@@ -15,6 +16,7 @@ export type AppearancePreferences = {
   codeFont: string;
   codeSize: number;
   contrast: number;
+  controlDensity: "compact" | "comfortable" | "touch";
   chatWidth: "comfortable" | "wide" | "full";
   wordWrap: boolean;
 };
@@ -35,6 +37,10 @@ export function normalizeAppearancePreferences(
       : "System",
     codeSize: bounded(value.codeSize, 13, 11, 18),
     contrast: bounded(value.contrast, 100, 75, 150),
+    controlDensity:
+      value.controlDensity === "comfortable" || value.controlDensity === "touch"
+        ? value.controlDensity
+        : "compact",
     chatWidth:
       value.chatWidth === "wide" || value.chatWidth === "full" ? value.chatWidth : "comfortable",
     wordWrap: value.wordWrap === true,
@@ -49,6 +55,7 @@ export function loadAppearancePreferences(): AppearancePreferences {
 }
 export function applyAppearancePreferences(value: AppearancePreferences) {
   const root = document.documentElement;
+  root.dataset.controlDensity = value.controlDensity;
   for (const [property, font, fallback] of [
     ["--font-sans", value.interfaceFont, "sans-serif"],
     ["--font-mono", value.codeFont, "monospace"],

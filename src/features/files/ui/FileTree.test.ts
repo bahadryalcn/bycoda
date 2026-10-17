@@ -488,7 +488,7 @@ describe("FileTree accepts files from outside the tree", () => {
         payload: { type: "over", position: { x: 10, y: 10 } },
       });
     });
-    expect(target.className).toContain("bg-selection");
+    expect(target.getAttribute("data-tree-drop-target")).toBe("true");
     await nativeDrop(["/Users/me/Desktop/a.txt"]);
     expect(copied).toEqual([{ from: "/Users/me/Desktop/a.txt", destParent: `${cwd}/docs` }]);
     expect(target.className).not.toContain("bg-selection");
@@ -656,7 +656,7 @@ describe("FileTree starts Explorer file drags", () => {
 
 describe("FileTree keyboard navigation", () => {
   const selected = () =>
-    container.querySelector<HTMLButtonElement>('[role="treeitem"].bg-selection')?.title;
+    container.querySelector<HTMLButtonElement>('[role="treeitem"][aria-selected="true"]')?.title;
 
   beforeEach(async () => {
     directories.set(cwd, [folder("src"), file("first.ts"), file("second.ts")]);
@@ -859,7 +859,7 @@ describe("FileTree multiple selection", () => {
     await click("a.ts");
     await click("b.ts", { ctrlKey: true });
     await press(row("b.ts"), { key: "x", ctrlKey: true });
-    expect(row("a.ts").className).toContain("opacity-50");
+    expect(row("a.ts").getAttribute("data-tree-cut")).toBe("true");
     failures.set(`${cwd}/b.ts`, "move failed");
     await click("dest");
     await press(row("dest"), { key: "v", ctrlKey: true });

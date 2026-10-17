@@ -214,16 +214,26 @@ it("resets device control when switching conversations in the same project", asy
       .click(),
   );
   await toolAct(async () =>
-    container.querySelector<HTMLButtonElement>('[role="switch"][aria-label="Allow device control"]')!.click(),
+    container
+      .querySelector<HTMLButtonElement>('[role="switch"][aria-label="Allow device control"]')!
+      .click(),
   );
-  expect(container.querySelector('[role="switch"][aria-label="Allow device control"]')!.getAttribute("aria-checked")).toBe("true");
+  expect(
+    container
+      .querySelector('[role="switch"][aria-label="Allow device control"]')!
+      .getAttribute("aria-checked"),
+  ).toBe("true");
   await render("second");
   await toolAct(async () =>
     [...container.querySelectorAll<HTMLButtonElement>('[role="tab"]')]
       .find((tab) => tab.textContent === "Devices")!
       .click(),
   );
-  expect(container.querySelector('[role="switch"][aria-label="Allow device control"]')!.getAttribute("aria-checked")).toBe("false");
+  expect(
+    container
+      .querySelector('[role="switch"][aria-label="Allow device control"]')!
+      .getAttribute("aria-checked"),
+  ).toBe("false");
 });
 
 const clickToolTab = (name: string) =>
@@ -396,7 +406,9 @@ it("clears the device screen and control and discovers devices on another machin
     container.querySelector('button[aria-label^="Selected device:"]')?.getAttribute("aria-label"),
   ).toContain("iPhone");
   await toolAct(async () =>
-    container.querySelector<HTMLButtonElement>('[role="switch"][aria-label="Allow device control"]')!.click(),
+    container
+      .querySelector<HTMLButtonElement>('[role="switch"][aria-label="Allow device control"]')!
+      .click(),
   );
   await toolAct(async () =>
     [...container.querySelectorAll("button")]
@@ -409,7 +421,11 @@ it("clears the device screen and control and discovers devices on another machin
   expect(
     container.querySelector('button[aria-label^="Selected device:"]')?.getAttribute("aria-label"),
   ).toContain("iPhone");
-  expect(container.querySelector('[role="switch"][aria-label="Allow device control"]')!.getAttribute("aria-checked")).toBe("false");
+  expect(
+    container
+      .querySelector('[role="switch"][aria-label="Allow device control"]')!
+      .getAttribute("aria-checked"),
+  ).toBe("false");
   expect(hostToolRequest).toHaveBeenCalledWith(
     "remote://macbook/repo",
     "device.host",

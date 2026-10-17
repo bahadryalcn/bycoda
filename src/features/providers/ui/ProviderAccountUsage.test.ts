@@ -2,7 +2,8 @@
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { UsageMeter } from "./ProviderAccountUsage";
+import { UsageMeter, AccountUsageMeters } from "./ProviderAccountUsage";
+import { idleRateLimits } from "../model/rateLimits";
 
 let container: HTMLDivElement;
 let root: Root;
@@ -38,7 +39,7 @@ it("flips the meter when another window turns off remaining usage", async () => 
   );
   const bar = () => container.querySelector('[role="progressbar"]');
   expect(bar()?.getAttribute("aria-label")).toBe("5h limit remaining");
-  expect(bar()?.querySelector("span")?.getAttribute("style")).toBe("width: 77%;");
+  expect(bar()?.getAttribute("aria-valuenow")).toBe("77");
   expect(container.textContent).toContain("77% left");
 
   await act(async () => {
@@ -47,6 +48,38 @@ it("flips the meter when another window turns off remaining usage", async () => 
   });
 
   expect(bar()?.getAttribute("aria-label")).toBe("5h limit used");
-  expect(bar()?.querySelector("span")?.getAttribute("style")).toBe("width: 23%;");
+  expect(bar()?.getAttribute("aria-valuenow")).toBe("23");
   expect(container.textContent).not.toContain("left");
+});
+
+it("keeps exhausted quota dangerous even when showing zero remaining", async () => {
+  await act(async () =>
+    root.render(
+      createElement(UsageMeter, {
+        title: "Weekly",
+        now: 0,
+        window: { usedPercent: 100, windowMinutes: 10080, resetsAt: 1000 },
+      }),
+    ),
+  );
+  const bar = container.querySelector('[role="progressbar"]')!;
+  expect(bar.getAttribute("aria-valuenow")).toBe("0");
+  expect(bar.getAttribute("data-tone")).toBe("danger");
+  expect(container.textContent).toContain("0% left");
+});
+
+it("exposes loading placeholders only while limits are unavailable", async () => {
+  await act(async () =>
+    root.render(createElement(AccountUsageMeters, { now: 0, limits: undefined })),
+  );
+  expect(container.querySelectorAll('[role="status"]')).toHaveLength(2);
+  await act(async () =>
+    root.render(
+      createElement(AccountUsageMeters, {
+        now: 0,
+        limits: { ...idleRateLimits("codex"), status: "error" },
+      }),
+    ),
+  );
+  expect(container.querySelector('[role="status"]')).toBeNull();
 });

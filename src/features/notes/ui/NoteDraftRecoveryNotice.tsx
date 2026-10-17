@@ -1,3 +1,5 @@
+import { Alert } from "../../../shared/ui/Alert";
+import { Button } from "../../../shared/ui/Button";
 import { t, useLocale } from "../../../shared/i18n";
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
@@ -62,25 +64,26 @@ export function NoteDraftRecoveryNotice() {
   if (!failed.length || isNotesViewOpen()) return null;
   return createPortal(
     <div
-      role="alert"
       style={{ zIndex: LAYER.toast }}
-      className="fixed right-3 bottom-3 max-w-[min(360px,calc(100vw-24px))] rounded-xl border border-stroke bg-background-base p-3 text-[12px] text-content shadow-xl"
+      className="fixed right-3 bottom-3 max-w-[min(360px,calc(100vw-24px))]"
     >
       {failed.map(([id, draft]) => (
-        <div key={id} className="flex flex-col gap-1">
+        <Alert key={id} tone="danger">
           <span>
             {t("Could not save “")}
             {draft.edits.current.title ?? draft.base.title}”: {draft.error}
           </span>
           <span>{t("Your draft is retained for this app session.")}</span>
-          <button
+          <Button
+            variant="ghost"
+            size="sm"
             type="button"
-            className="self-start underline"
+
             onClick={() => void retryDraft(id, draft)}
           >
             {t("Retry save")}
-          </button>
-        </div>
+          </Button>
+        </Alert>
       ))}
     </div>,
     document.body,

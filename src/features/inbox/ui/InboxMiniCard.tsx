@@ -1,3 +1,4 @@
+import { Button } from "../../../shared/ui/Button";
 import { providerLabel } from "../../../shared/lib/providerLabel";
 import { labelColor } from "../../../shared/lib/colorUtils";
 import { t, useLocale } from "../../../shared/i18n";
@@ -20,8 +21,9 @@ export function InboxMiniCard({ card, onDismiss }: Props) {
 
   return (
     <div className="px-3 pt-2">
-      <div className="relative rounded-md border border-content/10 bg-content/6 px-2.5 py-2 pr-8">
-        <button
+      <div className="relative rounded-md border border-(--ui-tone-neutral-border) bg-(--ui-surface-raised) px-2.5 py-2 pr-8">
+        <Button
+          variant="ghost"
           type="button"
           title={t("Open in {p0}", { p0: serviceLabel })}
           aria-label={t("Open {p0} {p1} in {p2}", {
@@ -33,21 +35,21 @@ export function InboxMiniCard({ card, onDismiss }: Props) {
           onClick={() => {
             if (card.url) void openUrl(card.url);
           }}
-          className="flex w-full flex-col text-left disabled:cursor-default"
+          className="w-full flex-col text-left"
         >
           <span className="flex min-w-0 items-center gap-1.5">
             <InboxProviderMark provider={card.provider} className="size-3.5 shrink-0" />
-            <KindIcon className="size-3 shrink-0 text-content/45" strokeWidth={1.75} />
-            <span className="min-w-0 truncate text-[11px] text-content/50">
+            <KindIcon className="size-3 shrink-0 text-(--ui-text-secondary)" strokeWidth={1.75} />
+            <span className="min-w-0 truncate text-[11px] text-(--ui-text-secondary)">
               {kindLabel} · {card.identifier}
             </span>
           </span>
-          <span className="mt-1 line-clamp-1 text-[13px] font-semibold leading-snug text-content">
+          <span className="mt-1 line-clamp-1 text-[13px] font-semibold leading-snug text-(--ui-tone-neutral-fg)">
             {card.title}
           </span>
           <span className="mt-1 flex min-w-0 items-center gap-2">
             {card.source ? (
-              <span className="min-w-0 flex-1 truncate text-[11px] text-content/45">
+              <span className="min-w-0 flex-1 truncate text-[11px] text-(--ui-text-secondary)">
                 {card.source}
               </span>
             ) : (
@@ -61,17 +63,19 @@ export function InboxMiniCard({ card, onDismiss }: Props) {
               </span>
             ) : null}
           </span>
-        </button>
+        </Button>
         {onDismiss ? (
-          <button
+          <Button
+            iconOnly
+            label={t("Remove {p0} {p1}", { p0: kindLabel, p1: card.identifier })}
+            variant="ghost"
             type="button"
             title={t("Remove")}
             aria-label={t("Remove {p0} {p1}", { p0: kindLabel, p1: card.identifier })}
             onClick={onDismiss}
-            className="absolute right-1.5 top-1.5 grid size-5 place-items-center rounded text-content/40 hover:bg-content/10 hover:text-content"
           >
             <X className="size-3" strokeWidth={2} />
-          </button>
+          </Button>
         ) : null}
       </div>
     </div>
@@ -82,7 +86,7 @@ function InboxMiniLabel({ label }: { label: GithubLabel }) {
   useLocale();
   const color = labelColor(label.color);
   return (
-    <span className="inline-flex min-w-0 max-w-20 items-center gap-1 rounded bg-content/8 px-1.5 py-px text-[10px] text-content/50">
+    <span className="inline-flex min-w-0 max-w-20 items-center gap-1 rounded bg-(--ui-surface-raised) px-1.5 py-px text-[10px] text-(--ui-text-secondary)">
       {color ? (
         <span
           aria-hidden

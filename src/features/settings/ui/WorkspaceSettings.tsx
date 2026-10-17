@@ -1,3 +1,4 @@
+import { Badge } from "../../../shared/ui/Badge";
 import { useState } from "react";
 import { IS_MAC } from "../../../platform/tauri/platform";
 import { t, useLocale } from "../../../shared/i18n";
@@ -107,9 +108,9 @@ export function WorkspacePage() {
             )}
           >
             {quickComposerError ? (
-              <span role="alert" className="text-[12px] text-danger">
+              <Badge tone="danger" role="alert">
                 {quickComposerError}
-              </span>
+              </Badge>
             ) : null}
             <Toggle
               label={t("Quick composer")}

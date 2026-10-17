@@ -1,3 +1,4 @@
+import { Button } from "../../../shared/ui/Button";
 import "./UnifiedDiffView.css";
 import { useStableCallback } from "../../../shared/hooks/useStableCallback";
 import { t, useLocale } from "../../../shared/i18n/git";
@@ -305,7 +306,9 @@ export function UnifiedDiffView({
   }, []);
 
   if (files.length === 0) {
-    return <p className="px-4 py-6 text-[13px] text-content/45">{t("No file changes")}</p>;
+    return (
+      <p className="px-4 py-6 text-[13px] text-[var(--ui-text-muted)]">{t("No file changes")}</p>
+    );
   }
 
   const count = fileCount ?? files.length;
@@ -323,29 +326,35 @@ export function UnifiedDiffView({
       <div
         className={`flex h-8 shrink-0 items-center gap-3 border-b border-stroke px-3 text-[12px]`}
       >
-        <span className="text-content/70">{fileLabel}</span>
+        <span className="text-[var(--ui-text-secondary)]">{fileLabel}</span>
         <DiffCounts additions={additions} deletions={deletions} />
         <span className="ml-auto flex items-center gap-0.5">
           <DiffLayoutToggle className="mr-0.5" />
-          <button
+          <Button
+            iconOnly
+            label={t("Expand all files")}
+            variant="ghost"
+            motion="none"
             type="button"
             title={t("Expand all files")}
             aria-label={t("Expand all files")}
             onClick={() => setOpen(new Set(files.map((file) => file.id)))}
-            className="grid size-7 place-items-center rounded-md text-content/45 hover:bg-content/10 hover:text-content"
           >
             <UnfoldVertical className="size-3.5" strokeWidth={1.75} />
-          </button>
-          <button
+          </Button>
+          <Button
+            iconOnly
+            label={t("Collapse all files")}
+            variant="ghost"
+            motion="none"
             type="button"
             title={t("Collapse all files")}
             aria-label={t("Collapse all files")}
             disabled={open.size === 0}
             onClick={() => setOpen(new Set())}
-            className="grid size-7 place-items-center rounded-md text-content/45 hover:bg-content/10 hover:text-content disabled:opacity-40"
           >
             <FoldVertical className="size-3.5" strokeWidth={1.75} />
-          </button>
+          </Button>
         </span>
       </div>
       <div
@@ -360,7 +369,7 @@ export function UnifiedDiffView({
         style={zoomStyle}
       >
         {truncated ? (
-          <p className="px-3 py-3 text-[12px] text-content/45">
+          <p className="px-3 py-3 text-[12px] text-[var(--ui-text-muted)]">
             {t("Diff is too large to display in full. File list is shown without patches.")}
           </p>
         ) : null}
@@ -507,7 +516,9 @@ const FileSection = memo(function FileSection({
       ref={setSection}
       data-diff-file={file.path}
       className={`${
-        fileLayout === "cards" ? "overflow-hidden rounded-md border border-content/10" : ""
+        fileLayout === "cards"
+          ? "overflow-hidden rounded-md border border-[var(--color-stroke)]"
+          : ""
       } ${focused ? "bg-content/[0.03]" : ""}`}
     >
       <header
@@ -517,22 +528,24 @@ const FileSection = memo(function FileSection({
           fileLayout === "stacked" || expanded ? "border-b border-stroke" : ""
         }`}
       >
-        <button
+        <Button
+          variant="ghost"
+          motion="none"
           type="button"
           aria-expanded={expanded}
           onClick={() => onToggle(file.id)}
           className="flex min-w-0 flex-1 items-center gap-2 text-left"
         >
-          <Chevron className="size-3.5 shrink-0 text-content/45" strokeWidth={1.75} />
+          <Chevron className="size-3.5 shrink-0 text-[var(--ui-text-muted)]" strokeWidth={1.75} />
           <FileTypeIcon name={name} isDir={false} size={16} />
           <span
-            className="min-w-0 flex-1 truncate font-mono text-[12px] text-content/85"
+            className="min-w-0 flex-1 truncate font-mono text-[12px] text-[var(--color-content)]"
             title={file.label}
           >
             {file.label}
           </span>
           <DiffCounts additions={file.additions} deletions={file.deletions} />
-        </button>
+        </Button>
         {file.canDiscard && onDiscardFile ? (
           <IconButton
             title={t("Discard file")}
@@ -543,16 +556,19 @@ const FileSection = memo(function FileSection({
           </IconButton>
         ) : null}
         {file.canStage && onStageFile ? (
-          <button
+          <Button
+            iconOnly
+            label={t("Stage file")}
+            variant="ghost"
+            motion="none"
             type="button"
             title={t("Stage file")}
             aria-label={t("Stage file")}
             disabled={busy}
             onClick={() => onStageFile(file.id)}
-            className="grid size-4 place-items-center rounded-[3px] bg-content text-background-base hover:opacity-80 disabled:opacity-40"
           >
             <Check className="size-2.5" strokeWidth={2.5} />
-          </button>
+          </Button>
         ) : null}
       </header>
       {expanded ? (
@@ -1149,12 +1165,12 @@ const SplitLane = memo(function SplitLane({
     return side === "before" ? (
       <DiffLineRow line={row.line} lane={lane} hovered={false} commenting={false} />
     ) : (
-      <div className="bg-content/5" style={HUNK_HEIGHT} />
+      <div className="bg-[var(--ui-surface)]" style={HUNK_HEIGHT} />
     );
   }
   const line = side === "before" ? row.left : row.right;
   if (!line) {
-    return <div className="bg-content/[0.04]" style={LINE_HEIGHT} />;
+    return <div className="bg-[var(--ui-surface)]" style={LINE_HEIGHT} />;
   }
   return (
     <DiffLineRow
@@ -1242,34 +1258,42 @@ function FoldBar({
 }) {
   useLocale();
   return (
-    <div className="flex items-center gap-1 bg-content/8 px-2" style={FOLD_HEIGHT}>
-      <button
+    <div className="flex items-center gap-1 bg-[var(--ui-surface-muted)] px-2" style={FOLD_HEIGHT}>
+      <Button
+        iconOnly
+        label={t("Expand unmodified lines upward")}
+        variant="ghost"
+        motion="none"
         type="button"
         title={t("Expand upward")}
         aria-label={t("Expand unmodified lines upward")}
         onClick={() => onReveal(foldId, "up")}
-        className="grid size-5 place-items-center rounded text-content/40 hover:bg-content/10 hover:text-content"
       >
         <ChevronUp className="size-3" strokeWidth={2} />
-      </button>
-      <button
+      </Button>
+      <Button
+        iconOnly
+        label={t("Expand unmodified lines downward")}
+        variant="ghost"
+        motion="none"
         type="button"
         title={t("Expand downward")}
         aria-label={t("Expand unmodified lines downward")}
         onClick={() => onReveal(foldId, "down")}
-        className="grid size-5 place-items-center rounded text-content/40 hover:bg-content/10 hover:text-content"
       >
         <ChevronDown className="size-3" strokeWidth={2} />
-      </button>
-      <button
+      </Button>
+      <Button
+        variant="ghost"
+        motion="none"
         type="button"
         onClick={() => onReveal(foldId, "all")}
-        className="min-w-0 flex-1 py-1 text-left font-mono text-[length:var(--diff-meta-font,11px)] text-content/45 hover:text-content/70"
+        className="min-w-0 flex-1 text-left font-mono"
       >
         {hidden}
         {t(" unmodified ")}
         {hidden === 1 ? t("line") : t("lines")}
-      </button>
+      </Button>
     </div>
   );
 }
@@ -1308,9 +1332,9 @@ const DiffLineRow = memo(function DiffLineRow({
   useLocale();
   if (line.kind === "hunk") {
     return (
-      <div className="flex items-center bg-content/5" style={HUNK_HEIGHT}>
+      <div className="flex items-center bg-[var(--ui-surface)]" style={HUNK_HEIGHT}>
         {lane === "code" ? (
-          <span className="px-3 font-mono text-[length:var(--diff-meta-font,11px)] leading-none text-content/40">
+          <span className="px-3 font-mono text-[length:var(--diff-meta-font,11px)] leading-none text-[var(--ui-text-muted)]">
             {line.text}
           </span>
         ) : null}
@@ -1323,7 +1347,11 @@ const DiffLineRow = memo(function DiffLineRow({
     numberFrom === "old" || (numberFrom === undefined && deleted) ? line.oldNumber : line.newNumber;
   const row = added ? "bg-diff-add-bg" : deleted ? "bg-diff-del-bg" : "";
   const gutterTint = added ? "bg-diff-add-gutter" : deleted ? "bg-diff-del-gutter" : "";
-  const gutterText = added ? "text-diff-add-fg" : deleted ? "text-diff-del-fg" : "text-content/35";
+  const gutterText = added
+    ? "text-diff-add-fg"
+    : deleted
+      ? "text-diff-del-fg"
+      : "text-[var(--ui-text-muted)]";
 
   if (lane === "gutter") {
     return (
@@ -1344,7 +1372,11 @@ const DiffLineRow = memo(function DiffLineRow({
           {number ?? ""}
         </span>
         {onComment ? (
-          <button
+          <Button
+            iconOnly
+            label={`Comment on line ${number ?? ""}`.trim()}
+            variant="ghost"
+            motion="none"
             type="button"
             title={`Comment on line ${number ?? ""}`.trim()}
             aria-label={`Comment on line ${number ?? ""}`.trim()}
@@ -1355,27 +1387,29 @@ const DiffLineRow = memo(function DiffLineRow({
                 event.currentTarget.getBoundingClientRect(),
               )
             }
-            className={`diff-hover-comment absolute top-0.5 left-0.5 z-10 grid size-4 place-items-center rounded-[3px] bg-content text-background-base outline-none transition-opacity hover:opacity-80 focus-visible:pointer-events-auto focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-accent/50 ${
+            className={`diff-hover-comment absolute top-0.5 left-0.5 z-10 grid size-4 place-items-center transition-opacity focus-visible:pointer-events-auto focus-visible:opacity-100 ${
               hovered || commenting ? "opacity-100" : "pointer-events-none opacity-0"
             }`}
           >
             <MessageSquarePlus className="size-2.5" strokeWidth={2} />
-          </button>
+          </Button>
         ) : null}
         {onStage ? (
-          <button
+          <Button
+            variant="ghost"
+            motion="none"
             type="button"
             title={t("Stage hunk")}
             aria-label={t("Stage hunk")}
             onClick={() => {
               if (fileId !== undefined && stagePos !== undefined) onStage(fileId, stagePos);
             }}
-            className={`diff-hover-stage absolute top-0.5 left-full z-10 ml-0.5 grid size-4 place-items-center rounded-[3px] bg-on-solid text-[11px] font-bold text-scrim ${
+            className={`diff-hover-stage absolute top-0.5 left-full z-10 ml-0.5 grid size-4 place-items-center ${
               stageVisible ? "opacity-100" : "pointer-events-none opacity-0"
             }`}
           >
             +
-          </button>
+          </Button>
         ) : null}
       </div>
     );
@@ -1394,7 +1428,7 @@ const DiffLineRow = memo(function DiffLineRow({
         ) : null}
       </span>
       <span
-        className={`whitespace-pre pr-3 font-mono text-[length:var(--diff-code-font,12px)] leading-none text-content/80 ${
+        className={`whitespace-pre pr-3 font-mono text-[length:var(--diff-code-font,12px)] leading-none text-[var(--color-content)] ${
           line.kind === "context" ? "opacity-70" : ""
         }`}
       >
@@ -1422,7 +1456,7 @@ function renderLineText(line: UnifiedLine, tokens?: SyntaxToken[]) {
 
 function EmptyBody({ children }: { children: string }) {
   useLocale();
-  return <p className="px-3 py-3 text-[12px] text-content/45">{children}</p>;
+  return <p className="px-3 py-3 text-[12px] text-[var(--ui-text-muted)]">{children}</p>;
 }
 
 function DiffCounts({ additions, deletions }: { additions: number; deletions: number }) {
@@ -1449,16 +1483,18 @@ function IconButton({
 }) {
   useLocale();
   return (
-    <button
+    <Button
+      variant="ghost"
+      motion="none"
       type="button"
       title={title}
       aria-label={title}
       disabled={disabled}
       onClick={onClick}
-      className="grid size-6 place-items-center rounded-md text-content/45 hover:bg-content/10 hover:text-content disabled:opacity-40"
+      className="grid size-6 place-items-center"
     >
       {children}
-    </button>
+    </Button>
   );
 }
 

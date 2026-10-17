@@ -1,3 +1,6 @@
+import { Alert } from "../../../shared/ui/Alert";
+import { Button } from "../../../shared/ui/Button";
+import { TextareaField } from "../../../shared/ui/TextareaField";
 import { providerLabel } from "../../../shared/lib/providerLabel";
 import { t, useLocale } from "../../../shared/i18n";
 import { openUrl } from "@tauri-apps/plugin-opener";
@@ -131,9 +134,9 @@ export function InboxComments({
   if (!thread) {
     if (error) {
       return (
-        <p role="alert" className="text-[12px] text-content/45">
+        <Alert tone="info" role="alert">
           {error}
-        </p>
+        </Alert>
       );
     }
     if (loading) return <CommentsPending />;
@@ -150,18 +153,18 @@ export function InboxComments({
   const moreOn = providerLabel(provider);
 
   return (
-    <section className="flex flex-col gap-3 border-t border-stroke pt-5">
-      <div className="flex items-center gap-2 text-[12px] text-content/50">
+    <section className="flex flex-col gap-3 border-t border-(--ui-tone-neutral-border) pt-5">
+      <div className="flex items-center gap-2 text-[12px] text-(--ui-text-secondary)">
         {thread.commits ? (
           <>
-            <h2 className="text-content/70">{t("Activity")}</h2>
+            <h2 className="text-(--ui-text-secondary)">{t("Activity")}</h2>
             <span>
               {label}
               {commitCount > 0 ? ` · ${commitLabel}` : ""}
             </span>
           </>
         ) : (
-          <h2 className="text-content/70">{label}</h2>
+          <h2 className="text-(--ui-text-secondary)">{label}</h2>
         )}
         {thread.truncated ? (
           <span>
@@ -170,13 +173,16 @@ export function InboxComments({
           </span>
         ) : null}
         {loading ? (
-          <LoaderCircle className="size-3 animate-spin text-content/35" strokeWidth={1.75} />
+          <LoaderCircle
+            className="size-3 animate-spin text-(--ui-text-secondary)"
+            strokeWidth={1.75}
+          />
         ) : null}
       </div>
       {error ? (
-        <p role="alert" className="text-[12px] text-content/45">
+        <Alert tone="info" role="alert">
           {error}
-        </p>
+        </Alert>
       ) : null}
       {thread.commits ? (
         <ol className="flex flex-col">
@@ -276,26 +282,34 @@ export function InboxCommentForm({
   };
 
   return (
-    <form onSubmit={onFormSubmit} className="flex flex-col gap-2 border-t border-stroke pt-5">
+    <form
+      onSubmit={onFormSubmit}
+      className="flex flex-col gap-2 border-t border-(--ui-tone-neutral-border) pt-5"
+    >
       {replyTo ? (
-        <div className="flex items-center gap-2 text-[12px] text-content/50">
+        <div className="flex items-center gap-2 text-[12px] text-(--ui-text-secondary)">
           <span className="min-w-0 truncate">
             {t("Replying to ")}
             {replyTo.author || t("comment")}
           </span>
-          <button
+          <Button
+            iconOnly
+            label={t("Cancel reply")}
+            variant="ghost"
             type="button"
             title={t("Cancel reply")}
             aria-label={t("Cancel reply")}
             onClick={onCancelReply}
-            className="grid size-5 shrink-0 place-items-center rounded-md text-content/45 hover:bg-content/10 hover:text-content"
+            className="shrink-0"
           >
             <X className="size-3" strokeWidth={1.75} />
-          </button>
+          </Button>
         </div>
       ) : null}
-      <div className="rounded-md border border-content/10 bg-content/5 focus-within:border-content/20">
-        <textarea
+      <div className="space-y-1">
+        <TextareaField
+          hideLabel
+          label=""
           ref={field}
           rows={2}
           value={draft}
@@ -307,19 +321,16 @@ export function InboxCommentForm({
           }
           onChange={(event) => setDraft(event.target.value)}
           onKeyDown={onKeyDown}
-          className="max-h-40 w-full resize-none overflow-y-auto bg-transparent px-3 py-2 text-[13px] leading-5 text-content outline-none placeholder:text-content/35 disabled:opacity-40"
+          fieldClassName="w-full"
+          className="resize-none"
         />
         <div className="flex items-center justify-end px-2 pb-2">
-          <button
-            type="submit"
-            disabled={!canPost}
-            className="inline-flex h-7 items-center rounded-md bg-content px-3 text-[12px] text-background-base hover:bg-content/80 disabled:cursor-default disabled:opacity-40"
-          >
+          <Button variant="primary" size="sm" type="submit" disabled={!canPost} loading={posting}>
             {posting ? t("Posting...") : replyTo ? t("Reply") : t("Comment")}
-          </button>
+          </Button>
         </div>
       </div>
-      {error ? <p className="text-[12px] text-danger/90">{error}</p> : null}
+      {error ? <p className="text-[12px] text-(--ui-tone-danger-fg)">{error}</p> : null}
     </form>
   );
 }
@@ -327,7 +338,7 @@ export function InboxCommentForm({
 function CommentsPending() {
   useLocale();
   return (
-    <div className="flex items-center gap-2 border-t border-stroke pt-5 text-[12px] text-content/45">
+    <div className="flex items-center gap-2 border-t border-(--ui-tone-neutral-border) pt-5 text-[12px] text-(--ui-text-secondary)">
       <LoaderCircle className="size-3.5 animate-spin" strokeWidth={1.75} />
       {t("Loading comments")}
     </div>
@@ -369,9 +380,9 @@ function InboxComment({
   const inner = (
     <>
       <header
-        className={`flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-[12px] text-content/50 ${
+        className={`flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-[12px] text-(--ui-text-secondary) ${
           nested ? "" : timeline ? "min-h-9 px-3 py-1.5" : "px-3 py-2"
-        } ${!nested && (hasBody || hasReplies) ? "border-b border-stroke" : ""}`}
+        } ${!nested && (hasBody || hasReplies) ? "border-b border-(--ui-tone-neutral-border)" : ""}`}
       >
         <InboxCommentPerson
           avatar={!timeline}
@@ -382,7 +393,8 @@ function InboxComment({
           <span key={`${part}-${index}`} className="flex min-w-0 items-center gap-2">
             <span aria-hidden>·</span>
             {comment.url && part === time ? (
-              <button
+              <Button
+                variant="ghost"
                 type="button"
                 title={
                   provider === "linear"
@@ -396,19 +408,18 @@ function InboxComment({
                           : t("Open on GitHub")
                 }
                 onClick={() => void openUrl(comment.url)}
-                className="hover:text-content"
               >
                 {part}
-              </button>
+              </Button>
             ) : (
               <span
                 className={
                   comment.state === "APPROVED"
-                    ? "text-success/90"
+                    ? "text-(--ui-tone-success-fg)"
                     : comment.state === "CHANGES_REQUESTED"
-                      ? "text-danger/90"
+                      ? "text-(--ui-tone-danger-fg)"
                       : comment.resolved && part === "Resolved"
-                        ? "text-success/80"
+                        ? "text-(--ui-tone-success-fg)"
                         : "min-w-0 truncate"
                 }
               >
@@ -420,7 +431,8 @@ function InboxComment({
         {canReply ? (
           <span className="flex items-center gap-2">
             <span aria-hidden>·</span>
-            <button
+            <Button
+              variant="ghost"
               type="button"
               onClick={() =>
                 onReply({
@@ -429,15 +441,18 @@ function InboxComment({
                   threadId: (comment.threadId ?? "").trim(),
                 })
               }
-              className="hover:text-content"
             >
               {t("Reply")}
-            </button>
+            </Button>
           </span>
         ) : null}
       </header>
       {hasBody ? (
-        <SurfaceSelection cwd={cwd} contentVersion={comment.body} className={nested ? "mt-2" : "px-3 py-2.5"}>
+        <SurfaceSelection
+          cwd={cwd}
+          contentVersion={comment.body}
+          className={nested ? "mt-2" : "px-3 py-2.5"}
+        >
           {timeline ? (
             <CollapsibleBody>
               <AgentMarkdown
@@ -458,9 +473,12 @@ function InboxComment({
         </SurfaceSelection>
       ) : null}
       {hasReplies ? (
-        <div className="border-t border-stroke px-3">
+        <div className="border-t border-(--ui-tone-neutral-border) px-3">
           {comment.replies.map((reply, index) => (
-            <div key={reply.id} className={`py-2.5 ${index > 0 ? "border-t border-stroke" : ""}`}>
+            <div
+              key={reply.id}
+              className={`py-2.5 ${index > 0 ? "border-t border-(--ui-tone-neutral-border)" : ""}`}
+            >
               <InboxComment
                 comment={reply}
                 cwd={cwd}
@@ -478,7 +496,7 @@ function InboxComment({
 
   if (nested) return <article>{inner}</article>;
   return (
-    <article className="overflow-hidden rounded-md border border-content/10 bg-content/5">
+    <article className="overflow-hidden rounded-md border border-(--ui-tone-neutral-border) bg-(--ui-surface-raised)">
       {inner}
     </article>
   );
@@ -519,14 +537,15 @@ function CollapsibleBody({ children }: { children: ReactNode }) {
         <div ref={inner}>{children}</div>
       </div>
       {overflows ? (
-        <button
+        <Button
+          variant="ghost"
           type="button"
           aria-expanded={expanded}
           onClick={() => setExpanded((current) => !current)}
-          className="mt-1.5 text-[12px] text-content/50 hover:text-content"
+          className="mt-1.5"
         >
           {expanded ? t("Show less") : t("Show more")}
-        </button>
+        </Button>
       ) : null}
     </>
   );
@@ -586,9 +605,9 @@ function TimelineRail({
   useLocale();
   return (
     <div aria-hidden className="flex w-5 shrink-0 flex-col items-center">
-      <span className={`w-px shrink-0 ${lead} ${first ? "" : "bg-content/10"}`} />
+      <span className={`w-px shrink-0 ${lead} ${first ? "" : "bg-(--ui-surface-raised)"}`} />
       <div className="flex size-5 shrink-0 items-center justify-center">{children}</div>
-      {last ? null : <span className="w-px flex-1 bg-content/10" />}
+      {last ? null : <span className="w-px flex-1 bg-(--ui-surface-raised)" />}
     </div>
   );
 }
@@ -633,10 +652,10 @@ function InboxTimelineComment({
           <Icon
             className={`size-4 ${
               state === "APPROVED"
-                ? "text-success/90"
+                ? "text-(--ui-tone-success-fg)"
                 : state === "CHANGES_REQUESTED"
-                  ? "text-danger/90"
-                  : "text-content/45"
+                  ? "text-(--ui-tone-danger-fg)"
+                  : "text-(--ui-text-secondary)"
             }`}
             strokeWidth={1.75}
           />
@@ -715,8 +734,8 @@ function InboxCommitRun({
 function TimelineEventLine({ name, action, time }: { name: string; action: string; time: string }) {
   useLocale();
   return (
-    <p className="flex h-5 min-w-0 items-center gap-1.5 text-[12px] text-content/50">
-      <span className="min-w-0 truncate font-medium text-content">{name}</span>
+    <p className="flex h-5 min-w-0 items-center gap-1.5 text-[12px] text-(--ui-text-secondary)">
+      <span className="min-w-0 truncate font-medium text-(--ui-tone-neutral-fg)">{name}</span>
       <span className="shrink-0">{action}</span>
       {time ? (
         <>
@@ -734,25 +753,26 @@ function InboxCommitStop({ commit, last }: { commit: InboxCommit; last: boolean 
     <li className="flex gap-3">
       {/* The rail runs through commit dots, so a push reads as one stretch. */}
       <div aria-hidden className="flex w-5 shrink-0 flex-col items-center">
-        <span className="h-1.5 w-px shrink-0 bg-content/10" />
-        <span className="size-2 shrink-0 rounded-full border-[1.5px] border-content/35" />
-        {last ? null : <span className="w-px flex-1 bg-content/10" />}
+        <span className="h-1.5 w-px shrink-0 bg-(--ui-surface-raised)" />
+        <span className="size-2 shrink-0 rounded-full border-[1.5px] border-(--ui-tone-neutral-border)" />
+        {last ? null : <span className="w-px flex-1 bg-(--ui-surface-raised)" />}
       </div>
       <div className={`min-w-0 flex-1 ${last ? "" : TIMELINE_GAP}`}>
-        <button
+        <Button
+          variant="item"
           type="button"
           title={commit.url ? t("Open commit") : commit.messageHeadline}
           disabled={!commit.url}
           onClick={() => void openUrl(commit.url)}
-          className="group flex h-5 w-full min-w-0 items-center gap-3 text-left text-[12px]"
+          className="w-full min-w-0 text-left"
         >
-          <span className="min-w-0 flex-1 truncate text-content/70 group-hover:text-content group-disabled:text-content/70">
+          <span className="min-w-0 flex-1 truncate text-(--ui-text-secondary) group-hover:text-(--ui-tone-neutral-fg) group-disabled:text-(--ui-text-secondary)">
             {commit.messageHeadline}
           </span>
-          <span className="shrink-0 font-mono text-[11px] text-content/35 group-hover:text-content/60">
+          <span className="shrink-0 font-mono text-[11px] text-(--ui-text-secondary) group-hover:text-(--ui-text-secondary)">
             {commit.oid.slice(0, 7)}
           </span>
-        </button>
+        </Button>
       </div>
     </li>
   );
@@ -776,12 +796,12 @@ function InboxCommentPerson({
 }) {
   useLocale();
   if (!avatar) {
-    return <span className="min-w-0 truncate font-medium text-content">{name}</span>;
+    return <span className="min-w-0 truncate font-medium text-(--ui-tone-neutral-fg)">{name}</span>;
   }
   return (
     <span className="inline-flex min-w-0 items-center gap-1.5">
       <InboxAvatar name={name} avatarUrl={avatarUrl} />
-      <span className="min-w-0 truncate font-medium text-content">{name}</span>
+      <span className="min-w-0 truncate font-medium text-(--ui-tone-neutral-fg)">{name}</span>
     </span>
   );
 }
@@ -804,12 +824,12 @@ function InboxAvatar({ name, avatarUrl }: { name: string; avatarUrl: string }) {
       referrerPolicy="no-referrer"
       draggable={false}
       onError={() => setFailed(true)}
-      className="size-5 shrink-0 rounded-full bg-content/10 object-cover"
+      className="size-5 shrink-0 rounded-full bg-(--ui-surface-raised) object-cover"
     />
   ) : (
     <span
       aria-hidden
-      className="grid size-5 shrink-0 place-items-center rounded-full bg-content/12 text-[10px] font-medium text-content/55"
+      className="grid size-5 shrink-0 place-items-center rounded-full bg-(--ui-surface-raised) text-[10px] font-medium text-(--ui-text-secondary)"
     >
       {initial}
     </span>

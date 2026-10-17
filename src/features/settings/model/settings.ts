@@ -769,6 +769,14 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
     keywords: "zoom font size bigger smaller ui",
   },
   {
+    id: "control-density",
+    section: "appearance",
+    get label() {
+      return t("Control density");
+    },
+    keywords: "compact comfortable touch controls target size spacing density",
+  },
+  {
     id: "collapsed-project-rail",
     section: "appearance",
     get label() {

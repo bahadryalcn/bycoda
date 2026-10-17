@@ -417,7 +417,7 @@ describe("Composer question focus", () => {
   });
 
   it.each([false, true])(
-    "starts fresh without sending /clear to Claude (busy=%s)",
+    "clears the current conversation without opening a tab (busy=%s)",
     async (busy) => {
       const onNewSession = vi.fn();
       const onSubmit = vi.fn();
@@ -444,15 +444,20 @@ describe("Composer question focus", () => {
           new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }),
         ),
       );
-      expect(onNewSession).toHaveBeenCalledExactlyOnceWith({ preserveSettings: true });
-      expect(onSubmit).not.toHaveBeenCalled();
-      expect(textarea.value).toBe("");
-      expect(getComposerDraft("clear-command")?.text ?? "").toBe("");
+      expect(onNewSession).not.toHaveBeenCalled();
+      if (busy) {
+        expect(onSubmit).not.toHaveBeenCalled();
+        expect(textarea.value).toBe("/clear");
+      } else {
+        expect(onSubmit).toHaveBeenCalledExactlyOnceWith("/clear", [], { intent: "default" });
+        expect(textarea.value).toBe("");
+        expect(getComposerDraft("clear-command")?.text ?? "").toBe("");
+      }
     },
   );
 
-  it("keeps /clear unsent when fresh conversations are unavailable", async () => {
-    const onSubmit = vi.fn();
+  it("keeps /clear when the session rejects clearing", async () => {
+    const onSubmit = vi.fn(() => false);
     await renderComposer(undefined, vi.fn(), false, 0, "/clear", undefined, onSubmit);
     const textarea = document.querySelector("textarea")!;
     await act(async () =>
@@ -460,9 +465,9 @@ describe("Composer question focus", () => {
         new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }),
       ),
     );
-    expect(onSubmit).not.toHaveBeenCalled();
+    expect(onSubmit).toHaveBeenCalledWith("/clear", [], { intent: "default" });
     expect(textarea.value).toBe("/clear");
-    expect(document.body.textContent).toContain("Starting a fresh conversation is unavailable");
+    expect(document.body.textContent).toContain("Stop the current turn");
   });
 
   async function typeInto(textarea: HTMLTextAreaElement, value: string) {
@@ -677,8 +682,8 @@ describe("Composer question focus", () => {
     const list = document.querySelector<HTMLElement>('[data-mcp-picker] [role="listbox"]')!;
     expect(list.querySelectorAll('[role="option"]')).toHaveLength(6);
     expect(list.classList.contains("max-h-[min(184px,45vh)]")).toBe(true);
-    expect(list.querySelector('[role="option"]')?.classList.contains("h-11")).toBe(true);
-    expect(document.querySelector("[data-mcp-picker]")?.className).toContain("bg-content/5");
+    expect(list.querySelector('[role="option"]')?.className).toContain("bycoda-arc");
+    expect(document.querySelector("[data-mcp-picker]")?.className).toContain("--ui-surface-raised");
     const searchInput = document.querySelector<HTMLInputElement>(
       '[aria-label="Search MCP servers"]',
     )!;

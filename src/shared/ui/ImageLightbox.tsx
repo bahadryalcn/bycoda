@@ -134,16 +134,20 @@ export function ImageLightbox({ src, alt, onClose }: Props) {
           </Button>
         ) : null}
       </div>
-      <button
+      <Button
         ref={closeRef}
         type="button"
-        aria-label={t("Close image preview")}
-        title={t("Close")}
+        iconOnly
+        label={t("Close image preview")}
+        tooltip={t("Close")}
+        variant="secondary"
+        shape="pill"
+        size="lg"
         onClick={onClose}
-        className="ui-icon-hit absolute [inset-inline-end:1rem] [inset-block-start:1rem] grid size-9 place-items-center rounded-full border border-on-solid/15 bg-scrim/45 text-on-solid/80 shadow-lg backdrop-blur-md hover:bg-scrim/65 hover:text-on-solid focus-visible:outline-2 focus-visible:outline-on-solid/80"
+        className="absolute [inset-inline-end:1rem] [inset-block-start:1rem]"
       >
         <X className="size-4" strokeWidth={2} />
-      </button>
+      </Button>
     </div>,
     document.body,
   );

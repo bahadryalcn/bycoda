@@ -352,9 +352,9 @@ it("renders assigned projects in persistent collapsible groups", async () => {
   expect(groupRow.classList).toContain("project-reorder-item");
   expect(groupRow.classList).toContain("h-8");
   expect(groupRow.classList).toContain("px-2");
-  expect(button("Client work group options").className).toBe(
-    container.querySelector<HTMLButtonElement>('button[aria-label="Project options"]')!.className,
-  );
+  const options = button("Client work group options");
+  expect(options.getAttribute("aria-haspopup")).toBe("menu");
+  expect(options.closest("[data-project-group]")).toBe(group);
 
   const header = button("Client work, 1 project");
   expect(header.getAttribute("aria-expanded")).toBe("true");

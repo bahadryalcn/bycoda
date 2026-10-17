@@ -6,7 +6,7 @@ test("all recovered projects remain searchable, selectable and reopenable", asyn
   await expect(dialog).toBeVisible();
   await expect(dialog.getByRole("checkbox")).toHaveCount(6);
   await expect(dialog.getByRole("status")).toContainText("1 Failed");
-  await dialog.getByRole("button", { name: "All sessions" }).click();
+  await dialog.getByRole("radio", { name: /All sessions/ }).click();
   await expect(dialog.getByRole("checkbox")).toHaveCount(24);
   await dialog.getByRole("textbox", { name: "Search recovered sessions" }).fill("conversation 24");
   await expect(dialog.getByRole("checkbox")).toHaveCount(1);
@@ -47,7 +47,9 @@ test("cleanup updates the list and survives closing the dialog", async ({ page }
   await page.goto("/tests/browser/session-recovery.html");
   const dialog = page.getByRole("dialog", { name: "Recovered sessions" });
   await dialog.getByRole("button", { name: "Clear completed", exact: true }).click();
-  await dialog.getByRole("button", { name: "All sessions" }).click();
+  const allSessions = dialog.getByRole("radio", { name: /All sessions/ });
+  await allSessions.click();
+  await expect(allSessions).toBeChecked();
   await expect(dialog.getByRole("checkbox")).toHaveCount(6);
   await dialog.getByRole("checkbox").first().check();
   await dialog.getByRole("button", { name: "Remove selected", exact: true }).click();
@@ -149,3 +151,36 @@ test("compact navigation keeps tabs reachable and recovery count above its icon"
     page.getByRole("button", { name: "Recovered sessions (40)", exact: true }),
   ).toHaveCount(0);
 });
+for (const [theme, width] of [
+  ["light", 390],
+  ["dark", 1000],
+] as const) {
+  test(`shared recovery field ${theme} ${width}`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 900 });
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await page.goto(`/tests/browser/session-recovery.html?theme=${theme}`);
+    const dialog = page.getByRole("dialog", { name: "Recovered sessions" });
+    const field = dialog.getByRole("textbox", { name: "Search recovered sessions", exact: true });
+    await field.focus();
+    await expect(field).toBeFocused();
+    await field.fill("conversation 24");
+    await dialog.getByRole("radio", { name: /All sessions/ }).click();
+    await expect(dialog.getByRole("checkbox")).toHaveCount(1);
+    await dialog.getByRole("button", { name: "Clear search", exact: true }).click();
+    await expect(field).toHaveValue("");
+    await expect(field).toBeFocused();
+    await expect(dialog.getByRole("checkbox")).toHaveCount(24);
+    const box = (await field.boundingBox())!;
+    expect(box.width).toBeGreaterThan(100);
+    expect(box.x).toBeGreaterThanOrEqual(0);
+    expect(box.x + box.width).toBeLessThanOrEqual(width);
+    expect(box.height).toBeGreaterThanOrEqual(24);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+      true,
+    );
+    await page.screenshot({
+      path: `temp/verification/2026-10-16-ui-system/W7-SHELL-recovery-${theme}-${width}.png`,
+      animations: "disabled",
+    });
+  });
+}

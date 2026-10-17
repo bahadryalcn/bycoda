@@ -1,11 +1,12 @@
+import { Alert } from "../../shared/ui/Alert";
+import { Button } from "../../shared/ui/Button";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { t, useLocale } from "../../shared/i18n/technical";
 import type { ConversationTools } from "./SessionHostTools";
 import { lazySurface } from "../../shared/ui/lazySurface";
-import { Popover } from "../../shared/ui/Popover";
+import { DropdownMenu } from "../../shared/ui/DropdownMenu";
 import { useDragResize } from "../../shared/hooks/useDragResize";
 import {
-  Check,
   CircleX,
   ExternalLink,
   PanelBottom,
@@ -48,52 +49,40 @@ function PlacementButton({
   const { Icon, label } = placements[value];
   return (
     <>
-      <button
+      <Button
+        variant="ghost"
+        size="sm"
         ref={trigger}
         type="button"
         className="tools-workspace-icon"
         aria-label={`${t("Placement")}: ${t(label)}`}
         title={`${t("Placement")}: ${t(label)}`}
-        aria-haspopup="dialog"
+        aria-haspopup="menu"
         aria-expanded={open}
         onClick={() => setOpen((previous) => !previous)}
       >
         <Icon className="size-4" aria-hidden />
-      </button>
+      </Button>
       {open ? (
-        <Popover
+        <DropdownMenu
           anchor={trigger}
-          side="bottom"
+          label={t("Placement")}
+          returnFocusRef={trigger}
           align="end"
-          width={190}
-          role="dialog"
-          aria-label={t("Placement")}
-          className="tools-workspace-placement-menu font-sans"
-          onDismiss={(reason) => {
-            setOpen(false);
-            if (reason === "escape") trigger.current?.focus();
-          }}
-        >
-          {(Object.keys(placements) as Placement[]).map((side) => {
+          onClose={() => setOpen(false)}
+          onPick={(side) => onChange(side as Placement)}
+          items={(Object.keys(placements) as Placement[]).map((side) => {
             const option = placements[side];
-            return (
-              <button
-                key={side}
-                type="button"
-                aria-pressed={side === value}
-                onClick={() => {
-                  onChange(side);
-                  setOpen(false);
-                  trigger.current?.focus();
-                }}
-              >
-                <option.Icon className="size-4" aria-hidden />
-                <span>{t(option.label)}</span>
-                {side === value ? <Check className="size-3.5" aria-hidden /> : null}
-              </button>
-            );
+            return {
+              kind: "item",
+              id: side,
+              label: t(option.label),
+              icon: <option.Icon className="size-4" aria-hidden />,
+              checked: side === value,
+              selectionRole: "radio",
+            };
           })}
-        </Popover>
+        />
       ) : null}
     </>
   );
@@ -310,7 +299,11 @@ export function ToolsWorkspace({ children }: { children: ReactNode }) {
       <div className="tools-workspace-main">{children}</div>
       {panes.length ? (
         <ToolDock placement={placement}>
-          {error ? <p role="alert">{error}</p> : null}
+          {error ? (
+            <Alert tone="danger" role="alert">
+              {error}
+            </Alert>
+          ) : null}
           <div className="tools-workspace-panes">
             {panes.map((pane) => (
               <section className="tools-workspace-pane" key={pane.id}>
@@ -321,7 +314,9 @@ export function ToolsWorkspace({ children }: { children: ReactNode }) {
                     <span>{pane.title}</span>
                   </div>
                   <PlacementButton value={placement} onChange={setPlacement} />
-                  <button
+                  <Button
+                    variant="ghost"
+                    size="sm"
                     type="button"
                     className="tools-workspace-icon"
                     aria-label={t("Open in new window")}
@@ -336,9 +331,11 @@ export function ToolsWorkspace({ children }: { children: ReactNode }) {
                     }}
                   >
                     <ExternalLink className="size-4" aria-hidden />
-                  </button>
+                  </Button>
                   {panes.length > 1 ? (
-                    <button
+                    <Button
+                      variant="ghost"
+                      size="sm"
                       type="button"
                       className="tools-workspace-icon"
                       aria-label={t("Close panels")}
@@ -346,9 +343,11 @@ export function ToolsWorkspace({ children }: { children: ReactNode }) {
                       onClick={() => setPanes([])}
                     >
                       <CircleX className="size-4" aria-hidden />
-                    </button>
+                    </Button>
                   ) : null}
-                  <button
+                  <Button
+                    variant="ghost"
+                    size="sm"
                     type="button"
                     className="tools-workspace-icon"
                     onClick={() => close(pane.id)}
@@ -356,7 +355,7 @@ export function ToolsWorkspace({ children }: { children: ReactNode }) {
                     title={t("Close panel")}
                   >
                     <X className="size-4" aria-hidden />
-                  </button>
+                  </Button>
                 </header>
                 <SessionHostTools
                   {...pane}

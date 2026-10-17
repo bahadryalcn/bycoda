@@ -24,7 +24,7 @@ window.addEventListener("keydown", handleEditorFindKey, true);
 document.body.style.cssText =
   "margin:0;height:100vh;background:var(--ui-surface);color:var(--color-content)";
 createRoot(document.getElementById("root")!).render(
-  <main className="flex h-screen min-w-0 flex-col">
+  <main className="flex min-w-0 flex-col" style={{ height: "100dvh" }}>
     <CodeMirrorEditor
       path="/fixture/prices.txt"
       cwd="/fixture"

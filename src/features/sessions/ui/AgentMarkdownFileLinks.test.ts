@@ -3,9 +3,30 @@ import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AgentMarkdown } from "./AgentMarkdown";
+import * as filesystem from "../../../platform/tauri/fs";
 
 const copy = vi.hoisted(() => vi.fn(async (_text: string) => {}));
 vi.mock("../../../platform/tauri/clipboard", () => ({ copyText: copy }));
+const existingPaths = new Set([
+  "G:/My Projects/ayşe/özet.md",
+  "G:/My Projects/ayşe",
+  "/repo/My Project/özet.md",
+  "/repo/src",
+  "/Users/me/projects/shop/.artifacts/reports/assessment-pdf/prs-tr.pdf",
+  "/Users/me/projects/shop/.artifacts/reports/assessment-pdf/ancestry-tr.pdf",
+  "G:/Projects/app/output/previews/pacing-character.html",
+  "remote://mac/Users/me/My Project/özet.htm",
+  "G:/My Project/Türkçe/özet.md",
+]);
+vi.mock("../../../platform/tauri/fs", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../../platform/tauri/fs")>()),
+  statFiles: async (paths: string[]) =>
+    paths.map((path) => ({
+      path,
+      mtimeMs: existingPaths.has(path) ? 1 : null,
+      isDir: path === "/repo/src" || path === "G:/My Projects/ayşe",
+    })),
+}));
 
 describe("markdown file navigation", () => {
   let root: Root;
@@ -25,6 +46,7 @@ describe("markdown file navigation", () => {
     await act(async () => root.unmount());
     container.remove();
     vi.unstubAllGlobals();
+    vi.restoreAllMocks();
   });
 
   async function render(text: string, cwd = "/repo") {
@@ -38,6 +60,42 @@ describe("markdown file navigation", () => {
       ),
     );
   }
+
+  it.each(["/clear", "/help"])("keeps slash command %s as ordinary code", async (command) => {
+    await render(`\`${command}\``);
+    expect(container.querySelector('code[role="link"]')).toBeNull();
+    expect(container.querySelector('[aria-label="Open containing folder"]')).toBeNull();
+    expect(onOpenFile).not.toHaveBeenCalled();
+  });
+
+  it("preserves explicit editor links without revealing absent files", async () => {
+    await render("[Missing](/repo/missing-verification-file.ts)");
+    expect(container.querySelector('[aria-label="Open containing folder"]')).toBeNull();
+    await act(async () => container.querySelector<HTMLAnchorElement>("a")!.click());
+    expect(onOpenFile).toHaveBeenCalledWith("/repo/missing-verification-file.ts", undefined);
+  });
+
+  it("hides a prior folder action while the replacement path is unverified", async () => {
+    await render("[Existing](<G:/My Projects/ayşe/özet.md>)");
+    expect(container.querySelector('[aria-label="Open containing folder"]')).not.toBeNull();
+    let resolveMetadata!: (
+      value: { path: string; mtimeMs: number | null; isDir: boolean }[],
+    ) => void;
+    vi.spyOn(filesystem, "statFiles").mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveMetadata = resolve;
+        }),
+    );
+    await render("[Checking](/repo/pending-verification-file.ts)");
+    expect(container.querySelector('[aria-label="Open containing folder"]')).toBeNull();
+    await act(async () =>
+      resolveMetadata([
+        { path: "/repo/pending-verification-file.ts", mtimeMs: null, isDir: false },
+      ]),
+    );
+    expect(container.querySelector('[aria-label="Open containing folder"]')).toBeNull();
+  });
 
   it("copies table email addresses without file icons or folder actions", async () => {
     const emails = [

@@ -1,3 +1,5 @@
+import { Alert } from "../../../shared/ui/Alert";
+import { Button } from "../../../shared/ui/Button";
 import { projectDisplayName } from "../../projects/model/projectNames";
 import { t, useLocale } from "../../../shared/i18n";
 import { useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
@@ -71,72 +73,87 @@ export function ReminderNotices({
         ref={panelRef}
         aria-label={t("Due reminders")}
         style={{ zIndex: LAYER.popover - 1 }}
-        className="fixed top-3 right-3 w-[min(320px,calc(100vw-24px))] overflow-hidden rounded-xl border border-content/15 bg-background-base/95 text-content shadow-xl backdrop-blur-xl"
+        className="fixed top-3 right-3 w-[min(320px,calc(100vw-24px))] overflow-hidden rounded-xl border border-(--ui-tone-neutral-border) bg-(--ui-surface) text-(--ui-tone-neutral-fg) shadow-xl backdrop-blur-xl"
       >
-        <div className="flex items-center gap-2 border-b border-stroke px-3 py-2.5">
-          <Clock className="size-3.5 text-warning" strokeWidth={1.75} />
+        <div className="flex items-center gap-2 border-b border-(--ui-tone-neutral-border) px-3 py-2.5">
+          <Clock className="size-3.5 text-(--ui-tone-warning-fg)" strokeWidth={1.75} />
           <span className="flex-1 text-[12px] font-semibold">{t("Due reminders")}</span>
-          <span role="status" className="text-[11px] text-content/50">
+          <span role="status" className="text-[11px] text-(--ui-text-secondary)">
             {reminders.length || ""}
           </span>
         </div>
         {error ? (
-          <div role="alert" className="px-3 py-2 text-[12px] text-content/70">
+          <Alert tone="info" role="alert">
             {t("Couldn’t load reminders.")}{" "}
-            <button className="underline" onClick={onRetry}>
+            <Button variant="ghost" type="submit" onClick={onRetry}>
               {t("Retry")}
-            </button>
-          </div>
+            </Button>
+          </Alert>
         ) : null}
         <div className="max-h-[min(320px,50vh)] overflow-y-auto overscroll-none divide-y divide-stroke">
           {reminders.map((reminder) => (
             <article key={reminder.sessionId} className="px-3 py-2.5">
-              <button className="block w-full text-left" onClick={() => onOpen(reminder)}>
+              <Button
+                fullWidth
+                variant="item"
+                type="submit"
+                className="block w-full text-left"
+                onClick={() => onOpen(reminder)}
+              >
                 <span className="block truncate text-[13px] font-medium hover:underline">
                   {sessionDisplayTitle(reminder.title, reminder.harness)}
                 </span>
                 <span
-                  className="mt-1 block truncate text-[11px] text-content/50"
+                  className="mt-1 block truncate text-[11px] text-(--ui-text-secondary)"
                   title={formatReminderTime(reminder.dueAt)}
                 >
                   {projectDisplayName(reminder.cwd)} · {formatReminderTime(reminder.dueAt)}
                 </span>
-              </button>
+              </Button>
               <div className="mt-2 flex items-center gap-1.5 text-[11px]">
-                <button
-                  className="rounded-md bg-content/10 px-2 py-1 hover:bg-content/15"
+                <Button
+                  variant="ghost"
+                  type="submit"
+
                   onClick={() => onOpen(reminder)}
                 >
                   {t("Open session")}
-                </button>
-                <button
+                </Button>
+                <Button
+                  variant="ghost"
+                  type="submit"
                   aria-haspopup="menu"
                   aria-expanded={snooze?.reminder.sessionId === reminder.sessionId}
-                  className="rounded-md px-2 py-1 text-content/65 hover:bg-content/10"
+
                   onClick={(event) => {
                     const rect = event.currentTarget.getBoundingClientRect();
                     setSnooze({ reminder, x: rect.left, y: rect.bottom + 4 });
                   }}
                 >
                   {t("Snooze")}
-                </button>
-                <button
-                  className="ml-auto rounded-md px-2 py-1 text-content/50 hover:bg-content/10"
+                </Button>
+                <Button
+                  variant="ghost"
+                  type="submit"
+                  className="ml-auto"
                   onClick={() => onDismiss([reminder.sessionId], reminder.dueAt)}
                 >
                   {t("Dismiss")}
-                </button>
+                </Button>
               </div>
             </article>
           ))}
         </div>
         {!notifications && reminders.length ? (
-          <button
-            className="w-full border-t border-stroke px-3 py-2 text-left text-[11px] text-content/50 hover:text-content"
+          <Button
+            fullWidth
+            variant="item"
+            type="submit"
+            className="w-full text-left"
             onClick={onOpenSettings}
           >
             {t("Desktop alerts are off. Enable in Settings.")}
-          </button>
+          </Button>
         ) : null}
       </section>
       {snooze &&

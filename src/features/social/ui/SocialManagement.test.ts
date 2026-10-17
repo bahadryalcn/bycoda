@@ -1,8 +1,10 @@
+import { chooseSocialValue } from "./socialTestControls";
 // @vitest-environment happy-dom
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Audience, Rules } from "./SocialManagement";
+import { SocialBulkComposer } from "./SocialBulkComposer";
 import { Campaigns as QueryCampaigns } from "./SocialCampaigns";
 import { withQueryClient } from "../../../../tests/browser/queryTest";
 import type { SocialClient } from "../model/socialClient";
@@ -148,17 +150,18 @@ function outreach(): HTMLElement {
 function control(
   label: string,
   scope: ParentNode = container,
-): HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement {
+): HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement | HTMLButtonElement {
   const element = Array.from(scope.querySelectorAll("label"))
     .find((item) => item.textContent?.trim().startsWith(label))
-    ?.querySelector("input,select,textarea");
+    ?.querySelector('input,select,textarea,button[aria-haspopup="dialog"]');
   expect(element, `Missing control: ${label}`).toBeTruthy();
   return element as HTMLInputElement;
 }
 async function change(
-  element: HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement,
+  element: HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement | HTMLButtonElement,
   value: string,
 ) {
+  if (element instanceof HTMLButtonElement) return chooseSocialValue(element, value);
   const prototype =
     element instanceof HTMLSelectElement
       ? HTMLSelectElement.prototype
@@ -191,6 +194,52 @@ async function submit(element: HTMLFormElement) {
 }
 
 describe("Social management workflows", () => {
+  it("uses the searchable required bulk project while retaining the empty-target preparation gate", async () => {
+    const value = snapshot();
+    await act(async () =>
+      root.render(createElement(SocialBulkComposer, { ...props(value), targets: [] })),
+    );
+    const project = container.querySelector<HTMLSelectElement>("select[required]")!;
+    expect(project.value).toBe("a");
+    await chooseSocialValue(
+      container.querySelector<HTMLButtonElement>('button[aria-label^="Proje:"]')!,
+      "b",
+    );
+    expect(project.value).toBe("b");
+    expect(
+      Array.from(container.querySelectorAll<HTMLButtonElement>('button[type="submit"]')).every(
+        (button) => button.disabled,
+      ),
+    ).toBe(true);
+    expect(request.mock.calls.some((call) => call[0] !== "policy.get")).toBe(false);
+  });
+  it("keeps the searchable contact account uncontrolled, named and resettable, including the disabled edit payload", async () => {
+    const value = snapshot();
+    value.accounts.push({ ...value.accounts[0], id: "second", name: "Second account" });
+    await render(Audience, value);
+    const create = form("Yeni kişi");
+    const account = create.querySelector<HTMLSelectElement>('select[name="account"]')!;
+    expect(account.required).toBe(true);
+    expect(account.value).toBe("account");
+    await chooseSocialValue(
+      create.querySelector<HTMLButtonElement>('button[aria-label^="Hesap:"]')!,
+      "second",
+    );
+    expect(new FormData(create).get("account")).toBe("second");
+    await act(async () => create.reset());
+    expect(account.value).toBe("account");
+    expect(create.querySelector('button[aria-label^="Hesap:"]')?.textContent).toContain(
+      "Test account",
+    );
+    await click("Test contact");
+    const edit = form("Kişiyi güncelle");
+    expect(edit.querySelector<HTMLSelectElement>('select[name="account"]')?.disabled).toBe(true);
+    expect(edit.querySelector<HTMLButtonElement>('button[aria-label^="Hesap:"]')?.disabled).toBe(
+      true,
+    );
+    expect(edit.querySelectorAll('input[type="hidden"][name="account"]')).toHaveLength(1);
+    expect(new FormData(edit).get("account")).toBe("account");
+  });
   it("keeps unsaved profile fields separate for each project and preserves failed fact edits", async () => {
     await render(Campaigns, snapshot());
     const profileDetails = Array.from(container.querySelectorAll("details")).find(
@@ -407,7 +456,17 @@ describe("Social management workflows", () => {
   it("cannot save an automation with a fact removed from its project", async () => {
     const value = snapshot();
     await render(Rules, value);
-    await change(control("İzin verilen yanıt bilgisi"), "fact-a");
+    const factLabel = Array.from(container.querySelectorAll("label")).find((item) =>
+      item.textContent?.trim().startsWith("İzin verilen yanıt bilgisi"),
+    )!;
+    const factSelect = factLabel.querySelector("select")!;
+    expect(factSelect.required).toBe(true);
+    expect(factSelect.value).toBe("");
+    await chooseSocialValue(
+      factLabel.querySelector<HTMLButtonElement>('button[aria-haspopup="dialog"]')!,
+      "fact-a",
+    );
+    expect(factSelect.value).toBe("fact-a");
     const save = () =>
       Array.from(container.querySelectorAll("button")).find(
         (item) => item.textContent === "Durdurulmuş kuralı kaydet",

@@ -1,3 +1,4 @@
+import { Button } from "../../../shared/ui/Button";
 import { valueHash } from "../../../shared/lib/valueHash";
 import { t, useLocale } from "../../../shared/i18n";
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
@@ -385,9 +386,13 @@ function CrewStage({
             {artStatus === "loading" ? (
               t("Loading crew…")
             ) : (
-              <button type="button" onClick={() => setArtRetry((value) => value + 1)}>
+              <Button
+                variant="ghost"
+                type="button"
+                onClick={() => setArtRetry((value) => value + 1)}
+              >
                 {t("Retry loading crew")}
-              </button>
+              </Button>
             )}
           </div>
         )}

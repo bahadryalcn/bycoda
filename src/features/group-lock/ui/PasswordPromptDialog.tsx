@@ -4,6 +4,8 @@ import { Modal } from "../../../shared/ui/Modal";
 import { formatCooldown, WRONG_PASSWORD_DELAY_MS } from "../model/attemptThrottle";
 import { lockCooldownMs, type VerifyResult } from "../model/groupLock";
 import { PasswordField } from "./PasswordField";
+import { Button } from "../../../shared/ui/Button";
+import { Alert } from "../../../shared/ui/Alert";
 
 /** What to tell the user about a refused password, or `null` when it was accepted. */
 export function verifyFailureMessage(result: VerifyResult, cooldownMs: number): string | null {
@@ -122,29 +124,23 @@ export function PasswordPromptDialog({
           describedBy={message ? "lock-password-error" : undefined}
         />
         {message ? (
-          <p id="lock-password-error" role="alert" className="text-[12px] text-danger">
+          <Alert id="lock-password-error" tone="danger">
             {message}
-          </p>
+          </Alert>
         ) : null}
         <div className="flex justify-end gap-2">
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-md px-3 py-1.5 text-[12px] text-content/70 hover:bg-content/8 hover:text-content"
-          >
+          <Button type="button" onClick={onClose} variant="ghost">
             {t("Cancel")}
-          </button>
-          <button
+          </Button>
+          <Button
             type="submit"
             disabled={busy || cooldown.remainingMs > 0}
-            className={`rounded-md px-3 py-1.5 text-[12px] font-medium disabled:opacity-40 ${
-              danger
-                ? "bg-danger/20 text-danger hover:bg-danger/30"
-                : "bg-selection text-content hover:bg-selection-hover"
-            }`}
+            variant="primary"
+            tone={danger ? "danger" : "neutral"}
+            loading={busy}
           >
             {submitLabel}
-          </button>
+          </Button>
         </div>
       </form>
     </Modal>

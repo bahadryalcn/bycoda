@@ -1,3 +1,4 @@
+import { Button } from "../../../shared/ui/Button";
 import { SearchInput } from "../../../shared/ui/SearchInput";
 import { t, useLocale } from "../../../shared/i18n/git";
 import { useEffect, useRef, useState } from "react";
@@ -156,7 +157,9 @@ export function SidebarWorktreeSwitcher({
   const title = focus ? (focused?.branch ?? focus.branch ?? "Detached worktree") : "Workspace";
   return (
     <>
-      <button
+      <Button
+        variant="item"
+        motion="none"
         ref={anchor}
         type="button"
         data-tauri-drag-region="false"
@@ -179,18 +182,18 @@ export function SidebarWorktreeSwitcher({
           event.preventDefault();
           openPicker();
         }}
-        className="-ml-1.5 flex h-6.5 min-w-0 max-w-full items-center gap-2 rounded-md px-1.5 text-sm font-medium leading-tight hover:bg-content/8 aria-expanded:bg-content/8"
+        className="-ml-1.5 flex h-6.5 min-w-0 max-w-full items-center gap-2 leading-tight"
       >
         <span className="min-w-0 truncate">{title}</span>
         {pending || creating ? (
           <Loader
             aria-label={creating ? t("Creating worktree") : t("Switching working copy")}
-            className="size-3.5 shrink-0 animate-spin text-content/45"
+            className="size-3.5 shrink-0 animate-spin text-[var(--ui-text-muted)]"
           />
         ) : (
-          <ChevronsUpDown className="size-3.5 shrink-0 text-content/45" />
+          <ChevronsUpDown className="size-3.5 shrink-0 text-[var(--ui-text-muted)]" />
         )}
-      </button>
+      </Button>
       {open ? (
         <Popover
           anchor={anchor}
@@ -205,7 +208,7 @@ export function SidebarWorktreeSwitcher({
           aria-label={t("Working copies")}
           className="flex flex-col overflow-hidden"
         >
-          <label className="flex h-11 shrink-0 items-center gap-2.5 border-b border-stroke px-3 text-content/45 focus-within:text-content/70">
+          <label className="flex h-11 shrink-0 items-center gap-2.5 border-b border-stroke px-3 text-[var(--ui-text-muted)] focus-within:text-[var(--ui-text-secondary)]">
             <Search className="size-4 shrink-0" strokeWidth={1.75} />
             <span className="sr-only">{t("Search working copies")}</span>
             <SearchInput
@@ -237,7 +240,7 @@ export function SidebarWorktreeSwitcher({
                   else if (canCreate) void create();
                 }
               }}
-              className="min-w-0 flex-1 bg-transparent text-[13px] text-content outline-none placeholder:text-content/35 disabled:opacity-60"
+              className="min-w-0 flex-1"
             />
           </label>
           <div
@@ -246,7 +249,7 @@ export function SidebarWorktreeSwitcher({
             className="min-h-0 flex-1 overflow-y-auto overscroll-none p-1.5"
           >
             {!data && !error ? (
-              <div className="flex items-center gap-2 p-2 text-[12px] text-content/50">
+              <div className="flex items-center gap-2 p-2 text-[12px] text-[var(--ui-text-secondary)]">
                 <Loader className="size-3.5 animate-spin" />
                 {t("Loading working copies…")}
               </div>
@@ -256,7 +259,10 @@ export function SidebarWorktreeSwitcher({
                 ? !focus
                 : !!focus && pathKey(focus.path) === pathKey(tree.path);
               return (
-                <button
+                <Button
+                  selected={index === activeIndex}
+                  variant="item"
+                  motion="none"
                   key={tree.path}
                   ref={index === activeIndex ? activeOption : undefined}
                   type="button"
@@ -266,28 +272,28 @@ export function SidebarWorktreeSwitcher({
                   disabled={creating}
                   onMouseEnter={() => setActive(index)}
                   onClick={() => pick(tree)}
-                  className={`flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left disabled:opacity-40 ${
-                    index === activeIndex ? "bg-selection" : "hover:bg-content/5"
-                  }`}
+                  className={`  flex w-full items-center gap-2 text-left  ${
+                    index === activeIndex ? "" : ""
+                  }   `}
                 >
                   {tree.isMain ? (
-                    <GitBranch className="size-3.5 shrink-0 text-content/50" />
+                    <GitBranch className="size-3.5 shrink-0 text-[var(--ui-text-secondary)]" />
                   ) : (
-                    <FolderTree className="size-3.5 shrink-0 text-content/50" />
+                    <FolderTree className="size-3.5 shrink-0 text-[var(--ui-text-secondary)]" />
                   )}
                   <span className="min-w-0 flex-1">
                     <span className="block truncate text-[12px]">{tree.label}</span>
-                    <span className="block truncate text-[10px] text-content/40">
+                    <span className="block truncate text-[10px] text-[var(--ui-text-muted)]">
                       {tree.detail}
                     </span>
                   </span>
                   <OpenTabs stats={tabStats?.get(pathKey(tree.path))} />
                   {selected ? <Check className="size-3.5 shrink-0" /> : null}
-                </button>
+                </Button>
               );
             })}
             {data && rows.length === 0 ? (
-              <p className="px-2.5 py-5 text-center text-[12px] text-content/45">
+              <p className="px-2.5 py-5 text-center text-[12px] text-[var(--ui-text-muted)]">
                 {t("No matching working copies")}
               </p>
             ) : null}
@@ -299,12 +305,14 @@ export function SidebarWorktreeSwitcher({
           ) : null}
           {canCreate ? (
             <div className="shrink-0 border-t border-stroke p-1.5">
-              <button
+              <Button
+                variant="item"
+                motion="none"
                 type="button"
                 disabled={creating}
                 onClick={() => void create()}
                 title={t("Create worktree {p0}", { p0: createName })}
-                className="flex h-9 w-full items-center gap-2.5 rounded-lg px-2.5 text-left text-[13px] text-content/75 hover:bg-content/8 hover:text-content disabled:opacity-60"
+                className="flex h-9 w-full items-center gap-2.5 text-left"
               >
                 {creating ? (
                   <Loader className="size-4 shrink-0 animate-spin" />
@@ -315,7 +323,7 @@ export function SidebarWorktreeSwitcher({
                   {t("Create worktree ")}
                   {createName}
                 </span>
-              </button>
+              </Button>
             </div>
           ) : null}
         </Popover>
@@ -333,7 +341,7 @@ function OpenTabs({ stats }: { stats?: { tabs: number; busy: boolean } }) {
     <span
       title={label}
       aria-label={label}
-      className="flex shrink-0 items-center gap-1 text-[11px] tabular-nums text-content/40"
+      className="flex shrink-0 items-center gap-1 text-[11px] tabular-nums text-[var(--ui-text-muted)]"
     >
       {stats.busy ? <span className="size-1.5 animate-pulse rounded-full bg-accent" /> : null}
       {stats.tabs}

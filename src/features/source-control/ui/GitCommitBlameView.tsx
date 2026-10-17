@@ -36,7 +36,9 @@ export function GitCommitBlameView({
         />
       ) : null}
       {resource.loading && !resource.data ? <GitLoading text="Loading…" /> : null}
-      {!sha ? <p className="p-3 text-[12px] text-content/60">{t("No commits yet")}</p> : null}
+      {!sha ? (
+        <p className="p-3 text-[12px] text-[var(--ui-text-secondary)]">{t("No commits yet")}</p>
+      ) : null}
       <div className="min-h-0 flex-1 overflow-auto font-mono text-[12px] leading-6">
         {resource.data?.map((entry, index) => {
           const first = resource.data?.[index - 1]?.sha !== entry.sha;
@@ -47,11 +49,11 @@ export function GitCommitBlameView({
             >
               <span
                 title={`${entry.sha}\n${entry.author} · ${entry.summary}`}
-                className="sticky left-0 w-44 shrink-0 truncate bg-background-base px-2 font-sans text-[11px] text-content/60"
+                className="sticky left-0 w-44 shrink-0 truncate bg-[var(--ui-surface)] px-2 font-sans text-[11px] text-[var(--ui-text-secondary)]"
               >
                 {first ? `${entry.shortSha} ${entry.author}` : ""}
               </span>
-              <span className="w-10 shrink-0 pr-2 text-right text-content/35 select-none">
+              <span className="w-10 shrink-0 pr-2 text-right text-[var(--ui-text-muted)] select-none">
                 {entry.line}
               </span>
               <span className="pr-3 text-content">{lines[entry.line - 1] ?? ""}</span>

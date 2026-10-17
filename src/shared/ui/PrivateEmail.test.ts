@@ -37,12 +37,16 @@ it("masks a revealed email again when masking is turned off and back on", async 
 
   await act(async () => saveMaskEmails(true));
   expect(container.querySelector('[aria-label="Hide email"]')).toBeNull();
-  expect(revealButton()?.querySelector("span")?.className).toContain("blur-[5px]");
+  expect(revealButton()?.querySelector('span[aria-hidden="true"]')?.className).toContain(
+    "blur-[5px]",
+  );
 });
 
 it("shows a plain email when another window turns masking off", async () => {
   await act(async () => root.render(createElement(PrivateEmail, { email: "user@example.com" })));
-  expect(revealButton()?.querySelector("span")?.className).toContain("blur-[5px]");
+  expect(revealButton()?.querySelector('span[aria-hidden="true"]')?.className).toContain(
+    "blur-[5px]",
+  );
 
   await act(async () => {
     localStorage.setItem("bycoda.maskEmails", "0");

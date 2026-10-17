@@ -195,15 +195,17 @@ export function SubagentSheet({
         className="subagent-sheet absolute inset-y-0 right-0 isolate w-[min(34rem,94%)] outline-none"
       >
         <GlassBackdrop className="subagent-sheet-glass popover-backdrop" />
-        <div className="relative z-[1] flex h-full min-h-0 flex-col font-sans text-sm text-content">
-          <header className="flex shrink-0 flex-col gap-1 border-b border-content/8 py-2.5 pr-2 pl-4">
+        <div className="relative z-[1] flex h-full min-h-0 flex-col font-sans text-sm text-(--ui-tone-neutral-fg)">
+          <header className="flex shrink-0 flex-col gap-1 border-b border-(--ui-tone-neutral-border) py-2.5 pr-2 pl-4">
             <div className="flex min-w-0 items-center gap-2">
               <h2 className="min-w-0 flex-1 truncate text-sm font-medium" title={name}>
                 {name}
               </h2>
               <CopyTranscriptButton block={block} status={runLabel(block, busy)} />
               {onStop && running ? (
-                <button
+                <Button
+                  className="shrink-0"
+                  variant="ghost"
                   type="button"
                   disabled={stopping}
                   title={
@@ -212,37 +214,46 @@ export function SubagentSheet({
                       : t(command ? "Stop this command" : "Stop this subagent")
                   }
                   onClick={() => stops.request(stopKey, onStop)}
-                  className={`flex h-7 shrink-0 items-center gap-1.5 rounded-md px-2 text-xs transition-colors hover:bg-content/8 hover:text-content focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-accent disabled:pointer-events-none ${
-                    stops.failed.has(stopKey) ? "text-danger" : "text-content/55"
-                  }`}
                 >
                   <Square className="size-3.5" strokeWidth={1.75} />
                   {stopping ? t("Stopping…") : t("Stop")}
-                </button>
+                </Button>
               ) : null}
-              <button
+              <Button
+                variant="ghost"
                 type="button"
                 onClick={() => onShowInTranscript(block.id)}
                 title={
                   command ? t("Show in transcript") : t("Scroll to this agent in the transcript")
                 }
-                className="flex h-7 shrink-0 items-center gap-1.5 rounded-md px-2 text-xs text-content/55 transition-colors hover:bg-content/8 hover:text-content focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-accent"
+                className="shrink-0"
               >
                 <CornerDownRight className="size-3.5" strokeWidth={1.75} />
                 {t("Show in transcript")}
-              </button>
-              <button
+              </Button>
+              <Button
+                iconOnly
+                label={t(command ? "Close command panel" : "Close agent panel")}
+                variant="ghost"
                 type="button"
                 aria-label={t(command ? "Close command panel" : "Close agent panel")}
                 title={t("Close (Esc)")}
                 onClick={onClose}
-                className="grid size-7 shrink-0 place-items-center rounded-md text-content/45 transition-colors hover:bg-content/8 hover:text-content focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-accent"
+                className="shrink-0"
               >
                 <X className="size-4" strokeWidth={1.75} />
-              </button>
+              </Button>
             </div>
-            <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-content/45">
-              <span className={state === "rejected" ? "text-danger" : running ? "text-accent" : ""}>
+            <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-(--ui-text-secondary)">
+              <span
+                className={
+                  state === "rejected"
+                    ? "text-(--ui-tone-danger-fg)"
+                    : running
+                      ? "text-(--ui-tone-accent-fg)"
+                      : ""
+                }
+              >
                 {runLabel(block, busy)}
               </span>
               {run?.agentType ? <span>{run.agentType}</span> : null}
@@ -266,7 +277,7 @@ export function SubagentSheet({
           )}
           {!command && relay ? (
             <form
-              className="flex shrink-0 flex-col gap-2 border-t border-stroke bg-[var(--ui-surface)] px-4 py-3"
+              className="flex shrink-0 flex-col gap-2 border-t border-(--ui-tone-neutral-border) bg-[var(--ui-surface)] px-4 py-3"
               onSubmit={(event) => {
                 event.preventDefault();
                 if (!relay.blockedReason && relay.draft.trim()) relay.send();
@@ -315,7 +326,7 @@ export function SubagentSheet({
               </div>
             </form>
           ) : !command ? (
-            <p className="shrink-0 border-t border-content/8 px-4 py-2 text-xs text-content/40">
+            <p className="shrink-0 border-t border-(--ui-tone-neutral-border) px-4 py-2 text-xs text-(--ui-text-secondary)">
               {t("Messaging is unavailable in this conversation.")}
             </p>
           ) : null}
@@ -337,28 +348,30 @@ function CommandDetails({ block, cwd }: { block: Block; cwd?: string }) {
     .join("\n\n");
   return (
     <div className="min-h-0 flex-1 overflow-y-auto overscroll-none px-4 py-3">
-      <h3 className="mb-1 text-xs text-content/45">{t("Command")}</h3>
-      <pre className="select-text whitespace-pre-wrap break-words rounded-lg bg-content/6 p-3 font-mono text-xs leading-5">
+      <h3 className="mb-1 text-xs text-(--ui-text-secondary)">{t("Command")}</h3>
+      <pre className="select-text whitespace-pre-wrap break-words rounded-lg bg-(--ui-surface-raised) p-3 font-mono text-xs leading-5">
         {command}
       </pre>
       {cwd ? (
         <>
-          <h3 className="mt-4 mb-1 text-xs text-content/45">{t("Working directory")}</h3>
+          <h3 className="mt-4 mb-1 text-xs text-(--ui-text-secondary)">{t("Working directory")}</h3>
           <pre className="select-text whitespace-pre-wrap break-words font-mono text-xs">{cwd}</pre>
         </>
       ) : null}
-      <h3 className="mt-4 mb-1 text-xs text-content/45">{t("Output")}</h3>
+      <h3 className="mt-4 mb-1 text-xs text-(--ui-text-secondary)">{t("Output")}</h3>
       {result ? (
-        <pre className="select-text whitespace-pre-wrap break-words rounded-lg bg-content/6 p-3 font-mono text-xs leading-5">
+        <pre className="select-text whitespace-pre-wrap break-words rounded-lg bg-(--ui-surface-raised) p-3 font-mono text-xs leading-5">
           {result}
         </pre>
       ) : (
-        <p className="text-xs text-content/45">
+        <p className="text-xs text-(--ui-text-secondary)">
           {t("No output has been reported for this command yet.")}
         </p>
       )}
       {block.tool?.outputTruncated ? (
-        <p className="mt-2 text-xs text-content/45">{t("Output was truncated by the provider.")}</p>
+        <p className="mt-2 text-xs text-(--ui-text-secondary)">
+          {t("Output was truncated by the provider.")}
+        </p>
       ) : null}
     </div>
   );
@@ -397,21 +410,20 @@ function CopyTranscriptButton({ block, status }: { block: Block; status: string 
   const label =
     state === "copied" ? "Copied" : state === "failed" ? "Copy failed" : "Copy transcript";
   return (
-    <button
+    <Button
+      className="shrink-0"
+      variant="ghost"
       type="button"
       onClick={copy}
       title={t("{p0} (Markdown)", { p0: label })}
       aria-label={label}
-      className={`grid size-7 shrink-0 place-items-center rounded-md transition-colors hover:bg-content/8 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-accent ${
-        state === "failed" ? "text-danger" : "text-content/45 hover:text-content"
-      }`}
     >
       {state === "copied" ? (
         <Check className="size-4" strokeWidth={1.75} />
       ) : (
         <Copy className="size-4" strokeWidth={1.75} />
       )}
-    </button>
+    </Button>
   );
 }
 
@@ -423,27 +435,27 @@ function PromptCard({ prompt }: { prompt: string }) {
   return (
     <section
       aria-label={t("Prompt")}
-      className="rounded-lg bg-content/6 px-3 py-2 text-[13px] leading-5"
+      className="rounded-lg bg-(--ui-surface-raised) px-3 py-2 text-[13px] leading-5"
     >
-      <h3 className="pb-0.5 text-[11px] font-medium tracking-wide text-content/40 uppercase">
+      <h3 className="pb-0.5 text-[11px] font-medium tracking-wide text-(--ui-text-secondary) uppercase">
         {t("Prompt")}
       </h3>
       <p
-        className={`min-w-0 whitespace-pre-wrap break-words text-content/80 ${
+        className={`min-w-0 whitespace-pre-wrap break-words text-(--ui-text-secondary) ${
           open || !long ? "" : "line-clamp-6"
         }`}
       >
         {prompt}
       </p>
       {long ? (
-        <button
+        <Button
+          variant="ghost"
           type="button"
           aria-expanded={open}
           onClick={() => setOpen((value) => !value)}
-          className="pt-1 text-xs text-content/50 hover:text-content focus-visible:outline-2 focus-visible:outline-accent"
         >
           {open ? t("Show less") : t("Show full prompt")}
-        </button>
+        </Button>
       ) : null}
     </section>
   );
@@ -523,22 +535,23 @@ function SubagentTrail({
       <div className="flex min-w-0 flex-col gap-1 px-4 py-3">
         {prompt ? <PromptCard prompt={prompt} /> : null}
         {visible.length === 0 && !report ? (
-          <p className="pt-1 text-xs text-content/45">
+          <p className="pt-1 text-xs text-(--ui-text-secondary)">
             {running ? t("Waiting for the first step.") : t("This agent did not report any steps.")}
           </p>
         ) : null}
         {hidden > 0 ? (
-          <button
+          <Button
+            variant="ghost"
             type="button"
             onClick={() => {
               following.current = false;
               setShown((count) => count + STEP_PAGE);
             }}
-            className="self-start rounded-md bg-content/8 px-2.5 py-1 text-xs text-content/60 hover:bg-content/12 hover:text-content focus-visible:outline-2 focus-visible:outline-accent"
+            className="self-start"
           >
             {t("Show earlier steps (")}
             {hidden})
-          </button>
+          </Button>
         ) : null}
         {visible.map((step) => (
           <SheetStep
@@ -553,10 +566,10 @@ function SubagentTrail({
         {report ? (
           <section
             aria-label={failed ? t("Failure") : t("Report")}
-            className="mt-1 border-t border-content/8 pt-2"
+            className="mt-1 border-t border-(--ui-tone-neutral-border) pt-2"
           >
             {failed ? (
-              <pre className="min-w-0 whitespace-pre-wrap break-words font-mono text-[12px] leading-5 text-danger/80">
+              <pre className="min-w-0 whitespace-pre-wrap break-words font-mono text-[12px] leading-5 text-(--ui-tone-danger-fg)">
                 {report}
               </pre>
             ) : (

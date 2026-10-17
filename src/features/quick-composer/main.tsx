@@ -1,3 +1,8 @@
+import {
+  applyAppearancePreferences,
+  initAppearancePreferences,
+  loadAppearancePreferences,
+} from "../settings/model/appearancePreferences";
 import { QueryProvider } from "../../app/QueryProvider";
 import React from "react";
 import { languageReady } from "../../shared/i18n";
@@ -27,11 +32,12 @@ import { getGroupLockView } from "../group-lock/model/groupLock";
 import "../../styles/index.css";
 
 /**
- * Only the theme, not the workspace's glass, backgrounds, or scale: the panel
+ * Theme, shared control geometry and typography, without workspace glass, backgrounds or scale: the panel
  * draws its own card on a clear window. Storage keeps an open panel in sync;
  * every show also reloads the theme after a hidden window resumes.
  */
 function applyAppearance() {
+  applyAppearancePreferences(loadAppearancePreferences());
   document.documentElement.classList.toggle("is-mac", IS_MAC);
   applyAccentColor(loadAccentColor());
   applyThemeTint(loadThemeHue(), loadThemeSaturation());
@@ -48,6 +54,7 @@ window.addEventListener(SCHEME_CHANGE_EVENT, (event) => {
     .catch(() => undefined);
 });
 
+initAppearancePreferences();
 applyAppearance();
 subscribeThemeStorage(applyAppearance);
 watchSystemColorScheme();

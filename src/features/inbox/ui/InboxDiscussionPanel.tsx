@@ -1,7 +1,9 @@
+import { Alert } from "../../../shared/ui/Alert";
+import { Button } from "../../../shared/ui/Button";
 import { t, useLocale } from "../../../shared/i18n";
 import { useEffect, useRef, useState } from "react";
 import { PanelLeft, RotateCcw } from "../../../shared/ui/icons";
-import { IconButton } from "../../../app/shell/TitleBar";
+
 import { useDragResize } from "../../../shared/hooks/useDragResize";
 import { inboxItemRef, type InboxItem } from "../model/githubTasks";
 import { inboxAskKey } from "../model/inboxAsk";
@@ -67,7 +69,7 @@ export function InboxDiscussionPanel({
     <aside
       ref={resize.setPaneRef}
       aria-label={t("Ask about {p0}", { p0: inboxItemRef(item) })}
-      className="relative flex min-h-0 shrink-0 flex-col border-l border-stroke max-[1100px]:absolute max-[1100px]:inset-0 max-[1100px]:z-10 max-[1100px]:!w-auto max-[1100px]:bg-background-base"
+      className="relative flex min-h-0 shrink-0 flex-col border-l border-(--ui-tone-neutral-border) max-[1100px]:absolute max-[1100px]:inset-0 max-[1100px]:z-10 max-[1100px]:!w-auto max-[1100px]:bg-(--ui-surface)"
     >
       <div
         role="separator"
@@ -77,12 +79,14 @@ export function InboxDiscussionPanel({
         onDoubleClick={resize.onDoubleClick}
         className="absolute inset-y-0 -left-1 z-20 w-2 cursor-col-resize max-[1100px]:hidden"
       />
-      <header className="flex h-11 shrink-0 items-center border-b border-stroke px-3">
+      <header className="flex h-11 shrink-0 items-center border-b border-(--ui-tone-neutral-border) px-3">
         <span className="min-w-0 flex-1 truncate text-[13px] font-medium">
           {t("Ask · ")}
           {inboxItemRef(item)}
         </span>
-        <IconButton
+        <Button
+          variant="ghost"
+          iconOnly
           label={t("Restart conversation")}
           disabled={loading}
           onClick={() => {
@@ -103,25 +107,21 @@ export function InboxDiscussionPanel({
           }}
         >
           <RotateCcw className="size-3.5" />
-        </IconButton>
-        <IconButton label={t("Close panel")} onClick={onClose}>
+        </Button>
+        <Button variant="ghost" iconOnly label={t("Close panel")} onClick={onClose}>
           <PanelLeft className="size-3.5" />
-        </IconButton>
+        </Button>
       </header>
       {error ? (
-        <div role="alert" className="p-3 text-xs text-danger">
+        <Alert tone="danger" role="alert">
           <p>{error}</p>
-          <button
-            type="button"
-            onClick={() => setRevision((value) => value + 1)}
-            className="rounded px-2 py-1 text-content/70 active:bg-content/10 focus-visible:outline-2 focus-visible:outline-accent"
-          >
+          <Button variant="ghost" type="button" onClick={() => setRevision((value) => value + 1)}>
             {t("Retry")}
-          </button>
-        </div>
+          </Button>
+        </Alert>
       ) : null}
       {loading ? (
-        <p role="status" className="p-3 text-xs text-content/55">
+        <p role="status" className="p-3 text-xs text-(--ui-text-secondary)">
           {t("Loading…")}
         </p>
       ) : null}

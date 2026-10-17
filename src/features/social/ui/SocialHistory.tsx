@@ -1,3 +1,7 @@
+import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
+import { NativeSelect } from "../../../shared/ui/Select";
+import { TextField } from "../../../shared/ui/TextField";
+import { Button } from "../../../shared/ui/Button";
 import { SearchInput } from "../../../shared/ui/SearchInput";
 import { useState } from "react";
 import { socialRows } from "../model/socialWorkspace";
@@ -164,7 +168,7 @@ export function JobHistory({
         <label>
           İşlem ara
           <SearchInput
-            standalone
+            appearance="field"
             type="search"
             value={query}
             placeholder="İçerik, kişi veya kampanya"
@@ -176,7 +180,7 @@ export function JobHistory({
         </label>
         <label>
           Gönderim durumu
-          <select
+          <NativeSelect
             value={status}
             onChange={(event) => {
               setStatus(event.target.value);
@@ -199,28 +203,30 @@ export function JobHistory({
                   jobs.filter((job) => job.status === item).length}
               </option>
             ))}
-          </select>
+          </NativeSelect>
         </label>
         <label>
           Hesap
-          <select
+          <SearchableSelect
             value={accountId}
-            onChange={(event) => {
-              setAccountId(event.target.value);
+            label={"Hesap"}
+            options={[
+              { value: "", label: "Tüm hesaplar" },
+              ...snapshot.accounts.map((item) => ({
+                value: item.id,
+                label: [item.name, "·", names[item.platform]].join(" "),
+              })),
+            ]}
+            onChange={(nextValue) => {
+              setAccountId(nextValue);
               setPage(0);
             }}
-          >
-            <option value="">Tüm hesaplar</option>
-            {snapshot.accounts.map((item) => (
-              <option key={item.id} value={item.id}>
-                {item.name} · {names[item.platform]}
-              </option>
-            ))}
-          </select>
+            searchLocale="tr"
+          />
         </label>
         <label>
           İşlem türü
-          <select
+          <NativeSelect
             value={kind}
             onChange={(event) => {
               setKind(event.target.value);
@@ -233,11 +239,13 @@ export function JobHistory({
                 {title}
               </option>
             ))}
-          </select>
+          </NativeSelect>
         </label>
         <label>
           Başlangıç tarihi
-          <input
+          <TextField
+            hideLabel
+            label=""
             type="date"
             value={since}
             onChange={(event) => {
@@ -251,9 +259,9 @@ export function JobHistory({
         {hostFiltered && onFilterChange ? snapshot.pages?.jobs?.total : filtered.length} iş
         {!hostFiltered && filtered.length !== jobs.length ? ` / ${jobs.length}` : ""}
         {status || accountId || kind || query || since ? (
-          <button type="button" onClick={reset}>
+          <Button variant="secondary" type="button" onClick={reset}>
             Filtreleri temizle
-          </button>
+          </Button>
         ) : null}
       </p>
       {filtered.length ? (
@@ -310,7 +318,8 @@ export function JobHistory({
                     </a>
                   ) : null}
                   {job.status === "queued" ? (
-                    <button
+                    <Button
+                      variant="secondary"
                       type="button"
                       onClick={() =>
                         void run(
@@ -320,10 +329,11 @@ export function JobHistory({
                       }
                     >
                       İşi iptal et
-                    </button>
+                    </Button>
                   ) : null}
                   {job.status === "failed" ? (
-                    <button
+                    <Button
+                      variant="secondary"
                       type="button"
                       onClick={() =>
                         void run(
@@ -333,7 +343,7 @@ export function JobHistory({
                       }
                     >
                       Bu hedefi yeniden dene
-                    </button>
+                    </Button>
                   ) : null}
                 </div>
               </article>
@@ -349,23 +359,25 @@ export function JobHistory({
       )}
       {!onFilterChange && filtered.length > PAGE_SIZE ? (
         <div className="social-pagination">
-          <button
+          <Button
+            variant="secondary"
             type="button"
             disabled={currentPage === 0}
             onClick={() => setPage(currentPage - 1)}
           >
             Önceki
-          </button>
+          </Button>
           <span>
             {currentPage + 1} / {Math.ceil(filtered.length / PAGE_SIZE)}
           </span>
-          <button
+          <Button
+            variant="secondary"
             type="button"
             disabled={(currentPage + 1) * PAGE_SIZE >= filtered.length}
             onClick={() => setPage(currentPage + 1)}
           >
             Sonraki
-          </button>
+          </Button>
         </div>
       ) : null}
     </div>

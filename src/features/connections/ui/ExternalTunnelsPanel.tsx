@@ -1,3 +1,9 @@
+import { Alert } from "../../../shared/ui/Alert";
+import { PasswordField } from "../../../shared/ui/PasswordField";
+import { Button } from "../../../shared/ui/Button";
+import { TextField } from "../../../shared/ui/TextField";
+import { NativeSelect } from "../../../shared/ui/Select";
+import { NativeSearchableSelect } from "../../../shared/ui/NativeSearchableSelect";
 import { useEffect, useId, useRef, useState, useSyncExternalStore } from "react";
 import { QRCodeSVG } from "qrcode.react";
 import { t, useLocale } from "../../../shared/i18n";
@@ -127,7 +133,9 @@ function TunnelUrl({ tunnel, machine }: { tunnel: ExternalTunnel; machine: Remot
       {copied === "done" ? (
         <p role="status">{t("URL copied")}</p>
       ) : copied === "error" ? (
-        <p role="alert">{t("The URL could not be copied. Try again.")}</p>
+        <Alert role="alert" tone="danger">
+          {t("The URL could not be copied. Try again.")}
+        </Alert>
       ) : null}
       <p>{t("Public access has not been verified.")}</p>
       {qr ? (
@@ -216,7 +224,11 @@ export function TunnelControls({
           </span>
         ) : null}
       </div>
-      {state.issue ? <p role="alert">{t(issueCopy[state.issue])}</p> : null}
+      {state.issue ? (
+        <Alert role="alert" tone="danger">
+          {t(issueCopy[state.issue])}
+        </Alert>
+      ) : null}
       <form
         className="external-tunnel-form"
         onSubmit={(event) => {
@@ -235,7 +247,7 @@ export function TunnelControls({
       >
         <label htmlFor={`${id}-provider`}>
           {t("Tunnel provider")}
-          <select
+          <NativeSelect
             id={`${id}-provider`}
             value={provider}
             disabled={state.pending}
@@ -243,11 +255,11 @@ export function TunnelControls({
           >
             <option value="cloudflare">Cloudflare</option>
             <option value="ngrok">ngrok</option>
-          </select>
+          </NativeSelect>
         </label>
         <label htmlFor={`${id}-target`}>
           {t("Tunnel target")}
-          <select
+          <NativeSelect
             id={`${id}-target`}
             value={target}
             disabled={state.pending}
@@ -255,11 +267,11 @@ export function TunnelControls({
           >
             <option value="dev-server">{t("Dev server sharing")}</option>
             <option value="host">{t("bycoda host access")}</option>
-          </select>
+          </NativeSelect>
         </label>
         <label htmlFor={`${id}-url`} className="external-tunnel-wide">
           {t("Local URL or port on the selected computer")}
-          <input
+          <TextField
             id={`${id}-url`}
             value={target === "host" ? (overview?.hostLocalUrl ?? "") : localUrl}
             readOnly={target === "host"}
@@ -268,6 +280,9 @@ export function TunnelControls({
             onChange={(event) => setLocalUrl(event.target.value)}
             autoCapitalize="none"
             spellCheck={false}
+            label=""
+            hideLabel
+            fieldClassName="min-w-0 flex-1"
           />
         </label>
         <p className="external-tunnel-wide">
@@ -279,17 +294,18 @@ export function TunnelControls({
                 "Anyone with the public URL can reach this dev server. Use the server's own access controls.",
               )}
         </p>
-        <button
+        <Button
           type="submit"
-          className="external-tunnel-primary"
+
           disabled={
             !ready ||
             !selected?.installed ||
             (provider === "ngrok" && selected.credential !== "saved")
           }
+          variant="primary"
         >
           {t("Start tunnel")}
-        </button>
+        </Button>
       </form>
       {selected && !selected.installed ? (
         <p role="status">
@@ -328,19 +344,22 @@ export function TunnelControls({
           >
             <label htmlFor={`${id}-token`}>
               {t("ngrok authtoken")}
-              <input
+              <PasswordField
                 id={`${id}-token`}
-                type="password"
+
                 value={token}
                 disabled={state.pending}
                 autoComplete="new-password"
                 spellCheck={false}
                 onChange={(event) => setToken(event.target.value)}
+                label=""
+                hideLabel
+                fieldClassName="min-w-0 flex-1"
               />
             </label>
-            <button type="submit" className="external-tunnel-primary" disabled={!ready || !token}>
+            <Button type="submit" disabled={!ready || !token} variant="primary">
               {t("Save token securely")}
-            </button>
+            </Button>
             {selected?.credential === "saved" ? (
               <SecondaryButton disabled={!ready} onClick={() => void controller.credential("")}>
                 {t("Forget saved token")}
@@ -406,11 +425,11 @@ export function ExternalTunnelsPanel({
   const machine = selected ? ordered.find((entry) => entry.id === selected) : ordered[0];
   return (
     <section
-      className="external-tunnels-panel rounded-xl border border-stroke bg-content/3 p-4"
+      className="external-tunnels-panel rounded-xl border border-stroke bg-(--ui-surface-raised) p-4"
       aria-label={t("External tunnels")}
     >
       <div className="external-tunnel-actions">
-        <Internet className="size-5 shrink-0 text-content/60" aria-hidden />
+        <Internet className="size-5 shrink-0 text-(--ui-text-muted)" aria-hidden />
         <div>
           <h2 className="text-[14px] font-medium text-content">{t("External tunnels")}</h2>
           <p>{t("Share a dev server or connect to a bycoda host through ngrok or Cloudflare.")}</p>
@@ -418,19 +437,20 @@ export function ExternalTunnelsPanel({
       </div>
       <label htmlFor={`${id}-machine`}>
         {t("Computer")}
-        <select
+        <NativeSearchableSelect
+          label={t("Computer")}
           id={`${id}-machine`}
           value={machine?.id ?? ""}
           disabled={!loaded || loading}
           onChange={(event) => setSelected(event.target.value)}
-        >
-          {!machine ? <option value="">{t("Choose a computer")}</option> : null}
-          {ordered.map((entry) => (
-            <option key={entry.id} value={entry.id}>
-              {isLocalSyncMachine(entry) ? t("This computer") : entry.name}
-            </option>
-          ))}
-        </select>
+          options={[
+            ...(!machine ? [{ value: "", label: t("Choose a computer") }] : []),
+            ...ordered.map((entry) => ({
+              value: entry.id,
+              label: isLocalSyncMachine(entry) ? t("This computer") : entry.name,
+            })),
+          ]}
+        />
       </label>
       {!loaded || loading ? (
         <p role="status">{t("Checking tunnel access…")}</p>

@@ -231,6 +231,7 @@ describe("Settings skill preview", () => {
     vi.mocked(invoke).mockImplementationOnce(() => pending.promise);
     await click("Actions for Project guide");
     await click("Delete Project guide");
+    await click("Actions for Project guide");
     expect(button("Delete Project guide").disabled).toBe(true);
     await click("Actions for Personal guide");
     await click("Delete Personal guide");
@@ -353,8 +354,14 @@ describe("Settings skill preview", () => {
           input.dispatchEvent(new Event("input", { bubbles: true }));
         });
         const target = Array.from(
-          container.querySelectorAll<HTMLButtonElement>("form button"),
-        ).find((item) => item.textContent?.startsWith(control));
+          container.querySelectorAll<HTMLInputElement | HTMLButtonElement>(
+            "form button, form input[type=radio]",
+          ),
+        ).find(
+          (item) =>
+            item.textContent?.startsWith(control) ||
+            item.closest("label")?.textContent?.startsWith(control),
+        );
         expect(target, `Form control: ${control}`).toBeDefined();
         expect(target!.disabled).toBe(false);
         act(() => target!.focus());

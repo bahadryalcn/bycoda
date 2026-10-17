@@ -1,3 +1,4 @@
+import { Button } from "../../../shared/ui/Button";
 import { t, useLocale, getLocale } from "../../../shared/i18n";
 import { useEffect, useState } from "react";
 import { ModalPanel } from "../../../shared/ui/Modal";
@@ -48,9 +49,12 @@ export function ClaudeSessionPicker({ cwd, providerAccountId, onPick, onClose }:
         <ul className="flex flex-col gap-1">
           {sessions.map((session) => (
             <li key={session.id}>
-              <button
+              <Button
+                fullWidth
+                layout="stacked"
+                variant="item"
                 type="button"
-                className="flex w-full flex-col items-start gap-0.5 rounded-lg px-3 py-2 text-left hover:bg-scrim/5 dark:hover:bg-on-solid/10"
+                className="w-full flex-col text-left"
                 onClick={() => onPick(session)}
               >
                 <span className="line-clamp-2 text-sm">{session.title}</span>
@@ -60,7 +64,7 @@ export function ClaudeSessionPicker({ cwd, providerAccountId, onPick, onClose }:
                     ? t("1 message")
                     : t("{p0} messages", { p0: session.messageCount })}
                 </span>
-              </button>
+              </Button>
             </li>
           ))}
         </ul>

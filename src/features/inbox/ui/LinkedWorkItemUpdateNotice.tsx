@@ -1,3 +1,4 @@
+import { Button } from "../../../shared/ui/Button";
 import { t, useLocale } from "../../../shared/i18n";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { useEffect, useState } from "react";
@@ -134,31 +135,35 @@ export function LinkedWorkItemUpdateNotice({
     <section
       aria-label={t("New activity on {p0} {p1}", { p0: kindLabel, p1: card.number })}
       aria-live="polite"
-      className="pointer-events-auto absolute top-3 right-3 z-40 isolate w-[min(320px,calc(100%_-_24px))] overflow-hidden rounded-xl border border-content/10 text-content shadow-xl"
+      className="pointer-events-auto absolute top-3 right-3 z-40 isolate w-[min(320px,calc(100%_-_24px))] overflow-hidden rounded-xl border border-(--ui-tone-neutral-border) text-(--ui-tone-neutral-fg) shadow-xl"
     >
       <GlassBackdrop />
       <div className="linked-activity-notice relative z-[1]">
-        <div className="relative z-[1] flex items-center justify-between gap-0.5 border-b border-stroke px-3 py-2">
+        <div className="relative z-[1] flex items-center justify-between gap-0.5 border-b border-(--ui-tone-neutral-border) px-3 py-2">
           <div className="flex items-center gap-1.5">
-            <span className="size-2 shrink-0 rounded-full bg-accent" />
-            <KindIcon className="size-3.5 text-content/55" strokeWidth={1.75} />
+            <span className="size-2 shrink-0 rounded-full bg-(--ui-tone-accent-subtle)" />
+            <KindIcon className="size-3.5 text-(--ui-text-secondary)" strokeWidth={1.75} />
             <span className="min-w-0 flex-1 truncate text-[12px] font-semibold">
               {t("GitHub activity")}
             </span>
           </div>
-          <button
+          <Button
+            iconOnly
+            label={t("Dismiss updates for {p0} {p1}", { p0: kindLabel, p1: card.number })}
+            variant="ghost"
             type="button"
             title={t("Dismiss")}
             aria-label={t("Dismiss updates for {p0} {p1}", { p0: kindLabel, p1: card.number })}
             onClick={dismiss}
-            className="grid size-6 shrink-0 place-items-center rounded-md text-content/40 hover:bg-content/10 hover:text-content"
+            className="shrink-0"
           >
             <X className="size-3" strokeWidth={2} />
-          </button>
+          </Button>
         </div>
 
         <div className="relative z-[1] px-3 py-2.5">
-          <button
+          <Button
+            variant="ghost"
             type="button"
             onClick={() => {
               onAcknowledge();
@@ -166,22 +171,23 @@ export function LinkedWorkItemUpdateNotice({
             }}
             className="block w-full text-left"
           >
-            <span className="block text-[11px] text-content/50">
+            <span className="block text-[11px] text-(--ui-text-secondary)">
               {kindLabel} #{card.number} · {card.repo}
             </span>
             <span className="mt-0.5 block truncate text-[13px] font-medium hover:underline">
               {card.title}
             </span>
-          </button>
-          <div className="mt-1.5 flex items-center gap-1.5 text-[11px] text-content/55">
+          </Button>
+          <div className="mt-1.5 flex items-center gap-1.5 text-[11px] text-(--ui-text-secondary)">
             <span>{linkedWorkItemUpdateSummary(card)}</span>
           </div>
         </div>
 
         {card.entries.length > 0 ? (
-          <div className="relative z-[1] max-h-52 overflow-y-auto border-t border-stroke divide-y divide-stroke">
+          <div className="relative z-[1] max-h-52 overflow-y-auto border-t border-(--ui-tone-neutral-border) divide-y divide-stroke">
             {card.entries.slice(0, 3).map((entry) => (
-              <button
+              <Button
+                variant="ghost"
                 key={`${entry.kind}:${entry.id}`}
                 type="button"
                 disabled={!entry.url}
@@ -191,51 +197,56 @@ export function LinkedWorkItemUpdateNotice({
                     void openUrl(entry.url);
                   }
                 }}
-                className="flex w-full items-start gap-2 px-3 py-2 text-left hover:bg-content/5 disabled:cursor-default disabled:hover:bg-transparent"
+                className="w-full text-left"
               >
-                <span className="mt-0.5 text-content/45">
+                <span className="mt-0.5 text-(--ui-text-secondary)">
                   <ActivityIcon entry={entry} />
                 </span>
                 <span className="min-w-0 flex-1">
                   <span className="flex min-w-0 items-center gap-1.5 text-[11px]">
-                    <span className="font-medium text-content/70">{entryKindLabel(entry)}</span>
+                    <span className="font-medium text-(--ui-text-secondary)">
+                      {entryKindLabel(entry)}
+                    </span>
                     {entry.author ? (
-                      <span className="min-w-0 truncate text-content/45">@{entry.author}</span>
+                      <span className="min-w-0 truncate text-(--ui-text-secondary)">
+                        @{entry.author}
+                      </span>
                     ) : null}
-                    <span className="ml-auto shrink-0 text-content/35">
+                    <span className="ml-auto shrink-0 text-(--ui-text-secondary)">
                       {formatRelativeTime(entry.createdAt)}
                     </span>
                   </span>
-                  <span className="mt-0.5 line-clamp-2 block text-[12px] leading-relaxed text-content/65">
+                  <span className="mt-0.5 line-clamp-2 block text-[12px] leading-relaxed text-(--ui-text-secondary)">
                     {entry.text || t("No message")}
                   </span>
                 </span>
-              </button>
+              </Button>
             ))}
           </div>
         ) : null}
 
         {terminalState ? (
-          <div className="relative z-[1] border-t border-stroke px-3 py-2.5">
+          <div className="relative z-[1] border-t border-(--ui-tone-neutral-border) px-3 py-2.5">
             <div className="flex items-center gap-2 text-[11px]">
               <TerminalIcon
                 className={
                   terminalState === "pr_merged"
-                    ? "size-3.5 shrink-0 text-feature/90"
-                    : "size-3.5 shrink-0 text-success/90"
+                    ? "size-3.5 shrink-0 text-(--ui-tone-accent-fg)"
+                    : "size-3.5 shrink-0 text-(--ui-tone-success-fg)"
                 }
                 strokeWidth={1.75}
               />
-              <span className="font-medium text-content/75">{terminalLabel}</span>
-              <span className="text-content/45">{t("Clean up this session")}</span>
+              <span className="font-medium text-(--ui-text-secondary)">{terminalLabel}</span>
+              <span className="text-(--ui-text-secondary)">{t("Clean up this session")}</span>
             </div>
             <div className="mt-2 flex items-center gap-1.5">
-              <button
+              <Button
+                variant="ghost"
                 type="button"
                 title={t("Archive session")}
                 disabled={Boolean(cleanupAction) || !onArchiveSession}
                 onClick={() => void runCleanup("archive", onArchiveSession)}
-                className="inline-flex min-w-0 items-center gap-1.5 overflow-hidden rounded-md bg-content/10 px-2 py-1 text-[11px] font-medium hover:bg-content/15 disabled:opacity-40"
+                className="min-w-0"
               >
                 {cleanupAction === "archive" ? (
                   <Loader className="size-3 shrink-0 animate-spin" />
@@ -243,13 +254,14 @@ export function LinkedWorkItemUpdateNotice({
                   <Archive className="size-3 shrink-0" strokeWidth={1.75} />
                 )}
                 <span className="min-w-0 truncate whitespace-nowrap">{t("Archive session")}</span>
-              </button>
-              <button
+              </Button>
+              <Button
+                variant="ghost"
                 type="button"
                 title={t("Delete session")}
                 disabled={Boolean(cleanupAction) || !onDeleteSession}
                 onClick={() => void runCleanup("delete", onDeleteSession)}
-                className="inline-flex min-w-0 items-center gap-1.5 overflow-hidden rounded-md px-2 py-1 text-[11px] text-danger/90 hover:bg-danger/15 disabled:opacity-40"
+                className="min-w-0"
               >
                 {cleanupAction === "delete" ? (
                   <Loader className="size-3 shrink-0 animate-spin" />
@@ -257,31 +269,33 @@ export function LinkedWorkItemUpdateNotice({
                   <Trash2 className="size-3 shrink-0" strokeWidth={1.75} />
                 )}
                 <span className="min-w-0 truncate whitespace-nowrap">{t("Delete…")}</span>
-              </button>
+              </Button>
             </div>
           </div>
         ) : null}
 
-        <div className="relative z-[1] flex min-w-0 items-center gap-1.5 border-t border-stroke px-3 py-2.5 text-[11px]">
-          <button
+        <div className="relative z-[1] flex min-w-0 items-center gap-1.5 border-t border-(--ui-tone-neutral-border) px-3 py-2.5 text-[11px]">
+          <Button
+            variant="ghost"
             type="button"
             title={agentLabel}
-            className="min-w-0 flex-1 truncate whitespace-nowrap rounded-md bg-content px-2 py-1 font-medium text-background-base hover:bg-content/90"
+            className="min-w-0 flex-1 truncate"
             onClick={() => {
               onAcknowledge();
               onAddToChat(linkedWorkItemActivityPrompt(card));
             }}
           >
             {agentLabel}
-          </button>
-          <button
+          </Button>
+          <Button
+            variant="ghost"
             type="button"
             title={openLabel}
-            className="min-w-0 flex-1 truncate whitespace-nowrap rounded-md bg-content/10 px-2 py-1 font-medium hover:bg-content/15"
+            className="min-w-0 flex-1 truncate"
             onClick={openActivity}
           >
             {openLabel}
-          </button>
+          </Button>
         </div>
       </div>
     </section>

@@ -1,3 +1,11 @@
+import { Button } from "../../../shared/ui/Button";
+import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
+import { Select } from "../../../shared/ui/Select";
+import { DropdownMenu } from "../../../shared/ui/DropdownMenu";
+import { Alert } from "../../../shared/ui/Alert";
+import { Badge } from "../../../shared/ui/Badge";
+import { EmptyState } from "../../../shared/ui/EmptyState";
+import { TagInput } from "../../../shared/ui/TagInput";
 import { useQueryVisible } from "../../../shared/hooks/useQueryVisible";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { bridgeQueryEvents } from "../../../shared/lib/queryClient";
@@ -11,10 +19,10 @@ import {
   Search,
   File,
   Trash2,
-  X,
   ChevronDown,
   SlidersHorizontal,
   MessageSquarePlus,
+  MoreHorizontal,
 } from "../../../shared/ui/icons";
 import { Popover } from "../../../shared/ui/Popover";
 import { ConfirmMorph } from "../../../shared/ui/ConfirmMorph";
@@ -501,7 +509,7 @@ export function NotesView({
       ref={resize.setPaneRef}
       className="relative flex h-full min-h-0 shrink-0 flex-col border-r border-stroke"
     >
-      <div className="flex h-11 shrink-0 items-center gap-1 border-b border-stroke px-2">
+      <div className="flex h-10 shrink-0 items-center gap-1 border-b border-(--ui-tone-neutral-border) px-2">
         <div className="relative flex h-7 min-w-0 flex-1 items-center">
           <Search className="pointer-events-none absolute left-2 size-3 shrink-0 opacity-50" />
           <TextField
@@ -517,7 +525,12 @@ export function NotesView({
             fieldClassName="bycoda-arc-field--search"
           />
         </div>
-        <button
+        <Button
+          iconOnly
+          label={t("Filters and options")}
+          variant="ghost"
+          size="sm"
+          selected={projectFilter !== null || tagFilter !== null}
           ref={filtersButton}
           type="button"
           title={t("Filters and options")}
@@ -528,28 +541,33 @@ export function NotesView({
             event.currentTarget.focus();
             setFiltersOpen((open) => !open);
           }}
-          className="note-filter-button"
+          className="shrink-0"
           data-active={projectFilter !== null || tagFilter !== null || undefined}
         >
           <SlidersHorizontal className="size-3.5" strokeWidth={1.75} />
           {projectFilter !== null || tagFilter !== null ? (
             <span className="note-filter-dot" />
           ) : null}
-        </button>
-        <button
+        </Button>
+        <Button
+          iconOnly
+          label={t("New note")}
+          variant="ghost"
+          size="sm"
+          loading={creating}
           type="button"
           title={t("New note")}
           aria-label={t("New note")}
           disabled={creating}
           onClick={() => void onCreate()}
-          className="grid size-8 shrink-0 place-items-center rounded-md text-content/70 hover:bg-content/10 hover:text-content disabled:opacity-40"
+          className="shrink-0"
         >
           {creating ? (
             <LoaderCircle className="size-3.5 animate-spin" strokeWidth={1.75} />
           ) : (
             <Plus className="size-3.5" strokeWidth={1.75} />
           )}
-        </button>
+        </Button>
       </div>
       {projectFilter !== null || tagFilter !== null ? (
         <FilterToolbar
@@ -591,80 +609,72 @@ export function NotesView({
           className="note-filters-popover"
         >
           <div className="note-library-controls">
-            <label>
-              <span>{t("Project")}</span>
-              <select
-                aria-label={t("Filter by project")}
-                value={projectFilter ?? "all"}
-                onChange={(event) =>
-                  setProjectFilter(event.target.value === "all" ? null : event.target.value)
-                }
-              >
-                <option value="all">
-                  {t("All projects")} ({notes.length})
-                </option>
-                <option value="">
-                  {t("No project")} ({notes.filter((note) => !noteProjectKey(note)).length})
-                </option>
-                {projects.map((project) => (
-                  <option key={project.key} value={project.key} title={project.path}>
-                    {projects.filter((item) => item.name === project.name).length > 1
+            <SearchableSelect
+              label={t("Filter by project")}
+              value={projectFilter ?? "all"}
+              onChange={(value) => setProjectFilter(value === "all" ? null : value)}
+              options={[
+                { value: "all", label: t("All projects") + " (" + notes.length + ")" },
+                {
+                  value: "",
+                  label:
+                    t("No project") +
+                    " (" +
+                    notes.filter((note) => !noteProjectKey(note)).length +
+                    ")",
+                },
+                ...projects.map((project) => ({
+                  value: project.key,
+                  label:
+                    (projects.filter((item) => item.name === project.name).length > 1
                       ? project.path
-                      : project.name}{" "}
-                    ({project.count})
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label>
-              <span>{t("Tags")}</span>
-              <select
-                aria-label={t("Filter by tag")}
-                value={tagFilter ?? ""}
-                onChange={(event) => setTagFilter(event.target.value || null)}
-              >
-                <option value="">{t("All tags")}</option>
-                {allTags.map((tag) => (
-                  <option key={tag} value={tag}>
-                    #{tag}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label>
-              <span>{t("Group notes by")}</span>
-              <select
-                aria-label={t("Group notes by")}
-                value={libraryPreferences.grouping}
-                onChange={(event) =>
-                  setLibraryPreferences((current) => ({
-                    ...current,
-                    grouping: event.target.value as NoteGrouping,
-                  }))
-                }
-              >
-                <option value="project">{t("Project")}</option>
-                <option value="tag">{t("Tags")}</option>
-                <option value="none">{t("No grouping")}</option>
-              </select>
-            </label>
-            <label>
-              <span>{t("Sort notes by")}</span>
-              <select
-                aria-label={t("Sort notes by")}
-                value={libraryPreferences.sort}
-                onChange={(event) =>
-                  setLibraryPreferences((current) => ({
-                    ...current,
-                    sort: event.target.value as NoteSort,
-                  }))
-                }
-              >
-                <option value="updated">{t("Recently updated")}</option>
-                <option value="created">{t("Recently created")}</option>
-                <option value="title">{t("Title A–Z")}</option>
-              </select>
-            </label>
+                      : project.name) +
+                    " (" +
+                    project.count +
+                    ")",
+                  description: project.path,
+                })),
+              ]}
+            />
+            <SearchableSelect
+              label={t("Filter by tag")}
+              value={tagFilter ?? ""}
+              onChange={(value) => setTagFilter(value || null)}
+              options={[
+                { value: "", label: t("All tags") },
+                ...allTags.map((tag) => ({ value: tag, label: "#" + tag })),
+              ]}
+            />
+            <Select
+              label={t("Group notes by")}
+              value={libraryPreferences.grouping}
+              onValueChange={(value) =>
+                setLibraryPreferences((current) => ({
+                  ...current,
+                  grouping: value as NoteGrouping,
+                }))
+              }
+              options={[
+                { value: "project", label: t("Project") },
+                { value: "tag", label: t("Tags") },
+                { value: "none", label: t("No grouping") },
+              ]}
+            />
+            <Select
+              label={t("Sort notes by")}
+              value={libraryPreferences.sort}
+              onValueChange={(value) =>
+                setLibraryPreferences((current) => ({ ...current, sort: value as NoteSort }))
+              }
+              options={[
+                { value: "updated", label: t("Recently updated") },
+                { value: "created", label: t("Recently created") },
+                { value: "title", label: t("Title A–Z") },
+              ]}
+            />
+            <Button variant="ghost" size="sm" onClick={clearFilters}>
+              {t("Clear filters")}
+            </Button>
           </div>
         </Popover>
       ) : null}
@@ -674,13 +684,9 @@ export function NotesView({
       >
         <span>{t("{p0} of {p1} notes", { p0: visible.length, p1: notes.length })}</span>
         {filtered ? (
-          <button
-            type="button"
-            onClick={clearFilters}
-            className="rounded px-1.5 py-1 hover:bg-content/10"
-          >
+          <Button variant="ghost" size="sm" type="button" onClick={clearFilters}>
             {t("Clear filters")}
-          </button>
+          </Button>
         ) : null}
       </div>
       <div
@@ -691,50 +697,67 @@ export function NotesView({
         }}
       >
         {error ? (
-          <div role="alert" className="px-3 py-2 text-[12px] text-content">
+          <Alert tone="danger" className="">
             {t("Could not load or update notes: ")}
             {error}{" "}
-            <button type="button" onClick={() => void refresh()} className="underline">
+            <Button
+              variant="ghost"
+              size="sm"
+              type="button"
+              onClick={() => void refresh()}
+              className="underline"
+            >
               {t("Retry")}
-            </button>
-          </div>
+            </Button>
+          </Alert>
         ) : null}
         {searchError ? (
-          <div role="alert" className="px-3 py-2 text-[12px] text-content">
+          <Alert tone="danger" className="">
             {t("Could not load or update notes: ")}
             {searchError}{" "}
-            <button type="button" onClick={() => void refresh()} className="underline">
+            <Button
+              variant="ghost"
+              size="sm"
+              type="button"
+              onClick={() => void refresh()}
+              className="underline"
+            >
               {t("Retry")}
-            </button>
-          </div>
+            </Button>
+          </Alert>
         ) : null}
         {[...drafts]
           .filter(([id, draft]) => id !== selectedId && draft.error)
           .map(([id, draft]) => (
-            <div key={id} role="alert" className="px-3 py-2 text-[12px] text-content">
+            <Alert tone="danger" key={id} className="">
               {t("Unsaved note: ")}
               {draft.error}{" "}
-              <button type="button" className="underline" onClick={() => setSelectedId(id)}>
+              <Button variant="ghost" size="sm" type="button" onClick={() => setSelectedId(id)}>
                 {t("Recover draft")}
-              </button>
-            </div>
+              </Button>
+            </Alert>
           ))}
         {loading && notes.length === 0 ? (
           <div className="flex justify-center py-10 text-content/40">
             <LoaderCircle className="size-4 animate-spin" strokeWidth={1.75} />
           </div>
         ) : error && notes.length === 0 ? null : visible.length === 0 ? (
-          <p className="px-3 py-2 text-[12px] text-content/50">
-            {filtered
-              ? t("No matching notes")
-              : t("No notes yet. Save a turn from the transcript, or create one here.")}
-          </p>
+          <EmptyState
+            description={
+              filtered
+                ? t("No matching notes")
+                : t("No notes yet. Save a turn from the transcript, or create one here.")
+            }
+          />
         ) : (
           <div className="p-1.5" data-note-library>
             {libraryWindow.groups.map((group) => (
               <section key={group.key}>
                 {libraryPreferences.grouping !== "none" ? (
-                  <button
+                  <Button
+                    variant="item"
+                    size="sm"
+                    motion="none"
                     type="button"
                     className="note-group-heading"
                     title={group.path}
@@ -758,7 +781,7 @@ export function NotesView({
                           : t("Untagged"))}
                     </span>
                     <span className="tabular-nums text-content/60">{group.totalNotes}</span>
-                  </button>
+                  </Button>
                 ) : null}
                 {collapsedGroups.has(group.key) ? null : (
                   <ul className="flex flex-col gap-0.5">
@@ -789,7 +812,9 @@ export function NotesView({
       </div>
       {libraryWindow.total > LIST_PAGE_SIZE ? (
         <nav className="note-library-pages" aria-label={t("Notes")}>
-          <button
+          <Button
+            variant="ghost"
+            size="sm"
             type="button"
             disabled={libraryWindow.start === 0}
             onClick={() => {
@@ -798,12 +823,14 @@ export function NotesView({
             }}
           >
             {t("Back")}
-          </button>
+          </Button>
           <span aria-live="polite" className="tabular-nums">
             {Math.floor(libraryWindow.start / LIST_PAGE_SIZE) + 1} /{" "}
             {Math.ceil(libraryWindow.total / LIST_PAGE_SIZE)}
           </span>
-          <button
+          <Button
+            variant="ghost"
+            size="sm"
             type="button"
             disabled={libraryWindow.end >= libraryWindow.total}
             onClick={() => {
@@ -812,7 +839,7 @@ export function NotesView({
             }}
           >
             {t("Show more")}
-          </button>
+          </Button>
         </nav>
       ) : null}
       <div
@@ -855,19 +882,19 @@ export function NotesView({
           {selectedSummary && !visible.some((note) => note.id === selectedSummary.id) ? (
             <div className="flex flex-wrap items-center gap-2 border-b border-stroke px-5 py-2 text-[12px] text-content/70">
               {t("This note is outside the current filters.")}
-              <button type="button" className="underline" onClick={clearFilters}>
+              <Button variant="ghost" size="sm" type="button" onClick={clearFilters}>
                 {t("Clear filters")}
-              </button>
+              </Button>
             </div>
           ) : null}
           {detailError ? (
-            <div role="alert" className="px-5 py-2 text-[12px] text-content">
+            <Alert tone="danger" className="">
               {t("Could not load or update notes: ")}
               {detailError}{" "}
-              <button type="button" onClick={retryDetail} className="underline">
+              <Button variant="ghost" size="sm" type="button" onClick={retryDetail}>
                 {t("Retry")}
-              </button>
-            </div>
+              </Button>
+            </Alert>
           ) : null}
           {detailLoading && !selected ? (
             <div role="status" className="grid min-h-0 flex-1 place-items-center">
@@ -941,18 +968,18 @@ function NoteDetailTab({
 }) {
   useLocale();
   return (
-    <button
+    <Button
+      variant="tab"
+      size="sm"
+      motion="none"
       type="button"
       role="tab"
       aria-selected={selected}
       onClick={onSelect}
-      className={`relative flex h-9 items-center text-[12px] leading-none ${
-        selected ? "text-content" : "text-content/50 hover:text-content"
-      }`}
+      selected={selected}
     >
       {label}
-      {selected ? <span className="absolute inset-x-0 bottom-0 h-0.5 bg-content" /> : null}
-    </button>
+    </Button>
   );
 }
 
@@ -979,7 +1006,10 @@ function NoteCard({
   const time = formatRelativeTime(new Date(note.updatedAt).toISOString());
   const hint = [note.title, project].filter(Boolean).join(" · ");
   return (
-    <button
+    <Button
+      variant="item"
+      motion="none"
+      selected={active}
       type="button"
       title={hint}
       aria-current={active ? "true" : undefined}
@@ -987,11 +1017,7 @@ function NoteCard({
       data-note-group={group}
       onClick={onSelect}
       onKeyDown={onNavigate}
-      className={`flex w-full flex-col rounded-md border px-2.5 py-2 text-left ${
-        active
-          ? "border-transparent bg-selection text-content"
-          : "border-transparent text-content/80 hover:bg-content/5 hover:text-content"
-      }`}
+      className="note-library-card flex w-full flex-col"
     >
       <span className="flex items-center gap-2">
         {project && note.sourceCwd ? (
@@ -1022,19 +1048,16 @@ function NoteCard({
       {note.tags.length > 0 ? (
         <span className="mt-1.5 flex min-w-0 items-center gap-1 overflow-hidden">
           {note.tags.slice(0, 3).map((tag) => (
-            <span
-              key={tag}
-              className="max-w-24 truncate rounded bg-content/8 px-1.5 py-0.5 text-[10px] leading-none text-content/55"
-            >
+            <Badge key={tag} size="sm" className="max-w-24 truncate">
               #{tag}
-            </span>
+            </Badge>
           ))}
           {note.tags.length > 3 ? (
             <span className="shrink-0 text-[10px] text-content/40">+{note.tags.length - 3}</span>
           ) : null}
         </span>
       ) : null}
-    </button>
+    </Button>
   );
 }
 
@@ -1137,6 +1160,7 @@ function NoteEditor({
     notifyDrafts();
   };
   const [deleting, setDeleting] = useState(false);
+  const [actionMenu, setActionMenu] = useState<HTMLElement | null>(null);
   const [imageDrag, setImageDrag] = useState(false);
   const [imageBusy, setImageBusy] = useState(false);
   const editsRef = draftState.edits;
@@ -1493,7 +1517,9 @@ function NoteEditor({
               </span>
             ) : null}
           </div>
-          <input
+          <TextField
+            label={t("Note title")}
+            hideLabel
             ref={titleFieldRef}
             value={title}
             onChange={(event) => {
@@ -1509,7 +1535,7 @@ function NoteEditor({
             }}
             onKeyDown={onTitleKeyDown}
             aria-label={t("Note title")}
-            className="note-detail-title w-full border-0 bg-transparent p-0 text-[20px] font-semibold leading-tight text-content placeholder:text-content/35"
+            fieldClassName="note-detail-title"
             placeholder={t("Untitled")}
           />
           <div className="note-detail-tags">
@@ -1522,23 +1548,38 @@ function NoteEditor({
             />
           </div>
           <div className="note-detail-actions">
-            <button
+            <Button
+              variant="primary"
+              size="sm"
               type="button"
               disabled={!canAddToChat}
               onClick={() => onAddToChat(draft)}
-              className="note-action note-action-primary"
             >
               <MessageSquarePlus className="size-3.5" strokeWidth={1.75} />
               {t("Add to chat")}
-            </button>
-            <button
-              type="button"
-              disabled={saving}
-              onClick={() => void saveNow()}
-              className="note-action note-action-save"
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              iconOnly
+              label={t("More options")}
+              aria-haspopup="menu"
+              aria-expanded={!!actionMenu}
+              onClick={(event) => setActionMenu(event.currentTarget)}
             >
-              {t("Save")}
-            </button>
+              <MoreHorizontal />
+            </Button>
+            {actionMenu ? (
+              <DropdownMenu
+                anchor={actionMenu}
+                label={t("Note actions")}
+                items={[{ kind: "item", id: "save", label: t("Save"), disabled: saving }]}
+                onClose={() => setActionMenu(null)}
+                onPick={(id) => {
+                  if (id === "save") void saveNow();
+                }}
+              />
+            ) : null}
             <ConfirmMorph
               disabled={deleting}
               label={t("Delete")}
@@ -1562,7 +1603,11 @@ function NoteEditor({
               }}
             />
           </div>
-          <span role="status" className="note-detail-status text-[11px] text-content/65">
+          <Badge
+            role="status"
+            tone={saveError ? "danger" : saving ? "info" : dirty ? "warning" : "neutral"}
+            className="note-detail-status"
+          >
             {saveError
               ? t("Unsaved changes")
               : saving
@@ -1572,17 +1617,16 @@ function NoteEditor({
                   : t("Saved")}
             {" · "}
             <NoteWordCount body={body} />
-          </span>
+          </Badge>
           {saveError ? (
-            <div
-              role="alert"
-              className="note-detail-error flex items-center gap-2 text-[12px] text-danger/90"
-            >
+            <Alert tone="danger" className="note-detail-error">
               <span>
                 {t("Could not save note: ")}
                 {saveError}
               </span>
-              <button
+              <Button
+                variant="ghost"
+                size="sm"
                 type="button"
                 onClick={() => {
                   setSaveError(null);
@@ -1591,8 +1635,8 @@ function NoteEditor({
                 className="shrink-0 underline hover:no-underline"
               >
                 {t("Retry")}
-              </button>
-            </div>
+              </Button>
+            </Alert>
           ) : null}
         </header>
         <div className="note-editor-toolbar flex flex-wrap items-center gap-x-4 border-b border-stroke">
@@ -1629,7 +1673,9 @@ function NoteEditor({
           data-external-drop-owner="note-images"
           aria-busy={imageBusy}
           className={`note-editor-body relative rounded-lg border transition-colors ${
-            imageDrag ? "border-accent/60 bg-accent/5" : "border-transparent"
+            imageDrag
+              ? "border-(--ui-border-accent) bg-(--ui-surface-selected)"
+              : "border-transparent"
           }`}
           onDragOver={(event: ReactDragEvent<HTMLDivElement>) => {
             if (!hasDroppedFiles(event.dataTransfer)) return;
@@ -1712,63 +1758,22 @@ function NoteTagsEditor({
   onChange: (tags: string[]) => void;
 }) {
   useLocale();
-  const [value, setValue] = useState("");
-
-  const addTag = (input = value) => {
-    const next = normalizeNoteTags([...tags, input]);
-    setValue("");
-    if (!sameTags(next, tags)) onChange(next);
-  };
-
   return (
-    <div className="flex min-w-0 flex-wrap items-center gap-1.5" aria-label={t("Tags")}>
-      <span className="mr-0.5 text-[11px] text-content/45">{t("Tags")}</span>
-      {tags.map((tag) => (
-        <span
-          key={tag}
-          className="inline-flex h-6 max-w-48 items-center gap-1 rounded-md bg-content/8 pl-2 pr-1 text-[11px] text-content/70"
-        >
-          <span className="truncate">#{tag}</span>
-          <button
-            type="button"
-            title={t("Remove #{p0}", { p0: tag })}
-            aria-label={t("Remove #{p0}", { p0: tag })}
-            onClick={() => onChange(tags.filter((item) => item !== tag))}
-            className="grid size-4 shrink-0 place-items-center rounded text-content/40 hover:bg-content/10 hover:text-content"
-          >
-            <X className="size-2.5" strokeWidth={1.75} />
-          </button>
-        </span>
-      ))}
-      {tags.length < MAX_NOTE_TAGS ? (
-        <input
-          value={value}
-          onChange={(event) => {
-            const next = event.target.value;
-            if (next.endsWith(",")) addTag(next.slice(0, -1));
-            else setValue(next);
-          }}
-          onBlur={() => {
-            if (value.trim()) addTag();
-          }}
-          onKeyDown={(event) => {
-            if (event.key === "Enter" || event.key === ",") {
-              event.preventDefault();
-              addTag();
-              return;
-            }
-            if (event.key === "Backspace" && !value && tags.length > 0) {
-              onChange(tags.slice(0, -1));
-            }
-          }}
-          aria-label={t("Add note tag")}
-          placeholder={t("Add tag…")}
-          spellCheck={false}
-          autoComplete="off"
-          className="h-6 min-w-20 flex-1 border-0 bg-transparent px-1 text-[11px] text-content outline-none placeholder:text-content/35"
-        />
-      ) : null}
-    </div>
+    <TagInput
+      label={t("Tags")}
+      hideLabel
+      value={tags}
+      maxTags={MAX_NOTE_TAGS}
+      normalize={normalizeNoteTags}
+      backspaceBehavior="remove"
+      formatTag={(tag) => `#${tag}`}
+      placeholder={t("Add tag…")}
+      removeLabel={(tag) => t("Remove #{p0}", { p0: tag })}
+      inputProps={{ "aria-label": t("Add note tag"), spellCheck: false, autoComplete: "off" }}
+      onValueChange={(next) => {
+        if (!sameTags(next, tags)) onChange(next);
+      }}
+    />
   );
 }
 

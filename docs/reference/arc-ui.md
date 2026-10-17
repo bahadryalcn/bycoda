@@ -2,8 +2,9 @@
 
 The shared design policy is [bycoda UI design system](ui-design-system.md).
 Use [component selection](ui-component-catalog.md) to choose free Arc capabilities.
-This document describes the current implementation; target APIs in the design
-policy are not available until their foundation wave is implemented and verified.
+This document describes current source contracts. A catalog decision is not a claim
+that an official registry item is installed, every consumer has migrated, or an
+installed desktop application has passed acceptance.
 
 Arc source is installed with the project-pinned shadcn CLI into `src/shared/ui/arc/`.
 `components.json` registers `@uiarc` and maps components to `src/shared/ui`.
@@ -73,12 +74,20 @@ while improving the interaction. A shared import alone does not prove task fit.
 already delegates to it. New application code must not import the registry Button
 directly or define another button's color, padding, border, focus and loading system.
 
-The shared API exposes seven variants. `primary`, `secondary`, `ghost` and `danger`
-use the existing Arc action variants. `link`, `item` and `tab` are bycoda adaptations
+The shared API separates hierarchy from semantic intent. `primary`, `secondary`
+and `ghost` use Arc action rendering. Legacy `danger` normalizes to secondary with
+danger tone. `link`, `item` and `tab` are bycoda adaptations
 of Arc's ghost presentation. `link` is a text action, not an anchor for navigation.
 `item` fills a row and aligns content to the start; `tab` represents a compact tab.
 Both structural variants render direct children without label/width/press animation.
 They do not implement roving focus or selection: the existing interaction owner does.
+
+`tone` accepts `neutral`, `accent`, `info`, `success`, `warning` and `danger`;
+legacy `error` maps to danger. An explicit tone overrides the legacy variant.
+The default remains neutral, including primary. Tone foreground, solid/on-solid,
+hover, pressed, border and disabled roles live in the shared theme; info remains
+independent of the user's accent. Structural state and native props remain owned
+by their existing interactions.
 
 | Prop                       | Contract                                                                                                                                                        |
 | -------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -162,15 +171,71 @@ not a new product build or UI test suite.
 - `src/shared/ui/Button.tsx` preserves native button props, defaults to
   `type="button"`, and uses the compact Arc theme. Native drag and animation
   handlers use a native button because Motion reserves those event names.
+  Structural item/tab records may opt into `layout="stacked"` for direct multiline
+  children. This keeps row geometry in the shared control when layered utility
+  display classes would otherwise be overridden by Arc's base inline layout.
 - `SecondaryButton` keeps its existing public API and delegates to `Button`.
 - `TextField` adds the scoped theme to Arc Input and forwards the input ref.
   Use `hideLabel` only when an existing visible label or surrounding context
-  supplies the visual hierarchy. The input still has an accessible label.
-- Settings `Toggle`, `Slider`, and `Segmented` keep their existing call-site
-  contracts. Switch sounds, controlled values, radio semantics and settings
-  search ids remain owned by the existing settings layer.
-- Settings `Select` and `SearchableSelect` compose Arc Select/Combobox presentation
+  supplies the visual hierarchy. It omits the inner label to avoid nesting;
+  a nonempty `label` becomes an accessible-name fallback. Existing native
+  `aria-label`/`aria-labelledby` and outer label relationships remain supported.
+- Shared `Switch`, `Slider`, `SegmentedControl` and `Select` own generic
+  presentation without depending on Settings. Switch forwards native props/ref;
+  Slider exposes scalar/range values and `onValueCommit`; SegmentedControl
+  defaults to radio semantics. Select uses `onValueChange` and the existing Popover.
+  Settings `Toggle`, `Slider`, `Segmented` and `Select` remain compatibility
+  facades, keeping sounds, settings search IDs and persistence hints.
+- Shared `Select` and `SearchableSelect` compose Arc Select/Combobox presentation
   while retaining the existing Popover routing, IME, focus and keyboard contracts.
+- `NativeSelect` (exported from `Select`) and `Checkbox` retain native input
+  refs, uncontrolled defaults, required validation, reset and `FormData` for
+  existing forms. These are native form owners with shared semantic styling;
+  searchable controlled collections still use SearchableSelect. Checkbox also
+  supports an indeterminate visual/ARIA state without controlling its value.
+- `NativeSearchableSelect` adds searchable presentation to single-value native
+  forms. A real select retains `name`, `form`, `required`, native change events,
+  controlled `value` or uncontrolled `defaultValue`, reset, disabled option
+  metadata and `HTMLSelectElement`
+  refs. `options` uses the shared selection metadata. Invalid submission displays
+  the browser's validation message and focuses the visible trigger; imperative
+  select focus and external labels also route there. Reset synchronization runs
+  after the native default action and honors cancelled resets. Social's project,
+  account and verified-fact form fields use this bridge. Disabled fields retain
+  native omission from FormData; existing explicit edit payload owners remain.
+  This is a real select bridge, not hidden-input-only serialization. The six
+  initial growing Social form choices were migrated; that count is consumer
+  evidence, not a restriction on reuse. checkValidity/reportValidity and custom
+  validation messages retain visible recovery feedback and trigger focus.
+- `Badge`, `Alert` and `EmptyState` expose adapted official free Arc source through
+  application adapters and shared semantic tones. Social retains domain status
+  mapping, labels, operation callbacks and recovery actions. Alert supports
+  controlled presence/dismissal and native HTMLDivElement ref/attributes;
+  EmptyState accepts caller-owned action content. Feature-wide role=alert CSS
+  must not override the shared tone, surface or spacing.
+  Neither component grants operation authority. Social's native disclosure/modal
+  lifecycle remains the owner of mounted drafts and close/focus behavior.
+- `SearchableSelect` supports per-option descriptions/disabled metadata,
+  locale-specific matching, native `triggerProps`/ref, optional selected values
+  and removal/reset/Done labels. SocialMultiSelect retains domain busy state
+  and Turkish copy in its feature facade.
+- `ExpandingSearch` adapts official free width/radius choreography to controlled
+  query and externally ranked results. SettingsSearch retains `searchSettings`
+  ordering, localization and deferred setting reveal. Its results use the
+  existing Popover; it does not replace filtering or form-value selection.
+- `ControlSpecimen` renders real Button, fields, generic choices and a Popover
+  with ephemeral local state. Appearance uses the same compact specimen and
+  optional tone/state details; its storage keys and preference owners remain.
+- `ExpandingButtonGroup` reuses official free choreography with shared Button
+  action nodes and guarded async results. Session Notes uses it for Copy,
+  Add to chat and conditional Link; deletion and serialized saving retain their
+  feature owners. A false/rejected operation never produces success feedback.
+- `FloatingButtonGroup` supplies shared action rows and roving keyboard focus
+  inside TranscriptSelectionMenu's existing Popover. Terminal delegates to that
+  same menu. Selection preservation, dismissal and pending/error/retry remain
+  feature-owned. Native Button tooltips avoid another tooltip/overlay dependency.
+- ConfirmMorph action nodes delegate to Button with its own label motion off;
+  the composite retains hold/countdown/arming, async retry, actual undo and focus.
 - `MorphSelect` handles small property lists and registers with the shared Escape
   overlay stack. General settings uses it for the stay-awake duration.
 - `ExpandableCard` displays Diagnostics measurement details. Closed content stays
@@ -179,6 +244,48 @@ not a new product build or UI test suite.
   keeps worker/reviewer session actions visible outside collapsed review details.
 - `TextareaField` forwards native textarea props/ref and scopes the field theme.
   Social bulk composition retains its original validation and policy controls.
+- `NumberField` delegates to TextField with native `type="number"`, keeping
+  `min`, `max`, `step`, invalid/empty drafts, native change events and form refs.
+  Usage budgets retain their own parsing and save boundary; the adapter does not
+  add scrubbing, formatting or coercion on change.
+- `PasswordField` adapts the free password reveal interaction through TextField
+  and Button. The same native input retains its uncontrolled value, selection,
+  ref, autocomplete and validation. Reveal changes its type, never copies a secret
+  into React state and never submits the form. Connections uses it for credential
+  entry; password-strength rules do not apply to provider tokens.
+- `RadioGroup` adapts free native radio rows with optional descriptions and a
+  compact layout. Native radios retain name, required validation, disabled options,
+  value/defaultValue, change events, keyboard navigation, reset and input refs.
+  Social schedule and approval choices retain their feature-owned draft and
+  approval-step callbacks.
+- `DropdownMenu` provides a controlled single-level action menu through the
+  existing Popover and Arc ContextMenuRow. It supports disabled items, separators,
+  descriptions, shortcuts, checked state, roving focus, typeahead and Escape focus
+  return. Nested ExplorerMenu interactions keep their existing owner. Consumers
+  own operation promises, errors and permissions.
+- Public `ContextMenu` forwards to `arc/context-menu/native-context-menu.tsx`, the
+  extracted ExplorerMenu point/anchor/submenu controller. Feature `ExplorerMenu` is
+  a compatibility re-export; native popup and existing Popover routing still own
+  placement, focus and dismissal. This is distinct from single-level DropdownMenu.
+- Public `MenuRow` delegates the existing private Arc ContextMenuRow and exports
+  `menuRowClassName`. It forwards native button refs/events and disabled/submenu
+  semantics to existing domain menu controllers; it does not create a menu stack.
+- Public `TreeRow` forwards native button props/ref to `arc/tree-view/tree-row.tsx`.
+  Controlled `selected`, `cut`, `dropTarget` and finite depth clamped to 0..64
+  drive shared density/token presentation. The default role is treeitem with
+  aria-level; caller roles/ARIA and events remain supported. FileTree retains
+  lazy loading, windowing, multi-selection, rename and coordinate native drops.
+- `Progress` uses measured values or an explicit indeterminate state when `value`
+  is absent. Caller tones remain independent of completion: exhausted provider
+  quota keeps its danger meaning at zero remaining or 100 percent used. `Skeleton`
+  reserves pending content and can reveal caller children; outgoing placeholders
+  stop announcing loading during their exit. Provider account usage consumes both.
+- `TagInput` adapts free tag editing with native draft input refs, IME-safe
+  delimiters, blur commit, optional normalization/max tags and keyboard removal.
+  Notes retains normalizeNoteTags, persistence and its immediate Backspace removal
+  contract. Committed tags are owned by `value`/`onValueChange`; `inputProps.name`
+  names only the draft input. Named committed-tag FormData/reset/required semantics
+  are not supplied by this adapter and must not be inferred from its input props.
 - Project group menus use Arc Context Menu row presentation with the existing
   `Popover` and `ExplorerMenu` overlay owners. Appearance, order, privacy,
   workspace and deletion actions live in viewport-aware flyouts. Group deletion
@@ -189,14 +296,39 @@ not a new product build or UI test suite.
 
 Text-field focus is owned by `src/styles/arc.css`: one 1px outline inset on the
 existing border, with the shared danger token for invalid fields. `SearchInput`
-defaults to owning this outline. For a bordered composite, use `SearchInputGroup`
+owns this outline by default for `appearance="field"` or `standalone`; an
+unframed bare input defaults to the menu owner. For a bordered composite, use `SearchInputGroup`
 and `focusOwner="group"`; for an already framed menu header, use
 `focusOwner="menu"`. Clear buttons retain their own keyboard focus indicator.
 Feature focus rules must exclude `[data-ui-focus]` instead of overriding this
 contract or drawing another outline on the container.
 
+Standalone search fields use `SearchInput appearance="field"`; bordered search
+compositions use `SearchInputGroup appearance="field"` with an inner
+`SearchInput focusOwner="group"`. Shared CSS owns surface, border, radius, height,
+font, placeholder, disabled and invalid presentation. Set native `aria-invalid`
+on the input; the group uses the same danger border role. Keep visible error or
+match-count feedback in the caller. Existing unframed editor/menu inputs can keep
+`appearance="bare"` with their explicit focus owner. Consumers supply layout,
+not replacement border/background/font/height/focus classes.
+
+SearchInput preserves native props/ref, controlled/uncontrolled values and input
+events. Clear uses the native value setter and dispatches input before returning
+focus to the same input. Uncontrolled native form reset reads the value after
+the browser default action and honors preventDefault; controlled value ownership
+stays with the caller. FilePreviewSearch retains its Range/highlight controller,
+find shortcuts, IME/options and preview focus recovery around the shared group.
+
+The existing `bycoda.appearancePreferences.v1` record now includes normalized
+`controlDensity`: compact (default), comfortable and touch. The root
+`data-control-density` selects shared geometry. Compact retains 28/36px
+compact/standard heights, comfortable uses 32/40px, and touch uses 44px for
+compact/standard controls (48px large). Missing/invalid old values remain compact.
+Reading-section reset restores compact and that section's defaults while retaining
+fonts and unrelated preferences; no separate density storage key is introduced.
+
 `src/styles/arc.css` defines semantic Arc roles on `.bycoda-arc` control roots.
-Colors, fonts, active states, focus and 28/36px heights come from the existing
+Colors, fonts, active states, focus and density-dependent geometry come from
 bycoda appearance tokens. These roles inherit into child controls without
 replacing global font, theme, accent or focus behavior.
 
@@ -246,6 +378,20 @@ of the desktop development server. Browser captures and traces stay in ignored
 `temp/` locations. Browser fixture acceptance does not establish native popup or
 installed desktop acceptance.
 
+## Review boundaries
+
+`node scripts/checks/check-ui-boundaries.mjs` compares source/style findings
+against explicit owner-reviewed fingerprint decisions. The baseline includes
+944 historical component decisions plus reviewed current additions and counted
+signal exceptions. It remains in the uncommitted owner review diff. Inventory
+counts alone are not approval; the check has no automatic refresh command.
+AST/CSS heuristics cannot prove event, permission, native editor or overlay
+correctness. Local immutable/conditional/template class recipes and static
+ARIA/feedback selectors are tracked; dynamic roles, indirect styles and imported
+recipes still need manual review.
+Source contracts, mocked browser fixtures, installed Windows/macOS applications
+and release acceptance are separate evidence.
+
 ## Additional data and action controls
 
 Nine free Arc registry items are installed with the pinned CLI. Their shared adapters
@@ -266,3 +412,39 @@ scope appearance to `bycoda-arc`; registry copy is localized through the existin
 The new controls are exercised in the existing memory-only Arc browser fixture,
 including dark/light themes, narrow widths, keyboard interactions and reduced motion.
 No component imports Arc's global foundation reset. Shared focus rules remain in `arc.css`.
+
+The current native file consumers use single-file selection and immediately
+invoke their existing feature callback. `TextField type="file"` preserves the
+browser FileList, accept/ref/reset and form ownership. Free FileDropzone/FileUpload
+sources own queued item/progress/retry/abort state and do not forward that native
+form contract. Those families remain conditional until a concrete consumer needs
+that lifecycle; no cancellation or upload authority is invented by UI migration.
+
+Stepper, ElasticSlider and SplitButton now have actual consumers: onboarding
+workflow state, Appearance opacity/blur, and Inbox PR merge method respectively.
+SplitButton also owns the Commit action cluster: optional `menuDisabled` overrides
+only the menu half's native-disabled gate so Amend remains reachable when the
+primary Commit is invalid. Omission preserves the primary-disabled behavior.
+Loading and explicit group aria-disabled always gate both halves. Menu selection
+only calls its explicit onSelect; it never implicitly invokes the primary action.
+Stepper completion and navigation remain feature-owned; ElasticSlider is opt-in
+for approximate visual adjustments; SplitButton method selection never runs the
+primary action. Native confirmation/approval stays with the feature.
+
+`MorphSelect` now accepts exported `MorphSelectItem` option/group records,
+`searchable` (default false), `onClose` and native `triggerProps` including ref
+and pointer events. Disabled/group keyboard navigation and IME guards remain in
+the shared owner. Sessions use it for bounded independent scalar model settings;
+service tier, effort and other settings retain their own values and callbacks.
+Growing/custom model catalogs retain their search and free-entry controllers.
+
+`SlotText` animates existing formatted strings in Usage overview KPIs. It respects
+application motion preference and OS reduced motion, keeps the latest accessible
+value through rapid updates, and does not change numeric formatting, units,
+estimates or filtering. Streaming transcript values are not SlotText consumers.
+
+Pure placement classes (`absolute`, `fixed`, `sticky`, `static`, `relative`) on
+`Button` are honored through the shared components layer. Arc and adapter box
+layout stays in that layer so consumer layout utilities can also hide/reveal,
+align and place controls. Control shape, color, focus
+and disabled/loading presentation remain centralized; this is not a feature skin.

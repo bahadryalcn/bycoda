@@ -54,7 +54,7 @@ export function EmptySession({ cwd, composer, hasChatBackground }: Props) {
               <img className="bycoda-brand-lettering" src={PRODUCT_IDENTITY.wordmarkSrc} alt="" />
             </div>
             <div className="bycoda-task-brief pointer-events-auto">
-              <h1 className="text-content" title={project ? cwd : undefined}>
+              <h1 className="text-(--ui-tone-neutral-fg)" title={project ? cwd : undefined}>
                 {title}
               </h1>
               {project ? null : (

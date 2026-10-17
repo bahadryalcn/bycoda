@@ -8,7 +8,11 @@ export default defineConfig({
     outDir: "temp/build/browser-editor-selection",
     emptyOutDir: false,
     rolldownOptions: {
-      input: ["tests/browser/editor-selection.html", "tests/browser/file-save.html"],
+      input: [
+        "tests/browser/editor-selection.html",
+        "tests/browser/file-save.html",
+        "tests/browser/file-tree.html",
+      ],
     },
   },
   preview: { host: "127.0.0.1", port: 1451, strictPort: true },

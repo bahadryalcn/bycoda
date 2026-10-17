@@ -1,3 +1,8 @@
+import { Alert } from "../../../shared/ui/Alert";
+import { SearchInput } from "../../../shared/ui/SearchInput";
+import { Checkbox } from "../../../shared/ui/Checkbox";
+import { TextField } from "../../../shared/ui/TextField";
+import { Button } from "../../../shared/ui/Button";
 import { t, useLocale } from "../../../shared/i18n";
 import { useEffect, useRef, useState } from "react";
 import {
@@ -21,9 +26,6 @@ type Props = {
   onClose: () => void;
 };
 
-const actionClass =
-  "flex items-center gap-1.5 rounded-md px-2 py-1.5 text-[12px] text-content/65 hover:bg-content/5 hover:text-content disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent";
-
 export function FolderPicker({ title, multiple, onPick, onClose }: Props) {
   useLocale();
   const [directory, setDirectory] = useState("");
@@ -31,6 +33,10 @@ export function FolderPicker({ title, multiple, onPick, onClose }: Props) {
   const [roots, setRoots] = useState<string[]>(IS_WIN ? [] : ["/"]);
   const [pathInput, setPathInput] = useState("");
   const [entries, setEntries] = useState<FsEntry[]>([]);
+  const [query, setQuery] = useState("");
+  const visibleEntries = entries.filter((entry) =>
+    entry.name.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()),
+  );
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string>();
   const [loadFailed, setLoadFailed] = useState(false);
@@ -111,6 +117,7 @@ export function FolderPicker({ title, multiple, onPick, onClose }: Props) {
   function navigate(path: string) {
     if (busy) return;
     setDirectory(path);
+    setQuery("");
     setPathInput(path);
     setNewName(null);
     setError(undefined);
@@ -160,16 +167,17 @@ export function FolderPicker({ title, multiple, onPick, onClose }: Props) {
         }}
       >
         <div className="flex items-center gap-2 border-b border-stroke p-3 pr-12">
-          <button
+          <Button
+            variant="secondary"
+            motion="none"
             type="button"
             aria-label={t("Parent folder")}
             title={t("Parent folder (Backspace)")}
             disabled={busy || !directory || pathKey(parent) === pathKey(directory)}
-            className={actionClass}
             onClick={() => navigate(parent)}
           >
             <ArrowLeft className="size-4" />
-          </button>
+          </Button>
           <form
             className="min-w-0 flex-1"
             onSubmit={(event) => {
@@ -183,59 +191,75 @@ export function FolderPicker({ title, multiple, onPick, onClose }: Props) {
               }
             }}
           >
-            <input
+            <TextField
+              hideLabel
+              label=""
               aria-label={t("Folder path")}
               title={directory}
               value={pathInput}
               onChange={(event) => setPathInput(event.target.value)}
               placeholder={t("Folder path…")}
               disabled={busy}
-              className="w-full rounded-md bg-transparent px-1 py-1.5 font-mono text-[13px] outline-none focus:bg-content/5 focus:ring-1 focus:ring-accent"
+              className="w-full"
             />
           </form>
-          <button
+          <Button
+            variant="secondary"
+            motion="none"
             type="button"
             title={t("Add folder ({p0}Enter)", { p0: MOD })}
             disabled={busy || loading || !directory || loadFailed}
             onClick={pick}
-            className={`${actionClass} border border-stroke text-content`}
           >
             {t("Add")}
             {selected.length ? ` (${selected.length})` : ""}
-          </button>
+          </Button>
         </div>
         <nav
           aria-label={t("Locations")}
           className="flex flex-wrap gap-1 border-b border-stroke px-3 py-2"
         >
-          <button
+          <Button
+            variant="secondary"
+            motion="none"
             type="button"
             disabled={busy || !home}
-            className={actionClass}
             onClick={() => navigate(home)}
           >
             {t("Home folder")}
-          </button>
+          </Button>
           {roots.map((path) => (
-            <button
+            <Button
+              variant="secondary"
+              motion="none"
               key={path}
               type="button"
               disabled={busy}
               aria-current={pathKey(path) === pathKey(directory) ? "location" : undefined}
-              className={`${actionClass} border border-stroke font-mono`}
               onClick={() => navigate(path)}
             >
               {path}
-            </button>
+            </Button>
           ))}
         </nav>
+        <div className="px-3 py-2">
+          <SearchInput
+            standalone
+            aria-label={t("Search folders")}
+            value={query}
+            onChange={(event) => {
+              setQuery(event.target.value);
+              setActive(0);
+            }}
+          />
+        </div>
         <div
           ref={listRef}
           role="listbox"
           aria-label={t("Folders")}
           aria-multiselectable={multiple || undefined}
           tabIndex={0}
-          aria-activedescendant={entries[active] ? `folder-picker-${active}` : undefined}
+          aria-activedescendant={visibleEntries[active] ? `folder-picker-${active}` : undefined}
           title={t("↑ ↓ Navigate · Enter Open folder · Backspace Parent folder · Esc Close")}
           className="h-[min(340px,50vh)] overflow-y-auto overscroll-none p-1.5 outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-accent"
           onKeyDown={(event) => {
@@ -245,18 +269,18 @@ export function FolderPicker({ title, multiple, onPick, onClose }: Props) {
               setActive((index) =>
                 Math.max(
                   0,
-                  Math.min(entries.length - 1, index + (event.key === "ArrowDown" ? 1 : -1)),
+                  Math.min(visibleEntries.length - 1, index + (event.key === "ArrowDown" ? 1 : -1)),
                 ),
               );
             } else if (event.key === "Enter" && !event.ctrlKey && !event.metaKey) {
               event.preventDefault();
-              if (entries[active]) navigate(entries[active].path);
+              if (visibleEntries[active]) navigate(visibleEntries[active].path);
             } else if (event.key === "Backspace") {
               event.preventDefault();
               navigate(parent);
-            } else if (event.key === " " && multiple && entries[active]) {
+            } else if (event.key === " " && multiple && visibleEntries[active]) {
               event.preventDefault();
-              const path = entries[active].path;
+              const path = visibleEntries[active].path;
               setSelected((paths) =>
                 paths.some((item) => pathKey(item) === pathKey(path))
                   ? paths.filter((item) => pathKey(item) !== pathKey(path))
@@ -266,13 +290,13 @@ export function FolderPicker({ title, multiple, onPick, onClose }: Props) {
           }}
         >
           {loading ? (
-            <p role="status" className="p-3 text-[13px] text-content/50">
+            <p role="status" className="p-3 text-[13px] text-[var(--ui-text-muted)]">
               {t("Loading folders…")}
             </p>
-          ) : entries.length === 0 && !error ? (
-            <p className="p-3 text-[13px] text-content/50">{t("No subfolders")}</p>
+          ) : visibleEntries.length === 0 && !error ? (
+            <p className="p-3 text-[13px] text-[var(--ui-text-muted)]">{t("No subfolders")}</p>
           ) : null}
-          {entries.map((entry, index) => (
+          {visibleEntries.map((entry, index) => (
             <div
               key={entry.path}
               id={`folder-picker-${index}`}
@@ -283,11 +307,10 @@ export function FolderPicker({ title, multiple, onPick, onClose }: Props) {
                   ? selected.some((path) => pathKey(path) === pathKey(entry.path))
                   : index === active
               }
-              className={`flex items-center rounded-md ${index === active ? "bg-selection" : "hover:bg-content/5"}`}
+              className={`flex items-center rounded-md ${index === active ? "bg-selection" : "hover:bg-[var(--ui-surface-hover)]"}`}
             >
               {multiple ? (
-                <input
-                  type="checkbox"
+                <Checkbox
                   aria-label={t("Select {p0}", { p0: entry.name })}
                   checked={selected.some((path) => pathKey(path) === pathKey(entry.path))}
                   onChange={(event) =>
@@ -297,22 +320,24 @@ export function FolderPicker({ title, multiple, onPick, onClose }: Props) {
                         : paths.filter((path) => pathKey(path) !== pathKey(entry.path)),
                     )
                   }
-                  className="ml-2 size-3.5 accent-accent"
+                  className="ml-2 size-3.5"
                   disabled={busy}
                 />
               ) : null}
-              <button
+              <Button
+                variant="item"
+                motion="none"
                 type="button"
                 tabIndex={-1}
                 title={t("{p0}\nOpen folder (Enter)", { p0: entry.path })}
                 disabled={busy}
                 onMouseEnter={() => setActive(index)}
                 onClick={() => navigate(entry.path)}
-                className="flex min-w-0 flex-1 items-center gap-2 px-2 py-2 text-left text-[13px] text-content"
+                className="flex min-w-0 flex-1 items-center gap-2 text-left"
               >
-                <Folder className="size-4 shrink-0 text-content/50" />
+                <Folder className="size-4 shrink-0 text-[var(--ui-text-muted)]" />
                 <span className="truncate">{entry.name}</span>
-              </button>
+              </Button>
             </div>
           ))}
         </div>
@@ -324,23 +349,26 @@ export function FolderPicker({ title, multiple, onPick, onClose }: Props) {
               void createFolder();
             }}
           >
-            <FolderPlus className="size-4 shrink-0 text-content/50" />
-            <input
+            <FolderPlus className="size-4 shrink-0 text-[var(--ui-text-muted)]" />
+            <TextField
+              hideLabel
+              label=""
               autoFocus
               aria-label={t("New folder name")}
               placeholder={t("Folder name…")}
               value={newName}
               onChange={(event) => setNewName(event.target.value)}
               disabled={busy}
-              className="min-w-0 flex-1 rounded-md border border-stroke bg-transparent px-2 py-1.5 text-[13px] outline-none focus:border-accent"
+              className="min-w-0 flex-1"
             />
-            <button type="submit" disabled={busy} className={actionClass}>
+            <Button variant="secondary" motion="none" type="submit" disabled={busy}>
               {t("Create")}
-            </button>
-            <button
+            </Button>
+            <Button
+              variant="secondary"
+              motion="none"
               type="button"
               disabled={busy}
-              className={actionClass}
               onClick={() => {
                 setNewName(null);
                 setError(undefined);
@@ -348,30 +376,30 @@ export function FolderPicker({ title, multiple, onPick, onClose }: Props) {
               }}
             >
               {t("Cancel")}
-            </button>
+            </Button>
           </form>
         ) : null}
         {error ? (
           <div className="flex items-center gap-2 px-3 py-2">
-            <p role="alert" className="min-w-0 flex-1 break-words text-[12px] text-danger">
-              {error}
-            </p>
-            <button
+            <Alert tone="danger">{error}</Alert>
+            <Button
+              variant="secondary"
+              motion="none"
               type="button"
-              className={actionClass}
               disabled={busy}
               onClick={() => setRevision((value) => value + 1)}
             >
               {t("Retry")}
-            </button>
+            </Button>
           </div>
         ) : null}
         <div className="flex flex-wrap items-center justify-between gap-1 border-t border-stroke px-2 py-2">
-          <button
+          <Button
+            variant="secondary"
+            motion="none"
             type="button"
             title={t("Create a folder in the current directory")}
             disabled={busy || loading || !directory}
-            className={actionClass}
             onClick={() => {
               setNewName("");
               setError(undefined);
@@ -379,12 +407,13 @@ export function FolderPicker({ title, multiple, onPick, onClose }: Props) {
           >
             <FolderPlus className="size-3.5" />
             {t("New folder")}
-          </button>
-          <button
+          </Button>
+          <Button
+            variant="secondary"
+            motion="none"
             type="button"
             title={t("Choose a drive, network location or folders using the system picker")}
             disabled={busy}
-            className={actionClass}
             onClick={() =>
               void run(async () => {
                 const paths = await pickNativeFolders(title, multiple);
@@ -393,17 +422,18 @@ export function FolderPicker({ title, multiple, onPick, onClose }: Props) {
             }
           >
             {t("Browse…")}
-          </button>
-          <button
+          </Button>
+          <Button
+            variant="secondary"
+            motion="none"
             type="button"
             title={`${managerLabel}\n${prettyCwd(directory)}`}
             disabled={busy || loading || !directory}
-            className={actionClass}
             onClick={() => void run(() => openPathWithDefaultApp(directory))}
           >
             <FolderOpen className="size-3.5" />
             {managerLabel}
-          </button>
+          </Button>
         </div>
       </div>
     </Modal>

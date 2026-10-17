@@ -1,3 +1,6 @@
+import { Alert } from "../../../shared/ui/Alert";
+import { TextField } from "../../../shared/ui/TextField";
+import { Button } from "../../../shared/ui/Button";
 import { t, useLocale } from "../../../shared/i18n";
 import {
   AppWindow,
@@ -24,10 +27,7 @@ import { clearProjectLogo, pickAndSetProjectLogo } from "../../projects/model/pr
 import { TAB_GROUP_COLORS } from "../model/tabGroups";
 import { ColorPickerPopover, ColorSwatchRow } from "../../../shared/ui/ColorPickerPopover";
 import { Popover } from "../../../shared/ui/Popover";
-import {
-  ContextMenuRow,
-  contextMenuRowClassName,
-} from "../../../shared/ui/arc/context-menu/context-menu";
+import { MenuRow as SharedMenuRow, menuRowClassName } from "../../../shared/ui/MenuRow";
 import { ProjectLogoIcon } from "../../projects/ui/ProjectLogoIcon";
 import { ProjectIconPicker } from "../../projects/ui/ProjectIconPicker";
 import { RailBackgroundControls } from "../../projects/ui/RailBackgroundControls";
@@ -247,7 +247,11 @@ export function TabGroupMenu({
     <>
       {logoProject ? (
         <div className="mb-2 flex items-center gap-2 px-0.5">
-          <button
+          <Button
+            iconOnly
+            label={logoPath ? t("Change project logo") : t("Add project logo")}
+            variant="ghost"
+            motion="none"
             type="button"
             title={logoPath ? t("Change project logo") : t("Add project logo")}
             aria-label={logoPath ? t("Change project logo") : t("Add project logo")}
@@ -264,7 +268,7 @@ export function TabGroupMenu({
                 }
               })();
             }}
-            className="grid size-9 shrink-0 place-items-center rounded-lg border border-content/10 bg-content/5 hover:bg-content/10"
+            className="grid shrink-0 place-items-center"
           >
             <ProjectLogoIcon
               path={logoPath}
@@ -273,7 +277,7 @@ export function TabGroupMenu({
               fallback={ImagePlus}
               fallbackStrokeWidth={1.75}
             />
-          </button>
+          </Button>
           <div className="min-w-0 flex-1">
             <p className="text-[11px] text-content/50">{t("Project logo")}</p>
             <p className="truncate text-[12px] text-content/70">
@@ -281,7 +285,11 @@ export function TabGroupMenu({
             </p>
           </div>
           {logoPath ? (
-            <button
+            <Button
+              iconOnly
+              label={t("Remove project logo")}
+              variant="ghost"
+              motion="none"
               type="button"
               title={t("Remove project logo")}
               aria-label={t("Remove project logo")}
@@ -289,10 +297,10 @@ export function TabGroupMenu({
               onClick={() => {
                 void clearProjectLogo(projectKey(logoProject)).then(onLogoChange);
               }}
-              className="grid size-7 shrink-0 place-items-center rounded-md text-content/50 hover:bg-content/10 hover:text-content"
+              className="grid shrink-0 place-items-center"
             >
               <Trash2 className="size-3.5" strokeWidth={1.75} />
-            </button>
+            </Button>
           ) : null}
         </div>
       ) : null}
@@ -383,19 +391,22 @@ export function TabGroupMenu({
             <div role="separator" className="my-1 h-px bg-content/10" />
           </>
         ) : null}
-        <input
+        <TextField
+          fieldClassName="min-w-0 flex-1"
+          hideLabel
+          label={t("Group name")}
           ref={input}
           value={name}
           onChange={(e) => setName(e.target.value)}
           onBlur={() => void commitName()}
           aria-label={t("Group name")}
           aria-invalid={nameError ? true : undefined}
-          className="mb-2 w-full rounded-lg border border-content/10 bg-content/5 px-2.5 py-1.5 text-[13px] text-content outline-none ring-accent/40 focus:ring-1"
+          className="mb-2 w-full"
         />
         {nameError ? (
-          <p role="alert" className="-mt-1 mb-2 px-0.5 text-xs leading-snug text-danger">
+          <Alert tone="danger" role="alert">
             {nameError}
-          </p>
+          </Alert>
         ) : null}
 
         {compactAppearance ? (
@@ -508,7 +519,7 @@ export function TabGroupMenu({
       {submenu?.item.submenu ? (
         <ExplorerMenu
           className="bycoda-arc"
-          rowClassName={contextMenuRowClassName}
+          rowClassName={menuRowClassName}
           anchor={submenu.anchor}
           ownerId={menuId}
           ariaLabel={submenu.item.label}
@@ -538,7 +549,7 @@ function MenuRow({
   useLocale();
   const Icon = item.icon;
   return (
-    <ContextMenuRow
+    <SharedMenuRow
       destructive={item.danger}
       branchWidth={item.id === "appearance" ? MENU_WIDTH : 228}
       type="button"
@@ -577,6 +588,6 @@ function MenuRow({
       {item.shortcut ? (
         <span className="shrink-0 text-[11px] text-content/40">{item.shortcut}</span>
       ) : null}
-    </ContextMenuRow>
+    </SharedMenuRow>
   );
 }

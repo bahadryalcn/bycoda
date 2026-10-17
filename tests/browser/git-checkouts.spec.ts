@@ -1,5 +1,58 @@
 import { test, expect } from "@playwright/test";
 
+test("repository overview collapses with keyboard and preserves open panels and drafts", async ({
+  page,
+}, testInfo) => {
+  await page.addInitScript(() => localStorage.setItem("bycoda.language.git", "en"));
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.goto("/tests/browser/git-workspace.html?submodules");
+  const overview = page.getByRole("button", { name: "Repository", exact: true });
+  const selector = page.getByRole("button", { name: /^Repository:/ });
+  const panel = page.locator('[data-git-repository="/fixture/core-pack"]');
+  const row = panel.locator("header button[aria-expanded]").first();
+  await expect(row).toHaveAttribute("aria-expanded", "false");
+  // Repository identity occupies one line; its full path remains discoverable.
+  await expect(row).toHaveAttribute("title", /core-pack.*\/fixture\/core-pack/);
+  expect((await panel.locator("header").boundingBox())!.height).toBeLessThanOrEqual(40);
+  for (const width of [280, 390]) {
+    await page.setViewportSize({ width, height: 700 });
+    await page.locator("#root > div").evaluate((element, size) => {
+      (element as HTMLElement).style.width = `${size}px`;
+    }, width);
+    for (const light of [false, true]) {
+      await page.evaluate(
+        (value) => document.documentElement.classList.toggle("theme-light", value),
+        light,
+      );
+      expect(
+        await page
+          .locator("[data-workspace-source-control]")
+          .evaluate((element) => element.scrollWidth <= element.clientWidth),
+      ).toBe(true);
+      await page.screenshot({
+        path: testInfo.outputPath(`repositories-${width}-${light ? "light" : "dark"}.png`),
+      });
+    }
+  }
+  await row.click();
+  const message = panel.getByRole("textbox", { name: "Commit message", exact: true });
+  await message.fill("Keep my submodule draft");
+  await overview.focus();
+  await page.keyboard.press("Enter");
+  await expect(overview).toHaveAttribute("aria-expanded", "false");
+  await expect(panel).toBeHidden();
+  await expect(selector).toBeVisible();
+  await page.keyboard.press("Space");
+  await expect(message).toHaveValue("Keep my submodule draft");
+  await overview.click();
+  await selector.click();
+  await page.getByRole("option", { name: "Submodule · core-pack", exact: true }).click();
+  await expect(overview).toHaveAttribute("aria-expanded", "true");
+  await expect(page.getByRole("textbox", { name: "Commit message", exact: true })).toHaveValue(
+    "Keep my submodule draft",
+  );
+});
+
 test("repository choice survives sidebar remount and reload before delayed submodule discovery", async ({
   page,
 }) => {
@@ -255,7 +308,7 @@ test("grouped repository files allow wheel scrolling the outer list", async ({ p
   for (const panel of await panels.all()) {
     await panel.locator("header button[aria-expanded]").first().click();
   }
-  const outer = page.locator("[data-workspace-source-control] > .overflow-y-auto");
+  const outer = page.locator("[data-workspace-source-control] .overflow-y-auto").first();
   await outer.evaluate((element) => {
     element.scrollTop = 0;
   });

@@ -1,6 +1,11 @@
 import { useState } from "react";
 import { createRoot } from "react-dom/client";
 import { JiraBoardView } from "../../src/features/inbox/ui/JiraBoardView";
+import { GithubPrActions } from "../../src/features/inbox/ui/InboxPrActions";
+import { InboxFiltersMenu } from "../../src/features/inbox/ui/InboxFiltersMenu";
+import { DEFAULT_INBOX_FILTERS } from "../../src/features/inbox/model/inboxFilters";
+import type { InboxItem } from "../../src/features/inbox/model/githubTasks";
+import { Button } from "../../src/shared/ui/Button";
 import type { JiraBoardIssue } from "../../src/features/inbox/model/jiraBoard";
 import { setLanguagePreference } from "../../src/shared/i18n";
 import "../../src/styles/index.css";
@@ -35,6 +40,18 @@ const issues = [
   issue("ENG-2", "Review authentication flow", "3"),
   issue("ENG-3", "Prepare the next release", "1"),
 ];
+const pullRequest = {
+  ...issues[0],
+  provider: "github",
+  kind: "pr",
+  id: "fixture-pr",
+  number: 12,
+  repo: "fixture/repository",
+  projectPath: "C:/fixture/project",
+  state: "open",
+  draft: false,
+} as InboxItem;
+const filterWrites: string[][] = [];
 const membership = new Map([
   ["ENG-1", "backlog"],
   ["ENG-2", "sprint:21"],
@@ -42,12 +59,14 @@ const membership = new Map([
 ]);
 Object.assign(window, {
   jiraFixtureCalls: calls,
+  inboxFixtureFilterWrites: filterWrites,
   jiraFixtureFail: () => {
     fail = true;
   },
   __TAURI_INTERNALS__: {
     invoke: async (command: string, args: Record<string, unknown> = {}) => {
       calls.push({ command, args });
+      if (command === "git_github_pr_action") return { ...pullRequest, state: "merged" };
       if (command === "jira_list_boards")
         return [{ id: 7, name: "Engineering board", kind: "scrum" }];
       if (command === "jira_board_configuration")
@@ -119,4 +138,42 @@ function Fixture() {
     </div>
   );
 }
-createRoot(document.getElementById("root")!).render(<Fixture />);
+function SharedControlsFixture() {
+  const [item, setItem] = useState(pullRequest);
+  const [open, setOpen] = useState(false);
+  const [filters, setFilters] = useState(DEFAULT_INBOX_FILTERS);
+  const [hidden, setHidden] = useState(["2", "stale-project"]);
+  return (
+    <main className="flex min-w-0 flex-wrap items-center gap-2 p-4">
+      <GithubPrActions item={item} baseRef="main" headRef="feature" onChange={setItem} />
+      <Button onClick={() => setOpen((value) => !value)}>Filters</Button>
+      {open ? (
+        <InboxFiltersMenu
+          x={16}
+          y={80}
+          source="jira"
+          projects={[]}
+          linearProjects={[]}
+          linearTeams={[]}
+          hiddenLinearTeamIds={[]}
+          jiraProjects={[
+            { id: "1", key: "ENG", name: "Engineering" },
+            { id: "2", key: "DOC", name: "Documentation" },
+          ]}
+          hiddenJiraProjectIds={hidden}
+          filters={filters}
+          onChange={setFilters}
+          onLinearTeamsChange={() => {}}
+          onJiraProjectsChange={(ids) => {
+            filterWrites.push(ids);
+            setHidden(ids);
+          }}
+          onClose={() => setOpen(false)}
+        />
+      ) : null}
+    </main>
+  );
+}
+createRoot(document.getElementById("root")!).render(
+  new URLSearchParams(location.search).has("uiControls") ? <SharedControlsFixture /> : <Fixture />,
+);

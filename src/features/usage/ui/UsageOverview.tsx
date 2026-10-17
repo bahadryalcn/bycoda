@@ -1,3 +1,8 @@
+import { Alert } from "../../../shared/ui/Alert";
+import { Button } from "../../../shared/ui/Button";
+import { SlotText } from "../../../shared/ui/SlotText";
+import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
+import { useDecorativeMotionPreference } from "../../settings/model/decorativeMotion";
 import { t, useLocale, getLocale } from "../../../shared/i18n";
 import { RefreshCw } from "../../../shared/ui/icons";
 import { useEffect, useMemo, useState } from "react";
@@ -126,7 +131,12 @@ export function UsageOverview({ refresh = 0 }: { refresh?: number }) {
     : (USAGE_RANGES.find((entry) => entry.id === range)?.label ?? "");
 
   return (
-    <section id="setting-cost-overview" data-setting-id="cost-overview" tabIndex={-1} className="pt-8">
+    <section
+      id="setting-cost-overview"
+      data-setting-id="cost-overview"
+      tabIndex={-1}
+      className="pt-8"
+    >
       <div className="flex flex-wrap items-end gap-4 pb-2.5">
         <div className="min-w-0 flex-1">
           <h2 className="text-[13px] font-semibold text-content">{t("Cost by project and day")}</h2>
@@ -156,20 +166,22 @@ export function UsageOverview({ refresh = 0 }: { refresh?: number }) {
             }}
           />
           <DateRangePicker value={customRange} onChange={setCustomRange} maxDate={new Date()} />
-          <button
+          <Button
+            variant="ghost"
+            size="sm"
             type="button"
-            aria-label={t("Reload cost by project and day")}
+            iconOnly
+            label={t("Reload cost by project and day")}
             title={t("Reload")}
             disabled={refreshing}
             onClick={() => setReload((value) => value + 1)}
-            className="grid size-[26px] place-items-center rounded-md border border-content/10 text-content/50 hover:bg-content/10 hover:text-content disabled:opacity-40"
           >
             <RefreshCw
               className={`size-3.5${refreshing ? " motion-safe:animate-spin" : ""}`}
               strokeWidth={1.75}
               aria-hidden
             />
-          </button>
+          </Button>
         </div>
       </div>
       <div
@@ -177,18 +189,18 @@ export function UsageOverview({ refresh = 0 }: { refresh?: number }) {
         aria-busy={refreshing}
       >
         {refreshing && data ? (
-          <p role="status" className="px-4 py-2 text-[12px] text-content/60">
+          <Alert tone="info" role="status">
             {t("Refreshing usage… Previous results remain visible.")}
-          </p>
+          </Alert>
         ) : null}
         {!data ? (
           <div role="status" className="px-4 py-6 text-[12px] text-content/45">
             {t("Reading session logs…")}
           </div>
         ) : load.status === "ready" && load.failed > 0 && load.failed === accounts.length ? (
-          <p role="alert" className="px-4 py-6 text-[12px] text-danger">
+          <Alert tone="danger" role="alert">
             {t("Usage could not be read for the selected accounts. Reload usage to try again.")}
-          </p>
+          </Alert>
         ) : data.totals.tokens === 0 ? (
           <div className="px-4 py-6 text-[12px] leading-relaxed text-content/45">
             {t("No usage in the selected range (")}
@@ -236,11 +248,12 @@ function Totals({ data }: { data: UsageOverviewData }) {
 
 function Stat({ label, value, detail }: { label: string; value: string; detail: string }) {
   useLocale();
+  const decorativeMotion = useDecorativeMotionPreference();
   return (
     <div className="min-w-0 px-4 py-3.5">
       <div className="text-[12px] text-content/45">{label}</div>
       <div className="mt-1 text-[20px] font-semibold leading-tight tabular-nums text-content">
-        {value}
+        <SlotText value={value} align="end" motion={decorativeMotion ? "auto" : "none"} />
       </div>
       <div className="mt-1 truncate text-[11px] text-content/40">{detail}</div>
     </div>
@@ -570,7 +583,7 @@ function Notes({
   );
 }
 
-/** Same look as the Settings segmented control, which is private to that file. */
+/** Exclusive metric/range/group modes; domain values stay with the caller. */
 function Choice<T extends string>({
   label,
   value,
@@ -582,32 +595,12 @@ function Choice<T extends string>({
   options: { value: T; label: string }[];
   onChange: (value: T) => void;
 }) {
-  useLocale();
   return (
-    <div
-      role="radiogroup"
-      aria-label={label}
-      className="inline-grid max-w-full shrink-0 gap-0.5 rounded-md border border-content/10 p-0.5 text-[12px]"
-      style={{
-        gridTemplateColumns: `repeat(${options.length}, minmax(0, 1fr))`,
-      }}
-    >
-      {options.map((option) => (
-        <button
-          key={option.value}
-          type="button"
-          role="radio"
-          aria-checked={value === option.value}
-          onClick={() => onChange(option.value)}
-          className={`min-w-0 rounded-[5px] px-2.5 py-1 ${
-            value === option.value
-              ? "bg-selection text-content"
-              : "text-content/50 hover:text-content"
-          }`}
-        >
-          {option.label}
-        </button>
-      ))}
-    </div>
+    <SegmentedControl
+      label={label}
+      value={value}
+      options={options}
+      onValueChange={(next) => onChange(next as T)}
+    />
   );
 }

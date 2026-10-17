@@ -1,3 +1,5 @@
+import { Alert } from "../../../shared/ui/Alert";
+import { Button } from "../../../shared/ui/Button";
 import { SearchInput } from "../../../shared/ui/SearchInput";
 import { projectDisplayName } from "../../projects/model/projectNames";
 import { t, useLocale } from "../../../shared/i18n";
@@ -485,15 +487,11 @@ export function QuickComposer({ onShown }: { onShown: () => void }) {
     (attachmentsSupported || !attachments.files.length),
   );
 
-  const optionClass = (index: number, stacked = false) =>
-    `flex w-full ${stacked ? "flex-col items-start gap-0.5" : "items-center gap-2.5"} rounded-lg px-2 py-1.5 text-left text-[13px] ${
-      index === highlight ? "bg-selection-emphasis text-content" : "text-content/75"
-    }`;
-
   return (
     // Selectors expand below the toolbar without moving the prompt.
     <div
       ref={frameRef}
+      data-ui-focus-group=""
       data-external-drop-owner="quick-attachments"
       onPaste={attachments.onPaste}
       onDragOver={attachments.onDragOver}
@@ -520,15 +518,19 @@ export function QuickComposer({ onShown }: { onShown: () => void }) {
       >
         <span className="pointer-events-none h-0.5 w-6 rounded-full bg-content/15 transition-colors group-hover:bg-content/35" />
       </div>
-      <button
+      <Button
+        iconOnly
+        label={t("Close composer")}
+        variant="ghost"
+        motion="none"
         type="button"
         aria-label={t("Close composer")}
         title={t("Close (Esc)")}
         onClick={dismiss}
-        className="absolute right-2 top-2 z-20 grid size-5 place-items-center rounded text-content/35 hover:bg-selection-hover hover:text-content"
+        className="absolute right-2 top-2 z-20 grid place-items-center"
       >
         <X className="size-3" />
-      </button>
+      </Button>
       {attachments.dragging ? (
         <div className="pointer-events-none absolute inset-0 z-30 grid place-items-center rounded-[16px] border border-dashed border-accent/60 bg-background-base/90 text-sm text-accent">
           {t("Drop to attach")}
@@ -544,14 +546,17 @@ export function QuickComposer({ onShown }: { onShown: () => void }) {
           onOpenChange={onGitOpenChange}
           onClose={focusPrompt}
         />
-        <button
+        <Button
+          selected={picker === "project"}
+          variant="ghost"
+          motion="none"
           type="button"
           onMouseDown={(event) => event.preventDefault()}
           onClick={() => openPicker("project")}
           disabled={projects.length === 0}
           title={t("Project (⌘P)")}
           aria-expanded={picker === "project"}
-          className={`ml-auto flex min-w-0 max-w-[40%] items-center gap-1.5 rounded-md px-2 py-1 text-[12px] disabled:opacity-50 ${picker === "project" ? "bg-selection-emphasis text-content" : "text-content/70 hover:bg-selection-hover hover:text-content"}`}
+          className={`ml-auto flex min-w-0 max-w-[40%] items-center gap-1.5 `}
         >
           {cwd ? (
             <QuickProjectIcon
@@ -562,7 +567,7 @@ export function QuickComposer({ onShown }: { onShown: () => void }) {
           ) : null}
           <span className="truncate">{cwd ? projectDisplayName(cwd) : t("No project")}</span>
           <ChevronDown className="size-3 shrink-0 opacity-60" />
-        </button>
+        </Button>
       </div>
       {attachments.files.length ? (
         <div
@@ -607,6 +612,7 @@ export function QuickComposer({ onShown }: { onShown: () => void }) {
           {prompt.endsWith("\n") ? "\n" : null}
         </div>
         <textarea
+          data-ui-focus="group"
           ref={promptRef}
           value={prompt}
           rows={2}
@@ -650,12 +656,17 @@ export function QuickComposer({ onShown }: { onShown: () => void }) {
       </div>
 
       {attachments.files.length && !attachmentsSupported ? (
-        <p role="alert" className="px-5 pb-2 text-xs text-warning">
+        <Alert tone="warning" role="alert">
           {t("Choose a provider that supports attachments, or remove the attached files.")}
-        </p>
+        </Alert>
       ) : null}
       <div className="flex shrink-0 items-center gap-1.5 border-t border-stroke px-3 py-2">
-        <button
+        <Button
+          iconOnly
+          label={t("Add attachment")}
+          selected={picker === "attachments"}
+          variant="ghost"
+          motion="none"
           type="button"
           ref={plusRef}
           aria-label={t("Add attachment")}
@@ -668,36 +679,42 @@ export function QuickComposer({ onShown }: { onShown: () => void }) {
           disabled={!attachmentsSupported || attachments.loading || busy}
           onMouseDown={(event) => event.preventDefault()}
           onClick={() => openPicker("attachments")}
-          className={`grid size-6.5 shrink-0 place-items-center rounded-md disabled:opacity-40 ${picker === "attachments" ? "bg-selection-emphasis text-content" : "text-content/70 hover:bg-selection-hover hover:text-content"}`}
+          className={`grid shrink-0 place-items-center `}
         >
           <Plus className="size-3.5" strokeWidth={1.5} />
-        </button>
-        <button
+        </Button>
+        <Button
+          selected={picker === "model"}
+          variant="ghost"
+          motion="none"
           type="button"
           onMouseDown={(event) => event.preventDefault()}
           onClick={() => openPicker("model")}
           title={t("Model (⌘.)")}
           aria-expanded={picker === "model"}
-          className={`flex min-w-0 max-w-[40%] items-center gap-1.5 rounded-md px-2 py-1 text-[12px] ${picker === "model" ? "bg-selection-emphasis text-content" : "text-content/70 hover:bg-selection-hover hover:text-content"}`}
+          className={`flex min-w-0 max-w-[40%] items-center gap-1.5 `}
         >
           <HarnessIcon harness={model.harness} className="size-3.5 shrink-0" />
           <span className="truncate">{model.name}</span>
           <ChevronDown className="size-3 shrink-0 opacity-60" />
-        </button>
+        </Button>
         {model.harness !== "fx" ? (
-          <button
+          <Button
+            selected={picker === "permissions"}
+            variant="ghost"
+            motion="none"
             type="button"
             onMouseDown={(event) => event.preventDefault()}
             onClick={() => openPicker("permissions")}
             title={t("Permissions")}
             aria-label={t("Permissions")}
             aria-expanded={picker === "permissions"}
-            className={`flex min-w-0 items-center gap-1.5 rounded-md px-2 py-1 text-[12px] ${picker === "permissions" ? "bg-selection-emphasis text-content" : "text-content/70 hover:bg-selection-hover hover:text-content"}`}
+            className={`flex min-w-0 items-center gap-1.5 `}
           >
             <QuickPermissionIcon mode={runtimeMode} className="size-3.5 shrink-0" />
             <span className="truncate max-[450px]:hidden">{RUNTIME_MODE_LABEL[runtimeMode]}</span>
             <ChevronDown className="size-3 shrink-0 opacity-60" />
-          </button>
+          </Button>
         ) : null}
         <span className="ml-auto flex shrink-0 items-center gap-3 text-[11px] text-content/45">
           {attachments.loading ? (
@@ -718,14 +735,17 @@ export function QuickComposer({ onShown }: { onShown: () => void }) {
               </span>
             </>
           )}
-          <button
+          <Button
+            variant="primary"
+            tone="accent"
+            motion="none"
             type="button"
             onClick={() => void submit(false)}
             disabled={!canSubmit}
-            className="rounded-md bg-accent px-2.5 py-1 text-[12px] font-medium text-on-solid disabled:opacity-40"
+            className=""
           >
             {leadingMode?.name === DRAFT_COMMAND.name ? t("Save draft") : t("Start")}
-          </button>
+          </Button>
         </span>
       </div>
 
@@ -741,7 +761,9 @@ export function QuickComposer({ onShown }: { onShown: () => void }) {
           onDismiss={closePicker}
           className="p-1"
         >
-          <button
+          <Button
+            variant="ghost"
+            motion="none"
             type="button"
             disabled={attachments.loading || !attachmentsSupported}
             onMouseDown={(event) => event.preventDefault()}
@@ -749,12 +771,14 @@ export function QuickComposer({ onShown }: { onShown: () => void }) {
               setPicker(null);
               void attachments.chooseFiles().then(focusPrompt);
             }}
-            className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs hover:bg-selection-hover disabled:opacity-40"
+            className="flex w-full items-center gap-2"
           >
             <ImagePlus className="size-3.5" />
             {t("Choose files…")}
-          </button>
-          <button
+          </Button>
+          <Button
+            variant="ghost"
+            motion="none"
             type="button"
             disabled={attachments.loading || !attachmentsSupported}
             onMouseDown={(event) => event.preventDefault()}
@@ -762,11 +786,11 @@ export function QuickComposer({ onShown }: { onShown: () => void }) {
               setPicker(null);
               void attachments.takeScreenshot().then(focusPrompt);
             }}
-            className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs hover:bg-selection-hover disabled:opacity-40"
+            className="flex w-full items-center gap-2"
           >
             <Maximize2 className="size-3.5" />
             {t("Take screenshot…")}
-          </button>
+          </Button>
         </Popover>
       ) : null}
       {picker && picker !== "attachments" ? (
@@ -783,7 +807,10 @@ export function QuickComposer({ onShown }: { onShown: () => void }) {
                 <p className="px-2 py-2 text-[12px] text-content/45">{t("No matching commands")}</p>
               ) : (
                 commandOptions.map((command, index) => (
-                  <button
+                  <Button
+                    fullWidth
+                    variant="item"
+                    motion="none"
                     key={command.invocation}
                     id={`quick-command-${command.invocation}`}
                     type="button"
@@ -793,13 +820,12 @@ export function QuickComposer({ onShown }: { onShown: () => void }) {
                     onMouseEnter={() => setHighlight(index)}
                     onMouseDown={(event) => event.preventDefault()}
                     onClick={() => chooseAt(index)}
-                    className={optionClass(index, true)}
                   >
                     <CommandLabel name={command.name} />
                     <span className="text-[11px] leading-4 text-content/50">
                       {command.description}
                     </span>
-                  </button>
+                  </Button>
                 ))
               )}
             </div>
@@ -847,7 +873,7 @@ export function QuickComposer({ onShown }: { onShown: () => void }) {
                   aria-label={t("Find a project")}
                   spellCheck={false}
                   autoComplete="off"
-                  className="min-w-0 flex-1 bg-transparent text-[13px] text-content outline-none placeholder:text-content/35"
+                  className="min-w-0 flex-1"
                 />
               </label>
               <div
@@ -860,7 +886,10 @@ export function QuickComposer({ onShown }: { onShown: () => void }) {
                   <p className="px-2 py-2 text-[12px] text-content/45">{t("No matches")}</p>
                 ) : (
                   projectOptions.map((path, index) => (
-                    <button
+                    <Button
+                      fullWidth
+                      variant="item"
+                      motion="none"
                       key={path}
                       type="button"
                       role="option"
@@ -869,7 +898,6 @@ export function QuickComposer({ onShown }: { onShown: () => void }) {
                       onMouseEnter={() => setHighlight(index)}
                       onMouseDown={(event) => event.preventDefault()}
                       onClick={() => chooseAt(index)}
-                      className={optionClass(index)}
                     >
                       <QuickProjectIcon
                         projectPath={path}
@@ -880,7 +908,7 @@ export function QuickComposer({ onShown }: { onShown: () => void }) {
                       <span className="ml-auto truncate pl-3 text-[11px] text-content/40">
                         {prettyParent(path)}
                       </span>
-                    </button>
+                    </Button>
                   ))
                 )}
               </div>

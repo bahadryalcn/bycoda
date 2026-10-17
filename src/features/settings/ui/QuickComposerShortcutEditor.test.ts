@@ -57,11 +57,7 @@ afterEach(async () => {
 });
 
 async function render() {
-  await act(async () =>
-    root.render(
-      createElement(QuickComposerShortcutEditor),
-    ),
-  );
+  await act(async () => root.render(createElement(QuickComposerShortcutEditor)));
 }
 
 it("records a global shortcut, persists it, and restores the default", async () => {

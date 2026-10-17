@@ -1,3 +1,4 @@
+import { Button } from "../../../shared/ui/Button";
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { useLocale } from "../../../shared/i18n";
 import { LiveBackgroundCanvas } from "./LiveBackgroundCanvas";
@@ -119,7 +120,10 @@ function LiveBackgroundTile({
   }, [visible]);
 
   return (
-    <button
+    <Button
+      variant="item"
+      motion="none"
+      selected={selected}
       ref={ref}
       type="button"
       role="radio"
@@ -128,11 +132,7 @@ function LiveBackgroundTile({
       title={label}
       onClick={onSelect}
       onKeyDown={onKeyDown}
-      className={`flex min-w-0 flex-col gap-1 rounded-lg border p-1 text-left transition-colors focus-visible:outline-2 focus-visible:outline-accent ${
-        selected
-          ? "border-accent bg-selection text-content"
-          : "border-content/10 text-content/65 hover:bg-content/5 hover:text-content"
-      }`}
+      className="flex min-w-0 flex-col gap-1"
     >
       <span className="relative block aspect-[12/7] w-full overflow-hidden rounded-md bg-background-base">
         {visible && scene !== "none" ? (
@@ -140,6 +140,6 @@ function LiveBackgroundTile({
         ) : null}
       </span>
       <span className="truncate px-0.5 text-[11px] leading-4">{label}</span>
-    </button>
+    </Button>
   );
 }

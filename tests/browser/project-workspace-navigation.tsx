@@ -8,7 +8,7 @@ import {
 } from "../../src/features/projects/model/projectGroups";
 import { savePinnedProjects } from "../../src/features/projects/model/recents";
 import { languageReady } from "../../src/shared/i18n";
-import "../../src/styles/index.css";
+import "./w7-shell.css";
 
 // Exercise the production rail without changing a real repository or session.
 saveProjectGroups([

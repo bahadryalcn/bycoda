@@ -1,3 +1,4 @@
+import { Button } from "../../../shared/ui/Button";
 import { t, useLocale } from "../../../shared/i18n";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { useEffect, useMemo, useState } from "react";
@@ -37,15 +38,11 @@ export function CheckEvidence({
         />
       ))}
       {!showAll && annotations.length > 5 ? (
-        <button
-          type="button"
-          onClick={() => setShowAll(true)}
-          className="rounded px-2 py-1 text-[11px] text-content/55 hover:bg-content/5 hover:text-content"
-        >
+        <Button variant="ghost" type="button" onClick={() => setShowAll(true)}>
           {t("Show ")}
           {annotations.length - 5}
           {t(" more annotations")}
-        </button>
+        </Button>
       ) : null}
     </div>
   );
@@ -115,23 +112,26 @@ function CheckAnnotation({
   const [messageTitle, ...messageLines] = annotation.message.split(/\r?\n/);
   const Mark = annotation.level === "failure" ? CircleX : AlertCircle;
   return (
-    <div className="min-w-0 overflow-hidden rounded-lg border border-stroke bg-background-base/35">
+    <div className="min-w-0 overflow-hidden rounded-lg border border-(--ui-tone-neutral-border) bg-(--ui-surface)">
       {annotation.path ? (
-        <div className="flex min-w-0 items-center gap-1.5 border-b border-stroke bg-content/[0.02] px-3 py-2 text-[12px] text-content/65">
+        <div className="flex min-w-0 items-center gap-1.5 border-b border-(--ui-tone-neutral-border) bg-(--ui-surface-hover) px-3 py-2 text-[12px] text-(--ui-text-secondary)">
           <FileTypeIcon name={annotation.path} isDir={false} size={13} />
           <span title={location} className="min-w-0 flex-1 truncate">
             {location}
           </span>
           {fileUrl ? (
-            <button
+            <Button
+              iconOnly
+              label={t("View {p0} on GitHub", { p0: location })}
+              variant="ghost"
               type="button"
               title={t("View source at the checked commit")}
               aria-label={t("View {p0} on GitHub", { p0: location })}
               onClick={() => void openUrl(fileUrl)}
-              className="-my-1 -mr-1 grid size-6 shrink-0 place-items-center rounded text-content/40 hover:bg-content/5 hover:text-content"
+              className="-my-1 -mr-1 shrink-0"
             >
               <ExternalLink className="size-3" strokeWidth={1.75} />
-            </button>
+            </Button>
           ) : null}
         </div>
       ) : null}
@@ -143,9 +143,9 @@ function CheckAnnotation({
           {excerpt.map((line, index) => (
             <div
               key={index}
-              className={`flex min-w-max gap-4 border-l-2 pr-3 ${firstLine + index === annotation.line ? "border-danger/40 bg-danger/[0.06] text-content/85" : "border-transparent text-content/45"}`}
+              className={`flex min-w-max gap-4 border-l-2 pr-3 ${firstLine + index === annotation.line ? "border-(--ui-tone-danger-border) bg-(--ui-tone-danger-subtle)/[0.06] text-(--ui-text-secondary)" : "border-transparent text-(--ui-text-secondary)"}`}
             >
-              <span className="w-8 shrink-0 select-none text-right tabular-nums text-content/30">
+              <span className="w-8 shrink-0 select-none text-right tabular-nums text-(--ui-text-secondary)">
                 {firstLine + index}
               </span>
               <code className="whitespace-pre">{line || " "}</code>
@@ -154,23 +154,23 @@ function CheckAnnotation({
         </div>
       ) : null}
       <div
-        className={`flex min-w-0 items-start gap-2 px-3 py-3 ${excerpt.length ? "border-t border-stroke" : ""}`}
+        className={`flex min-w-0 items-start gap-2 px-3 py-3 ${excerpt.length ? "border-t border-(--ui-tone-neutral-border)" : ""}`}
       >
         <Mark
-          className={`mt-0.5 size-3 shrink-0 ${annotation.level === "failure" ? "text-danger/70" : "text-warning/70"}`}
+          className={`mt-0.5 size-3 shrink-0 ${annotation.level === "failure" ? "text-(--ui-tone-danger-fg)" : "text-(--ui-tone-warning-fg)"}`}
           strokeWidth={1.75}
         />
         <div className="min-w-0 flex-1">
-          <p className="max-h-32 overflow-auto whitespace-pre-wrap break-words text-[12px] text-content/75">
+          <p className="max-h-32 overflow-auto whitespace-pre-wrap break-words text-[12px] text-(--ui-text-secondary)">
             {messageTitle}
           </p>
           {messageLines.length ? (
-            <pre className="mt-1.5 max-h-60 overflow-auto whitespace-pre-wrap break-words font-mono text-[11px] leading-relaxed text-content/65">
+            <pre className="mt-1.5 max-h-60 overflow-auto whitespace-pre-wrap break-words font-mono text-[11px] leading-relaxed text-(--ui-text-secondary)">
               {messageLines.join("\n")}
             </pre>
           ) : null}
           {canRead && source?.key === sourceKey && !excerpt.length ? (
-            <p className="mt-2 text-[10px] text-content/40">
+            <p className="mt-2 text-[10px] text-(--ui-text-secondary)">
               {t("Source preview unavailable for this commit.")}
             </p>
           ) : null}

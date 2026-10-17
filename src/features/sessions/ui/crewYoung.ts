@@ -774,10 +774,7 @@ function head(
   // Even skin with one soft shade on the far side: no lighter face disc or muzzle.
   P.solid(outline, skin, 0.8);
   const far = outline.slice(3, 15);
-  P.shape(
-    [...far, ...far.reverse().map(([px, py]): Pt => [mix(px, x, 0.2), py])],
-    180,
-  );
+  P.shape([...far, ...far.reverse().map(([px, py]): Pt => [mix(px, x, 0.2), py])], 180);
   P.alpha(0.55, () => P.ellipse(x - r * 0.28, y - ry * 0.55, r * 0.34, ry * 0.16, 214));
   const cry = k === 0 ? f.cry : 0,
     pout = k >= 1 ? f.cry : 0;
@@ -834,7 +831,13 @@ function head(
       const gaze = Math.max(-eye * 0.4, Math.min(eye * 0.4, f.look));
       const iris = eye * (k === 0 ? 0.72 : 0.58);
       P.ellipse(ex + gaze, ey + f.down * 0.1, iris, Math.min(iris, eye * open), 36);
-      P.ellipse(ex + gaze - eye * 0.22, ey - eye * 0.26 + f.down * 0.3, eye * 0.26, eye * 0.24, 250);
+      P.ellipse(
+        ex + gaze - eye * 0.22,
+        ey - eye * 0.26 + f.down * 0.3,
+        eye * 0.26,
+        eye * 0.24,
+        250,
+      );
       if (f.lids > 0) {
         // Heavy, unimpressed upper lids.
         const cut = ey - eye * open + f.lids * eye * open * 1.05;

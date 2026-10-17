@@ -76,7 +76,7 @@ it("connects Jira, synchronizes project filters, and disconnects", async () => {
   });
   expect(container.textContent).toContain("ada@example.com");
   const email = container.querySelector<HTMLButtonElement>('[aria-label="Reveal email"]')!;
-  expect(email.querySelector("span")?.className).toContain("blur-[5px]");
+  expect(email.querySelector("span[aria-hidden]")?.className).toContain("blur-[5px]");
   await act(async () => email.click());
   expect(email.getAttribute("aria-label")).toBe("Hide email");
   await act(async () => email.click());

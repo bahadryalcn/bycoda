@@ -487,7 +487,7 @@ export function FileEditor({
 
   if (loadState.status === "loading" || diffPending) {
     return (
-      <div className="grid h-full place-items-center text-[12px] text-content/45">
+      <div className="grid h-full place-items-center text-[12px] text-[var(--ui-text-muted)]">
         {t("Opening ")}
         {basename(path)}…
       </div>
@@ -503,28 +503,36 @@ export function FileEditor({
             {t("Couldn’t open ")}
             {basename(path)}
           </p>
-          <p className="mt-1 text-[12px] leading-5 text-content/50">{loadState.message}</p>
-          <button
+          <p className="mt-1 text-[12px] leading-5 text-[var(--ui-text-secondary)]">
+            {loadState.message}
+          </p>
+          <Button
+            size="sm"
+            variant="ghost"
+            motion="none"
             type="button"
             onClick={() => setReloadKey((value) => value + 1)}
-            className="mx-auto mt-4 flex h-7 items-center gap-1.5 rounded-md bg-content/10 px-2.5 text-[12px] text-content hover:bg-content/15"
+            className="mx-auto mt-4 flex items-center gap-1.5"
           >
             <RotateCcw className="size-3" strokeWidth={1.75} />
             {t("Retry")}
-          </button>
+          </Button>
           {isRemoteProjectPath(path) ? null : (
-            <button
+            <Button
+              size="sm"
+              variant="ghost"
+              motion="none"
               type="button"
               onClick={() =>
                 void revealPath(path).catch((error) => {
                   console.warn("FileEditor operation failed", error);
                 })
               }
-              className="mx-auto mt-2 flex h-7 items-center gap-1.5 rounded-md bg-content/10 px-2.5 text-[12px] text-content hover:bg-content/15"
+              className="mx-auto mt-2 flex items-center gap-1.5"
             >
               <Folder className="size-3" strokeWidth={1.75} />
               {REVEAL_LABEL}
-            </button>
+            </Button>
           )}
         </div>
       </div>
@@ -533,6 +541,7 @@ export function FileEditor({
 
   const saveAction = (
     <Button
+      size="sm"
       variant="ghost"
       tooltip={`${t("Save")} (${IS_MAC ? "⌘S" : "Ctrl+S"})`}
       loading={saveState.status === "saving"}
@@ -553,7 +562,7 @@ export function FileEditor({
       {showDiff && gitDiff?.eolOnly && (
         <p
           role="status"
-          className="shrink-0 border-b border-stroke px-3 py-1 text-[12px] text-content/60"
+          className="shrink-0 border-b border-stroke px-3 py-1 text-[12px] text-[var(--ui-text-secondary)]"
         >
           {gitDiff.kind === "staged" ? t("Staged") : t("Unstaged")}
           {t(" line-ending changes. Line breaks are normalized in this view.")}
@@ -638,12 +647,17 @@ export function FileEditor({
           {chromeError}
         </p>
       ) : null}
-      <footer className="flex h-6 shrink-0 items-center border-t border-stroke px-2.5 font-mono text-[10.5px] text-content/40">
+      <footer className="flex h-6 shrink-0 items-center border-t border-stroke px-2.5 font-mono text-[10.5px] text-[var(--ui-text-muted)]">
         <span className="min-w-0 flex-1 truncate" title={path}>
           {relativePath}
         </span>
         {html ? (
-          <button
+          <Button
+            size="sm"
+            iconOnly
+            label={REVEAL_LABEL}
+            variant="ghost"
+            motion="none"
             type="button"
             disabled={isRemoteProjectPath(path)}
             onClick={() =>
@@ -651,13 +665,15 @@ export function FileEditor({
             }
             title={REVEAL_LABEL}
             aria-label={REVEAL_LABEL}
-            className="mr-2 shrink-0 rounded px-1.5 py-0.5 text-content/75 hover:bg-content/10 disabled:opacity-40"
           >
             <Folder className="size-3" />
-          </button>
+          </Button>
         ) : null}
         {html ? (
-          <button
+          <Button
+            size="sm"
+            variant="ghost"
+            motion="none"
             type="button"
             disabled={openingChrome || isRemoteProjectPath(path)}
             onClick={() => void goLive()}
@@ -666,10 +682,10 @@ export function FileEditor({
                 ? t("Go Live is available for local HTML files.")
                 : t("Save and open this HTML file in Google Chrome")
             }
-            className="mr-2 shrink-0 rounded px-1.5 py-0.5 font-sans text-[11px] text-content/75 hover:bg-content/10 hover:text-content disabled:opacity-40"
+            className="mr-2 shrink-0"
           >
             {openingChrome ? t("Opening…") : t("Go Live")}
-          </button>
+          </Button>
         ) : null}
         <InlineBlameToggle reason={footerBlameReason} />
         <span

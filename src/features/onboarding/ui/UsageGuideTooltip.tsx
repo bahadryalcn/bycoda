@@ -1,7 +1,8 @@
-import { Check, X } from "lucide-react";
+import { X } from "../../../shared/ui/icons";
+import { Stepper } from "../../../shared/ui/Stepper";
 import type { TooltipRenderProps } from "react-joyride";
 import { t } from "../../../shared/i18n";
-import { Button } from "../../../shared/ui/arc/button/button";
+import { Button } from "../../../shared/ui/Button";
 
 const guides = [
   { name: "Obi-Wan Kenobi", asset: "obi-wan", label: "New Tab" },
@@ -36,7 +37,12 @@ export function UsageGuideTooltip({
         <span className="usage-guide-progress" aria-live="polite" aria-atomic="true">
           {t("Step {p0} of {p1}", { p0: index + 1, p1: size })}
         </span>
-        <Button {...closeProps} variant="ghost" className="usage-guide-close">
+        <Button
+          {...closeProps}
+          variant="ghost"
+          iconOnly
+          label={closeProps["aria-label"] ?? closeProps.title ?? t("Close")}
+        >
           <X size={18} aria-hidden="true" />
         </Button>
       </header>
@@ -57,22 +63,12 @@ export function UsageGuideTooltip({
         {step.content}
       </div>
       <footer className="usage-guide-footer">
-        <ol className="usage-guide-track" aria-label={t("Usage guide")}>
-          {guides.map((item, itemIndex) => (
-            <li
-              key={item.asset}
-              aria-current={itemIndex === index ? "step" : undefined}
-              data-complete={itemIndex < index || undefined}
-              title={t(item.label)}
-              aria-label={t(item.label)}
-            >
-              <span className="usage-guide-marker" aria-hidden="true">
-                {itemIndex < index ? <Check size={12} /> : itemIndex + 1}
-              </span>
-              <span className="usage-guide-track-label">{t(item.label)}</span>
-            </li>
-          ))}
-        </ol>
+        <Stepper
+          label={t("Usage guide")}
+          steps={guides.map((guide) => ({ id: guide.asset, label: t(guide.label) }))}
+          current={index}
+          compact
+        />
         <div className="usage-guide-actions">
           <Button {...backProps} variant="secondary" disabled={index === 0}>
             {t("← Back")}

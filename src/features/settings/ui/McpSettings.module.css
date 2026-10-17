@@ -53,7 +53,6 @@
   white-space: nowrap;
 }
 .metadata,
-.status,
 .details,
 .pagination {
   font-size: var(--ui-font-caption);

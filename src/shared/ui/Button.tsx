@@ -10,9 +10,12 @@ import styles from "./Button.module.css";
 export type { ButtonSize } from "./arc/button/button";
 export type ButtonVariant = ArcButtonVariant | "link" | "item" | "tab";
 export type ButtonShape = "default" | "pill";
+export type ButtonTone = "neutral" | "accent" | "info" | "success" | "warning" | "danger";
 
 type CommonButtonProps = ComponentPropsWithRef<"button"> & {
   variant?: ButtonVariant;
+  /** Semantic intent, independent of hierarchy. `error` is a legacy danger alias. */
+  tone?: ButtonTone | "error";
   size?: ButtonSize;
   shape?: ButtonShape;
   /** Visual selection only. The owning interaction supplies its appropriate ARIA state. */
@@ -25,6 +28,8 @@ type CommonButtonProps = ComponentPropsWithRef<"button"> & {
   fullWidth?: boolean;
   /** Disable label/press motion for controls that require a stable, direct DOM layout. */
   motion?: "auto" | "none";
+  /** Structural item/tab content may form a record row instead of an inline action. */
+  layout?: "inline" | "stacked";
 };
 
 export type ButtonProps = CommonButtonProps &
@@ -35,6 +40,7 @@ const isTrue = (value: unknown) => value === true || value === "true";
 /** One application API, with Arc action rendering and native structural/event rendering. */
 export function Button({
   variant = "secondary",
+  tone,
   size = "sm",
   shape = "default",
   type = "button",
@@ -48,6 +54,7 @@ export function Button({
   endIcon,
   fullWidth = false,
   motion = "auto",
+  layout,
   className,
   children,
   disabled,
@@ -64,6 +71,10 @@ export function Button({
   onAnimationStart,
   ...props
 }: ButtonProps) {
+  // Keep legacy aliases at this boundary; render one hierarchy/tone implementation.
+  const hierarchy = variant === "danger" ? "secondary" : variant;
+  const resolvedTone: ButtonTone =
+    tone === "error" ? "danger" : (tone ?? (variant === "danger" ? "danger" : "neutral"));
   const structural = variant === "item" || variant === "tab";
   const native =
     structural ||
@@ -85,12 +96,15 @@ export function Button({
     selected ??
     (isTrue(props["aria-selected"]) ||
       isTrue(props["aria-pressed"]) ||
-      isTrue(props["aria-checked"]));
-  const arcVariant: ArcButtonVariant = variant === "link" || structural ? "ghost" : variant;
+      isTrue(props["aria-checked"]) ||
+      isTrue(props["aria-current"]) ||
+      props["aria-current"] === "page");
+  const arcVariant: ArcButtonVariant =
+    hierarchy === "link" || hierarchy === "item" || hierarchy === "tab" ? "ghost" : hierarchy;
   const classes = [
     "bycoda-arc",
     styles.control,
-    styles[variant],
+    styles[hierarchy],
     iconOnly ? styles.iconOnly : "",
     fullWidth ? styles.fullWidth : "",
     className,
@@ -124,10 +138,13 @@ export function Button({
     "aria-busy": loading || props["aria-busy"] || undefined,
     "aria-disabled": blocked || props["aria-disabled"] || undefined,
     "data-button-variant": variant,
+    "data-button-hierarchy": hierarchy,
+    "data-button-tone": resolvedTone,
     "data-button-shape": shape,
     "data-button-selected": active || undefined,
     "data-button-loading": loading || undefined,
     "data-button-structural": structural || undefined,
+    "data-button-layout": structural ? layout : undefined,
     "data-button-size": size,
     onClick: guard(onClick),
     onClickCapture: guard(onClickCapture),

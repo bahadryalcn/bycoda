@@ -129,7 +129,7 @@ it("uses the interface typeface for branch names and search", async () => {
   )!;
   const branchName = picker.querySelector<HTMLElement>('[role="option"] span')!;
 
-  expect(search.className).toContain("font-sans");
+  expect(search.className).not.toContain("font-mono");
   expect(branchName.className).not.toContain("font-mono");
   expect(branchName.className).toContain("font-medium");
 });
@@ -148,7 +148,7 @@ it("asks for a branch name before creating from the fixed action", async () => {
   expect(create.parentElement?.className).toContain("border-t");
   expect(create.parentElement?.className).toContain("shrink-0");
   expect(create.parentElement).toBe(picker.lastElementChild);
-  expect(create.className).toContain("hover:bg-content/8");
+  expect(create.getAttribute("data-button-variant")).toBe("item");
 
   await act(async () => create.click());
   expect(gitCreateBranch).not.toHaveBeenCalled();

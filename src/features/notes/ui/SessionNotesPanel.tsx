@@ -1,16 +1,19 @@
+import { Alert } from "../../../shared/ui/Alert";
+import { EmptyState } from "../../../shared/ui/EmptyState";
 import { SearchInput } from "../../../shared/ui/SearchInput";
 import { useRetainedState } from "../../../shared/hooks/useRetainedState";
 import { InlineEdit } from "../../../shared/ui/InlineEdit";
 import { Button } from "../../../shared/ui/Button";
+import { ExpandingButtonGroup } from "../../../shared/ui/ExpandingButtonGroup";
 import { SurfaceSelection } from "../../sessions/ui/SurfaceSelection";
 import { errorText } from "../../../shared/lib/errors";
 import { t, useLocale } from "../../../shared/i18n";
 import {
-  Check,
   ChevronDown,
   Copy,
   File,
   LoaderCircle,
+  Link,
   Plus,
   Trash2,
   X,
@@ -259,7 +262,9 @@ function SessionNotesContent({ sessionId, cwd }: Props) {
         setError(null);
       } catch (err: unknown) {
         setError(errorText(err));
+        return false;
       }
+      return true;
     },
     [sessionId, onSaved],
   );
@@ -341,7 +346,7 @@ function SessionNotesContent({ sessionId, cwd }: Props) {
           className="max-h-56 shrink-0 overflow-y-auto overscroll-none border-b border-stroke p-1.5"
         >
           <SearchInput
-            standalone
+            appearance="field"
             aria-label={t("Search notes")}
             placeholder={t("Search notes")}
             value={query}
@@ -350,7 +355,6 @@ function SessionNotesContent({ sessionId, cwd }: Props) {
               setListLimit(40);
             }}
             containerClassName="mb-1 w-full"
-            className="h-7 rounded border border-stroke bg-transparent px-2 text-[12px] outline-none focus:border-content/40"
           />
           <NoteGroup
             label={t("This session")}
@@ -373,34 +377,36 @@ function SessionNotesContent({ sessionId, cwd }: Props) {
             }}
           />
           {filtered.session.length + filtered.project.length > listLimit ? (
-            <button
+            <Button
+              variant="ghost"
+              size="sm"
               type="button"
-              className="w-full rounded px-2 py-1.5 text-left text-[12px] hover:bg-content/10"
+              className="w-full"
               onClick={() => setListLimit((limit) => limit + 40)}
             >
               {t("Show more")}
-            </button>
+            </Button>
           ) : null}
           {hasNotes || error || !loaded ? null : (
-            <p className="px-2 py-1.5 text-[12px] text-content/50">{t("No notes yet.")}</p>
+            <EmptyState icon={null} description={t("No notes yet.")} />
           )}
         </div>
       ) : null}
       {error ? (
-        <p role="alert" className="px-3 py-2 text-[12px] text-danger/90">
+        <Alert tone="danger">
           {error}{" "}
-          <button type="button" className="underline" onClick={() => void refresh()}>
+          <Button variant="ghost" size="sm" type="button" onClick={() => void refresh()}>
             {t("Retry")}
-          </button>
-        </p>
+          </Button>
+        </Alert>
       ) : null}
       {detailError ? (
-        <p role="alert" className="px-3 py-2 text-[12px] text-content">
+        <Alert tone="danger">
           {detailError}{" "}
-          <button type="button" className="underline" onClick={retryDetail}>
+          <Button variant="ghost" size="sm" type="button" onClick={retryDetail}>
             {t("Retry")}
-          </button>
-        </p>
+          </Button>
+        </Alert>
       ) : null}
       {selectedDetail ? (
         <PanelNoteEditor
@@ -472,22 +478,22 @@ function NoteGroup({
           const time = formatRelativeTime(new Date(note.updatedAt).toISOString());
           return (
             <li key={note.id}>
-              <button
+              <Button
+                variant="item"
+                size="sm"
                 type="button"
                 title={note.title}
                 aria-current={note.id === activeId ? "true" : undefined}
                 onClick={() => onSelect(note.id)}
-                className={`flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[12px] ${
-                  note.id === activeId
-                    ? "bg-selection text-content"
-                    : "text-content/80 hover:bg-content/5 hover:text-content"
-                }`}
+                motion="none"
+                selected={note.id === activeId}
+                className="flex w-full items-center gap-2"
               >
                 <span className="min-w-0 flex-1 truncate">{note.title}</span>
                 {time ? (
                   <span className="shrink-0 text-[11px] tabular-nums text-content/45">{time}</span>
                 ) : null}
-              </button>
+              </Button>
             </li>
           );
         })}
@@ -511,13 +517,12 @@ const PanelNoteEditor = memo(function PanelNoteEditor({
   onSaved: (note: Note) => void;
   onDelete: (id: string) => Promise<boolean>;
   sessionId: string;
-  onLink: (id: string) => Promise<void>;
+  onLink: (id: string) => Promise<boolean>;
 }) {
   useLocale();
   const [title, setTitle] = useState(note.title);
   const [body, setBody] = useState(note.body);
   const [saveError, setSaveError] = useState<string | null>(null);
-  const [copied, setCopied] = useState(false);
   const [linking, setLinking] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const field = useRef<HTMLTextAreaElement>(null);
@@ -528,7 +533,6 @@ const PanelNoteEditor = memo(function PanelNoteEditor({
   const finalizeRequested = useRef(false);
   const skipSave = useRef(false);
   const saveTimer = useRef<number | null>(null);
-  const copyTimer = useRef<number | null>(null);
   const onSavedRef = useRef(onSaved);
   onSavedRef.current = onSaved;
 
@@ -591,20 +595,18 @@ const PanelNoteEditor = memo(function PanelNoteEditor({
   useEffect(
     () => () => {
       void saveNow(true);
-      if (copyTimer.current != null) window.clearTimeout(copyTimer.current);
     },
     [saveNow],
   );
 
-  const copy = () => {
-    void navigator.clipboard
-      ?.writeText(bodyRef.current)
-      .then(() => {
-        setCopied(true);
-        if (copyTimer.current != null) window.clearTimeout(copyTimer.current);
-        copyTimer.current = window.setTimeout(() => setCopied(false), 1200);
-      })
-      .catch(() => undefined);
+  const copy = async () => {
+    if (!navigator.clipboard) return false;
+    try {
+      await navigator.clipboard.writeText(bodyRef.current);
+      return true;
+    } catch {
+      return false;
+    }
   };
 
   const sendToChat = () => {
@@ -649,7 +651,9 @@ const PanelNoteEditor = memo(function PanelNoteEditor({
           }
         }}
       />
+      {/* This native textarea edits a document with retained ref/caret/paste ownership. */}
       <textarea
+        data-ui-focus="input"
         ref={field}
         value={body}
         onChange={(event) => {
@@ -661,65 +665,70 @@ const PanelNoteEditor = memo(function PanelNoteEditor({
         aria-label={t("Note")}
         placeholder={t("Write markdown…")}
         spellCheck={false}
-        className="min-h-0 w-full flex-1 resize-none border-0 bg-transparent px-3 py-2 font-mono text-[13px] leading-5 text-content outline-none placeholder:text-content/35"
+        className="min-h-0 w-full flex-1 resize-none border-0 bg-transparent px-3 py-2 font-mono text-[13px] leading-5 text-content placeholder:text-content/35"
       />
       {saveError ? (
-        <div
-          role="alert"
-          className="flex shrink-0 items-center gap-2 px-3 py-1.5 text-[12px] text-danger/90"
-        >
+        <Alert tone="danger">
           <span className="min-w-0 flex-1">
             {t("Could not save: ")}
             {saveError}
           </span>
-          <button
+          <Button
+            variant="ghost"
+            size="sm"
             type="button"
             onClick={() => {
               setSaveError(null);
               void saveNow();
             }}
-            className="shrink-0 underline hover:no-underline"
           >
             {t("Retry")}
-          </button>
-        </div>
+          </Button>
+        </Alert>
       ) : null}
       <div className="flex min-h-9 shrink-0 flex-wrap items-center gap-1 border-t border-stroke px-2 py-1">
-        <PanelIconButton
-          label={copied ? t("Copied") : t("Copy note")}
-          disabled={!hasBody}
-          onClick={copy}
-        >
-          {copied ? (
-            <Check className="size-3.5" strokeWidth={1.75} />
-          ) : (
-            <Copy className="size-3.5" strokeWidth={1.75} />
-          )}
-        </PanelIconButton>
-        <Button
-          variant="ghost"
+        <ExpandingButtonGroup
+          label={t("Note actions")}
           size="sm"
-          disabled={!hasBody}
-          title={t("Add the selection, or the whole note, to the composer")}
-          onClick={sendToChat}
-        >
-          {t("Add to chat")}
-        </Button>
-        {note.sourceSessionId !== sessionId ? (
-          <Button
-            variant="ghost"
-            size="sm"
-            disabled={linking}
-            onClick={() => {
-              setLinking(true);
-              void saveNow()
-                .then(() => onLink(note.id))
-                .finally(() => setLinking(false));
-            }}
-          >
-            {t("Link to this session")}
-          </Button>
-        ) : null}
+          defaultExpanded="chat"
+          confirmDuration={1200}
+          items={[
+            {
+              id: "copy",
+              label: t("Copy note"),
+              icon: <Copy />,
+              disabled: !hasBody,
+              onSelect: copy,
+              doneLabel: t("Copied"),
+            },
+            {
+              id: "chat",
+              label: t("Add to chat"),
+              icon: <Plus />,
+              disabled: !hasBody,
+              onSelect: sendToChat,
+            },
+            ...(note.sourceSessionId !== sessionId
+              ? [
+                  {
+                    id: "link",
+                    label: t("Link to this session"),
+                    icon: <Link />,
+                    disabled: linking,
+                    onSelect: async () => {
+                      setLinking(true);
+                      try {
+                        await saveNow();
+                        return await onLink(note.id);
+                      } finally {
+                        setLinking(false);
+                      }
+                    },
+                  },
+                ]
+              : []),
+          ]}
+        />
         <span className="min-w-0 flex-1" />
         <PanelIconButton
           label={t("Delete note")}

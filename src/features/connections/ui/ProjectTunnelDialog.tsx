@@ -1,3 +1,4 @@
+import { Alert } from "../../../shared/ui/Alert";
 import { useEffect, useState } from "react";
 import { t, useLocale } from "../../../shared/i18n/technical";
 import { Modal } from "../../../shared/ui/Modal";
@@ -50,13 +51,13 @@ export function ProjectTunnelDialog({
         />
       ) : error ? (
         <div className="flex flex-col gap-3">
-          <p role="alert" className="text-[13px] text-danger">
+          <Alert role="alert" tone="danger">
             {t(
               update
                 ? "Update bycoda Host on this computer to manage external tunnels."
                 : "The selected computer could not be reached. Reconnect it and check again.",
             )}
-          </p>
+          </Alert>
           <SecondaryButton onClick={() => setRetry((value) => value + 1)}>
             {t("Check again")}
           </SecondaryButton>

@@ -1,3 +1,4 @@
+import { Progress } from "../../../shared/ui/Progress";
 import { t, useLocale } from "../../../shared/i18n";
 import { useEffect, useState } from "react";
 import { basename, gitFetch, gitRemotes, notifyGitChanged } from "../../../platform/tauri/fs";
@@ -71,7 +72,7 @@ export function GroupFetchPopover({
       onDismiss={onClose}
       className="overflow-y-auto p-1"
     >
-      <p className="px-2.5 pb-1 pt-1.5 text-xs text-content/50">
+      <p className="px-2.5 pb-1 pt-1.5 text-xs text-[var(--ui-text-muted)]">
         {paths.length === 0
           ? t("No projects to fetch")
           : done
@@ -84,13 +85,21 @@ export function GroupFetchPopover({
                 p1: paths.length,
               })}
       </p>
+      {paths.length ? (
+        <Progress
+          compact
+          label={t("Fetch all in {p0}", { p0: name })}
+          value={done ? paths.length : results.length}
+          max={paths.length}
+        />
+      ) : null}
       <ul>
         {paths.map((path, index) => {
           const result = results[index];
           return (
             <li
               key={path}
-              className="flex items-center gap-2 px-2.5 py-1 text-[13px] text-content/80"
+              className="flex items-center gap-2 px-2.5 py-1 text-[13px] text-[var(--color-content)]"
             >
               <span className="min-w-0 flex-1 truncate" title={path}>
                 {basename(path)}
@@ -101,7 +110,7 @@ export function GroupFetchPopover({
                     ? "text-danger"
                     : result?.status === "fetched"
                       ? "text-success"
-                      : "text-content/45"
+                      : "text-[var(--ui-text-muted)]"
                 }`}
                 title={result?.error}
               >

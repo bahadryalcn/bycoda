@@ -1,3 +1,4 @@
+import { Button } from "../../../shared/ui/Button";
 import {
   useDeferredValue,
   useEffect,
@@ -116,13 +117,15 @@ export function NoteEditablePreview({
               <AgentMarkdown text={`${block.text}\n\n${definitions}`} cwd={cwd} hardBreaks />
             )}
           </div>
-          <button
+          <Button
+            variant="ghost"
+            size="sm"
             type="button"
             className="note-edit-block"
             onClick={() => start(block.from, block.to)}
           >
             {t("Edit block")}
-          </button>
+          </Button>
         </div>
       ));
 
@@ -156,18 +159,24 @@ export function NoteEditablePreview({
               onSave={onSave}
               onPasteImages={onPasteImages}
             />
-            <button type="button" className="note-edit-block" onClick={finish}>
+            <Button
+              variant="ghost"
+              size="sm"
+              type="button"
+              className="note-edit-block"
+              onClick={finish}
+            >
               {t("Done")}
-            </button>
+            </Button>
           </div>
           {renderBlocks(currentActive.to)}
         </>
       ) : (
         renderBlocks()
       )}
-      <button type="button" className="note-add-block" onClick={append}>
+      <Button variant="ghost" size="sm" type="button" className="note-add-block" onClick={append}>
         {value.trim() ? t("Add text") : t("Start writing")}
-      </button>
+      </Button>
     </div>
   );
 }

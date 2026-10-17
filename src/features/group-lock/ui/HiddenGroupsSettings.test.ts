@@ -40,10 +40,12 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 const button = (label: string) =>
-  [...document.querySelectorAll<HTMLButtonElement>("button")].find(
-    (item) => (item.querySelector('[aria-hidden="true"]')
-      ? [...item.querySelectorAll("span")].some((span) => !span.closest('[aria-hidden="true"]') && span.textContent === label)
-      : item.textContent === label),
+  [...document.querySelectorAll<HTMLButtonElement>("button")].find((item) =>
+    item.querySelector('[aria-hidden="true"]')
+      ? [...item.querySelectorAll("span")].some(
+          (span) => !span.closest('[aria-hidden="true"]') && span.textContent === label,
+        )
+      : item.textContent === label,
   )!;
 
 it("restores temporarily and permanently through Settings without the rail icon", async () => {

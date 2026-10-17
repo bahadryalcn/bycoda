@@ -1,3 +1,5 @@
+import { Button } from "../../../shared/ui/Button";
+import { TextField } from "../../../shared/ui/TextField";
 import { t, useLocale } from "../../../shared/i18n/technical";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
@@ -77,7 +79,7 @@ export default function PdfViewer({ bytes }: { bytes: Uint8Array }) {
     );
   if (!doc) {
     return (
-      <div className="grid h-full place-items-center text-[12px] text-content/45">
+      <div className="grid h-full place-items-center text-[12px] text-[var(--ui-text-muted)]">
         {t("Loading PDF…")}
       </div>
     );
@@ -215,9 +217,12 @@ function PdfPages({ doc }: { doc: PDFDocumentProxy }) {
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="flex h-8 shrink-0 items-center gap-2 border-b border-stroke px-3 text-[11px] text-content/60">
-        <input
+      <div className="flex h-8 shrink-0 items-center gap-2 border-b border-stroke px-3 text-[11px] text-[var(--ui-text-secondary)]">
+        <TextField
+          hideLabel
+          label=""
           aria-label={t("Page number")}
+          fieldClassName="w-10 shrink-0"
           value={pageInput}
           inputMode="numeric"
           onChange={(event) => setPageInput(event.target.value)}
@@ -225,7 +230,7 @@ function PdfPages({ doc }: { doc: PDFDocumentProxy }) {
             if (event.key === "Enter") goTo(Number(pageInput));
           }}
           onBlur={() => setPageInput(String(current))}
-          className="h-5 w-10 rounded bg-content/10 text-center tabular-nums text-content outline-none"
+          className="w-10 text-center tabular-nums"
         />
         <span className="tabular-nums">/ {doc.numPages}</span>
         <span className="flex-1" />
@@ -238,19 +243,20 @@ function PdfPages({ doc }: { doc: PDFDocumentProxy }) {
         <ToolbarButton label={t("Zoom in")} onClick={() => zoomBy(ZOOM_STEP)}>
           <Plus className="size-3" strokeWidth={1.75} />
         </ToolbarButton>
-        <button
+        <Button
+          size="sm"
+          variant="ghost"
+          motion="none"
           type="button"
           title={t("Fit to width")}
           onClick={() => {
             endGesture();
             changeZoom("fit");
           }}
-          className={`h-5 rounded px-1.5 hover:bg-content/10 hover:text-content ${
-            zoom === "fit" ? "text-content" : ""
-          }`}
+          className={""}
         >
           {t("Fit width")}
-        </button>
+        </Button>
       </div>
       <div
         ref={scrollRef}
@@ -471,14 +477,19 @@ function ToolbarButton({
 }) {
   useLocale();
   return (
-    <button
+    <Button
+      size="sm"
+      iconOnly
+      label={label}
+      variant="ghost"
+      motion="none"
       type="button"
       title={label}
       aria-label={label}
       onClick={onClick}
-      className="grid size-5 place-items-center rounded hover:bg-content/10 hover:text-content"
+      className="grid place-items-center"
     >
       {children}
-    </button>
+    </Button>
   );
 }

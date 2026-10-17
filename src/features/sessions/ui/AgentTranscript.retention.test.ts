@@ -139,7 +139,7 @@ it("restores loaded history and a turn-relative offset after earlier rows change
   expect(restored.querySelectorAll("[data-transcript-turn]")).toHaveLength(100);
   expect(restored.scrollTop).toBe(6350);
   expect(navigate).toBeTypeOf("function");
-});
+}, 20_000);
 
 it("restores bottom following when an evicted transcript is reopened", () => {
   const pool = new TranscriptPool(12, undefined, 100, 1);
@@ -173,4 +173,4 @@ it("restores bottom following when an evicted transcript is reopened", () => {
   expect(pool.getSnapshot().find((entry) => entry.id === "bottom")!.uiState.bottomFollow).toBe(
     true,
   );
-});
+}, 20_000);

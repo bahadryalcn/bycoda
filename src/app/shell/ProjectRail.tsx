@@ -1,6 +1,9 @@
+import { DropdownMenu } from "../../shared/ui/DropdownMenu";
+import { Checkbox } from "../../shared/ui/Checkbox";
+import { Button } from "../../shared/ui/Button";
 import { WorkspaceFeatureGate } from "../../features/settings/ui/WorkspaceFeatureGate";
 import { t, useLocale } from "../../shared/i18n";
-import { SocialShortcut } from "../../features/social/ui/SocialShortcut";
+import { SOCIAL_PANEL_EVENT } from "../../features/social/ui/SocialShortcut";
 import {
   ProjectMultiSelect,
   useProjectMultiSelect,
@@ -13,6 +16,7 @@ import { PRODUCT_IDENTITY } from "../../shared/lib/productIdentity";
 import {
   AlertCircle,
   Archive,
+  Globe,
   EyeOff,
   BellOff,
   Check,
@@ -137,7 +141,6 @@ import { notificationMuteStatus } from "../../features/notifications/ui/notifica
 import { useProjectNotificationPreferences } from "../../features/notifications/hooks/useProjectNotificationPreferences";
 import { useNotificationProjects } from "../../features/notifications/hooks/useNotificationProjects";
 import { GithubStarPrompt } from "./GithubStarPrompt";
-import { Popover } from "../../shared/ui/Popover";
 import { OPEN_REMOTE_PROJECT_EVENT } from "../../features/connections/model/connections";
 import { OPEN_CODE_WORKSPACE_EVENT } from "../../features/projects/model/codeWorkspace";
 import { OPEN_SESSION_IMPORT_EVENT } from "../../features/sessions/import/importModel";
@@ -739,7 +742,7 @@ export function ProjectRail({
       data-side-pane="rail"
       data-usage-guide="project-navigation"
       aria-label={t("Projects")}
-      className={`bycoda-project-rail sidebar-glass relative shrink-0 flex-col border-r border-stroke ${visible ? "flex" : "hidden"}`}
+      className={`bycoda-project-rail sidebar-glass relative shrink-0 flex-col border-r border-stroke pe-1.5 ${visible ? "flex" : "hidden"}`}
     >
       <div
         className="@container/rail flex h-10 shrink-0 select-none items-center overflow-hidden pr-1.5"
@@ -783,18 +786,21 @@ export function ProjectRail({
           )}
         </div>
         {settingsOpen ? (
-          <button
+          <Button
+            variant="ghost"
+            motion="none"
             type="button"
             className="bycoda-settings-return"
             onClick={() => onCloseSettings?.()}
           >
             {t("Back to workspace")}
-          </button>
+          </Button>
         ) : (
           <>
-            {recoveryControl}
-            <div className="bycoda-rail-tools shrink-0">
-              <div className="my-1 shrink-0 @max-[140px]/rail:hidden">
+            {/* One column of equal rows: session status first, then navigation. */}
+            <div className="bycoda-rail-status shrink-0">
+              {recoveryControl}
+              <div className="shrink-0 @max-[140px]/rail:hidden">
                 <LiveAgentsPreview
                   agents={visibleLiveAgents}
                   activeSessionId={activeSessionId}
@@ -815,7 +821,8 @@ export function ProjectRail({
                 groupCustomColors={groupCustomColors}
                 groupMascots={groupMascots}
               />
-              <div className="mt-0.5" />
+            </div>
+            <nav aria-label={t("Workspace tools")} className="bycoda-rail-tools shrink-0">
               <WorkspaceFeatureGate id="inbox" active={inboxActive}>
                 <RailAction
                   label={t("Inbox")}
@@ -850,7 +857,17 @@ export function ProjectRail({
                   ariaLabel="Automations"
                 />
               </WorkspaceFeatureGate>
-              <SocialShortcut active={socialActive} cwd={cwd} responsiveRail />
+              <WorkspaceFeatureGate id="social" active={socialActive}>
+                <RailAction
+                  label={t("Social Media")}
+                  icon={Globe}
+                  onClick={() =>
+                    window.dispatchEvent(new CustomEvent(SOCIAL_PANEL_EVENT, { detail: { cwd } }))
+                  }
+                  active={socialActive}
+                  ariaLabel={t("Social Media")}
+                />
+              </WorkspaceFeatureGate>
               <WorkspaceFeatureGate id="tasks" active={tasksActive}>
                 <RailAction
                   label={t("Tasks")}
@@ -860,8 +877,7 @@ export function ProjectRail({
                   ariaLabel="Tasks"
                 />
               </WorkspaceFeatureGate>
-            </div>
-
+            </nav>
             <ProjectMultiSelect
               paths={selectionPaths}
               groups={projectGroups.filter(
@@ -919,7 +935,11 @@ export function ProjectRail({
                   shortcut={`${MOD},`}
                   ariaLabel={`Settings (${MOD},)`}
                 />
-                <button
+                <Button
+                  iconOnly
+                  label={t("Manage hidden groups")}
+                  variant="ghost"
+                  motion="none"
                   type="button"
                   aria-label={t("Manage hidden groups")}
                   title={t("Manage hidden groups")}
@@ -928,10 +948,10 @@ export function ProjectRail({
                     onOpenSettings?.();
                     onSelectSettingsSection?.("groupLock");
                   }}
-                  className="flex size-8 shrink-0 items-center justify-center rounded-md text-content/65 hover:bg-content/8 hover:text-content focus-visible:outline-2 focus-visible:outline-accent focus-visible:-outline-offset-2 disabled:opacity-40"
+                  className="flex size-8 shrink-0 items-center justify-center focus-visible:-outline-offset-2"
                 >
                   <EyeOff className="size-4" strokeWidth={1.75} />
-                </button>
+                </Button>
               </div>
             </div>
           </>
@@ -953,7 +973,7 @@ export function ProjectRail({
       <div
         {...resize.separatorProps}
         aria-label={t("Resize project sidebar")}
-        className={`absolute inset-y-0 -right-px z-10 w-1.5 cursor-col-resize touch-none ${
+        className={`absolute inset-y-0 end-0 z-10 w-1.5 cursor-col-resize touch-none ${
           resize.dragging ? "bg-content/15" : "hover:bg-content/10"
         }`}
         onPointerDown={resize.onPointerDown}
@@ -1181,7 +1201,10 @@ function RemoteProjectSuggestion({
   const match = remoteOpenMatch(project);
   return (
     <>
-      <button
+      <Button
+        variant="item"
+        size="sm"
+        selected={selected}
         type="button"
         data-remote-project-id={project.projectId}
         data-multi-selected={selected || undefined}
@@ -1207,7 +1230,7 @@ function RemoteProjectSuggestion({
           const rect = event.currentTarget.getBoundingClientRect();
           onMenu(rect.left, rect.bottom);
         }}
-        className={`flex h-8 min-w-0 cursor-default select-none items-center gap-2 rounded-md px-2 text-left active:bg-content/12 focus-visible:outline-2 focus-visible:outline-accent @max-[140px]/rail:justify-center @max-[140px]/rail:px-0 ${selected ? "bg-accent/12 text-content ring-1 ring-inset ring-accent/25" : "opacity-40 [@media(hover:hover)_and_(pointer:fine)]:hover:bg-content/8 [@media(hover:hover)_and_(pointer:fine)]:hover:opacity-70"}`}
+        className="flex min-w-0 select-none items-center gap-2 text-left @max-[140px]/rail:justify-center"
       >
         {selected ? (
           <Check className="size-4 shrink-0" strokeWidth={1.75} />
@@ -1215,7 +1238,7 @@ function RemoteProjectSuggestion({
           <LinkIcon className="size-4 shrink-0" strokeWidth={1.75} />
         )}
         <span className={nameClassName}>{project.name}</span>
-      </button>
+      </Button>
     </>
   );
 }
@@ -1244,7 +1267,11 @@ function ProjectSectionHeader({
         {label}
       </span>
       {onAddGroup ? (
-        <button
+        <Button
+          iconOnly
+          label={t("New project group")}
+          variant="ghost"
+          motion="none"
           type="button"
           data-no-drag
           title={t("New project group")}
@@ -1253,10 +1280,10 @@ function ProjectSectionHeader({
             const rect = event.currentTarget.getBoundingClientRect();
             onAddGroup(rect.left, rect.bottom);
           }}
-          className="grid size-5 shrink-0 place-items-center rounded-md text-content/50 hover:bg-content/8 hover:text-content"
+          className="grid size-5 shrink-0 place-items-center"
         >
           <FolderPlus className="size-3.5" strokeWidth={1.75} />
-        </button>
+        </Button>
       ) : null}
       {onAdd ? <AddProjectButton onOpenFolder={onAdd} /> : null}
       <span className="contents @max-[140px]/rail:hidden">
@@ -1427,7 +1454,11 @@ function ProjectGroupSection({
           openMenu(event.currentTarget, event.clientX, event.clientY);
         }}
       >
-        <button
+        <Button
+          iconOnly
+          label={locked ? t("{p0}, locked", { p0: group.name }) : `${group.name}, ${countLabel}`}
+          variant="ghost"
+          motion="none"
           type="button"
           aria-expanded={expanded}
           aria-label={
@@ -1435,7 +1466,7 @@ function ProjectGroupSection({
           }
           title={locked ? t("{p0} · Locked", { p0: group.name }) : `${group.name} · ${countLabel}`}
           onClick={onToggleCollapsed}
-          className="flex shrink-0 cursor-grab items-center text-left @max-[140px]/rail:flex-1 @max-[140px]/rail:justify-center"
+          className="size-6 shrink-0 @max-[140px]/rail:flex-1"
         >
           <div className="grid size-4 shrink-0 place-items-center">
             {collapsed ? (
@@ -1461,10 +1492,13 @@ function ProjectGroupSection({
               <ChevronDown data-group-chevron className="size-3.5" strokeWidth={1.75} />
             )}
           </div>
-        </button>
+        </Button>
         <div className="flex min-w-0 flex-1 items-center gap-1.5 @max-[140px]/rail:hidden">
           {workspaceRoot && !locked ? (
-            <button
+            <Button
+              variant="ghost"
+              selected={workspaceSelected}
+              motion="none"
               type="button"
               data-no-drag
               aria-label={t("Open {p0}", { p0: group.name })}
@@ -1472,10 +1506,11 @@ function ProjectGroupSection({
               title={workspaceRoot}
               onPointerDown={(event) => event.stopPropagation()}
               onClick={() => onSelect(workspaceRoot)}
-              className={`min-w-0 flex-1 rounded-md px-1.5 text-left focus-visible:outline-2 focus-visible:outline-accent active:bg-selection ${workspaceSelected ? "bg-selection text-content" : "hover:bg-content/8 hover:text-content"}`}
+              size="sm"
+              className="min-w-0 flex-1 justify-start text-left"
             >
               <span className={nameClassName}>{group.name}</span>
-            </button>
+            </Button>
           ) : (
             <span className={`${nameClassName} ps-1.5`}>{group.name}</span>
           )}
@@ -1509,9 +1544,11 @@ function ProjectGroupSection({
             </span>
           ) : null}
         </div>
-        <div className="my-auto flex shrink-0 items-center transition-[margin] duration-150 group-hover:mr-6 group-has-[:focus-visible]:mr-6 motion-reduce:transition-none @max-[140px]/rail:hidden">
+        <div className="my-auto flex shrink-0 items-center gap-0.5 @max-[140px]/rail:hidden">
           {localPaths.length > 0 || (workspaceRoot && !locked) ? (
-            <button
+            <Button
+              variant="ghost"
+              motion="none"
               ref={gitAnchor}
               type="button"
               data-no-drag
@@ -1528,15 +1565,22 @@ function ProjectGroupSection({
                   );
                 } else setOverviewOpen((value) => !value);
               }}
-              className="my-auto flex h-5 shrink-0 items-center gap-0.5 rounded-md px-1 text-[11px] font-semibold tabular-nums text-content/50 hover:bg-content/8 hover:text-content aria-expanded:bg-content/8"
+              size="sm"
+              className="h-6 min-w-6 shrink-0 px-1 tabular-nums"
             >
               <GitBranch className="size-3" strokeWidth={1.75} />
               {gitSummary.dirty > 0 ? (
                 <span className="text-warning">{gitSummary.dirty}</span>
               ) : null}
-            </button>
+            </Button>
           ) : null}
-          <button
+          <Button
+            iconOnly
+            label={
+              locked ? t("Unlock {p0}", { p0: group.name }) : t("Lock {p0}", { p0: group.name })
+            }
+            variant="ghost"
+            motion="none"
             type="button"
             data-no-drag
             title={locked ? t("Unlock…") : t("Lock group")}
@@ -1548,10 +1592,8 @@ function ProjectGroupSection({
               event.stopPropagation();
               onToggleLock();
             }}
-            className={`size-5 shrink-0 place-items-center rounded-md hover:bg-content/8 hover:text-content ${
-              locked
-                ? "grid text-content/60"
-                : "hidden text-content/50 group-hover:grid group-has-[:focus-visible]:grid"
+            className={`size-6 shrink-0 place-items-center ${
+              locked ? "grid" : "hidden group-hover:grid group-has-[:focus-visible]:grid"
             }`}
           >
             {locked ? (
@@ -1559,7 +1601,26 @@ function ProjectGroupSection({
             ) : (
               <LockOpen className="size-3.5" strokeWidth={1.75} />
             )}
-          </button>
+          </Button>
+          <Button
+            iconOnly
+            label={t("{p0} group options", { p0: group.name })}
+            variant="ghost"
+            motion="none"
+            type="button"
+            data-no-drag
+            title={t("Group options")}
+            aria-label={t("{p0} group options", { p0: group.name })}
+            aria-haspopup="menu"
+            onPointerDown={(event) => event.stopPropagation()}
+            onClick={(event) => {
+              event.stopPropagation();
+              openMenu(event.currentTarget);
+            }}
+            className="hidden size-6 shrink-0 place-items-center group-hover:grid group-has-[:focus-visible]:grid"
+          >
+            <MoreHorizontal className="size-4" strokeWidth={1.75} />
+          </Button>
         </div>
         {overviewOpen && !locked && !workspaceRoot ? (
           <GroupGitPopover
@@ -1573,21 +1634,6 @@ function ProjectGroupSection({
             onDismiss={() => setOverviewOpen(false)}
           />
         ) : null}
-        <button
-          type="button"
-          data-no-drag
-          title={t("Group options")}
-          aria-label={t("{p0} group options", { p0: group.name })}
-          aria-haspopup="menu"
-          onPointerDown={(event) => event.stopPropagation()}
-          onClick={(event) => {
-            event.stopPropagation();
-            openMenu(event.currentTarget);
-          }}
-          className="absolute right-1 top-1/2 hidden size-6 -translate-y-1/2 place-items-center rounded-md text-content/55 hover:bg-content/8 hover:text-content group-hover:grid group-has-[:focus-visible]:grid @max-[140px]/rail:hidden!"
-        >
-          <MoreHorizontal className="size-4" strokeWidth={1.75} />
-        </button>
       </div>
       <div
         ref={viewportRef}
@@ -1741,7 +1787,7 @@ function ProjectCard({
         ...(selected || multiSelected
           ? {
               backgroundImage:
-                "linear-gradient(color-mix(in oklch, var(--color-accent) 12%, transparent), color-mix(in oklch, var(--color-accent) 12%, transparent))",
+                "linear-gradient(var(--ui-surface-selected), var(--ui-surface-selected))",
             }
           : {}),
       }}
@@ -1810,29 +1856,21 @@ function ProjectCard({
       }}
     >
       {multi?.active ? (
-        <span className="relative my-auto grid size-3.5 shrink-0 place-items-center [margin-inline-end:0.5rem]">
-          <input
-            type="checkbox"
+        <span className="my-auto shrink-0 [margin-inline-end:0.5rem]">
+          <Checkbox
             data-no-drag
             checked={multiSelected}
             aria-label={t("Select {p0}", { p0: name })}
-            className="absolute inset-0 size-full appearance-none rounded-sm border border-content/25 bg-content/5 checked:border-content/40 checked:bg-content/12 focus-visible:outline-2 focus-visible:outline-accent"
             onClick={(event) => {
               event.stopPropagation();
               multi.toggle(item.path, event.shiftKey);
             }}
             onChange={() => {}}
           />
-          {multiSelected ? (
-            <Check
-              className="pointer-events-none size-3 text-content/85"
-              strokeWidth={2}
-              aria-hidden="true"
-            />
-          ) : null}
         </span>
       ) : null}
-      <button
+      <Button
+        variant="item"
         type="button"
         title={muteStatus ? `${cardTitle}\n${muteStatus}` : cardTitle}
         aria-label={muteStatus ? `${cardAriaLabel}, ${muteStatus}` : cardAriaLabel}
@@ -1930,7 +1968,7 @@ function ProjectCard({
             <BellOff className="size-3.5" strokeWidth={1.75} aria-hidden="true" />
           </span>
         ) : null}
-      </button>
+      </Button>
       {hasChanges ? (
         <span
           aria-hidden
@@ -1939,7 +1977,12 @@ function ProjectCard({
       ) : null}
       {!multi?.active ? (
         <>
-          <button
+          <Button
+            iconOnly
+            label={t("Project options")}
+            size="sm"
+            variant="ghost"
+            motion="none"
             type="button"
             data-no-drag
             title={t("Project options")}
@@ -1956,11 +1999,16 @@ function ProjectCard({
                 multi && item.path !== "~" ? () => multi.toggle(item.path) : undefined,
               );
             }}
-            className="absolute right-1 top-1/2 hidden size-6 -translate-y-1/2 place-items-center rounded-md text-content/55 hover:bg-content/8 hover:text-content group-hover:grid group-has-[:focus-visible]:grid @max-[140px]/rail:hidden!"
+            className="absolute right-1 top-1/2 hidden size-6 -translate-y-1/2 place-items-center group-hover:grid group-has-[:focus-visible]:grid @max-[140px]/rail:hidden!"
           >
             <MoreHorizontal className="size-4" strokeWidth={1.75} />
-          </button>
-          <button
+          </Button>
+          <Button
+            iconOnly
+            label={pinned ? t("Unpin project") : t("Pin project")}
+            size="sm"
+            variant="ghost"
+            motion="none"
             type="button"
             data-no-drag
             title={pinned ? t("Unpin project") : t("Pin project")}
@@ -1970,14 +2018,14 @@ function ProjectCard({
               event.stopPropagation();
               onTogglePin(item.path);
             }}
-            className="absolute left-2 top-1/2 grid size-4 -translate-y-1/2 place-items-center rounded-sm text-content/55 opacity-0 pointer-events-none transition-opacity hover:text-content group-hover:pointer-events-auto group-hover:opacity-100 @max-[140px]/rail:hidden!"
+            className="absolute left-2 top-1/2 grid -translate-y-1/2 place-items-center opacity-0 pointer-events-none transition-opacity group-hover:pointer-events-auto group-hover:opacity-100 group-has-[:focus-visible]:pointer-events-auto group-has-[:focus-visible]:opacity-100 @max-[140px]/rail:hidden!"
           >
             {pinned ? (
               <PinOff className="size-3.5" strokeWidth={1.75} />
             ) : (
               <Pin className="size-3.5" strokeWidth={1.75} />
             )}
-          </button>
+          </Button>
         </>
       ) : null}
     </div>
@@ -2034,16 +2082,20 @@ function CompactLiveAgents({
               : agent.activity;
           const parts = [agent.title, project, activity].filter(Boolean);
           return (
-            <button
+            <Button
+              variant="ghost"
+              motion="none"
               key={agent.id}
+              iconOnly
+              label={parts.join(", ")}
+              size="sm"
+              selected={agent.id === activeSessionId}
               type="button"
               title={parts.join("\n")}
               aria-label={parts.join(", ")}
               aria-current={agent.id === activeSessionId ? "true" : undefined}
               onClick={() => onSelect?.(agent.id)}
-              className={`relative grid h-8 w-full shrink-0 place-items-center rounded-md ${
-                agent.id === activeSessionId ? "bg-selection" : "hover:bg-content/8"
-              }`}
+              className="relative grid w-full shrink-0 place-items-center"
             >
               <ProjectMascot
                 project={seed}
@@ -2058,7 +2110,7 @@ function CompactLiveAgents({
                   className="absolute right-1.5 top-1.5 size-1.5 rounded-full bg-warning"
                 />
               ) : null}
-            </button>
+            </Button>
           );
         })}
       </div>
@@ -2139,11 +2191,13 @@ function AddProjectButton({ onOpenFolder }: { onOpenFolder: () => void }) {
   useLocale();
   const anchor = useRef<HTMLButtonElement>(null);
   const [open, setOpen] = useState(false);
-  const item =
-    "flex w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left text-[13px] text-content/80 hover:bg-content/8 hover:text-content";
   return (
     <>
-      <button
+      <Button
+        iconOnly
+        label={t("Open project")}
+        variant="ghost"
+        motion="none"
         ref={anchor}
         type="button"
         data-no-drag
@@ -2152,69 +2206,49 @@ function AddProjectButton({ onOpenFolder }: { onOpenFolder: () => void }) {
         aria-haspopup="menu"
         aria-expanded={open}
         onClick={() => setOpen((value) => !value)}
-        className="grid size-5 shrink-0 place-items-center rounded-md text-content/50 hover:bg-content/8 hover:text-content aria-expanded:bg-content/8 aria-expanded:text-content"
+        className="grid size-5 shrink-0 place-items-center"
       >
         <Plus className="size-3.5" strokeWidth={1.75} />
-      </button>
+      </Button>
       {open ? (
-        <Popover
+        <DropdownMenu
           anchor={anchor}
+          label={t("Open project")}
           align="start"
           width={290}
-          onDismiss={() => setOpen(false)}
-          role="menu"
-          aria-label={t("Open project")}
-          className="p-1"
-        >
-          <button
-            type="button"
-            role="menuitem"
-            className={item}
-            onClick={() => {
-              setOpen(false);
-              onOpenFolder();
-            }}
-          >
-            <FolderPlus className="size-3.5 shrink-0" strokeWidth={1.75} />
-            {t("Open folder…")}
-          </button>
-          <button
-            type="button"
-            role="menuitem"
-            className={item}
-            onClick={() => {
-              setOpen(false);
-              window.dispatchEvent(new Event(OPEN_CODE_WORKSPACE_EVENT));
-            }}
-          >
-            <FolderPlus className="size-3.5 shrink-0" strokeWidth={1.75} />
-            {t("Open VS Code workspace…")}
-          </button>
-          <button
-            type="button"
-            role="menuitem"
-            className={item}
-            onClick={() => {
-              setOpen(false);
-              window.dispatchEvent(new Event(OPEN_REMOTE_PROJECT_EVENT));
-            }}
-          >
-            <Internet className="size-3.5 shrink-0" strokeWidth={1.75} />
-            {t("Open folder on a machine…")}
-          </button>
-          <button
-            type="button"
-            role="menuitem"
-            className={item}
-            onClick={() => {
-              setOpen(false);
-              window.dispatchEvent(new Event(OPEN_SESSION_IMPORT_EVENT));
-            }}
-          >
-            <Archive className="size-3.5 shrink-0" strokeWidth={1.75} />
-            {t("Import Claude Code / Codex sessions…")}
-          </button>
-        </Popover>
+          returnFocusRef={anchor}
+          onClose={() => setOpen(false)}
+          onPick={(id) => {
+            if (id === "folder") onOpenFolder();
+            else window.dispatchEvent(new Event(id));
+          }}
+          items={[
+            {
+              kind: "item",
+              id: "folder",
+              label: t("Open folder…"),
+              icon: <FolderPlus className="size-3.5" />,
+            },
+            {
+              kind: "item",
+              id: OPEN_CODE_WORKSPACE_EVENT,
+              label: t("Open VS Code workspace…"),
+              icon: <FolderPlus className="size-3.5" />,
+            },
+            {
+              kind: "item",
+              id: OPEN_REMOTE_PROJECT_EVENT,
+              label: t("Open folder on a machine…"),
+              icon: <Internet className="size-3.5" />,
+            },
+            {
+              kind: "item",
+              id: OPEN_SESSION_IMPORT_EVENT,
+              label: t("Import Claude Code / Codex sessions…"),
+              icon: <Archive className="size-3.5" />,
+            },
+          ]}
+        />
       ) : null}
     </>
   );

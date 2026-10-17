@@ -736,3 +736,28 @@ test("model menu stays inside its frame and viewport", async ({ page }, testInfo
     animations: "disabled",
   });
 });
+
+test("independent scalar model settings preserve the draft caret and sibling values", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 800 });
+  await page.goto("/tests/browser/composer-extras.html?scalar");
+  const draft = page.getByRole("textbox", { name: "Scalar draft", exact: true });
+  await draft.focus();
+  await draft.evaluate((node) => node.setSelectionRange(3, 8));
+  const effort = page.getByRole("combobox", { name: /^(Effort|Reasoning): Medium$/ });
+  await effort.click();
+  await effort.press("End");
+  await effort.press("Enter");
+  await expect(draft).toBeFocused();
+  expect(await draft.evaluate((node) => [node.selectionStart, node.selectionEnd])).toEqual([3, 8]);
+  await expect(page.getByTestId("scalar-settings")).toContainText('"reasoningEffort":"high"');
+  const tier = page.getByRole("combobox", { name: "Service Tier: Standard", exact: true });
+  await tier.click();
+  await tier.press("End");
+  await tier.press("Enter");
+  await expect(page.getByTestId("scalar-settings")).toContainText('"reasoningEffort":"high"');
+  await expect(page.getByTestId("scalar-settings")).toContainText('"serviceTier":"fast"');
+  await expect(draft).toHaveValue("Preserve this draft");
+  await expect(draft).toBeFocused();
+});

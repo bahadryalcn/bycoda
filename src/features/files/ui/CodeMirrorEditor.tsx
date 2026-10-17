@@ -1,3 +1,4 @@
+import { Button } from "../../../shared/ui/Button";
 import { t, useLocale } from "../../../shared/i18n/technical";
 import { acceptCompletion, completionStatus } from "@codemirror/autocomplete";
 import { indentLess, indentMore, isolateHistory } from "@codemirror/commands";
@@ -1017,31 +1018,33 @@ function DiffChunkNav({
       <DiffChunkStat additions={additions} deletions={deletions} />
       <div className="flex items-center gap-0.5">
         <DiffLayoutToggle className="mr-1" />
-        <button
+        <Button
+          variant="ghost"
+          motion="none"
           type="button"
           title={t("Previous change")}
           aria-label={t("Previous change")}
           disabled={total === 0 || index <= 0}
           onMouseDown={(event) => event.preventDefault()}
           onClick={onPrev}
-          className="grid size-6 place-items-center rounded text-content/70 hover:bg-content/10 hover:text-content disabled:opacity-35"
         >
           <ChevronUp className="size-3.5" strokeWidth={1.75} />
-        </button>
+        </Button>
         <span className="min-w-10 px-0.5 text-center font-mono text-[10.5px] font-medium tabular-nums text-content/55 select-none">
           {total === 0 ? "0/0" : `${index + 1}/${total}`}
         </span>
-        <button
+        <Button
+          variant="ghost"
+          motion="none"
           type="button"
           title={t("Next change")}
           aria-label={t("Next change")}
           disabled={total === 0 || index >= total - 1}
           onMouseDown={(event) => event.preventDefault()}
           onClick={onNext}
-          className="grid size-6 place-items-center rounded text-content/70 hover:bg-content/10 hover:text-content disabled:opacity-35"
         >
           <ChevronDown className="size-3.5" strokeWidth={1.75} />
-        </button>
+        </Button>
       </div>
     </header>
   );

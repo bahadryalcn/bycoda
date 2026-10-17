@@ -39,7 +39,7 @@ const render = (cwd = "/repo") =>
     ),
   );
 const input = (label: string) =>
-  host.querySelector<HTMLInputElement>(`input[aria-label="${label}"]`)!;
+  document.querySelector<HTMLInputElement>(`input[aria-label="${label}"]`)!;
 function type(label: string, value: string) {
   act(() => {
     const field = input(label);
@@ -50,14 +50,16 @@ function type(label: string, value: string) {
 it("restores find text and all filters on return, reruns search, and isolates other projects", async () => {
   render();
   type("Search", "needle");
+  act(() => host.querySelector<HTMLButtonElement>('[aria-label="Filters"]')!.click());
   type("files to include", "src/**");
   type("files to exclude", "**/generated/**");
   for (const label of ["Match case", "Match whole word", "Use regular expression"])
-    act(() => host.querySelector<HTMLButtonElement>(`button[aria-label="${label}"]`)!.click());
+    act(() => document.querySelector<HTMLButtonElement>(`button[aria-label="${label}"]`)!.click());
   act(() => root.unmount());
   root = createRoot(host);
   render();
   expect(input("Search").value).toBe("needle");
+  act(() => host.querySelector<HTMLButtonElement>('[aria-label="Filters"]')!.click());
   expect(input("files to include").value).toBe("src/**");
   expect(input("files to exclude").value).toBe("**/generated/**");
   await act(async () => vi.advanceTimersByTime(210));
@@ -76,4 +78,36 @@ it("restores find text and all filters on return, reruns search, and isolates ot
   expect(input("Search").value).toBe("");
   render();
   expect(input("Search").value).toBe("needle");
+});
+it("resets advanced filters without clearing the retained query", async () => {
+  render();
+  type("Search", "needle");
+  act(() => host.querySelector<HTMLButtonElement>('[aria-label="Filters"]')!.click());
+  type("files to include", "src/**");
+  type("files to exclude", "generated/**");
+  act(() => document.querySelector<HTMLButtonElement>('[aria-label="Match case"]')!.click());
+  expect(host.querySelector('[aria-label="Filters"]')?.getAttribute("data-button-selected")).toBe(
+    "true",
+  );
+  const reset = [...document.querySelectorAll<HTMLButtonElement>('[role="dialog"] button')].find(
+    (node) => node.textContent === "Reset",
+  )!;
+  act(() => reset.click());
+  expect(input("Search").value).toBe("needle");
+  expect(input("files to include").value).toBe("");
+  expect(input("files to exclude").value).toBe("");
+  expect(
+    host.querySelector('[aria-label="Filters"]')?.getAttribute("data-button-selected"),
+  ).toBeNull();
+  await act(async () => vi.advanceTimersByTime(210));
+  expect(search).toHaveBeenLastCalledWith(
+    expect.objectContaining({
+      query: "needle",
+      include: undefined,
+      exclude: undefined,
+      caseSensitive: false,
+      wholeWord: false,
+      regex: false,
+    }),
+  );
 });

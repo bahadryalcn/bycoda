@@ -377,7 +377,7 @@ export function BranchPicker({
           data-branch-picker
           className="flex flex-col overflow-hidden"
         >
-          <div className="flex shrink-0 items-center gap-2 border-b border-stroke px-3 py-2.5 text-content/50">
+          <div className="flex shrink-0 items-center gap-2 border-b border-stroke px-3 py-2.5 text-[var(--ui-text-secondary)]">
             <Search className="size-3.5 shrink-0" strokeWidth={1.75} />
             <SearchInput
               ref={search}
@@ -390,7 +390,7 @@ export function BranchPicker({
               autoCorrect="off"
               autoCapitalize="off"
               disabled={busy}
-              className="min-w-0 flex-1 bg-transparent font-sans text-[13px] text-content outline-none placeholder:text-content/40 disabled:opacity-60"
+              className="min-w-0 flex-1"
               onChange={(e) => {
                 setQuery(e.target.value);
                 setActive(0);
@@ -437,19 +437,21 @@ export function BranchPicker({
           {error ? (
             <p
               role="alert"
-              className="max-h-16 shrink-0 overflow-y-auto whitespace-pre-wrap border-t border-stroke px-2.5 py-2 text-[11px] leading-4 text-danger/90"
+              className="max-h-16 shrink-0 overflow-y-auto whitespace-pre-wrap border-t border-stroke px-2.5 py-2 text-[11px] leading-4 text-danger"
             >
               {error}
             </p>
           ) : null}
           <div className="shrink-0 border-t border-stroke p-1 px-1.5">
             {createRow ? (
-              <button
+              <Button
+                variant="item"
+                motion="none"
                 type="button"
                 disabled={busy}
                 onMouseDown={(e) => e.preventDefault()}
                 onClick={() => pick(createRow)}
-                className="flex h-7.5 w-full items-center gap-2.5 rounded-lg px-2.5 text-left text-[13px] text-content/75 hover:bg-content/8 hover:text-content disabled:opacity-60"
+                className="flex h-7.5 w-full items-center gap-2.5 text-left"
               >
                 <Plus className="size-4 shrink-0" strokeWidth={1.75} />
                 <span className="min-w-0 truncate">
@@ -457,9 +459,11 @@ export function BranchPicker({
                     ? t("Create and checkout {p0}", { p0: createRow.name })
                     : t("New branch")}
                 </span>
-              </button>
+              </Button>
             ) : null}
-            <button
+            <Button
+              variant="item"
+              motion="none"
               type="button"
               disabled={busy || !projectBranches?.branches.length}
               onMouseDown={(e) => e.preventDefault()}
@@ -469,11 +473,11 @@ export function BranchPicker({
                 setCreatingFrom(true);
                 setCreating(true);
               }}
-              className="flex h-7.5 w-full items-center gap-2.5 rounded-lg px-2.5 text-left text-[13px] text-content/75 hover:bg-content/8 hover:text-content active:bg-content/8 focus-visible:outline-2 focus-visible:outline-content/50 disabled:opacity-60"
+              className="flex h-7.5 w-full items-center gap-2.5 text-left"
             >
               <GitBranch className="size-4 shrink-0" strokeWidth={1.75} />
               <span className="min-w-0 truncate">{t("New branch from…")}</span>
-            </button>
+            </Button>
           </div>
         </Popover>
       ) : null}
@@ -505,7 +509,11 @@ function BranchList({
   }, [active]);
 
   if (rows.length === 0) {
-    return <div className="min-h-0 flex-1 px-3 py-4 text-[12px] text-content/50">{emptyLabel}</div>;
+    return (
+      <div className="min-h-0 flex-1 px-3 py-4 text-[12px] text-[var(--ui-text-secondary)]">
+        {emptyLabel}
+      </div>
+    );
   }
 
   return (
@@ -519,7 +527,9 @@ function BranchList({
         const highlighted = index === active;
         const selected = row.branch.current;
         return (
-          <button
+          <Button
+            variant="item"
+            motion="none"
             key={`${row.branch.remote ?? "local"}:${row.branch.name}`}
             ref={highlighted ? activeRef : undefined}
             type="button"
@@ -529,26 +539,27 @@ function BranchList({
             onMouseDown={(e) => e.preventDefault()}
             onMouseEnter={() => onActive(index)}
             onClick={() => onPick(row)}
-            className={`flex h-8 w-full items-center gap-2 rounded-lg px-2 text-left text-[13px] disabled:opacity-60 ${
-              highlighted || selected
-                ? "bg-selection text-content"
-                : "text-content hover:bg-content/5"
-            }`}
+            className={`  flex h-8 w-full items-center gap-2 text-left  ${
+              highlighted || selected ? "" : ""
+            }   `}
           >
             {selected ? (
               <Check className="size-3.5 shrink-0" strokeWidth={1.75} />
             ) : (
-              <GitBranch className="size-3.5 shrink-0 text-content/50" strokeWidth={1.75} />
+              <GitBranch
+                className="size-3.5 shrink-0 text-[var(--ui-text-secondary)]"
+                strokeWidth={1.75}
+              />
             )}
             <span className={`min-w-0 flex-1 truncate ${selected ? "font-medium" : ""}`}>
               {row.branch.name}
             </span>
             {row.branch.remote ? (
-              <span className="shrink-0 rounded bg-content/6 px-1.5 py-0.5 text-[10px] text-content/40">
+              <span className="shrink-0 rounded bg-[var(--ui-surface)] px-1.5 py-0.5 text-[10px] text-[var(--ui-text-muted)]">
                 {row.branch.remote}
               </span>
             ) : null}
-          </button>
+          </Button>
         );
       })}
     </div>

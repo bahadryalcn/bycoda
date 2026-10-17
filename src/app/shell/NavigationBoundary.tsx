@@ -1,3 +1,4 @@
+import { Button } from "../../shared/ui/Button";
 import { t, useLocale } from "../../shared/i18n";
 import { Suspense, useEffect, useState, type ReactNode } from "react";
 import { LoaderCircle } from "../../shared/ui/icons";
@@ -34,13 +35,9 @@ function NavigationLoading({ name, onBack }: { name: string; onBack: () => void 
         data-tauri-drag-region="deep"
       >
         {IS_MAC ? <div className="w-[78px] shrink-0" /> : null}
-        <button
-          type="button"
-          onClick={onBack}
-          className="text-[13px] text-content/60 hover:text-content"
-        >
+        <Button variant="ghost" motion="none" type="button" onClick={onBack} className="">
           {t("Back to workspace")}
-        </button>
+        </Button>
         <span className="flex-1 text-[13px]">{name}</span>
         {IS_MAC ? null : <WindowControls />}
       </div>

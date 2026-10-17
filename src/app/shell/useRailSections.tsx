@@ -1,3 +1,4 @@
+import { Button } from "../../shared/ui/Button";
 import { t, useLocale } from "../../shared/i18n";
 import {
   useEffect,
@@ -42,7 +43,11 @@ export function SectionMenuButton({
 }) {
   useLocale();
   return (
-    <button
+    <Button
+      iconOnly
+      label={t("{p0} section options", { p0: label })}
+      variant="ghost"
+      motion="none"
       type="button"
       data-no-drag
       title={t("Section options")}
@@ -52,10 +57,10 @@ export function SectionMenuButton({
         const rect = event.currentTarget.getBoundingClientRect();
         onOpen(rect.left, rect.bottom);
       }}
-      className="hidden size-5 shrink-0 cursor-default place-items-center rounded-md text-content/50 hover:bg-content/8 hover:text-content group-hover:grid group-has-[:focus-visible]:grid"
+      className="hidden size-5 shrink-0 place-items-center group-hover:grid group-has-[:focus-visible]:grid"
     >
       <MoreHorizontal className="size-3.5" strokeWidth={1.75} />
-    </button>
+    </Button>
   );
 }
 

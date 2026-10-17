@@ -216,13 +216,13 @@ it("navigates provider choices with arrow keys", async () => {
   const list = document.body.querySelector<HTMLElement>('[role="listbox"][aria-label="Provider"]')!;
   const options = list.querySelectorAll<HTMLButtonElement>('[role="option"]');
   await act(async () =>
-    list.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true })),
+    list.dispatchEvent(new KeyboardEvent("keydown", { key: "Home", bubbles: true })),
   );
-  expect(document.activeElement).toBe(options[0]);
+  expect(list.getAttribute("aria-activedescendant")).toBe(options[0].id);
   await act(async () =>
-    options[0].dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowUp", bubbles: true })),
+    list.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowUp", bubbles: true })),
   );
-  expect(document.activeElement).toBe(options[options.length - 1]);
+  expect(list.getAttribute("aria-activedescendant")).toBe(options[options.length - 1].id);
 });
 
 it("hides Sign in when a server has no known transport", async () => {

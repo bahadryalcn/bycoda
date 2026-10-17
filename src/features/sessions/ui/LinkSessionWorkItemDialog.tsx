@@ -1,3 +1,5 @@
+import { TextField } from "../../../shared/ui/TextField";
+import { Button } from "../../../shared/ui/Button";
 import { t, useLocale } from "../../../shared/i18n";
 import { useState, type FormEvent } from "react";
 import { Modal } from "../../../shared/ui/Modal";
@@ -38,8 +40,12 @@ export function LinkSessionWorkItemDialog({
     >
       <form onSubmit={submit} className="flex flex-col gap-4 p-4 text-[12px]">
         <label className="flex flex-col gap-1.5">
-          <span className="font-medium text-content/80">{t("Issue or pull request URL")}</span>
-          <input
+          <span className="font-medium text-(--ui-text-secondary)">
+            {t("Issue or pull request URL")}
+          </span>
+          <TextField
+            hideLabel
+            label=""
             autoFocus
             type="url"
             value={url}
@@ -51,43 +57,38 @@ export function LinkSessionWorkItemDialog({
               setUrl(event.target.value);
               if (error) setError("");
             }}
-            className={`h-9 rounded-md border bg-content/5 px-2.5 text-[13px] text-content outline-none placeholder:text-content/30 focus:border-content/30 ${
-              error ? "border-danger/60" : "border-content/10"
-            }`}
           />
           {error ? (
-            <span id="linked-work-item-error" role="alert" className="text-[11px] text-danger">
+            <span
+              id="linked-work-item-error"
+              role="alert"
+              className="text-[11px] text-(--ui-tone-danger-fg)"
+            >
               {error}
             </span>
           ) : (
-            <span className="text-[11px] text-content/45">
+            <span className="text-[11px] text-(--ui-text-secondary)">
               {t("Paste the full github.com URL. The linked item will appear on the session card.")}
             </span>
           )}
         </label>
         <div className="flex items-center justify-end gap-2">
           {initial ? (
-            <button
+            <Button
+              variant="ghost"
               type="button"
               onClick={() => onSave(undefined)}
-              className="mr-auto rounded-md px-3 py-1.5 text-danger hover:bg-danger/10 active:scale-[0.97]"
+              className="mr-auto"
             >
               {t("Remove link")}
-            </button>
+            </Button>
           ) : null}
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-md px-3 py-1.5 hover:bg-content/8 active:scale-[0.97]"
-          >
+          <Button variant="ghost" type="button" onClick={onClose}>
             {t("Cancel")}
-          </button>
-          <button
-            type="submit"
-            className="rounded-md bg-accent px-3 py-1.5 font-medium text-on-solid hover:brightness-110 active:scale-[0.97]"
-          >
+          </Button>
+          <Button variant="ghost" type="submit">
             {initial ? t("Update link") : t("Link")}
-          </button>
+          </Button>
         </div>
       </form>
     </Modal>

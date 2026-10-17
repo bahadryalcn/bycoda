@@ -31,7 +31,7 @@ export function SessionAgentIdentity({
       title={`${t(running ? "Running agent" : "Session agent")}: ${label}`}
     >
       {running ? (
-        <span className="size-1.5 shrink-0 rounded-full bg-success" aria-hidden />
+        <span className="size-1.5 shrink-0 rounded-full bg-(--ui-tone-success-fg)" aria-hidden />
       ) : null}
       <span className="truncate">{label}</span>
     </span>

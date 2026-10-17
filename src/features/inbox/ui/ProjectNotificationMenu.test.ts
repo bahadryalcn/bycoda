@@ -159,9 +159,10 @@ it("shows persisted mute status on the project and in its reopened menu", async 
   const menu = resume.closest('[role="menu"]')!;
   expect(menu.firstElementChild).toBe(resume);
   expect(resume.nextElementSibling?.getAttribute("role")).toBe("separator");
-  expect(resume.nextElementSibling?.nextElementSibling?.getAttribute("aria-label")).toBe(
-    "Group name",
-  );
+  // The shared TextField wraps the name input; the field follows the separator.
+  expect(
+    resume.nextElementSibling?.nextElementSibling?.querySelector('[aria-label="Group name"]'),
+  ).not.toBeNull();
   expect(menu.querySelectorAll('[aria-label="Resume notifications"]')).toHaveLength(1);
   expect(button("Mute notifications").textContent).not.toContain("Muted until resumed");
   act(() => button("Resume notifications").click());
@@ -196,8 +197,10 @@ it("shows persisted mute status on the project and in its reopened menu", async 
   expect(button("Mute notifications").textContent).not.toContain("Muted until");
   expect(document.querySelector('[aria-label="Resume notifications"]')).toBeNull();
   expect(
-    document.querySelector('[role="menu"]')?.firstElementChild?.getAttribute("aria-label"),
-  ).toBe("Group name");
+    document.querySelector('[role="menu"]')?.firstElementChild?.querySelector(
+      '[aria-label="Group name"]',
+    ),
+  ).not.toBeNull();
 });
 
 it("mutes a repository from its project context menu", async () => {

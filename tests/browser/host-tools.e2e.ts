@@ -276,7 +276,11 @@ test("inspects unified logs, prepares an agent draft and clears a scoped view", 
     1,
   );
   await panel.getByRole("button", { name: "Pause", exact: true }).click();
-  await panel.getByRole("button", { name: "ERROR", exact: true }).click();
+  await panel.getByRole("button", { name: "Filters", exact: true }).click();
+  const filters = page.getByRole("dialog", { name: "Log filters", exact: true });
+  await filters.getByRole("button", { name: "Log level: All levels", exact: true }).click();
+  await page.getByRole("option", { name: "ERROR", exact: true }).click();
+  await page.keyboard.press("Escape");
   await expect(timeline.getByText("Workspace loaded", { exact: true })).toHaveCount(0);
   await timeline.locator("details").first().getByText("Details", { exact: true }).click();
   await expect(timeline.getByText("Stack trace", { exact: true })).toBeVisible();
@@ -321,7 +325,7 @@ test("keeps the log workspace within narrow and wide layouts", async ({ page }) 
     ).toBeVisible();
     const logBox = await page.locator(".runtime-logs-timeline").boundingBox();
     expect(logBox!.height).toBeGreaterThan(120);
-    await expect(page.getByRole("button", { name: "ERROR", exact: true })).toBeInViewport();
+    await expect(page.getByRole("button", { name: "Filters", exact: true })).toBeInViewport();
     await expect(page.getByLabel("Website port or URL")).toBeInViewport();
     await page
       .getByRole("button", { name: "Add to conversation", exact: true })
@@ -401,11 +405,20 @@ test("shows grouped server ports, reviews impact and offers force after graceful
 }) => {
   await page.goto(fixture);
   await page.getByRole("tab", { name: "Development servers", exact: true }).click();
-  const server = page.getByRole("article", { name: "Demo dev server", exact: true });
-  await expect(server.getByText("http://127.0.0.1:5173", { exact: true })).toBeVisible();
-  await expect(server.getByText("http://[::1]:5173", { exact: true })).toBeVisible();
-  await server.getByText("Process and controls", { exact: true }).click();
-  await server.getByRole("button", { name: "Stop", exact: true }).click();
+  const list = page.getByRole("list", { name: "Development servers", exact: true });
+  const server = list.getByRole("listitem", { name: "Demo dev server", exact: true });
+  await expect(server.getByRole("button")).toHaveAttribute("aria-pressed", "true");
+  const selection = page.getByRole("complementary", { name: "Demo dev server", exact: true });
+  await selection.getByRole("button", { name: /^Address:/ }).click();
+  await expect(
+    page.getByRole("option", { name: "http://127.0.0.1:5173", exact: true }),
+  ).toBeVisible();
+  await expect(page.getByRole("option", { name: "http://[::1]:5173", exact: true })).toBeVisible();
+  await page.getByRole("option", { name: "http://[::1]:5173", exact: true }).click();
+  await expect(selection.getByRole("button", { name: /^Address:/ })).toContainText(
+    "http://[::1]:5173",
+  );
+  await selection.getByRole("button", { name: "Stop", exact: true }).click();
   const details = page.getByRole("region", { name: "Selected process details" });
   await expect(details.getByText("5173, 5174", { exact: true })).toBeVisible();
   expect(
@@ -690,18 +703,21 @@ test("finds servers by port and name and retains list scroll across updates and 
   await page.goto(fixture + "?detached=1&servers=many");
   await page.getByRole("tab", { name: "Development servers", exact: true }).click();
   const search = page.getByLabel("Find server", { exact: true });
-  await expect(page.getByRole("article")).toHaveCount(26);
+  const list = page.getByRole("list", { name: "Development servers", exact: true });
+  await expect(list.getByRole("listitem")).toHaveCount(26);
   await search.fill("5173");
-  await expect(page.getByRole("article")).toHaveCount(1);
-  await expect(page.getByRole("article", { name: "Demo dev server", exact: true })).toBeVisible();
+  await expect(list.getByRole("listitem")).toHaveCount(1);
+  await expect(list.getByRole("listitem", { name: "Demo dev server", exact: true })).toBeVisible();
   await search.fill("external");
-  await expect(page.getByRole("article")).toHaveCount(1);
-  await expect(page.getByRole("article", { name: "External server", exact: true })).toBeVisible();
+  await expect(list.getByRole("listitem")).toHaveCount(1);
+  await expect(list.getByRole("listitem", { name: "External server", exact: true })).toBeVisible();
   await search.fill("");
   const panel = page.getByRole("tabpanel");
   await panel.evaluate((element) => {
     element.scrollTop = 750;
   });
+  const scrollBefore = await panel.evaluate((element) => element.scrollTop);
+  expect(scrollBefore).toBeGreaterThan(0);
   const controls = page.getByRole("region", { name: "Development servers", exact: true });
   const refresh = () =>
     controls
@@ -713,9 +729,11 @@ test("finds servers by port and name and retains list scroll across updates and 
     ).hostToolFixture.scanDelayMs = 150;
   });
   await refresh();
-  await expect(page.getByRole("article")).toHaveCount(26);
+  await expect(list.getByRole("listitem")).toHaveCount(26);
   await expect(page.locator('.dev-servers-panel[aria-busy="true"]')).toHaveCount(0);
-  await expect.poll(() => panel.evaluate((element) => element.scrollTop)).toBeGreaterThan(700);
+  await expect
+    .poll(() => panel.evaluate((element) => element.scrollTop))
+    .toBeCloseTo(scrollBefore, 0);
   await page.evaluate(() => {
     (
       window as unknown as { hostToolFixture: { scanFailure: boolean } }
@@ -725,8 +743,10 @@ test("finds servers by port and name and retains list scroll across updates and 
   await expect(
     page.getByText("Showing the last successful scan. Retry to update.", { exact: true }),
   ).toBeAttached();
-  await expect(page.getByRole("article")).toHaveCount(26);
-  await expect.poll(() => panel.evaluate((element) => element.scrollTop)).toBeGreaterThan(700);
+  await expect(list.getByRole("listitem")).toHaveCount(26);
+  await expect
+    .poll(() => panel.evaluate((element) => element.scrollTop))
+    .toBeCloseTo(scrollBefore, 0);
   await page.evaluate(() => {
     const fixture = (
       window as unknown as { hostToolFixture: { scanFailure: boolean; updateServer: () => void } }
@@ -738,9 +758,11 @@ test("finds servers by port and name and retains list scroll across updates and 
     .getByRole("button", { name: "Retry scan", exact: true })
     .evaluate((button: HTMLButtonElement) => button.click());
   await expect(
-    page.getByRole("article", { name: "Updated preview server", exact: true }),
+    list.getByRole("listitem", { name: "Updated preview server", exact: true }),
   ).toBeAttached();
-  await expect.poll(() => panel.evaluate((element) => element.scrollTop)).toBeGreaterThan(700);
+  await expect
+    .poll(() => panel.evaluate((element) => element.scrollTop))
+    .toBeCloseTo(scrollBefore, 0);
 });
 
 test("compact browser keeps preview and keyboard controls usable at all panel widths", async ({
@@ -844,4 +866,81 @@ test("compact browser keeps preview and keyboard controls usable at all panel wi
     animations: "disabled",
   });
   expect(errors).toEqual([]);
+});
+for (const [theme, width] of [
+  ["light", 390],
+  ["dark", 1440],
+] as const) {
+  test(`shared AUX log filters ${theme} ${width}`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 900 });
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await page.goto(`${fixture}?theme=${theme}`);
+    await page.getByRole("tab", { name: "Logs", exact: true }).click();
+    const trigger = page.getByRole("button", { name: "Filters", exact: true });
+    await trigger.click();
+    const filters = page.getByRole("dialog", { name: "Log filters", exact: true });
+    await expect(filters).toBeVisible();
+    await filters.getByRole("radio", { name: /^Server/ }).focus();
+    await page.keyboard.press("ArrowLeft");
+    await expect(filters.getByRole("radio", { name: /^Browser/ })).toBeChecked();
+    await filters.getByRole("button", { name: "Reset filters", exact: true }).click();
+    await expect(filters.getByRole("radio", { name: /^All/ })).toBeChecked();
+    await page.keyboard.press("Escape");
+    await expect(filters).toBeHidden();
+    await expect(trigger).toBeFocused();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+      true,
+    );
+    await page.screenshot({
+      path: `temp/verification/2026-10-16-ui-system/W5b-AUX-logs-${theme}-${width}.png`,
+      animations: "disabled",
+    });
+    expect(
+      await page.evaluate(() =>
+        (window as any).hostToolCalls.filter((call: any) =>
+          [
+            "runtimeLogs.monitors.start",
+            "devServers.stop",
+            "devServers.kill",
+            "devServers.restart",
+          ].includes(call.method),
+        ),
+      ),
+    ).toEqual([]);
+  });
+}
+
+test("shared host danger feedback preserves server selection and recovery in both themes", async ({
+  page,
+}) => {
+  for (const theme of ["light", "dark"]) {
+    await page.setViewportSize({ width: 390, height: 820 });
+    await page.goto(`${fixture}?detached=1&theme=${theme}`);
+    await page.getByRole("tab", { name: "Development servers", exact: true }).click();
+    const servers = page.getByRole("list", { name: "Development servers", exact: true });
+    const selected = servers.getByRole("button", { name: /^Demo dev server/ });
+    await expect(selected).toHaveAttribute("aria-pressed", "true");
+    await page.evaluate(() => {
+      (
+        window as unknown as { hostToolFixture: { scanFailure: boolean } }
+      ).hostToolFixture.scanFailure = true;
+    });
+    await page.getByRole("button", { name: "Refresh", exact: true }).click();
+    const error = page.getByRole("alert").filter({ hasText: "Could not refresh servers." });
+    await expect(error).toBeVisible();
+    await expect(error).toHaveClass(/bycoda-arc/);
+    await expect(selected).toHaveAttribute("aria-pressed", "true");
+    await expect(servers.getByRole("listitem")).toHaveCount(2);
+    expect(await page.locator("body").evaluate((node) => node.scrollWidth <= innerWidth)).toBe(
+      true,
+    );
+    await page.evaluate(() => {
+      (
+        window as unknown as { hostToolFixture: { scanFailure: boolean } }
+      ).hostToolFixture.scanFailure = false;
+    });
+    await page.getByRole("button", { name: "Retry scan", exact: true }).click();
+    await expect(error).toHaveCount(0);
+    await expect(selected).toHaveAttribute("aria-pressed", "true");
+  }
 });

@@ -1,3 +1,4 @@
+import { Button } from "../../../shared/ui/Button";
 import { t, useLocale } from "../../../shared/i18n/git";
 import { useEffect, useMemo, useState } from "react";
 import { gitConflictStages, type GitConflictStages } from "../../../platform/tauri/fs";
@@ -99,7 +100,10 @@ export function GitConflictCompare({ cwd, relative, onClose }: Props) {
           className="flex items-center gap-1"
         >
           {comparisons.map((entry) => (
-            <button
+            <Button
+              size="sm"
+              variant="tab"
+              motion="none"
               key={entry.id}
               type="button"
               role="tab"
@@ -107,14 +111,10 @@ export function GitConflictCompare({ cwd, relative, onClose }: Props) {
               disabled={!!entry.unavailable}
               title={entry.unavailable}
               onClick={() => setPair(entry.id)}
-              className={`h-6 rounded-md px-2 text-[12px] disabled:opacity-40 ${
-                entry.id === pair
-                  ? "bg-content/12 text-content"
-                  : "text-content/60 hover:bg-content/8 hover:text-content"
-              }`}
+              className={""}
             >
               {entry.label}
-            </button>
+            </Button>
           ))}
         </div>
       }
@@ -123,7 +123,7 @@ export function GitConflictCompare({ cwd, relative, onClose }: Props) {
         <div
           role="status"
           aria-label={t("Loading conflict versions")}
-          className="grid flex-1 place-items-center text-content/40"
+          className="grid flex-1 place-items-center text-[var(--ui-text-muted)]"
         >
           <Loader className="size-4 animate-spin" strokeWidth={1.75} />
         </div>
@@ -132,7 +132,7 @@ export function GitConflictCompare({ cwd, relative, onClose }: Props) {
           <div>
             <AlertCircle className="mx-auto mb-3 size-5 text-danger" />
             <p className="text-[13px] text-content">{t("Couldn’t load the versions")}</p>
-            <p className="mt-1 text-[12px] text-content/50">{load.message}</p>
+            <p className="mt-1 text-[12px] text-[var(--ui-text-secondary)]">{load.message}</p>
             <GitFeedback
               title={t("Conflict versions unavailable")}
               onRetry={() => setRetry((value) => value + 1)}
@@ -144,7 +144,7 @@ export function GitConflictCompare({ cwd, relative, onClose }: Props) {
           {notes.length > 0 ? (
             <p
               role="status"
-              className="shrink-0 border-b border-stroke px-4 py-1.5 text-[12px] text-content/60"
+              className="shrink-0 border-b border-stroke px-4 py-1.5 text-[12px] text-[var(--ui-text-secondary)]"
             >
               {notes.join(" ")}
             </p>

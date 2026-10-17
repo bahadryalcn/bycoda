@@ -1,3 +1,4 @@
+import { Button } from "../../../shared/ui/Button";
 import { t, useLocale } from "../../../shared/i18n/git";
 import {
   useCallback,
@@ -61,8 +62,7 @@ const WIDE_DATE_PX = 64;
 const WIDE_SHA_PX = 72;
 const WIDE_GRAPH_MAX_PX = 260;
 
-const LOAD_MORE_CLASS =
-  "w-full px-3 py-1.5 text-left text-[12px] text-content/55 hover:bg-content/5 hover:text-content";
+const LOAD_MORE_CLASS = "w-full text-left";
 
 function useNow(): number {
   const [now, setNow] = useState(Date.now);
@@ -213,7 +213,7 @@ export function GitGraphList({
         <>
           {wide ? (
             <div
-              className="sticky top-0 z-[2] grid items-center border-b border-stroke bg-background-base text-[10px] font-semibold tracking-[0.04em] text-content/50 uppercase"
+              className="sticky top-0 z-[2] grid items-center border-b border-stroke bg-[var(--ui-surface)] text-[10px] font-semibold tracking-[0.04em] text-[var(--ui-text-secondary)] uppercase"
               style={{
                 height: WIDE_HEADER_PX,
                 gridTemplateColumns: columns,
@@ -263,9 +263,15 @@ export function GitGraphList({
             {range.padBottom > 0 ? <li aria-hidden style={{ height: range.padBottom }} /> : null}
           </ul>
           {hasMore ? (
-            <button type="button" onClick={onLoadMore} className={LOAD_MORE_CLASS}>
+            <Button
+              variant="item"
+              motion="none"
+              type="button"
+              onClick={onLoadMore}
+              className={LOAD_MORE_CLASS}
+            >
               {t("Load more commits")}
-            </button>
+            </Button>
           ) : null}
         </>
       )}
@@ -313,14 +319,18 @@ function rowButtonProps({ item, active, onOpen, onMenu, onHoverStart, onHoverEnd
     "aria-pressed": active,
     className: `git-history-item min-w-0 w-full overflow-visible text-left ${
       row.kind === "HEAD" ? "is-head" : ""
-    } ${active ? "is-selected bg-selection text-content" : "text-content hover:bg-content/5"}`,
+    } ${active ? "is-selected" : ""}`,
   };
 }
 
 function subjectClass(item: GraphListItem): string {
   const { commit, row } = item;
   return `min-w-0 truncate text-[12px] leading-[22px] ${
-    row.kind === "HEAD" ? "font-semibold" : isMergeCommit(commit) ? "text-content/60" : ""
+    row.kind === "HEAD"
+      ? "font-semibold"
+      : isMergeCommit(commit)
+        ? "text-[var(--ui-text-secondary)]"
+        : ""
   }`;
 }
 
@@ -333,9 +343,11 @@ function CompactRow(props: RowProps) {
   return (
     // The row is the container the author and date hide against.
     <li className="git-graph-row min-w-0 overflow-visible" style={{ height: GRAPH_ROW_PX }}>
-      <button
+      <Button
+        variant="item"
+        motion="none"
         {...button}
-        className={`${button.className} flex h-[22px] items-stretch pr-2 ${plain ? "pl-3" : ""}`}
+        className={`   ${button.className}  flex h-[22px] items-stretch  `}
       >
         {plain ? null : <GraphLane row={row} />}
         <span className="ml-1 flex min-w-0 flex-1 items-center">
@@ -350,11 +362,11 @@ function CompactRow(props: RowProps) {
         <GraphAvatar name={commit.author} className="git-graph-author ml-1.5 self-center" />
         <span
           title={formatAbsoluteTime(commit.timestamp)}
-          className="git-graph-date ml-1.5 w-7 shrink-0 text-right text-[11px] leading-[22px] text-content/45"
+          className="git-graph-date ml-1.5 w-7 shrink-0 text-right text-[11px] leading-[22px] text-[var(--ui-text-muted)]"
         >
           {formatRelativeTime(commit.timestamp, now)}
         </span>
-      </button>
+      </Button>
     </li>
   );
 }
@@ -365,12 +377,14 @@ function WideRow(props: RowProps & { columns: string; workspace?: boolean }) {
   const { commit, row } = item;
   const refs = useMemo(() => orderGraphRefs(row.refs, commit.head), [row.refs, commit.head]);
   const button = rowButtonProps(props);
-  const dim = isMergeCommit(commit) && row.kind !== "HEAD" ? "text-content/60" : "";
+  const dim = isMergeCommit(commit) && row.kind !== "HEAD" ? "text-[var(--ui-text-secondary)]" : "";
   return (
     <li className="min-w-0 overflow-visible" style={{ height: GRAPH_ROW_PX }}>
-      <button
+      <Button
+        variant="item"
+        motion="none"
         {...button}
-        className={`${button.className} grid h-[22px] items-center`}
+        className={`   ${button.className}  grid h-[22px] items-center  `}
         style={{ gridTemplateColumns: columns }}
       >
         <span className="flex min-w-0 items-center pr-1 pl-3">
@@ -383,19 +397,23 @@ function WideRow(props: RowProps & { columns: string; workspace?: boolean }) {
         {!workspace ? (
           <span className={`flex min-w-0 items-center gap-1.5 pr-2 ${dim}`}>
             <GraphAvatar name={commit.author} />
-            <span className="min-w-0 truncate text-[12px] text-content/70">{commit.author}</span>
+            <span className="min-w-0 truncate text-[12px] text-[var(--ui-text-secondary)]">
+              {commit.author}
+            </span>
           </span>
         ) : null}
         {!workspace ? (
           <span
             title={formatAbsoluteTime(commit.timestamp)}
-            className="truncate text-[12px] text-content/55"
+            className="truncate text-[12px] text-[var(--ui-text-secondary)]"
           >
             {formatRelativeTime(commit.timestamp, now)}
           </span>
         ) : null}
-        <span className="truncate font-mono text-[11px] text-content/55">{commit.shortSha}</span>
-      </button>
+        <span className="truncate font-mono text-[11px] text-[var(--ui-text-secondary)]">
+          {commit.shortSha}
+        </span>
+      </Button>
     </li>
   );
 }

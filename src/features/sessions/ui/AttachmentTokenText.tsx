@@ -1,3 +1,4 @@
+import { Button } from "../../../shared/ui/Button";
 import { t, useLocale } from "../../../shared/i18n";
 import { Fragment, useEffect, useState } from "react";
 import { splitAttachmentTokens } from "../model/attachmentTokens";
@@ -18,7 +19,7 @@ type PillProps = {
 };
 
 const PILL_CLASS =
-  "mx-px rounded bg-content/12 px-1 py-px align-baseline text-[0.85em] text-content/80";
+  "mx-px rounded bg-(--ui-surface-raised) px-1 py-px align-baseline text-[0.85em] text-(--ui-text-secondary)";
 
 /** A token as a pill. It keeps its brackets in the DOM so selecting and copying give the text back. */
 function TokenPill({ token, label, attachment }: PillProps) {
@@ -54,7 +55,9 @@ function TokenPill({ token, label, attachment }: PillProps) {
   }
   return (
     <>
-      <button
+      <Button
+        motion="none"
+        variant="ghost"
         type="button"
         title={t("Open {p0} full screen", { p0: attachment.name })}
         aria-label={t("Open {p0} ({p1}) full screen", { p0: token, p1: attachment.name })}
@@ -68,18 +71,17 @@ function TokenPill({ token, label, attachment }: PillProps) {
             setOpenedFile(attachment);
           } else void show();
         }}
-        className={`${PILL_CLASS} cursor-zoom-in [@media(hover:hover)_and_(pointer:fine)]:hover:bg-content/20 active:bg-content/20 focus-visible:outline-2 focus-visible:outline-accent`}
       >
         {body}
-      </button>
+      </Button>
       {loading ? (
-        <span role="status" className="text-xs text-content/60">
+        <span role="status" className="text-xs text-(--ui-text-secondary)">
           {" "}
           {t("Loading…")}
         </span>
       ) : null}
       {error ? (
-        <span role="alert" className="text-xs text-warning">
+        <span role="alert" className="text-xs text-(--ui-tone-warning-fg)">
           {" "}
           {t("Preview unavailable. Try again.")}
         </span>

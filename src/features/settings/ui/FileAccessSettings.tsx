@@ -1,3 +1,4 @@
+import { Alert } from "../../../shared/ui/Alert";
 import { useEffect, useState } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import {
@@ -66,9 +67,9 @@ export function FileAccessSettings() {
         </Button>
       </Row>
       {error ? (
-        <p role="alert" className="px-4 py-3 text-[12px] text-danger">
+        <Alert tone="danger" role="alert">
           {error}
-        </p>
+        </Alert>
       ) : null}
       <AdvancedSettings
         id="file-access-permissions"

@@ -1,4 +1,5 @@
 import { ChangeSignal } from "./changeSignal";
+import { normalizeProjectPath } from "./desktopSessions";
 import { isSessionErrorBlock, sessionIssue } from "../src/features/sessions/model/sessionIssue";
 import { DatabaseSync } from "node:sqlite";
 import { randomUUID, createHash, randomBytes } from "node:crypto";
@@ -351,6 +352,11 @@ export class HostStore {
   }
 
   addProject(cwd: string, name: string): HostProject {
+    // Use the same filesystem identity as desktop session discovery. Legacy
+    // spellings remain registered so their sessions and feature data stay valid.
+    const path = normalizeProjectPath(cwd);
+    const existing = this.projects().find((project) => normalizeProjectPath(project.cwd) === path);
+    if (existing) return existing;
     this.changes.notify();
     this.db.prepare("INSERT OR IGNORE INTO projects VALUES (?, ?, ?)").run(randomUUID(), cwd, name);
     return this.db.prepare("SELECT * FROM projects WHERE cwd=?").get(cwd) as unknown as HostProject;

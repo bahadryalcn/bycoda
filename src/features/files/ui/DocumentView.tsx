@@ -1,3 +1,5 @@
+import { Progress } from "../../../shared/ui/Progress";
+import { Button } from "../../../shared/ui/Button";
 import { t, useLocale } from "../../../shared/i18n/technical";
 import { Suspense, lazy, useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { ExternalLink } from "../../../shared/ui/icons";
@@ -128,13 +130,16 @@ export function DocumentView({ path, cwd, readBytes, externalPath = path }: Prop
       <DocumentMessage title={t("Couldn’t open {p0}", { p0: name })} error>
         {state.message}
         {detail}
-        <button
+        <Button
+          size="sm"
+          variant="ghost"
+          motion="none"
           type="button"
           onClick={reload}
-          className="mt-3 h-7 rounded-md bg-content/10 px-2.5 text-[12px] text-content hover:bg-content/15"
+          className="mt-3"
         >
           {t("Retry")}
-        </button>
+        </Button>
       </DocumentMessage>
     );
   } else if (state.status === "loading") {
@@ -149,17 +154,25 @@ export function DocumentView({ path, cwd, readBytes, externalPath = path }: Prop
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <SurfaceSelection className="min-h-0 flex-1" context={`@${displayPath(path, cwd)}`} cwd={cwd} contentVersion={state}>
+      <SurfaceSelection
+        className="min-h-0 flex-1"
+        context={`@${displayPath(path, cwd)}`}
+        cwd={cwd}
+        contentVersion={state}
+      >
         {body}
       </SurfaceSelection>
-      <footer className="flex h-8 shrink-0 items-center gap-3 border-t border-stroke px-3 text-[11px] text-content/50">
+      <footer className="flex h-8 shrink-0 items-center gap-3 border-t border-stroke px-3 text-[11px] text-[var(--ui-text-secondary)]">
         <span className="truncate">{name}</span>
         {state.status === "ready" ? (
           <span className="tabular-nums">{formatFileSize(state.bytes.byteLength)}</span>
         ) : null}
         <span className="flex-1" />
         {externalPath ? (
-          <button
+          <Button
+            size="sm"
+            variant="ghost"
+            motion="none"
             type="button"
             title={t(
               localCopy
@@ -174,11 +187,11 @@ export function DocumentView({ path, cwd, readBytes, externalPath = path }: Prop
                   setActionError(cause instanceof Error ? cause.message : String(cause));
               });
             }}
-            className="flex h-5 items-center gap-1.5 rounded px-1.5 hover:bg-content/10 hover:text-content"
+            className="flex items-center gap-1.5"
           >
             <ExternalLink className="size-3" strokeWidth={1.75} />
             {t(localCopy ? "Open local copy" : "Open in default app")}
-          </button>
+          </Button>
         ) : null}
       </footer>
       {actionError ? (
@@ -198,9 +211,8 @@ function FormatViewer({ kind, bytes }: { kind: DocumentKind; bytes: Uint8Array }
 function Loading({ name }: { name: string }) {
   useLocale();
   return (
-    <div className="grid h-full place-items-center text-[12px] text-content/45">
-      {t("Opening ")}
-      {name}…
+    <div className="grid h-full place-items-center p-3">
+      <Progress label={t("Opening ") + name + "…"} compact />
     </div>
   );
 }

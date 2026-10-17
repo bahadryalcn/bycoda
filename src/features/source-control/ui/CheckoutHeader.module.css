@@ -2,8 +2,8 @@
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
-  gap: 4px 8px;
-  padding: 4px 8px;
+  gap: 4px;
+  padding: 2px 6px;
   color: var(--color-content);
 }
 
@@ -17,15 +17,15 @@
   align-items: center;
   gap: 4px;
   min-inline-size: 0;
-  min-block-size: 44px;
+  min-block-size: var(--control-height-sm);
   text-align: start;
 }
 
 .identity {
   display: flex;
   flex: 1;
-  flex-direction: column;
-  gap: 4px;
+  align-items: center;
+  gap: 6px;
   min-inline-size: 0;
 }
 
@@ -37,12 +37,14 @@
 }
 
 .name {
+  min-inline-size: 0;
   font-size: var(--ui-font-caption);
   font-weight: 500;
   color: var(--color-content);
 }
 
 .path {
+  flex: 0 2 auto;
   font-size: var(--ui-font-caption);
   color: var(--ui-text-secondary);
 }

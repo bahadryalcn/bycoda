@@ -101,9 +101,7 @@ export function WorkspaceFooter({
           onToggleTerminal={onToggleRunningTerminal}
           onNewTerminal={canOpenTerminalIn(projectCwd) ? onNewTerminal : undefined}
           onShowTerminal={canOpenTerminalIn(projectCwd) ? onShowProjectTerminal : undefined}
-          projectTerminalActive={
-            !!currentProjectDock && currentProjectDock.pane.files.length > 0
-          }
+          projectTerminalActive={!!currentProjectDock && currentProjectDock.pane.files.length > 0}
           projectTerminalVisible={dockVisible}
           tools={conversationTools ? { ...conversationTools, onOpenFile } : undefined}
         />

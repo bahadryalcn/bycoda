@@ -1,3 +1,6 @@
+import { Badge } from "../../../shared/ui/Badge";
+import { Button } from "../../../shared/ui/Button";
+import { Checkbox } from "../../../shared/ui/Checkbox";
 import { t, useLocale } from "../../../shared/i18n";
 import { BellOff, CircleAlert, MessageMultiple, X } from "../../../shared/ui/icons";
 import { useEffect, useId, useRef, useState } from "react";
@@ -41,8 +44,7 @@ type Props = {
 const POPUP_PREFERENCE = "bycoda.notifications.agentInput.popups.v1";
 const MAX_POPUPS = 3;
 const POPUP_DURATION = 12_000;
-const controlClass =
-  "rounded p-1.5 text-content/60 hover:bg-content/10 active:bg-content/20 focus-visible:outline-2 focus-visible:outline-content";
+
 const noticeKey = notificationKey;
 function readPopupsEnabled() {
   try {
@@ -176,7 +178,8 @@ export function ApprovalToasts({
 
   return (
     <>
-      <button
+      <Button
+        variant="ghost"
         ref={trigger}
         type="button"
         title={t("Notifications")}
@@ -185,18 +188,17 @@ export function ApprovalToasts({
         aria-expanded={expanded}
         aria-controls={expanded ? panelId : undefined}
         onClick={() => setExpanded((value) => !value)}
-        className={`${controlClass} relative flex h-7 items-center gap-1.5 ${expanded ? "bg-content/10 text-content" : ""}`}
       >
         {popupsEnabled ? <MessageMultiple className="size-4" /> : <BellOff className="size-4" />}
         {count > 0 ? (
           <span
             id={`${panelId}-count`}
-            className="rounded bg-warning/15 px-1 text-[10px] font-semibold tabular-nums text-warning"
+            className="rounded bg-(--ui-tone-warning-subtle) px-1 text-[10px] font-semibold tabular-nums text-(--ui-tone-warning-fg)"
           >
             {count}
           </span>
         ) : null}
-      </button>
+      </Button>
       {expanded
         ? createPortal(
             <div
@@ -207,35 +209,35 @@ export function ApprovalToasts({
               style={{
                 zIndex: LAYER.toast,
               }}
-              className="notification-sheet fixed end-0 flex flex-col border-s border-stroke bg-background-base shadow-xl"
+              className="notification-sheet fixed end-0 flex flex-col border-s border-(--ui-tone-neutral-border) bg-(--ui-surface) shadow-xl"
             >
-              <div className="flex items-center justify-between gap-2 border-b border-stroke px-5 py-4">
-                <div className="flex items-center gap-2 text-base font-semibold text-content">
-                  <MessageMultiple className="size-5 text-content/50" />
+              <div className="flex items-center justify-between gap-2 border-b border-(--ui-tone-neutral-border) px-5 py-4">
+                <div className="flex items-center gap-2 text-base font-semibold text-(--ui-tone-neutral-fg)">
+                  <MessageMultiple className="size-5 text-(--ui-text-secondary)" />
                   {t("Notifications")}
-                  {count > 0 ? (
-                    <span className="rounded-full bg-warning/15 px-2 text-xs text-warning">
-                      {count}
-                    </span>
-                  ) : null}
+                  {count > 0 ? <Badge tone="warning">{count}</Badge> : null}
                 </div>
-                <button
+                <Button
+                  iconOnly
+                  label={t("Close")}
+                  variant="ghost"
                   type="button"
-                  className={controlClass}
+
                   onClick={closePanel}
                   title={t("Close")}
                   aria-label={t("Close")}
                 >
                   <X className="size-4" />
-                </button>
+                </Button>
               </div>
               <div
-                className="flex gap-1 border-b border-stroke px-5 py-3"
+                className="flex gap-1 border-b border-(--ui-tone-neutral-border) px-5 py-3"
                 role="tablist"
                 aria-label={t("Notifications")}
               >
                 {(["pending", "history"] as const).map((tab) => (
-                  <button
+                  <Button
+                    variant="tab"
                     key={tab}
                     type="button"
                     role="tab"
@@ -258,19 +260,17 @@ export function ApprovalToasts({
                       setView(next);
                       document.getElementById(`${panelId}-${next}`)?.focus();
                     }}
-                    className={`notification-sheet-tab rounded-md px-3 py-2 text-xs font-medium ${view === tab ? "bg-content/10 text-content" : "text-content/50"}`}
                   >
                     {tab === "pending" ? t("Pending") : t("Notification history")}
-                    <span className="ps-2 tabular-nums text-content/40">
+                    <span className="ps-2 tabular-nums text-(--ui-text-secondary)">
                       {tab === "pending" ? count : visibleHistory.length}
                     </span>
-                  </button>
+                  </Button>
                 ))}
               </div>
-              <div className="flex flex-wrap items-center justify-between gap-2 border-b border-stroke px-5 py-3 text-xs text-content/70">
+              <div className="flex flex-wrap items-center justify-between gap-2 border-b border-(--ui-tone-neutral-border) px-5 py-3 text-xs text-(--ui-text-secondary)">
                 <label className="flex cursor-pointer items-center gap-2">
-                  <input
-                    type="checkbox"
+                  <Checkbox
                     checked={popupsEnabled}
                     onChange={(event) => {
                       const enabled = event.currentTarget.checked;
@@ -284,11 +284,11 @@ export function ApprovalToasts({
                   />
                   {t("Show request popups")}
                 </label>
-                <button type="button" className={controlClass} onClick={dismissAll}>
+                <Button variant="ghost" type="button" onClick={dismissAll}>
                   {t("Hide all popups")}
-                </button>
+                </Button>
               </div>
-              <p className="px-5 py-3 text-xs leading-relaxed text-content/50">
+              <p className="px-5 py-3 text-xs leading-relaxed text-(--ui-text-secondary)">
                 {view === "pending"
                   ? t("Pending requests stay here until answered.")
                   : t("Recent requests are kept on this device.")}
@@ -301,8 +301,8 @@ export function ApprovalToasts({
                 className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-4"
               >
                 {(view === "pending" ? count === 0 : visibleHistory.length === 0) ? (
-                  <div className="flex flex-col items-center gap-3 px-5 py-12 text-center text-content/50">
-                    <MessageMultiple className="size-8 text-content/25" />
+                  <div className="flex flex-col items-center gap-3 px-5 py-12 text-center text-(--ui-text-secondary)">
+                    <MessageMultiple className="size-8 text-(--ui-text-secondary)" />
                     <p className="text-sm">
                       {view === "pending" ? t("No pending requests") : t("No notification history")}
                     </p>
@@ -324,10 +324,10 @@ export function ApprovalToasts({
                     : visibleHistory.map((entry, index) => (
                         <article
                           key={`${entry.key}:${entry.occurredAt}:${index}`}
-                          className="rounded-lg border border-stroke bg-content/5 p-3.5"
+                          className="rounded-lg border border-(--ui-tone-neutral-border) bg-(--ui-surface-raised) p-3.5"
                         >
                           <NotificationProjectLabel cwd={entry.cwd} />
-                          <div className="mbs-3 flex flex-wrap items-center justify-between gap-2 text-[11px] text-content/60">
+                          <div className="mbs-3 flex flex-wrap items-center justify-between gap-2 text-[11px] text-(--ui-text-secondary)">
                             <span>{entry.kind === "question" ? t("Question") : t("Approval")}</span>
                             <time
                               className="tabular-nums"
@@ -337,13 +337,13 @@ export function ApprovalToasts({
                             </time>
                           </div>
                           <details className="notification-history-details">
-                            <summary className="cursor-pointer rounded text-[13px] font-semibold leading-relaxed text-content">
+                            <summary className="cursor-pointer rounded text-[13px] font-semibold leading-relaxed text-(--ui-tone-neutral-fg)">
                               {entry.title || t("Untitled")}
-                              <span className="notification-history-preview mbs-2 whitespace-pre-wrap text-xs font-normal leading-relaxed text-content/70">
+                              <span className="notification-history-preview mbs-2 whitespace-pre-wrap text-xs font-normal leading-relaxed text-(--ui-text-secondary)">
                                 {entry.label}
                               </span>
                             </summary>
-                            <p className="notification-history-label mbs-2 whitespace-pre-wrap break-words text-xs leading-relaxed text-content/70">
+                            <p className="notification-history-label mbs-2 whitespace-pre-wrap break-words text-xs leading-relaxed text-(--ui-text-secondary)">
                               {entry.label}
                             </p>
                           </details>
@@ -355,17 +355,18 @@ export function ApprovalToasts({
                 </div>
               </div>
               {view === "history" && history.length > 0 ? (
-                <div className="border-t border-stroke px-5 py-3">
-                  <button
+                <div className="border-t border-(--ui-tone-neutral-border) px-5 py-3">
+                  <Button
+                    variant="ghost"
                     type="button"
-                    className={controlClass}
+
                     onClick={() => {
                       setHistory([]);
                       writeNotificationHistory([]);
                     }}
                   >
                     {t("Clear notification history")}
-                  </button>
+                  </Button>
                 </div>
               ) : null}
             </div>,
@@ -395,13 +396,14 @@ export function ApprovalToasts({
                   <LockedNotice onDismiss={() => dismiss("locked")} />
                 ) : null}
                 {eligible.length > MAX_POPUPS ? (
-                  <button
+                  <Button
+                    variant="ghost"
                     type="button"
-                    className={`pointer-events-auto border border-stroke bg-background-base px-3 py-2 text-xs ${controlClass}`}
+
                     onClick={() => setExpanded(true)}
                   >
                     {t("View all pending requests ({p0})", { p0: count })}
-                  </button>
+                  </Button>
                 ) : null}
               </div>,
               document.body,
@@ -422,21 +424,26 @@ function LockedNotice({ onDismiss }: { onDismiss?: () => void }) {
   }, [timed]);
   return (
     <article
-      className="approval-toast pointer-events-auto flex items-center gap-2 rounded-xl border border-dashed border-content/20 bg-content/10 px-3.5 py-3 shadow-xl backdrop-blur-xl"
+      className="approval-toast pointer-events-auto flex items-center gap-2 rounded-xl border border-dashed border-(--ui-tone-neutral-border) bg-(--ui-surface-raised) px-3.5 py-3 shadow-xl backdrop-blur-xl"
       role="status"
     >
-      <CircleAlert className="size-3.5 shrink-0 text-warning" strokeWidth={1.75} />
-      <span className="flex-1 text-[13px] text-content">{LOCKED_NOTIFICATION_TEXT}</span>
+      <CircleAlert className="size-3.5 shrink-0 text-(--ui-tone-warning-fg)" strokeWidth={1.75} />
+      <span className="flex-1 text-[13px] text-(--ui-tone-neutral-fg)">
+        {LOCKED_NOTIFICATION_TEXT}
+      </span>
       {onDismiss ? (
-        <button
+        <Button
+          iconOnly
+          label={t("Dismiss notice")}
+          variant="ghost"
           type="button"
-          className={controlClass}
+
           onClick={onDismiss}
           title={t("Dismiss notice")}
           aria-label={t("Dismiss notice")}
         >
           <X className="size-3.5" />
-        </button>
+        </Button>
       ) : null}
     </article>
   );
@@ -476,11 +483,14 @@ function NotificationProjectLabel({ cwd }: { cwd: string }) {
   );
   return (
     <span className="notification-project flex min-w-0 w-full flex-col gap-1 text-start">
-      <span className="text-[11px] font-medium text-content/60">{t("Project")}</span>
-      <span className="notification-project-name text-xs font-semibold text-content">
+      <span className="text-[11px] font-medium text-(--ui-text-secondary)">{t("Project")}</span>
+      <span className="notification-project-name text-xs font-semibold text-(--ui-tone-neutral-fg)">
         {project?.name || projectName(cwd)}
       </span>
-      <span className="notification-project-path text-[11px] text-content/60" title={cwd}>
+      <span
+        className="notification-project-path text-[11px] text-(--ui-text-secondary)"
+        title={cwd}
+      >
         {prettyCwd(cwd)}
       </span>
     </span>
@@ -502,59 +512,66 @@ function ApprovalToastCard({
   const title = sessionDisplayTitle(session.title, session.harness);
   return (
     <article
-      className="approval-toast pointer-events-auto relative overflow-clip rounded-xl border border-dashed border-content/20 bg-content/10 shadow-xl backdrop-blur-xl"
+      className="approval-toast pointer-events-auto relative overflow-clip rounded-xl border border-dashed border-(--ui-tone-neutral-border) bg-(--ui-surface-raised) shadow-xl backdrop-blur-xl"
       role="status"
     >
-      <button
+      <Button
+        fullWidth
+        variant="item"
         type="button"
         onClick={() => onFocusSession(session.id)}
-        className="flex w-full flex-col gap-2 px-3.5 py-3 text-start hover:bg-content/5 active:bg-content/10 focus-visible:outline-2 focus-visible:outline-content"
+        className="w-full flex-col"
       >
         <span className={`min-w-0 w-full ${onDismiss ? "pe-7" : ""}`}>
           <NotificationProjectLabel cwd={session.cwd} />
         </span>
         <span className={`flex w-full items-center gap-2 ${onDismiss ? "pe-7" : ""}`}>
           <HarnessIcon harness={session.harness} className="size-4 shrink-0" />
-          <span className="min-w-0 flex-1 truncate text-[13px] font-semibold leading-snug text-content">
+          <span className="min-w-0 flex-1 truncate text-[13px] font-semibold leading-snug text-(--ui-tone-neutral-fg)">
             {title}
           </span>
-          <span className="flex shrink-0 items-center gap-1 text-[11px] text-warning">
+          <span className="flex shrink-0 items-center gap-1 text-[11px] text-(--ui-tone-warning-fg)">
             <CircleAlert className="size-3.5" strokeWidth={1.75} />
             {notice.kind === "question" ? t("Question") : t("Approval")}
           </span>
         </span>
-        <span className="line-clamp-3 w-full whitespace-pre-wrap break-words text-xs leading-relaxed text-content/70">
+        <span className="line-clamp-3 w-full whitespace-pre-wrap break-words text-xs leading-relaxed text-(--ui-text-secondary)">
           {label}
         </span>
         <span className="ui-caption-text">{HARNESS_TITLE[session.harness]}</span>
-      </button>
+      </Button>
       {onDismiss ? (
-        <button
+        <Button
+          iconOnly
+          label={t("Dismiss notice")}
+          variant="ghost"
           type="button"
-          className={`absolute end-1.5 inset-bs-1.5 ${controlClass}`}
+
           onClick={onDismiss}
           title={t("Dismiss notice")}
           aria-label={t("Dismiss notice")}
         >
           <X className="size-3.5" />
-        </button>
+        </Button>
       ) : null}
       {notice.kind === "approval" ? (
-        <div className="flex gap-2 border-t border-stroke px-3.5 py-2.5">
-          <button
+        <div className="flex gap-2 border-t border-(--ui-tone-neutral-border) px-3.5 py-2.5">
+          <Button
+            variant="ghost"
             type="button"
-            className="flex-1 rounded-md bg-content px-2.5 py-1 text-[11px] font-medium text-background-base hover:bg-content/80 active:bg-content/60 focus-visible:outline-2 focus-visible:outline-content"
+            className="flex-1"
             onClick={() => onApproval(session.id, requestId, "allow")}
           >
             {t("Allow")}
-          </button>
-          <button
+          </Button>
+          <Button
+            variant="ghost"
             type="button"
-            className="flex-1 rounded-md bg-content/10 px-2.5 py-1 text-[11px] font-medium text-content/70 hover:bg-content/20 active:bg-content/30 focus-visible:outline-2 focus-visible:outline-content"
+            className="flex-1"
             onClick={() => onApproval(session.id, requestId, "deny")}
           >
             {t("Deny")}
-          </button>
+          </Button>
         </div>
       ) : null}
     </article>

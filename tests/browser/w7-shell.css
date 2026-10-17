@@ -1,0 +1,7 @@
+@import "../../src/styles/index.css";
+/* Offline acceptance fixtures explicitly opt into their own layout utilities. */
+@source "./workspace-layout.tsx";
+@source "./project-workspace-navigation.tsx";
+@source "./quick-composer.tsx";
+
+@source "./session-recovery.tsx";

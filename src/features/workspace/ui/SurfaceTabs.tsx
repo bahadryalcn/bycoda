@@ -1,3 +1,4 @@
+import { Button } from "../../../shared/ui/Button";
 import { t, useLocale } from "../../../shared/i18n";
 import { GitCompare, GripVertical, Terminal, X } from "../../../shared/ui/icons";
 import type { PointerEvent as ReactPointerEvent, ReactNode } from "react";
@@ -548,7 +549,9 @@ export function SurfaceTabs({
                   className={`pointer-events-none absolute inset-y-0 z-20 w-0.5 ${externalDrop.tabPosition === "before" ? "start-0" : "end-0"} ${externalDrop.invalid ? "bg-danger" : "bg-accent"}`}
                 />
               ) : null}
-              <button
+              <Button
+                variant="tab"
+                motion="none"
                 type="button"
                 role="tab"
                 aria-selected={active}
@@ -558,11 +561,7 @@ export function SurfaceTabs({
                   onSelectFile(file.id);
                 }}
                 onDoubleClick={() => onPinFile?.(file.id)}
-                className={`relative flex h-7.5 min-w-0 flex-1 cursor-default items-center gap-1.5 self-center rounded-md px-2 pr-7 text-left text-[13px] ${
-                  active
-                    ? "bg-selection text-content"
-                    : "text-content/50 hover:bg-content/5 hover:text-content"
-                }`}
+                className={`relative flex min-w-0 flex-1 cursor-default pe-7 items-center gap-1.5 self-center `}
               >
                 {terminal ? (
                   <Terminal className="size-3.5 shrink-0" strokeWidth={1.75} />
@@ -591,8 +590,12 @@ export function SurfaceTabs({
                     aria-label={t("Unsaved changes")}
                   />
                 ) : null}
-              </button>
-              <button
+              </Button>
+              <Button
+                iconOnly
+                label={t("Close {p0}", { p0: label })}
+                variant="ghost"
+                motion="none"
                 type="button"
                 title={t("Close {p0}", { p0: label })}
                 aria-label={t("Close {p0}", { p0: label })}
@@ -602,12 +605,10 @@ export function SurfaceTabs({
                   event.stopPropagation();
                   onCloseFile(file.id);
                 }}
-                className={`absolute right-1 top-1/2 grid size-5 -translate-y-1/2 place-items-center rounded text-content/50 hover:bg-content/10 hover:text-content ${
-                  active ? "opacity-100" : "opacity-0 group-hover:opacity-100"
-                }`}
+                className={`absolute right-1 top-1/2 grid size-5 -translate-y-1/2 place-items-center ${active ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}
               >
                 <X className="size-3" strokeWidth={1.75} />
-              </button>
+              </Button>
             </div>
           );
           return closing || opening ? (

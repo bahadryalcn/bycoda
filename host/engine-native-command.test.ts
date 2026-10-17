@@ -68,7 +68,8 @@ describe("headless native command guidance", () => {
   ])("preserves Codex %s with a non-null runtime bridge", async (text) => {
     const { engine, store, turns, sessionId } = setup("codex");
     engine.command({ type: "send", commandId: "send-native-command", sessionId, text });
-    await vi.waitFor(() => expect(turns).toHaveLength(1));
+    // The real checkpoint preparation can exceed one second on Windows.
+    await vi.waitFor(() => expect(turns).toHaveLength(1), { timeout: 10_000 });
     expect(turns[0].input.text).toBe(text);
     expect(turns[0].input.runtimeInstructions).toContain("social_policy_get");
     expect(turns[0].input.runtimeInstructions).toContain("Drafts do not authorize sending");
@@ -84,7 +85,7 @@ describe("headless native command guidance", () => {
       const { engine, store, turns, sessionId } = setup(harness);
       const text = "$review inspect this change";
       engine.command({ type: "send", commandId: "send-skill", sessionId, text });
-      await vi.waitFor(() => expect(turns).toHaveLength(1));
+      await vi.waitFor(() => expect(turns).toHaveLength(1), { timeout: 10_000 });
       const sent = turns[0].input;
       expect(prepareSkill).toHaveBeenCalledOnce();
       expect(sent.text).toContain(`Host skill instructions.\n\n${text}`);

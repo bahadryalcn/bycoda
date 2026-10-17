@@ -1,4 +1,5 @@
 import { t, useLocale } from "../../../shared/i18n";
+import { Button } from "../../../shared/ui/Button";
 import { indentWithTab, redo } from "@codemirror/commands";
 import { markdown } from "@codemirror/lang-markdown";
 import { openSearchPanel } from "@codemirror/search";
@@ -318,9 +319,6 @@ const TOOLBAR: {
   },
 ];
 
-const TOOLBAR_BUTTON =
-  "grid size-7 shrink-0 place-items-center rounded-md text-content/70 hover:bg-content/10 hover:text-content active:bg-content/15 focus-visible:outline-2 focus-visible:outline-accent";
-
 export function NoteMarkdownToolbar({
   viewRef,
   editing,
@@ -346,41 +344,53 @@ export function NoteMarkdownToolbar({
       // Keep the selection in the editor while a button is pressed.
       onMouseDown={(event) => event.preventDefault()}
     >
-      <button
+      <Button
+        variant="ghost"
+        size="sm"
+        iconOnly
+        label={t("Insert image")}
+        motion="none"
         type="button"
         title={t("Insert image · or paste ({p0}V) / drop one", { p0: MOD })}
         aria-label={t("Insert image")}
         disabled={imageBusy}
         onClick={onInsertImage}
-        className={`${TOOLBAR_BUTTON} disabled:opacity-40`}
       >
         <ImagePlus className="size-3.5" />
-      </button>
+      </Button>
       {editing ? <span aria-hidden className="mx-1 h-4 w-px shrink-0 bg-content/10" /> : null}
       {(editing ? TOOLBAR : []).map(({ command, label, icon: Icon }) => (
-        <button
+        <Button
+          variant="ghost"
+          size="sm"
+          iconOnly
+          label={label}
+          motion="none"
           key={command}
           type="button"
           title={label}
           aria-label={label}
           onClick={() => run((view) => runMarkdownCommand(view, command))}
-          className={TOOLBAR_BUTTON}
         >
           <Icon className="size-3.5" />
-        </button>
+        </Button>
       ))}
       {editing ? (
         <>
           <span aria-hidden className="mx-1 h-4 w-px shrink-0 bg-content/10" />
-          <button
+          <Button
+            variant="ghost"
+            size="sm"
+            iconOnly
+            label={t("Find and replace")}
+            motion="none"
             type="button"
             title={t("Find ({p0}F) · Replace ({p1}H)", { p0: MOD, p1: MOD })}
             aria-label={t("Find and replace")}
             onClick={() => run(openSearchPanel)}
-            className={TOOLBAR_BUTTON}
           >
             <Search className="size-3.5" />
-          </button>
+          </Button>
         </>
       ) : null}
     </div>

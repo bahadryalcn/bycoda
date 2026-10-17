@@ -1,3 +1,5 @@
+import { Switch } from "../../../shared/ui/Switch";
+import { Button } from "../../../shared/ui/Button";
 import { t, useLocale } from "../../../shared/i18n/git";
 import { useState, type ComponentType, type FormEvent, type ReactNode } from "react";
 import { prettyCwd } from "../../../shared/lib/paths";
@@ -16,7 +18,7 @@ import {
 const TONE = {
   danger: "text-danger",
   warn: "text-warning",
-  muted: "text-content/35",
+  muted: "text-[var(--ui-text-muted)]",
 };
 
 function Consequence({
@@ -85,15 +87,15 @@ export function DeleteWorktreeDialog({
         className="flex flex-col gap-3.5 p-4 text-[13px] leading-[1.5]"
         onSubmit={(e) => void submit(e)}
       >
-        <p className="text-content/75">
+        <p className="text-[var(--ui-text-secondary)]">
           {t("This permanently deletes the working copy and everything inside it.")}
         </p>
-        <div className="rounded-lg border border-content/10 bg-content/5 p-3">
-          <p className="flex items-start gap-2.5 text-[12px] text-content/55">
-            <Folder className="mt-px size-3.5 shrink-0 text-content/35" />
+        <div className="rounded-lg border border-[var(--color-stroke)] bg-[var(--ui-surface)] p-3">
+          <p className="flex items-start gap-2.5 text-[12px] text-[var(--ui-text-secondary)]">
+            <Folder className="mt-px size-3.5 shrink-0 text-[var(--ui-text-muted)]" />
             <span className="min-w-0 flex-1 break-all font-mono">{prettyCwd(tree.path)}</span>
           </p>
-          <ul className="mt-2.5 flex flex-col gap-2 border-t border-content/8 pt-2.5 text-[12.5px] text-content/75">
+          <ul className="mt-2.5 flex flex-col gap-2 border-t border-[var(--color-stroke)] pt-2.5 text-[12.5px] text-[var(--ui-text-secondary)]">
             {sessionCount > 0 && (
               <Consequence icon={MessageSquare} tone={deleteSessions ? "danger" : "muted"}>
                 {deleteSessions
@@ -138,23 +140,19 @@ export function DeleteWorktreeDialog({
           </ul>
         </div>
         {sessionCount > 0 && (
-          <div className="flex items-center justify-between gap-3 rounded-lg border border-content/10 p-3">
-            <span id="delete-worktree-sessions-label" className="text-[12.5px] text-content/75">
+          <div className="flex items-center justify-between gap-3 rounded-lg border border-[var(--color-stroke)] p-3">
+            <span
+              id="delete-worktree-sessions-label"
+              className="text-[12.5px] text-[var(--ui-text-secondary)]"
+            >
               {t("Also delete associated sessions")}
             </span>
-            <button
-              type="button"
-              role="switch"
+            <Switch
               aria-labelledby="delete-worktree-sessions-label"
-              aria-checked={deleteSessions}
+              checked={deleteSessions}
               disabled={busy}
-              onClick={() => setDeleteSessions(!deleteSessions)}
-              className={`relative h-5 w-9 shrink-0 rounded-full transition-colors disabled:opacity-40 ${deleteSessions ? "bg-danger" : "bg-content/20"}`}
-            >
-              <span
-                className={`absolute top-0.5 size-4 rounded-full bg-on-solid transition-[left] ${deleteSessions ? "left-4.5" : "left-0.5"}`}
-              />
-            </button>
+              onCheckedChange={setDeleteSessions}
+            />
           </div>
         )}
         {error && (
@@ -163,18 +161,15 @@ export function DeleteWorktreeDialog({
           </p>
         )}
         <div className="flex justify-end gap-2">
-          <button
-            type="button"
-            disabled={busy}
-            onClick={onClose}
-            className="rounded-md px-3 py-1.5 hover:bg-content/8 active:scale-[0.97]"
-          >
+          <Button variant="ghost" motion="none" type="button" disabled={busy} onClick={onClose}>
             {t("Cancel")}
-          </button>
-          <button
+          </Button>
+          <Button
+            variant="primary"
+            motion="none"
             type="submit"
             disabled={busy}
-            className="inline-flex items-center gap-1.5 rounded-md bg-danger/20 px-3 py-1.5 font-medium text-danger hover:bg-danger/30 disabled:opacity-40 disabled:hover:bg-danger/20 active:scale-[0.97]"
+            className="inline-flex items-center gap-1.5"
           >
             {busy && <Loader className="size-3.5 animate-spin" />}
             {sessionCount && deleteSessions
@@ -184,7 +179,7 @@ export function DeleteWorktreeDialog({
                     : "Delete worktree and sessions",
                 )
               : t("Delete worktree")}
-          </button>
+          </Button>
         </div>
       </form>
     </Modal>

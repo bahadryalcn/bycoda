@@ -78,7 +78,7 @@ it("retains workspace search text and category across close/reopen and remount w
   expect(
     [...host.querySelectorAll("button")]
       .find((button) => button.textContent === "Projects")!
-      .getAttribute("aria-pressed"),
+      .getAttribute("aria-checked"),
   ).toBe("true");
   act(() => root.unmount());
   root = createRoot(host);

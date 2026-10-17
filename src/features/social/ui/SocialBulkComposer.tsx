@@ -1,3 +1,8 @@
+import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
+import { NativeSelect } from "../../../shared/ui/Select";
+import { NativeSearchableSelect } from "../../../shared/ui/NativeSearchableSelect";
+import { TextField } from "../../../shared/ui/TextField";
+import { Button } from "../../../shared/ui/Button";
 import { useEffect, useRef, useState } from "react";
 import type { HostProject } from "../../connections/model/protocol";
 import type { SocialPolicy, SocialSnapshot } from "../model/social";
@@ -179,48 +184,49 @@ export function SocialBulkComposer({
             <>
               <label>
                 İşlem
-                <select value={kind} onChange={(event) => setKind(event.target.value as BulkKind)}>
+                <NativeSelect
+                  value={kind}
+                  onChange={(event) => setKind(event.target.value as BulkKind)}
+                >
                   <option value="message">Yeni mesaj</option>
                   <option value="comment">Gönderiye yorum</option>
-                </select>
+                </NativeSelect>
               </label>
               <label>
                 Proje
-                <select
+                <NativeSearchableSelect
+                  label="Proje"
+                  options={[
+                    { value: "", label: "Proje seçin", disabled: true },
+                    ...projects.map((project) => ({
+                      value: project.id,
+                      label: project.name || project.cwd,
+                    })),
+                  ]}
                   value={projectId}
                   onChange={(event) => setProjectId(event.target.value)}
                   required
-                >
-                  <option value="" disabled>
-                    Proje seçin
-                  </option>
-                  {projects.map((project) => (
-                    <option key={project.id} value={project.id}>
-                      {project.name || project.cwd}
-                    </option>
-                  ))}
-                </select>
+                />
               </label>
             </>
           ) : null}
           {facts.length ? (
             <label>
               Hazır bilgi (isteğe bağlı)
-              <select
+              <SearchableSelect
                 value=""
-                onChange={(event) => {
-                  const fact = facts.find((item) => item.id === event.target.value);
+                disabled={!ready}
+                label={"Hazır bilgi (isteğe bağlı)"}
+                options={[
+                  { value: "", label: "Bilgi seçin" },
+                  ...facts.map((fact) => ({ value: fact.id, label: fact.topic })),
+                ]}
+                onChange={(nextValue) => {
+                  const fact = facts.find((item) => item.id === nextValue);
                   if (fact && ready) changeContent({ text: fact.text, factIds: [fact.id] });
                 }}
-                disabled={!ready}
-              >
-                <option value="">Bilgi seçin</option>
-                {facts.map((fact) => (
-                  <option key={fact.id} value={fact.id}>
-                    {fact.topic}
-                  </option>
-                ))}
-              </select>
+                searchLocale="tr"
+              />
             </label>
           ) : null}
           {kind === "comment" ? (
@@ -243,7 +249,9 @@ export function SocialBulkComposer({
                 return (
                   <label key={target.key}>
                     {contact?.name ?? "Kişi"} · gönderi kimliği
-                    <input
+                    <TextField
+                      hideLabel
+                      label={`${contact?.name ?? "Kişi"} gönderi kimliği`}
                       aria-label={`${contact?.name ?? "Kişi"} gönderi kimliği`}
                       list={`posts-${target.key}`}
                       value={postIds[target.key] ?? ""}
@@ -295,9 +303,13 @@ export function SocialBulkComposer({
                 ? "Sınırları alınamayan hesaplar atlanır. Diğer hesaplar için devam edebilirsiniz."
                 : "Hesapların içerik sınırları yükleniyor…"}
               {Object.keys(policyErrors).length ? (
-                <button type="button" onClick={() => setPolicyAttempt((attempt) => attempt + 1)}>
+                <Button
+                  variant="secondary"
+                  type="button"
+                  onClick={() => setPolicyAttempt((attempt) => attempt + 1)}
+                >
                   Sınırları yeniden yükle
-                </button>
+                </Button>
               ) : null}
             </Notice>
           ) : null}
@@ -330,22 +342,29 @@ export function SocialBulkComposer({
               );
             })}
           </div>
-          <button className="social-primary" disabled={busy || !eligible.length || !ready}>
+          <Button
+            type="submit"
+            variant="primary"
+            loading={busy}
+            disabled={busy || !eligible.length || !ready}
+          >
             {eligible.length > 1 ? `${eligible.length} taslak hazırla` : "Taslak kaydet"}
-          </button>
+          </Button>
         </form>
       ) : (
         <>
           {recipientsChanged ? (
             <Notice kind="info" title="Alıcı seçimi değişti.">
               Bu sonuçlar önceki hazırlamaya ait.
-              <button
+              <Button
+                variant="secondary"
+                loading={busy}
                 type="button"
                 disabled={busy || !targets.length}
                 onClick={prepareCurrentSelection}
               >
                 Yeni seçilenler için hazırla
-              </button>
+              </Button>
             </Notice>
           ) : null}
           <Notice
@@ -377,12 +396,21 @@ export function SocialBulkComposer({
           </div>
           <div className="social-actions">
             {failed ? (
-              <button disabled={busy} onClick={() => void start(true)}>
+              <Button
+                type="submit"
+                variant="secondary"
+                loading={busy}
+                disabled={busy}
+                onClick={() => void start(true)}
+              >
                 Yalnızca {failed} başarısız taslağı yeniden dene
-              </button>
+              </Button>
             ) : null}
             {!recipientsChanged ? (
-              <button
+              <Button
+                type="submit"
+                variant="secondary"
+                loading={busy}
                 disabled={busy}
                 onClick={() => {
                   setBatch(undefined);
@@ -395,7 +423,7 @@ export function SocialBulkComposer({
                 }}
               >
                 {success && !failed ? "Yeni içerik hazırla" : "İçeriği düzenle"}
-              </button>
+              </Button>
             ) : null}
           </div>
           <DraftList

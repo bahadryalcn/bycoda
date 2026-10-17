@@ -1,3 +1,6 @@
+import { Badge } from "../../../shared/ui/Badge";
+import { TextField } from "../../../shared/ui/TextField";
+import { Button } from "../../../shared/ui/Button";
 import { t, useLocale } from "../../../shared/i18n";
 import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
 import { ExternalLink, FolderOpen, Pencil, RefreshCw } from "../../../shared/ui/icons";
@@ -148,7 +151,15 @@ export function ProviderBinaryControl({
 
   return (
     <span ref={root} className="inline-flex align-middle">
-      <button
+      <Button
+        variant="ghost"
+        size="sm"
+        iconOnly={!showLabel}
+        label={
+          restartRequired
+            ? t("Show {p0} CLI details, restart required", { p0: title })
+            : t("Show {p0} CLI details", { p0: title })
+        }
         ref={trigger}
         type="button"
         aria-label={
@@ -169,13 +180,10 @@ export function ProviderBinaryControl({
           setOpen((value) => !value);
           setEditing(false);
         }}
-        className={`inline-flex shrink-0 items-center justify-center gap-1.5 rounded hover:bg-content/10 focus-visible:outline-2 focus-visible:outline-accent ${showLabel ? "px-2 py-1 text-[11px]" : "size-6"} ${
-          restartRequired ? "text-warning" : "text-content/35 hover:text-content"
-        }`}
       >
         <FolderOpen className="size-3.5" strokeWidth={1.75} />
         {showLabel ? t("CLI setup") : null}
-      </button>
+      </Button>
       {open ? (
         <Popover
           id={`${provider}-binary-popover`}
@@ -243,7 +251,9 @@ export function ProviderBinaryControl({
               <label htmlFor={`${provider}-binary-path`} className="text-[11px] text-content/50">
                 {t("CLI path")}
               </label>
-              <input
+              <TextField
+                hideLabel
+                label={t("CLI path")}
                 id={`${provider}-binary-path`}
                 ref={editInput}
                 type="text"
@@ -252,7 +262,6 @@ export function ProviderBinaryControl({
                 disabled={working}
                 autoFocus
                 onChange={(event) => setDraft(event.target.value)}
-                className="mt-1.5 h-8 w-full rounded-md border border-content/10 bg-content/[0.04] px-2 font-mono text-[11px] text-content outline-none placeholder:font-sans placeholder:text-content/35 focus:border-accent/45 disabled:opacity-50"
               />
               <p className="mt-1.5 text-[10px] text-content/40">
                 {t(
@@ -261,9 +270,9 @@ export function ProviderBinaryControl({
                 {PRODUCT_IDENTITY.displayName}.
               </p>
               {error ? (
-                <span role="alert" className="mt-1.5 block text-[11px] text-danger">
+                <Badge tone="danger" role="alert">
                   {error}
-                </span>
+                </Badge>
               ) : null}
               <div className="mt-3 flex justify-end gap-2">
                 <SecondaryButton
@@ -299,22 +308,15 @@ export function ProviderBinaryControl({
                 </span>
               </div>
               {error ? (
-                <span
-                  role="alert"
-                  title={error}
-                  className="mt-1.5 block max-h-20 overflow-y-auto whitespace-pre-wrap break-words text-[10px] leading-4 text-danger"
-                >
+                <Badge tone="danger" role="alert" title={error}>
                   {error}
-                </span>
+                </Badge>
               ) : null}
               {revealError ? (
-                <span
-                  role="alert"
-                  className="mt-1.5 block max-h-20 overflow-y-auto whitespace-pre-wrap break-words text-[10px] leading-4 text-danger"
-                >
+                <Badge tone="danger" role="alert">
                   {t("Could not open the CLI location: ")}
                   {revealError}
-                </span>
+                </Badge>
               ) : null}
               <div className="mt-3 flex justify-end gap-2">
                 {error ? (

@@ -1,3 +1,5 @@
+import { Alert } from "../../../shared/ui/Alert";
+import { Button } from "../../../shared/ui/Button";
 import { SearchInput } from "../../../shared/ui/SearchInput";
 import { t, useLocale } from "../../../shared/i18n";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
@@ -76,10 +78,10 @@ export function McpServerPicker({
           onDismiss("escape");
         }
       }}
-      className="overflow-hidden rounded-lg border border-content/10 bg-content/5 shadow-xl backdrop-blur-xl"
+      className="overflow-hidden rounded-lg border border-(--ui-tone-neutral-border) bg-(--ui-surface-raised) shadow-xl backdrop-blur-xl"
     >
-      <div className="flex items-center gap-2 border-b border-content/10 px-3 py-2">
-        <Search className="size-3.5 shrink-0 text-content/45" />
+      <div className="flex items-center gap-2 border-b border-(--ui-tone-neutral-border) px-3 py-2">
+        <Search className="size-3.5 shrink-0 text-(--ui-text-secondary)" />
         <SearchInput
           ref={search}
           role="combobox"
@@ -108,18 +110,21 @@ export function McpServerPicker({
               if (server?.availability === "available") onPick(server);
             }
           }}
-          className="min-w-0 flex-1 bg-transparent text-[13px] text-content outline-none placeholder:text-content/40"
+          className="min-w-0 flex-1 bg-transparent text-[13px] text-(--ui-tone-neutral-fg) outline-none placeholder:text-(--ui-text-secondary)"
           placeholder={t("Search MCP servers…")}
         />
-        <button
+        <Button
+          iconOnly
+          label={t("Close MCP picker")}
+          variant="ghost"
           type="button"
           aria-label={t("Close MCP picker")}
           title={t("Back to the conversation (Esc)")}
           onClick={() => onDismiss("escape")}
-          className="grid size-7 shrink-0 place-items-center rounded-md text-content/45 transition-colors hover:bg-content/8 hover:text-content focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-accent"
+          className="shrink-0"
         >
           <ChevronDown className="size-4" strokeWidth={1.75} />
-        </button>
+        </Button>
       </div>
       <div
         ref={lockOverscroll}
@@ -129,20 +134,26 @@ export function McpServerPicker({
         className="max-h-[min(184px,45vh)] overflow-y-auto overscroll-none p-1"
       >
         {loading ? (
-          <p className="px-2 py-2 text-[12px] text-content/50">{t("Checking MCP servers…")}</p>
-        ) : error ? (
-          <p role="alert" className="px-2 py-2 text-[12px] text-danger">
-            {error}
+          <p className="px-2 py-2 text-[12px] text-(--ui-text-secondary)">
+            {t("Checking MCP servers…")}
           </p>
+        ) : error ? (
+          <Alert tone="danger" role="alert">
+            {error}
+          </Alert>
         ) : servers.length === 0 ? (
-          <p className="px-2 py-2 text-[12px] text-content/50">
+          <p className="px-2 py-2 text-[12px] text-(--ui-text-secondary)">
             {query ? t("No matching MCP servers") : t("No MCP servers found")}
           </p>
         ) : (
           servers.map((server, index) => {
             const available = server.availability === "available";
             return (
-              <button
+              <Button
+                className="w-full text-left"
+                fullWidth
+                selected={index === active}
+                variant="item"
                 key={`${server.provider}:${server.scope}:${server.configPath}:${server.name}`}
                 id={`${listboxId}-option-${index}`}
                 ref={available && active === index ? activeOption : undefined}
@@ -158,7 +169,6 @@ export function McpServerPicker({
                   if (available) setActive(index);
                 }}
                 onClick={() => onPick(server)}
-                className={`flex h-11 w-full items-center gap-2 rounded-md px-2 py-1.5 text-left focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-accent ${available ? (active === index ? "bg-selection text-content" : "text-content hover:bg-content/5") : "cursor-default text-content/40"}`}
               >
                 <HarnessIcon
                   harness={server.provider === "claude_desktop" ? "claude" : server.provider}
@@ -166,12 +176,12 @@ export function McpServerPicker({
                 />
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-[13px]">{server.name}</span>
-                  <span className="block truncate text-[11px] text-content/45">
+                  <span className="block truncate text-[11px] text-(--ui-text-secondary)">
                     {MCP_PROVIDER_LABELS[server.provider]} · {server.scope}
                   </span>
                 </span>
                 <span
-                  className={`max-w-[40%] shrink-0 truncate text-[11px] ${server.availability === "authentication" ? "text-warning" : "text-content/45"}`}
+                  className={`max-w-[40%] shrink-0 truncate text-[11px] ${server.availability === "authentication" ? "text-(--ui-tone-warning-fg)" : "text-(--ui-text-secondary)"}`}
                 >
                   {server.availability === "authentication"
                     ? t("Needs authentication")
@@ -179,19 +189,21 @@ export function McpServerPicker({
                       ? server.detail
                       : t("Available")}
                 </span>
-              </button>
+              </Button>
             );
           })
         )}
       </div>
-      <button
+      <Button
+        fullWidth
+        variant="item"
         type="button"
         onClick={onManage}
-        className="flex w-full items-center gap-2 border-t border-content/10 px-3 py-2 text-left text-[12px] text-content/65 hover:bg-content/5 hover:text-content"
+        className="w-full text-left"
       >
         <Settings className="size-3.5" />
         {t("Manage MCP Servers…")}
-      </button>
+      </Button>
     </div>
   );
 }

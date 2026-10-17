@@ -1,3 +1,4 @@
+import { Button } from "../../../shared/ui/Button";
 import { t, useLocale } from "../../../shared/i18n/git";
 import {
   useEffect,
@@ -101,9 +102,9 @@ export function GitGraphDialog({ title, toolbar, onClose, children, expandable =
           aria-labelledby={titleId}
           onMouseDown={(event) => event.stopPropagation()}
           onKeyDown={trapTab}
-          className={`relative isolate flex h-full flex-col overflow-hidden border border-content/7 shadow-2xl ${maximized ? "" : "rounded-2xl"}`}
+          className={`relative isolate flex h-full flex-col overflow-hidden border border-[var(--color-stroke)] shadow-2xl ${maximized ? "" : "rounded-2xl"}`}
         >
-          <GlassBackdrop className="bg-background-base/55" />
+          <GlassBackdrop className="bg-[var(--ui-surface)]/55" />
           <div className="modal-panel relative z-[1] flex min-h-0 flex-1 flex-col">
             <header className="flex shrink-0 items-center gap-2 px-4 py-2.5">
               <h2 id={titleId} className="text-[15px] leading-tight font-medium text-content">
@@ -111,27 +112,33 @@ export function GitGraphDialog({ title, toolbar, onClose, children, expandable =
               </h2>
               <div className="ml-2 flex min-w-0 flex-1 items-center gap-1">{toolbar}</div>
               {expandable ? (
-                <button
+                <Button
+                  iconOnly
+                  label={t(maximized ? "Restore window" : "Full screen")}
+                  variant="ghost"
+                  motion="none"
                   type="button"
                   aria-label={t(maximized ? "Restore window" : "Full screen")}
                   title={t(maximized ? "Restore window" : "Full screen")}
                   aria-pressed={maximized}
                   onClick={() => setMaximized(!maximized)}
-                  className="grid size-7 shrink-0 place-items-center rounded-md text-content/70 hover:bg-content/8"
                 >
                   <Maximize2 className="size-3.5" />
-                </button>
+                </Button>
               ) : null}
-              <button
+              <Button
+                iconOnly
+                label={t("Close")}
+                variant="ghost"
+                motion="none"
                 ref={closeRef}
                 type="button"
                 aria-label={t("Close")}
                 title={t("Close")}
                 onClick={onClose}
-                className="grid size-7 shrink-0 place-items-center rounded-md text-content/45 hover:bg-content/8 hover:text-content focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none"
               >
                 <X className="size-3.5" strokeWidth={1.75} />
-              </button>
+              </Button>
             </header>
             <div className="flex min-h-0 flex-1 flex-col border-t border-stroke">{children}</div>
           </div>

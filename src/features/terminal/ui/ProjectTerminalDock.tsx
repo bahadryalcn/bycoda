@@ -1,3 +1,4 @@
+import { Button } from "../../../shared/ui/Button";
 import { t, useLocale } from "../../../shared/i18n/technical";
 import {
   ChevronDown,
@@ -273,7 +274,9 @@ export function ProjectTerminalDock({
       />
       <header className="terminal-header">
         <div className="terminal-context-tabs">
-          <button
+          <Button
+            variant="ghost"
+            motion="none"
             type="button"
             className="terminal-context-tab"
             aria-label={t("Terminal")}
@@ -282,9 +285,11 @@ export function ProjectTerminalDock({
           >
             <Terminal className="terminal-context-icon size-3.5 shrink-0" />
             <span>{t("Terminal")}</span>
-          </button>
+          </Button>
           {tools ? (
-            <button
+            <Button
+              variant="ghost"
+              motion="none"
               type="button"
               className="terminal-tools-button terminal-context-tab"
               aria-label={t("Conversation tools")}
@@ -293,7 +298,7 @@ export function ProjectTerminalDock({
             >
               <Wrench className="size-3.5 shrink-0" />
               <span>{t("Conversation tools")}</span>
-            </button>
+            </Button>
           ) : null}
         </div>
         <div className="terminal-toolbar">
@@ -358,7 +363,9 @@ export function ProjectTerminalDock({
           >
             {dock.pane.files.map((file, index) => (
               <div key={file.id} className="terminal-list-row" role="presentation">
-                <button
+                <Button
+                  variant="tab"
+                  motion="none"
                   id={`terminal-tab-${file.id}`}
                   type="button"
                   role="tab"
@@ -428,26 +435,34 @@ export function ProjectTerminalDock({
                 >
                   <Terminal className="size-3 shrink-0" strokeWidth={1.5} />
                   <span className="min-w-0 flex-1 truncate">{terminalTabLabel(file)}</span>
-                </button>
+                </Button>
                 <div className="terminal-row-actions">
                   {onSplitTerminal ? (
-                    <button
+                    <Button
+                      iconOnly
+                      label={`${t("Split")} — ${terminalTabLabel(file)}`}
+                      variant="ghost"
+                      motion="none"
                       type="button"
                       aria-label={`${t("Split")} — ${terminalTabLabel(file)}`}
                       title={t("Split")}
                       onClick={() => splitTerminal(file.id)}
                     >
                       <SplitSquare className="size-3" strokeWidth={1.75} />
-                    </button>
+                    </Button>
                   ) : null}
-                  <button
+                  <Button
+                    iconOnly
+                    label={`${t("Close")} — ${terminalTabLabel(file)}`}
+                    variant="ghost"
+                    motion="none"
                     type="button"
                     aria-label={`${t("Close")} — ${terminalTabLabel(file)}`}
                     title={t("Close")}
                     onClick={() => onCloseTerminal(file.id)}
                   >
                     <Trash2 className="size-3" strokeWidth={1.75} />
-                  </button>
+                  </Button>
                 </div>
               </div>
             ))}

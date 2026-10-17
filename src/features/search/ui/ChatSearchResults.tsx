@@ -1,3 +1,6 @@
+import { Button } from "../../../shared/ui/Button";
+import { Checkbox } from "../../../shared/ui/Checkbox";
+import { NativeSelect } from "../../../shared/ui/Select";
 import { t, useLocale } from "../../../shared/i18n";
 import { useEffect, useRef, type MouseEvent as ReactMouseEvent } from "react";
 import { Folder, MessageSquare } from "../../../shared/ui/icons";
@@ -26,9 +29,6 @@ const RANGE_LABEL: Record<ChatDateRange, string> = {
   year: "Past year",
 };
 
-const SELECT_CLASS =
-  "h-6 max-w-[9.5rem] rounded-md border border-stroke bg-background-base px-1.5 text-[12px] text-content outline-none focus-visible:border-accent";
-
 export function ChatFilterBar({
   filters,
   inGroup,
@@ -46,19 +46,18 @@ export function ChatFilterBar({
       role="group"
       aria-label={t("Chat search filters")}
     >
-      <select
+      <NativeSelect
         aria-label={t("Search in")}
         value={filters.scope}
         onChange={(event) => onChange({ ...filters, scope: event.target.value as ChatScope })}
-        className={SELECT_CLASS}
       >
         {(Object.keys(SCOPE_LABEL) as ChatScope[]).map((scope) => (
           <option key={scope} value={scope} disabled={scope === "group" && !inGroup}>
             {SCOPE_LABEL[scope]}
           </option>
         ))}
-      </select>
-      <select
+      </NativeSelect>
+      <NativeSelect
         aria-label={t("Provider")}
         value={filters.harness}
         onChange={(event) =>
@@ -67,7 +66,6 @@ export function ChatFilterBar({
             harness: event.target.value as HarnessId | "any",
           })
         }
-        className={SELECT_CLASS}
       >
         <option value="any">{t("Any provider")}</option>
         {HARNESSES.map((harness) => (
@@ -75,22 +73,20 @@ export function ChatFilterBar({
             {HARNESS_TITLE[harness]}
           </option>
         ))}
-      </select>
-      <select
+      </NativeSelect>
+      <NativeSelect
         aria-label={t("Date")}
         value={filters.range}
         onChange={(event) => onChange({ ...filters, range: event.target.value as ChatDateRange })}
-        className={SELECT_CLASS}
       >
         {(Object.keys(RANGE_LABEL) as ChatDateRange[]).map((range) => (
           <option key={range} value={range}>
             {RANGE_LABEL[range]}
           </option>
         ))}
-      </select>
+      </NativeSelect>
       <label className="flex items-center gap-1.5 text-[12px] text-content/60">
-        <input
-          type="checkbox"
+        <Checkbox
           checked={filters.archived}
           onChange={(event) => onChange({ ...filters, archived: event.target.checked })}
           className="size-3"
@@ -200,13 +196,12 @@ export function ChatSearchResults({
             const more = session.hitCount - session.hits.length;
             return (
               <div key={session.id}>
-                <button
+                <Button
+                  variant="ghost"
+                  size="sm"
                   type="button"
                   {...row.buttonProps}
                   onClick={() => row.entry && onOpen(row.entry)}
-                  className={`flex h-8 w-full items-center gap-2 rounded-md px-2 text-left text-[13px] leading-none text-content ${
-                    row.highlighted ? "bg-selection" : ""
-                  }`}
                 >
                   <HarnessIcon harness={session.harness} className="size-3.5 shrink-0" />
                   <span className="min-w-0 flex-1 truncate">
@@ -227,18 +222,17 @@ export function ChatSearchResults({
                   <span className="shrink-0 font-mono text-[11px] text-content/35">
                     {formatChatDate(session.updatedAt)}
                   </span>
-                </button>
+                </Button>
                 {session.hits.map((hit) => {
                   const hitRow = rowProps(hit.id);
                   return (
-                    <button
+                    <Button
+                      variant="ghost"
+                      size="sm"
                       key={hit.id}
                       type="button"
                       {...hitRow.buttonProps}
                       onClick={() => hitRow.entry && onOpen(hitRow.entry)}
-                      className={`ml-5 flex h-7 w-[calc(100%-1.25rem)] items-center gap-2 rounded-md px-2 text-left text-[12px] leading-none ${
-                        hitRow.highlighted ? "bg-selection text-content" : "text-content/70"
-                      }`}
                     >
                       <MessageSquare
                         className="size-3 shrink-0 text-content/40"
@@ -250,7 +244,7 @@ export function ChatSearchResults({
                       <span className="shrink-0 text-[10px] text-content/35">
                         {hit.role === "user" ? t("You") : hit.role}
                       </span>
-                    </button>
+                    </Button>
                   );
                 })}
                 {more > 0 ? (

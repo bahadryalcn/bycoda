@@ -330,6 +330,15 @@ export function upsertSession(session: Session): Promise<SessionSummary | null> 
   return persistSession(session);
 }
 
+/** Explicit /clear must overwrite an existing transcript even though it is empty. */
+export function upsertClearedSession(session: Session): Promise<SessionSummary | null> {
+  if (session.blocks.length || session.providerSessionId || session.pendingContextReplay ||
+      session.historyPartial || session.historyLoading || session.inboxAsk ||
+      isRemoteProjectPath(session.cwd) || session.cwd === "~")
+    throw new Error("Invalid cleared conversation");
+  return persistSession(session, undefined, true);
+}
+
 /**
  * Mid-turn snapshot for watchers: at most one write in flight and one pending
  * per session, the pending one always the newest. Shares the per-session chain
@@ -448,8 +457,9 @@ export async function upsertSessionIfUnchanged(
 async function persistSession(
   session: Session,
   guard?: { expectedUpdatedAt: number; expectedRevision?: number } | { expectMissing: true },
+  allowEmpty = false,
 ): Promise<SessionSummary | null> {
-  if (!shouldPersistSession(session) || deletedSessionIds.has(session.id)) {
+  if ((!allowEmpty && !shouldPersistSession(session)) || deletedSessionIds.has(session.id)) {
     return null;
   }
   const payload = sanitizeSessionForPersist(session);

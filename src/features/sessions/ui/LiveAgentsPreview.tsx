@@ -1,3 +1,4 @@
+import { Button } from "../../../shared/ui/Button";
 import { t, useLocale } from "../../../shared/i18n";
 import { useEffect, useState } from "react";
 import { useLockOverscroll } from "../../../shared/hooks/useLockOverscroll";
@@ -102,30 +103,41 @@ export function LiveAgentsPreview({
                 { p0: workingCount, p2: finishedCount },
               )}
       </span>
-      <div className="overflow-hidden rounded-lg border border-accent/20 bg-accent/5">
+      {/* On the rail the header is a plain row in the navigation rhythm, not a framed card. */}
+      <div
+        className={
+          collapsible
+            ? ""
+            : "overflow-hidden rounded-lg border border-(--ui-tone-accent-border) bg-(--ui-tone-accent-subtle)"
+        }
+      >
         <Header
           type={collapsible ? "button" : undefined}
           aria-expanded={collapsible ? !collapsed : undefined}
           onClick={collapsible ? () => setCollapsed((value) => !value) : undefined}
-          className={`flex w-full items-center gap-2 px-2.5 py-2 text-left ${collapsible ? "hover:bg-accent/8 focus-visible:outline-2 focus-visible:outline-accent focus-visible:-outline-offset-2" : ""}`}
+          className={`flex w-full items-center text-left ${collapsible ? "h-7 gap-2 rounded-[5px] px-2 hover:bg-(--ui-surface-hover) focus-visible:outline-2 focus-visible:outline-(--ui-focus-ring-color) focus-visible:-outline-offset-2" : "gap-2 px-2.5 py-2"}`}
         >
           <span
             aria-hidden
-            className={`size-1.5 shrink-0 rounded-full ${
+            className={`size-1.5 shrink-0 rounded-full ${collapsible ? "mx-1" : ""} ${
               hasWorkingAgents
-                ? "bg-accent shadow-[0_0_8px_var(--color-accent)] motion-safe:animate-pulse"
-                : "bg-content/35"
+                ? "bg-(--ui-tone-accent-subtle) shadow-[0_0_8px_var(--color-accent)] motion-safe:animate-pulse"
+                : "bg-(--ui-surface-raised)"
             }`}
           />
-          <span className="min-w-0 flex-1 truncate text-xs font-semibold text-content/90">
+          <span
+            className={`min-w-0 flex-1 truncate text-(--ui-text-secondary) ${collapsible ? "text-[12px] font-medium" : "text-xs font-semibold"}`}
+          >
             {hasIssues ? t("Needs attention") : hasWorkingAgents ? t("Working") : t("Finished")}
           </span>
-          <span className="rounded-md bg-accent/12 px-1.5 text-[11px] font-medium tabular-nums text-content/85">
+          <span
+            className={`text-[11px] font-medium tabular-nums text-(--ui-text-secondary) ${collapsible ? "" : "rounded-md bg-(--ui-tone-accent-subtle) px-1.5"}`}
+          >
             {agents.length}
           </span>
           {collapsible ? (
             <ChevronDown
-              className={`size-3.5 shrink-0 text-content/65 transition-transform motion-reduce:transition-none ${collapsed ? "-rotate-90" : ""}`}
+              className={`size-3.5 shrink-0 text-(--ui-text-secondary) transition-transform motion-reduce:transition-none ${collapsed ? "-rotate-90" : ""}`}
               strokeWidth={1.75}
             />
           ) : null}
@@ -152,11 +164,13 @@ export function LiveAgentsPreview({
             ))}
           </div>
           {extra > 0 ? (
-            <button
+            <Button
+              fullWidth
+              variant="item"
               type="button"
               aria-expanded={expanded}
               onClick={() => setExpanded((open) => !open)}
-              className="flex w-full items-center justify-center gap-1 px-2 py-1.5 text-[11px] text-content/50 hover:bg-content/8 hover:text-content"
+              className="w-full"
             >
               {expanded ? (
                 <ChevronUp className="size-3" strokeWidth={1.75} />
@@ -164,7 +178,7 @@ export function LiveAgentsPreview({
                 <ChevronDown className="size-3" strokeWidth={1.75} />
               )}
               {expanded ? t("Show less") : t("{p0} more", { p0: extra })}
-            </button>
+            </Button>
           ) : null}
         </div>
       </div>
@@ -217,18 +231,17 @@ function LiveAgentCard({
     .join("\n");
 
   return (
-    <button
+    <Button
+      className="w-full flex-col text-left"
+      fullWidth
+      selected={selected}
+      variant="item"
       type="button"
       title={title}
       aria-label={[agent.title, project, activity, elapsed].filter(Boolean).join(", ")}
       aria-current={selected ? "true" : undefined}
       data-live-agent-card={agent.id}
       onClick={() => onSelect?.(agent.id)}
-      className={`relative flex w-full flex-col rounded-md px-2 py-1.5 text-left ${
-        selected
-          ? "bg-accent/12 ring-1 ring-inset ring-accent/25"
-          : "text-content/90 hover:bg-content/8"
-      }`}
     >
       <span className="flex min-w-0 items-center gap-2">
         <ProjectMascot
@@ -251,14 +264,14 @@ function LiveAgentCard({
       <span
         className={`mt-1 flex min-w-0 items-center gap-1.5 pl-4 text-[11px] leading-tight ${
           agent.issue === "failed"
-            ? "text-danger"
+            ? "text-(--ui-tone-danger-fg)"
             : agent.issue === "retrying"
-              ? "text-warning"
+              ? "text-(--ui-tone-warning-fg)"
               : agent.needsApproval
-                ? "text-warning"
+                ? "text-(--ui-tone-warning-fg)"
                 : agent.done
-                  ? "text-success"
-                  : "text-content/65"
+                  ? "text-(--ui-tone-success-fg)"
+                  : "text-(--ui-text-secondary)"
         }`}
       >
         {agent.issue || agent.needsApproval ? (
@@ -270,7 +283,7 @@ function LiveAgentCard({
         )}
         <span className="min-w-0 truncate">{activity}</span>
       </span>
-      <span className="mt-1 flex min-w-0 items-center gap-1.5 pl-4 text-[11px] leading-tight text-content/65">
+      <span className="mt-1 flex min-w-0 items-center gap-1.5 pl-4 text-[11px] leading-tight text-(--ui-text-secondary)">
         <HarnessIcon harness={agent.harness} className="size-3 shrink-0" />
         {remote ? (
           <Internet
@@ -282,6 +295,6 @@ function LiveAgentCard({
         <span className="min-w-0 flex-1 truncate">{project}</span>
         {elapsed ? <span className="shrink-0 tabular-nums">{elapsed}</span> : null}
       </span>
-    </button>
+    </Button>
   );
 }

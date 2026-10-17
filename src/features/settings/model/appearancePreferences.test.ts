@@ -57,6 +57,16 @@ describe("appearance preferences", () => {
     expect(listener).toHaveBeenCalledOnce();
     window.removeEventListener(APPEARANCE_PREFERENCES_EVENT, listener);
   });
+  it("upgrades saved preferences without density and persists a shared touch target preference", () => {
+    localStorage.setItem("bycoda.appearancePreferences.v1", JSON.stringify({ codeSize: 15 }));
+    expect(loadAppearancePreferences()).toEqual({ ...APPEARANCE_DEFAULTS, codeSize: 15 });
+    saveAppearancePreferences({ ...loadAppearancePreferences(), controlDensity: "touch" });
+    expect(loadAppearancePreferences().controlDensity).toBe("touch");
+    expect(document.documentElement.dataset.controlDensity).toBe("touch");
+    saveAppearancePreferences({ ...APPEARANCE_DEFAULTS });
+    expect(document.documentElement.dataset.controlDensity).toBe("compact");
+    expect(loadAppearancePreferences().codeSize).toBe(13);
+  });
   it("restores CSS font fallbacks and wrapping when reset", () => {
     applyAppearancePreferences({
       ...APPEARANCE_DEFAULTS,

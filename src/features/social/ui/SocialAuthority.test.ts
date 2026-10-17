@@ -1,3 +1,4 @@
+import { chooseSocialValue } from "./socialTestControls";
 // @vitest-environment happy-dom
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
@@ -83,11 +84,10 @@ async function input(value: string) {
   });
 }
 async function map(value = "target-project") {
-  await act(async () => {
-    const select = container.querySelector("select")!;
-    select.value = value;
-    select.dispatchEvent(new Event("change", { bubbles: true }));
-  });
+  await chooseSocialValue(
+    container.querySelector<HTMLButtonElement>('button[aria-haspopup="dialog"]')!,
+    value,
+  );
 }
 async function save() {
   await act(async () =>
@@ -152,7 +152,9 @@ it("never reuses project mappings or endpoint values for another host", async ()
   await input("https://local.test");
   await map();
   await mount("other");
-  expect(container.querySelector("select")!.value).toBe("");
+  expect(container.querySelector('button[aria-haspopup="dialog"]')?.textContent).toContain(
+    "Bu projeyi paylaşma",
+  );
   expect(container.querySelector<HTMLInputElement>('input[type="url"]')!.value).toBe("");
   await save();
   expect(mocks.invoke).not.toHaveBeenCalledWith("social_authority_connect", expect.anything());
@@ -162,7 +164,9 @@ it("rejects stale mappings after a target project disappears", async () => {
   await input("https://local.test");
   await map();
   await mount("remote", machines, []);
-  expect(container.querySelector("select")!.value).toBe("");
+  expect(container.querySelector('button[aria-haspopup="dialog"]')?.textContent).toContain(
+    "Bu projeyi paylaşma",
+  );
   expect(container.textContent).toContain("Bazı kayıtlı projeler artık bulunamıyor");
   await save();
   expect(mocks.invoke).not.toHaveBeenCalledWith("social_authority_connect", expect.anything());

@@ -1,3 +1,4 @@
+import { Button } from "../../../shared/ui/Button";
 import { t, useLocale } from "../../../shared/i18n/git";
 import { useMemo, useState } from "react";
 import { CreateWorktreeDialog } from "./CreateWorktreeDialog";
@@ -74,28 +75,31 @@ export function WorktreesPage({
           cwd={project || "~"}
           recents={projects}
           className="w-fit max-w-full shrink-0"
-          buttonClassName="h-7.5 max-w-full gap-2 bg-content/5 px-2.5 text-[13px] hover:bg-content/12 active:scale-[0.98]"
+          buttonClassName="max-w-full gap-2"
           onSelectProject={(path) => {
             setProject(path);
             setError(undefined);
             setDeleting(undefined);
           }}
         />
-        <button
+        <Button
+          size="sm"
+          variant="ghost"
+          motion="none"
           type="button"
           disabled={!data}
           onClick={() => setCreating(true)}
-          className="flex h-7.5 items-center gap-1.5 rounded-md px-2 text-[11px] hover:bg-content/12 disabled:opacity-40 active:scale-[0.97]"
+          className="flex items-center gap-1.5"
         >
           <Plus className="size-3" />
           {t("Create worktree")}
-        </button>
+        </Button>
       </div>
-      <p className="break-all text-[12px] text-content/65">
+      <p className="break-all text-[12px] text-[var(--ui-text-secondary)]">
         {t("Scope: repository and machine of {p0}", { p0: prettyCwd(project || "~") })}
       </p>
       {!data ? (
-        <p className="text-[12px] text-content/65">
+        <p className="text-[12px] text-[var(--ui-text-secondary)]">
           {!project
             ? t("Select a project before creating a worktree.")
             : loadError
@@ -104,12 +108,15 @@ export function WorktreesPage({
         </p>
       ) : null}
       <div className="flex items-center justify-between gap-3">
-        <p className="min-w-0 flex-1 text-[12px] text-content/50">
+        <p className="min-w-0 flex-1 text-[12px] text-[var(--ui-text-secondary)]">
           {t(
             "Sessions can share a worktree. Deleting one keeps its sessions by default and discards uncommitted changes. Its branch and commits are kept.",
           )}
         </p>
-        <button
+        <Button
+          size="sm"
+          variant="ghost"
+          motion="none"
           type="button"
           title={
             loadError
@@ -119,11 +126,11 @@ export function WorktreesPage({
           aria-label={t("Refresh worktrees")}
           disabled={!project}
           onClick={refresh}
-          className={`flex h-7 shrink-0 items-center gap-1.5 rounded-md bg-content/8 px-2 text-[11px] hover:bg-content/12 disabled:opacity-40 active:scale-[0.97] ${loadError ? "text-danger" : "text-content/65"}`}
+          className={"flex shrink-0 items-center gap-1.5"}
         >
           <RefreshCw className="size-3.5" />
           <span>{t("Refresh")}</span>
-        </button>
+        </Button>
       </div>
       {error && (
         <p role="alert" className="break-words text-[12px] text-danger">
@@ -136,26 +143,28 @@ export function WorktreesPage({
         </p>
       ) : null}
       {refreshingAfterFailure ? (
-        <p role="status" className="text-[12px] text-content/65">
+        <p role="status" className="text-[12px] text-[var(--ui-text-secondary)]">
           {t("Refreshing after a failed deletion. Wait for current status before retrying.")}
         </p>
       ) : null}
       {!project ? (
-        <p className="text-[12px] text-content/50">{t("Add a project to manage its worktrees.")}</p>
+        <p className="text-[12px] text-[var(--ui-text-secondary)]">
+          {t("Add a project to manage its worktrees.")}
+        </p>
       ) : !data && loadError ? (
         <p role="alert" className="break-words text-[12px] text-danger">
           {loadError}
         </p>
       ) : !data ? (
-        <p className="flex items-center gap-2 text-[12px] text-content/50">
+        <p className="flex items-center gap-2 text-[12px] text-[var(--ui-text-secondary)]">
           <Loader className="size-4 animate-spin" />
           {t("Loading worktrees…")}
         </p>
       ) : !worktrees.length ? (
         <div className="flex flex-col items-center gap-2 rounded-xl border border-stroke px-4 py-8 text-center">
-          <FolderTree className="size-5 text-content/35" />
+          <FolderTree className="size-5 text-[var(--ui-text-muted)]" />
           <p className="text-[13px] font-medium">{t("No additional worktrees")}</p>
-          <p className="text-[12px] text-content/50">
+          <p className="text-[12px] text-[var(--ui-text-secondary)]">
             {t("Create a worktree to work on another branch in a separate folder.")}
           </p>
         </div>
@@ -170,17 +179,17 @@ export function WorktreesPage({
                 : undefined;
             return (
               <div key={tree.path} className="flex items-start gap-3 p-4">
-                <FolderTree className="mt-0.5 size-4 shrink-0 text-content/45" />
+                <FolderTree className="mt-0.5 size-4 shrink-0 text-[var(--ui-text-muted)]" />
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="text-[13px] font-medium">{projectName(tree.path)}</span>
                     {pathKey(tree.path) === pathKey(project) && (
-                      <span className="text-[10px] text-content/40">
+                      <span className="text-[10px] text-[var(--ui-text-muted)]">
                         {t("Selected project folder")}
                       </span>
                     )}
                   </div>
-                  <p className="mt-1 break-all text-[11px] text-content/40">
+                  <p className="mt-1 break-all text-[11px] text-[var(--ui-text-muted)]">
                     {prettyCwd(tree.path)}
                   </p>
                   {blocked || loadError || refreshingAfterFailure ? (
@@ -191,7 +200,7 @@ export function WorktreesPage({
                           : t("Deletion is unavailable while status is being refreshed."))}
                     </p>
                   ) : null}
-                  <p className="mt-2 flex items-center gap-1.5 text-[11px] text-content/55">
+                  <p className="mt-2 flex items-center gap-1.5 text-[11px] text-[var(--ui-text-secondary)]">
                     <GitBranch className="size-3 shrink-0" />
                     <span className="min-w-0 break-all">
                       {tree.branch
@@ -199,7 +208,7 @@ export function WorktreesPage({
                         : t("Detached at {p0}", { p0: tree.head.slice(0, 7) })}
                     </span>
                   </p>
-                  <p className="mt-2 flex flex-wrap gap-x-3 text-[11px] text-content/55">
+                  <p className="mt-2 flex flex-wrap gap-x-3 text-[11px] text-[var(--ui-text-secondary)]">
                     <span>
                       {count}
                       {t(" session")}
@@ -225,17 +234,26 @@ export function WorktreesPage({
                     {tree.locked && <span>{t("Locked")}</span>}
                   </p>
                 </div>
-                <button
+                <Button
+                  size="sm"
+                  iconOnly
+                  label={t("Reveal {p0}", { p0: tree.branch ?? "worktree" })}
+                  variant="ghost"
+                  motion="none"
                   type="button"
                   disabled={tree.missing}
                   aria-label={t("Reveal {p0}", { p0: tree.branch ?? "worktree" })}
                   title={t("Reveal folder")}
                   onClick={() => void revealPath(tree.path).catch((e) => setError(String(e)))}
-                  className="rounded-md p-1.5 text-content/40 hover:bg-content/8 hover:text-content disabled:opacity-30"
                 >
                   <FolderOpen className="size-4" />
-                </button>
-                <button
+                </Button>
+                <Button
+                  size="sm"
+                  iconOnly
+                  label={t("Delete {p0}", { p0: tree.branch ?? "worktree" })}
+                  variant="ghost"
+                  motion="none"
                   type="button"
                   disabled={!!blocked || refreshingAfterFailure || !!loadError}
                   aria-label={t("Delete {p0}", { p0: tree.branch ?? "worktree" })}
@@ -244,10 +262,9 @@ export function WorktreesPage({
                     setError(undefined);
                     setDeleting(tree);
                   }}
-                  className="rounded-md p-1.5 text-content/40 hover:bg-danger/10 hover:text-danger disabled:opacity-25"
                 >
                   <Trash2 className="size-4" />
-                </button>
+                </Button>
               </div>
             );
           })}
@@ -259,11 +276,11 @@ export function WorktreesPage({
           settingIds={["worktree-location"]}
           title={t("Advanced: worktree location and deletion")}
         >
-          <p className="break-all py-3 text-[12px] text-content/65">
+          <p className="break-all py-3 text-[12px] text-[var(--ui-text-secondary)]">
             {t("New worktrees are created in ")}
             {prettyCwd(data.defaultRoot)}.
           </p>
-          <p className="text-[12px] text-content/65">
+          <p className="text-[12px] text-[var(--ui-text-secondary)]">
             {t(
               "The main working copy is excluded from this list. Deletion checks run before associated sessions can be removed. Review the confirmation for local changes and session retention.",
             )}

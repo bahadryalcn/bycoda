@@ -1,4 +1,6 @@
-import { SearchInput } from "../../../shared/ui/SearchInput";
+import { Alert } from "../../../shared/ui/Alert";
+import { Button } from "../../../shared/ui/Button";
+import { SearchInput, SearchInputGroup } from "../../../shared/ui/SearchInput";
 import { fetchCheckDetails } from "../model/prChecks";
 import type { CodeHostProvider } from "../model/githubPrChecks";
 import { t, useLocale } from "../../../shared/i18n";
@@ -177,30 +179,39 @@ export function CheckRepairForm({
       className="flex min-h-0 flex-col overflow-hidden"
     >
       <div className="flex shrink-0 items-start gap-2.5 px-3.5 pb-3 pt-3.5">
-        <Sparkles className="mt-0.5 size-4 shrink-0 text-content/65" strokeWidth={1.75} />
+        <Sparkles
+          className="mt-0.5 size-4 shrink-0 text-(--ui-text-secondary)"
+          strokeWidth={1.75}
+        />
         <div className="min-w-0 flex-1">
-          <p className="text-[13px] font-medium leading-5 text-content">{t("Fix with AI")}</p>
+          <p className="text-[13px] font-medium leading-5 text-(--ui-tone-neutral-fg)">
+            {t("Fix with AI")}
+          </p>
           <p
             title={checks.map((check) => check.name).join(", ")}
-            className="mt-0.5 truncate text-[11px] leading-4 text-content/45"
+            className="mt-0.5 truncate text-[11px] leading-4 text-(--ui-text-secondary)"
           >
             {checks.length === 1 ? checks[0].name : t("{p0} failed checks", { p0: checks.length })}{" "}
             {t("· PR #")}
             {repair.number}
           </p>
         </div>
-        <button
+        <Button
+          iconOnly
+          label={t("Close fix picker")}
+          variant="ghost"
           type="button"
           aria-label={t("Close fix picker")}
           onClick={() => dismiss()}
-          className="grid size-6 shrink-0 place-items-center rounded-md text-content/40 hover:bg-content/10 hover:text-content"
+          className="shrink-0"
         >
           <X className="size-3.5" strokeWidth={1.75} />
-        </button>
+        </Button>
       </div>
-      <label className="mx-1.5 flex h-9 shrink-0 items-center gap-2 rounded-md bg-content/5 px-2.5 text-content/40 focus-within:text-content/65">
+      <SearchInputGroup appearance="field" className="mx-1.5 shrink-0">
         <Search className="size-3.5 shrink-0" strokeWidth={1.75} />
         <SearchInput
+          focusOwner="group"
           ref={searchRef}
           value={query}
           disabled={busy}
@@ -224,9 +235,8 @@ export function CheckRepairForm({
               setSessionId(choices[active]?.id ?? "");
             }
           }}
-          className="min-w-0 flex-1 bg-transparent text-[12px] text-content outline-none placeholder:text-content/35"
         />
-      </label>
+      </SearchInputGroup>
       <div
         ref={listRef}
         id={listId}
@@ -238,7 +248,8 @@ export function CheckRepairForm({
           const selected = sessionId === session.id;
           const Icon = session.id ? MessageSquare : Plus;
           return (
-            <button
+            <Button
+              variant="item"
               key={session.id}
               id={`${listId}-${index}`}
               type="button"
@@ -250,49 +261,54 @@ export function CheckRepairForm({
               onMouseEnter={() => setActive(index)}
               onFocus={() => setActive(index)}
               onClick={() => setSessionId(session.id)}
-              className={`flex h-9 w-full items-center gap-2.5 rounded-lg px-2.5 text-left text-[12px] disabled:opacity-50 ${index === active ? "bg-selection text-content" : "text-content/70 hover:bg-content/5 hover:text-content"}`}
             >
-              <Icon className="size-3.5 shrink-0 text-content/50" strokeWidth={1.75} />
+              <Icon className="size-3.5 shrink-0 text-(--ui-text-secondary)" strokeWidth={1.75} />
               <span className="min-w-0 flex-1 truncate" title={session.title || t("Untitled chat")}>
                 {session.title || t("Untitled chat")}
               </span>
               {selected ? (
-                <Check className="size-3.5 shrink-0 text-content/75" strokeWidth={1.75} />
+                <Check
+                  className="size-3.5 shrink-0 text-(--ui-text-secondary)"
+                  strokeWidth={1.75}
+                />
               ) : null}
-            </button>
+            </Button>
           );
         })}
         {choices.length === 1 && query.trim() ? (
-          <p className="px-2.5 py-3 text-[12px] text-content/45">{t("No matching chats")}</p>
+          <p className="px-2.5 py-3 text-[12px] text-(--ui-text-secondary)">
+            {t("No matching chats")}
+          </p>
         ) : null}
       </div>
       {error ? (
-        <p role="alert" className="px-3.5 pb-3 text-[12px] leading-4 text-danger">
+        <Alert tone="danger" role="alert">
           {error}
-        </p>
+        </Alert>
       ) : null}
       {blocked && !busy ? (
-        <p role="status" className="px-3.5 pb-3 text-[12px] leading-4 text-content/55">
+        <p role="status" className="px-3.5 pb-3 text-[12px] leading-4 text-(--ui-text-secondary)">
           {t("Wait for the latest checks before starting a fix.")}
         </p>
       ) : null}
-      <div className="flex shrink-0 items-center gap-3 border-t border-stroke px-3 py-2.5">
+      <div className="flex shrink-0 items-center gap-3 border-t border-(--ui-tone-neutral-border) px-3 py-2.5">
         <div className="min-w-0 flex-1 text-[11px] leading-4">
-          <p className="truncate text-content/65" title={selectedTitle}>
+          <p className="truncate text-(--ui-text-secondary)" title={selectedTitle}>
             {selectedTitle}
           </p>
-          <p className="text-content/35">{t("CI details included")}</p>
+          <p className="text-(--ui-text-secondary)">{t("CI details included")}</p>
         </div>
-        <button
+        <Button
+          variant="ghost"
           type="button"
           disabled={busy || blocked}
           onClick={() => void start()}
-          className="inline-flex h-7 shrink-0 items-center gap-1.5 rounded-md bg-selection px-2.5 text-[12px] font-medium text-content hover:bg-selection-hover disabled:opacity-50 focus-visible:outline focus-visible:outline-1 focus-visible:outline-content/50"
+          className="shrink-0"
         >
           {busy ? <LoaderCircle className="size-3.5 animate-spin" strokeWidth={1.75} /> : null}
           {busy ? t("Preparing...") : t("Start fix")}
           {!busy ? <ChevronRight className="size-3" strokeWidth={1.75} /> : null}
-        </button>
+        </Button>
       </div>
     </Popover>
   );

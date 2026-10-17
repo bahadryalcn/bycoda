@@ -1,0 +1,39 @@
+.menu {
+  padding: var(--space-1);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  color: var(--foreground);
+}
+.separator {
+  block-size: 1px;
+  margin-block: var(--space-1);
+  background: var(--border);
+}
+.icon {
+  display: inline-flex;
+  inline-size: 1rem;
+  block-size: 1rem;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+}
+.icon svg {
+  inline-size: 100%;
+  block-size: 100%;
+}
+.copy {
+  flex: 1;
+  min-inline-size: 0;
+  overflow-wrap: anywhere;
+}
+.copy > span {
+  display: block;
+}
+.description,
+.shortcut {
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+}
+.shortcut {
+  flex: none;
+}

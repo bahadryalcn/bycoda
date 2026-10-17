@@ -1,4 +1,4 @@
-/** Route checkout actions to the application-owned deletion and session safeguards. */
+/** Open worktree management, or a targeted deletion with application-owned safeguards. */
 export const OPEN_WORKTREE_MANAGEMENT = "bycoda:open-worktree-management";
 
 export type WorktreeManagementRequest = { cwd: string; deletePath?: string };

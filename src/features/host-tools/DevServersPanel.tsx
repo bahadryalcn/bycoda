@@ -1,3 +1,9 @@
+import { Badge } from "../../shared/ui/Badge";
+import { EmptyState } from "../../shared/ui/EmptyState";
+import { Alert } from "../../shared/ui/Alert";
+import { NumberField } from "../../shared/ui/NumberField";
+import { TextField } from "../../shared/ui/TextField";
+import { Checkbox } from "../../shared/ui/Checkbox";
 import { SearchInput } from "../../shared/ui/SearchInput";
 import { useRetainedState } from "../../shared/hooks/useRetainedState";
 import { pathKey } from "../../shared/lib/paths";
@@ -102,7 +108,7 @@ function ProjectDevServersPanel({ cwd, launch }: { cwd: string; launch?: Launch 
   const detailsPanel = useRef<HTMLElement>(null);
   const previewPanel = useRef<HTMLElement>(null);
   const startForm = useRef<HTMLFormElement>(null);
-  const actionError = useRef<HTMLParagraphElement>(null);
+  const actionError = useRef<HTMLDivElement>(null);
 
   const reveal = (element: HTMLElement | null) => {
     element?.focus({ preventScroll: true });
@@ -365,9 +371,14 @@ function ProjectDevServersPanel({ cwd, launch }: { cwd: string; launch?: Launch 
         aria-pressed={server.id === selected?.id}
         onClick={() => choose(server)}
       >
-        <span className="dev-server-state" data-state={server.state} role="status">
+        <Badge
+          tone={
+            server.state === "error" ? "danger" : server.state === "running" ? "success" : "neutral"
+          }
+          role="status"
+        >
           {t(stateLabels[server.state])}
-        </span>
+        </Badge>
         <strong className="dev-server-name">{server.name}</strong>
         <code className="dev-server-ports">
           {[...new Set(server.endpoints.map((item) => `:${item.port}`))].join(" ") ||
@@ -433,8 +444,7 @@ function ProjectDevServersPanel({ cwd, launch }: { cwd: string; launch?: Launch 
               .join(", ")}
           </p>
           <label className="host-tool-check">
-            <input
-              type="checkbox"
+            <Checkbox
               disabled={disabled || intent === "restart"}
               checked={tree}
               onChange={(event) => setTree(event.target.checked)}
@@ -450,7 +460,9 @@ function ProjectDevServersPanel({ cwd, launch }: { cwd: string; launch?: Launch 
           </p>
           <label className="host-tool-field">
             {t("Restart command")}
-            <input
+            <TextField
+              hideLabel
+              label={t("Restart command")}
               value={restartCommand}
               disabled={disabled}
               onChange={(event) => setRestartCommand(event.target.value)}
@@ -458,7 +470,9 @@ function ProjectDevServersPanel({ cwd, launch }: { cwd: string; launch?: Launch 
           </label>
           <label className="host-tool-field">
             {t("Restart working directory")}
-            <input
+            <TextField
+              hideLabel
+              label={t("Restart working directory")}
               value={restartCwd}
               disabled={disabled}
               onChange={(event) => setRestartCwd(event.target.value)}
@@ -678,7 +692,11 @@ function ProjectDevServersPanel({ cwd, launch }: { cwd: string; launch?: Launch 
       {(server.cwd ?? server.process?.cwd) ? (
         <p className="host-tool-location">{server.cwd ?? server.process?.cwd}</p>
       ) : null}
-      {server.error ? <p role="alert">{server.error}</p> : null}
+      {server.error ? (
+        <Alert tone="danger" role="alert">
+          {server.error}
+        </Alert>
+      ) : null}
       {selectedDetails ? renderDetails(selectedDetails) : null}
     </aside>
   );
@@ -770,7 +788,7 @@ function ProjectDevServersPanel({ cwd, launch }: { cwd: string; launch?: Launch 
         </div>
       </header>
       {scanError ? (
-        <div className="dev-server-scan-error" role="alert">
+        <Alert tone="danger" role="alert">
           <strong>{t("Could not refresh servers.")}</strong>
           <p className="host-tool-muted">
             {scan
@@ -786,15 +804,29 @@ function ProjectDevServersPanel({ cwd, launch }: { cwd: string; launch?: Launch 
             <summary>{t("Error details")}</summary>
             <p>{scanError}</p>
           </details>
-        </div>
+        </Alert>
       ) : null}
       {error ? (
-        <p role="alert" ref={actionError} tabIndex={-1}>
+        <Alert
+          tone="danger"
+          role="alert"
+          ref={actionError}
+          tabIndex={-1}
+          className="host-tool-error-payload"
+        >
           {error}
-        </p>
+        </Alert>
       ) : null}
-      {notice ? <p role="status">{notice}</p> : null}
-      {launch?.pending ? <p role="status">{t("Starting")}</p> : null}
+      {notice ? (
+        <Alert tone="info" role="status">
+          {notice}
+        </Alert>
+      ) : null}
+      {launch?.pending ? (
+        <Alert tone="info" role="status">
+          {t("Starting")}
+        </Alert>
+      ) : null}
       {showStart ? (
         <form
           ref={startForm}
@@ -826,7 +858,9 @@ function ProjectDevServersPanel({ cwd, launch }: { cwd: string; launch?: Launch 
         >
           <label className="host-tool-field">
             {t("Server name")}
-            <input
+            <TextField
+              hideLabel
+              label={t("Server name")}
               value={name}
               required
               maxLength={80}
@@ -836,7 +870,9 @@ function ProjectDevServersPanel({ cwd, launch }: { cwd: string; launch?: Launch 
           </label>
           <label className="host-tool-field">
             {t("Server command")}
-            <input
+            <TextField
+              hideLabel
+              label={t("Server command")}
               value={command}
               required
               maxLength={32768}
@@ -846,7 +882,9 @@ function ProjectDevServersPanel({ cwd, launch }: { cwd: string; launch?: Launch 
           </label>
           <label className="host-tool-field">
             {t("Working directory")}
-            <input
+            <TextField
+              hideLabel
+              label={t("Working directory")}
               value={workingDirectory}
               disabled={disabled}
               onChange={(event) => setWorkingDirectory(event.target.value)}
@@ -854,8 +892,10 @@ function ProjectDevServersPanel({ cwd, launch }: { cwd: string; launch?: Launch 
           </label>
           <label className="host-tool-field">
             {t("Expected port (optional)")}
-            <input
-              type="number"
+            <NumberField
+              hideLabel
+              label={t("Expected port (optional)")}
+
               min={1}
               max={65535}
               value={port}
@@ -879,7 +919,9 @@ function ProjectDevServersPanel({ cwd, launch }: { cwd: string; launch?: Launch 
       ) : null}
       {startResult?.conflict ? (
         <section className="dev-server-conflict" aria-label={t("Port conflict")}>
-          <p role="alert">{t("Port {p0} is already in use.", { p0: startResult.conflict.port })}</p>
+          <Alert tone="danger" role="alert">
+            {t("Port {p0} is already in use.", { p0: startResult.conflict.port })}
+          </Alert>
           <p className="host-tool-muted">
             {t("Inspect and stop the existing process, or define a command using another port.")}
           </p>
@@ -890,9 +932,9 @@ function ProjectDevServersPanel({ cwd, launch }: { cwd: string; launch?: Launch 
         </section>
       ) : null}
       {scan && scan.servers.length === 0 && !scanError ? (
-        <div className="host-tool-empty">{t("No servers found")}</div>
+        <EmptyState description={t("No servers found")} />
       ) : scan && visibleServers.length === 0 && query ? (
-        <div className="host-tool-empty">{t("No servers match your search.")}</div>
+        <EmptyState description={t("No servers match your search.")} />
       ) : null}
       {visibleServers.length || selected ? (
         <div className="dev-server-workspace">

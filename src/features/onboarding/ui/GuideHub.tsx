@@ -143,16 +143,12 @@ export default function GuideHub({
             </div>
           ))}
         </nav>
-        <article
-          key={topic.id}
-          className="guide-hub-content"
-          aria-labelledby="guide-hub-title"
-        >
+        <article key={topic.id} className="guide-hub-content" aria-labelledby="guide-hub-title">
           <h2 id="guide-hub-title">{topic.title}</h2>
           <p className="guide-hub-summary">{topic.summary}</p>
           <div className="guide-hub-actions">
             <Button
-              variant="primary"
+              variant="secondary"
               disabled={!!blocker}
               endIcon={<ChevronRight size={14} />}
               onClick={() => run(topic.action.id)}

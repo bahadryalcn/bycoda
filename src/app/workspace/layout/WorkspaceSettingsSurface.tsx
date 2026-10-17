@@ -1,5 +1,8 @@
 import type { ComponentProps, Dispatch, SetStateAction } from "react";
 import { QuickDeleteWorktreeDialog } from "../../../features/source-control/ui/QuickDeleteWorktreeDialog";
+import { WorktreesPage } from "../../../features/source-control/ui/WorktreesPage";
+import { Modal } from "../../../shared/ui/Modal";
+import { t, useLocale } from "../../../shared/i18n/git";
 import type { WorktreeManagementRequest } from "../../../features/source-control/model/worktreeManagement";
 import { SettingsView } from "../surfaces/lazySurfaces";
 
@@ -63,15 +66,32 @@ export function WorkspaceSettingsSurface({
   collapsedProjectRailMode,
   setCollapsedProjectRailMode,
 }: WorkspaceSettingsSurfaceProps) {
+  useLocale();
   return (
     <>
-      {worktreeManagementRequest ? (
+      {worktreeManagementRequest?.deletePath ? (
         <QuickDeleteWorktreeDialog
           key={worktreeManagementRevision}
           request={worktreeManagementRequest}
           onRemove={onRemoveWorktree}
           onClose={() => setWorktreeManagementRequest(null)}
         />
+      ) : worktreeManagementRequest ? (
+        <Modal
+          key={worktreeManagementRevision}
+          title={t("Worktrees")}
+          size="lg"
+          onClose={() => setWorktreeManagementRequest(null)}
+        >
+          <WorktreesPage
+            cwd={worktreeManagementRequest.cwd}
+            recents={visibleRecents}
+            liveSessions={sessions}
+            onRemove={onRemoveWorktree}
+            onCheckRemove={onCheckWorktreeRemoval}
+            onDeleteSessions={onDeleteWorktreeSessions}
+          />
+        </Modal>
       ) : null}
       {settingsOpen ? (
         <SettingsView

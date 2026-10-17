@@ -1,11 +1,10 @@
 .jira-board-view {
-  --jira-background: var(--color-background-base);
   display: flex;
   flex: 1;
   flex-direction: column;
   min-inline-size: 0;
   min-block-size: 0;
-  color: var(--color-content);
+  color: var(--ui-tone-neutral-fg);
   font-size: 12px;
 }
 .jira-board-toolbar {
@@ -14,50 +13,23 @@
   flex-wrap: wrap;
   gap: 12px;
   padding: 14px 18px;
-  border-block-end: 1px solid var(--color-stroke);
+  border-block-end: 1px solid var(--ui-tone-neutral-border);
 }
 .jira-board-toolbar label {
   display: grid;
   gap: 6px;
   min-inline-size: 0;
-  color: color-mix(in oklch, var(--color-content) 65%, transparent);
+  color: var(--ui-text-secondary);
 }
 .jira-board-toolbar select {
   max-inline-size: min(350px, 70vw);
-}
-.jira-board-toolbar input,
-.jira-board-view select,
-.jira-board-view button {
-  border: 1px solid var(--color-stroke);
-  border-radius: 6px;
-  background: var(--jira-background);
-  color: var(--color-content);
-  padding-block: 6px;
-  padding-inline: 10px;
-  min-block-size: 30px;
-}
-.jira-board-view button {
-  cursor: pointer;
-}
-.jira-board-view :is(button, input, select):focus-visible {
-  outline: 2px solid var(--color-accent);
-  outline-offset: 2px;
-}
-.jira-board-view button:active {
-  background: var(--ui-surface-pressed);
-}
-.jira-board-view :disabled {
-  opacity: 0.5;
-  cursor: default;
 }
 .jira-board-tabs {
   display: flex;
   gap: 4px;
 }
-.jira-board-tabs [aria-pressed="true"] {
-  background: var(--color-selection);
-}
-.jira-board-search {
+
+.jira-board-toolbar .jira-board-search {
   flex: 1;
   min-inline-size: 140px;
 }
@@ -65,7 +37,7 @@
 .jira-board-hint {
   padding-block: 8px;
   padding-inline: 18px;
-  color: color-mix(in oklch, var(--color-content) 65%, transparent);
+  color: var(--ui-text-secondary);
 }
 .jira-board-hint {
   margin: 0;
@@ -73,9 +45,6 @@
 .jira-board-error {
   margin-inline: 18px;
   margin-block-end: 10px;
-  padding: 10px;
-  border: 1px solid var(--color-danger);
-  border-radius: 6px;
   overflow-wrap: anywhere;
 }
 .jira-board-columns {
@@ -91,7 +60,7 @@
 .jira-board-column {
   flex: 1 0 260px;
   min-inline-size: 260px;
-  border: 1px solid var(--color-stroke);
+  border: 1px solid var(--ui-tone-neutral-border);
   border-radius: 8px;
   background: var(--ui-surface);
   padding: 10px;
@@ -114,15 +83,15 @@
 }
 .jira-board-column header span,
 .jira-board-sprint header span {
-  color: color-mix(in oklch, var(--color-content) 60%, transparent);
+  color: var(--ui-text-secondary);
   font-variant-numeric: tabular-nums;
 }
 .jira-board-card {
-  border: 1px solid var(--color-stroke);
+  border: 1px solid var(--ui-tone-neutral-border);
   border-radius: 6px;
   padding: 10px;
   margin-block-end: 8px;
-  background: var(--jira-background);
+  background: var(--ui-surface);
   cursor: grab;
   touch-action: none;
   user-select: none;
@@ -131,20 +100,17 @@
   opacity: 0.45;
 }
 .jira-board-view [data-drop] {
-  outline: 2px solid var(--color-accent);
+  outline: 2px solid var(--ui-tone-accent-fg);
   outline-offset: -2px;
 }
 .jira-board-card .jira-board-card-open {
   display: grid;
   gap: 6px;
   inline-size: 100%;
-  border: 0;
-  padding: 0;
   text-align: start;
-  background: transparent;
 }
 .jira-board-key {
-  color: var(--color-accent);
+  color: var(--ui-tone-accent-fg);
   font-size: 11px;
 }
 .jira-board-summary {
@@ -158,13 +124,10 @@
   justify-content: space-between;
   gap: 8px;
   margin-block: 10px;
-  color: color-mix(in oklch, var(--color-content) 60%, transparent);
+  color: var(--ui-text-secondary);
   overflow-wrap: anywhere;
 }
-.jira-board-card .jira-board-move {
-  font-size: 11px;
-  padding-block: 3px;
-}
+
 .jira-board-move-menu,
 .jira-board-transition {
   display: flex;
@@ -176,7 +139,7 @@
   margin-inline: 18px;
   margin-block-end: 12px;
   padding: 12px;
-  border: 1px solid var(--color-stroke);
+  border: 1px solid var(--ui-tone-neutral-border);
   border-radius: 6px;
 }
 .jira-board-transition strong {
@@ -184,7 +147,7 @@
 }
 .jira-board-empty {
   padding-block: 20px;
-  color: color-mix(in oklch, var(--color-content) 45%, transparent);
+  color: var(--ui-text-secondary);
   text-align: center;
 }
 .jira-board-planning {
@@ -195,7 +158,7 @@
   overscroll-behavior: contain;
 }
 .jira-board-sprint {
-  border: 1px solid var(--color-stroke);
+  border: 1px solid var(--ui-tone-neutral-border);
   border-radius: 8px;
   padding: 12px;
   margin-block-end: 16px;
@@ -228,17 +191,21 @@
   flex: 0 1 480px;
   min-inline-size: 260px;
   min-block-size: 0;
-  border-inline-start: 1px solid var(--color-stroke);
+  border-inline-start: 1px solid var(--ui-tone-neutral-border);
 }
 .jira-board-detail-close {
   align-self: end;
   margin: 8px;
 }
 @media (hover: hover) and (pointer: fine) {
-  .jira-board-view button:hover:enabled:not(:active) {
-    background: var(--ui-surface-hover);
-  }
   .jira-board-card:hover {
-    border-color: color-mix(in oklch, var(--color-content) 30%, var(--color-stroke));
+    border-color: var(--ui-border-accent);
   }
+}
+
+.jira-board-mode {
+  min-inline-size: 0;
+  margin: 0;
+  border: 0;
+  padding: 0;
 }

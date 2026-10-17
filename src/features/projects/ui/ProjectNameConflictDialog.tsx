@@ -4,6 +4,9 @@ import { OverlayParent, useOverlay } from "../../../shared/ui/overlay";
 import { createPortal } from "react-dom";
 import { LAYER } from "../../../shared/lib/layers";
 import { prettyCwd } from "../../../shared/lib/paths";
+import { Button } from "../../../shared/ui/Button";
+import { TextField } from "../../../shared/ui/TextField";
+import { Alert } from "../../../shared/ui/Alert";
 
 type Props = {
   /** The name both projects would show. */
@@ -51,7 +54,7 @@ export function ProjectNameConflictDialog({
           }
         }}
       >
-        <div className="pointer-events-none absolute inset-0 bg-scrim/30" />
+        <div className="pointer-events-none absolute inset-0 bg-(--ui-overlay-backdrop)" />
         <form
           ref={dialogRoot}
           tabIndex={-1}
@@ -65,20 +68,24 @@ export function ProjectNameConflictDialog({
             setError(problem);
             if (!problem) onConfirm(value.trim());
           }}
-          className="absolute left-1/2 top-[22%] flex w-[min(420px,calc(100vw-24px))] -translate-x-1/2 flex-col gap-3 rounded-lg border border-content/10 bg-content/5 p-4 shadow-xl backdrop-blur-xl"
+          className="absolute left-1/2 top-[22%] flex w-[min(420px,calc(100vw-24px))] -translate-x-1/2 flex-col gap-3 rounded-lg border border-stroke bg-(--ui-surface) p-4 shadow-xl backdrop-blur-xl"
         >
           <div className="flex flex-col gap-1">
             <h2 className="text-[13px] font-medium leading-tight text-content">
               {t("Rename project")}
             </h2>
-            <p className="text-[12px] leading-snug text-content/55">
+            <p className="text-[12px] leading-snug text-(--ui-text-secondary)">
               {t('A project named "')}
               {name}
               {t('" already exists. Give this one a different name.')}
             </p>
-            <p className="truncate text-[11px] leading-tight text-content/40">{prettyCwd(path)}</p>
+            <p className="truncate text-[11px] leading-tight text-(--ui-text-muted)">
+              {prettyCwd(path)}
+            </p>
           </div>
-          <input
+          <TextField
+            label={t("Project name")}
+            hideLabel
             ref={input}
             aria-label={t("Project name")}
             aria-invalid={error ? true : undefined}
@@ -89,28 +96,20 @@ export function ProjectNameConflictDialog({
               setValue(event.target.value);
               setError(null);
             }}
-            className="h-8 shrink-0 rounded-md border border-content/10 bg-content/3 px-2.5 text-[13px] text-content outline-none focus:border-content/25"
           />
-          {error ? (
-            <p role="alert" className="text-[12px] leading-snug text-danger/90">
-              {error}
-            </p>
-          ) : null}
+          {error ? <Alert tone="danger">{error}</Alert> : null}
           <div className="flex justify-end gap-2">
-            <button
+            <Button
               type="button"
               onClick={onCancel}
               title={t('Keep "{p0}"', { p0: suggested })}
-              className="rounded-md px-3 py-1.5 text-[12px] text-content/70 hover:bg-content/8 hover:text-content"
+              variant="secondary"
             >
               {t("Cancel")}
-            </button>
-            <button
-              type="submit"
-              className="rounded-md bg-selection px-3 py-1.5 text-[12px] font-medium hover:bg-selection-hover"
-            >
+            </Button>
+            <Button type="submit" variant="primary">
               {t("Rename")}
-            </button>
+            </Button>
           </div>
         </form>
       </div>

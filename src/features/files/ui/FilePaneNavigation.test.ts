@@ -228,10 +228,12 @@ describe("file pane source navigation", () => {
       // watcher IPC must not consume a one-shot file-read response.
       disk.content = "first line";
       const view = await render(path, 3);
-      await act(async () => vi.waitFor(() => {
-        expect(view.state.doc.lines).toBe(1);
-        expect(view.state.selection.main.head).toBe(1);
-      }));
+      await act(async () =>
+        vi.waitFor(() => {
+          expect(view.state.doc.lines).toBe(1);
+          expect(view.state.selection.main.head).toBe(1);
+        }),
+      );
       const button = document.createElement("button");
       container.append(button);
       if (interaction === "selection")

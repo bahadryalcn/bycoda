@@ -1,3 +1,6 @@
+import { Alert } from "../../../shared/ui/Alert";
+import { Button } from "../../../shared/ui/Button";
+import { Checkbox } from "../../../shared/ui/Checkbox";
 import { t, useLocale } from "../../../shared/i18n";
 import { useState } from "react";
 import { archiveRemoteOutboxIssue, useRemoteOutboxIssues } from "../model/remoteOutbox";
@@ -16,12 +19,9 @@ export function RemoteOutboxNotice({
   if (!issues.length) return null;
   const issue = issues[0];
   return (
-    <section
-      role="alert"
-      className="shrink-0 space-y-2 border-b border-stroke bg-content/5 px-4 py-3 text-xs text-content"
-    >
+    <Alert role="alert" tone="warning">
       <p className="font-medium">{t("An unfinished request needs recovery")}</p>
-      <p className="leading-relaxed text-content/75">
+      <p className="leading-relaxed text-content">
         {issues.length}
         {t(" saved request")}
         {issues.length === 1 ? "" : "s"}
@@ -29,22 +29,21 @@ export function RemoteOutboxNotice({
           " could not be read. Check the conversations on the host before sending again; a request may already have run.",
         )}
       </p>
-      <p className="break-all text-content/75">
+      <p className="break-all text-content">
         {t("Project: ")}
         {issue.project}
       </p>
       <label className="flex items-start gap-2">
-        <input
-          type="checkbox"
+        <Checkbox
           checked={reviewed === issue.key}
           onChange={(event) => setReviewed(event.target.checked ? issue.key : null)}
         />
         {t("I checked the host and understand that this request will not be retried.")}
       </label>
-      <button
+      <Button
         type="button"
         disabled={reviewed !== issue.key}
-        className="rounded border border-content/25 px-3 py-1.5 disabled:opacity-50 focus-visible:outline-2 focus-visible:outline-accent"
+
         onClick={() => {
           try {
             archiveRemoteOutboxIssue(issue.key);
@@ -54,10 +53,15 @@ export function RemoteOutboxNotice({
             setError(reason instanceof Error ? reason.message : "Could not archive the request.");
           }
         }}
+        variant="secondary"
       >
         {t("Archive unreadable request")}
-      </button>
-      {error ? <p role="alert">{error}</p> : null}
-    </section>
+      </Button>
+      {error ? (
+        <Alert role="alert" tone="warning">
+          {error}
+        </Alert>
+      ) : null}
+    </Alert>
   );
 }

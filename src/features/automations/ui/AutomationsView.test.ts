@@ -39,6 +39,15 @@ let root: Root;
 
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  vi.stubGlobal(
+    "ResizeObserver",
+    class {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    },
+  );
+  Element.prototype.scrollIntoView = vi.fn();
   const storage = new Map<string, string>();
   vi.stubGlobal("localStorage", {
     getItem: (key: string) => storage.get(key) ?? null,
@@ -288,4 +297,162 @@ it("has no label field on triggers that are not about labels", async () => {
   await renderSentence(createAutomationTrigger("github", "issue_reopened"));
   expect(container.querySelector('input[aria-label="Label"]')).toBeNull();
   expect(container.textContent).toContain("Issue reopened");
+});
+
+async function renderControlEditor(overrides: Partial<Automation> = {}) {
+  const automation: Automation = {
+    ...newAutomationDraft("/work/controls", "codex", "model"),
+    id: "controls-automation",
+    name: "Controls review",
+    prompt: "Review changes",
+    nextRunAt: 0,
+    createdAt: 1,
+    updatedAt: 1,
+    ...overrides,
+  };
+  invoke.mockImplementation(async (command: string, args?: any) => {
+    if (command === "automations_list") return [automation];
+    if (command === "automations_upsert") return { ...args.automation, createdAt: 1, updatedAt: 2 };
+    if (command.endsWith("_status")) return { connected: false };
+    return [];
+  });
+  await act(async () =>
+    root.render(
+      createElement(AutomationsView, {
+        cwd: automation.cwd,
+        recents: [],
+        onClose: vi.fn(),
+        onLaunch: vi.fn(),
+        onOpenSession: vi.fn(),
+        onOpenBackgroundSession: vi.fn(),
+      }),
+    ),
+  );
+  await act(async () =>
+    container.querySelector<HTMLButtonElement>('[aria-label="Open Controls review"]')!.click(),
+  );
+  return automation;
+}
+
+async function changeInput(input: HTMLInputElement, value: string) {
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, value);
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+}
+
+it("keeps edited drafts while the compact filter popover changes and resets the collection", async () => {
+  await renderControlEditor();
+  const name = container.querySelector<HTMLInputElement>('[aria-label="Automation name"]')!;
+  await changeInput(name, "Retained draft");
+  const filter = container.querySelector<HTMLButtonElement>(
+    'button[aria-label="Filter automations"]',
+  )!;
+  await act(async () => filter.click());
+  const search = document.querySelector<HTMLInputElement>(
+    '[role="dialog"][aria-label="Filter automations"] input',
+  )!;
+  await changeInput(search, "no-match");
+  expect(filter.hasAttribute("data-button-selected")).toBe(true);
+  expect(container.querySelector('[aria-label="Open Controls review"]')).toBeNull();
+  expect(name.value).toBe("Retained draft");
+  const reset = Array.from(
+    document.querySelectorAll<HTMLButtonElement>(
+      '[role="dialog"][aria-label="Filter automations"] button',
+    ),
+  ).find((node) => node.textContent?.trim() === "Reset")!;
+  await act(async () => reset.click());
+  expect(container.querySelector('[aria-label="Open Controls review"]')).not.toBeNull();
+  expect(filter.hasAttribute("data-button-selected")).toBe(false);
+  expect(name.value).toBe("Retained draft");
+});
+
+it("searches trigger events by provider while retaining readiness gates and saves added schedules", async () => {
+  const automation = await renderControlEditor();
+  const trigger = container.querySelector<HTMLButtonElement>('button[aria-label^="Add Trigger:"]')!;
+  const before = container.querySelectorAll('[aria-label="Remove trigger"]').length;
+  await act(async () => trigger.click());
+  const search = document.querySelector<HTMLInputElement>('input[placeholder="Search triggers"]')!;
+  await changeInput(search, "GitHub");
+  const unavailable = Array.from(document.querySelectorAll<HTMLButtonElement>('[role="option"]'));
+  expect(unavailable.length).toBeGreaterThan(0);
+  expect(unavailable.every((node) => node.disabled)).toBe(true);
+  expect(document.body.textContent).toContain("Connect GitHub in Settings");
+  await act(async () => unavailable[0].click());
+  expect(container.querySelectorAll('[aria-label="Remove trigger"]')).toHaveLength(before);
+  await changeInput(search, "Daily");
+  const daily = Array.from(document.querySelectorAll<HTMLButtonElement>('[role="option"]')).find(
+    (node) => !node.disabled && node.textContent?.includes("Daily"),
+  )!;
+  await act(async () => daily.click());
+  expect(container.querySelectorAll('[aria-label="Remove trigger"]')).toHaveLength(before + 1);
+  const save = Array.from(container.querySelectorAll<HTMLButtonElement>("button")).find(
+    (node) => node.textContent?.trim() === "Save",
+  )!;
+  await act(async () => save.click());
+  const saved = invoke.mock.calls.find(([command]) => command === "automations_upsert")![1]
+    .automation;
+  expect(saved.triggers).toHaveLength(automation.triggers.length + 1);
+  expect(saved.triggers.at(-1)).toEqual(
+    expect.objectContaining({ kind: "time", scheduleKind: "daily" }),
+  );
+});
+
+it("uses the shared action menu while preserving the native delete confirmation gate", async () => {
+  await renderControlEditor();
+  const previousConfirmation = window.confirm;
+  const confirmation = vi.fn(() => false);
+  window.confirm = confirmation;
+  try {
+    const actions = container.querySelector<HTMLButtonElement>(
+      '[aria-label="Automation actions"]',
+    )!;
+    await act(async () => actions.click());
+    const item = document.querySelector<HTMLButtonElement>('[role="menuitem"]')!;
+    expect(item.textContent).toContain("Delete automation");
+    await act(async () => item.click());
+    expect(confirmation).toHaveBeenCalledOnce();
+    expect(invoke.mock.calls.some(([command]) => command === "automations_delete")).toBe(false);
+    expect(document.querySelector('[role="menu"]')).toBeNull();
+    expect(document.activeElement).toBe(actions);
+  } finally {
+    window.confirm = previousConfirmation;
+  }
+});
+
+it("blocks duplicate run actions and deletion while a manual run is pending", async () => {
+  await renderControlEditor();
+  const previous = invoke.getMockImplementation()!;
+  let finish!: (run: unknown) => void;
+  const pending = new Promise((resolve) => {
+    finish = resolve;
+  });
+  invoke.mockImplementation((command: string, args?: unknown) =>
+    command === "automation_run_now" ? pending : previous(command, args),
+  );
+  const run = Array.from(container.querySelectorAll<HTMLButtonElement>("button")).find(
+    (node) => node.textContent?.trim() === "Run now",
+  )!;
+  await act(async () => run.click());
+  expect(run.disabled).toBe(true);
+  await act(async () => run.click());
+  expect(invoke.mock.calls.filter(([command]) => command === "automation_run_now")).toHaveLength(1);
+  await act(async () =>
+    container.querySelector<HTMLButtonElement>('[aria-label="Automation actions"]')!.click(),
+  );
+  expect(document.querySelector<HTMLButtonElement>('[role="menuitem"]')!.disabled).toBe(true);
+  await act(async () =>
+    finish({ id: "run", automationId: "controls-automation", status: "running", createdAt: 1 }),
+  );
+  expect(run.disabled).toBe(false);
+});
+
+it("keeps the twenty-trigger limit visible and unavailable", async () => {
+  await renderControlEditor({
+    triggers: Array.from({ length: 20 }, () => createAutomationTrigger("time", "daily")),
+  });
+  expect(
+    container.querySelector<HTMLButtonElement>('button[aria-label^="Add Trigger:"]')!.disabled,
+  ).toBe(true);
+  expect(container.querySelectorAll('[aria-label="Remove trigger"]')).toHaveLength(20);
 });

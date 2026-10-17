@@ -1,3 +1,7 @@
+import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
+import { NativeSelect } from "../../../shared/ui/Select";
+import { Button } from "../../../shared/ui/Button";
+import { Checkbox } from "../../../shared/ui/Checkbox";
 import { SearchInput } from "../../../shared/ui/SearchInput";
 import { useState } from "react";
 import { socialRows } from "../model/socialWorkspace";
@@ -119,7 +123,7 @@ export function Inbox({ client, snapshot, projects, run, onFilterChange }: Props
           <label>
             Konuşma ara
             <SearchInput
-              standalone
+              appearance="field"
               type="search"
               value={query}
               onChange={(event) => setQuery(event.target.value)}
@@ -128,33 +132,40 @@ export function Inbox({ client, snapshot, projects, run, onFilterChange }: Props
           </label>
           <label>
             Hesap
-            <select
+            <SearchableSelect
               value={accountFilter}
-              onChange={(event) => setAccountFilter(event.target.value)}
-            >
-              <option value="">Tüm hesaplar</option>
-              {snapshot.accounts.map((item) => (
-                <option key={item.id} value={item.id}>
-                  {item.name}
-                </option>
-              ))}
-            </select>
+              label={"Hesap"}
+              options={[
+                { value: "", label: "Tüm hesaplar" },
+                ...snapshot.accounts.map((item) => ({
+                  value: item.id,
+                  label: item.name,
+                })),
+              ]}
+              onChange={(nextValue) => setAccountFilter(nextValue)}
+              searchLocale="tr"
+            />
           </label>
           <label>
             İleti türü
-            <select value={kindFilter} onChange={(event) => setKindFilter(event.target.value)}>
+            <NativeSelect
+              value={kindFilter}
+              onChange={(event) => setKindFilter(event.target.value)}
+            >
               <option value="">Mesaj ve yorumlar</option>
               <option value="message">Mesajlar</option>
               <option value="comment">Yorumlar</option>
-            </select>
+            </NativeSelect>
           </label>
-          <button
+          <Button
+            type="submit"
+            variant="secondary"
             disabled={!snapshot.hostOnline || !syncAccounts.length || syncing}
             onClick={() => void synchronize()}
           >
             <RefreshCw aria-hidden="true" />
             {syncing ? "Yenileniyor…" : "Konuşmaları yenile"}
-          </button>
+          </Button>
           {unsupportedAccounts.map((item) => (
             <Notice
               key={item.id}
@@ -181,8 +192,7 @@ export function Inbox({ client, snapshot, projects, run, onFilterChange }: Props
             </Notice>
           ))}
           <label className="social-select-all">
-            <input
-              type="checkbox"
+            <Checkbox
               aria-label="Görünen tüm konuşmaları seç"
               checked={threads.length > 0 && threads.every((item) => checkedIds.includes(item.id))}
               disabled={!threads.length}
@@ -194,9 +204,14 @@ export function Inbox({ client, snapshot, projects, run, onFilterChange }: Props
           </label>
           <div className="social-bulk-toolbar">
             <span>{checkedThreads.length} konuşma seçili</span>
-            <button disabled={!checkedIds.length} onClick={() => setCheckedIds([])}>
+            <Button
+              type="submit"
+              variant="secondary"
+              disabled={!checkedIds.length}
+              onClick={() => setCheckedIds([])}
+            >
               Seçimi temizle
-            </button>
+            </Button>
           </div>
           <Composer title="Seçili konuşmalara yanıt hazırla">
             <SocialBulkComposer
@@ -213,8 +228,7 @@ export function Inbox({ client, snapshot, projects, run, onFilterChange }: Props
               threads.map((item) => (
                 <div className="social-selection-row" key={item.id}>
                   <label>
-                    <input
-                      type="checkbox"
+                    <Checkbox
                       aria-label={`${contacts.get(item.contactId)?.name ?? "Kişi"} konuşmasını seç`}
                       checked={checkedIds.includes(item.id)}
                       onChange={(event) =>
@@ -226,7 +240,9 @@ export function Inbox({ client, snapshot, projects, run, onFilterChange }: Props
                       }
                     />
                   </label>
-                  <button
+                  <Button
+                    type="submit"
+                    variant="tab"
                     className="social-row"
                     aria-pressed={selected === item.id}
                     onClick={() => setSelected(item.id)}
@@ -241,7 +257,7 @@ export function Inbox({ client, snapshot, projects, run, onFilterChange }: Props
                     {item.reviewReason || !item.projectId ? (
                       <StatusBadge status="review" label="Proje seçilmeli" />
                     ) : null}
-                  </button>
+                  </Button>
                 </div>
               ))
             ) : (
@@ -286,30 +302,30 @@ export function Inbox({ client, snapshot, projects, run, onFilterChange }: Props
               ) : null}
               <label>
                 İlgili proje
-                <select
+                <SearchableSelect
                   value={thread.projectId ?? ""}
-                  onChange={(event) =>
+                  label={"İlgili proje"}
+                  options={[
+                    { value: "", label: "Proje seçin", disabled: true },
+                    ...projects
+                      .filter((project) => account?.grants[project.id]?.includes("draft"))
+                      .map((project) => ({
+                        value: project.id,
+                        label: project.name || project.cwd,
+                      })),
+                  ]}
+                  onChange={(nextValue) =>
                     void run(
                       () =>
                         client.request("thread.assign", {
                           id: thread.id,
-                          projectId: event.target.value,
+                          projectId: nextValue,
                         }),
                       "Konuşmanın projesi güncellendi.",
                     )
                   }
-                >
-                  <option value="" disabled>
-                    Proje seçin
-                  </option>
-                  {projects
-                    .filter((project) => account?.grants[project.id]?.includes("draft"))
-                    .map((project) => (
-                      <option key={project.id} value={project.id}>
-                        {project.name || project.cwd}
-                      </option>
-                    ))}
-                </select>
+                  searchLocale="tr"
+                />
               </label>
               <div className="social-conversation">
                 {detail.loading ? (

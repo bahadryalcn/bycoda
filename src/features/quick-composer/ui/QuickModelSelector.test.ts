@@ -98,11 +98,12 @@ it("browses one provider at a time and selects a model without closing settings"
 });
 
 it("updates effort inline and closes with Escape", () => {
-  const slider = container.querySelector<HTMLInputElement>('input[type="range"]')!;
-  act(() => {
-    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(slider, "1");
-    slider.dispatchEvent(new Event("input", { bubbles: true }));
-  });
+  const slider = container.querySelector<HTMLElement>('[role="slider"]')!;
+  act(() =>
+    slider.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "End", bubbles: true, cancelable: true }),
+    ),
+  );
   expect(onSettingsChange).toHaveBeenCalledWith({ effort: "high" });
   act(() => slider.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })));
   expect(onClose).toHaveBeenCalledOnce();
@@ -158,4 +159,26 @@ it("resets reasoning and fast mode to saved user defaults", () => {
 it("keeps permissions outside the model picker and focuses model search", () => {
   expect(document.activeElement).toBe(container.querySelector('[aria-label="Search models"]'));
   expect(container.querySelector('[aria-label="Permissions"]')).toBeNull();
+});
+it("does not commit a model while its search input is composing", () => {
+  const search = container.querySelector<HTMLInputElement>('input[aria-label="Search models"]')!;
+  act(() =>
+    search.dispatchEvent(
+      new KeyboardEvent("keydown", {
+        key: "Enter",
+        isComposing: true,
+        bubbles: true,
+        cancelable: true,
+      }),
+    ),
+  );
+  expect(onChange).not.toHaveBeenCalled();
+  expect(onClose).not.toHaveBeenCalled();
+  act(() =>
+    search.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }),
+    ),
+  );
+  expect(onChange).toHaveBeenCalledOnce();
+  expect(onClose).not.toHaveBeenCalled();
 });

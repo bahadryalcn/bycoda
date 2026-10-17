@@ -31,7 +31,7 @@
 }
 
 .pdf-text-layer ::selection {
-  background: var(--palette-rgb_0_100_255_0_3);
+  background: var(--color-selection-strong);
   color: transparent;
 }
 

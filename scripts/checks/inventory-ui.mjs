@@ -2,6 +2,10 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import ts from "@typescript/typescript6";
+import { createHash } from "node:crypto";
+
+export const uiFingerprint = (text) =>
+  createHash("sha256").update(text.replace(/\s+/g, " ").trim()).digest("hex").slice(0, 20);
 
 const nativeTags = new Set([
   "button",
@@ -70,6 +74,48 @@ export function scanSource(file, source) {
   };
   const imports = new Map();
   const line = (node) => ast.getLineAndCharacterOfPosition(node.getStart(ast)).line + 1;
+  // Resolve local immutable recipes without executing application code. Scope
+  // lookup prevents a same-named field in another component from being approved.
+  function classText(expression, seen = new Set()) {
+    if (!expression) return "";
+    if (ts.isStringLiteralLike(expression)) return expression.text;
+    if (ts.isParenthesizedExpression(expression)) return classText(expression.expression, seen);
+    if (ts.isConditionalExpression(expression))
+      return `${classText(expression.whenTrue, seen)} ${classText(expression.whenFalse, seen)}`;
+    if (ts.isTemplateExpression(expression))
+      return (
+        expression.head.text +
+        expression.templateSpans
+          .map((span) => `${classText(span.expression, seen)}${span.literal.text}`)
+          .join("")
+      );
+    if (ts.isBinaryExpression(expression))
+      return `${classText(expression.left, seen)} ${classText(expression.right, seen)}`;
+    if (ts.isIdentifier(expression) && !seen.has(expression)) {
+      const next = new Set(seen).add(expression);
+      for (let scope = expression.parent; scope; scope = scope.parent) {
+        if (
+          ts.isFunctionLike(scope) &&
+          scope.parameters.some(
+            (parameter) =>
+              ts.isIdentifier(parameter.name) && parameter.name.text === expression.text,
+          )
+        )
+          return "";
+        if (!ts.isBlock(scope) && !ts.isSourceFile(scope)) continue;
+        for (const statement of scope.statements) {
+          if (!ts.isVariableStatement(statement)) continue;
+          for (const declaration of statement.declarationList.declarations) {
+            if (ts.isIdentifier(declaration.name) && declaration.name.text === expression.text)
+              return statement.declarationList.flags & ts.NodeFlags.Const
+                ? classText(declaration.initializer, next)
+                : "";
+          }
+        }
+      }
+    }
+    return "";
+  }
   for (const node of ast.statements) {
     if (
       (!ts.isImportDeclaration(node) && !ts.isExportDeclaration(node)) ||
@@ -126,6 +172,7 @@ export function scanSource(file, source) {
       const role = value("role");
       if (nativeTags.has(tag) || /^(?:motion|m)\.(?:button|input|select|textarea)$/.test(tag)) {
         result.nativeControls.push({
+          fingerprint: uiFingerprint(node.getText(ast)),
           line: line(node),
           tag,
           type: value("type"),
@@ -136,7 +183,12 @@ export function scanSource(file, source) {
         });
       }
       if (interactiveRoles.has(role) && !nativeTags.has(tag)) {
-        result.interactiveElements.push({ line: line(node), tag, role });
+        result.interactiveElements.push({
+          fingerprint: uiFingerprint(node.getText(ast)),
+          line: line(node),
+          tag,
+          role,
+        });
       }
       const imported = imports.get(tag);
       if (
@@ -151,7 +203,11 @@ export function scanSource(file, source) {
           variant: value("variant"),
         });
         if (!imported.module.startsWith("src/shared/ui/arc/")) {
-          const className = value("className");
+          const classAttribute = attributes.get("className")?.initializer;
+          const className =
+            classAttribute && ts.isJsxExpression(classAttribute)
+              ? classText(classAttribute.expression) || "<expression>"
+              : value("className");
           const style = attributes.get("style")?.initializer;
           const expression = style && ts.isJsxExpression(style) ? style.expression : undefined;
           const properties =
@@ -168,6 +224,7 @@ export function scanSource(file, source) {
             visual.length
           ) {
             result.presentationOverrides.push({
+              fingerprint: uiFingerprint(`${node.getText(ast)}\nresolved-class:${className ?? ""}`),
               line: line(node),
               tag,
               className,
@@ -193,6 +250,12 @@ export function scanStyles(file, source) {
     /color-mix\(|(?:linear|radial|conic)-gradient\(|var\(--palette-[\w-]+/g,
   )) {
     result.localColorRecipes.push({
+      fingerprint: uiFingerprint(
+        text.slice(
+          text.lastIndexOf(";", match.index) + 1,
+          text.indexOf(";", match.index) + 1 || text.length,
+        ),
+      ),
       line: line(match.index),
       kind: match[0].startsWith("var(") ? "palette-reference" : match[0].slice(0, -1),
     });
@@ -201,11 +264,17 @@ export function scanStyles(file, source) {
     const selector = match[1].trim();
     if (
       !selector.startsWith("@") &&
-      /\b(?:button|input|textarea|select)\b|[.\w-]+(?:[Bb]utton|[Ii]nput|[Cc]ontrol|[Tt]rigger)[\w-]*/.test(
+      /\b(?:button|input|textarea|select)\b|[.\w-]+(?:[Bb]utton|[Ii]nput|[Cc]ontrol|[Tt]rigger)[\w-]*|\[\s*role\s*=\s*["']?(?:alert|status|combobox|listbox|checkbox|switch|radio|menuitem|tab)\b/.test(
         selector,
       )
     ) {
-      result.controlSelectors.push({ line: line(match.index + match[1].search(/\S/)), selector });
+      result.controlSelectors.push({
+        line: line(match.index + match[1].search(/\S/)),
+        selector,
+        fingerprint: uiFingerprint(
+          selector + text.slice(match.index + match[0].length, text.indexOf("}", match.index)),
+        ),
+      });
     }
   }
   return result;

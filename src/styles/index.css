@@ -16,6 +16,21 @@
 
 @custom-variant dark (&:where(html:not(.theme-light), html:not(.theme-light) *));
 
+/* Shared control geometry. Compact preserves the established desktop sizes. */
+html[data-control-density="comfortable"] {
+  --ui-segment-height: 2rem;
+  --ui-control-height: 2.5rem;
+  --ui-control-height-compact: 2rem;
+  --ui-control-height-lg: 2.75rem;
+}
+html[data-control-density="touch"] {
+  --ui-control-clear-size: 2.75rem;
+  --ui-segment-height: 2.75rem;
+  --ui-control-height: 2.75rem;
+  --ui-control-height-compact: 2.75rem;
+  --ui-control-height-lg: 3rem;
+}
+
 html [data-transcript-content],
 html [data-session-composer].max-w-4xl {
   max-width: var(--appearance-chat-width, 56rem);
@@ -125,6 +140,132 @@ html.appearance-word-wrap .agent-markdown [data-streamdown="code-block-body"] co
   --color-diff-del-gutter: color-mix(in srgb, var(--color-diff-del) 25%, transparent);
 }
 
+/* Shared action tones: hierarchy is selected by the adapter, intent by these roles.
+   Keep the neutral primary contract and the user's persisted accent contrast pair. */
+:root {
+  --ui-annotation-highlight: color-mix(in oklch, var(--color-accent) 12%, transparent);
+  --ui-annotation-highlight-selected: color-mix(in oklch, var(--color-accent) 22%, transparent);
+  --ui-transparency-grid-ink: color-mix(in srgb, var(--palette-hex808080) 10%, transparent);
+  --ui-transparency-grid-image: linear-gradient(45deg, var(--ui-transparency-grid-ink) 25%, transparent 25%, transparent 75%, var(--ui-transparency-grid-ink) 75%), linear-gradient(45deg, var(--ui-transparency-grid-ink) 25%, transparent 25%, transparent 75%, var(--ui-transparency-grid-ink) 75%);
+  --ui-tone-status-on-solid: var(--palette-scrim);
+  --ui-tone-status-interaction-ink: var(--palette-solidInk);
+  --ui-control-disabled-fg: var(--ui-text-disabled);
+  --ui-control-disabled-surface: var(--ui-surface-muted);
+  --ui-control-disabled-border: var(--color-stroke);
+  --ui-tone-neutral-fg: var(--color-content);
+  --ui-tone-neutral-solid: var(--color-content);
+  --ui-tone-neutral-on-solid: var(--palette-scrim);
+  --ui-tone-neutral-subtle: var(--color-selection-subtle);
+  --ui-tone-neutral-border: var(--color-stroke);
+  --ui-tone-neutral-hover: var(--ui-surface-muted);
+  --ui-tone-neutral-pressed: var(--ui-surface-pressed);
+  --ui-tone-neutral-solid-hover: var(--ui-primary-hover);
+  --ui-tone-neutral-solid-pressed: var(--ui-primary-pressed);
+  --ui-tone-neutral-disabled-fg: var(--ui-control-disabled-fg);
+  --ui-tone-neutral-disabled-surface: var(--ui-control-disabled-surface);
+  --ui-tone-neutral-disabled-border: var(--ui-control-disabled-border);
+  --ui-tone-accent-fg: color-mix(in srgb, var(--ui-tone-accent-solid) 35%, var(--color-content));
+  --ui-tone-accent-solid: var(--user-accent-color, var(--color-accent));
+  --ui-tone-accent-on-solid: var(--user-accent-foreground, var(--palette-scrim));
+  --ui-tone-accent-subtle: color-mix(in srgb, var(--ui-tone-accent-fg) 9%, var(--ui-surface));
+  --ui-tone-accent-border: color-mix(in srgb, var(--ui-tone-accent-fg) 60%, var(--color-stroke));
+  --ui-tone-accent-hover: color-mix(in srgb, var(--ui-tone-accent-fg) 14%, var(--ui-surface));
+  --ui-tone-accent-pressed: color-mix(in srgb, var(--ui-tone-accent-fg) 20%, var(--ui-surface));
+  /* Keep the runtime contrast pair exact, even near the black/white crossover. */
+  --ui-tone-accent-solid-hover: var(--ui-tone-accent-solid);
+  --ui-tone-accent-solid-pressed: var(--ui-tone-accent-solid);
+  --ui-tone-accent-disabled-fg: var(--ui-control-disabled-fg);
+  --ui-tone-accent-disabled-surface: var(--ui-control-disabled-surface);
+  --ui-tone-accent-disabled-border: var(--ui-control-disabled-border);
+  --ui-tone-info-fg: var(--color-info);
+  --ui-tone-info-solid: var(--color-info);
+  --ui-tone-info-on-solid: var(--ui-tone-status-on-solid);
+  --ui-tone-info-subtle: color-mix(in srgb, var(--ui-tone-info-fg) 9%, var(--ui-surface));
+  --ui-tone-info-border: color-mix(in srgb, var(--ui-tone-info-fg) 60%, var(--color-stroke));
+  --ui-tone-info-hover: color-mix(in srgb, var(--ui-tone-info-fg) 14%, var(--ui-surface));
+  --ui-tone-info-pressed: color-mix(in srgb, var(--ui-tone-info-fg) 20%, var(--ui-surface));
+  --ui-tone-info-solid-hover: color-mix(
+    in srgb,
+    var(--ui-tone-info-solid) 94%,
+    var(--ui-tone-status-interaction-ink)
+  );
+  --ui-tone-info-solid-pressed: color-mix(
+    in srgb,
+    var(--ui-tone-info-solid) 90%,
+    var(--ui-tone-status-interaction-ink)
+  );
+  --ui-tone-info-disabled-fg: var(--ui-control-disabled-fg);
+  --ui-tone-info-disabled-surface: var(--ui-control-disabled-surface);
+  --ui-tone-info-disabled-border: var(--ui-control-disabled-border);
+  --ui-tone-success-fg: var(--color-success);
+  --ui-tone-success-solid: var(--color-success);
+  --ui-tone-success-on-solid: var(--ui-tone-status-on-solid);
+  --ui-tone-success-subtle: color-mix(in srgb, var(--ui-tone-success-fg) 9%, var(--ui-surface));
+  --ui-tone-success-border: color-mix(in srgb, var(--ui-tone-success-fg) 60%, var(--color-stroke));
+  --ui-tone-success-hover: color-mix(in srgb, var(--ui-tone-success-fg) 14%, var(--ui-surface));
+  --ui-tone-success-pressed: color-mix(in srgb, var(--ui-tone-success-fg) 20%, var(--ui-surface));
+  --ui-tone-success-solid-hover: color-mix(
+    in srgb,
+    var(--ui-tone-success-solid) 94%,
+    var(--ui-tone-status-interaction-ink)
+  );
+  --ui-tone-success-solid-pressed: color-mix(
+    in srgb,
+    var(--ui-tone-success-solid) 90%,
+    var(--ui-tone-status-interaction-ink)
+  );
+  --ui-tone-success-disabled-fg: var(--ui-control-disabled-fg);
+  --ui-tone-success-disabled-surface: var(--ui-control-disabled-surface);
+  --ui-tone-success-disabled-border: var(--ui-control-disabled-border);
+  --ui-tone-warning-fg: var(--color-warning);
+  --ui-tone-warning-solid: var(--color-warning);
+  --ui-tone-warning-on-solid: var(--ui-tone-status-on-solid);
+  --ui-tone-warning-subtle: color-mix(in srgb, var(--ui-tone-warning-fg) 9%, var(--ui-surface));
+  --ui-tone-warning-border: color-mix(in srgb, var(--ui-tone-warning-fg) 60%, var(--color-stroke));
+  --ui-tone-warning-hover: color-mix(in srgb, var(--ui-tone-warning-fg) 14%, var(--ui-surface));
+  --ui-tone-warning-pressed: color-mix(in srgb, var(--ui-tone-warning-fg) 20%, var(--ui-surface));
+  --ui-tone-warning-solid-hover: color-mix(
+    in srgb,
+    var(--ui-tone-warning-solid) 94%,
+    var(--ui-tone-status-interaction-ink)
+  );
+  --ui-tone-warning-solid-pressed: color-mix(
+    in srgb,
+    var(--ui-tone-warning-solid) 90%,
+    var(--ui-tone-status-interaction-ink)
+  );
+  --ui-tone-warning-disabled-fg: var(--ui-control-disabled-fg);
+  --ui-tone-warning-disabled-surface: var(--ui-control-disabled-surface);
+  --ui-tone-warning-disabled-border: var(--ui-control-disabled-border);
+  --ui-tone-danger-fg: var(--color-danger);
+  --ui-tone-danger-solid: var(--color-danger);
+  --ui-tone-danger-on-solid: var(--ui-tone-status-on-solid);
+  --ui-tone-danger-subtle: color-mix(in srgb, var(--ui-tone-danger-fg) 9%, var(--ui-surface));
+  --ui-tone-danger-border: color-mix(in srgb, var(--ui-tone-danger-fg) 60%, var(--color-stroke));
+  --ui-tone-danger-hover: color-mix(in srgb, var(--ui-tone-danger-fg) 14%, var(--ui-surface));
+  --ui-tone-danger-pressed: color-mix(in srgb, var(--ui-tone-danger-fg) 20%, var(--ui-surface));
+  --ui-tone-danger-solid-hover: color-mix(
+    in srgb,
+    var(--ui-tone-danger-solid) 94%,
+    var(--ui-tone-status-interaction-ink)
+  );
+  --ui-tone-danger-solid-pressed: color-mix(
+    in srgb,
+    var(--ui-tone-danger-solid) 90%,
+    var(--ui-tone-status-interaction-ink)
+  );
+  --ui-tone-danger-disabled-fg: var(--ui-control-disabled-fg);
+  --ui-tone-danger-disabled-surface: var(--ui-control-disabled-surface);
+  --ui-tone-danger-disabled-border: var(--ui-control-disabled-border);
+}
+
+html.theme-light {
+  --ui-tone-neutral-on-solid: var(--palette-solidInk);
+  --ui-primary-pressed: color-mix(in oklab, var(--color-content) 90%, var(--color-background-base));
+  --ui-tone-status-on-solid: var(--palette-solidInk);
+  --ui-tone-status-interaction-ink: var(--palette-scrim);
+}
+
 :root {
   --ui-font-secondary: 0.8125rem;
   --ui-font-caption: 0.75rem;
@@ -168,6 +309,13 @@ html.appearance-word-wrap .agent-markdown [data-streamdown="code-block-body"] co
   --ui-control-thumb-shadow: 0 1px 4px color-mix(in oklab, var(--color-scrim) 20%, transparent);
   --ui-control-height: 2.25rem;
   --ui-control-height-compact: 1.75rem;
+  --ui-control-height-sm: var(--ui-control-height-compact);
+  --ui-control-height-md: var(--ui-control-height);
+  --ui-control-height-lg: 2.5rem;
+  --ui-control-radius: 0.375rem;
+  --ui-control-checkbox-size: 1rem;
+  --ui-overlay-backdrop: var(--palette-oklch_0_08_0_none_0_68);
+  --ui-focus-ring-color: var(--color-accent);
   --ui-focus-width: 2px;
   --ui-focus-offset: 2px;
   --motion-reorder-duration: 160ms;

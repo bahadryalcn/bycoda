@@ -1,3 +1,5 @@
+import { Alert } from "../../../shared/ui/Alert";
+import { Button } from "../../../shared/ui/Button";
 import { t, useLocale } from "../../../shared/i18n";
 import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
 import { useRef, useState, useSyncExternalStore } from "react";
@@ -104,9 +106,9 @@ export function AntigravityAccountSettings({ embedded = false }: { embedded?: bo
       </SecondaryButton>
       {status && <p role="status">{t(status)}</p>}
       {error && (
-        <p role="alert" className="text-danger">
+        <Alert tone="danger" role="alert">
           {t(error)}
-        </p>
+        </Alert>
       )}
     </div>
   );
@@ -129,15 +131,16 @@ export function AntigravityAccountSettings({ embedded = false }: { embedded?: bo
               </p>
             </div>
           </div>
-          <button
+          <Button
+            variant="ghost"
+            size="sm"
             type="button"
             aria-expanded={expanded}
             aria-controls="antigravity-account-setup"
             onClick={() => setExpanded((value) => !value)}
-            className="rounded-md border border-content/10 px-3 py-1.5 text-[11px] text-content/70 hover:bg-content/5"
           >
             {expanded ? t("Hide account setup") : t("Set up account")}
-          </button>
+          </Button>
         </div>
         <div
           id="antigravity-account-setup"

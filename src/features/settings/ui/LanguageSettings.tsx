@@ -1,3 +1,4 @@
+import { Badge } from "../../../shared/ui/Badge";
 import { useState } from "react";
 import {
   getLanguagePreference,
@@ -54,9 +55,9 @@ export function LanguageSettings() {
           </span>
         ) : null}
         {error ? (
-          <span role="alert" className="text-[12px] text-danger">
+          <Badge tone="danger" role="alert">
             {t("Could not load the language. Please try again.")}
-          </span>
+          </Badge>
         ) : null}
       </Row>
       <DomainLanguageRow domain="git" />
@@ -112,9 +113,9 @@ function DomainLanguageRow({ domain }: { domain: LanguageDomain }) {
         </span>
       ) : null}
       {error ? (
-        <span role="alert" className="text-[12px] text-danger">
+        <Badge tone="danger" role="alert">
           {t("Could not load the language. Please try again.")}
-        </span>
+        </Badge>
       ) : null}
     </Row>
   );

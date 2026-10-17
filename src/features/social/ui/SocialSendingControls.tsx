@@ -1,3 +1,5 @@
+import { Checkbox } from "../../../shared/ui/Checkbox";
+import { Button } from "../../../shared/ui/Button";
 import { useState } from "react";
 import { Notice, StatusBadge, type Props } from "./socialShared";
 
@@ -35,16 +37,16 @@ export function SocialSendingControls({ snapshot, client, run }: Props) {
       {!snapshot.sendingEnabled ? (
         <div className="social-confirm">
           <label className="social-inline-check">
-            <input
-              type="checkbox"
+            <Checkbox
               checked={confirmed}
               onChange={(event) => setConfirmed(event.target.checked)}
             />
             Onayladığım işler ve etkin kurallar gerçek hesaplarda gönderim yapabilir.
           </label>
-          <button
+          <Button
+            variant="primary"
             type="button"
-            className="social-primary"
+
             disabled={!confirmed || !snapshot.hostOnline}
             onClick={() =>
               void run(
@@ -54,11 +56,12 @@ export function SocialSendingControls({ snapshot, client, run }: Props) {
             }
           >
             Onaylı gönderimleri aç
-          </button>
+          </Button>
         </div>
       ) : null}
       <div className="social-actions">
-        <button
+        <Button
+          variant="secondary"
           type="button"
           disabled={!snapshot.hostOnline}
           onClick={() =>
@@ -69,7 +72,7 @@ export function SocialSendingControls({ snapshot, client, run }: Props) {
           }
         >
           {snapshot.stopped ? "Tüm gönderimleri devam ettir" : "Tüm gönderimleri durdur"}
-        </button>
+        </Button>
       </div>
       <details className="social-settings">
         <summary>Gelen kutusunu otomatik yenile</summary>
@@ -82,7 +85,8 @@ export function SocialSendingControls({ snapshot, client, run }: Props) {
           label={snapshot.pollingEnabled ? "Otomatik yenileme açık" : "Otomatik yenileme kapalı"}
         />
         <div className="social-actions">
-          <button
+          <Button
+            variant="secondary"
             type="button"
             onClick={() =>
               void run(
@@ -94,7 +98,7 @@ export function SocialSendingControls({ snapshot, client, run }: Props) {
             }
           >
             {snapshot.pollingEnabled ? "Otomatik yenilemeyi kapat" : "Otomatik yenilemeyi aç"}
-          </button>
+          </Button>
         </div>
       </details>
     </section>

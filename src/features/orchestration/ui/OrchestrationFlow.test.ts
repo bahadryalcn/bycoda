@@ -1,3 +1,4 @@
+import { OrchestrationPreview } from "./OrchestrationPreview";
 // @vitest-environment happy-dom
 import { act, createElement, useState } from "react";
 import { createRoot, type Root } from "react-dom/client";
@@ -314,6 +315,14 @@ describe("orchestration composer and card", () => {
     expect(document.querySelector("[data-popover-side]")?.textContent).not.toContain("Worker One");
     // Arrows walk the list, then Enter opens and chooses its effort.
     await input(document.querySelector('[aria-label="Search assignment models"]')!, "Worker");
+    await act(async () =>
+      document
+        .querySelector('[aria-label="Search assignment models"]')!
+        .dispatchEvent(
+          new KeyboardEvent("keydown", { key: "Enter", bubbles: true, isComposing: true }),
+        ),
+    );
+    expect(document.querySelector('[role="menu"][aria-label="Worker One effort"]')).toBeNull();
     await press(document.querySelector('[aria-label="Search assignment models"]')!, "ArrowDown");
     await press(document.querySelector('[aria-label="Search assignment models"]')!, "Enter");
     expect(document.querySelector('[role="menu"][aria-label="Worker Two effort"]')).not.toBeNull();
@@ -366,6 +375,85 @@ describe("orchestration composer and card", () => {
         ],
       }),
     );
+  });
+  it("keeps keyboard parallel budget and instruction drafts through rejected confirmation and blocks duplicate start", async () => {
+    const choices = [{ harness: "codex" as const, model: "codex:one", name: "Worker One" }];
+    const initial: OrchestrationProposal = {
+      version: 1,
+      leadId: "lead",
+      cwd: "/repo",
+      request: "Build",
+      author: choices[0],
+      settings: { choices, maxWorkers: 2 },
+      status: "ready",
+      title: "Review the proposal",
+      summary: "",
+      tasks: [
+        {
+          id: "ui",
+          title: "UI task",
+          prompt: "Original instruction",
+          harness: "codex",
+          model: "codex:one",
+          files: [],
+          dependsOn: [],
+        },
+      ],
+    };
+    let fail!: (reason: Error) => void;
+    const confirm = vi.fn(
+      () =>
+        new Promise<void>((_resolve, reject) => {
+          fail = reject;
+        }),
+    );
+    let latest = initial;
+    function Card() {
+      const [proposal, setProposal] = useState(initial);
+      latest = proposal;
+      return createElement(
+        OrchestrationActions.Provider,
+        {
+          value: {
+            update: (_lead, _block, next) => setProposal(next),
+            confirm,
+            retry: () => {},
+            open: () => {},
+          },
+        },
+        createElement(OrchestrationPreview, {
+          block: { id: "card", role: "plan", text: "", orchestration: proposal },
+        }),
+      );
+    }
+    await act(async () => root.render(createElement(Card)));
+    const selected = container.querySelector<HTMLElement>(
+      '[aria-label="Parallel workers"] [role="radio"][aria-checked="true"]',
+    )!;
+    await press(selected, "ArrowRight");
+    expect(latest.settings.maxWorkers).toBe(3);
+    expect(confirm).not.toHaveBeenCalled();
+    await click(container.querySelector('[aria-label="Details for UI task"]')!);
+    await input(
+      container.querySelector<HTMLTextAreaElement>('[aria-label="Instructions for task 1"]')!,
+      "Retained instructions\n".repeat(20),
+    );
+    const start = button("Confirm & start");
+    await act(async () => {
+      start.click();
+      start.click();
+    });
+    expect(confirm).toHaveBeenCalledOnce();
+    expect(start.disabled).toBe(true);
+    await act(async () => fail(new Error("Approval unavailable")));
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain(
+      "Approval unavailable",
+    );
+    expect(
+      container.querySelector<HTMLTextAreaElement>('[aria-label="Instructions for task 1"]')?.value,
+    ).toBe("Retained instructions\n".repeat(20));
+    expect(latest.settings.maxWorkers).toBe(3);
+    expect(button("Confirm & start").disabled).toBe(false);
   });
   it("never offers confirmation for a proposal that is still being generated", async () => {
     const proposal: OrchestrationProposal = {

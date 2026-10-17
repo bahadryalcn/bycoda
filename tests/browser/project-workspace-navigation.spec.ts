@@ -68,6 +68,12 @@ test("rail appearance keeps two icon rows and applies independent translucent co
   const menu = page.getByRole("dialog", { name: "Appearance", exact: true });
   const icons = menu.getByRole("group", { name: "Project icons", exact: true });
   await expect(icons).toHaveCSS("height", "140px");
+  const iconHeading = await menu.getByText("Project icon", { exact: true }).boundingBox();
+  const automatic = await menu
+    .getByRole("button", { name: "Use automatic project icon", exact: true })
+    .boundingBox();
+  expect(iconHeading!.width).toBeGreaterThan(50);
+  expect(automatic!.x).toBeGreaterThanOrEqual(iconHeading!.x + iconHeading!.width);
   expect(await icons.evaluate((node) => node.scrollHeight > node.clientHeight)).toBe(true);
   await menu.getByLabel("Color 7", { exact: true }).click();
   const swatchColor = await menu
@@ -80,13 +86,10 @@ test("rail appearance keeps two icon rows and applies independent translucent co
   );
   await menu.getByText("Background colors", { exact: true }).click();
   await menu.getByRole("checkbox", { name: "Group header", exact: true }).check();
-  await menu
-    .getByRole("slider")
-    .first()
-    .evaluate((node: HTMLInputElement) => {
-      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(node, "35");
-      node.dispatchEvent(new Event("input", { bubbles: true }));
-    });
+  const visibility = menu.getByRole("slider").first();
+  await visibility.press("Home");
+  for (let index = 0; index < 3; index++) await visibility.press("PageUp");
+  for (let index = 0; index < 5; index++) await visibility.press("ArrowRight");
   await menu.getByRole("checkbox", { name: "Expanded contents", exact: true }).check();
   await menu
     .getByLabel("Expanded contents: Color", { exact: true })

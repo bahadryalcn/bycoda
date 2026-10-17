@@ -1,3 +1,4 @@
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { createRoot } from "react-dom/client";
 import { useState } from "react";
 import { ToolPanel } from "../../src/app/shell/ToolNavigation";
@@ -644,4 +645,9 @@ function SocialFixture() {
     </div>
   );
 }
-createRoot(document.getElementById("root")!).render(<SocialFixture />);
+const fixtureQueryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+createRoot(document.getElementById("root")!).render(
+  <QueryClientProvider client={fixtureQueryClient}>
+    <SocialFixture />
+  </QueryClientProvider>,
+);

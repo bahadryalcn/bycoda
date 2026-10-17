@@ -1,0 +1,75 @@
+.group {
+  position: relative;
+  isolation: isolate;
+  display: inline-flex;
+  max-inline-size: 100%;
+  flex: none;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  background: var(--surface);
+}
+/* Official measured width/label reveal; standard action presentation stays in Button. */
+.group .item {
+  min-inline-size: var(--ebg-h);
+  flex: none;
+  justify-content: flex-start;
+  overflow: clip;
+  padding-inline: var(--ebg-start) 0;
+  touch-action: manipulation;
+}
+.item > span {
+  gap: var(--ebg-gap);
+  flex: none;
+  justify-content: flex-start;
+}
+.icon {
+  position: relative;
+  display: grid;
+  inline-size: var(--ebg-icon);
+  block-size: var(--ebg-icon);
+  flex: none;
+  place-items: center;
+}
+.glyph {
+  display: grid;
+  grid-area: 1 / 1;
+  place-items: center;
+  inline-size: 100%;
+  block-size: 100%;
+}
+.glyph svg {
+  inline-size: 100%;
+  block-size: 100%;
+  stroke-width: 1.75;
+}
+.label {
+  display: inline-grid;
+  flex: none;
+  align-items: center;
+  justify-items: start;
+}
+.word {
+  grid-area: 1 / 1;
+  white-space: nowrap;
+}
+.sizer {
+  grid-area: 1 / 1;
+  visibility: hidden;
+  pointer-events: none;
+  white-space: nowrap;
+}
+.item[data-unmeasured][data-expanded] {
+  inline-size: auto !important;
+  padding-inline-end: var(--ebg-end);
+}
+.srOnly {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  overflow: clip;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}

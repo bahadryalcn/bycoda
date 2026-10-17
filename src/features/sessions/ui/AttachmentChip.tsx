@@ -1,3 +1,4 @@
+import { Button } from "../../../shared/ui/Button";
 import { t, useLocale } from "../../../shared/i18n";
 import { X } from "../../../shared/ui/icons";
 import { attachmentPreviewSrc, isAttachmentFolder } from "../model/attachments";
@@ -46,10 +47,12 @@ export function AttachmentChip({ attachment, onRemove, token, onInsertToken }: P
   const label = token ? tokenLabel(token) : null;
   const labelClass = image
     ? "absolute inset-x-0 bottom-0 truncate rounded-b-lg bg-scrim/60 px-0.5 text-center text-[9px] leading-3.5 text-on-solid"
-    : "shrink-0 rounded bg-content/10 px-1 text-[10px] leading-4 text-content/60";
+    : "shrink-0 rounded bg-(--ui-surface-raised) px-1 text-[10px] leading-4 text-(--ui-text-secondary)";
   const labelNode =
     label && onInsertToken ? (
-      <button
+      <Button
+        motion="none"
+        variant="ghost"
         type="button"
         title={t("Insert {p0} into the message", { p0: token })}
         aria-label={t("Insert {p0} into the message", { p0: token })}
@@ -59,10 +62,9 @@ export function AttachmentChip({ attachment, onRemove, token, onInsertToken }: P
           event.stopPropagation();
           onInsertToken();
         }}
-        className={`${labelClass} hover:bg-accent hover:text-on-solid focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent`}
       >
         {label}
-      </button>
+      </Button>
     ) : label ? (
       <span className={labelClass}>{label}</span>
     ) : null;
@@ -71,13 +73,17 @@ export function AttachmentChip({ attachment, onRemove, token, onInsertToken }: P
     <>
       <div
         className={`group relative flex min-w-0 items-center gap-1.5 rounded-md ${
-          image ? "" : "bg-content/10 py-0.5 pl-1 pr-1"
+          image ? "" : "bg-(--ui-surface-raised) py-0.5 pl-1 pr-1"
         }`}
         title={attachment.path ?? attachment.name}
       >
         {image ? (
           <span className="relative shrink-0">
-            <button
+            <Button
+              motion="none"
+              iconOnly
+              label={t("Open {p0} full screen", { p0: attachment.name })}
+              variant="ghost"
               type="button"
               aria-label={t("Open {p0} full screen", { p0: attachment.name })}
               title={t("Open {p0} full screen", { p0: attachment.name })}
@@ -85,7 +91,7 @@ export function AttachmentChip({ attachment, onRemove, token, onInsertToken }: P
                 event.stopPropagation();
                 void show();
               }}
-              className="shrink-0 cursor-zoom-in rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+              className="shrink-0"
             >
               <img
                 src={preview}
@@ -93,7 +99,7 @@ export function AttachmentChip({ attachment, onRemove, token, onInsertToken }: P
                 draggable={false}
                 className="size-9 rounded-lg object-cover"
               />
-            </button>
+            </Button>
             {labelNode}
           </span>
         ) : (
@@ -106,9 +112,11 @@ export function AttachmentChip({ attachment, onRemove, token, onInsertToken }: P
                 size={16}
               />
             </span>
-            <span className="min-w-0 max-w-[140px] truncate text-[11px] leading-none text-content/80">
+            <span className="min-w-0 max-w-[140px] truncate text-[11px] leading-none text-(--ui-text-secondary)">
               {canOpen || canOpenFile ? (
-                <button
+                <Button
+                  motion="none"
+                  variant="ghost"
                   type="button"
                   disabled={loading}
                   aria-busy={loading}
@@ -121,28 +129,32 @@ export function AttachmentChip({ attachment, onRemove, token, onInsertToken }: P
                       setOpenedFile(attachment);
                     } else void show();
                   }}
-                  className="cursor-zoom-in [@media(hover:hover)_and_(pointer:fine)]:hover:text-accent active:text-accent focus-visible:outline-2 focus-visible:outline-accent"
                 >
                   {loading ? t("Loading…") : attachment.name}
-                </button>
+                </Button>
               ) : (
                 attachment.name
               )}
             </span>
             {previewError ? (
-              <span role="alert" className="text-[10px] text-warning">
+              <span role="alert" className="text-[10px] text-(--ui-tone-warning-fg)">
                 {t("Preview unavailable. Try again.")}
               </span>
             ) : null}
             {attachment.missing ? (
-              <span className="shrink-0 text-[10px] leading-none text-warning">
+              <span className="shrink-0 text-[10px] leading-none text-(--ui-tone-warning-fg)">
                 {t("missing")}
               </span>
             ) : null}
           </>
         )}
         {onRemove ? (
-          <button
+          <Button
+            motion="none"
+            className="shrink-0"
+            iconOnly
+            label={t("Remove {p0}", { p0: attachment.name })}
+            variant="ghost"
             type="button"
             title={t("Remove")}
             aria-label={t("Remove {p0}", { p0: attachment.name })}
@@ -150,14 +162,9 @@ export function AttachmentChip({ attachment, onRemove, token, onInsertToken }: P
               event.stopPropagation();
               onRemove();
             }}
-            className={`grid shrink-0 place-items-center rounded-full text-content/70 hover:bg-content/15 hover:text-content ${
-              image
-                ? "absolute -right-1 -top-1 size-5 bg-content/20 opacity-100 shadow-sm backdrop-blur-sm"
-                : "size-4 text-content/40"
-            }`}
           >
             <X className="size-3" strokeWidth={2} />
-          </button>
+          </Button>
         ) : null}
       </div>
       {attachment.browserAnnotation ? (

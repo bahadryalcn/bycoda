@@ -1,7 +1,9 @@
+import { Alert } from "../../../shared/ui/Alert";
 import { useEffect, useRef, useState, useSyncExternalStore, type ComponentProps } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { TextField } from "../../../shared/ui/TextField";
+import { NumberField } from "../../../shared/ui/NumberField";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import { UsageMeter } from "../../../shared/ui/UsageMeter";
 import { useLockSnapshot } from "../../group-lock/hooks/useGroupLock";
@@ -143,14 +145,14 @@ function UsageBudgetsContent({ refresh }: { refresh: number }) {
         )}
       </p>
       {error ? (
-        <p role="alert" className="text-xs text-danger">
+        <Alert tone="danger" role="alert">
           {error}
-        </p>
+        </Alert>
       ) : null}
       {saved ? (
-        <p role="status" className="text-xs">
+        <Alert tone="info" role="status">
           {t("Budget saved")}
-        </p>
+        </Alert>
       ) : null}
       {editor && editorVisible ? (
         <BudgetEditor
@@ -174,9 +176,9 @@ function UsageBudgetsContent({ refresh }: { refresh: number }) {
         />
       ) : null}
       {pending && !visible.length ? (
-        <p role="status" className="text-xs text-content/60">
+        <Alert tone="info" role="status">
           {t("Checking budget usage…")}
-        </p>
+        </Alert>
       ) : null}
       {!pending && !visible.length && !editor && !error ? (
         <p className="text-xs text-content/60">
@@ -236,13 +238,13 @@ function UsageBudgetsContent({ refresh }: { refresh: number }) {
                 </p>
               </>
             ) : (
-              <p role="status" className="text-xs text-content/60">
+              <Alert tone="info" role="status">
                 {t(
                   pending
                     ? "Checking budget usage…"
                     : "Usage unavailable. No zero usage is assumed.",
                 )}
-              </p>
+              </Alert>
             )}
             {budget.metric === "accountPercent" ? (
               <p className="text-xs text-content/60">
@@ -391,9 +393,8 @@ function BudgetEditor({
           ).map((p) => ({ value: p, label: t(periodLabel[p]) }))}
         />
         {metric === "tokens" ? (
-          <TextField
+          <NumberField
             label={t("Token capacity")}
-            type="number"
             min={1}
             step={1}
             required
@@ -411,9 +412,8 @@ function BudgetEditor({
             }))}
           />
         )}
-        <TextField
+        <NumberField
           label={t(metric === "tokens" ? "Allocation (%)" : "Account usage threshold (%)")}
-          type="number"
           min={0.01}
           max={100}
           step="any"
@@ -432,9 +432,9 @@ function BudgetEditor({
         />
       </div>
       {error ? (
-        <p role="alert" className="text-xs text-danger">
+        <Alert tone="danger" role="alert">
           {error}
-        </p>
+        </Alert>
       ) : null}
       <div className="flex gap-2">
         <Button type="submit" variant="primary">

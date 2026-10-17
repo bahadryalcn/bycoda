@@ -529,6 +529,22 @@ async function setup(providers: RemoteProvider[] = ["codex"]) {
 }
 
 describe("shared queued messages", () => {
+  it("dispatches /clear without opening a session or sending a provider turn", async () => {
+    const s = await setup();
+    const created = s.engine.command({ type: "create", commandId: "clear-create", projectId: s.project.id,
+      harness: "codex", model: "codex:test", runtimeMode: "supervised" });
+    const current = s.store.session(created.sessionId);
+    s.store.save({ ...current, revision: current.revision + 1, session: { ...current.session,
+      providerSessionId: "old-provider", blocks: [{ id: "old", role: "user", text: "Old context" }] } }, { type: "test.seed" });
+    const response = await s.call("commands.dispatch", { type: "send", commandId: "clear-rpc",
+      sessionId: created.sessionId, text: "/clear" });
+    expect(response.value.error).toBeUndefined();
+    expect(response.value.result.sessionId).toBe(created.sessionId);
+    expect(s.store.session(created.sessionId).session.blocks).toEqual([]);
+    expect(s.store.session(created.sessionId).session.providerSessionId).toBeUndefined();
+    expect(s.send).not.toHaveBeenCalled();
+  });
+
   it("dispatches rewind through the async host cleanup path", async () => {
     const s = await setup();
     const created = s.engine.command({
@@ -646,7 +662,11 @@ describe("project directory endpoint", () => {
       projects: [],
     });
     const one = s.store.addProject("G:/Work/shared", "One");
-    const two = s.store.addProject("g:\\work\\shared", "Two");
+    // Existing databases can contain aliases from before project deduplication.
+    s.store.db
+      .prepare("INSERT INTO projects VALUES (?, ?, ?)")
+      .run("legacy-shared-alias", "g:\\work\\shared", "Two");
+    const two = s.store.project("legacy-shared-alias");
     s.store.addProject("G:/Private", "Private client");
     expect(
       (

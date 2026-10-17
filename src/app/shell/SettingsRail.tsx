@@ -1,3 +1,4 @@
+import { Button } from "../../shared/ui/Button";
 import { t, useLocale } from "../../shared/i18n";
 import { useEffect, useRef, type KeyboardEvent } from "react";
 import {
@@ -90,8 +91,10 @@ export function SettingsNav({ section, onSelect, onClose }: Props) {
                 onKeyDown={(event) => {
                   const index = sections.findIndex((candidate) => candidate.id === item.id);
                   let next = index;
-                  if (event.key === "ArrowDown" || event.key === "ArrowRight") next = (index + 1) % sections.length;
-                  else if (event.key === "ArrowUp" || event.key === "ArrowLeft") next = (index - 1 + sections.length) % sections.length;
+                  if (event.key === "ArrowDown" || event.key === "ArrowRight")
+                    next = (index + 1) % sections.length;
+                  else if (event.key === "ArrowUp" || event.key === "ArrowLeft")
+                    next = (index - 1 + sections.length) % sections.length;
                   else if (event.key === "Home") next = 0;
                   else if (event.key === "End") next = sections.length - 1;
                   else return;
@@ -133,7 +136,10 @@ function NavRow({
 }) {
   useLocale();
   return (
-    <button
+    <Button
+      selected={active}
+      variant="item"
+      motion="none"
       type="button"
       onClick={onClick}
       ref={buttonRef}
@@ -142,16 +148,12 @@ function NavRow({
       title={label}
       aria-label={label}
       aria-current={active ? "true" : undefined}
-      className={`flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left focus-visible:outline-2 focus-visible:outline-accent active:bg-selection @max-[140px]/rail:justify-center @max-[140px]/rail:px-0 ${
-        active
-          ? "bg-selection text-content"
-          : "text-content/50 hover:bg-content/5 hover:text-content"
-      }`}
+      className={`flex w-full items-center gap-2 @max-[140px]/rail:justify-center `}
     >
       <Icon aria-hidden="true" className="size-4 shrink-0 opacity-70" strokeWidth={1.75} />
       <span className="min-w-0 flex-1 truncate text-sm font-medium leading-tight @max-[140px]/rail:hidden">
         {label}
       </span>
-    </button>
+    </Button>
   );
 }

@@ -1,3 +1,5 @@
+import { Alert } from "../../../shared/ui/Alert";
+import { Button } from "../../../shared/ui/Button";
 import { t, useLocale } from "../../../shared/i18n";
 import { ChevronDown, ChevronRight, FileDiff } from "../../../shared/ui/icons";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -134,19 +136,19 @@ function SessionReviewContent({
   if (!enabled || busy || (files.length === 0 && !error && !recording)) return null;
   if (recording) {
     return (
-      <p role="status" className="px-3 py-2 text-xs text-content/50">
+      <p role="status" className="px-3 py-2 text-xs text-(--ui-text-secondary)">
         {t("Loading changes…")}
       </p>
     );
   }
 
   const errorNotice = error ? (
-    <p role="alert" className="px-3 py-2 text-xs text-danger">
+    <Alert tone="danger" role="alert">
       {error}{" "}
-      <button type="button" className="underline" onClick={load}>
+      <Button variant="ghost" type="button" onClick={load}>
         {t("Retry")}
-      </button>
-    </p>
+      </Button>
+    </Alert>
   ) : null;
   if (files.length === 0) return errorNotice;
 
@@ -191,16 +193,16 @@ function SessionReviewContent({
   return (
     <div className="px-4 pt-1 pb-2 font-sans" data-session-review-shell>
       <div
-        className="overflow-hidden rounded-xl border border-content/12 bg-content/3"
+        className="overflow-hidden rounded-xl border border-(--ui-tone-neutral-border) bg-(--ui-surface-raised)"
         data-session-review
       >
         {errorNotice}
         <div className="flex min-w-0 items-center gap-2.5 px-3 py-2.5">
-          <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-content/8 text-content/55">
+          <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-(--ui-surface-raised) text-(--ui-text-secondary)">
             <FileDiff className="size-4" strokeWidth={1.75} />
           </span>
           <div className="min-w-0 flex-1">
-            <div className="truncate text-[12px] font-medium text-content/80">
+            <div className="truncate text-[12px] font-medium text-(--ui-text-secondary)">
               {t("Changed ")}
               {files.length} {files.length === 1 ? t("file") : t("files")}
             </div>
@@ -210,7 +212,8 @@ function SessionReviewContent({
             </div>
           </div>
           <div className="flex shrink-0 items-center gap-0.5">
-            <button
+            <Button
+              variant="ghost"
               type="button"
               title={
                 canUndoAll
@@ -221,31 +224,30 @@ function SessionReviewContent({
               }
               disabled={disabled || !canUndoAll}
               onClick={() => run("undo")}
-              className="h-7 rounded-md px-2.5 text-[11px] text-content/50 hover:bg-content/8 hover:text-content disabled:opacity-35"
             >
               {t("Undo")}
-            </button>
-            <button
+            </Button>
+            <Button
+              variant="ghost"
               type="button"
               title={t("Keep all session changes and dismiss this card")}
               disabled={disabled}
               onClick={() => run("keep")}
-              className="h-7 rounded-md px-2.5 text-[11px] text-content/50 hover:bg-content/8 hover:text-content disabled:opacity-35"
             >
               {t("Keep")}
-            </button>
-            <button
+            </Button>
+            <Button
+              variant="ghost"
               type="button"
               title={t("Review changes")}
               onClick={() => onOpenDiff(undefined, { sessionId, cwd })}
-              className="h-7 rounded-md border border-content/12 bg-content/8 px-2.5 text-[11px] font-medium text-content/75 hover:bg-content/12 hover:text-content"
             >
               {t("Review")}
-            </button>
+            </Button>
           </div>
         </div>
         <ul
-          className={`scrollbar-none border-t border-stroke py-1 ${
+          className={`scrollbar-none border-t border-(--ui-tone-neutral-border) py-1 ${
             expanded ? "max-h-64 overflow-y-auto" : ""
           }`}
         >
@@ -262,11 +264,13 @@ function SessionReviewContent({
           ))}
         </ul>
         {files.length > 3 ? (
-          <button
+          <Button
+            fullWidth
+            variant="item"
             type="button"
             aria-expanded={expanded}
             onClick={() => setExpanded((open) => !open)}
-            className="flex h-8 w-full items-center gap-1.5 border-t border-stroke px-3 text-left text-[11px] text-content/45 hover:bg-content/5 hover:text-content/70"
+            className="w-full text-left"
           >
             {expanded ? (
               <ChevronDown className="size-3.5" strokeWidth={1.75} />
@@ -280,7 +284,7 @@ function SessionReviewContent({
                     p0: hiddenFileCount,
                   })}
             </span>
-          </button>
+          </Button>
         ) : null}
       </div>
     </div>
@@ -311,17 +315,19 @@ function FileRow({
   });
   return (
     <>
-      <button
+      <Button
+        fullWidth
+        variant="item"
         {...menuHandlers}
         type="button"
         title={file.relative}
         onClick={() => onOpenDiff(file.path, { sessionId, cwd })}
-        className="flex h-8 w-full min-w-0 items-center gap-2 px-3 text-left text-content/65 hover:bg-content/5 hover:text-content"
+        className="w-full min-w-0 text-left"
       >
         <FileTypeIcon name={name} isDir={false} size={15} />
         <span className="min-w-0 flex-1 truncate font-mono text-[12px]">{file.relative}</span>
         <DiffCounts file={file} />
-      </button>
+      </Button>
       {menu}
     </>
   );
@@ -331,7 +337,9 @@ function DiffCounts({ file }: { file: CheckpointFile }) {
   useLocale();
   if (!file.exact) {
     return (
-      <span className="shrink-0 text-[11px] font-medium text-warning/80">{t("Mixed changes")}</span>
+      <span className="shrink-0 text-[11px] font-medium text-(--ui-tone-warning-fg)">
+        {t("Mixed changes")}
+      </span>
     );
   }
   return (

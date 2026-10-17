@@ -49,7 +49,7 @@ export function MarkdownModeToggle({ mode, onChange }: ToggleProps) {
     <div
       role="tablist"
       aria-label={t("Markdown view")}
-      className="flex shrink-0 rounded-md border border-stroke bg-[var(--ui-surface)] p-0.5"
+      className="flex shrink-0 rounded-md border border-(--ui-tone-neutral-border) bg-[var(--ui-surface)] p-0.5"
     >
       <ModeTab
         label={t("Preview")}
@@ -94,7 +94,7 @@ export function MarkdownViewShell({ mode, onModeChange, preview, source, actions
   useLocale();
   return (
     <div className="markdown-view-shell flex min-h-0 min-w-0 flex-1 flex-col">
-      <div className="markdown-view-actions flex shrink-0 justify-end border-b border-stroke px-2 py-1">
+      <div className="markdown-view-actions flex shrink-0 justify-end border-b border-(--ui-tone-neutral-border) px-2 py-1">
         <div className="flex flex-wrap items-center justify-end gap-1.5">
           {actions}
           <MarkdownModeToggle mode={mode} onChange={onModeChange} />

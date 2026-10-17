@@ -1,3 +1,4 @@
+import { Button } from "../../../shared/ui/Button";
 import { t, useLocale } from "../../../shared/i18n";
 import {
   memo,
@@ -614,14 +615,16 @@ function PaneTreeComponent({
                 className="flex shrink-0 overflow-x-auto border-b border-stroke bg-surface"
               >
                 {leaf.tabIds.map((id) => (
-                  <button
+                  <Button
+                    variant="tab"
+                    motion="none"
                     key={id}
                     type="button"
                     role="tab"
                     aria-selected={id === leaf.id}
                     tabIndex={id === leaf.id ? 0 : -1}
                     data-pane-tab-id={id}
-                    className={`relative max-w-48 shrink-0 truncate border-r border-stroke px-3 py-1.5 text-xs focus-visible:outline-2 focus-visible:outline-accent active:bg-selection ${id === leaf.id ? "bg-accent/15 text-content" : "text-content/60"}`}
+                    className={`relative max-w-48 shrink-0 truncate `}
                     onClick={() => onFocus(id)}
                     onKeyDown={(event) => {
                       const ids = leaf.tabIds!;
@@ -663,7 +666,7 @@ function PaneTreeComponent({
                         className={`pointer-events-none absolute inset-y-0 w-0.5 ${drop.tabPosition === "before" ? "start-0" : "end-0"} ${drop.invalid ? "bg-danger" : "bg-accent"}`}
                       />
                     ) : null}
-                  </button>
+                  </Button>
                 ))}
               </div>
             ) : null}
@@ -677,17 +680,21 @@ function PaneTreeComponent({
               <PaneDropHint edge={drop.edge} invalid={drop.invalid} />
             ) : null}
             {(inSplit || maximum) && !hidden ? (
-              <button
+              <Button
+                iconOnly
+                label={t(maximum ? "Restore panel layout" : "Maximize panel")}
+                variant="ghost"
+                motion="none"
                 type="button"
                 title={t(maximum ? "Restore panel layout" : "Maximize panel")}
                 aria-label={t(maximum ? "Restore panel layout" : "Maximize panel")}
                 aria-pressed={Boolean(maximum)}
                 data-pane-maximize={leaf.id}
                 onClick={() => toggleMaximum(leaf.id)}
-                className="absolute [inset-block-start:0.25rem] end-2 z-10 grid size-6 place-items-center rounded bg-surface/90 text-content/50 hover:bg-selection hover:text-content active:bg-selection focus-visible:outline-2 focus-visible:outline-accent"
+                className="absolute [inset-block-start:0.25rem] end-2 z-10 grid place-items-center"
               >
                 <Maximize2 className="size-3.5" />
-              </button>
+              </Button>
             ) : null}
             <div
               className="flex min-h-0 min-w-0 flex-1 flex-col"
@@ -698,109 +705,109 @@ function PaneTreeComponent({
               }}
             >
               <MediaVisibilityContext.Provider value={visible && !hidden}>
-              {editorPane ? (
-                <FilePane
-                  pane={editorPane}
-                  focused={focusedId === editorPane.id}
-                  visible={visible && !hidden}
-                  showTabs={inSplit || editorPane.files.length > 1 || Boolean(onPaneDragStart)}
-                  dirtyFileIds={dirtyFileIds}
-                  fileErrorCounts={fileErrorCounts}
-                  sessions={sessions}
-                  onFocus={onFocus}
-                  onSelectFile={onSelectFile}
-                  onCloseFile={onCloseFile}
-                  onCloseOtherFiles={onCloseOtherFiles}
-                  onOpenInNewWindow={onOpenInNewWindow}
-                  onPinFile={onPinFile}
-                  onReorderFiles={onReorderFiles}
-                  onMoveFile={onMoveFile}
-                  onDirtyChange={onFileDirtyChange}
-                  onErrorCountChange={onFileErrorCountChange}
-                  onOpenFile={onOpenFile}
-                  onUpdatePlan={onUpdatePlan}
-                  onBuildPlan={onBuildPlan}
-                  editorNavigation={editorNavigation}
-                  onPaneDragStart={onPaneDragStart}
-                  onTerminalMetaChange={onTerminalMetaChange}
-                />
-              ) : session ? (
-                <SessionPane
-                  session={session}
-                  workspaceSwitchingSessionId={workspaceSwitchingSessionId}
-                  reviewUndoLocked={sessions.some(
-                    (other) =>
-                      other.id !== session.id &&
-                      other.busy &&
-                      sameProjectPath(sessionWorkCwd(other), sessionWorkCwd(session)),
-                  )}
-                  visible={visible && !hidden}
-                  focused={focusedId === session.id}
-                  addToChatTarget={addToChatSessionId === session.id}
-                  inSplit={inSplit}
-                  composerFocused={composerFocused}
-                  composerFocusToken={composerFocusToken}
-                  recents={recents}
-                  hideProjectPicker={hideProjectPicker}
-                  onFocus={onFocus}
-                  onClose={onClose}
-                  onRemoteSnapshot={onRemoteSnapshot}
-                  onRefreshAdoptedSession={onRefreshAdoptedSession}
-                  onCwdChange={onCwdChange}
-                  onBranchChange={onBranchChange}
-                  onWorktreeChange={onWorktreeChange}
-                  onWorkspaceModeChange={onWorkspaceModeChange}
-                  onWorktreeBaseChange={onWorktreeBaseChange}
-                  onManageWorktrees={onManageWorktrees}
-                  onModelChange={onModelChange}
-                  onModelSettingsChange={onModelSettingsChange}
-                  onRuntimeModeChange={onRuntimeModeChange}
-                  onSaveDraft={onSaveDraft}
-                  onRemoveDraft={onRemoveDraft}
-                  onSubmit={onSubmit}
-                  onStop={onStop}
-                  onCompactContext={onCompactContext}
-                  onRewindMessage={onRewindMessage}
-                  onNewSession={onNewSession}
-                  onPlaceSessionInFolder={onPlaceSessionInFolder}
-                  onResumeProviderSession={onResumeProviderSession}
-                  onDeleteQueuedMessage={onDeleteQueuedMessage}
-                  onEditQueuedMessage={onEditQueuedMessage}
-                  onQueuedMessageEditingChange={onQueuedMessageEditingChange}
-                  onReorderQueuedMessages={onReorderQueuedMessages}
-                  onSteerQueuedMessage={onSteerQueuedMessage}
-                  onResumeQueue={onResumeQueue}
-                  onUsageLimitResume={onUsageLimitResume}
-                  onUsageLimitResumeAtReset={onUsageLimitResumeAtReset}
-                  onUsageLimitDismiss={onUsageLimitDismiss}
-                  onSelectProviderAccount={onSelectProviderAccount}
-                  onInboxCardDismiss={onInboxCardDismiss}
-                  onLinkedWorkItemUpdateCardDismiss={onLinkedWorkItemUpdateCardDismiss}
-                  onNoteCardDismiss={onNoteCardDismiss}
-                  onHandoffCardDismiss={onHandoffCardDismiss}
-                  onOpenLinkedWorkItem={onOpenLinkedWorkItem}
-                  onArchiveSession={onArchiveSession}
-                  onDeleteSession={onDeleteSession}
-                  onApproval={onApproval}
-                  onQuestionReply={onQuestionReply}
-                  onQuestionInteraction={onQuestionInteraction}
-                  onOpenFile={onOpenFile}
-                  onOpenDiff={onOpenDiff}
-                  onOpenPlan={onOpenPlan}
-                  onBuildPlan={onBuildPlan}
-                  onSecondOpinion={onSecondOpinion}
-                  onHandoff={onHandoff}
-                  onBtwSubmit={onBtwSubmit}
-                  onBtwRetry={onBtwRetry}
-                  onBtwDelete={onBtwDelete}
-                  onBtwStop={onBtwStop}
-                  onBtwModelChange={onBtwModelChange}
-                  onNewTerminal={onNewTerminal}
-                  onRunProjectAction={onRunProjectAction}
-                  onPaneDragStart={onPaneDragStart}
-                  transcriptPool={transcriptPool}
-                />
-              ) : null}
+                {editorPane ? (
+                  <FilePane
+                    pane={editorPane}
+                    focused={focusedId === editorPane.id}
+                    visible={visible && !hidden}
+                    showTabs={inSplit || editorPane.files.length > 1 || Boolean(onPaneDragStart)}
+                    dirtyFileIds={dirtyFileIds}
+                    fileErrorCounts={fileErrorCounts}
+                    sessions={sessions}
+                    onFocus={onFocus}
+                    onSelectFile={onSelectFile}
+                    onCloseFile={onCloseFile}
+                    onCloseOtherFiles={onCloseOtherFiles}
+                    onOpenInNewWindow={onOpenInNewWindow}
+                    onPinFile={onPinFile}
+                    onReorderFiles={onReorderFiles}
+                    onMoveFile={onMoveFile}
+                    onDirtyChange={onFileDirtyChange}
+                    onErrorCountChange={onFileErrorCountChange}
+                    onOpenFile={onOpenFile}
+                    onUpdatePlan={onUpdatePlan}
+                    onBuildPlan={onBuildPlan}
+                    editorNavigation={editorNavigation}
+                    onPaneDragStart={onPaneDragStart}
+                    onTerminalMetaChange={onTerminalMetaChange}
+                  />
+                ) : session ? (
+                  <SessionPane
+                    session={session}
+                    workspaceSwitchingSessionId={workspaceSwitchingSessionId}
+                    reviewUndoLocked={sessions.some(
+                      (other) =>
+                        other.id !== session.id &&
+                        other.busy &&
+                        sameProjectPath(sessionWorkCwd(other), sessionWorkCwd(session)),
+                    )}
+                    visible={visible && !hidden}
+                    focused={focusedId === session.id}
+                    addToChatTarget={addToChatSessionId === session.id}
+                    inSplit={inSplit}
+                    composerFocused={composerFocused}
+                    composerFocusToken={composerFocusToken}
+                    recents={recents}
+                    hideProjectPicker={hideProjectPicker}
+                    onFocus={onFocus}
+                    onClose={onClose}
+                    onRemoteSnapshot={onRemoteSnapshot}
+                    onRefreshAdoptedSession={onRefreshAdoptedSession}
+                    onCwdChange={onCwdChange}
+                    onBranchChange={onBranchChange}
+                    onWorktreeChange={onWorktreeChange}
+                    onWorkspaceModeChange={onWorkspaceModeChange}
+                    onWorktreeBaseChange={onWorktreeBaseChange}
+                    onManageWorktrees={onManageWorktrees}
+                    onModelChange={onModelChange}
+                    onModelSettingsChange={onModelSettingsChange}
+                    onRuntimeModeChange={onRuntimeModeChange}
+                    onSaveDraft={onSaveDraft}
+                    onRemoveDraft={onRemoveDraft}
+                    onSubmit={onSubmit}
+                    onStop={onStop}
+                    onCompactContext={onCompactContext}
+                    onRewindMessage={onRewindMessage}
+                    onNewSession={onNewSession}
+                    onPlaceSessionInFolder={onPlaceSessionInFolder}
+                    onResumeProviderSession={onResumeProviderSession}
+                    onDeleteQueuedMessage={onDeleteQueuedMessage}
+                    onEditQueuedMessage={onEditQueuedMessage}
+                    onQueuedMessageEditingChange={onQueuedMessageEditingChange}
+                    onReorderQueuedMessages={onReorderQueuedMessages}
+                    onSteerQueuedMessage={onSteerQueuedMessage}
+                    onResumeQueue={onResumeQueue}
+                    onUsageLimitResume={onUsageLimitResume}
+                    onUsageLimitResumeAtReset={onUsageLimitResumeAtReset}
+                    onUsageLimitDismiss={onUsageLimitDismiss}
+                    onSelectProviderAccount={onSelectProviderAccount}
+                    onInboxCardDismiss={onInboxCardDismiss}
+                    onLinkedWorkItemUpdateCardDismiss={onLinkedWorkItemUpdateCardDismiss}
+                    onNoteCardDismiss={onNoteCardDismiss}
+                    onHandoffCardDismiss={onHandoffCardDismiss}
+                    onOpenLinkedWorkItem={onOpenLinkedWorkItem}
+                    onArchiveSession={onArchiveSession}
+                    onDeleteSession={onDeleteSession}
+                    onApproval={onApproval}
+                    onQuestionReply={onQuestionReply}
+                    onQuestionInteraction={onQuestionInteraction}
+                    onOpenFile={onOpenFile}
+                    onOpenDiff={onOpenDiff}
+                    onOpenPlan={onOpenPlan}
+                    onBuildPlan={onBuildPlan}
+                    onSecondOpinion={onSecondOpinion}
+                    onHandoff={onHandoff}
+                    onBtwSubmit={onBtwSubmit}
+                    onBtwRetry={onBtwRetry}
+                    onBtwDelete={onBtwDelete}
+                    onBtwStop={onBtwStop}
+                    onBtwModelChange={onBtwModelChange}
+                    onNewTerminal={onNewTerminal}
+                    onRunProjectAction={onRunProjectAction}
+                    onPaneDragStart={onPaneDragStart}
+                    transcriptPool={transcriptPool}
+                  />
+                ) : null}
               </MediaVisibilityContext.Provider>
             </div>
           </div>

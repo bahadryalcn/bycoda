@@ -1,3 +1,4 @@
+import { visibleSessionTestText } from "./sessionUiTestText";
 // @vitest-environment happy-dom
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
@@ -51,7 +52,7 @@ function render(workingDirectory = "/work/web") {
 }
 function button(text: string) {
   const found = [...document.querySelectorAll<HTMLButtonElement>("button")].find((element) =>
-    element.textContent?.includes(text),
+    visibleSessionTestText(element)?.includes(text),
   );
   expect(found, text).toBeDefined();
   return found!;
@@ -75,7 +76,7 @@ async function browse() {
 describe("session folders", () => {
   it("shows the session working folder by default, even with no other projects", () => {
     render();
-    expect(container.textContent).toBe("web");
+    expect(visibleSessionTestText(container)).toBe("web");
     open();
     expect(checkbox("/work/web")?.checked).toBe(true);
     expect(checkbox("/work/web")?.disabled).toBe(true);
@@ -86,7 +87,7 @@ describe("session folders", () => {
 
   it("shows the actual worktree folder instead of the base project", () => {
     render("/work/web-worktree");
-    expect(container.textContent).toBe("web-worktree");
+    expect(visibleSessionTestText(container)).toBe("web-worktree");
     open();
     expect(checkbox("/work/web-worktree")?.checked).toBe(true);
     expect(checkbox("/work/web")).toBeUndefined();
@@ -99,7 +100,7 @@ describe("session folders", () => {
     render();
     open();
     act(() => checkbox("/other/api")!.click());
-    expect(container.textContent).toBe("2 folders");
+    expect(visibleSessionTestText(container)).toBe("2 folders");
     expect(additionalDirsForSession("s1", "/work/web")).toEqual(["/other/api"]);
     expect(additionalDirsForSession("s2", "/work/web")).toEqual([]);
     expect(loadAdditionalDirs("/work/web")).toEqual([]);
@@ -112,7 +113,7 @@ describe("session folders", () => {
     await browse();
     expect(pickFolders).toHaveBeenCalledWith("Add folders to this session", true);
     expect(additionalDirsForSession("s1", "/work/web")).toEqual(["/custom/api", "/custom/ui"]);
-    expect(container.textContent).toBe("3 folders");
+    expect(visibleSessionTestText(container)).toBe("3 folders");
     expect(checkbox("/custom/api")?.checked).toBe(true);
     open();
     open();
@@ -181,6 +182,10 @@ describe("session folders", () => {
     expect(document.body.textContent).toContain("No matching folders");
     expect(checkbox("/other/api")).toBeUndefined();
     expect(button("Choose from").disabled).toBe(false);
+    act(() => document.querySelector<HTMLButtonElement>('[aria-label="Clear search"]')!.click());
+    expect(input.value).toBe("");
+    expect(checkbox("/other/api")).toBeDefined();
+    expect(document.activeElement).toBe(input);
   });
 
   it("rejects a drive root without changing session folders", async () => {
@@ -190,6 +195,6 @@ describe("session folders", () => {
     await browse();
     expect(document.querySelector('[role="alert"]')?.textContent).toContain("drive root");
     expect(loadSessionAdditionalDirs("s1")).toBeUndefined();
-    expect(container.textContent).toBe("web");
+    expect(visibleSessionTestText(container)).toBe("web");
   });
 });

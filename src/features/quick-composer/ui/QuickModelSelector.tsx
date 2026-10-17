@@ -1,6 +1,7 @@
+import { Slider } from "../../../shared/ui/Slider";
+import { Button } from "../../../shared/ui/Button";
 import { SearchInput } from "../../../shared/ui/SearchInput";
 import { t, useLocale } from "../../../shared/i18n";
-import "./QuickModelSelector.css";
 import { useEffect, useId, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
 import { emit } from "@tauri-apps/api/event";
 import { Check, RotateCcw, Search, Star, Zap } from "../../../shared/ui/icons";
@@ -162,7 +163,9 @@ export function QuickModelSelector({
         {tabs.map((id, index) => {
           const title = id === "favorites" ? "Favorites" : HARNESS_TITLE[id];
           return (
-            <button
+            <Button
+              variant="tab"
+              motion="none"
               key={id}
               type="button"
               role="tab"
@@ -184,14 +187,14 @@ export function QuickModelSelector({
                   ?.querySelectorAll<HTMLButtonElement>("button")
                   [next]?.focus({ preventScroll: true });
               }}
-              className={`flex h-8 w-full min-w-0 items-center justify-center rounded-lg transition-colors ${visibleTab === id ? "bg-selection-emphasis text-content" : "text-content/40 hover:text-content hover:bg-selection-hover"}`}
+              className={`flex w-full min-w-0 items-center justify-center `}
             >
               {id === "favorites" ? (
                 <Star className="size-4" fill={visibleTab === id ? "currentColor" : "none"} />
               ) : (
                 <HarnessIcon harness={id} className="size-4" />
               )}
-            </button>
+            </Button>
           );
         })}
       </nav>
@@ -215,8 +218,14 @@ export function QuickModelSelector({
               placeholder={t("Search models…")}
               autoComplete="off"
               spellCheck={false}
-              className="min-w-0 flex-1 bg-transparent text-[13px] text-content outline-none placeholder:text-content/35"
+              className="min-w-0 flex-1"
               onKeyDown={(event) => {
+                if (
+                  event.nativeEvent.isComposing ||
+                  event.key === "Process" ||
+                  event.keyCode === 229
+                )
+                  return;
                 if (event.nativeEvent.isComposing) return;
                 if (event.key === "ArrowDown" || event.key === "ArrowUp") {
                   event.preventDefault();
@@ -246,10 +255,14 @@ export function QuickModelSelector({
                 <div
                   key={`${item.harness}:${item.id}`}
                   data-index={index}
-                  className={`flex h-8 items-center rounded-lg ${index === active ? "bg-selection-emphasis" : "hover:bg-selection-hover"}`}
+                  className="flex items-center"
                   onMouseEnter={() => setActive(index)}
                 >
-                  <button
+                  <Button
+                    fullWidth
+                    selected={index === active}
+                    variant="item"
+                    motion="none"
                     id={`${listId}-${index}`}
                     type="button"
                     role="option"
@@ -257,7 +270,7 @@ export function QuickModelSelector({
                     disabled={!enabled(item)}
                     onMouseDown={(event) => event.preventDefault()}
                     onClick={() => pick(item)}
-                    className="flex min-w-0 flex-1 items-center gap-2 px-2 text-left text-[13px] text-content disabled:opacity-35"
+                    className="flex min-w-0 flex-1 items-center gap-2"
                   >
                     {visibleTab === "favorites" ? (
                       <HarnessIcon harness={item.harness} className="size-3.5 shrink-0" />
@@ -271,8 +284,21 @@ export function QuickModelSelector({
                     {item.id === model.id ? (
                       <Check className="ml-auto size-3.5 shrink-0 text-accent" />
                     ) : null}
-                  </button>
-                  <button
+                  </Button>
+                  <Button
+                    iconOnly
+                    label={t(
+                      favorites.includes(item.id)
+                        ? favorites.includes(item.id)
+                          ? "Remove {p1} from favorites"
+                          : "Remove {p1} to favorites"
+                        : favorites.includes(item.id)
+                          ? "Add {p1} from favorites"
+                          : "Add {p1} to favorites",
+                      { p1: item.name },
+                    )}
+                    variant="ghost"
+                    motion="none"
                     type="button"
                     title={
                       favorites.includes(item.id)
@@ -296,13 +322,13 @@ export function QuickModelSelector({
                       setFavorites(next);
                       saveFavoriteModels(next);
                     }}
-                    className="grid size-8 shrink-0 place-items-center text-content/35 hover:text-content"
+                    className="grid shrink-0 place-items-center"
                   >
                     <Star
                       className="size-3.5"
                       fill={favorites.includes(item.id) ? "currentColor" : "none"}
                     />
-                  </button>
+                  </Button>
                 </div>
               ))
             ) : (
@@ -319,68 +345,51 @@ export function QuickModelSelector({
             <div className="shrink-0 border-t border-stroke px-4 pb-3 pt-2">
               <div className="mb-1 grid grid-cols-[28px_1fr_28px] items-center">
                 {canToggleFast ? (
-                  <button
+                  <Button
+                    iconOnly
+                    label={t("Fast mode")}
+                    variant="ghost"
+                    motion="none"
                     type="button"
                     aria-label={t("Fast mode")}
                     aria-pressed={fastEnabled}
                     title={fastEnabled ? t("Turn off fast mode") : t("Turn on fast mode")}
                     onClick={() => changeSetting(fast.id, fastEnabled ? fastOff : fastOn)}
-                    className={`grid size-7 place-items-center rounded-md transition-colors ${fastEnabled ? "bg-warning/20 text-warning hover:bg-warning/30" : "text-content/40 hover:bg-selection-hover hover:text-content"}`}
+                    className={`grid place-items-center `}
                   >
                     <Zap className="size-4" fill={fastEnabled ? "currentColor" : "none"} />
-                  </button>
+                  </Button>
                 ) : (
                   <span />
                 )}
                 <span className="text-center text-[13px] font-medium text-accent">
                   {effort.options[effortIndex]?.label}
                 </span>
-                <button
+                <Button
+                  iconOnly
+                  label={t("Reset to saved defaults")}
+                  variant="ghost"
+                  motion="none"
                   type="button"
                   aria-label={t("Reset to saved defaults")}
                   title={t("Reset to saved defaults")}
                   onClick={resetSettings}
-                  className="grid size-7 place-items-center rounded-md text-content/40 hover:bg-selection-hover hover:text-content"
+                  className="grid place-items-center"
                 >
                   <RotateCcw className="size-4" />
-                </button>
+                </Button>
               </div>
-              <div className="relative h-6">
-                <div
-                  aria-hidden="true"
-                  className="pointer-events-none absolute inset-x-0 top-1/2 h-3 -translate-y-1/2 rounded-full"
-                  style={{
-                    background: `linear-gradient(to right, var(--color-accent) ${(effortIndex / Math.max(1, effort.options.length - 1)) * 100}%, color-mix(in srgb, var(--color-content) 15%, transparent) 0%)`,
-                  }}
-                />
-                <div
-                  aria-hidden="true"
-                  className="pointer-events-none absolute inset-x-2.5 top-1/2"
-                >
-                  {effort.options.map((option, index) => (
-                    <span
-                      key={option.value}
-                      className={`absolute size-1 -translate-x-1/2 -translate-y-1/2 rounded-full ${index <= effortIndex ? "bg-on-solid/45" : "bg-content/25"}`}
-                      style={{
-                        left: `${(index / Math.max(1, effort.options.length - 1)) * 100}%`,
-                      }}
-                    />
-                  ))}
-                </div>
-                <input
-                  type="range"
-                  aria-label={effort.label}
-                  min={0}
-                  max={effort.options.length - 1}
-                  step={1}
-                  value={effortIndex}
-                  aria-valuetext={effort.options[effortIndex]?.label}
-                  onChange={(event) =>
-                    changeSetting(effort.id, effort.options[Number(event.target.value)].value)
-                  }
-                  className="quick-reasoning-slider relative z-10 block h-6 w-full"
-                />
-              </div>
+              <Slider
+                hideLabel
+                label={effort.label}
+                value={effortIndex}
+                min={0}
+                max={effort.options.length - 1}
+                step={1}
+                marks={effort.options.map((_, index) => index)}
+                format={(index) => effort.options[index]?.label ?? ""}
+                onValueChange={(index) => changeSetting(effort.id, effort.options[index].value)}
+              />
             </div>
           ) : null}
         </div>

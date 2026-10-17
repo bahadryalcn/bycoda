@@ -5,6 +5,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { PublishingPlans } from "./SocialPublishingPlans";
 import type { SocialPublishingPlan, SocialSnapshot } from "../model/social";
 import type { SocialClient } from "../model/socialClient";
+import { chooseSocialValue } from "./socialTestControls";
 
 let container: HTMLDivElement, root: Root;
 const request = vi.fn();
@@ -81,13 +82,16 @@ function snapshot(change: Partial<SocialSnapshot> = {}): SocialSnapshot {
     ...change,
   };
 }
-async function render(value: SocialSnapshot) {
+async function render(value: SocialSnapshot, extraProject = false) {
   await act(async () =>
     root.render(
       createElement(PublishingPlans, {
         snapshot: value,
         client: { request } as unknown as SocialClient,
-        projects: [{ id: "project", name: "Product", cwd: "/product" }],
+        projects: [
+          { id: "project", name: "Product", cwd: "/product" },
+          ...(extraProject ? [{ id: "other", name: "Other project", cwd: "/other" }] : []),
+        ],
         initialProject: "project",
         run: async (work) => {
           await work();
@@ -97,9 +101,14 @@ async function render(value: SocialSnapshot) {
     ),
   );
 }
+function buttonName(button: HTMLButtonElement) {
+  const copy = button.cloneNode(true) as HTMLButtonElement;
+  copy.querySelectorAll('[aria-hidden="true"]').forEach((node) => node.remove());
+  return copy.textContent?.trim();
+}
 function button(text: string) {
   const target = Array.from(container.querySelectorAll("button")).find(
-    (item) => item.textContent === text,
+    (item) => buttonName(item) === text,
   );
   expect(target, text).toBeTruthy();
   return target!;
@@ -208,10 +217,44 @@ it("keeps the published prefix fixed while an owner edits the remaining pool", a
   expect(Array.from(form.querySelectorAll("select")).every((control) => control.disabled)).toBe(
     true,
   );
+  expect(
+    form.querySelector<HTMLButtonElement>('button[aria-label^="Paylaşım hesabı:"]')?.disabled,
+  ).toBe(true);
+  expect(form.querySelector<HTMLButtonElement>('button[aria-label^="Proje:"]')?.disabled).toBe(
+    true,
+  );
   const moves = Array.from(form.querySelectorAll<HTMLButtonElement>(".social-pool-editor button"));
   expect(moves[0].disabled).toBe(true);
   expect(moves[1].disabled).toBe(true);
   expect(moves[2].disabled).toBe(true);
   expect(moves[3].disabled).toBe(false);
   expect(form.textContent).toContain("Gönderilen içeriklerin sırası, hesap ve proje korunur");
+});
+
+it("clears the selected campaign pool when its searchable account changes", async () => {
+  const value = snapshot();
+  value.accounts.push({ ...value.accounts[0], id: "second", name: "Other account" });
+  await render(value);
+  await act(async () => button("Planı düzenle").click());
+  const form = container.querySelector("form")!;
+  const account = form.querySelector<HTMLButtonElement>('button[aria-label^="Paylaşım hesabı:"]')!;
+  expect(form.querySelectorAll("select[required]")).toHaveLength(2);
+  expect(form.textContent).toContain("Yeni özellik");
+  await chooseSocialValue(account, "second");
+  expect(form.querySelector<HTMLSelectElement>("select")?.value).toBe("second");
+  expect(form.querySelector('[aria-label="Seçilen değerler"]')).toBeNull();
+  expect(form.textContent).not.toContain("Yeni özellik");
+});
+
+it("clears the selected campaign pool when its searchable project changes", async () => {
+  await render(snapshot(), true);
+  await act(async () => button("Planı düzenle").click());
+  const form = container.querySelector("form")!;
+  expect(form.textContent).toContain("Yeni özellik");
+  await chooseSocialValue(
+    form.querySelector<HTMLButtonElement>('button[aria-label^="Proje:"]')!,
+    "other",
+  );
+  expect(Array.from(form.querySelectorAll("select")).at(1)?.value).toBe("other");
+  expect(form.textContent).not.toContain("Yeni özellik");
 });

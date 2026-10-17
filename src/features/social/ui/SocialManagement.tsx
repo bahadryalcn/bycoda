@@ -1,3 +1,10 @@
+import { Alert } from "../../../shared/ui/Alert";
+import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
+import { TextField } from "../../../shared/ui/TextField";
+import { Button } from "../../../shared/ui/Button";
+import { NativeSelect } from "../../../shared/ui/Select";
+import { NativeSearchableSelect } from "../../../shared/ui/NativeSearchableSelect";
+import { Checkbox } from "../../../shared/ui/Checkbox";
 import { SearchInput } from "../../../shared/ui/SearchInput";
 import { useState } from "react";
 import { SocialContactHistory } from "./SocialHistoryPage";
@@ -109,29 +116,31 @@ export function Audience({
           <h3>Segment oluştur</h3>
           <label>
             Ad
-            <input name="name" maxLength={200} required />
+            <TextField hideLabel label="" name="name" maxLength={200} required />
           </label>
           <label>
             Kullanıcının verdiği etiketler
-            <input name="tags" placeholder="Virgülle ayırın" />
+            <TextField hideLabel label="" name="tags" placeholder="Virgülle ayırın" />
           </label>
           <label>
             Dil
-            <input name="language" maxLength={30} placeholder="tr" />
+            <TextField hideLabel label="" name="language" maxLength={30} placeholder="tr" />
           </label>
           <Projects
             projects={projects}
             selected={selectedProjects}
             onChange={setSelectedProjects}
           />
-          <button
+          <Button
+            type="submit"
+            variant="secondary"
             disabled={
               !selectedProjects.length ||
               selectedProjects.some((id) => !projects.some((project) => project.id === id))
             }
           >
             Segment kaydet
-          </button>
+          </Button>
         </form>
       </Composer>
       <div className="social-columns">
@@ -142,39 +151,45 @@ export function Audience({
           <label>
             Kişi veya etiket ara
             <SearchInput
-              standalone
+              appearance="field"
               value={query}
               onChange={(event) => setQuery(event.target.value)}
             />
           </label>
           <label>
             Segment
-            <select value={segment} onChange={(event) => setSegment(event.target.value)}>
-              <option value="">Tüm kişiler</option>
-              {snapshot.segments.map((item) => (
-                <option key={item.id} value={item.id}>
-                  {item.name}
-                </option>
-              ))}
-            </select>
+            <SearchableSelect
+              value={segment}
+              label={"Segment"}
+              options={[
+                { value: "", label: "Tüm kişiler" },
+                ...snapshot.segments.map((item) => ({
+                  value: item.id,
+                  label: item.name,
+                })),
+              ]}
+              onChange={(nextValue) => setSegment(nextValue)}
+              searchLocale="tr"
+            />
           </label>
           <label>
             Hesap
-            <select
+            <SearchableSelect
               value={accountFilter}
-              onChange={(event) => setAccountFilter(event.target.value)}
-            >
-              <option value="">Tüm hesaplar</option>
-              {snapshot.accounts.map((account) => (
-                <option key={account.id} value={account.id}>
-                  {account.name}
-                </option>
-              ))}
-            </select>
+              label={"Hesap"}
+              options={[
+                { value: "", label: "Tüm hesaplar" },
+                ...snapshot.accounts.map((account) => ({
+                  value: account.id,
+                  label: account.name,
+                })),
+              ]}
+              onChange={(nextValue) => setAccountFilter(nextValue)}
+              searchLocale="tr"
+            />
           </label>
           <label className="social-select-all">
-            <input
-              type="checkbox"
+            <Checkbox
               aria-label="Görünen tüm kişileri seç"
               checked={
                 contacts.length > 0 && contacts.every((contact) => checkedIds.includes(contact.id))
@@ -191,9 +206,14 @@ export function Audience({
               {checkedIds.filter((id) => contacts.some((contact) => contact.id === id)).length} kişi
               seçili
             </span>
-            <button type="button" disabled={!checkedIds.length} onClick={() => setCheckedIds([])}>
+            <Button
+              variant="secondary"
+              type="button"
+              disabled={!checkedIds.length}
+              onClick={() => setCheckedIds([])}
+            >
               Seçimi temizle
-            </button>
+            </Button>
           </div>
           <Composer title="Seçili kişilere mesaj veya yorum hazırla">
             <SocialBulkComposer
@@ -208,21 +228,21 @@ export function Audience({
             />
           </Composer>
           {selectedSegment ? (
-            <button
+            <Button
+              variant="secondary"
               type="button"
               disabled={!contacts.length}
               onClick={() => setCheckedIds(contacts.map((contact) => contact.id))}
             >
               Bu grubun tüm kişilerini seç ({contacts.length})
-            </button>
+            </Button>
           ) : null}
           {contacts.length ? (
             <div className="social-list">
               {contacts.map((contact) => (
                 <div className="social-selection-row" key={contact.id}>
                   <label>
-                    <input
-                      type="checkbox"
+                    <Checkbox
                       aria-label={`${contact.name} kişisini seç`}
                       checked={checkedIds.includes(contact.id)}
                       onChange={(event) =>
@@ -234,7 +254,9 @@ export function Audience({
                       }
                     />
                   </label>
-                  <button
+                  <Button
+                    type="submit"
+                    variant="tab"
                     className="social-row"
                     aria-label={contact.name}
                     aria-pressed={contact.id === selectedId}
@@ -272,7 +294,7 @@ export function Audience({
                             : "Mesaj izni yok"
                       }
                     />
-                  </button>
+                  </Button>
                 </div>
               ))}
             </div>
@@ -287,7 +309,9 @@ export function Audience({
             <summary>Kişileri içe aktar</summary>
             <label>
               JSON kişi listesi
-              <input
+              <TextField
+                hideLabel
+                label=""
                 type="file"
                 accept="application/json,.json"
                 onChange={(event) => {
@@ -340,7 +364,9 @@ export function Audience({
                   "İzin bilgisini kişi düzenleme bölümünden kaydedebilirsiniz."}
                 {selected.consent?.at ? ` · ${time(selected.consent.at)}` : ""}
               </Notice>
-              <button
+              <Button
+                type="submit"
+                variant="secondary"
                 disabled={selected.optedOut}
                 onClick={() =>
                   void run(
@@ -352,7 +378,7 @@ export function Audience({
                 {selected.optedOut
                   ? "Bu kişiyle iletişim durduruldu"
                   : "İletişimi durdur ve bekleyen işleri iptal et"}
-              </button>
+              </Button>
               <details className="social-settings">
                 <summary>Kişi bilgilerini ve izinlerini düzenle</summary>
                 <ContactForm
@@ -471,24 +497,25 @@ function ContactForm({
       <h3>{contact ? "Kişiyi güncelle" : "Yeni kişi"}</h3>
       <label>
         Hesap
-        <select
+        <NativeSearchableSelect
+          label="Hesap"
+          options={
+            snapshot.accounts.length
+              ? snapshot.accounts.map((account) => ({ value: account.id, label: account.name }))
+              : [{ value: "", label: "Önce bir hesap ekleyin" }]
+          }
           name="account"
           required
           defaultValue={contact?.accountId}
           disabled={!!contact || !snapshot.accounts.length}
-        >
-          {!snapshot.accounts.length ? <option value="">Önce bir hesap ekleyin</option> : null}
-          {snapshot.accounts.map((account) => (
-            <option key={account.id} value={account.id}>
-              {account.name}
-            </option>
-          ))}
-        </select>
+        />
       </label>
       {contact ? <input type="hidden" name="account" value={contact.accountId} /> : null}
       <label>
         Platform kimliği
-        <input
+        <TextField
+          hideLabel
+          label=""
           name="identity"
           required
           maxLength={300}
@@ -503,19 +530,46 @@ function ContactForm({
       </label>
       <label>
         Ad
-        <input name="name" required maxLength={300} defaultValue={contact?.name} />
+        <TextField
+          hideLabel
+          label=""
+          name="name"
+          required
+          maxLength={300}
+          defaultValue={contact?.name}
+        />
       </label>
       <label>
         Profil URL
-        <input name="url" type="url" defaultValue={contact?.profileUrl} placeholder="https://" />
+        <TextField
+          hideLabel
+          label=""
+          name="url"
+          type="url"
+          defaultValue={contact?.profileUrl}
+          placeholder="https://"
+        />
       </label>
       <label>
         Etiketler
-        <input name="tags" defaultValue={contact?.tags.join(", ")} placeholder="Virgülle ayırın" />
+        <TextField
+          hideLabel
+          label=""
+          name="tags"
+          defaultValue={contact?.tags.join(", ")}
+          placeholder="Virgülle ayırın"
+        />
       </label>
       <label>
         Dil
-        <input name="language" maxLength={30} defaultValue={contact?.language} placeholder="tr" />
+        <TextField
+          hideLabel
+          label=""
+          name="language"
+          maxLength={30}
+          defaultValue={contact?.language}
+          placeholder="tr"
+        />
       </label>
       <Projects projects={projects} selected={projectIds} onChange={setProjectIds} />
       <details className="social-settings">
@@ -527,17 +581,17 @@ function ContactForm({
         <fieldset className="social-checks" disabled={contact?.optedOut}>
           <legend>Uygunlukları ayrı doğrulayın</legend>
           <label>
-            <input name="reply" type="checkbox" defaultChecked={contact?.replyEligible} />
+            <Checkbox name="reply" defaultChecked={contact?.replyEligible} />
             Yanıt vermeye uygun
           </label>
           <label>
-            <input name="comment" type="checkbox" defaultChecked={contact?.commentEligible} />
+            <Checkbox name="comment" defaultChecked={contact?.commentEligible} />
             Gönderisine yorum yapmaya uygun
           </label>
           <label>
-            <input
+            <Checkbox
               name="consent"
-              type="checkbox"
+
               checked={addConsent}
               onChange={(event) => setAddConsent(event.target.checked)}
             />
@@ -548,7 +602,9 @@ function ContactForm({
           <>
             <label>
               İzin kaynağı
-              <input
+              <TextField
+                hideLabel
+                label=""
                 name="source"
                 maxLength={1000}
                 required
@@ -557,7 +613,7 @@ function ContactForm({
             </label>
             <label>
               İzin tarihi
-              <input name="date" type="datetime-local" required />
+              <TextField hideLabel label="" name="date" type="datetime-local" required />
             </label>
           </>
         ) : null}
@@ -567,7 +623,13 @@ function ContactForm({
           Bu kişi iletişimi durdurdu. Bilgileri güncellemek iletişim iznini yeniden açmaz.
         </p>
       ) : null}
-      <button disabled={!snapshot.accounts.length || !validProjects}>Kişiyi kaydet</button>
+      <Button
+        type="submit"
+        variant="secondary"
+        disabled={!snapshot.accounts.length || !validProjects}
+      >
+        Kişiyi kaydet
+      </Button>
       {!validProjects ? (
         <p className="social-muted">Kişiyi kaydetmek için bir proje seçin.</p>
       ) : null}
@@ -664,7 +726,7 @@ export function Rules({ client, snapshot, projects, initialProject, run }: Props
             <summary>Bu kural için farklı AI ajanı kullan</summary>
             <label>
               Bu kuralın AI ajanı
-              <select
+              <NativeSelect
                 value={agent}
                 onChange={(event) => {
                   setAgent(event.target.value);
@@ -677,12 +739,14 @@ export function Rules({ client, snapshot, projects, initialProject, run }: Props
                     {HARNESS_TITLE[id]}
                   </option>
                 ))}
-              </select>
+              </NativeSelect>
             </label>
             {agent ? (
               <label>
                 Bu kuralın AI modeli
-                <input
+                <TextField
+                  hideLabel
+                  label=""
                   value={agentModel}
                   maxLength={200}
                   placeholder="Boş: ajanın varsayılan modeli"
@@ -693,50 +757,60 @@ export function Rules({ client, snapshot, projects, initialProject, run }: Props
           </details>
           <label>
             Ad
-            <input name="name" required maxLength={200} />
+            <TextField hideLabel label="" name="name" required maxLength={200} />
           </label>
           <label>
             Hesap
-            <select value={accountId} onChange={(event) => setAccountId(event.target.value)}>
-              {!accounts.length ? (
-                <option value="">Seçili proje için taslak erişimi olan hesap yok</option>
-              ) : null}
-              {accounts.map((account) => (
-                <option key={account.id} value={account.id}>
-                  {account.name} · {names[account.platform]}
-                </option>
-              ))}
-            </select>
+            <SearchableSelect
+              value={accountId}
+              label={"Hesap"}
+              options={[
+                ...(!accounts.length
+                  ? [
+                      {
+                        value: "",
+                        label: "Seçili proje için taslak erişimi olan hesap yok",
+                      },
+                    ]
+                  : []),
+                ...accounts.map((account) => ({
+                  value: account.id,
+                  label: [account.name, "·", names[account.platform]].join(" "),
+                })),
+              ]}
+              onChange={(nextValue) => setAccountId(nextValue)}
+              searchLocale="tr"
+            />
           </label>
           <label>
             Proje
-            <select
+            <SearchableSelect
               value={projectId}
-              onChange={(event) => {
-                setProjectId(event.target.value);
+              label={"Proje"}
+              options={projects.map((project) => ({
+                value: project.id,
+                label: project.name || project.cwd,
+              }))}
+              onChange={(nextValue) => {
+                setProjectId(nextValue);
                 setFactId("");
               }}
-            >
-              {projects.map((project) => (
-                <option key={project.id} value={project.id}>
-                  {project.name || project.cwd}
-                </option>
-              ))}
-            </select>
+              searchLocale="tr"
+            />
           </label>
           <label>
             Mod
-            <select value={mode} onChange={(event) => setMode(event.target.value)}>
+            <NativeSelect value={mode} onChange={(event) => setMode(event.target.value)}>
               <option value="draft">Yalnızca taslak</option>
               <option value="approval">Kullanıcı onayıyla gönderim</option>
               <option value="automatic" disabled={!canAutomate}>
                 Açık kural kapsamında otomatik gönderim
               </option>
-            </select>
+            </NativeSelect>
           </label>
           <label>
             Tetikleyici
-            <select
+            <NativeSelect
               name="trigger"
               value={trigger}
               onChange={(event) => setTrigger(event.target.value)}
@@ -757,11 +831,18 @@ export function Rules({ client, snapshot, projects, initialProject, run }: Props
               >
                 Gelen mesaj
               </option>
-            </select>
+            </NativeSelect>
           </label>
           <label>
             Tam eşleşecek gelen ifade
-            <input name="keyword" required maxLength={100} placeholder="Örn. fiyatı nedir" />
+            <TextField
+              hideLabel
+              label=""
+              name="keyword"
+              required
+              maxLength={100}
+              placeholder="Örn. fiyatı nedir"
+            />
           </label>
           {!facts.length ? (
             <p className="social-muted">
@@ -770,45 +851,56 @@ export function Rules({ client, snapshot, projects, initialProject, run }: Props
           ) : null}
           <label>
             İzin verilen yanıt bilgisi
-            <select required value={factId} onChange={(event) => setFactId(event.target.value)}>
-              <option value="" disabled>
-                Doğrulanmış bilgi seç
-              </option>
-              {facts.map((fact) => (
-                <option key={fact.id} value={fact.id}>
-                  {fact.topic}: {fact.text}
-                </option>
-              ))}
-            </select>
+            <NativeSearchableSelect
+              label="İzin verilen yanıt bilgisi"
+              options={[
+                { value: "", label: "Doğrulanmış bilgi seç", disabled: true },
+                ...facts.map((fact) => ({ value: fact.id, label: `${fact.topic}: ${fact.text}` })),
+              ]}
+              required
+              value={factId}
+              onChange={(event) => setFactId(event.target.value)}
+            />
           </label>
           <details className="social-settings">
             <summary>İleri seçenekler: günlük sınır ve durdurma ifadeleri</summary>
             <label>
               Günlük sınır
-              <input name="limit" type="number" min={1} max={100} defaultValue={10} required />
+              <TextField
+                hideLabel
+                label=""
+                name="limit"
+                type="number"
+                min={1}
+                max={100}
+                defaultValue={10}
+                required
+              />
             </label>
             <label>
               Durdurma ifadeleri
-              <input name="stop" placeholder="Virgülle ayırın" />
+              <TextField hideLabel label="" name="stop" placeholder="Virgülle ayırın" />
             </label>
           </details>
           {triggerCapability?.status === "unsupported" ? (
-            <p role="alert">
+            <Alert tone="danger">
               {account?.connection === "browser"
                 ? "Tarayıcı bağlantısı gelen kutusunu otomatik okuyamaz. Bu tetikleyici için resmi API bağlantısı gerekir."
                 : triggerCapability.reason}
-            </p>
+            </Alert>
           ) : null}
           {mode === "automatic" && !canAutomate ? (
-            <p role="alert">
+            <Alert tone="danger">
               Otomatik gönderim için desteklenen bir hesap ve bu projeye yanıt izni gerekli.
-            </p>
+            </Alert>
           ) : null}
           <p className="social-muted">
             Kural durdurulmuş olarak kaydedilir. İçeriği ve izinleri kontrol edip ayrıca
             etkinleştirin. AI ajanı ve içerik sınırları Ayarlar bölümünden devralınır.
           </p>
-          <button
+          <Button
+            type="submit"
+            variant="secondary"
             disabled={
               !accountId ||
               !projectId ||
@@ -818,7 +910,7 @@ export function Rules({ client, snapshot, projects, initialProject, run }: Props
             }
           >
             Durdurulmuş kuralı kaydet
-          </button>
+          </Button>
         </form>
       </Composer>
       <div className="social-columns">
@@ -873,16 +965,20 @@ export function Rules({ client, snapshot, projects, initialProject, run }: Props
                   })()}
                 </p>
                 <div className="social-actions">
-                  <button
+                  <Button
+                    type="submit"
+                    variant="secondary"
                     disabled={!rule.enabled}
                     onClick={() =>
                       void run(() => client.request("automations.pause", { id: rule.id }))
                     }
                   >
                     Durdur
-                  </button>
+                  </Button>
                   {!rule.enabled ? (
-                    <button
+                    <Button
+                      type="submit"
+                      variant="secondary"
                       onClick={() =>
                         void run(() =>
                           client.request("automations.activate", {
@@ -897,7 +993,7 @@ export function Rules({ client, snapshot, projects, initialProject, run }: Props
                       {rule.mode === "automatic"
                         ? "Bu kuralın otomatik gönderimini etkinleştir"
                         : "Etkinleştir"}
-                    </button>
+                    </Button>
                   ) : null}
                 </div>
               </article>

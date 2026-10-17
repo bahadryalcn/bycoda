@@ -1,3 +1,4 @@
+import { Alert } from "../../../shared/ui/Alert";
 import { UsageMeter } from "../../../shared/ui/UsageMeter";
 import { t, useLocale } from "../../../shared/i18n";
 import { useEffect, useState } from "react";
@@ -200,14 +201,14 @@ function AccountLimits({
         );
       })}
       {limits.error ? (
-        <p role="alert" className="text-xs text-danger">
+        <Alert tone="danger" role="alert">
           {label}: {limits.error}
-        </p>
+        </Alert>
       ) : null}
       {windows.length > 0 && (limits.status === "fetching" || limits.status === "idle") ? (
-        <p role="status" className="text-xs text-content/60">
+        <Alert tone="info" role="status">
           {t("Refreshing account limits… Previous limits remain visible.")}
-        </p>
+        </Alert>
       ) : null}
       {!windows.length && !limits.error ? (
         <p className="rounded-xl border border-stroke p-4 text-xs text-content/50">

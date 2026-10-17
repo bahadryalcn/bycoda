@@ -516,9 +516,10 @@ it("appends a separate block and invalidates preview ranges after a source edit"
     "Changed this text.",
   );
   await act(async () =>
-    [...container.querySelectorAll<HTMLButtonElement>(".note-detail header button")]
-      .find((button) => button.textContent === "Save")!
-      .click(),
+    container.querySelector<HTMLButtonElement>('[aria-label="More options"]')!.click(),
+  );
+  await act(async () =>
+    document.querySelector<HTMLButtonElement>('[role="menuitem"][aria-label="Save"]')!.click(),
   );
   expect(stored.body).toBe("Changed this text.\n\nSecond paragraph");
 });
@@ -548,11 +549,14 @@ it("filters and collapses project groups while retaining an edited note outside 
   await act(async () =>
     container.querySelector<HTMLButtonElement>('[aria-label="Filters and options"]')!.click(),
   );
-  const project = document.querySelector<HTMLSelectElement>('[aria-label="Filter by project"]')!;
-  await act(async () => {
-    project.value = "/work/portognjeeen";
-    project.dispatchEvent(new Event("change", { bubbles: true }));
-  });
+  const project = document.querySelector<HTMLButtonElement>(
+    'button[aria-label^="Filter by project:"]',
+  )!;
+  await act(async () => project.click());
+  const option = [...document.querySelectorAll<HTMLElement>('[role="option"]')].find((node) =>
+    node.textContent?.includes("portognjeeen"),
+  )!;
+  await act(async () => option.click());
   expect(container.querySelectorAll("[data-note-library] li")).toHaveLength(1);
   expect(container.textContent).toContain("This note is outside the current filters.");
   expect(container.querySelector<HTMLInputElement>('[aria-label="Note title"]')?.value).toBe(

@@ -1,3 +1,4 @@
+import { Button } from "../../shared/ui/Button";
 import { t, useLocale } from "../../shared/i18n";
 import { X } from "../../shared/ui/icons";
 import { PRODUCT_IDENTITY } from "../../shared/lib/productIdentity";
@@ -15,10 +16,12 @@ export function UpdateRailCard({ update, onOpen, onDismiss }: Props) {
 
   return (
     <section role="status" className="relative overflow-hidden rounded-lg bg-content/12">
-      <button
+      <Button
+        variant="ghost"
+        motion="none"
         type="button"
         onClick={() => onOpen(update.version)}
-        className="flex w-full items-start gap-2 rounded-lg px-2 py-2 pr-8 text-left hover:bg-accent/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent"
+        className="flex w-full items-start gap-2"
       >
         <span className="mt-0.5 grid size-[18px] shrink-0 place-items-center">
           <img
@@ -37,15 +40,19 @@ export function UpdateRailCard({ update, onOpen, onDismiss }: Props) {
             {t("What's new")}
           </span>
         </span>
-      </button>
-      <button
+      </Button>
+      <Button
+        iconOnly
+        label={t("Dismiss update notification")}
+        variant="ghost"
+        motion="none"
         type="button"
         aria-label={t("Dismiss update notification")}
         onClick={onDismiss}
-        className="absolute right-1 top-1 grid size-6 place-items-center rounded-md text-content/45 hover:bg-content/8 hover:text-content focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+        className="absolute right-1 top-1 grid place-items-center"
       >
         <X className="size-3.5" strokeWidth={1.75} />
-      </button>
+      </Button>
     </section>
   );
 }

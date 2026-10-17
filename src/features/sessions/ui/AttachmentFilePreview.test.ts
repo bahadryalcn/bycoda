@@ -242,6 +242,8 @@ describe("media attachment integration", () => {
     expect(mocks.prepare).not.toHaveBeenCalled();
     expect(mocks.read).not.toHaveBeenCalled();
     closePreview();
-      await vi.waitFor(() => expect(URL.revokeObjectURL).toHaveBeenCalledWith("blob:attachment-media"));
+    await vi.waitFor(() =>
+      expect(URL.revokeObjectURL).toHaveBeenCalledWith("blob:attachment-media"),
+    );
   });
 });

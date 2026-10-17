@@ -1,3 +1,6 @@
+import { Alert } from "../../../shared/ui/Alert";
+import { Button } from "../../../shared/ui/Button";
+import { TextField } from "../../../shared/ui/TextField";
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import { pathKey } from "../../../shared/lib/paths";
@@ -84,9 +87,8 @@ export function ProjectMultiSelect({
   const toggle = (path: string, range = false, includeAnchor = range) => {
     if (!paths.some((allowed) => pathKey(allowed) === pathKey(path))) return;
     setStored((current) => {
-      const initial = !active && includeAnchor && anchor != null
-        ? new Set([pathKey(anchor)])
-        : current;
+      const initial =
+        !active && includeAnchor && anchor != null ? new Set([pathKey(anchor)]) : current;
       return selectProjectRange(paths, initial, anchor, path, range);
     });
     if (!range || anchor == null) setAnchor(path);
@@ -186,9 +188,7 @@ export function ProjectMultiSelect({
       }}
     >
       {error && !newGroupAnchor ? (
-        <p role="alert" className="px-3 py-1 text-[11px] text-danger">
-          {t("Could not save project changes. Try again.")}
-        </p>
+        <Alert tone="danger">{t("Could not save project changes. Try again.")}</Alert>
       ) : null}
       {children}
       {menu ? (
@@ -227,38 +227,40 @@ export function ProjectMultiSelect({
             }}
           >
             <label
-              className="px-1 text-xs font-medium text-content/70"
+              className="px-1 text-xs font-medium text-[var(--ui-text-muted)]"
               htmlFor="project-selection-group-name"
             >
               {t("New group name")}
             </label>
-            <input
+            <TextField
+              hideLabel
+              label=""
               id="project-selection-group-name"
               autoFocus
-              className="min-w-0 rounded-md border border-content/10 bg-content/5 px-2 py-1.5 text-[13px] text-content focus-visible:outline-2 focus-visible:outline-accent"
+              className="min-w-0"
               value={name}
               onChange={(event) => setName(event.target.value)}
             />
             {error ? (
-              <p role="alert" className="px-1 text-[11px] text-danger">
-                {t("Could not save project changes. Try again.")}
-              </p>
+              <Alert tone="danger">{t("Could not save project changes. Try again.")}</Alert>
             ) : null}
             <div className="flex justify-end gap-1">
-              <button
+              <Button
+                variant="secondary"
+                motion="none"
                 type="button"
-                className="rounded-md px-2 py-1 text-xs text-content/60 hover:bg-content/8 active:bg-content/12 focus-visible:outline-2 focus-visible:outline-accent"
                 onClick={() => setNewGroupAnchor(null)}
               >
                 {t("Cancel")}
-              </button>
-              <button
+              </Button>
+              <Button
+                variant="primary"
+                motion="none"
                 type="submit"
                 disabled={!chosen.length || !name.trim()}
-                className="rounded-md bg-content/8 px-2 py-1 text-xs text-content/85 hover:bg-content/12 active:bg-content/15 focus-visible:outline-2 focus-visible:outline-accent disabled:opacity-30"
               >
                 {t("Group")}
-              </button>
+              </Button>
             </div>
           </form>
         </Popover>

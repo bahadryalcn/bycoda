@@ -28,6 +28,11 @@ afterEach(async () => {
   await setLanguagePreference("en");
 });
 const button = () => container.querySelector("button")!;
+const buttonText = () => {
+  const copy = button().cloneNode(true) as HTMLElement;
+  copy.querySelectorAll('[aria-hidden="true"]').forEach((node) => node.remove());
+  return copy.textContent;
+};
 
 it("shows both warnings, disables repeat clicks, and explains the preserved copy after success", async () => {
   let finish!: (preserved: boolean) => void;
@@ -50,7 +55,7 @@ it("shows both warnings, disables repeat clicks, and explains the preserved copy
   });
   expect(onRefresh).toHaveBeenCalledExactlyOnceWith(session.id);
   expect(button().disabled).toBe(true);
-  expect(button().textContent).toBe("Refreshing…");
+  expect(buttonText()).toBe("Refreshing…");
   await act(async () => {
     finish(true);
     root.render(
@@ -77,7 +82,7 @@ it("shows a connection failure and allows a successful retry", async () => {
   act(() => root.render(createElement(AdoptedSessionNotice, { session, onRefresh })));
   await act(async () => button().click());
   expect(container.textContent).toContain("Check the connection and try again");
-  expect(button().textContent).toBe("Retry refresh");
+  expect(buttonText()).toBe("Retry refresh");
   await act(async () => button().click());
   expect(onRefresh).toHaveBeenCalledTimes(2);
   expect(container.textContent).toContain("Conversation synced.");

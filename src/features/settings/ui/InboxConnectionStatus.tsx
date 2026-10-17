@@ -1,3 +1,5 @@
+import { Alert } from "../../../shared/ui/Alert";
+import { Badge } from "../../../shared/ui/Badge";
 import { t, useLocale } from "../../../shared/i18n";
 import { SecondaryButton } from "../../../shared/ui/SecondaryButton";
 import { Row } from "./settingsControls";
@@ -25,19 +27,22 @@ export function InboxConnectionStatus({
         "Checking reads the saved configuration. Save and test verifies access with the credentials you enter.",
       )}
     >
-      <span
+      <Badge
+        tone={error ? "danger" : configured && !checking ? "success" : "neutral"}
+        icon={
+          error ? (
+            <AlertCircle size={14} />
+          ) : configured && !checking ? (
+            <Check size={14} />
+          ) : (
+            <CircleDashed size={14} />
+          )
+        }
         role="status"
         aria-live="polite"
         className="inbox-connection-status"
         data-state={checking ? "checking" : error ? "error" : configured ? "configured" : "idle"}
       >
-        {error ? (
-          <AlertCircle size={14} aria-hidden="true" />
-        ) : configured && !checking ? (
-          <Check size={14} aria-hidden="true" />
-        ) : (
-          <CircleDashed size={14} aria-hidden="true" />
-        )}
         {checking
           ? t("Checking")
           : error
@@ -45,7 +50,7 @@ export function InboxConnectionStatus({
             : configured
               ? t("Configured")
               : t("Not configured")}
-      </span>
+      </Badge>
       <SecondaryButton disabled={busy || checking} onClick={onCheck}>
         {error ? t("Retry") : t("Check saved configuration")}
       </SecondaryButton>
@@ -55,11 +60,8 @@ export function InboxConnectionStatus({
 
 export function InboxConnectionError({ error }: { error: string | null }) {
   return error ? (
-    <p
-      role="alert"
-      className="px-4 [padding-block:0.75rem] text-[12px] text-danger/90 whitespace-pre-wrap break-words"
-    >
+    <Alert tone="danger" role="alert">
       {error}
-    </p>
+    </Alert>
   ) : null;
 }

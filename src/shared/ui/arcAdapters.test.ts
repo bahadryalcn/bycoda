@@ -10,6 +10,35 @@ import { TextareaField } from "./TextareaField";
 let container: HTMLDivElement;
 let root: Root;
 
+it("keeps an outer input label and native ref without nesting another label", async () => {
+  const ref = createRef<HTMLInputElement>();
+  await act(async () =>
+    root.render(
+      createElement(
+        "label",
+        null,
+        "Model ID",
+        createElement(TextField, {
+          ref,
+          label: "",
+          hideLabel: true,
+          name: "model",
+          required: true,
+          defaultValue: "custom-model",
+          list: "model-options",
+          "aria-describedby": "model-help",
+        }),
+      ),
+    ),
+  );
+  expect(container.querySelectorAll("label")).toHaveLength(1);
+  expect(ref.current!.getAttribute("aria-label")).toBeNull();
+  expect(ref.current!.getAttribute("list")).toBe("model-options");
+  expect(ref.current!.getAttribute("aria-describedby")).toBe("model-help");
+  expect(ref.current!.value).toBe("custom-model");
+  expect(ref.current!.required).toBe(true);
+});
+
 it("preserves textarea ref, native validation and an existing outer label", async () => {
   const ref = createRef<HTMLTextAreaElement>();
   await act(async () =>
@@ -300,7 +329,8 @@ it("keeps hidden field labels, refs, validation descriptions and native form val
     ),
   );
   const input = ref.current!;
-  expect(container.querySelector("label")!.htmlFor).toBe(input.id);
+  expect(container.querySelector("label")).toBeNull();
+  expect(input.getAttribute("aria-label")).toBe("Project name");
   expect(input.required).toBe(true);
   expect(input.getAttribute("aria-invalid")).toBe("true");
   expect(document.getElementById(input.getAttribute("aria-describedby")!)!.textContent).toContain(

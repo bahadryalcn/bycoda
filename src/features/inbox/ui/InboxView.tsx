@@ -1,7 +1,10 @@
+import { Alert } from "../../../shared/ui/Alert";
+import { Button } from "../../../shared/ui/Button";
+import { NativeSelect } from "../../../shared/ui/Select";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useQueryVisible } from "../../../shared/hooks/useQueryVisible";
 import { useStableCallback } from "../../../shared/hooks/useStableCallback";
-import { SearchInput } from "../../../shared/ui/SearchInput";
+import { SearchInput, SearchInputGroup } from "../../../shared/ui/SearchInput";
 import { ToolHeader } from "../../../app/shell/ToolNavigation";
 import { filterCodeHostScopes, useCodeHostScopes } from "../model/codeHostScopes";
 import { prefetchInboxItem } from "../model/inboxPrefetch";
@@ -40,7 +43,7 @@ import { WORKSPACE_REFRESH_EVENT } from "../../../app/shell/WorkspaceControls";
 import { InboxProviderMark } from "./InboxProviderMark";
 import { ProjectLogoIcon } from "../../projects/ui/ProjectLogoIcon";
 import { ProjectMascot } from "../../projects/ui/ProjectMascot";
-import { IconButton, OverlayNav } from "../../../app/shell/TitleBar";
+import { OverlayNav } from "../../../app/shell/TitleBar";
 import { WindowControls } from "../../../app/shell/WindowControls";
 import { useDragResize } from "../../../shared/hooks/useDragResize";
 import { useLockOverscroll } from "../../../shared/hooks/useLockOverscroll";
@@ -138,7 +141,6 @@ import {
   inboxStatusMark,
   InboxLabel,
   CiRepairProps,
-  ACTION_OUTLINE,
 } from "./InboxPresentation";
 export { InboxDetail, inboxShowsFullFileDiff } from "./InboxDetail";
 export { GithubPrActions } from "./InboxPrActions";
@@ -185,22 +187,18 @@ function InboxSourceTab({
   useLocale();
   const label = INBOX_SOURCE_LABELS[source];
   return (
-    <button
+    <Button
+      variant="tab"
       type="button"
       role="tab"
       aria-selected={selected}
       onClick={() => onSelect(source)}
-      className={`flex h-6 min-w-0 flex-1 items-center justify-center rounded-md px-2 text-[12px] leading-none ${
-        selected
-          ? "bg-selection text-content"
-          : "text-content/50 hover:bg-content/5 hover:text-content"
-      }`}
     >
       <span className="flex items-center gap-1.5">
         <InboxProviderMark provider={source} className="block size-3.5 shrink-0" />
         <span className="leading-none">{label}</span>
       </span>
-    </button>
+    </Button>
   );
 }
 
@@ -772,9 +770,9 @@ export function InboxView({
   const list = (
     <div
       ref={resize.setPaneRef}
-      className="relative flex h-full min-h-0 shrink-0 flex-col border-r border-stroke"
+      className="relative flex h-full min-h-0 shrink-0 flex-col border-r border-(--ui-tone-neutral-border)"
     >
-      <div className="flex h-9 shrink-0 items-center gap-px border-b border-stroke px-2">
+      <div className="flex h-9 shrink-0 items-center gap-px border-b border-(--ui-tone-neutral-border) px-2">
         {visibleSources.length > 0 ? (
           <div
             role="tablist"
@@ -793,7 +791,10 @@ export function InboxView({
           </div>
         ) : null}
         {connectableSources.length > 0 ? (
-          <button
+          <Button
+            iconOnly
+            label={t("Connect an inbox source")}
+            variant="ghost"
             ref={connectButtonRef}
             type="button"
             aria-label={t("Connect an inbox source")}
@@ -801,44 +802,42 @@ export function InboxView({
             aria-expanded={connectMenuOpen}
             title={t("Connect an inbox source")}
             onClick={() => setConnectMenuOpen((open) => !open)}
-            className={`grid size-7 shrink-0 place-items-center rounded-md active:bg-content/10 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-content ${
-              connectMenuOpen
-                ? "bg-selection text-content"
-                : "text-content/40 hover:bg-content/5 hover:text-content"
-            }`}
           >
             <Plus className="size-3.5" strokeWidth={1.75} aria-hidden="true" />
-          </button>
+          </Button>
         ) : null}
       </div>
       {noSourcesConnected ? null : (
-        <div className="flex h-9 shrink-0 items-center gap-1 border-b border-stroke px-2">
-          <div className="relative flex h-7 min-w-0 flex-1 items-center">
-            <Search className="pointer-events-none absolute left-2 size-3 shrink-0 opacity-50" />
+        <div className="flex h-9 shrink-0 items-center gap-1 border-b border-(--ui-tone-neutral-border) px-2">
+          <SearchInputGroup appearance="field" className="min-w-0 flex-1">
+            <Search className="pointer-events-none size-3 shrink-0 text-(--ui-text-secondary)" />
             <SearchInput
+              focusOwner="group"
               value={searchInput}
               onChange={(event) => setSearchInput(event.target.value)}
               placeholder={pullRequestsOnly ? t("Search pull requests") : t("Filter inbox")}
               aria-label={pullRequestsOnly ? t("Search pull requests") : t("Filter inbox")}
               spellCheck={false}
               autoComplete="off"
-              className="h-7 w-full rounded-md bg-transparent pl-7 pr-2 text-[12px] text-content outline-none placeholder:text-content/40"
             />
-          </div>
-          <button
+          </SearchInputGroup>
+          <Button
+            iconOnly
+            label={t("Filter inbox")}
+            variant="ghost"
             type="button"
             title={t("Filter inbox")}
             aria-label={t("Filter inbox")}
             aria-expanded={!!filterMenu}
             aria-haspopup="menu"
             onClick={onFilterButtonClick}
-            className={`grid size-6 shrink-0 place-items-center rounded-md text-content/45 hover:bg-content/10 hover:text-content ${
-              filterMenu || filtersActive ? "bg-selection text-content" : ""
-            }`}
           >
             <ListFilter className="size-3" strokeWidth={1.75} />
-          </button>
-          <button
+          </Button>
+          <Button
+            iconOnly
+            label={t("Mark all as read")}
+            variant="ghost"
             type="button"
             title={t("Mark all as read")}
             aria-label={t("Mark all as read")}
@@ -850,44 +849,45 @@ export function InboxView({
                   : "Could not save read status. Please try again.",
               )
             }
-            className="grid size-6 shrink-0 place-items-center rounded-md text-content/45 hover:bg-content/10 hover:text-content disabled:cursor-default disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-content/45"
+            className="shrink-0"
           >
             <CheckCheck className="size-3.5" strokeWidth={1.75} />
-          </button>
-          <button
+          </Button>
+          <Button
+            variant="ghost"
             type="button"
             aria-label={t("Refresh")}
             onClick={() => setRefresh((value) => value + 1)}
-            className="grid size-6 shrink-0 place-items-center rounded-md text-content/45 hover:bg-content/10 hover:text-content"
+            className="shrink-0"
           >
             {loading || revalidating ? (
               <LoaderCircle className="size-3.5 animate-spin" strokeWidth={1.75} />
             ) : (
               <RefreshCw className="size-3.5" strokeWidth={1.75} />
             )}
-          </button>
+          </Button>
         </div>
       )}
       {readStatusError ? (
-        <p role="alert" className="px-3 py-2 text-xs text-danger">
+        <Alert tone="danger" role="alert">
           {readStatusError}
-        </p>
+        </Alert>
       ) : null}
       <div ref={setListScrollRef} className="min-h-0 flex-1 overflow-y-auto overscroll-none">
         {noSourcesConnected ? (
-          <p className="px-3 py-3 text-[12px] text-content/50">
+          <p className="px-3 py-3 text-[12px] text-(--ui-text-secondary)">
             {pullRequestsOnly
               ? t("Connect GitHub, GitLab or Azure DevOps to view pull requests.")
               : t("Add a connection to start using the Inbox.")}
           </p>
         ) : sourceError && visibleItems.length === 0 ? (
-          <p className="px-3 py-2 text-[12px] text-content/50">{sourceError}</p>
+          <p className="px-3 py-2 text-[12px] text-(--ui-text-secondary)">{sourceError}</p>
         ) : loading && items.length === 0 ? (
-          <div className="flex justify-center py-10 text-content/40">
+          <div className="flex justify-center py-10 text-(--ui-text-secondary)">
             <LoaderCircle className="size-4 animate-spin" strokeWidth={1.75} />
           </div>
         ) : pullRequestsOnly && visibleItems.length === 0 ? (
-          <p className="px-3 py-2 text-[12px] text-content/50">
+          <p className="px-3 py-2 text-[12px] text-(--ui-text-secondary)">
             {projects.length === 0
               ? t("Add a project to see its repository's pull requests.")
               : narrowedByUser
@@ -895,7 +895,7 @@ export function InboxView({
                 : t("No pull requests in this workspace.")}
           </p>
         ) : visibleItems.length === 0 ? (
-          <p className="px-3 py-2 text-[12px] text-content/50">
+          <p className="px-3 py-2 text-[12px] text-(--ui-text-secondary)">
             {narrowedByUser
               ? searchNarrowed
                 ? isTrackerSource(source)
@@ -956,7 +956,7 @@ export function InboxView({
         aria-orientation="vertical"
         aria-label={t("Resize inbox list")}
         className={`absolute inset-y-0 -right-px z-10 w-1.5 cursor-col-resize touch-none ${
-          resize.dragging ? "bg-content/15" : "hover:bg-content/10"
+          resize.dragging ? "bg-(--ui-surface-raised)" : "hover:bg-(--ui-surface-raised)"
         }`}
         onPointerDown={resize.onPointerDown}
         onDoubleClick={resize.onDoubleClick}
@@ -1002,10 +1002,10 @@ export function InboxView({
       role="region"
       aria-label={t("Inbox")}
       data-app-inbox
-      className="bycoda-inbox flex min-h-0 min-w-0 flex-1 flex-col text-content"
+      className="bycoda-inbox flex min-h-0 min-w-0 flex-1 flex-col text-(--ui-tone-neutral-fg)"
     >
       <div
-        className="flex h-10 shrink-0 select-none items-center border-b border-stroke"
+        className="flex h-10 shrink-0 select-none items-center border-b border-(--ui-tone-neutral-border)"
         data-tauri-drag-region="deep"
       >
         {IS_MAC && compactRail ? <div className="w-4 shrink-0" /> : null}
@@ -1013,79 +1013,63 @@ export function InboxView({
         {besideRail ? null : <OverlayNav onBack={onClose} onToggleSidebar={onToggleSidebar} />}
         <ToolHeader>
           <div className="flex min-w-0 flex-1 items-center gap-2 px-3 text-[13px]">
-            <Inbox className="size-3.5 shrink-0 text-content/45" strokeWidth={1.75} />
-            <span className="min-w-0 truncate text-content">
+            <Inbox className="size-3.5 shrink-0 text-(--ui-text-secondary)" strokeWidth={1.75} />
+            <h1 className="min-w-0 truncate text-(--ui-tone-neutral-fg)">
               {pullRequestsOnly ? t("Pull Requests") : t("Inbox")}
-            </span>
+            </h1>
           </div>
         </ToolHeader>
         {IS_MAC ? null : <WindowControls />}
       </div>
 
-      <header className="bycoda-workspace-heading">
-        <div className="bycoda-heading-mark" aria-hidden="true">
-          <Inbox className="size-6" />
-        </div>
-        <div className="min-w-0 flex-1">
-          <h1>{pullRequestsOnly ? t("Pull Requests") : t("Find the next step")}</h1>
-          <p>
-            {pullRequestsOnly
-              ? t("Search repository reviews, check CI and open the related conversation.")
-              : t("Bring requests, conversations and reviews into your workspace.")}
-          </p>
-        </div>
+      <header className="flex shrink-0 flex-wrap items-center gap-2 border-b border-(--ui-tone-neutral-border) px-3 py-2">
         {source === "jira" ? (
           <div role="group" aria-label={t("Jira view")} className="jira-board-tabs">
-            <button
+            <Button
+              variant="ghost"
               type="button"
               aria-pressed={jiraView === "list"}
               onClick={() => setJiraView("list")}
-              className="rounded-md border border-stroke px-3 py-1.5 text-xs"
             >
               {t("List")}
-            </button>
-            <button
+            </Button>
+            <Button
+              variant="ghost"
               type="button"
               aria-pressed={jiraView === "board"}
               onClick={() => setJiraView("board")}
-              className="rounded-md border border-stroke px-3 py-1.5 text-xs"
             >
               {t("Board")}
-            </button>
+            </Button>
           </div>
         ) : null}
         {source !== "jira" || jiraView === "list" ? (
-          <div className="bycoda-heading-count">
-            <strong>{visibleItems.length}</strong>
+          <div className="flex items-center gap-1.5 text-[12px] text-(--ui-text-secondary)">
+            <span className="tabular-nums">{visibleItems.length}</span>
             <span>{t("items")}</span>
           </div>
         ) : null}
         {pullRequestsOnly && projects.length === 0 && onOpenProject ? (
-          <button
-            type="button"
-            onClick={() => void onOpenProject()}
-            className="rounded-md bg-accent px-3 py-1.5 text-xs text-on-solid"
-          >
+          <Button variant="ghost" type="button" onClick={() => void onOpenProject()}>
             {t("Add project")}
-          </button>
+          </Button>
         ) : null}
         {pullRequestsOnly ? (
-          <select
+          <NativeSelect
             aria-label={t("Sort pull requests")}
             value={prSort}
             onChange={(event) => setPrSort(event.target.value)}
-            className="rounded-md border border-stroke bg-background px-2 py-1 text-xs"
           >
             <option value="updated">{t("Recently updated")}</option>
             <option value="title">{t("Title")}</option>
-          </select>
+          </NativeSelect>
         ) : null}
       </header>
 
       {source === "jira" && jiraView === "board" ? (
         <>
           <div
-            className="flex h-9 shrink-0 items-center gap-1 border-b border-stroke px-3"
+            className="flex h-9 shrink-0 items-center gap-1 border-b border-(--ui-tone-neutral-border) px-3"
             role="tablist"
             aria-label={t("Inbox source")}
           >
@@ -1111,13 +1095,14 @@ export function InboxView({
             />
             {boardIssue ? (
               <aside className="jira-board-detail" aria-label={boardIssue.identifier}>
-                <button
+                <Button
+                  variant="ghost"
                   type="button"
-                  className="jira-board-detail-close rounded-md border border-stroke px-3 py-1 text-xs"
+                  className="jira-board-detail-close"
                   onClick={() => setBoardIssue(null)}
                 >
                   {t("Close issue details")}
-                </button>
+                </Button>
                 <InboxDetailBody
                   item={boardIssue}
                   cwd={cwd}
@@ -1266,7 +1251,7 @@ export function LinkedWorkItemPanel({
       aria-hidden={!visible}
       inert={!visible || undefined}
       data-linked-work-item-panel
-      className={`@container/linked relative min-h-0 max-w-full shrink-0 flex-col border-l border-stroke text-content max-[950px]:absolute max-[950px]:inset-y-0 max-[950px]:right-0 max-[950px]:z-30 max-[950px]:shadow-2xl ${
+      className={`@container/linked relative min-h-0 max-w-full shrink-0 flex-col border-l border-(--ui-tone-neutral-border) text-(--ui-tone-neutral-fg) max-[950px]:absolute max-[950px]:inset-y-0 max-[950px]:right-0 max-[950px]:z-30 max-[950px]:shadow-2xl ${
         visible ? "flex linked-work-item-enter" : "hidden"
       }`}
     >
@@ -1277,16 +1262,18 @@ export function LinkedWorkItemPanel({
         onPointerDown={resize.onPointerDown}
         onDoubleClick={resize.onDoubleClick}
         className={`absolute inset-y-0 -left-1 z-20 w-2 cursor-col-resize touch-none ${
-          resize.dragging ? "bg-content/15" : "hover:bg-content/10"
+          resize.dragging ? "bg-(--ui-surface-raised)" : "hover:bg-(--ui-surface-raised)"
         }`}
       />
       <div className="absolute top-[5px] right-2 z-30">
-        <IconButton
+        <Button
+          variant="ghost"
+          iconOnly
           label={t("Close {p0} panel", { p0: kindLabel.toLowerCase() })}
           onClick={onClose}
         >
           <PanelLeft className="size-3.5" strokeWidth={1.75} />
-        </IconButton>
+        </Button>
       </div>
       <div className="min-h-0 min-w-0 flex-1">
         {item ? (
@@ -1306,21 +1293,17 @@ export function LinkedWorkItemPanel({
           />
         ) : error ? (
           <div className="flex h-full flex-col items-center justify-center gap-3 px-8 text-center">
-            <CircleX className="size-5 text-danger/90" strokeWidth={1.75} />
-            <p role="alert" className="max-w-sm text-[12px] text-content/55">
+            <CircleX className="size-5 text-(--ui-tone-danger-fg)" strokeWidth={1.75} />
+            <Alert tone="info" role="alert" className="max-w-sm">
               {error}
-            </p>
-            <button
-              type="button"
-              onClick={() => void openUrl(target.url)}
-              className={ACTION_OUTLINE}
-            >
+            </Alert>
+            <Button variant="secondary" type="button" onClick={() => void openUrl(target.url)}>
               <ExternalLink className="size-3.5" strokeWidth={1.75} />
               {t("Open on GitHub")}
-            </button>
+            </Button>
           </div>
         ) : (
-          <div className="flex h-full items-center justify-center text-content/40">
+          <div className="flex h-full items-center justify-center text-(--ui-text-secondary)">
             <LoaderCircle className="size-4 animate-spin" strokeWidth={1.75} />
           </div>
         )}
@@ -1358,8 +1341,8 @@ function InboxDetailBody({
   if (!item) {
     return (
       <div className="flex h-full flex-col items-center justify-center px-6 text-center">
-        <Inbox className="mb-3 size-6 text-content/30" strokeWidth={1.75} />
-        <p className="text-[13px] text-content/45">{t("Select an inbox item")}</p>
+        <Inbox className="mb-3 size-6 text-(--ui-text-secondary)" strokeWidth={1.75} />
+        <p className="text-[13px] text-(--ui-text-secondary)">{t("Select an inbox item")}</p>
       </div>
     );
   }
@@ -1417,7 +1400,10 @@ const InboxCard = memo(function InboxCard({
   });
 
   return (
-    <button
+    <Button
+      variant="item"
+      layout="stacked"
+      className="w-full min-w-0"
       type="button"
       title={item.title}
       aria-current={active ? "true" : undefined}
@@ -1427,17 +1413,12 @@ const InboxCard = memo(function InboxCard({
       onClick={() => onSelect(item)}
       onMouseEnter={() => prefetchInboxItem(item)}
       onFocus={() => prefetchInboxItem(item)}
-      className={`flex w-full flex-col rounded-md border px-2.5 py-2 text-left ${
-        active
-          ? "border-transparent bg-selection text-content"
-          : "border-transparent text-content/80 hover:bg-content/5 hover:text-content"
-      }`}
     >
-      <span className="flex items-center gap-2">
+      <span className="flex min-w-0 items-center gap-2">
         <span className="flex min-w-0 flex-1 items-center gap-1.5">
           <InboxProviderMark provider={item.provider} className="size-3.5 shrink-0" />
           <status.Icon className={`size-3 shrink-0 ${status.className}`} strokeWidth={1.75} />
-          <span className="min-w-0 truncate text-[11px] text-content/50">
+          <span className="min-w-0 truncate text-[11px] text-(--ui-text-secondary)">
             {kindLabel} · {inboxItemRef(item)}
             {attentionLabel ? ` · ${attentionLabel}` : ""}
           </span>
@@ -1450,22 +1431,30 @@ const InboxCard = memo(function InboxCard({
                   relatedSessionCount === 1 ? "{p0} related thread" : "{p0} related threads",
                   { p0: relatedSessionCount },
                 )}
-                className="inline-flex items-center gap-0.5 text-[11px] tabular-nums text-accent"
+                className="inline-flex items-center gap-0.5 text-[11px] tabular-nums text-(--ui-tone-accent-fg)"
               >
                 <MessageMultiple className="size-3" strokeWidth={1.75} />
                 {relatedSessionCount}
               </span>
             ) : null}
-            {time ? <span className="text-[11px] tabular-nums text-content/45">{time}</span> : null}
-            {unseen ? <span aria-hidden className="size-1.5 rounded-full bg-accent" /> : null}
+            {time ? (
+              <span className="text-[11px] tabular-nums text-(--ui-text-secondary)">{time}</span>
+            ) : null}
+            {unseen ? (
+              <span
+                data-inbox-unread
+                aria-hidden
+                className="size-1.5 rounded-full bg-(--ui-tone-accent-fg)"
+              />
+            ) : null}
           </span>
         ) : null}
       </span>
-      <span className="mt-1 line-clamp-1 text-[13px] font-semibold leading-snug text-content">
+      <span className="mt-1 min-w-0 truncate text-[13px] font-medium leading-snug text-(--ui-tone-neutral-fg)">
         {item.title}
       </span>
       <span className="mt-1 flex min-w-0 items-center gap-2">
-        <span className="flex min-w-0 flex-1 items-center gap-1.5 text-[11px] text-content/45">
+        <span className="flex min-w-0 flex-1 items-center gap-1.5 text-[11px] text-(--ui-text-secondary)">
           {tracker || !item.projectPath ? null : logoPath ? (
             <ProjectLogoIcon
               path={logoPath}
@@ -1483,13 +1472,13 @@ const InboxCard = memo(function InboxCard({
           <span className="min-w-0 truncate">{source}</span>
         </span>
         {item.labels.length > 0 ? (
-          <span className="flex min-w-0 shrink-0 items-center gap-1">
+          <span className="flex min-w-0 max-w-[45%] items-center gap-1 overflow-hidden">
             {item.labels.slice(0, 2).map((label) => (
               <InboxLabel key={label.name} label={label} compact />
             ))}
           </span>
         ) : null}
       </span>
-    </button>
+    </Button>
   );
 });

@@ -1,3 +1,4 @@
+import { Button } from "../../../shared/ui/Button";
 import { t, useLocale } from "../../../shared/i18n/technical";
 import { useEffect, useRef } from "react";
 import { MessageSquarePlus } from "../../../shared/ui/icons";
@@ -47,7 +48,10 @@ export function EditorSelectionMenu({
       aria-label={t("Selected code actions")}
       className="p-1"
     >
-      <button
+      <Button
+        size="sm"
+        variant="ghost"
+        motion="none"
         type="button"
         aria-keyshortcuts="Control+l Meta+l"
         onMouseDown={(event) => event.preventDefault()}
@@ -55,17 +59,17 @@ export function EditorSelectionMenu({
           requestAddToChat(formatEditorSelectionReference(selection), "plain");
           onDismiss();
         }}
-        className="flex h-7 items-center gap-1.5 whitespace-nowrap rounded-lg px-2 font-sans text-[13px] leading-none text-content active:bg-content/10 [@media(hover:hover)_and_(pointer:fine)]:hover:bg-content/5 focus-visible:outline-2 focus-visible:outline-accent"
+        className="flex items-center gap-1.5 whitespace-nowrap leading-none"
       >
         <MessageSquarePlus aria-hidden="true" className="size-3.5" strokeWidth={1.75} />
         {t("Add to chat")}
         <kbd
           aria-hidden="true"
-          className="rounded border border-content/10 px-1 py-0.5 font-sans text-[10px] text-content/60"
+          className="rounded border border-[var(--color-stroke)] px-1 py-0.5 font-sans text-[10px] text-[var(--ui-text-secondary)]"
         >
           {shortcut}
         </kbd>
-      </button>
+      </Button>
     </Popover>
   );
 }

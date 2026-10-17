@@ -50,6 +50,36 @@ afterEach(async () => {
 });
 
 describe("project background dialog", () => {
+  it("persists bounded visibility keyboard edits and the exclusive background scope for this project", async () => {
+    saveProjectChatBackgroundSettings("/work/alpha", {
+      path: "/backgrounds/alpha.png",
+      emptyOpacity: 0.2,
+      sessionOpacity: 0.3,
+      scope: "empty",
+      effect: "none",
+    });
+    await act(async () =>
+      root.render(
+        createElement(ProjectBackgroundDialog, {
+          project: "/work/alpha",
+          name: "Alpha",
+          onClose: vi.fn(),
+        }),
+      ),
+    );
+    const slider = document.querySelector<HTMLElement>('[role="slider"]')!;
+    expect(slider).not.toBeNull();
+    await act(async () =>
+      slider.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true })),
+    );
+    expect(loadProjectChatBackgroundSettings("/work/alpha")?.emptyOpacity).toBe(0.21);
+    const all = [...document.querySelectorAll<HTMLButtonElement>('[role="radio"]')].find((node) =>
+      node.textContent?.includes("All sessions"),
+    )!;
+    await act(async () => all.click());
+    expect(all.getAttribute("aria-checked")).toBe("true");
+    expect(loadProjectChatBackgroundSettings("/work/alpha")?.scope).toBe("all");
+  });
   it("changes the effect only for the selected project", async () => {
     saveProjectChatBackgroundSettings("/work/alpha", {
       path: "/backgrounds/alpha.png",

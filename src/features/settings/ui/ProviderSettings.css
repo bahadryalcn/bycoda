@@ -93,10 +93,7 @@
 .provider-cli-card[data-default] {
   border-color: var(--ui-border-accent);
 }
-#setting-agent-clis :is(button, summary):focus-visible {
-  outline: 2px solid var(--color-accent);
-  outline-offset: 3px;
-}
+
 .provider-cli-header {
   display: flex;
   align-items: center;
@@ -133,10 +130,10 @@
   margin-block-start: 0;
   font-size: 10px;
   line-height: 1.35;
-  color: color-mix(in oklch, var(--color-content) 60%, transparent);
+  color: var(--ui-text-secondary);
 }
 .provider-cli-machine {
-  color: color-mix(in oklch, var(--color-content) 48%, transparent);
+  color: var(--ui-text-secondary);
 }
 .provider-cli-header > .settings-advanced {
   flex: 0 0 auto;
@@ -171,7 +168,7 @@
   display: block;
   margin-block-end: 6px;
   font-size: 11px;
-  color: color-mix(in oklch, var(--color-content) 60%, transparent);
+  color: var(--ui-text-secondary);
 }
 .provider-cli-field > div {
   max-width: none;
@@ -193,7 +190,7 @@
   width: fit-content;
   font-size: 11px;
   font-weight: 500;
-  color: color-mix(in oklch, var(--color-content) 72%, transparent);
+  color: var(--ui-text-secondary);
 }
 .provider-cli-default-grid {
   display: grid;
@@ -214,14 +211,11 @@
   padding-block-start: 8px;
   border-block-start: 1px solid var(--color-stroke);
 }
-.provider-cli-card[data-default] .provider-cli-footer > button:disabled {
-  color: var(--color-content);
-  opacity: 0.8;
-}
+
 .provider-cli-install {
   margin-block-start: 12px;
   font-size: 11px;
-  color: color-mix(in oklch, var(--color-content) 60%, transparent);
+  color: var(--ui-text-secondary);
 }
 .provider-cli-install > summary {
   width: fit-content;

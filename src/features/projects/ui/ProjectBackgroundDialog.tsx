@@ -1,6 +1,9 @@
+import { Alert } from "../../../shared/ui/Alert";
+import { Slider } from "../../../shared/ui/Slider";
+import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
+import { Button } from "../../../shared/ui/Button";
 import { t, useLocale } from "../../../shared/i18n";
 import { useState, type CSSProperties, type ReactNode } from "react";
-import { Loader } from "../../../shared/ui/icons";
 import { Modal } from "../../../shared/ui/Modal";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import {
@@ -154,7 +157,7 @@ export function ProjectBackgroundDialog({ project, name, onClose }: Props) {
       <div className="flex flex-col gap-5 p-4">
         <div>
           <div
-            className={`overflow-hidden rounded-xl border border-content/10 ${previewEffect === "gradient-blur" ? "bg-background-base" : "bg-content/5"}`}
+            className={`overflow-hidden rounded-xl border border-[var(--color-stroke)] ${previewEffect === "gradient-blur" ? "bg-background-base" : "bg-[var(--ui-surface-hover)]"}`}
           >
             {previewSrc ? (
               previewEffect === "gradient-blur" ? (
@@ -179,26 +182,28 @@ export function ProjectBackgroundDialog({ project, name, onClose }: Props) {
                 />
               )
             ) : (
-              <div className="grid h-40 place-items-center text-[12px] text-content/40">
+              <div className="grid h-40 place-items-center text-[12px] text-[var(--ui-text-muted)]">
                 {t("No background selected")}
               </div>
             )}
           </div>
-          <button
+          <Button
+            variant="secondary"
+            motion="none"
             type="button"
+            loading={busy}
             onClick={() => void choose()}
             disabled={busy}
-            className="mt-2 flex w-full items-center justify-center gap-1.5 rounded-md border border-content/10 px-2.5 py-1.5 text-[12px] text-content/70 hover:bg-content/10 hover:text-content disabled:opacity-40"
+            className="mt-2 flex w-full items-center justify-center gap-1.5"
           >
-            {busy ? <Loader className="size-3.5 animate-spin" aria-hidden /> : null}
             {path ? t("Change image") : t("Choose image")}
-          </button>
-          <p className="mt-1.5 text-[11px] leading-relaxed text-content/45">
+          </Button>
+          <p className="mt-1.5 text-[11px] leading-relaxed text-[var(--ui-text-muted)]">
             {path
               ? t("This image overrides the global background for this project.")
               : t("This project currently follows the global Appearance setting.")}
           </p>
-          {error ? <p className="mt-1.5 text-[12px] text-danger">{error}</p> : null}
+          {error ? <Alert tone="danger">{error}</Alert> : null}
         </div>
 
         {path ? (
@@ -208,7 +213,7 @@ export function ProjectBackgroundDialog({ project, name, onClose }: Props) {
                 <span className="text-[13px] font-medium text-content">
                   {t("Background effect")}
                 </span>
-                <p className="text-[11px] text-content/45 line-clamp-1">
+                <p className="text-[11px] text-[var(--ui-text-muted)] line-clamp-1">
                   {NEW_THREAD_BACKGROUND_EFFECT_DESCRIPTIONS[effect]}
                 </p>
               </div>
@@ -231,53 +236,27 @@ export function ProjectBackgroundDialog({ project, name, onClose }: Props) {
         ) : null}
 
         <ProjectBackgroundRow label={t("Show on")}>
-          <div
-            role="radiogroup"
-            aria-label={t("Show project background on")}
-            className="grid w-44 grid-cols-2 gap-0.5 rounded-md border border-content/10 p-0.5 text-[12px]"
-          >
-            {[
-              {
-                value: "empty" as const,
-                get label() {
-                  return t("Empty only");
-                },
-              },
-              {
-                value: "all" as const,
-                get label() {
-                  return t("All sessions");
-                },
-              },
-            ].map((option) => (
-              <button
-                key={option.value}
-                type="button"
-                role="radio"
-                aria-checked={scope === option.value}
-                onClick={() => updateScope(option.value)}
-                className={`rounded-[5px] px-1.5 py-1 ${
-                  scope === option.value
-                    ? "bg-selection text-content"
-                    : "text-content/50 hover:text-content"
-                }`}
-              >
-                {option.label}
-              </button>
-            ))}
-          </div>
+          <SegmentedControl
+            label={t("Show project background on")}
+            value={scope}
+            onValueChange={(next) => updateScope(next as ChatBackgroundScope)}
+            options={[
+              { value: "empty", label: t("Empty only") },
+              { value: "all", label: t("All sessions") },
+            ]}
+          />
         </ProjectBackgroundRow>
 
         <ProjectBackgroundRow label={t("Empty chat visibility")}>
           <div className="flex w-56 items-center gap-3">
-            <input
-              type="range"
+            <Slider
+              hideLabel
+              label={t("Project background visibility in empty chats")}
               min={Math.round(CHAT_BACKGROUND_OPACITY_MIN * 100)}
               max={Math.round(CHAT_BACKGROUND_OPACITY_MAX * 100)}
               value={Math.round(emptyOpacity * 100)}
-              aria-label={t("Project background visibility in empty chats")}
-              className="sidebar-opacity-slider min-w-0 flex-1"
-              onChange={(event) => updateOpacity("empty", Number(event.target.value))}
+              onValueChange={(next) => updateOpacity("empty", next)}
+              className="min-w-0 flex-1"
             />
             <span className="w-10 shrink-0 text-right text-[12px] tabular-nums text-content">
               {Math.round(emptyOpacity * 100)}%
@@ -287,14 +266,14 @@ export function ProjectBackgroundDialog({ project, name, onClose }: Props) {
 
         <ProjectBackgroundRow label={t("Session visibility")}>
           <div className="flex w-56 items-center gap-3">
-            <input
-              type="range"
+            <Slider
+              hideLabel
+              label={t("Project background visibility in sessions")}
               min={Math.round(CHAT_BACKGROUND_OPACITY_MIN * 100)}
               max={Math.round(CHAT_BACKGROUND_OPACITY_MAX * 100)}
               value={Math.round(sessionOpacity * 100)}
-              aria-label={t("Project background visibility in sessions")}
-              className="sidebar-opacity-slider min-w-0 flex-1"
-              onChange={(event) => updateOpacity("session", Number(event.target.value))}
+              onValueChange={(next) => updateOpacity("session", next)}
+              className="min-w-0 flex-1"
             />
             <span className="w-10 shrink-0 text-right text-[12px] tabular-nums text-content">
               {Math.round(sessionOpacity * 100)}%
@@ -303,14 +282,18 @@ export function ProjectBackgroundDialog({ project, name, onClose }: Props) {
         </ProjectBackgroundRow>
 
         {path ? (
-          <button
+          <Button
+            variant="item"
+            motion="none"
             type="button"
+            tone="danger"
+            loading={busy}
             onClick={() => void removeImage()}
             disabled={busy}
-            className="w-full rounded-md border border-content/10 px-2.5 py-1.5 text-[12px] text-danger hover:border-danger/40 hover:bg-danger/10 disabled:opacity-40"
+            className="w-full"
           >
             {t("Remove background image")}
-          </button>
+          </Button>
         ) : null}
       </div>
     </Modal>

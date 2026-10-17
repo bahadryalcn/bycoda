@@ -101,7 +101,9 @@ it("filters the cached Inbox locally and reuses fresh data when reopened", async
   root = createRoot(container);
   await render();
   expect(listInboxItems.mock.calls).toHaveLength(reads);
-  expect(container.querySelector<HTMLInputElement>('input[aria-label="Filter inbox"]')?.value).toBe("Alpha");
+  expect(container.querySelector<HTMLInputElement>('input[aria-label="Filter inbox"]')?.value).toBe(
+    "Alpha",
+  );
   expect(container.querySelector('button[title="Alpha issue"]')).not.toBeNull();
   expect(container.querySelector('button[title="Beta issue"]')).toBeNull();
 });
@@ -242,7 +244,7 @@ it.each([
     expect(card).not.toBeNull();
     expect(card.getAttribute("aria-label")).toContain(", new");
 
-    expect(card.querySelector(".bg-accent")).not.toBeNull();
+    expect(card.querySelector("[data-inbox-unread]")).not.toBeNull();
     expect(isInboxEntryUnseen(entry)).toBe(true);
 
     act(() =>

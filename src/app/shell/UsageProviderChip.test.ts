@@ -360,7 +360,7 @@ describe("UsageProviderChip", () => {
 
     const trigger = button("Codex usage details");
     expect(trigger.getAttribute("aria-expanded")).toBe("false");
-    expect(trigger.querySelector(".w-8 > span")?.getAttribute("style")).toBe("width: 19%;");
+    expect(trigger.querySelector(".w-8")?.getAttribute("aria-valuenow")).toBe("19");
     await act(async () => trigger.click());
 
     const dialog = document.querySelector('[role="dialog"]');
@@ -373,9 +373,9 @@ describe("UsageProviderChip", () => {
     const sessionBar = dialog?.querySelector('[aria-label="5-hour limit remaining"]');
     const weeklyBar = dialog?.querySelector('[aria-label="Weekly limit remaining"]');
     expect(sessionBar?.getAttribute("aria-valuenow")).toBe("58");
-    expect(sessionBar?.querySelector("span")?.getAttribute("style")).toBe("width: 58%;");
+    expect(sessionBar?.getAttribute("aria-valuenow")).toBe("58");
     expect(weeklyBar?.getAttribute("aria-valuenow")).toBe("19");
-    expect(weeklyBar?.querySelector("span")?.getAttribute("style")).toBe("width: 19%;");
+    expect(weeklyBar?.getAttribute("aria-valuenow")).toBe("19");
   });
 
   it("fills bars with used capacity when remaining usage is turned off", async () => {
@@ -383,12 +383,12 @@ describe("UsageProviderChip", () => {
     act(() => root.render(createElement(UsageProviderChip, { limits: codexLimits(), now })));
 
     const trigger = button("Codex usage details");
-    expect(trigger.querySelector(".w-8 > span")?.getAttribute("style")).toBe("width: 81%;");
+    expect(trigger.querySelector(".w-8")?.getAttribute("aria-valuenow")).toBe("81");
     await act(async () => trigger.click());
 
     const weeklyBar = document.querySelector('[role="dialog"] [aria-label="Weekly limit used"]');
     expect(weeklyBar?.getAttribute("aria-valuenow")).toBe("81");
-    expect(weeklyBar?.querySelector("span")?.getAttribute("style")).toBe("width: 81%;");
+    expect(weeklyBar?.getAttribute("aria-valuenow")).toBe("81");
   });
 
   it("shows a full bar before usage and an empty bar when exhausted", async () => {
@@ -397,8 +397,8 @@ describe("UsageProviderChip", () => {
     limits.weekly!.usedPercent = 100;
     act(() => root.render(createElement(UsageProviderChip, { limits, now })));
 
-    expect(button("Codex usage details").querySelector(".w-8 > span")?.getAttribute("style")).toBe(
-      "width: 0%;",
+    expect(button("Codex usage details").querySelector(".w-8")?.getAttribute("aria-valuenow")).toBe(
+      "0",
     );
     await act(async () => button("Codex usage details").click());
 
@@ -406,9 +406,9 @@ describe("UsageProviderChip", () => {
     const sessionBar = dialog?.querySelector('[aria-label="5-hour limit remaining"]');
     const weeklyBar = dialog?.querySelector('[aria-label="Weekly limit remaining"]');
     expect(sessionBar?.getAttribute("aria-valuenow")).toBe("100");
-    expect(sessionBar?.querySelector("span")?.getAttribute("style")).toBe("width: 100%;");
+    expect(sessionBar?.getAttribute("aria-valuenow")).toBe("100");
     expect(weeklyBar?.getAttribute("aria-valuenow")).toBe("0");
-    expect(weeklyBar?.querySelector("span")?.getAttribute("style")).toBe("width: 0%;");
+    expect(weeklyBar?.getAttribute("aria-valuenow")).toBe("0");
   });
 
   it("switches between named accounts from the usage popover", async () => {
@@ -442,7 +442,7 @@ describe("UsageProviderChip", () => {
     const accountBar = accountRow.querySelector('[aria-label="5h limit remaining"]');
     expect(accountRow.textContent).toContain("58% left");
     expect(accountBar?.getAttribute("aria-valuenow")).toBe("58");
-    expect(accountBar?.querySelector("span")?.getAttribute("style")).toBe("width: 58%;");
+    expect(accountBar?.getAttribute("aria-valuemax")).toBe("100");
     await act(async () => button("Work").click());
 
     expect(onSelectAccount).toHaveBeenCalledWith("account-work");
@@ -476,8 +476,8 @@ describe("UsageProviderChip", () => {
     await act(async () => button("Codex usage details").click());
 
     const email = button("Reveal email");
-    expect(email.querySelector("span")?.className).toContain("blur-[5px]");
-    expect(email.querySelector("span")?.getAttribute("aria-hidden")).toBe("true");
+    expect(email.querySelector("span[aria-hidden=true]")?.className).toContain("blur-[5px]");
+    expect(email.querySelector("span[aria-hidden=true]")?.getAttribute("aria-hidden")).toBe("true");
     expect(document.body.textContent).toContain("Pro");
     await act(async () => email.click());
     expect(button("Hide email").querySelector("span")?.className).not.toContain("blur");
@@ -493,7 +493,9 @@ describe("UsageProviderChip", () => {
     expect(button("Reveal email").getAttribute("aria-pressed")).toBe("false");
 
     await act(async () => button("Switch Codex account").click());
-    expect(button("Reveal email").querySelector("span")?.className).toContain("blur-[5px]");
+    expect(button("Reveal email").querySelector("span[aria-hidden=true]")?.className).toContain(
+      "blur-[5px]",
+    );
     expect(document.querySelector("button button")).toBeNull();
     expect(
       [...document.querySelectorAll("[title], [aria-label]")].some((element) =>

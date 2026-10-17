@@ -1,3 +1,7 @@
+import { Alert } from "../../../shared/ui/Alert";
+import { TextareaField } from "../../../shared/ui/TextareaField";
+import { Checkbox } from "../../../shared/ui/Checkbox";
+import { Button } from "../../../shared/ui/Button";
 import { useEffect, useState } from "react";
 import { socialRows } from "../model/socialWorkspace";
 import type { SocialDraft, SocialPolicy, SocialSnapshot } from "../model/social";
@@ -187,7 +191,9 @@ function Draft({
         >
           <label>
             Taslak metni
-            <textarea
+            <TextareaField
+              hideLabel
+              label="Taslak metni"
               aria-label="Taslak metni"
               required
               rows={4}
@@ -200,8 +206,7 @@ function Draft({
             <summary>Bilgi kaynakları (isteğe bağlı)</summary>
             {facts.map((fact) => (
               <label className="social-inline-check" key={fact.id}>
-                <input
-                  type="checkbox"
+                <Checkbox
                   checked={factIds.includes(fact.id)}
                   onChange={(event) =>
                     setFactIds((current) =>
@@ -221,9 +226,9 @@ function Draft({
               </p>
             ) : null}
             {factIds.length ? (
-              <button type="button" onClick={() => setFactIds([])}>
+              <Button variant="secondary" type="button" onClick={() => setFactIds([])}>
                 Bilgi bağlantılarını kaldır
-              </button>
+              </Button>
             ) : (
               <p className="social-muted">Bu taslak belirli bir kaynak bilgiye bağlı değil.</p>
             )}
@@ -232,9 +237,13 @@ function Draft({
             <Notice kind={policyError ? "error" : "loading"}>
               {policyError || "Hesap sınırları yükleniyor…"}
               {policyError ? (
-                <button type="button" onClick={() => setPolicyAttempt((attempt) => attempt + 1)}>
+                <Button
+                  variant="secondary"
+                  type="button"
+                  onClick={() => setPolicyAttempt((attempt) => attempt + 1)}
+                >
                   Yeniden dene
-                </button>
+                </Button>
               ) : null}
             </Notice>
           ) : null}
@@ -243,11 +252,13 @@ function Draft({
             {limit ? ` / ${limit}` : ""} karakter
           </p>
           {limit && count > limit ? (
-            <p role="alert">Karakter sınırını {count - limit} karakter aştınız.</p>
+            <Alert tone="danger">Karakter sınırını {count - limit} karakter aştınız.</Alert>
           ) : null}
           <div className="social-actions">
-            <button
-              className="social-primary"
+            <Button
+              type="submit"
+              variant="primary"
+
               disabled={
                 !text.trim() ||
                 (!!limit && count > limit) ||
@@ -256,10 +267,10 @@ function Draft({
               }
             >
               Değişiklikleri kaydet
-            </button>
-            <button type="button" onClick={() => setEditing(false)}>
+            </Button>
+            <Button variant="secondary" type="button" onClick={() => setEditing(false)}>
               Vazgeç
-            </button>
+            </Button>
           </div>
         </form>
       ) : (
@@ -284,7 +295,9 @@ function Draft({
       ) : null}
       {!editing ? (
         <div className="social-actions">
-          <button
+          <Button
+            type="submit"
+            variant="secondary"
             disabled={!!job || draft.generation?.status === "running"}
             onClick={() => {
               setText(draft.text);
@@ -293,9 +306,11 @@ function Draft({
             }}
           >
             Düzenle
-          </button>
-          <button
-            className="social-primary"
+          </Button>
+          <Button
+            type="submit"
+            variant="primary"
+
             disabled={!!disabledReason || !draft.text.trim()}
             onClick={() =>
               void run(async () => {
@@ -320,7 +335,7 @@ function Draft({
             }
           >
             Onayla ve gönderim kuyruğuna ekle
-          </button>
+          </Button>
         </div>
       ) : null}
     </article>

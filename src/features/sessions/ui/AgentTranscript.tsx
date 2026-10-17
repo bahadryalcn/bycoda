@@ -1,3 +1,4 @@
+import { Alert } from "../../../shared/ui/Alert";
 import { dateTimeFormat } from "../../../shared/lib/intl";
 import { useStableValue } from "../../../shared/hooks/useStableValue";
 import { shallowArrayEqual } from "../model/stableBlocks";
@@ -257,8 +258,8 @@ function filterAuthErrors(harness: HarnessId | undefined, sourceBlocks: Block[])
 /** Disclosure values survive releasing the transcript DOM, without retaining it. */
 function useRetainedDisclosure<T extends boolean | null>(key: string, initial: T) {
   const retained = useContext(TranscriptRetentionContext);
-  const [value, setValue] = useState<T>(() =>
-    (retained?.read().disclosures?.[key] as T | undefined) ?? initial,
+  const [value, setValue] = useState<T>(
+    () => (retained?.read().disclosures?.[key] as T | undefined) ?? initial,
   );
   useLayoutEffect(() => {
     retained?.setDisclosure(key, value);
@@ -422,8 +423,12 @@ function AgentTranscriptComponent({
   const turns = turnCache.group(blocks, managed);
   const [visibleTurnCount, setVisibleTurnCount] = useState(() => {
     const firstIndex = retained?.firstLoadedTurnId
-      ? turns.findIndex((turn) => turn[0]?.id === retained.firstLoadedTurnId) : -1;
-    return Math.max(retained?.visibleTurnCount ?? FIRST_PAINT_TURNS, firstIndex >= 0 ? turns.length - firstIndex : 0);
+      ? turns.findIndex((turn) => turn[0]?.id === retained.firstLoadedTurnId)
+      : -1;
+    return Math.max(
+      retained?.visibleTurnCount ?? FIRST_PAINT_TURNS,
+      firstIndex >= 0 ? turns.length - firstIndex : 0,
+    );
   });
   // Turns whose folded work the reader has opened, by turn id.
   const [openWork, setOpenWork] = useState<Record<string, boolean>>(() => retained?.openWork ?? {});
@@ -474,24 +479,28 @@ function AgentTranscriptComponent({
     [onJumpToBottomChange],
   );
 
-  const rememberScroll = useCallback((el: HTMLElement) => {
-    scrollGeometry.current = {
-      el,
-      top: el.scrollTop,
-      height: el.scrollHeight,
-      viewport: el.clientHeight,
-    };
-    if (!retention || restoringCheckpoint.current || !el.isConnected || !el.clientHeight) return;
-    const top = el.getBoundingClientRect().top;
-    const anchor = [...el.querySelectorAll<HTMLElement>("[data-transcript-turn]")]
-      .find((node) => node.getBoundingClientRect().bottom > top);
-    retention.update({
-      anchorId: anchor?.dataset.transcriptTurn,
-      anchorOffset: anchor ? anchor.getBoundingClientRect().top - top : 0,
-      scrollTop: el.scrollTop,
-      bottomFollow: stickToBottom.current,
-    });
-  }, [retention]);
+  const rememberScroll = useCallback(
+    (el: HTMLElement) => {
+      scrollGeometry.current = {
+        el,
+        top: el.scrollTop,
+        height: el.scrollHeight,
+        viewport: el.clientHeight,
+      };
+      if (!retention || restoringCheckpoint.current || !el.isConnected || !el.clientHeight) return;
+      const top = el.getBoundingClientRect().top;
+      const anchor = [...el.querySelectorAll<HTMLElement>("[data-transcript-turn]")].find(
+        (node) => node.getBoundingClientRect().bottom > top,
+      );
+      retention.update({
+        anchorId: anchor?.dataset.transcriptTurn,
+        anchorOffset: anchor ? anchor.getBoundingClientRect().top - top : 0,
+        scrollTop: el.scrollTop,
+        bottomFollow: stickToBottom.current,
+      });
+    },
+    [retention],
+  );
 
   const syncPinned = useCallback(
     (el: HTMLElement) => {
@@ -935,7 +944,10 @@ function AgentTranscriptComponent({
     const observer = new MutationObserver(restoreCodeFolds);
     observer.observe(el, { childList: true, subtree: true });
     const timeout = setTimeout(() => observer.disconnect(), 1000);
-    return () => { observer.disconnect(); clearTimeout(timeout); };
+    return () => {
+      observer.disconnect();
+      clearTimeout(timeout);
+    };
   }, [retention, scrollerEl, visible]);
 
   useLayoutEffect(() => {
@@ -948,11 +960,15 @@ function AgentTranscriptComponent({
       stickToBottom.current = checkpoint.bottomFollow ?? true;
       if (stickToBottom.current) pinToBottom(el);
       else {
-        const anchor = [...el.querySelectorAll<HTMLElement>("[data-transcript-turn]")]
-          .find((node) => node.dataset.transcriptTurn === checkpoint.anchorId);
+        const anchor = [...el.querySelectorAll<HTMLElement>("[data-transcript-turn]")].find(
+          (node) => node.dataset.transcriptTurn === checkpoint.anchorId,
+        );
         el.scrollTop = anchor
-          ? el.scrollTop + anchor.getBoundingClientRect().top - el.getBoundingClientRect().top - (checkpoint.anchorOffset ?? 0)
-          : checkpoint.scrollTop ?? 0;
+          ? el.scrollTop +
+            anchor.getBoundingClientRect().top -
+            el.getBoundingClientRect().top -
+            (checkpoint.anchorOffset ?? 0)
+          : (checkpoint.scrollTop ?? 0);
       }
       distanceFromBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight;
       setShowJump(!stickToBottom.current);
@@ -996,13 +1012,17 @@ function AgentTranscriptComponent({
         ref={setScroller}
         tabIndex={-1}
         onClickCapture={(event) => {
-          const control = (event.target as HTMLElement).closest<HTMLButtonElement>(".markdown-code-toggle, .markdown-code-summary");
+          const control = (event.target as HTMLElement).closest<HTMLButtonElement>(
+            ".markdown-code-toggle, .markdown-code-summary",
+          );
           const shell = control?.closest<HTMLElement>(".markdown-code-shell");
           const turn = shell?.closest<HTMLElement>("[data-transcript-turn]");
           if (!control || !shell || !turn || !retention) return;
           const index = [...turn.querySelectorAll(".markdown-code-shell")].indexOf(shell);
-          retention.setDisclosure(`code:${turn.dataset.transcriptTurn}:${index}`,
-            control.matches(".markdown-code-summary") ? false : shell.dataset.collapsed !== "true");
+          retention.setDisclosure(
+            `code:${turn.dataset.transcriptTurn}:${index}`,
+            control.matches(".markdown-code-summary") ? false : shell.dataset.collapsed !== "true",
+          );
         }}
         onPointerDown={(event) => {
           const id = (event.target as HTMLElement)
@@ -1029,24 +1049,26 @@ function AgentTranscriptComponent({
         className="agent-transcript h-full overflow-y-auto overscroll-none [overflow-anchor:none] font-mono text-[13px] leading-5"
       >
         {activeVersionValid ? (
-          <div className="sticky inset-bs-0 z-10 flex flex-wrap items-center justify-end gap-2 bg-background-base px-4 py-2 font-sans text-xs text-content/70">
+          <div className="sticky inset-bs-0 z-10 flex flex-wrap items-center justify-end gap-2 bg-(--ui-surface) px-4 py-2 font-sans text-xs text-(--ui-text-secondary)">
             <span>{t("After applying: ↑ original, ↓ translation.")}</span>
-            <button
+            <Button
+              motion="none"
+              variant="ghost"
               type="button"
               aria-pressed={!activeVersion.translatedVisible}
               onClick={() => showTranslation(false)}
-              className="rounded-md px-2 py-1 hover:bg-content/5 active:bg-content/10 focus-visible:outline-2 focus-visible:outline-accent"
             >
               {t("Original text")}
-            </button>
-            <button
+            </Button>
+            <Button
+              motion="none"
+              variant="ghost"
               type="button"
               aria-pressed={activeVersion.translatedVisible}
               onClick={() => showTranslation(true)}
-              className="rounded-md px-2 py-1 hover:bg-content/5 active:bg-content/10 focus-visible:outline-2 focus-visible:outline-accent"
             >
               {t("Translation")}
-            </button>
+            </Button>
           </div>
         ) : null}
         <div
@@ -1054,30 +1076,32 @@ function AgentTranscriptComponent({
           className="mx-auto flex w-full min-w-0 max-w-4xl flex-col gap-1 pb-8"
         >
           {historyLoading ? (
-            <div role="status" className="px-4 py-3 font-sans text-xs text-content/60">
+            <div role="status" className="px-4 py-3 font-sans text-xs text-(--ui-text-secondary)">
               {t("Loading earlier messages…")}
             </div>
           ) : null}
           {historyLoadError ? (
-            <div role="alert" className="px-4 py-3 font-sans text-xs text-danger">
+            <Alert tone="danger" role="alert">
               {historyLoadError}
-            </div>
+            </Alert>
           ) : null}
           {remoteHistoryError ? (
-            <div role="alert" className="px-4 py-2 font-sans text-xs text-danger">
+            <Alert tone="danger" role="alert">
               {remoteHistoryError}
-            </div>
+            </Alert>
           ) : null}
           {firstVisibleTurn > 0 || remoteHistoryHasMore ? (
             <div className="flex justify-center px-4 py-3">
-              <button
+              <Button
+                motion="none"
+                variant="ghost"
                 type="button"
                 disabled={remoteHistoryLoading}
-                className="rounded-md bg-content/8 px-2.5 py-1.5 font-sans text-[12px] text-content/60 hover:bg-content/12 hover:text-content"
+
                 onClick={() => void loadEarlier()}
               >
                 {remoteHistoryLoading ? t("Loading earlier messages…") : t("Load earlier messages")}
-              </button>
+              </Button>
             </div>
           ) : null}
           {visibleTurns.map((turn, turnIndex) => {
@@ -1220,11 +1244,7 @@ export const AgentTranscript = memo(function AgentTranscript(props: Props) {
     ) : (
       <AgentTranscriptComponent {...props} />
     );
-  return (
-    <Activity mode={props.visible === false ? "hidden" : "visible"}>
-      {transcript}
-    </Activity>
-  );
+  return <Activity mode={props.visible === false ? "hidden" : "visible"}>{transcript}</Activity>;
 });
 
 type TurnProps = {
@@ -1419,9 +1439,11 @@ const Turn = memo(function Turn({
       <div key={item.block.id}>
         {item.block.remoteContent && onLoadRemoteBlock ? (
           <div className="mx-4 mb-1 flex items-center gap-2">
-            <button
+            <Button
+              motion="none"
+              variant="ghost"
               type="button"
-              className="rounded-md bg-content/8 px-2 py-1 font-sans text-[11px] text-content/65 hover:bg-content/12 hover:text-content"
+
               onClick={() =>
                 void onLoadRemoteBlock(item.block.id, item.block.remoteContent!.revision)
               }
@@ -1429,7 +1451,7 @@ const Turn = memo(function Turn({
               {t("Load full output (")}
               {Math.max(1, Math.ceil(item.block.remoteContent.bytes / 1024))}
               {t(" KB)")}
-            </button>
+            </Button>
           </div>
         ) : null}
         <TranscriptBlock
@@ -1611,7 +1633,7 @@ function InitialThinking({ live, embedded = false }: { live: boolean; embedded?:
   useLocale();
   return (
     <div
-      className={`min-w-0 pt-3 pb-1 font-sans text-sm text-content/50 ${embedded ? "" : "px-4"}`}
+      className={`min-w-0 pt-3 pb-1 font-sans text-sm text-(--ui-text-secondary) ${embedded ? "" : "px-4"}`}
     >
       {live ? <Shimmer duration={1.6}>{t("Thinking…")}</Shimmer> : t("Thinking…")}
     </div>
@@ -1646,7 +1668,7 @@ function LiveFoldTitle({
   if (!paused && background && isBackgroundOnly(true, background, backgroundAgents)) {
     return (
       <span
-        className="min-w-0 truncate font-sans text-sm text-content/55"
+        className="min-w-0 truncate font-sans text-sm text-(--ui-text-secondary)"
         title={background.join("\n")}
       >
         {background.length === 1
@@ -1721,17 +1743,18 @@ function TurnDuration({
   const label = formatWorkingDuration(elapsedMs, modelName, true);
   const hasOutput = hasTurnCopyText(turn);
   const getText = useCallback(() => turnCopyText(turn), [turn]);
-  const dot = <span aria-hidden className="size-[3px] shrink-0 rounded-full bg-content/25" />;
+  const dot = (
+    <span aria-hidden className="size-[3px] shrink-0 rounded-full bg-(--ui-surface-raised)" />
+  );
   return (
     <div
       aria-label={label}
-      className="flex w-full min-w-0 max-w-full items-center gap-2.5 overflow-hidden px-4 pt-1 pb-3 font-sans text-sm text-content/40"
+      className="flex w-full min-w-0 max-w-full items-center gap-2.5 overflow-hidden px-4 pt-1 pb-3 font-sans text-sm text-(--ui-text-secondary)"
     >
       <span className="flex shrink-0 items-center gap-1">
         {hasOutput ? (
           <>
-            <CopyTurnButton getText={getText} />
-            {onSaveNote ? <SaveNoteButton getText={getText} onSave={onSaveNote} /> : null}
+            <TurnOutputActions getText={getText} onSave={onSaveNote} />
           </>
         ) : turn.some((block) => block.role === "user" && block.turnOutcome === "stopped") ? (
           <X className="size-3.5" strokeWidth={1.75} />
@@ -1764,7 +1787,9 @@ function TurnDuration({
       {completedAt != null ? (
         <span className="flex shrink-0 items-center gap-2.5">
           {dot}
-          <span className="shrink-0 text-content/35">{formatClockTime(completedAt)}</span>
+          <span className="shrink-0 text-(--ui-text-secondary)">
+            {formatClockTime(completedAt)}
+          </span>
         </span>
       ) : null}
     </div>
@@ -1812,15 +1837,14 @@ function TurnMetricsBadge({
       onFocus={() => setHovered(true)}
       onBlur={() => setHovered(false)}
     >
-      <span
-        role="img"
-        tabIndex={0}
-        aria-label={t("Turn metrics: {p0}", { p0: label })}
+      <Button
+        variant="ghost"
+        iconOnly
+        label={t("Turn metrics: {p0}", { p0: label })}
         title={t("Turn metrics")}
-        className="grid rounded-md p-1 text-content/40 outline-none hover:bg-content/8 hover:text-content/70 focus-visible:ring-1 focus-visible:ring-accent"
       >
         <ChartBreakoutSquare className="size-3.5" strokeWidth={1.75} />
-      </span>
+      </Button>
       {hovered ? (
         <Popover
           anchor={root}
@@ -1828,8 +1852,10 @@ function TurnMetricsBadge({
           align="start"
           className="pointer-events-none w-max px-2.5 py-1.5"
         >
-          <div className="text-[12px] leading-4 text-content">{headline}</div>
-          {detail ? <div className="text-[11px] leading-4 text-content/50">{detail}</div> : null}
+          <div className="text-[12px] leading-4 text-(--ui-tone-neutral-fg)">{headline}</div>
+          {detail ? (
+            <div className="text-[11px] leading-4 text-(--ui-text-secondary)">{detail}</div>
+          ) : null}
         </Popover>
       ) : null}
     </div>
@@ -1861,11 +1887,28 @@ function formatClockTime(epochMs: number): string {
   }).format(new Date(epochMs));
 }
 
+/** Small completed-output commands; streaming text and nested model menus keep their owners. */
+function TurnOutputActions({
+  getText,
+  onSave,
+}: {
+  getText: () => string;
+  onSave?: (text: string) => void | Promise<void>;
+}) {
+  useLocale();
+  return (
+    <div role="group" aria-label={t("Message actions")} className="flex items-center gap-1">
+      <CopyTurnButton getText={getText} />
+      {onSave ? <SaveNoteButton getText={getText} onSave={onSave} /> : null}
+    </div>
+  );
+}
+
 function CopyTurnButton({
   text,
   getText,
   attachments,
-  label = "Copy response",
+  label = t("Copy response"),
   showLabel = false,
 }: {
   text?: string;
@@ -1878,6 +1921,7 @@ function CopyTurnButton({
   useLocale();
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
+  const inFlight = useRef(false);
   const [copied, setCopied] = useTransientFlag(2000);
 
   useEffect(() => {
@@ -1887,28 +1931,32 @@ function CopyTurnButton({
 
   return (
     <>
-      <button
+      <Button
+        iconOnly={!showLabel}
+        label={copied ? t("Copied") : label}
+        motion="none"
+        variant="ghost"
         type="button"
         disabled={pending}
         title={copied ? t("Copied") : label}
         aria-label={copied ? t("Copied") : label}
-        className={
-          showLabel
-            ? "inline-flex items-center gap-2 rounded-md border border-content/10 px-3 py-1.5 text-xs text-content/80 hover:bg-content/8 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-            : "-ml-1 rounded-md p-1 text-content/40 hover:bg-content/8 hover:text-content/70"
-        }
+
         onClick={(event) => {
           event.stopPropagation();
+          if (inFlight.current) return;
+          inFlight.current = true;
           setError(null);
           setCopied(false);
           setPending(true);
           playCue("copy");
           void copyMessage(text ?? getText?.() ?? "", attachments).then(
             () => {
+              inFlight.current = false;
               setPending(false);
               setCopied(true);
             },
             (error: unknown) => {
+              inFlight.current = false;
               setPending(false);
               setError(error instanceof Error ? error.message : String(error));
             },
@@ -1921,9 +1969,9 @@ function CopyTurnButton({
           <Copy className="size-3.5" strokeWidth={1.75} />
         )}
         {showLabel ? <span>{copied ? t("Copied") : label}</span> : null}
-      </button>
+      </Button>
       {error && (
-        <span role="alert" className="max-w-xs text-xs text-content/70">
+        <span role="alert" className="max-w-xs text-xs text-(--ui-text-secondary)">
           {t("Copy failed. ")}
           {error}
         </span>
@@ -1946,6 +1994,7 @@ function SaveNoteButton({
   useLocale();
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
+  const inFlight = useRef(false);
   const [saved, setSaved] = useTransientFlag(2000);
 
   useEffect(() => {
@@ -1955,17 +2004,19 @@ function SaveNoteButton({
 
   return (
     <>
-      <button
+      <Button
+        iconOnly={!showLabel}
+        label={saved ? t("Saved to Notes") : t("Save as note")}
+        motion="none"
+        variant="ghost"
         type="button"
         disabled={pending}
         title={saved ? t("Saved to Notes") : t("Save as note")}
         aria-label={saved ? t("Saved to Notes") : t("Save as note")}
-        className={
-          showLabel
-            ? "inline-flex items-center gap-2 rounded-md border border-content/10 px-3 py-1.5 text-xs text-content/80 hover:bg-content/8 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-            : "rounded-md p-1 text-content/40 hover:bg-content/8 hover:text-content/70"
-        }
+
         onClick={async () => {
+          if (inFlight.current) return;
+          inFlight.current = true;
           setError(null);
           setSaved(false);
           setPending(true);
@@ -1976,6 +2027,7 @@ function SaveNoteButton({
           } catch (error) {
             setError(error instanceof Error ? error.message : String(error));
           } finally {
+            inFlight.current = false;
             setPending(false);
           }
         }}
@@ -1986,9 +2038,9 @@ function SaveNoteButton({
           <FilePlusCorner className="size-3.5" strokeWidth={1.75} />
         )}
         {showLabel ? <span>{saved ? t("Saved to Notes") : t("Save as note")}</span> : null}
-      </button>
+      </Button>
       {error && (
-        <span role="alert" className="max-w-xs text-xs text-content/70">
+        <span role="alert" className="max-w-xs text-xs text-(--ui-text-secondary)">
           {t("Could not save note. ")}
           {error}
         </span>
@@ -2007,7 +2059,11 @@ function EditLastTurnButton({
   useLocale();
   const label = editing ? "Cancel edit" : "Edit and resend";
   return (
-    <button
+    <Button
+      motion="none"
+      iconOnly
+      label={label}
+      variant="ghost"
       type="button"
       title={label}
       aria-label={label}
@@ -2016,14 +2072,9 @@ function EditLastTurnButton({
         event.stopPropagation();
         onEdit();
       }}
-      className={`rounded-md p-1 transition-[background-color,color] duration-150 focus-visible:ring-1 focus-visible:ring-accent ${
-        editing
-          ? "edit-last-turn-button"
-          : "text-content/40 hover:bg-content/8 hover:text-content/70"
-      }`}
     >
       <Pencil className="size-3.5" strokeWidth={1.75} />
-    </button>
+    </Button>
   );
 }
 
@@ -2089,13 +2140,15 @@ const TranscriptBlock = memo(function TranscriptBlock({
             <div key={index} className="flex min-w-0 flex-col gap-2">
               <section
                 aria-label={t("AI question")}
-                className="flex min-w-0 flex-col gap-1 px-4 py-2 text-content"
+                className="flex min-w-0 flex-col gap-1 px-4 py-2 text-(--ui-tone-neutral-fg)"
               >
-                <span className="text-xs font-medium text-content/60">{t("AI question")}</span>
+                <span className="text-xs font-medium text-(--ui-text-secondary)">
+                  {t("AI question")}
+                </span>
                 <p className="whitespace-pre-wrap break-words text-sm">{prompt}</p>
               </section>
               <div className="flex min-w-0 flex-col gap-1">
-                <span className="px-4 text-xs font-medium text-content/60 [align-self:end]">
+                <span className="px-4 text-xs font-medium text-(--ui-text-secondary) [align-self:end]">
                   {t("Your answer")}
                 </span>
                 <UserMessageBlock
@@ -2220,7 +2273,7 @@ const TranscriptBlock = memo(function TranscriptBlock({
     return (
       <div
         role={isSessionErrorBlock(block) ? "alert" : undefined}
-        className={`${embedded ? "" : "px-4"} py-2 ${block.notice === "interrupt" ? "font-bold text-danger" : isSessionErrorBlock(block) ? "text-danger" : "text-content/50"}`}
+        className={`${embedded ? "" : "px-4"} py-2 ${block.notice === "interrupt" ? "font-bold text-(--ui-tone-danger-fg)" : isSessionErrorBlock(block) ? "text-(--ui-tone-danger-fg)" : "text-(--ui-text-secondary)"}`}
       >
         <pre className="min-w-0 whitespace-pre-wrap break-words">{text}</pre>
       </div>
@@ -2232,7 +2285,7 @@ const TranscriptBlock = memo(function TranscriptBlock({
   return (
     <div
       data-selectable-agent-response={block.streaming ? undefined : block.id}
-      className={`min-w-0 pb-1 text-content ${embedded ? "" : "px-4"} ${underLine ? "pt-1" : "pt-3"}`}
+      className={`min-w-0 pb-1 text-(--ui-tone-neutral-fg) ${embedded ? "" : "px-4"} ${underLine ? "pt-1" : "pt-3"}`}
     >
       <AgentMarkdown
         text={block.text}
@@ -2262,29 +2315,29 @@ function ShellRunCard({ run, embedded }: { run: ShellRun; embedded?: boolean }) 
     <div className={`${embedded ? "" : "px-4"} py-2`}>
       <div
         data-shell-run
-        className="overflow-hidden rounded-md border border-content/10 bg-content/[0.03] font-mono text-[12px] leading-5"
+        className="overflow-hidden rounded-md border border-(--ui-tone-neutral-border) bg-(--ui-tone-neutral-solid)/[0.03] font-mono text-[12px] leading-5"
       >
         <div className="flex min-w-0 items-start gap-2 px-3 py-1.5">
           <Terminal
-            className="mt-1 size-3 shrink-0 text-content/40"
+            className="mt-1 size-3 shrink-0 text-(--ui-text-secondary)"
             strokeWidth={1.75}
             aria-hidden
           />
-          <span className="min-w-0 flex-1 whitespace-pre-wrap break-words text-content">
+          <span className="min-w-0 flex-1 whitespace-pre-wrap break-words text-(--ui-tone-neutral-fg)">
             {run.command}
           </span>
           {run.running ? (
-            <TerminalSpinner className="inline-block w-3.5 shrink-0 select-none text-center text-[11px] text-content/45" />
+            <TerminalSpinner className="inline-block w-3.5 shrink-0 select-none text-center text-[11px] text-(--ui-text-secondary)" />
           ) : status ? (
             <span
-              className={`shrink-0 text-[11px] ${run.timedOut ? "text-warning" : "text-danger"}`}
+              className={`shrink-0 text-[11px] ${run.timedOut ? "text-(--ui-tone-warning-fg)" : "text-(--ui-tone-danger-fg)"}`}
             >
               {status}
             </span>
           ) : null}
         </div>
         {run.output.trim() ? (
-          <pre className="max-h-80 min-w-0 overflow-auto whitespace-pre-wrap break-words border-t border-content/10 px-3 py-2 text-content/65">
+          <pre className="max-h-80 min-w-0 overflow-auto whitespace-pre-wrap break-words border-t border-(--ui-tone-neutral-border) px-3 py-2 text-(--ui-text-secondary)">
             {run.output.trimEnd()}
           </pre>
         ) : null}
@@ -2449,6 +2502,7 @@ function UserMessageBlock({
       {onRewind && canRewind && !block.draft && !block.internal ? (
         <>
           <Button
+            motion="none"
             variant="ghost"
             size="sm"
             startIcon={<Pencil className="size-3.5" />}
@@ -2461,6 +2515,7 @@ function UserMessageBlock({
             {t("Edit")}
           </Button>
           <Button
+            motion="none"
             variant="ghost"
             size="sm"
             startIcon={<Undo2 className="size-3.5" />}
@@ -2488,7 +2543,7 @@ function UserMessageBlock({
             minute: "numeric",
             second: "numeric",
           }).format(new Date(block.startedAt))}
-          className="ml-1 font-sans text-xs text-content/40"
+          className="ml-1 font-sans text-xs text-(--ui-text-secondary)"
         >
           {formatClockTime(block.startedAt)}
         </time>
@@ -2511,12 +2566,14 @@ function UserMessageBlock({
           data-draft={block.draft ? "true" : undefined}
           data-follow-up-delivery={delivery}
           data-bycoda={bycoda ? "true" : undefined}
-          className={`user-message-bubble relative min-w-0 px-3 py-2 font-sans text-content transition-[background-color] duration-200 ${
-            block.draft ? "border border-dashed border-content/30 bg-content/4" : "bg-content/10"
+          className={`user-message-bubble relative min-w-0 px-3 py-2 font-sans text-(--ui-tone-neutral-fg) transition-[background-color] duration-200 ${
+            block.draft
+              ? "border border-dashed border-(--ui-tone-neutral-border) bg-(--ui-surface-raised)"
+              : "bg-(--ui-surface-raised)"
           } ${editing ? "edit-last-turn-bubble" : ""} ${
             chat
               ? `w-fit max-w-[min(100%,36rem)] ${singleLine ? "rounded-full" : "rounded-xl"}`
-              : "rounded-lg border border-content/10"
+              : "rounded-lg border border-(--ui-tone-neutral-border)"
           }`}
           style={{ zIndex: stickyIndex }}
         >
@@ -2573,38 +2630,40 @@ function UserMessageBlock({
             </pre>
           ) : null}
           {overflows && !compactText ? (
-            <button
+            <Button
+              motion="none"
+              variant="ghost"
               type="button"
               aria-expanded={expanded}
-              className="mt-1 rounded px-1 py-0.5 text-xs text-content/60 hover:bg-content/8 hover:text-content"
+              className="mt-1"
               onClick={toggle}
             >
               {expanded ? t("Show less") : t("Show more")}
-            </button>
+            </Button>
           ) : null}
           {block.ciContext ? (
             <details
               open={ciOpen}
               onToggle={(event) => setCiOpen(event.currentTarget.open)}
-              className="group/ci mt-2 min-w-0 border-t border-content/10 pt-2"
+              className="group/ci mt-2 min-w-0 border-t border-(--ui-tone-neutral-border) pt-2"
               onClick={(event) => event.stopPropagation()}
             >
-              <summary className="flex w-fit cursor-pointer list-none items-center gap-1.5 rounded text-xs text-content/50 transition-colors hover:text-content/80 focus-visible:outline focus-visible:outline-1 focus-visible:outline-content/40 [&::-webkit-details-marker]:hidden">
+              <summary className="flex w-fit cursor-pointer list-none items-center gap-1.5 rounded text-xs text-(--ui-text-secondary) transition-colors hover:text-(--ui-text-secondary) focus-visible:outline focus-visible:outline-1 focus-visible:outline-(--ui-focus-ring-color) [&::-webkit-details-marker]:hidden">
                 <ChevronRight className="size-3 shrink-0 transition-transform group-open/ci:rotate-90" />
                 <span>{t("CI context")}</span>
               </summary>
-              <p className="mt-2 text-xs text-content/50">
+              <p className="mt-2 text-xs text-(--ui-text-secondary)">
                 {t("CI instructions and failure details included with this request.")}
               </p>
-              <pre className="mt-2 max-h-72 min-w-0 overflow-auto overscroll-contain rounded-md bg-content/5 p-2.5 font-mono text-[11px] leading-relaxed whitespace-pre-wrap break-words text-content/70">
+              <pre className="mt-2 max-h-72 min-w-0 overflow-auto overscroll-contain rounded-md bg-(--ui-surface-raised) p-2.5 font-mono text-[11px] leading-relaxed whitespace-pre-wrap break-words text-(--ui-text-secondary)">
                 {block.ciContext}
               </pre>
             </details>
           ) : null}
           {block.draft ? (
-            <div className="mt-2 flex items-center justify-between gap-4 border-t border-dashed border-content/20 pt-2">
+            <div className="mt-2 flex items-center justify-between gap-4 border-t border-dashed border-(--ui-tone-neutral-border) pt-2">
               <span
-                className="flex items-center gap-1.5 text-xs text-content/50"
+                className="flex items-center gap-1.5 text-xs text-(--ui-text-secondary)"
                 role={delivery ? "status" : undefined}
                 title={deliveryDescription}
               >
@@ -2612,28 +2671,30 @@ function UserMessageBlock({
                 {deliveryLabel}
               </span>
               <span className="flex items-center gap-1">
-                <button
+                <Button
+                  motion="none"
+                  variant="ghost"
                   type="button"
                   title={deliveryActive ? heldActionTitle : t("Remove draft")}
                   aria-label={t("Remove draft")}
                   disabled={deliveryActive}
                   onClick={() => onRemoveDraft?.(block)}
-                  className="flex h-7 items-center gap-1.5 rounded-md px-2 text-xs text-content/55 hover:bg-content/10 hover:text-content"
                 >
                   <Trash2 className="size-3.5" strokeWidth={1.75} />
                   {t("Remove")}
-                </button>
-                <button
+                </Button>
+                <Button
+                  motion="none"
+                  variant="ghost"
                   type="button"
                   title={deliveryActive ? heldActionTitle : t("Send draft")}
                   aria-label={t("Send draft")}
                   disabled={deliveryActive}
                   onClick={() => onSendDraft?.(block)}
-                  className="primary-action flex h-7 items-center gap-1.5 rounded-md px-2.5 text-xs font-medium transition-transform duration-150 active:scale-[0.97]"
                 >
                   {t("Send")}
                   <ArrowUp className="size-3.5" strokeWidth={2.25} />
-                </button>
+                </Button>
               </span>
             </div>
           ) : null}
@@ -2750,7 +2811,10 @@ function WorkFoldLine({
       {open ? (
         // Open, the chevron stays put: it is the way back, and hunting for it
         // under the cursor is no way to close what you opened.
-        <ChevronRight className="size-3.5 rotate-90 text-content/45" strokeWidth={1.75} />
+        <ChevronRight
+          className="size-3.5 rotate-90 text-(--ui-text-secondary)"
+          strokeWidth={1.75}
+        />
       ) : (
         <>
           {harness ? (
@@ -2763,7 +2827,7 @@ function WorkFoldLine({
           )}
           {expandable ? (
             <ChevronRight
-              className="absolute size-3.5 text-content/45 opacity-0 transition-opacity duration-200 group-hover:opacity-100"
+              className="absolute size-3.5 text-(--ui-text-secondary) opacity-0 transition-opacity duration-200 group-hover:opacity-100"
               strokeWidth={1.75}
             />
           ) : null}
@@ -2776,7 +2840,7 @@ function WorkFoldLine({
   const label = live ? (
     title
   ) : (
-    <span className="min-w-0 flex-1 truncate font-sans text-sm text-content/50 transition-colors duration-200 group-hover:text-content/80">
+    <span className="min-w-0 flex-1 truncate font-sans text-sm text-(--ui-text-secondary) transition-colors duration-200 group-hover:text-(--ui-text-secondary)">
       {title}
     </span>
   );
@@ -2797,17 +2861,19 @@ function WorkFoldLine({
     );
   }
   return (
-    <button
+    <Button
+      motion="none"
+      variant="ghost"
       type="button"
+      selected={open}
       aria-expanded={open}
       aria-label={open ? t("Hide the work") : t("Show the work")}
       aria-live={live ? "polite" : undefined}
       onClick={onToggle}
-      className={`group ${row}`}
     >
       {icon}
       {label}
-    </button>
+    </Button>
   );
 }
 
@@ -3024,7 +3090,7 @@ function ActivityPhaseGroup({
   ) : (
     // Dimmed to sit with the icons: the work is chrome around the answer, and
     // only the answer reads at full strength.
-    <span className="min-w-0 flex-1 truncate font-sans text-sm text-content/50 transition-colors duration-200 group-hover:text-content/80">
+    <span className="min-w-0 flex-1 truncate font-sans text-sm text-(--ui-text-secondary) transition-colors duration-200 group-hover:text-(--ui-text-secondary)">
       {title}
     </span>
   );
@@ -3041,8 +3107,12 @@ function ActivityPhaseGroup({
 
   return (
     <div className="flex min-w-0 flex-col">
-      <button
+      <Button
+        motion="none"
+        fullWidth
+        variant="item"
         type="button"
+        selected={open}
         aria-expanded={open}
         aria-label={
           open
@@ -3050,7 +3120,7 @@ function ActivityPhaseGroup({
             : t("Show the steps for {p0}", { p0: title })
         }
         onClick={() => setOverride(!open)}
-        className="group flex w-full min-w-0 items-center gap-1.5 py-1 text-left"
+        className="w-full min-w-0 text-left"
       >
         {/*
          * The two icons share one 14px box, so the swap is instant: fading
@@ -3063,14 +3133,14 @@ function ActivityPhaseGroup({
             <ActivityPhaseIcon kind={phase.kind} className="group-hover:opacity-0" />
           )}
           <ChevronRight
-            className={`absolute size-3.5 text-content/45 opacity-0 transition-transform duration-200 group-hover:opacity-100 ${
+            className={`absolute size-3.5 text-(--ui-text-secondary) opacity-0 transition-transform duration-200 group-hover:opacity-100 ${
               open ? "rotate-90" : ""
             }`}
             strokeWidth={1.75}
           />
         </span>
         {label}
-      </button>
+      </Button>
       <div className="zen-phase-body" data-open={open}>
         {open ? (
           <div ref={setLiveScroller} className={active || !open ? "zen-phase-live" : undefined}>
@@ -3332,14 +3402,16 @@ function SubagentPanel({
       ) : (
         <span
           className={`min-w-0 flex-1 truncate font-sans text-sm transition-colors duration-200 ${
-            state === "rejected" ? "text-danger" : "text-content/75 group-hover:text-content"
+            state === "rejected"
+              ? "text-(--ui-tone-danger-fg)"
+              : "text-(--ui-text-secondary) group-hover:text-(--ui-tone-neutral-fg)"
           }`}
         >
           {name}
         </span>
       )}
       {model || status || block.agentRun?.startedAt !== undefined ? (
-        <span className="flex min-w-0 max-w-[55%] shrink-0 items-baseline gap-2 font-sans text-[12px] text-content/40">
+        <span className="flex min-w-0 max-w-[55%] shrink-0 items-baseline gap-2 font-sans text-[12px] text-(--ui-text-secondary)">
           {model ? (
             <span className="truncate" title={t("Model: {p0}", { p0: model })}>
               {model}
@@ -3360,25 +3432,31 @@ function SubagentPanel({
   // remain inspectable in the panel even before the trail arrives.
   if (steps.length === 0 && !report) {
     return (
-      <button
+      <Button
+        motion="none"
+        variant="ghost"
         type="button"
         aria-label={t("Open {p0} in its own panel", { p0: name })}
         title={brief}
         onClick={() => requestViewSubagent(block.id)}
-        className="-mx-1.5 flex min-w-0 items-center gap-2 px-1.5 py-1"
+        className="-mx-1.5 min-w-0"
       >
         <SubagentMascot name={name} state={state} active={active} />
         {label}
         <span className="size-3.5 shrink-0" />
-      </button>
+      </Button>
     );
   }
 
   return (
     <div className="flex min-w-0 flex-col">
       <div className="-mx-1.5 flex min-w-0 items-center gap-0.5">
-        <button
+        <Button
+          motion="none"
+          className="min-w-0 flex-1 text-left"
+          variant="ghost"
           type="button"
+          selected={open}
           aria-expanded={open}
           aria-label={
             open ? t("Hide {p0}'s work", { p0: name }) : t("Show {p0}'s work", { p0: name })
@@ -3387,28 +3465,29 @@ function SubagentPanel({
           onClick={onToggle}
           // An open row keeps the wash it lit up under the cursor, so the panel
           // below reads as hanging off it rather than off the transcript.
-          className={`group flex min-w-0 flex-1 items-center gap-2 rounded-md px-1.5 py-1 text-left transition-colors duration-200 hover:bg-content/8 ${
-            open ? "bg-content/8" : ""
-          }`}
         >
           <SubagentMascot name={name} state={state} active={active} />
           {label}
           <ChevronRight
-            className={`size-3.5 shrink-0 text-content/35 transition-transform duration-200 group-hover:text-content/60 ${
+            className={`size-3.5 shrink-0 text-(--ui-text-secondary) transition-transform duration-200 group-hover:text-(--ui-text-secondary) ${
               open ? "rotate-90" : ""
             }`}
             strokeWidth={1.75}
           />
-        </button>
-        <button
+        </Button>
+        <Button
+          motion="none"
+          iconOnly
+          label={t("Open {p0} in its own panel", { p0: name })}
+          variant="ghost"
           type="button"
           aria-label={t("Open {p0} in its own panel", { p0: name })}
           title={t("Open in panel")}
           onClick={() => requestViewSubagent(block.id)}
-          className="grid size-6 shrink-0 place-items-center rounded-md text-content/35 transition-colors hover:bg-content/8 hover:text-content/70 focus-visible:outline-2 focus-visible:outline-accent"
+          className="shrink-0"
         >
           <ExternalLink className="size-3" strokeWidth={1.75} />
-        </button>
+        </Button>
       </div>
       <div className="zen-phase-body" data-open={open}>
         {open ? (
@@ -3430,7 +3509,7 @@ function SubagentPanel({
             {report ? (
               <div className="zen-phase-step py-1">
                 {failed ? (
-                  <pre className="min-w-0 whitespace-pre-wrap break-words font-mono text-[12px] leading-5 text-danger/80">
+                  <pre className="min-w-0 whitespace-pre-wrap break-words font-mono text-[12px] leading-5 text-(--ui-tone-danger-fg)">
                     {report}
                   </pre>
                 ) : (
@@ -3466,10 +3545,10 @@ function SubagentMascot({
       active={active}
       className={`size-3.5 shrink-0 ${
         state === "rejected"
-          ? "text-danger"
+          ? "text-(--ui-tone-danger-fg)"
           : state === "pending"
-            ? "text-content/70"
-            : "text-content/45"
+            ? "text-(--ui-text-secondary)"
+            : "text-(--ui-text-secondary)"
       }`}
     />
   );
@@ -3520,7 +3599,7 @@ function ActivityPhaseIcon({
 }) {
   useLocale();
   const props = {
-    className: `size-3.5 shrink-0 text-content/45 ${className}`,
+    className: `size-3.5 shrink-0 text-(--ui-text-secondary) ${className}`,
     strokeWidth: 1.75,
   };
   if (kind === "edit") return <PenLine {...props} />;
@@ -3599,7 +3678,7 @@ function ActivityStatusRow({ block }: { block: Block }) {
     <div className="flex min-w-0 items-center gap-1.5 py-1">
       <span
         title={block.text}
-        className={`min-w-0 flex-1 truncate font-sans text-sm ${block.notice === "interrupt" ? "font-bold text-danger" : "text-content/50"}`}
+        className={`min-w-0 flex-1 truncate font-sans text-sm ${block.notice === "interrupt" ? "font-bold text-(--ui-tone-danger-fg)" : "text-(--ui-text-secondary)"}`}
       >
         {block.text.trim()}
       </span>
@@ -3614,19 +3693,22 @@ function ActivityStatusRow({ block }: { block: Block }) {
  */
 function ActivityInterjectionRow({ block }: { block: Block }) {
   useLocale();
-  const [open, setOpen] = useRetainedDisclosure<boolean>(`ActivityInterjectionRow:${block.id}`, false);
+  const [open, setOpen] = useRetainedDisclosure<boolean>(
+    `ActivityInterjectionRow:${block.id}`,
+    false,
+  );
   const meta = block.interjection;
   if (!meta) return null;
   const chrome = interjectionChrome(meta);
   const summary = proseSummary(block.text);
   const label = (
     <span className="min-w-0 flex-1 truncate font-sans text-sm">
-      <span className="text-content/55">{chrome.label}</span>
+      <span className="text-(--ui-text-secondary)">{chrome.label}</span>
       {chrome.severityText ? (
         <span className={`text-[11px] ${chrome.severityClass}`}> {chrome.severityText}</span>
       ) : null}
       {summary ? (
-        <span className="text-content/50 transition-colors duration-200 group-hover:text-content/75">
+        <span className="text-(--ui-text-secondary) transition-colors duration-200 group-hover:text-(--ui-text-secondary)">
           {" · "}
           {summary}
         </span>
@@ -3647,17 +3729,20 @@ function ActivityInterjectionRow({ block }: { block: Block }) {
 
   return (
     <div className="flex min-w-0 flex-col">
-      <button
+      <Button
+        motion="none"
+        variant="ghost"
         type="button"
+        selected={open}
         aria-expanded={open}
         aria-label={
           open ? t("Hide the {p0} note", { p0: chrome.label }) : `${chrome.label}: ${summary}`
         }
         onClick={() => setOpen((value) => !value)}
-        className="group flex min-w-0 items-center gap-1.5 py-1 text-left"
+        className="min-w-0 text-left"
       >
         {label}
-      </button>
+      </Button>
       {open ? (
         <div className="min-w-0 pb-2">
           <pre className={INTERJECTION_BODY}>{block.text}</pre>
@@ -3692,11 +3777,11 @@ export function ActivityThinkingRow({
   // reasoning streams in — the line itself does.
   const pulse = block.streaming ? "zen-thinking-pulse" : "";
   const icon = bare ? null : (
-    <Minus className={`size-3.5 shrink-0 text-content/40 ${pulse}`} strokeWidth={1.75} />
+    <Minus className={`size-3.5 shrink-0 text-(--ui-text-secondary) ${pulse}`} strokeWidth={1.75} />
   );
   const label = (
     <span
-      className={`min-w-0 flex-1 truncate font-sans text-sm text-content/50 ${bare ? pulse : ""}`}
+      className={`min-w-0 flex-1 truncate font-sans text-sm text-(--ui-text-secondary) ${bare ? pulse : ""}`}
     >
       {text}
     </span>
@@ -3716,22 +3801,25 @@ export function ActivityThinkingRow({
 
   return (
     <div className="flex min-w-0 flex-col">
-      <button
+      <Button
+        motion="none"
+        variant="ghost"
         type="button"
+        selected={open}
         aria-expanded={open}
         aria-label={open ? t("Hide thinking") : t("Show thinking: {p0}", { p0: text })}
         onClick={() => setOpen((value) => !value)}
-        className="group flex min-w-0 items-center gap-1.5 py-1 text-left"
+        className="min-w-0 text-left"
       >
         {icon}
         <span
-          className={`min-w-0 flex-1 truncate font-sans text-sm text-content/50 transition-colors duration-200 group-hover:text-content/75 ${
+          className={`min-w-0 flex-1 truncate font-sans text-sm text-(--ui-text-secondary) transition-colors duration-200 group-hover:text-(--ui-text-secondary) ${
             bare ? pulse : ""
           }`}
         >
           {text}
         </span>
-      </button>
+      </Button>
       {open ? (
         <div className={`min-w-0 pb-2 ${bare ? "" : "pl-5"}`}>
           <AgentMarkdown
@@ -3767,7 +3855,7 @@ function ActivityNoteRow({
   const [open, setOpen] = useRetainedDisclosure<boolean>(`ActivityNoteRow:${block.id}`, false);
   const text = proseSummary(block.text);
   const icon = bare ? null : (
-    <Minus className="size-3.5 shrink-0 text-content/50" strokeWidth={1.75} />
+    <Minus className="size-3.5 shrink-0 text-(--ui-text-secondary)" strokeWidth={1.75} />
   );
 
   if (!expandable) {
@@ -3777,25 +3865,30 @@ function ActivityNoteRow({
         className="flex min-w-0 items-center gap-1.5 py-1"
       >
         {icon}
-        <span className="min-w-0 flex-1 truncate font-sans text-sm text-content/70">{text}</span>
+        <span className="min-w-0 flex-1 truncate font-sans text-sm text-(--ui-text-secondary)">
+          {text}
+        </span>
       </div>
     );
   }
 
   return (
     <div className="flex min-w-0 flex-col">
-      <button
+      <Button
+        motion="none"
+        variant="ghost"
         type="button"
+        selected={open}
         aria-expanded={open}
         aria-label={open ? t("Hide the full note") : t("Agent said: {p0}", { p0: text })}
         onClick={() => setOpen((value) => !value)}
-        className="group flex min-w-0 items-center gap-1.5 py-1 text-left"
+        className="min-w-0 text-left"
       >
         {icon}
-        <span className="min-w-0 flex-1 truncate font-sans text-sm text-content/70 transition-colors duration-200 group-hover:text-content">
+        <span className="min-w-0 flex-1 truncate font-sans text-sm text-(--ui-text-secondary) transition-colors duration-200 group-hover:text-(--ui-tone-neutral-fg)">
           {text}
         </span>
-      </button>
+      </Button>
       {open ? (
         <div className="min-w-0 pb-2">
           <AgentMarkdown text={block.text} cwd={cwd} onOpenFile={onOpenFile} />
@@ -3823,7 +3916,10 @@ function ActivityToolRow({
   onOpenDiff?: (path: string) => void;
 }) {
   useLocale();
-  const [errorOpen, setErrorOpen] = useRetainedDisclosure<boolean>(`ActivityToolRow:${block.id}`, false);
+  const [errorOpen, setErrorOpen] = useRetainedDisclosure<boolean>(
+    `ActivityToolRow:${block.id}`,
+    false,
+  );
   const appCall = bycodaToolCall(block);
   if (appCall) {
     return <BycodaCallRow block={block} call={appCall} onApproval={onApproval} />;
@@ -3863,7 +3959,9 @@ function ActivityToolRow({
             {summary}
           </div>
           <ToolCallStatusIcon state={state} />
-          <button
+          <Button
+            motion="none"
+            variant="ghost"
             type="button"
             aria-expanded={errorOpen}
             aria-label={t(
@@ -3877,18 +3975,18 @@ function ActivityToolRow({
               { p2: label },
             )}
             onClick={() => setErrorOpen((value) => !value)}
-            className="-m-1 flex shrink-0 items-center gap-1 rounded p-1 active:bg-content/8 focus-visible:outline-2 focus-visible:outline-content/40"
+            className="-m-1 shrink-0"
           >
             {block.tool?.preview?.kind === "write" && !errorDetail ? (
-              <span className="text-[11px] text-content/50">{t("Changes")}</span>
+              <span className="text-[11px] text-(--ui-text-secondary)">{t("Changes")}</span>
             ) : null}
             <ChevronRight
               className={`size-3.5 transition-transform ${
-                errorDetail ? "text-danger/60" : "text-content/35"
+                errorDetail ? "text-(--ui-tone-danger-fg)" : "text-(--ui-text-secondary)"
               } ${errorOpen ? "rotate-90" : ""}`}
               strokeWidth={1.75}
             />
-          </button>
+          </Button>
         </div>
       ) : (
         <div
@@ -3927,7 +4025,10 @@ function BycodaCallRow({
 }) {
   useLocale();
   const state = toolCallState(block);
-  const [errorOpen, setErrorOpen] = useRetainedDisclosure<boolean>(`BycodaCallRow:${block.id}`, false);
+  const [errorOpen, setErrorOpen] = useRetainedDisclosure<boolean>(
+    `BycodaCallRow:${block.id}`,
+    false,
+  );
   const pendingApproval = needsApproval(block);
   const hasResult = !pendingApproval && hasToolInspection(block);
   const hasError = state === "rejected" && hasResult;
@@ -3936,12 +4037,12 @@ function BycodaCallRow({
   const summary = (
     <>
       <span
-        className={`shrink-0 font-sans text-sm ${state === "rejected" ? "text-danger" : "text-content/50"}`}
+        className={`shrink-0 font-sans text-sm ${state === "rejected" ? "text-(--ui-tone-danger-fg)" : "text-(--ui-text-secondary)"}`}
       >
         {verb}
       </span>
       <span
-        className={`flex min-w-0 max-w-full items-center gap-1 rounded bg-content/6 px-1 font-mono text-[13px] ${state === "rejected" ? "text-danger" : "text-content/70"}`}
+        className={`flex min-w-0 max-w-full items-center gap-1 rounded bg-(--ui-surface-raised) px-1 font-mono text-[13px] ${state === "rejected" ? "text-(--ui-tone-danger-fg)" : "text-(--ui-text-secondary)"}`}
         title={command}
       >
         <BycodaMark className="size-3.5" />
@@ -3950,7 +4051,7 @@ function BycodaCallRow({
       <ToolCallStatusIcon state={state} />
       {hasResult ? (
         <ChevronRight
-          className={`size-3.5 shrink-0 ${hasError ? "text-danger/60" : "text-content/35"} transition-transform ${errorOpen ? "rotate-90" : ""}`}
+          className={`size-3.5 shrink-0 ${hasError ? "text-(--ui-tone-danger-fg)" : "text-(--ui-text-secondary)"} transition-transform ${errorOpen ? "rotate-90" : ""}`}
           strokeWidth={1.75}
         />
       ) : null}
@@ -3959,7 +4060,10 @@ function BycodaCallRow({
   return (
     <div data-bycoda-tool-call={call.action} className="min-w-0">
       {hasResult ? (
-        <button
+        <Button
+          motion="none"
+          fullWidth
+          variant="item"
           type="button"
           aria-expanded={errorOpen}
           aria-label={t(
@@ -3973,16 +4077,16 @@ function BycodaCallRow({
             { p1: PRODUCT_IDENTITY.displayName, p2: call.label },
           )}
           onClick={() => setErrorOpen((value) => !value)}
-          className="flex w-full min-w-0 items-center gap-1.5 py-1 text-left"
+          className="w-full min-w-0 text-left"
         >
           {summary}
-        </button>
+        </Button>
       ) : (
         <div className="flex min-w-0 items-center gap-1.5 py-1">{summary}</div>
       )}
       {errorOpen && hasResult ? <ToolInspectionPanel block={block} /> : null}
       {pendingApproval ? (
-        <pre className="max-h-32 min-w-0 overflow-auto whitespace-pre-wrap break-all py-1 pl-5 font-mono text-[12px] leading-5 text-content/70">
+        <pre className="max-h-32 min-w-0 overflow-auto whitespace-pre-wrap break-all py-1 pl-5 font-mono text-[12px] leading-5 text-(--ui-text-secondary)">
           {call.command}
         </pre>
       ) : null}
@@ -3996,20 +4100,20 @@ function ActivityToolIcon({ state, live = false }: { state: ToolCallState; live?
   if (state === "pending") {
     return (
       <CircleDashed
-        className={`size-3.5 shrink-0 text-content/40 ${live ? "zen-tool-spin" : ""}`}
+        className={`size-3.5 shrink-0 text-(--ui-text-secondary) ${live ? "zen-tool-spin" : ""}`}
         strokeWidth={1.75}
       />
     );
   }
 
-  return <Minus className="size-3.5 shrink-0 text-content/50" strokeWidth={1.75} />;
+  return <Minus className="size-3.5 shrink-0 text-(--ui-text-secondary)" strokeWidth={1.75} />;
 }
 
 /** Failure stays marked. Running and success do not get a trailing icon. */
 function ToolCallStatusIcon({ state }: { state: ToolCallState }) {
   useLocale();
   if (state === "rejected") {
-    return <X className="size-3.5 shrink-0 text-danger" strokeWidth={2} />;
+    return <X className="size-3.5 shrink-0 text-(--ui-tone-danger-fg)" strokeWidth={2} />;
   }
   return null;
 }
@@ -4108,12 +4212,16 @@ function ToolCall({
   return (
     <div className={frame}>
       {expandable ? (
-        <button
+        <Button
+          motion="none"
+          fullWidth
+          variant="item"
           type="button"
+          selected={open}
           aria-expanded={open}
           aria-label={t("{p0} tool call: {p1}", { p0: stateLabel, p1: label })}
           onClick={() => setOpen((value) => !value)}
-          className="flex w-full min-w-0 items-center gap-2 rounded-lg py-1.5 text-left"
+          className="w-full min-w-0 text-left"
         >
           <ToolCallIcon state={state} />
           <ToolCallSummary
@@ -4124,10 +4232,10 @@ function ToolCall({
             onOpenFile={onOpenFile}
           />
           <ChevronRight
-            className={`size-3.5 shrink-0 text-content/35 transition-transform ${open ? "rotate-90" : ""}`}
+            className={`size-3.5 shrink-0 text-(--ui-text-secondary) transition-transform ${open ? "rotate-90" : ""}`}
             strokeWidth={1.75}
           />
-        </button>
+        </Button>
       ) : (
         <div
           aria-label={t("{p0} tool call: {p1}", { p0: stateLabel, p1: label })}
@@ -4144,7 +4252,7 @@ function ToolCall({
         </div>
       )}
       {open && expandable ? (
-        <pre className="mt-1.5 min-w-0 whitespace-pre-wrap break-words px-2.5 font-mono text-[12px] leading-5 text-content/55">
+        <pre className="mt-1.5 min-w-0 whitespace-pre-wrap break-words px-2.5 font-mono text-[12px] leading-5 text-(--ui-text-secondary)">
           {expanded}
         </pre>
       ) : null}
@@ -4185,7 +4293,11 @@ function ToolCallSummary({
     return (
       <span
         className={`min-w-0 flex-1 truncate font-mono text-[13px] ${
-          failed ? "text-danger" : chip ? "text-content/65" : "text-content/80"
+          failed
+            ? "text-(--ui-tone-danger-fg)"
+            : chip
+              ? "text-(--ui-text-secondary)"
+              : "text-(--ui-text-secondary)"
         }`}
         title={label}
       >
@@ -4201,8 +4313,12 @@ function ToolCallSummary({
     preview?.kind === "write" &&
     previewMatchesFile &&
     (preview.contentOnly || preview.lines?.some((line) => line.kind !== "context"));
-  const actionTone = failed ? "text-danger" : "text-content/50";
-  const targetTone = failed ? "text-danger" : chip ? "text-content/70" : "text-content/85";
+  const actionTone = failed ? "text-(--ui-tone-danger-fg)" : "text-(--ui-text-secondary)";
+  const targetTone = failed
+    ? "text-(--ui-tone-danger-fg)"
+    : chip
+      ? "text-(--ui-text-secondary)"
+      : "text-(--ui-text-secondary)";
 
   return (
     <span className="flex min-w-0 flex-1 items-center gap-1.5 font-mono text-[13px]">
@@ -4216,23 +4332,23 @@ function ToolCallSummary({
             cwd={cwd}
             onOpen={openFile && filePath ? () => openFile(filePath) : undefined}
             onOpenFile={onOpenFile}
-            className={`-my-0.5 flex min-w-0 cursor-pointer items-center gap-1 rounded px-1 py-0.5 text-left hover:text-info ${
+            className={`-my-0.5 flex min-w-0 cursor-pointer items-center gap-1 rounded px-1 py-0.5 text-left hover:text-(--ui-tone-info-fg) ${
               chip
-                ? `max-w-full bg-content/6 hover:bg-content/10 ${targetTone}`
-                : `flex-1 hover:bg-content/6 ${targetTone}`
+                ? `max-w-full bg-(--ui-surface-raised) hover:bg-(--ui-surface-raised) ${targetTone}`
+                : `flex-1 hover:bg-(--ui-surface-raised) ${targetTone}`
             }`}
           >
             <FileTypeIcon name={fileName} isDir={false} />
             <span className="min-w-0 truncate">{target}</span>
           </ToolDiffPreview>
         ) : canOpen ? (
-          <button
+          <Button
+            motion="none"
+            className="-my-0.5 min-w-0 text-left max-w-full flex-1"
+            fullWidth
+            variant="item"
             type="button"
-            className={`-my-0.5 flex min-w-0 cursor-pointer items-center gap-1 rounded px-1 py-0.5 text-left hover:text-info ${
-              chip
-                ? `max-w-full bg-content/6 hover:bg-content/10 ${targetTone}`
-                : `flex-1 hover:underline ${targetTone}`
-            }`}
+
             title={target}
             onClick={(event) => {
               event.stopPropagation();
@@ -4241,11 +4357,11 @@ function ToolCallSummary({
           >
             <FileTypeIcon name={fileName} isDir={action === "List"} />
             <span className="min-w-0 truncate">{target}</span>
-          </button>
+          </Button>
         ) : (
           <span
             className={`flex min-w-0 items-center gap-1 rounded px-1 ${
-              chip ? `max-w-full bg-content/6 ${targetTone}` : `flex-1 ${targetTone}`
+              chip ? `max-w-full bg-(--ui-surface-raised) ${targetTone}` : `flex-1 ${targetTone}`
             }`}
             title={target}
           >
@@ -4268,10 +4384,12 @@ function ToolCallSummary({
 function ToolCallIcon({ state }: { state: ToolCallState }) {
   useLocale();
   if (state === "rejected") {
-    return <X className="size-3.5 shrink-0 text-danger" strokeWidth={2} />;
+    return <X className="size-3.5 shrink-0 text-(--ui-tone-danger-fg)" strokeWidth={2} />;
   }
   if (state === "pending") {
-    return <CircleDashed className="size-3.5 shrink-0 text-content/40" strokeWidth={1.75} />;
+    return (
+      <CircleDashed className="size-3.5 shrink-0 text-(--ui-text-secondary)" strokeWidth={1.75} />
+    );
   }
   return null;
 }
@@ -4288,20 +4406,24 @@ function ApprovalControls({
   if (!approval || approval.decided || !onApproval) return null;
   return (
     <div className="mt-1.5 flex gap-2">
-      <button
+      <Button
+        motion="none"
+        variant="ghost"
         type="button"
-        className="rounded-md bg-content px-2.5 py-0.5 text-[11px] hover:bg-content/80     text-background-base"
+
         onClick={() => onApproval(approval.requestId, "allow")}
       >
         {t("Allow")}
-      </button>
-      <button
+      </Button>
+      <Button
+        motion="none"
+        variant="ghost"
         type="button"
-        className="rounded-md bg-content/10 px-2.5 py-0.5 text-[11px] text-content/70 hover:bg-content/20"
+
         onClick={() => onApproval(approval.requestId, "deny")}
       >
         {t("Deny")}
-      </button>
+      </Button>
     </div>
   );
 }
@@ -4317,7 +4439,7 @@ function HandoffDivider({ block }: { block: Block }) {
   return (
     <div className="px-4 py-5">
       <div className="flex items-center gap-3">
-        <div className="h-px min-w-4 flex-1 bg-content/12" />
+        <div className="h-px min-w-4 flex-1 bg-(--ui-surface-raised)" />
         <div
           role="separator"
           aria-label={
@@ -4325,11 +4447,11 @@ function HandoffDivider({ block }: { block: Block }) {
               ? t("Preparing a handoff to {p0}", { p0: HARNESS_TITLE[meta.to] })
               : t("Continued with {p0}", { p0: label })
           }
-          className="flex max-w-[min(100%,20rem)] items-center gap-1.5 px-1.5 font-sans text-[12px] text-content/55"
+          className="flex max-w-[min(100%,20rem)] items-center gap-1.5 px-1.5 font-sans text-[12px] text-(--ui-text-secondary)"
         >
           {preparing ? (
             <>
-              <TerminalSpinner className="inline-block w-3.5 shrink-0 select-none text-center text-[11px] leading-none text-content/45" />
+              <TerminalSpinner className="inline-block w-3.5 shrink-0 select-none text-center text-[11px] leading-none text-(--ui-text-secondary)" />
               <Shimmer duration={1.4}>{label}</Shimmer>
             </>
           ) : (
@@ -4338,7 +4460,7 @@ function HandoffDivider({ block }: { block: Block }) {
             </>
           )}
         </div>
-        <div className="h-px min-w-4 flex-1 bg-content/12" />
+        <div className="h-px min-w-4 flex-1 bg-(--ui-surface-raised)" />
       </div>
     </div>
   );
@@ -4366,16 +4488,16 @@ function interjectionChrome(meta: InterjectionMeta): {
           : undefined;
   const severityClass =
     meta.severity === "blocker"
-      ? "text-danger"
+      ? "text-(--ui-tone-danger-fg)"
       : meta.severity === "concern"
-        ? "text-warning"
-        : "text-content/55";
+        ? "text-(--ui-tone-warning-fg)"
+        : "text-(--ui-text-secondary)";
   return { label, severityText, severityClass };
 }
 
 /** The advisory body under an interjection, wherever the note is surfaced. */
 const INTERJECTION_BODY =
-  "min-w-0 whitespace-pre-wrap break-words font-sans text-[12.5px] leading-5 text-content/70";
+  "min-w-0 whitespace-pre-wrap break-words font-sans text-[12.5px] leading-5 text-(--ui-text-secondary)";
 
 /** A mid-turn interjection, e.g. OMP advisor notes: a labeled boundary with
  * a collapsible advisory body below it. */
@@ -4408,18 +4530,18 @@ function InterjectionDivider({ block }: { block: Block }) {
   return (
     <div className="px-4 py-4">
       <div className="flex items-center gap-3">
-        <div className="h-px min-w-4 flex-1 bg-content/12" />
+        <div className="h-px min-w-4 flex-1 bg-(--ui-surface-raised)" />
         <div
           role="separator"
           aria-label={t("Interjection: {p0}", { p0: label })}
-          className="flex items-center gap-2 px-1.5 font-sans text-[12px] text-content/55"
+          className="flex items-center gap-2 px-1.5 font-sans text-[12px] text-(--ui-text-secondary)"
         >
           <span>{label}</span>
           {severityText ? (
             <span className={`text-[11px] ${severityClass}`}>{severityText}</span>
           ) : null}
         </div>
-        <div className="h-px min-w-4 flex-1 bg-content/12" />
+        <div className="h-px min-w-4 flex-1 bg-(--ui-surface-raised)" />
       </div>
       {block.text ? (
         <div className="mt-2 px-2">
@@ -4427,14 +4549,16 @@ function InterjectionDivider({ block }: { block: Block }) {
             {block.text}
           </pre>
           {overflows ? (
-            <button
+            <Button
+              motion="none"
+              variant="ghost"
               type="button"
               aria-expanded={expanded}
               onClick={() => setExpanded((value) => !value)}
-              className="mt-1 py-1 font-sans text-xs text-content/55 hover:text-content"
+              className="mt-1"
             >
               {expanded ? t("Show less") : t("Show more")}
-            </button>
+            </Button>
           ) : null}
         </div>
       ) : null}

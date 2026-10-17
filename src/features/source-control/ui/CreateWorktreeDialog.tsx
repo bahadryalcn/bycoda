@@ -1,3 +1,5 @@
+import { Button } from "../../../shared/ui/Button";
+import { TextField } from "../../../shared/ui/TextField";
 import { t, useLocale, getLocale } from "../../../shared/i18n/git";
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { useProjectBranchesState } from "../hooks/useProjectBranches";
@@ -71,8 +73,6 @@ export function CreateWorktreeDialog({
       setBusy(false);
     }
   };
-  const field =
-    "h-9 rounded-md border border-content/10 bg-background-base px-2.5 text-[13px] outline-none focus:border-content/25 disabled:opacity-50";
   return (
     <Modal
       languageDomain="git"
@@ -83,12 +83,12 @@ export function CreateWorktreeDialog({
       }}
     >
       <form className="flex flex-col gap-4 p-4" onSubmit={(e) => void submit(e)}>
-        <p className="text-[12px] text-content/55">
+        <p className="text-[12px] text-[var(--ui-text-secondary)]">
           {t("An independent working copy of ")}
           {prettyCwd(cwd)}
           {t(". Existing uncommitted changes stay in their current working copy.")}
         </p>
-        <div className="flex flex-col gap-1.5 text-[12px] text-content/70">
+        <div className="flex flex-col gap-1.5 text-[12px] text-[var(--ui-text-secondary)]">
           <span>{t("Branch")}</span>
           <SearchableSelect
             label={t("Branch type")}
@@ -116,7 +116,7 @@ export function CreateWorktreeDialog({
             layer={LAYER.dialogPopover}
           />
         </div>
-        <div className="flex flex-col gap-1.5 text-[12px] text-content/70">
+        <div className="flex flex-col gap-1.5 text-[12px] text-[var(--ui-text-secondary)]">
           <span>{existing ? t("Existing branch") : t("New branch name")}</span>
           {existing ? (
             <SearchableSelect
@@ -131,10 +131,11 @@ export function CreateWorktreeDialog({
               layer={LAYER.dialogPopover}
             />
           ) : (
-            <input
+            <TextField
+              hideLabel
+              label=""
               ref={input}
               aria-label={t("New branch name")}
-              className={field}
               value={name}
               disabled={busy}
               placeholder={t("feature/my-task")}
@@ -145,7 +146,7 @@ export function CreateWorktreeDialog({
           )}
         </div>
         {!existing && (
-          <div className="flex flex-col gap-1.5 text-[12px] text-content/70">
+          <div className="flex flex-col gap-1.5 text-[12px] text-[var(--ui-text-secondary)]">
             <span>{t("Start from")}</span>
             <SearchableSelect
               label={t("Start from")}
@@ -159,7 +160,7 @@ export function CreateWorktreeDialog({
           </div>
         )}
         {defaultRoot && (
-          <p className="break-all text-[11px] text-content/40">
+          <p className="break-all text-[11px] text-[var(--ui-text-muted)]">
             {t("Created in ")}
             {prettyCwd(defaultRoot)}
           </p>
@@ -170,22 +171,19 @@ export function CreateWorktreeDialog({
           </p>
         )}
         <div className="flex justify-end gap-2">
-          <button
-            type="button"
-            disabled={busy}
-            onClick={onCancel}
-            className="rounded-md px-3 py-1.5 text-[12px] hover:bg-content/8 active:scale-[0.97]"
-          >
+          <Button variant="ghost" motion="none" type="button" disabled={busy} onClick={onCancel}>
             {t("Cancel")}
-          </button>
-          <button
+          </Button>
+          <Button
+            variant="primary"
+            motion="none"
             type="submit"
             disabled={busy || !name.trim()}
-            className="inline-flex items-center gap-1.5 rounded-md bg-content px-3 py-1.5 text-[12px] font-medium text-background-base disabled:opacity-40 active:scale-[0.97]"
+            className="inline-flex items-center gap-1.5"
           >
             {busy && <Loader className="size-3.5 animate-spin" />}
             {t("Create worktree")}
-          </button>
+          </Button>
         </div>
       </form>
     </Modal>

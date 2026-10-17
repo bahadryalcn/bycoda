@@ -1,3 +1,4 @@
+import { PasswordField } from "../../../shared/ui/PasswordField";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { t, useLocale } from "../../../shared/i18n";
 import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
@@ -342,9 +343,9 @@ export function GitlabSettings() {
               spellCheck={false}
               disabled={busy || checking}
             />
-            <TextField
+            <PasswordField
               label={t("GitLab access token")}
-              type="password"
+
               value={token}
               onChange={(event) => setToken(event.target.value)}
               onKeyDown={(event) => {
@@ -482,9 +483,9 @@ export function AzureDevOpsSettings() {
               spellCheck={false}
               disabled={busy || checking}
             />
-            <TextField
+            <PasswordField
               label={t("Azure DevOps personal access token")}
-              type="password"
+
               value={token}
               onChange={(event) => setToken(event.target.value)}
               onKeyDown={(event) => {
@@ -638,9 +639,9 @@ export function LinearSettings() {
           </SecondaryButton>
         ) : (
           <div className="inbox-account-fields">
-            <TextField
+            <PasswordField
               label={t("Linear API key")}
-              type="password"
+
               value={token}
               onChange={(event) => setToken(event.target.value)}
               onKeyDown={(event) => {

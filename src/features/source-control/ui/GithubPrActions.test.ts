@@ -88,9 +88,10 @@ describe("GitHub pull request actions", () => {
     )!;
     act(() => squash.click());
 
-    const primary = [...container.querySelectorAll("button")].find(
-      (button) => button.textContent?.trim() === "Squash and merge",
+    const primary = container.querySelector<HTMLButtonElement>(
+      '[role="group"][aria-label="Squash and merge"] > button',
     )!;
+    expect(githubPrAction).not.toHaveBeenCalled();
     act(() => primary.click());
     const dialog = document.querySelector<HTMLElement>(
       '[role="dialog"][aria-label="Squash and merge?"]',

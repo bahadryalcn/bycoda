@@ -1,3 +1,6 @@
+import { Alert } from "../../../shared/ui/Alert";
+import { Button } from "../../../shared/ui/Button";
+import { TextField } from "../../../shared/ui/TextField";
 import { useEffect, useRef, useState } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
@@ -37,6 +40,7 @@ export function TaskWorkspacePicker({
   const [error, setError] = useState("");
   const [newName, setNewName] = useState("");
   const [busy, setBusy] = useState(false);
+  const creating = useRef(false);
   const [revision, setRevision] = useState(0);
   const [supported, setSupported] = useState<boolean | null>(null);
   const machineId = machine?.id;
@@ -92,9 +96,10 @@ export function TaskWorkspacePicker({
   }, [machineId, cwd, revision]);
 
   const create = async (existing: boolean) => {
-    if (!machine || !inventory || busy) return;
+    if (!machine || !inventory || busy || creating.current) return;
     const branch = existing ? value?.baseBranch : newName.trim();
     if (!branch) return;
+    creating.current = true;
     setBusy(true);
     setError("");
     onBusyChange?.(true);
@@ -119,6 +124,7 @@ export function TaskWorkspacePicker({
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason));
     } finally {
+      creating.current = false;
       setBusy(false);
       onBusyChange?.(false);
     }
@@ -131,18 +137,19 @@ export function TaskWorkspacePicker({
         <p>{t("Update the selected host to choose a branch or worktree.")}</p>
       ) : null}
       {error ? (
-        <div role="alert">
+        <Alert tone="danger" role="alert">
           {error}
-          <button type="button" onClick={() => setRevision((count) => count + 1)}>
+          <Button variant="ghost" type="button" onClick={() => setRevision((count) => count + 1)}>
             {t("Retry")}
-          </button>
-        </div>
+          </Button>
+        </Alert>
       ) : null}
       {inventory ? (
         <>
           <label>
             {t("Base branch")}
             <SearchableSelect
+              disabled={disabled || busy}
               label={t("Base branch")}
               value={value?.baseBranch ?? ""}
               options={[
@@ -163,6 +170,7 @@ export function TaskWorkspacePicker({
           <label>
             {t("Worktree")}
             <SearchableSelect
+              disabled={disabled || busy}
               label={t("Worktree")}
               value={value?.checkoutCwd ?? ""}
               options={[
@@ -185,22 +193,34 @@ export function TaskWorkspacePicker({
           </label>
           {value?.baseBranch &&
           !inventory.trees.some((tree) => tree.branch === value.baseBranch) ? (
-            <button type="button" onClick={() => void create(true)}>
+            <Button
+              variant="secondary"
+              type="button"
+              loading={busy}
+              onClick={() => void create(true)}
+            >
               {t("Create worktree for this branch")}
-            </button>
+            </Button>
           ) : null}
           <label>
             {t("New integration branch")}
-            <input
+            <TextField
+              hideLabel
+              label=""
               value={newName}
               onChange={(event) => setNewName(event.target.value)}
               placeholder="goal/settings"
               spellCheck={false}
             />
           </label>
-          <button type="button" disabled={!newName.trim()} onClick={() => void create(false)}>
+          <Button
+            variant="ghost"
+            type="button"
+            disabled={!newName.trim()}
+            onClick={() => void create(false)}
+          >
             {busy ? t("Creating…") : t("Create a separate worktree")}
-          </button>
+          </Button>
           <p>
             {t(
               isolate
@@ -211,7 +231,9 @@ export function TaskWorkspacePicker({
           {branchName ? (
             <label>
               {t("Task branch name (optional)")}
-              <input
+              <TextField
+                hideLabel
+                label=""
                 value={value?.branchName ?? ""}
                 onChange={(event) =>
                   onChange({ ...value, branchName: event.target.value || undefined })

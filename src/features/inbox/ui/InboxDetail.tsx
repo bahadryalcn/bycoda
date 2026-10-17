@@ -1,3 +1,6 @@
+import { Alert } from "../../../shared/ui/Alert";
+import { Badge } from "../../../shared/ui/Badge";
+import { Button } from "../../../shared/ui/Button";
 import { t, useLocale, getLocale } from "../../../shared/i18n";
 import { useGithubPrChecks } from "../hooks/useGithubPrChecks";
 import { summarizePrChecks } from "../model/githubPrChecks";
@@ -48,10 +51,6 @@ import {
   InboxProjectPicker,
   InboxLabel,
   CiRepairProps,
-  ACTION_FILLED,
-  ACTION_OUTLINE,
-  ACTION_PANEL_HEADER,
-  ACTION_GHOST,
 } from "./InboxPresentation";
 import { InboxDescriptionSummary, InboxPrChangesGlance } from "./InboxPrOverview";
 import { useInboxDetailData } from "./useInboxDetailData";
@@ -69,24 +68,24 @@ export function InboxDetailTab({
 }) {
   useLocale();
   return (
-    <button
+    <Button
+      variant="tab"
       type="button"
       role="tab"
       aria-label={label}
       aria-selected={selected}
       onClick={onSelect}
-      className={`relative flex h-9 items-center text-[12px] leading-none ${
-        selected ? "text-content" : "text-content/50 hover:text-content"
-      }`}
     >
       {label}
       {count != null ? (
-        <span className="ml-1.5 rounded-full bg-content/10 px-1.5 py-0.5 text-[10px] tabular-nums text-content/60">
+        <Badge tone="neutral" className="ml-1.5">
           {count}
-        </span>
+        </Badge>
       ) : null}
-      {selected ? <span className="absolute inset-x-0 bottom-0 h-0.5 bg-content" /> : null}
-    </button>
+      {selected ? (
+        <span className="absolute inset-x-0 bottom-0 h-0.5 bg-(--ui-tone-neutral-solid)" />
+      ) : null}
+    </Button>
   );
 }
 
@@ -195,10 +194,10 @@ export function InboxDetail({
   const reviewLabel = githubReviewDecisionLabel(reviewDecision);
   const reviewClass =
     reviewDecision.toUpperCase() === "APPROVED"
-      ? "text-success/90"
+      ? "text-(--ui-tone-success-fg)"
       : reviewDecision.toUpperCase() === "CHANGES_REQUESTED"
-        ? "text-danger/90"
-        : "text-content/50";
+        ? "text-(--ui-tone-danger-fg)"
+        : "text-(--ui-text-secondary)";
   const baseRef = details?.baseRefName?.trim() || thread?.baseRefName?.trim() || "";
   const headRef = details?.headRefName?.trim() || thread?.headRefName?.trim() || "";
 
@@ -305,8 +304,8 @@ export function InboxDetail({
     <div
       data-inbox-detail-identity
       data-inbox-detail-fixed-header={panel ? "" : undefined}
-      className={`flex min-w-0 items-center gap-2 text-[12px] text-content/50 ${
-        panel ? "h-9 shrink-0 border-b border-stroke px-4 pr-[34px]" : ""
+      className={`flex min-w-0 items-center gap-2 whitespace-nowrap text-[12px] text-(--ui-text-secondary) ${
+        panel ? "h-9 shrink-0 border-b border-(--ui-tone-neutral-border) px-4 pr-[34px]" : ""
       }`}
     >
       <InboxProviderMark provider={item.provider} className="size-3.5 shrink-0" />
@@ -318,20 +317,22 @@ export function InboxDetail({
         <statusMark.Icon className="size-3.5" strokeWidth={1.75} />
         {status}
       </span>
-      {attentionLabel ? <span className="shrink-0 text-accent">{attentionLabel}</span> : null}
+      {attentionLabel ? (
+        <span className="shrink-0 text-(--ui-tone-accent-fg)">{attentionLabel}</span>
+      ) : null}
       {source ? <span className="min-w-0 truncate">{source}</span> : null}
       {panel ? (
-        <button
+        <Button
+          variant="ghost"
           type="button"
           title={item.url ? externalActionLabel : t("No link available")}
           aria-label={externalActionLabel}
           disabled={!item.url}
           onClick={() => void openUrl(item.url)}
-          className={`${ACTION_PANEL_HEADER} ml-auto shrink-0 disabled:opacity-40`}
         >
           <ExternalLink className="size-3.5" strokeWidth={1.75} />
           <span className="@max-[420px]/linked:hidden">{externalActionLabel}</span>
-        </button>
+        </Button>
       ) : null}
     </div>
   );
@@ -346,7 +347,7 @@ export function InboxDetail({
       >
         <div
           data-inbox-detail-header
-          className={`relative border-b border-stroke ${panel ? "" : "z-10 shrink-0"}`}
+          className={`relative border-b border-(--ui-tone-neutral-border) ${panel ? "" : "z-10 shrink-0"}`}
         >
           <div
             className={`mx-auto flex w-full max-w-5xl flex-col ${
@@ -357,13 +358,13 @@ export function InboxDetail({
               {panel ? null : identityRow}
               <h1
                 title={item.title}
-                className={`line-clamp-2 font-semibold leading-tight text-content ${
+                className={`line-clamp-2 font-semibold leading-tight text-(--ui-tone-neutral-fg) ${
                   panel ? "text-[18px]" : "text-[20px]"
                 }`}
               >
                 {item.title}
               </h1>
-              <div className="flex min-w-0 items-center gap-2 overflow-hidden whitespace-nowrap text-[12px] text-content/50">
+              <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-[12px] text-(--ui-text-secondary)">
                 {authorName ? (
                   <InboxPerson
                     name={authorName}
@@ -379,7 +380,7 @@ export function InboxDetail({
                   <>
                     {authorName ? <span aria-hidden>·</span> : null}
                     {extraAssignees.length > 0 ? (
-                      <span className="flex min-w-0 items-center gap-2 overflow-hidden">
+                      <span className="flex min-w-0 flex-wrap items-center gap-2">
                         {extraAssignees.map((person) => (
                           <InboxPerson
                             key={person.login}
@@ -440,25 +441,28 @@ export function InboxDetail({
               </div>
               {!panel && relatedSessions.length > 0 ? (
                 <div className="flex min-w-0 items-center gap-1.5 overflow-hidden">
-                  <span className="mr-0.5 inline-flex shrink-0 items-center gap-1 text-[11px] text-content/45">
+                  <span className="mr-0.5 inline-flex shrink-0 items-center gap-1 text-[11px] text-(--ui-text-secondary)">
                     <MessageMultiple className="size-3.5" strokeWidth={1.75} />
                     {t("Related")} {relatedSessions.length === 1 ? t("thread") : t("threads")}
                   </span>
                   {relatedSessions.map((session) => {
                     const title = sessionDisplayTitle(session.title, session.harness);
                     return (
-                      <button
+                      <Button
+                        variant="ghost"
                         key={session.id}
                         type="button"
                         title={t("Open thread: {p0}", { p0: title })}
                         onClick={() => void onOpenSession?.(session.id)}
-                        className="inline-flex min-w-0 max-w-64 items-center gap-1 rounded-md bg-content/5 px-2 py-1 text-[11px] text-content/70 hover:bg-content/10 hover:text-content"
+                        className="min-w-0 max-w-64"
                       >
                         <span className="truncate">{title}</span>
                         {session.archived ? (
-                          <span className="shrink-0 text-content/40">{t("Archived")}</span>
+                          <span className="shrink-0 text-(--ui-text-secondary)">
+                            {t("Archived")}
+                          </span>
                         ) : null}
-                      </button>
+                      </Button>
                     );
                   })}
                 </div>
@@ -466,7 +470,8 @@ export function InboxDetail({
               <div className="flex flex-wrap items-center gap-2 pt-0.5">
                 {onStart && item.kind !== "pr" ? (
                   <>
-                    <button
+                    <Button
+                      variant="primary"
                       type="button"
                       disabled={
                         starting ||
@@ -486,10 +491,9 @@ export function InboxDetail({
                           })
                           .finally(() => setStarting(false));
                       }}
-                      className={`${ACTION_FILLED} disabled:cursor-default disabled:opacity-40`}
                     >
                       {starting ? t("Sending...") : t("Send to agent")}
-                    </button>
+                    </Button>
                     {chooseStartProject ? (
                       <InboxProjectPicker
                         projects={projects}
@@ -508,24 +512,26 @@ export function InboxDetail({
                   />
                 ) : null}
                 {onDiscuss ? (
-                  <button type="button" onClick={onDiscuss} className={ACTION_OUTLINE}>
+                  <Button variant="secondary" type="button" onClick={onDiscuss}>
                     <MessageSquare className="size-3.5" strokeWidth={1.75} /> {t("Ask")}
-                  </button>
+                  </Button>
                 ) : null}
                 {panel ? null : (
-                  <button
+                  <Button
+                    variant="ghost"
                     type="button"
                     title={item.url ? externalActionLabel : t("No link available")}
                     disabled={!item.url}
                     onClick={() => void openUrl(item.url)}
-                    className={`${ACTION_GHOST} disabled:opacity-40`}
                   >
                     <ExternalLink className="size-3.5" strokeWidth={1.75} />
                     {externalActionLabel}
-                  </button>
+                  </Button>
                 )}
               </div>
-              {startError ? <p className="text-[12px] text-danger/90">{startError}</p> : null}
+              {startError ? (
+                <p className="text-[12px] text-(--ui-tone-danger-fg)">{startError}</p>
+              ) : null}
             </header>
             {isPr ? (
               <div className="flex h-9 items-stretch gap-4">
@@ -560,32 +566,24 @@ export function InboxDetail({
                   <div
                     role="group"
                     aria-label={t("Diff context")}
-                    className="ml-auto flex items-center self-center rounded-md border border-content/10 bg-content/[0.03] p-0.5"
+                    className="ml-auto flex items-center self-center rounded-md border border-(--ui-tone-neutral-border) bg-(--ui-surface-hover) p-0.5"
                   >
-                    <button
+                    <Button
+                      variant="ghost"
                       type="button"
                       aria-pressed={diffMode === "hunks"}
                       onClick={() => setDiffMode("hunks")}
-                      className={`rounded px-2.5 py-1 text-[11px] leading-none ${
-                        diffMode === "hunks"
-                          ? "bg-selection text-content"
-                          : "text-content/45 hover:text-content/70"
-                      }`}
                     >
                       {t("Hunks")}
-                    </button>
-                    <button
+                    </Button>
+                    <Button
+                      variant="ghost"
                       type="button"
                       aria-pressed={diffMode === "full"}
                       onClick={() => setDiffMode("full")}
-                      className={`rounded px-2.5 py-1 text-[11px] leading-none ${
-                        diffMode === "full"
-                          ? "bg-selection text-content"
-                          : "text-content/45 hover:text-content/70"
-                      }`}
                     >
                       {t("Full file")}
-                    </button>
+                    </Button>
                   </div>
                 ) : null}
               </div>
@@ -611,19 +609,19 @@ export function InboxDetail({
             ) : null}
             {isPr && tab === "code" ? (
               diffLoading ? (
-                <div className="flex justify-center py-10 text-content/40">
+                <div className="flex justify-center py-10 text-(--ui-text-secondary)">
                   <LoaderCircle className="size-4 animate-spin" strokeWidth={1.75} />
                 </div>
               ) : diffError && !prDiff ? (
-                <p role="alert" className="text-[13px] text-content/50">
+                <Alert tone="info" role="alert">
                   {diffError}
-                </p>
+                </Alert>
               ) : prDiff ? (
                 <>
                   {diffError ? (
-                    <p role="alert" className="text-[13px] text-content/50">
+                    <Alert tone="info" role="alert">
                       {diffError}
-                    </p>
+                    </Alert>
                   ) : null}
                   <InboxPrDiff
                     key={`${item.projectPath}:${item.number}:${revision}:${diffMode}`}
@@ -633,7 +631,7 @@ export function InboxDetail({
                   />
                 </>
               ) : (
-                <p className="text-[13px] text-content/45">{t("No file changes")}</p>
+                <p className="text-[13px] text-(--ui-text-secondary)">{t("No file changes")}</p>
               )
             ) : isPr && tab === "checks" ? (
               <InboxPrChecks
@@ -661,19 +659,19 @@ export function InboxDetail({
                 }
               />
             ) : loading ? (
-              <div className="flex justify-center py-10 text-content/40">
+              <div className="flex justify-center py-10 text-(--ui-text-secondary)">
                 <LoaderCircle className="size-4 animate-spin" strokeWidth={1.75} />
               </div>
             ) : error && !details ? (
-              <p role="alert" className="text-[13px] text-content/50">
+              <Alert tone="info" role="alert">
                 {error}
-              </p>
+              </Alert>
             ) : (
               <>
                 {error ? (
-                  <p role="alert" className="text-[13px] text-content/50">
+                  <Alert tone="info" role="alert">
                     {error}
-                  </p>
+                  </Alert>
                 ) : null}
                 {panel ? (
                   <InboxDescriptionSummary body={details?.body ?? ""} cwd={markdownCwd} />
@@ -682,7 +680,7 @@ export function InboxDetail({
                     <AgentMarkdown text={details.body} cwd={markdownCwd} allowRemoteMedia />
                   </SurfaceSelection>
                 ) : (
-                  <p className="text-[13px] text-content/45">{t("No description")}</p>
+                  <p className="text-[13px] text-(--ui-text-secondary)">{t("No description")}</p>
                 )}
                 {panel && isPr ? (
                   <InboxPrChangesGlance
@@ -738,11 +736,12 @@ export function CopyBranchNameButton({ branch }: { branch: string }) {
   }, [branch]);
 
   return (
-    <button
+    <Button
+      variant="ghost"
       type="button"
       title={copied ? t("Copied") : t("Copy branch name")}
       aria-label={copied ? t("Copied") : t("Copy branch name")}
-      className="shrink-0 rounded p-0.5 text-content/40 hover:bg-content/8 hover:text-content/70"
+      className="shrink-0"
       onClick={() => {
         void copyText(branch).then(
           () => {
@@ -760,6 +759,6 @@ export function CopyBranchNameButton({ branch }: { branch: string }) {
       ) : (
         <Copy className="size-3" strokeWidth={1.75} />
       )}
-    </button>
+    </Button>
   );
 }

@@ -1,4 +1,5 @@
 import { createRoot } from "react-dom/client";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { NotesView } from "../../src/features/notes/ui/NotesView";
 import { setLanguagePreference } from "../../src/shared/i18n";
 import { summarizeNote, type Note, type NoteUpsert } from "../../src/features/notes/notes";
@@ -6,6 +7,7 @@ import "../../src/styles/index.css";
 
 // Memory-only bridge. This fixture never reads or writes the owner's notes.
 const parameters = new URLSearchParams(location.search);
+document.documentElement.classList.toggle("theme-light", parameters.get("theme") === "light");
 const count = parameters.get("count") === "1000" ? 1000 : 42;
 const padding = count === 1000 ? "\n\n" + "Long note paragraph. ".repeat(1100) : "";
 const notes: Note[] = Array.from({ length: count }, (_, index) => ({
@@ -81,15 +83,19 @@ await setLanguagePreference(
   new URLSearchParams(location.search).get("lang") === "tr" ? "tr" : "en",
 );
 createRoot(document.getElementById("root")!).render(
-  <div style={{ blockSize: "100dvh", display: "flex", background: "var(--color-background-base)" }}>
-    <NotesView
-      besideRail
-      cwd="G:/Projects/monocode"
-      recents={[
-        { path: "G:/Projects/monocode", openedAt: 2 },
-        { path: "G:/Projects/mobile", openedAt: 1 },
-      ]}
-      onClose={() => {}}
-    />
-  </div>,
+  <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+    <div
+      style={{ blockSize: "100dvh", display: "flex", background: "var(--color-background-base)" }}
+    >
+      <NotesView
+        besideRail
+        cwd="G:/Projects/monocode"
+        recents={[
+          { path: "G:/Projects/monocode", openedAt: 2 },
+          { path: "G:/Projects/mobile", openedAt: 1 },
+        ]}
+        onClose={() => {}}
+      />
+    </div>
+  </QueryClientProvider>,
 );

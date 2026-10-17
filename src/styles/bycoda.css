@@ -85,15 +85,19 @@
   border-radius: 6px;
   border: 1px solid var(--color-stroke);
 }
+.bycoda-task-column {
+  border: 1px solid var(--ui-tone-neutral-border);
+  border-block-start-width: 2px;
+}
 .bycoda-task-column > h2 {
-  border-bottom: 1px solid var(--color-stroke);
-  margin-bottom: 8px;
+  border-block-end: 1px solid var(--ui-tone-neutral-border);
+  margin-block-end: 8px;
 }
 .bycoda-task-column[data-task-column="running"] {
-  border-top: 2px solid var(--color-accent);
+  border-block-start-color: var(--ui-tone-info-border);
 }
 .bycoda-task-column[data-task-column="done"] {
-  border-top: 2px solid var(--bycoda-brass-muted);
+  border-block-start-color: var(--ui-tone-success-border);
 }
 .bycoda-task-column article {
   border-radius: 5px;
@@ -368,15 +372,22 @@ html.theme-light .project-sigil {
   color: var(--ui-text-secondary);
 }
 .bycoda-rail-tools {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 2px;
-  padding: 0 7px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 6px 7px;
   border-bottom: 1px solid var(--color-stroke);
 }
-.bycoda-rail-tools > div,
-.bycoda-rail-tools > :first-child {
-  grid-column: 1 / -1;
+/* Recovery and live-agent rows share the navigation rhythm and collapse
+   entirely when neither has anything to show. */
+.bycoda-rail-status {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 0 7px;
+}
+.bycoda-rail-status:not(:has(button)) {
+  display: none;
 }
 .bycoda-project-ledger {
   padding-top: 8px;
@@ -426,9 +437,6 @@ html.theme-light .project-sigil {
   border: 1px solid var(--color-stroke);
 }
 @container rail (width < 140px) {
-  .bycoda-rail-tools {
-    grid-template-columns: 1fr;
-  }
   .bycoda-workbench-tag {
     display: none;
   }
@@ -458,17 +466,21 @@ html.theme-light .bycoda-workspace-tabs {
 .bycoda-project-rail > [data-tauri-drag-region] {
   height: 34px;
 }
-.bycoda-rail-tools > button {
+.bycoda-rail-tools > button,
+.bycoda-rail-status .recovery-rail-control {
   height: 28px;
-  gap: 5px;
-  padding-inline: 6px;
+  min-height: 28px;
+  gap: 8px;
+  padding-inline: 8px;
 }
-.bycoda-rail-tools > button > svg {
+.bycoda-rail-tools > button > svg,
+.bycoda-rail-status .recovery-rail-control > svg {
   width: 14px;
   height: 14px;
 }
-.bycoda-rail-tools > button > span {
-  font-size: 11px;
+.bycoda-rail-tools > button > span,
+.bycoda-rail-status .recovery-rail-control > span {
+  font-size: 12px;
 }
 
 html.theme-light { --glass-blur: 8px; }

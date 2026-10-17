@@ -99,14 +99,11 @@ component, not the shared accessibility role or the word autocomplete alone.
 | Enter a value that may be absent from suggestions                            | Shared autocomplete with an explicit free-entry contract; do not substitute a closed-list picker    |
 | Run commands or jump across application areas                                | CommandPalette, preserving the command registry, shortcuts, permissions and navigation owner        |
 
-The first ExpandingSearch candidate is the settings quick-jump interaction. Keep
-`searchSettings` ranking, translated labels, keyboard/IME and the deferred reveal/
-focus behavior after the search surface closes. Its source component accepts
-prefetched items/suggestions and owns its query internally; the current public
-API has no query-change/results control. If an existing ranker or asynchronous
-source must remain authoritative, add a reusable controlled query/result hook to
-the adapter before adopting the visual. Do not silently replace ranking with a
-different local filter or execute duplicate searches.
+Settings quick-jump now uses shared ExpandingSearch with controlled query and
+externally ranked results. It retains searchSettings ordering, translated labels,
+keyboard/IME and deferred reveal/focus after close. This deliberate extension
+keeps the ranker authoritative; adopting upstream internal filtering would not
+preserve that contract. It does not replace form-value selection or full search.
 
 Full project text search still needs its regex/case/include/exclude, cancellation,
 result context and pagination/truncation behavior. An expanding launcher may reveal
@@ -152,7 +149,7 @@ is not an exception.
 ## Action contract
 
 `Button.tsx` is the only ordinary action presentation owner. `SecondaryButton` and
-future copy, split, async and confirmation action composites must delegate to it.
+copy, split, async and confirmation action compositions must delegate to it.
 Do not add visual-only IconButton, ToolbarButton or feature-specific action skins.
 
 This contract applies after identifying a control as an action. Radio, segmented,
@@ -160,7 +157,7 @@ tab, tree and menu composites retain their own selection/navigation semantics an
 shared token presentation; their internal native buttons do not force a redesign
 into a row of action Buttons.
 
-### Target API: hierarchy and tone
+### Implemented API: hierarchy and tone
 
 Hierarchy and semantic color are independent:
 
@@ -173,8 +170,9 @@ Hierarchy and semantic color are independent:
 | `size`                   | `sm`, `md`, `lg`                                                                                             | Shared token dimensions, never a local height/padding override                      |
 | Other existing props     | `shape`, `iconOnly`, `label`, `tooltip`, `selected`, `loading`, `loadingLabel`, icons, `fullWidth`, `motion` | Preserve current contracts                                                          |
 
-The new tone prop is **not implemented yet**. Examples below specify the next
-foundation wave; current code continues to use the existing seven variants.
+The shared Button implements the independent tone prop. Existing seven variants
+remain compatible; legacy aliases normalize at the public adapter boundary.
+Feature-wide migration and installed-application acceptance remain separate work.
 
 ```tsx
 <Button variant="primary" tone="accent">Save changes</Button>
@@ -224,6 +222,33 @@ change controlled/uncontrolled ownership. Associate labels, helper text, validat
 and save status without overwriting caller ARIA. Do not use placeholder text as a
 label. Required, invalid, readonly, disabled and pending are different states.
 
+Implemented field ownership includes `SearchInput appearance="field"` and
+`SearchInputGroup appearance="field"` with `focusOwner="group"`. Surface, border,
+radius, density, font, disabled and aria-invalid presentation belong to that shared
+owner; callers keep query/options/count/error data and native refs/events. Clear
+returns focus to the same input and emits native input; uncontrolled form reset
+synchronizes after the default action, including canceled-reset handling. Bare
+editor/menu searches retain their explicit native focus owner.
+
+`NativeSearchableSelect` composes searchable presentation around a real native
+single select. Keep name/form/FormData, required/defaultValue or controlled value,
+native change/ref, reset, disabled option metadata and external label relationships.
+Validation focuses the visible trigger and exposes the browser message, including
+custom validity; imperative native focus routes there too. Do not replace it with
+hidden-input-only serialization. Six initial growing form choices use this bridge;
+that pilot count does not establish all consumer acceptance.
+
+Native menu/tree controllers may use public `MenuRow`, `ContextMenu` and
+`TreeRow` rather than duplicate presentation or direct registry imports. MenuRow
+forwards the native row contract; ContextMenu preserves extracted ExplorerMenu
+point/anchor/submenu/native-popup behavior. TreeRow owns row geometry while
+FileTree keeps selection, virtualization, rename and native drop authority.
+
+`SplitButton.menuDisabled` can independently allow menu choices when only the
+primary action is disabled (Commit/Amend). Loading and group aria-disabled gate
+both. Its default still derives the menu gate from primary disabled. Menu method
+selection never implies execution or bypasses a confirmation.
+
 ## Semantic color contract
 
 Application controls consume semantic variables. Neither a literal color nor a
@@ -241,11 +266,10 @@ utilities must not invent a control's appearance.
 | Semantic status                          | `--color-info`, `--color-success`, `--color-warning`, `--color-danger`; `--color-error` aliases danger |
 | Running/on                               | Existing `--color-active` and control tokens; preserve its distinction from the user accent            |
 
-**Target token family:** each action tone gets foreground, subtle surface, solid
-surface, on-solid ink, border, hover, pressed and disabled roles under the owning
-shared theme. Name these once during implementation, then expose them through the
-adapter. Add an explicit Arc `--info` bridge if the adapter needs it; do not quietly
-map info to the user accent, since bycoda already distinguishes these roles.
+Each action tone has foreground, subtle surface, solid surface, on-solid ink,
+border, hover, pressed and disabled roles in the shared theme. Button consumes
+`--ui-tone-{tone}-*` through its adapter. The scoped Arc info bridge stays distinct
+from the user accent.
 
 Both themes and custom accents require readable text and visible controls. Target
 4.5:1 normal text, 3:1 large text and 3:1 essential control boundaries/indicators
@@ -262,11 +286,19 @@ Use the shared interface and code font variables. Product labels/body use 400 or
 numbers tabular. New type roles must be shared tokens; do not scatter arbitrary
 font sizes or enforce Arc marketing headings in the workbench.
 
-The current compact and standard control heights are 28px and 36px at default
-scale. Preserve them until a shared density model replaces the hardcoded cases.
+The shared control-density preference lives in `appearancePreferences` and uses
+the existing versioned preference record. Missing or invalid values normalize to
+`compact`, preserving 28px compact and 36px standard controls at default scale.
+`comfortable` uses 32px/40px; `touch` uses 44px compact/standard and 48px large
+controls. This is the implemented `controlDensity` field in the existing
+`bycoda.appearancePreferences.v1` record, not a second preference key.
+Appearance applies the preference through `data-control-density` on the document
+root, and shared theme tokens own the geometry. Reading-settings reset restores
+compact density without clearing fonts or unrelated layout preferences.
 Use the 4px spacing rhythm for new layout roles; normalize the legacy Arc bridge's
 6/10/14px spacing centrally after geometry checks, not screen by screen. Touch
-contexts need at least a 44px interactive target through the shared density layer.
+contexts need at least a 44px interactive target through the shared density layer;
+specialized native rows and checkbox labels need their own target-size review.
 Do not widen every desktop toolbar merely to satisfy a mobile example.
 
 Align headings, fields and lists. Use one content gutter, logical properties and
@@ -353,7 +385,9 @@ fonts/code size, scale, glass, background effects, chat width/wrap and layout
 settings. Preserve storage keys, sync/backup behavior and normalization defaults.
 Changes to shared presentation must not reset these preferences.
 
-The next Appearance wave must:
+Appearance now uses real shared control specimens, compact preference groups and
+scoped resets. Existing storage/default/sync owners remain. The following contract
+continues to apply as remaining consumer and acceptance work is reconciled:
 
 1. Group theme/color, typography, density/accessibility and background/layout
    settings into compact sections with advanced disclosure and per-section reset.
@@ -362,16 +396,21 @@ The next Appearance wave must:
    recipes. Distinguish a preview from an operation on user data.
 3. Show neutral/accent/info/success/warning/danger in normal, selected, invalid,
    disabled and pending states. Keep status meaning stable under accent changes.
-4. Add a versioned, normalized shared density preference only after all affected
-   sizes consume tokens. Preserve current appearance when older data lacks it.
+4. Keep the implemented compact/comfortable/touch density on shared size tokens.
+   Normalize old/missing values to compact; preserve existing record/version and
+   scoped reset behavior as consumers are reviewed.
 5. Validate contrast for custom accents and extreme existing theme/contrast values.
    Derive accessible on-solid ink and shared fallback roles; expose a clear recovery
    action for an unreadable custom combination. Do not add arbitrary per-widget colors.
 6. Verify preference persistence, reset, live preview and remote sync/backup, plus
    light/dark/system, neutral/saturated accent, narrow/wide and reduced motion.
 
-This section specifies follow-up work; Appearance behavior has not been changed
-as part of the inventory and policy groundwork.
+Density is implemented, including persistence and Reading-section reset. No new
+standalone density key was added. Remaining specialized geometry still requires
+its own native/editor target review; this does not postpone the actual preference
+or establish installed-application acceptance.
+Source/browser verification does not establish installed native acceptance or
+complete contrast coverage for extreme custom themes and glass compositing.
 
 ## Component delivery and migration acceptance
 
@@ -391,9 +430,18 @@ pending/failure/retry, empty, long translation and disabled cases.
 Use `node scripts/checks/inventory-ui.mjs` (or `--json`) to measure remaining source
 sites. It is an advisory inventory, not a conformance gate. Review native semantics
 and dynamic/CSS candidates manually. `check-theme-colors.mjs` still owns existing
-literal-color checks. After classification, introduce a reviewed migration baseline
-that prevents new violations and shrinks by wave; do not block ordinary builds
-with unreviewed legacy counts.
+literal-color checks. Run `node scripts/checks/check-ui-boundaries.mjs` for
+owner-reviewed source/style fingerprint decisions. The baseline records 944
+historical component decisions plus current additions, with counted signal
+exceptions and explicit semantic owners. It remains in the uncommitted owner
+review diff; its existence or a source count does
+not authorize a blind baseline refresh. The command is separate from ordinary
+build/test execution. Heuristics do not prove behavior or complete CSS ownership:
+local immutable/conditional/template class recipes and static ARIA/feedback
+selectors are tracked. Indirect styles, dynamic roles, imported class recipes and
+specialized native controllers still need manual review. Preserve counted
+exceptions with concrete owners/reasons;
+line relocation alone must not invalidate a decision or bless a new bypass.
 
 Completion means standard controls use shared adapters, remaining native internals
 have named semantic owners, no feature owns a parallel control style/theme/overlay,

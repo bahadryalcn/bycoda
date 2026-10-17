@@ -76,3 +76,47 @@ test("keeps the editor usable at narrow width in light theme and reduced motion"
     fullPage: true,
   });
 });
+for (const [theme, width, motion] of [
+  ["light", 390, "off"],
+  ["dark", 1440, "reduce"],
+  ["dark", 1440, "auto"],
+] as const) {
+  test(`overview KPI ${theme} ${width} ${motion}`, async ({ page }) => {
+    const errors: string[] = [];
+    page.on("pageerror", (error) => errors.push(error.message));
+    await page.setViewportSize({ width, height: 900 });
+    await page.emulateMedia({ reducedMotion: motion === "reduce" ? "reduce" : "no-preference" });
+    await page.goto(`/tests/browser/usage-budgets.html?overview=1&theme=${theme}&motion=${motion}`);
+
+    const values = page.locator(".tabular-nums > .bycoda-arc");
+    await expect(values).toHaveCount(4);
+    await expect(values.nth(1)).toHaveText(motion === "auto" ? /1.0K/ : "1.0K");
+    if (motion !== "auto") await expect(values.locator('[aria-hidden="true"]')).toHaveCount(0);
+    await page.evaluate(() => {
+      (window as any).refreshUsageFixture();
+      (window as any).refreshUsageFixture();
+    });
+    await expect
+      .poll(() =>
+        values
+          .nth(1)
+          .evaluate((node) =>
+            node.querySelector("[aria-hidden]")
+              ? node.firstElementChild?.textContent
+              : node.textContent,
+          ),
+      )
+      .toBe("3.0K");
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+      true,
+    );
+    await page.getByRole("radio", { name: "Tokens", exact: true }).focus();
+    await page.keyboard.press("ArrowLeft");
+    await expect(page.getByRole("radio", { name: "Cost", exact: true })).toBeChecked();
+    await page.screenshot({
+      path: `temp/verification/2026-10-16-ui-system/W5b-AUX-kpi-${theme}-${motion}.png`,
+      animations: "disabled",
+    });
+    expect(errors).toEqual([]);
+  });
+}

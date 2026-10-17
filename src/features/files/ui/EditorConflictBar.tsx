@@ -1,8 +1,8 @@
+import { Button } from "../../../shared/ui/Button";
 import { t, useLocale } from "../../../shared/i18n/technical";
 import { ChevronDown, ChevronUp } from "../../../shared/ui/icons";
 
-const iconButton =
-  "grid size-6 place-items-center rounded text-content/70 hover:bg-content/10 hover:text-content disabled:opacity-35";
+const iconButton = "shrink-0";
 
 /**
  * The editor's merge-conflict strip: how many blocks are left and a way to
@@ -33,15 +33,18 @@ export function EditorConflictBar({
 }) {
   useLocale();
   const nextFile = onNextFile ? (
-    <button
+    <Button
+      size="sm"
+      variant="ghost"
+      motion="none"
       type="button"
       title={t("Open the next conflicted file")}
       onMouseDown={(event) => event.preventDefault()}
       onClick={onNextFile}
-      className="h-6 shrink-0 rounded-md px-2 text-[11px] text-content/70 hover:bg-content/10 hover:text-content"
+      className="shrink-0"
     >
       {t("Next file")}
-    </button>
+    </Button>
   ) : null;
   if (count === 0 && !canMarkResolved) return null;
   return (
@@ -57,12 +60,21 @@ export function EditorConflictBar({
           </span>
           <div className="flex items-center gap-0.5">
             {fileNote ? (
-              <span className="mr-1 truncate text-content/50" role="status" title={fileNote}>
+              <span
+                className="mr-1 truncate text-[var(--ui-text-secondary)]"
+                role="status"
+                title={fileNote}
+              >
                 {fileNote}
               </span>
             ) : null}
             {nextFile}
-            <button
+            <Button
+              size="sm"
+              iconOnly
+              label={t("Previous conflict")}
+              variant="ghost"
+              motion="none"
               type="button"
               title={t("Previous conflict")}
               aria-label={t("Previous conflict")}
@@ -71,8 +83,13 @@ export function EditorConflictBar({
               className={iconButton}
             >
               <ChevronUp className="size-3.5" strokeWidth={1.75} />
-            </button>
-            <button
+            </Button>
+            <Button
+              size="sm"
+              iconOnly
+              label={t("Next conflict")}
+              variant="ghost"
+              motion="none"
               type="button"
               title={t("Next conflict")}
               aria-label={t("Next conflict")}
@@ -81,12 +98,12 @@ export function EditorConflictBar({
               className={iconButton}
             >
               <ChevronDown className="size-3.5" strokeWidth={1.75} />
-            </button>
+            </Button>
           </div>
         </>
       ) : (
         <>
-          <span className="min-w-0 truncate text-content/60" role="status">
+          <span className="min-w-0 truncate text-[var(--ui-text-secondary)]" role="status">
             {error ? (
               <span className="text-danger" title={error}>
                 {error}
@@ -97,21 +114,28 @@ export function EditorConflictBar({
           </span>
           <div className="flex shrink-0 items-center gap-1">
             {fileNote ? (
-              <span className="truncate text-content/50" role="status" title={fileNote}>
+              <span
+                className="truncate text-[var(--ui-text-secondary)]"
+                role="status"
+                title={fileNote}
+              >
                 {fileNote}
               </span>
             ) : null}
             {nextFile}
-            <button
+            <Button
+              size="sm"
+              variant="ghost"
+              motion="none"
               type="button"
               disabled={marking}
               onMouseDown={(event) => event.preventDefault()}
               onClick={onMarkResolved}
               title={t("Save the file and stage it")}
-              className="mr-2 h-6 shrink-0 rounded-md bg-content/10 px-2 text-[11px] font-medium text-content hover:bg-content/15 disabled:opacity-50"
+              className="mr-2 shrink-0"
             >
               {marking ? t("Staging…") : t("Mark resolved")}
-            </button>
+            </Button>
           </div>
         </>
       )}

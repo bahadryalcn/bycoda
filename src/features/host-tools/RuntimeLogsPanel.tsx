@@ -1,3 +1,12 @@
+import { EmptyState } from "../../shared/ui/EmptyState";
+import { Alert } from "../../shared/ui/Alert";
+import { Popover } from "../../shared/ui/Popover";
+import { SegmentedControl } from "../../shared/ui/SegmentedControl";
+import { Select } from "../../shared/ui/Select";
+import { SlidersHorizontal } from "../../shared/ui/icons";
+import { Checkbox } from "../../shared/ui/Checkbox";
+import { TextField } from "../../shared/ui/TextField";
+import { Button } from "../../shared/ui/Button";
 import { SearchInput, SearchInputGroup } from "../../shared/ui/SearchInput";
 import { useRetainedState } from "../../shared/hooks/useRetainedState";
 import {
@@ -130,6 +139,8 @@ function ScopedRuntimeLogsPanel({
     "all",
   );
   const [sourceIds, setSourceIds] = useRetainedState<string[]>(`${stateKey}:source-ids`, []);
+  const filterTrigger = useRef<HTMLButtonElement>(null);
+  const [filtersOpen, setFiltersOpen] = useState(false);
   const [level, setLevel] = useRetainedState(`${stateKey}:level`, "all");
   const [grouped, setGrouped] = useRetainedState(`${stateKey}:grouped`, true);
   const [follow, setFollow] = useRetainedState(`${stateKey}:follow`, true);
@@ -432,7 +443,91 @@ function ScopedRuntimeLogsPanel({
       </header>
 
       <div className="runtime-logs-controls">
-        <SearchInputGroup className="runtime-logs-search">
+        <Button
+          ref={filterTrigger}
+          variant="ghost"
+          iconOnly
+          label={t("Filters")}
+          tooltip={t("Filters")}
+          selected={source !== "all" || sourceIds.length > 0 || level !== "all"}
+          aria-haspopup="dialog"
+          aria-expanded={filtersOpen}
+          onClick={() => setFiltersOpen((value) => !value)}
+        >
+          <SlidersHorizontal size={15} />
+        </Button>
+        {filtersOpen ? (
+          <Popover
+            anchor={filterTrigger}
+            role="dialog"
+            aria-label={t("Log filters")}
+            side="bottom"
+            align="start"
+            width={360}
+            autoFocus
+            onDismiss={(reason) => {
+              setFiltersOpen(false);
+              if (reason === "escape") filterTrigger.current?.focus();
+            }}
+          >
+            <div className="runtime-logs-filter-content">
+              <SegmentedControl
+                label={t("Log type")}
+                value={source}
+                onValueChange={(value) => {
+                  setSource(value as RuntimeLogEntry["source"] | "all");
+                  setSourceIds([]);
+                }}
+                options={(["all", "browser", "server"] as const).map((kind) => ({
+                  value: kind,
+                  label:
+                    kind === "all" ? t("All") : kind === "browser" ? t("Browser") : t("Server"),
+                  accessory: kind === "all" ? buffer.entries.length : typeCounts[kind],
+                }))}
+              />
+              <div className="runtime-logs-filter">
+                <SearchableSelect
+                  multiple
+                  label={t("Log source")}
+                  value={sourceIds}
+                  onChange={setSourceIds}
+                  placeholder={t("All sources")}
+                  options={buffer.sources
+                    .filter((entry) => source === "all" || entry.kind === source)
+                    .map((entry) => ({
+                      value: entry.id,
+                      label: `${entry.url ?? entry.label}${entry.available ? "" : " · " + t("Unavailable")}`,
+                      keywords: [entry.label, entry.url, entry.reason].filter(Boolean).join(" "),
+                    }))}
+                  searchPlaceholder={t("Search sources by name or URL")}
+                />
+              </div>
+
+              <Select
+                label={t("Log level")}
+                value={level}
+                onValueChange={setLevel}
+                options={(
+                  ["all", "error", "warn", "debug", "info", "success", "http"] as const
+                ).map((value) => ({
+                  value,
+                  label: value === "all" ? t("All levels") : LEVEL_LABELS[value],
+                }))}
+              />
+              <Button
+                variant="ghost"
+                onClick={() => {
+                  setSource("all");
+                  setSourceIds([]);
+                  setLevel("all");
+                }}
+              >
+                {t("Reset filters")}
+              </Button>
+            </div>
+          </Popover>
+        ) : null}
+        <SearchInputGroup appearance="field" className="runtime-logs-search">
           <Search size={15} />
           <SearchInput
             focusOwner="group"
@@ -445,21 +540,26 @@ function ScopedRuntimeLogsPanel({
           />
         </SearchInputGroup>
         <div className="runtime-logs-stream-actions">
-          <button
+          <Button
+            motion="none"
+            variant="ghost"
+            size="sm"
             type="button"
-            className="host-tool-primary"
             disabled={!chosen.length && !visibleEntries.length}
             onClick={inspect}
             title={t("Selected logs or visible errors are added to your draft for review.")}
           >
             <Bot size={15} />
             {t("Add to conversation")}
-          </button>
-          <button type="button" onClick={togglePause}>
+          </Button>
+          <Button motion="none" variant="ghost" size="sm" type="button" onClick={togglePause}>
             {paused ? <Play size={14} /> : <Pause size={14} />}
             {!started ? t("Read logs") : paused ? t("Resume") : t("Pause")}
-          </button>
-          <button
+          </Button>
+          <Button
+            motion="none"
+            variant="ghost"
+            size="sm"
             type="button"
             disabled={busy}
             onClick={() => void read()}
@@ -468,8 +568,11 @@ function ScopedRuntimeLogsPanel({
           >
             <RefreshCw size={14} />
             <span className="runtime-logs-sr">{t("Refresh")}</span>
-          </button>
-          <button
+          </Button>
+          <Button
+            motion="none"
+            variant="ghost"
+            size="sm"
             type="button"
             onClick={clear}
             title={t("Clear view")}
@@ -477,8 +580,11 @@ function ScopedRuntimeLogsPanel({
           >
             <Trash2 size={14} />
             <span className="runtime-logs-sr">{t("Clear view")}</span>
-          </button>
-          <button
+          </Button>
+          <Button
+            motion="none"
+            variant="ghost"
+            size="sm"
             type="button"
             aria-pressed={follow}
             onClick={() => setFollow(!follow)}
@@ -486,8 +592,11 @@ function ScopedRuntimeLogsPanel({
             aria-label={t("Follow latest")}
           >
             <ArrowDownCircle size={14} />
-          </button>
-          <button
+          </Button>
+          <Button
+            motion="none"
+            variant="ghost"
+            size="sm"
             type="button"
             aria-pressed={grouped}
             onClick={() => setGrouped(!grouped)}
@@ -495,8 +604,11 @@ function ScopedRuntimeLogsPanel({
             aria-label={t("Group repeated errors")}
           >
             <Copy size={14} />
-          </button>
-          <button
+          </Button>
+          <Button
+            motion="none"
+            variant="ghost"
+            size="sm"
             type="button"
             disabled={exporting || (!chosen.length && !filtered.length)}
             onClick={() => void exportLogs()}
@@ -505,63 +617,11 @@ function ScopedRuntimeLogsPanel({
           >
             <File size={14} />
             <span className="runtime-logs-sr">{t("Export logs")}</span>
-          </button>
+          </Button>
         </div>
       </div>
 
       <div className="runtime-logs-filters">
-        <div className="runtime-logs-source-switch" role="group" aria-label={t("Log type")}>
-          {(["all", "browser", "server"] as const).map((kind) => (
-            <button
-              type="button"
-              key={kind}
-              aria-pressed={source === kind}
-              data-source={kind}
-              onClick={() => {
-                setSource(kind);
-                setSourceIds([]);
-              }}
-            >
-              {kind === "browser" ? (
-                <Globe size={13} />
-              ) : kind === "server" ? (
-                <Terminal size={13} />
-              ) : null}
-              {kind === "all" ? t("All") : kind === "browser" ? t("Browser") : t("Server")}
-              <span>{kind === "all" ? buffer.entries.length : typeCounts[kind]}</span>
-            </button>
-          ))}
-        </div>
-        <div className="runtime-logs-filter">
-          <SearchableSelect
-            multiple
-            label={t("Log source")}
-            value={sourceIds}
-            onChange={setSourceIds}
-            placeholder={t("All sources")}
-            options={buffer.sources
-              .filter((entry) => source === "all" || entry.kind === source)
-              .map((entry) => ({
-                value: entry.id,
-                label: `${entry.url ?? entry.label}${entry.available ? "" : " · " + t("Unavailable")}`,
-                keywords: [entry.label, entry.url, entry.reason].filter(Boolean).join(" "),
-              }))}
-            searchPlaceholder={t("Search sources by name or URL")}
-          />
-        </div>
-        <div className="runtime-logs-levels" role="group" aria-label={t("Log level")}>
-          {(["all", "error", "warn", "debug", "info", "success", "http"] as const).map((value) => (
-            <button
-              type="button"
-              key={value}
-              data-level={value}
-              aria-pressed={level === value}
-              onClick={() => setLevel(value)}
-            >
-              {value === "all" ? t("All levels") : LEVEL_LABELS[value]}
-            </button>
-          ))}
-        </div>
         <span className="runtime-logs-totals">
           <span data-level="error">{t("{p0} errors", { p0: errorCount })}</span>
           <span data-level="warn">{t("{p0} warnings", { p0: warningCount })}</span>
@@ -580,7 +640,9 @@ function ScopedRuntimeLogsPanel({
             }}
           >
             <Globe size={14} />
-            <input
+            <TextField
+              hideLabel
+              label={t("Website port or URL")}
               aria-label={t("Website port or URL")}
               value={monitorUrl}
               onChange={(event) => setMonitorUrl(event.target.value)}
@@ -589,7 +651,10 @@ function ScopedRuntimeLogsPanel({
               maxLength={2048}
               required
             />
-            <button
+            <Button
+              motion="none"
+              variant="ghost"
+              size="sm"
               type="submit"
               disabled={monitorBusy || !monitorUrl.trim()}
               title={t("Open website and capture logs")}
@@ -597,8 +662,11 @@ function ScopedRuntimeLogsPanel({
             >
               <Play size={14} />
               <span className="runtime-logs-sr">{t("Capture website logs")}</span>
-            </button>
-            <button
+            </Button>
+            <Button
+              motion="none"
+              variant="ghost"
+              size="sm"
               type="button"
               disabled={monitorBusy}
               onClick={() => void monitorAction("list")}
@@ -606,13 +674,16 @@ function ScopedRuntimeLogsPanel({
               aria-label={t("Load monitors")}
             >
               <RefreshCw size={14} />
-            </button>
+            </Button>
           </form>
           {monitors.length ? (
             <ul className="runtime-logs-monitor-chips">
               {monitors.map((monitor) => (
                 <li key={monitor.id}>
-                  <button
+                  <Button
+                    motion="none"
+                    variant="ghost"
+                    size="sm"
                     type="button"
                     className="runtime-logs-monitor-name"
                     aria-pressed={!!monitor.sourceId && sourceIds.includes(monitor.sourceId)}
@@ -630,8 +701,11 @@ function ScopedRuntimeLogsPanel({
                     }}
                   >
                     {monitor.url}
-                  </button>
-                  <button
+                  </Button>
+                  <Button
+                    motion="none"
+                    variant="ghost"
+                    size="sm"
                     type="button"
                     disabled={monitorBusy}
                     title={t("Stop monitor")}
@@ -640,7 +714,7 @@ function ScopedRuntimeLogsPanel({
                   >
                     <Square size={13} />
                     <span className="runtime-logs-sr">{t("Stop monitor")}</span>
-                  </button>
+                  </Button>
                 </li>
               ))}
             </ul>
@@ -648,16 +722,16 @@ function ScopedRuntimeLogsPanel({
         </section>
       ) : null}
       {error ? (
-        <div role="alert" className="runtime-logs-error">
+        <Alert tone="danger" role="alert">
           <p>{t("Could not read logs. Check the host connection and retry.")}</p>
           <details>
             <summary>{t("Technical details")}</summary>
             <pre>{error}</pre>
           </details>
-        </div>
+        </Alert>
       ) : null}
       {actionError ? (
-        <div role="alert" className="runtime-logs-error">
+        <Alert tone="danger" role="alert">
           <p>
             {t(
               actionError.includes("ERR_CONNECTION_REFUSED")
@@ -669,12 +743,12 @@ function ScopedRuntimeLogsPanel({
             <summary>{t("Technical details")}</summary>
             <pre>{actionError}</pre>
           </details>
-        </div>
+        </Alert>
       ) : null}
       {notice ? (
-        <p className="runtime-logs-notice" role="status">
+        <Alert tone="info" role="status">
           {notice}
-        </p>
+        </Alert>
       ) : null}
 
       <div
@@ -718,16 +792,16 @@ function ScopedRuntimeLogsPanel({
               ))}
             </ol>
           ) : (
-            <div className="runtime-logs-empty">
-              <div className="runtime-logs-empty-icons">
-                <Globe size={24} />
-                <Terminal size={24} />
-              </div>
-              <strong>
-                {loaded && !buffer.entries.length ? t("Waiting for logs") : t("Runtime logs")}
-              </strong>
-              <p>{empty}</p>
-            </div>
+            <EmptyState
+              icon={
+                <>
+                  <Globe size={24} />
+                  <Terminal size={24} />
+                </>
+              }
+              title={loaded && !buffer.entries.length ? t("Waiting for logs") : t("Runtime logs")}
+              description={empty}
+            />
           )}
         </SurfaceSelection>
       </div>
@@ -740,9 +814,15 @@ function ScopedRuntimeLogsPanel({
               : t("{p0} visible events", { p0: visibleEntries.length })}
           </span>
           {chosen.length ? (
-            <button type="button" onClick={() => setSelected(new Set())}>
+            <Button
+              motion="none"
+              variant="ghost"
+              size="sm"
+              type="button"
+              onClick={() => setSelected(new Set())}
+            >
               {t("Deselect all")}
-            </button>
+            </Button>
           ) : null}
           {groups.length > visibleGroups.length ? (
             <span>{t("Showing the latest {p0} rows.", { p0: MAX_RENDERED_RUNTIME_LOGS })}</span>
@@ -780,10 +860,6 @@ const RuntimeLogRow = memo(function RuntimeLogRow({
   const entry = group.entry;
   const time = new Date(entry.timestamp).toLocaleTimeString(getLocale(), { hour12: false });
   const file = runtimeLogFileTarget(cwd, entry.location);
-  useEffect(() => {
-    if (checkbox.current)
-      checkbox.current.indeterminate = selectedCount > 0 && selectedCount < group.entries.length;
-  }, [selectedCount, group.entries.length]);
   return (
     <li
       className="runtime-log-row"
@@ -792,9 +868,10 @@ const RuntimeLogRow = memo(function RuntimeLogRow({
       data-selected={selectedCount > 0}
     >
       <label className="runtime-log-select">
-        <input
+        <Checkbox
           ref={checkbox}
-          type="checkbox"
+          indeterminate={selectedCount > 0 && selectedCount < group.entries.length}
+
           checked={selectedCount === group.entries.length}
           aria-label={t("Select log at {p0}", { p0: time })}
           onChange={(event) => onSelect(group, event.target.checked)}
@@ -834,14 +911,20 @@ const RuntimeLogRow = memo(function RuntimeLogRow({
             {entry.location ? (
               <div className="runtime-log-location">
                 {file && onOpenFile ? (
-                  <button type="button" onClick={() => onOpenFile(file.path, file.navigation)}>
+                  <Button
+                    motion="none"
+                    variant="ghost"
+                    size="sm"
+                    type="button"
+                    onClick={() => onOpenFile(file.path, file.navigation)}
+                  >
                     {file.label}
                     {file.navigation
                       ? ":" +
                         file.navigation.line +
                         (file.navigation.column ? ":" + file.navigation.column : "")
                       : ""}
-                  </button>
+                  </Button>
                 ) : (
                   <code>
                     {entry.location.file}

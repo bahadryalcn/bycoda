@@ -5,6 +5,8 @@ import { createPortal } from "react-dom";
 import { LAYER } from "../../../shared/lib/layers";
 import { prettyCwd } from "../../../shared/lib/paths";
 import { projectSessionCount } from "../model/projectData";
+import { Button } from "../../../shared/ui/Button";
+import { Alert } from "../../../shared/ui/Alert";
 
 type Props = {
   name: string;
@@ -92,7 +94,7 @@ export function RemoveProjectDialog({
           }
         }}
       >
-        <div className="pointer-events-none absolute inset-0 bg-scrim/30" />
+        <div className="pointer-events-none absolute inset-0 bg-(--ui-overlay-backdrop)" />
         <div
           ref={dialogRoot}
           tabIndex={-1}
@@ -101,14 +103,14 @@ export function RemoveProjectDialog({
           aria-busy={pending}
           aria-label={t("Delete {p0}", { p0: name })}
           onMouseDown={(event) => event.stopPropagation()}
-          className="absolute left-1/2 top-[22%] flex w-[min(420px,calc(100vw-24px))] -translate-x-1/2 flex-col gap-3 rounded-lg border border-content/10 bg-content/5 p-4 shadow-xl backdrop-blur-xl"
+          className="absolute left-1/2 top-[22%] flex w-[min(420px,calc(100vw-24px))] -translate-x-1/2 flex-col gap-3 rounded-lg border border-stroke bg-(--ui-surface) p-4 shadow-xl backdrop-blur-xl"
         >
           <div className="flex flex-col gap-1">
             <h2 className="text-[13px] font-medium leading-tight text-content">
               {t("Delete “")}
               {name}”?
             </h2>
-            <p className="text-[12px] leading-snug text-content/55">
+            <p className="text-[12px] leading-snug text-(--ui-text-secondary)">
               {paths
                 ? t(
                     "All conversations for the selected projects will be deleted. The projects leave the sidebar. Their folders on disk stay put.",
@@ -118,34 +120,30 @@ export function RemoveProjectDialog({
                   )}
             </p>
             {sessions != null && sessions > 0 ? (
-              <p className="text-[12px] leading-snug text-content/45">
+              <p className="text-[12px] leading-snug text-(--ui-text-secondary)">
                 {sessions === 1
                   ? t("1 saved conversation will be removed.")
                   : t("{p0} saved conversations will be removed.", { p0: sessions })}
               </p>
             ) : null}
             {countError ? (
-              <div role="alert" className="text-[12px] text-danger">
+              <Alert tone="danger">
                 <p>{countError}</p>
-                <button
+                <Button
                   type="button"
                   onClick={() => setRevision((value) => value + 1)}
-                  className="rounded px-2 py-1 text-content/70 active:bg-content/10 focus-visible:outline-2 focus-visible:outline-accent"
+                  variant="secondary"
                 >
                   {t("Retry")}
-                </button>
-              </div>
+                </Button>
+              </Alert>
             ) : sessions == null ? (
-              <p role="status" className="text-[12px] text-content/55">
+              <p role="status" className="text-[12px] text-(--ui-text-secondary)">
                 {t("Loading…")}
               </p>
             ) : null}
-            {deleteError ? (
-              <p role="alert" className="text-[12px] text-danger">
-                {deleteError}
-              </p>
-            ) : null}
-            <div className="max-h-40 overflow-y-auto text-[11px] leading-tight text-content/40">
+            {deleteError ? <Alert tone="danger">{deleteError}</Alert> : null}
+            <div className="max-h-40 overflow-y-auto text-[11px] leading-tight text-(--ui-text-muted)">
               {(paths ?? [path]).map((entry) => (
                 <p key={entry} className="break-all">
                   {prettyCwd(entry)}
@@ -153,32 +151,36 @@ export function RemoveProjectDialog({
               ))}
             </div>
             {confirmDisabled ? (
-              <p role="alert" className="text-[12px] text-danger">
+              <Alert tone="danger">
                 {t(
                   "Selection changed or a project is working. Close this dialog and review your selection.",
                 )}
-              </p>
+              </Alert>
             ) : null}
           </div>
 
           <div className="flex justify-end gap-2">
-            <button
+            <Button
               ref={cancelRef}
               type="button"
               onClick={close}
               disabled={pending}
-              className="rounded-md px-3 py-1.5 text-[12px] text-content/70 hover:bg-content/8 hover:text-content"
+              variant="secondary"
             >
               {t("Cancel")}
-            </button>
-            <button
+            </Button>
+            <Button
               type="button"
               onClick={() => void confirm()}
               disabled={pending || confirmDisabled || sessions == null || countError != null}
-              className="rounded-md bg-danger/20 px-3 py-1.5 text-[12px] font-medium text-danger hover:bg-danger/30"
+              variant="primary"
+              tone="danger"
+              loading={pending}
+              loadingLabel={t("Deleting…")}
+              label={pending ? t("Deleting…") : t("Delete")}
             >
               {pending ? t("Deleting…") : t("Delete")}
-            </button>
+            </Button>
           </div>
         </div>
       </div>

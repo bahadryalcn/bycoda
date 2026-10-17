@@ -1,3 +1,4 @@
+import { Button } from "../../shared/ui/Button";
 import { t, useLocale } from "../../shared/i18n";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { useState } from "react";
@@ -24,16 +25,22 @@ export function GithubStarPrompt() {
   if (!repositoryUrl || dismissed) return null;
   return (
     <div data-github-star-prompt className="relative mb-1 h-8 w-full">
-      <button
+      <Button
+        variant="ghost"
+        motion="none"
         type="button"
         aria-label={t("View {p0} on GitHub", { p0: PRODUCT_IDENTITY.displayName })}
         onClick={() => void openUrl(repositoryUrl).catch(() => undefined)}
-        className="flex h-full w-full items-center justify-center gap-2 rounded-md bg-accent/8 pl-2.5 pr-8 text-accent hover:bg-accent/15 focus-visible:outline-2 focus-visible:outline-accent"
+        className="flex h-full w-full items-center justify-center gap-2"
       >
         <Star className="size-3 shrink-0" strokeWidth={1.5} />
         <span className="truncate text-xs font-medium">{t("View on GitHub")}</span>
-      </button>
-      <button
+      </Button>
+      <Button
+        iconOnly
+        label={t("Dismiss GitHub repository prompt")}
+        variant="ghost"
+        motion="none"
         type="button"
         aria-label={t("Dismiss GitHub repository prompt")}
         onClick={() => {
@@ -44,10 +51,10 @@ export function GithubStarPrompt() {
           }
           setDismissed(true);
         }}
-        className="absolute right-1 top-1/2 grid size-6 -translate-y-1/2 place-items-center rounded-md text-content/50 hover:bg-content/8 focus-visible:outline-2 focus-visible:outline-accent"
+        className="absolute right-1 top-1/2 grid -translate-y-1/2 place-items-center"
       >
         <X className="size-3" strokeWidth={1.75} />
-      </button>
+      </Button>
     </div>
   );
 }

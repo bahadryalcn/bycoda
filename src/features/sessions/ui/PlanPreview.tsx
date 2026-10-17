@@ -1,3 +1,4 @@
+import { Button } from "../../../shared/ui/Button";
 import { t, useLocale } from "../../../shared/i18n";
 import { AiIdea, CircleDashed, PanelRight, Play } from "../../../shared/ui/icons";
 import { planSummary, planTitle } from "../model/plan";
@@ -41,64 +42,73 @@ export function PlanPreview({
     plan?.status === "building" ? "Building…" : plan?.status === "built" ? "Built" : "Build";
 
   return (
-    <div className="mb-2 overflow-hidden rounded-[12px] border border-content/10 bg-content/7">
+    <div className="mb-2 overflow-hidden rounded-[12px] border border-(--ui-tone-neutral-border) bg-(--ui-surface-raised)">
       <div className="flex items-start gap-2.5 px-3 py-2.5">
         {streaming ? (
-          <CircleDashed className="mt-0.5 size-4 shrink-0 text-content/40" strokeWidth={1.75} />
+          <CircleDashed
+            className="mt-0.5 size-4 shrink-0 text-(--ui-text-secondary)"
+            strokeWidth={1.75}
+          />
         ) : (
-          <AiIdea className="mt-0.5 size-4 shrink-0 text-content/40" strokeWidth={1.75} />
+          <AiIdea
+            className="mt-0.5 size-4 shrink-0 text-(--ui-text-secondary)"
+            strokeWidth={1.75}
+          />
         )}
         <div className="min-w-0 flex-1">
           {onOpen ? (
-            <button
+            <Button
+              fullWidth
+              variant="item"
               type="button"
-              className="block w-full truncate text-left font-sans text-[13px] font-medium text-content/90 hover:text-warning"
+              className="block w-full truncate text-left"
               title={title}
               onClick={onOpen}
             >
               {title}
-            </button>
+            </Button>
           ) : (
             <span
-              className="block truncate font-sans text-[13px] font-medium text-content/90"
+              className="block truncate font-sans text-[13px] font-medium text-(--ui-text-secondary)"
               title={title}
             >
               {title}
             </span>
           )}
           {summary ? (
-            <p className="mt-0.5 line-clamp-3 font-sans text-[12px] leading-4.5 text-content/50">
+            <p className="mt-0.5 line-clamp-3 font-sans text-[12px] leading-4.5 text-(--ui-text-secondary)">
               {summary}
             </p>
           ) : null}
           {onOpen || onBuild ? (
             <div className="mt-2 flex items-center justify-end gap-1.5">
               {onOpen ? (
-                <button
+                <Button
+                  variant="ghost"
                   type="button"
                   title={t("Open in pane")}
                   aria-label={t("Open plan in pane")}
-                  className="flex h-6 shrink-0 items-center gap-1 rounded-md bg-content/8 px-2 font-sans text-[11px] text-content/70 hover:bg-content/12 hover:text-content"
+                  className="shrink-0"
                   onClick={onOpen}
                 >
                   <PanelRight className="size-3" strokeWidth={1.75} />
                   {t("Open")}
-                </button>
+                </Button>
               ) : null}
               {onBuild ? (
                 <div className="flex items-center font-sans">
-                  <button
+                  <Button
+                    className="shrink-0"
+                    variant="ghost"
                     type="button"
                     title={t("Build this plan")}
                     disabled={buildDisabled}
-                    className={`flex h-6 shrink-0 items-center gap-1 bg-content px-2 font-sans text-[11px] text-background-base hover:bg-content/90 disabled:cursor-not-allowed disabled:opacity-40 ${
-                      harness ? "rounded-l-md" : "rounded-md"
-                    }`}
+
                     onClick={() => onBuild()}
                   >
                     <Play className="size-3" strokeWidth={1.75} />
                     {buildLabel}
-                  </button>
+                  </Button>
                   {harness ? (
                     <BuildTargetButton
                       from={harness}

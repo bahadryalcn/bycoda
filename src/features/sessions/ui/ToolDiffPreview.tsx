@@ -1,3 +1,4 @@
+import { Button } from "../../../shared/ui/Button";
 import { t, useLocale } from "../../../shared/i18n";
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import type { ToolPreview } from "../model/session";
@@ -80,10 +81,12 @@ export function ToolDiffPreview({
 
   return (
     <>
-      <button
+      <Button
+        className={className}
+        variant="ghost"
         ref={trigger}
         type="button"
-        className={`${className ?? ""} focus-visible:outline-2 focus-visible:outline-info/60`}
+
         aria-label={
           onOpen
             ? t("Open {p0}", { p0: label })
@@ -126,7 +129,7 @@ export function ToolDiffPreview({
         }}
       >
         {children}
-      </button>
+      </Button>
       {open ? (
         <Popover
           ref={surface}
@@ -158,16 +161,19 @@ export function ToolDiffPreview({
             }
           }}
         >
-          <div className="flex items-center gap-2 border-b border-stroke px-2.5 py-1.5 font-sans text-[11px] text-content/50">
+          <div className="flex items-center gap-2 border-b border-(--ui-tone-neutral-border) px-2.5 py-1.5 font-sans text-[11px] text-(--ui-text-secondary)">
             <span className="min-w-0 flex-1">{description}</span>
-            <button
+            <Button
+              iconOnly
+              label={t("Close preview")}
+              variant="ghost"
               type="button"
               aria-label={t("Close preview")}
-              className="shrink-0 rounded p-0.5 hover:bg-content/8 hover:text-content"
+              className="shrink-0"
               onClick={() => dismiss(true)}
             >
               <X className="size-3" />
-            </button>
+            </Button>
           </div>
           <FilePreview
             preview={preview}

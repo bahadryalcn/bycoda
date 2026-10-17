@@ -1,3 +1,7 @@
+import { Alert } from "../../../shared/ui/Alert";
+import { NativeSearchableSelect } from "../../../shared/ui/NativeSearchableSelect";
+import { Button } from "../../../shared/ui/Button";
+import { Checkbox } from "../../../shared/ui/Checkbox";
 import { lazy, Suspense, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { t, useLocale } from "../../../shared/i18n";
@@ -108,8 +112,7 @@ export function OnboardingAgents({
                           : t("Install the CLI, then refresh to continue")}
                   </small>
                 </div>
-                <input
-                  type="checkbox"
+                <Checkbox
                   aria-label={t("Use {p0}", { p0: HARNESS_TITLE[provider] })}
                   checked={visible}
                   onChange={(event) => savePickerProviderVisible(provider, event.target.checked)}
@@ -118,29 +121,31 @@ export function OnboardingAgents({
               <div className="onboarding-agent-actions">
                 <ProviderBinaryControl provider={provider} />
                 {provider === "acp" ? (
-                  <button className="onboarding-small" onClick={() => setCustom(true)}>
+                  <Button onClick={() => setCustom(true)} variant="secondary" type="button">
                     {t("Configure")}
-                  </button>
+                  </Button>
                 ) : null}
                 {!checking && !available && INSTALL_GUIDES[provider] ? (
-                  <button
-                    className="onboarding-small"
+                  <Button
                     onClick={() =>
                       void openUrl(INSTALL_GUIDES[provider]!).catch((reason) => {
                         if (alive.current) setError(String(reason));
                       })
                     }
+                    variant="secondary"
+                    type="button"
                   >
                     {t("Install guide ↗")}
-                  </button>
+                  </Button>
                 ) : supportsHarnessLogin(provider) ? (
-                  <button
-                    className="onboarding-small"
+                  <Button
                     disabled={checking || !available}
                     onClick={() => onSignIn(provider)}
+                    variant="secondary"
+                    type="button"
                   >
                     {t("Sign in")}
-                  </button>
+                  </Button>
                 ) : (
                   <small>{t("Configure authentication in your provider")}</small>
                 )}
@@ -153,17 +158,20 @@ export function OnboardingAgents({
         <div className="onboarding-add-provider">
           <label className="onboarding-provider-select">
             <span>{t("More providers")}</span>
-            <select value={adding} onChange={(event) => setAdding(event.target.value)}>
-              <option value="">{t("Choose a provider")}</option>
-              {HARNESSES.filter((id) => !providers.includes(id)).map((id) => (
-                <option key={id} value={id}>
-                  {HARNESS_TITLE[id]}
-                </option>
-              ))}
-            </select>
+            <NativeSearchableSelect
+              label={t("More providers")}
+              value={adding}
+              onChange={(event) => setAdding(event.target.value)}
+              options={[
+                { value: "", label: t("Choose a provider") },
+                ...HARNESSES.filter((id) => !providers.includes(id)).map((id) => ({
+                  value: id,
+                  label: HARNESS_TITLE[id],
+                })),
+              ]}
+            />
           </label>
-          <button
-            className="onboarding-small"
+          <Button
             disabled={!adding}
             onClick={() => {
               const id = adding as HarnessId;
@@ -172,25 +180,27 @@ export function OnboardingAgents({
               setAdding("");
               if (id === "acp") setCustom(true);
             }}
+            variant="secondary"
+            type="button"
           >
             <Plus className="size-3.5" />
             {t("Add provider")}
-          </button>
+          </Button>
         </div>
       ) : null}
       <div className="onboarding-agent-help">
         <p>
           {t("Already signed in through the CLI? Your existing account is used automatically.")}
         </p>
-        <button className="onboarding-muted" disabled={checking} onClick={refresh}>
+        <Button disabled={checking} onClick={refresh} variant="secondary" type="button">
           <RefreshCw className="size-3.5" />
           {t("Refresh agent status")}
-        </button>
+        </Button>
       </div>
       {error ? (
-        <p className="onboarding-error" role="alert">
+        <Alert role="alert" tone="danger">
           {error}
-        </p>
+        </Alert>
       ) : null}
       {custom ? (
         <Modal

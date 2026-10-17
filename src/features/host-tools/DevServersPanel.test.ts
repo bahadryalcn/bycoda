@@ -120,6 +120,10 @@ it("reveals a failed process request and restores the row after a failed stop", 
   vi.mocked(hostFeatureRequest).mockRejectedValueOnce(new Error("Process identity changed"));
   await act(async () => button("Process details").click());
   expect(document.activeElement?.textContent).toBe("Process identity changed");
+  expect(document.activeElement?.tagName).toBe("DIV");
+  expect(document.activeElement?.getAttribute("role")).toBe("alert");
+  expect(document.activeElement?.classList.contains("bycoda-arc")).toBe(true);
+  expect(document.activeElement?.classList.contains("host-tool-error-payload")).toBe(true);
   await act(async () => button("Stop").click());
   vi.mocked(hostFeatureRequest).mockRejectedValueOnce(new Error("Host disconnected"));
   await act(async () => button("Confirm graceful stop").click());

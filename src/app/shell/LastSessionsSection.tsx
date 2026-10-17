@@ -1,6 +1,8 @@
+import { DropdownMenu } from "../../shared/ui/DropdownMenu";
+import { Button } from "../../shared/ui/Button";
 import { t, useLocale, getLocale } from "../../shared/i18n";
 import { useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
-import { Check, ChevronDown, Clock, Internet, Pin, PinOff } from "../../shared/ui/icons";
+import { ChevronDown, Clock, Internet, Pin, PinOff } from "../../shared/ui/icons";
 import { basename } from "../../platform/tauri/fs";
 import { projectKey, projectName } from "../../shared/lib/paths";
 import { remoteProjectFor } from "../../features/connections/model/remoteProjects";
@@ -8,7 +10,6 @@ import type { useTabGroupLogos } from "../../features/projects/hooks/useTabGroup
 import { ProjectLogoIcon } from "../../features/projects/ui/ProjectLogoIcon";
 import { ProjectMascot } from "../../features/projects/ui/ProjectMascot";
 import { ExplorerMenu } from "../../features/files/ui/ExplorerMenu";
-import { Popover } from "../../shared/ui/Popover";
 import {
   RAIL_DRAG_HANDLE,
   RAIL_SECTION_HEADER,
@@ -105,9 +106,6 @@ const STATUS_DOT: Record<RecentSessionStatus, string> = {
   done: "bg-success",
 };
 
-const MENU_ITEM =
-  "flex w-full items-center justify-between gap-2.5 rounded-lg px-2.5 py-1.5 text-left text-[13px] text-content/80 hover:bg-content/8 hover:text-content";
-
 export function LastSessionsSection({
   source,
   projectKeys,
@@ -152,13 +150,14 @@ export function LastSessionsSection({
         title={drag ? t("Drag to reorder") : undefined}
         className={`${RAIL_SECTION_HEADER} ${drag ? RAIL_DRAG_HANDLE : ""}`}
       >
-        <button
+        <Button
+          variant="item"
+          motion="none"
           type="button"
           aria-expanded={!prefs.collapsed}
           onClick={() => update({ ...prefs, collapsed: !prefs.collapsed })}
-          className={`flex min-w-0 flex-1 items-center gap-1 rounded-md px-1 text-left text-xs font-medium text-content/70 hover:text-content ${
-            drag ? "cursor-grab" : ""
-          }`}
+          size="sm"
+          className={`min-w-0 flex-1 ${drag ? "cursor-grab" : ""}`}
         >
           <Clock
             className="size-3.5 shrink-0 group-hover:hidden group-has-[:focus-visible]:hidden"
@@ -171,7 +170,7 @@ export function LastSessionsSection({
             strokeWidth={1.75}
           />
           <span className="truncate">{t("Last sessions")}</span>
-        </button>
+        </Button>
         {prefs.collapsed ? null : (
           <CountPicker count={prefs.count} onChange={(count) => update({ ...prefs, count })} />
         )}
@@ -296,7 +295,9 @@ function CountPicker({
   const [open, setOpen] = useState(false);
   return (
     <>
-      <button
+      <Button
+        variant="ghost"
+        motion="none"
         ref={anchor}
         type="button"
         data-no-drag
@@ -305,38 +306,29 @@ function CountPicker({
         aria-haspopup="menu"
         aria-expanded={open}
         onClick={() => setOpen((value) => !value)}
-        className="flex h-5 shrink-0 items-center gap-0.5 rounded-md px-1 text-[11px] font-semibold tabular-nums text-content/50 hover:bg-content/8 hover:text-content aria-expanded:bg-content/8 aria-expanded:text-content"
+        size="sm"
+        className="shrink-0 tabular-nums"
       >
         {count === 50 ? t("All") : count}
         <ChevronDown className="size-3" strokeWidth={1.75} />
-      </button>
+      </Button>
       {open ? (
-        <Popover
+        <DropdownMenu
           anchor={anchor}
-          align="end"
+          label={t("Sessions shown")}
+          returnFocusRef={anchor}
           width={180}
-          onDismiss={() => setOpen(false)}
-          role="menu"
-          aria-label={t("Sessions shown")}
-          className="p-1"
-        >
-          {RECENT_SESSION_COUNTS.map((option) => (
-            <button
-              key={option}
-              type="button"
-              role="menuitemradio"
-              aria-checked={option === count}
-              className={MENU_ITEM}
-              onClick={() => {
-                setOpen(false);
-                onChange(option);
-              }}
-            >
-              {recentCountLabel(option)}
-              {option === count ? <Check className="size-3.5 shrink-0" strokeWidth={1.75} /> : null}
-            </button>
-          ))}
-        </Popover>
+          align="end"
+          onClose={() => setOpen(false)}
+          onPick={(id) => onChange(Number(id) as RecentSessionsPrefs["count"])}
+          items={RECENT_SESSION_COUNTS.map((option) => ({
+            kind: "item",
+            id: String(option),
+            label: recentCountLabel(option),
+            checked: option === count,
+            selectionRole: "radio",
+          }))}
+        />
       ) : null}
     </>
   );
@@ -394,16 +386,15 @@ function SessionRow({
     <div
       role="listitem"
       data-selected={selected || undefined}
-      className={`group relative flex rounded-md ${
-        selected
-          ? "bg-selection-strong text-content"
-          : "opacity-80 hover:bg-content/8 hover:opacity-100"
-      }`}
+      className="group relative flex"
       onContextMenu={openMenuAt}
     >
-      <button
+      <Button
+        variant="item"
+        motion="none"
         type="button"
         title={tooltip}
+        selected={selected}
         aria-current={selected ? "true" : undefined}
         aria-label={[row.title, project, agent, status ? STATUS_LABEL[status].toLowerCase() : time]
           .filter(Boolean)
@@ -415,9 +406,7 @@ function SessionRow({
           const rect = event.currentTarget.getBoundingClientRect();
           onOpenMenu(rect.left, rect.bottom);
         }}
-        className={`flex min-w-0 flex-1 cursor-default items-center gap-2 rounded-md px-2 py-1 text-left transition-[padding] duration-150 motion-reduce:transition-none ${
-          row.pinnable ? "group-hover:pr-7 group-has-[:focus-visible]:pr-7" : ""
-        }`}
+        className="min-w-0 flex-1"
       >
         <span className="grid size-4 shrink-0 place-items-center">
           {logoPath && status !== "working" ? (
@@ -441,7 +430,7 @@ function SessionRow({
             {row.pinned ? (
               <Pin
                 aria-label={t("Pinned")}
-                className="size-3 shrink-0 text-content/45"
+                className="size-3 shrink-0 text-(--ui-text-secondary)"
                 strokeWidth={1.75}
               />
             ) : null}
@@ -449,7 +438,7 @@ function SessionRow({
               {row.title}
             </span>
           </span>
-          <span className="flex min-w-0 items-center gap-1 text-[11px] leading-tight text-content/45">
+          <span className="flex min-w-0 items-center gap-1 text-[11px] leading-tight text-(--ui-text-secondary)">
             {row.remote ? (
               <Internet
                 aria-label={t("On another machine")}
@@ -479,24 +468,30 @@ function SessionRow({
             className={`size-1.5 shrink-0 rounded-full ${STATUS_DOT[status]}`}
           />
         ) : null}
-      </button>
+        {row.pinnable ? <span className="size-7 shrink-0" aria-hidden="true" /> : null}
+      </Button>
       {row.pinnable ? (
-        <button
+        <Button
+          variant="item"
+          motion="none"
           type="button"
+          iconOnly
+          size="sm"
+          label={row.pinned ? t("Unpin session") : t("Pin session")}
           title={row.pinned ? t("Unpin session") : t("Pin session")}
           aria-label={row.pinned ? t("Unpin session") : t("Pin session")}
           onClick={(event) => {
             event.stopPropagation();
             onTogglePin();
           }}
-          className="absolute right-1 top-1/2 hidden size-6 -translate-y-1/2 place-items-center rounded-md text-content/55 hover:bg-content/8 hover:text-content group-hover:grid group-has-[:focus-visible]:grid"
+          className="absolute right-1 top-1/2 hidden -translate-y-1/2 group-hover:flex group-has-[:focus-visible]:flex"
         >
           {row.pinned ? (
             <PinOff className="size-3.5" strokeWidth={1.75} />
           ) : (
             <Pin className="size-3.5" strokeWidth={1.75} />
           )}
-        </button>
+        </Button>
       ) : null}
     </div>
   );

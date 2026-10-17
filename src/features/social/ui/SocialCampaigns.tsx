@@ -1,3 +1,9 @@
+import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
+import { TextField } from "../../../shared/ui/TextField";
+import { NativeSelect } from "../../../shared/ui/Select";
+import { Checkbox } from "../../../shared/ui/Checkbox";
+import { TextareaField } from "../../../shared/ui/TextareaField";
+import { Button } from "../../../shared/ui/Button";
 import { SearchInput } from "../../../shared/ui/SearchInput";
 import { useState } from "react";
 import { useSocialWorkspaceFilter } from "./useSocialWorkspaceFilter";
@@ -261,7 +267,9 @@ export function Campaigns({
         >
           <label>
             Kampanya adı
-            <input
+            <TextField
+              hideLabel
+              label=""
               value={name}
               onChange={(event) => setName(event.target.value)}
               required
@@ -319,7 +327,9 @@ export function Campaigns({
                 <>
                   <label>
                     Video başlığı
-                    <input
+                    <TextField
+                      hideLabel
+                      label=""
                       required
                       maxLength={100}
                       value={variant.youtube?.title ?? ""}
@@ -336,7 +346,7 @@ export function Campaigns({
                   </label>
                   <label>
                     Video görünürlüğü
-                    <select
+                    <NativeSelect
                       value={variant.youtube?.privacy ?? "private"}
                       onChange={(event) =>
                         update(variant.accountId, {
@@ -351,13 +361,12 @@ export function Campaigns({
                       <option value="private">Özel</option>
                       <option value="unlisted">Liste dışı</option>
                       <option value="public">Herkese açık</option>
-                    </select>
+                    </NativeSelect>
                   </label>
                   <fieldset className="social-checks">
                     <legend>İçerik beyanı</legend>
                     <label>
-                      <input
-                        type="checkbox"
+                      <Checkbox
                         checked={variant.youtube?.madeForKids ?? false}
                         onChange={(event) =>
                           update(variant.accountId, {
@@ -372,8 +381,7 @@ export function Campaigns({
                       Çocuklara yönelik içerik
                     </label>
                     <label>
-                      <input
-                        type="checkbox"
+                      <Checkbox
                         checked={variant.youtube?.containsSyntheticMedia ?? false}
                         onChange={(event) =>
                           update(variant.accountId, {
@@ -390,7 +398,9 @@ export function Campaigns({
                   </fieldset>
                   <label>
                     Videoyu host'a yükle · MP4/WebM, en fazla 64 MiB
-                    <input
+                    <TextField
+                      hideLabel
+                      label=""
                       type="file"
                       accept="video/mp4,video/webm"
                       onChange={(event) => {
@@ -442,7 +452,9 @@ export function Campaigns({
               ) : null}
               <label>
                 Bu hesaba özel içerik
-                <textarea
+                <TextareaField
+                  hideLabel
+                  label=""
                   value={variant.text}
                   required
                   rows={4}
@@ -462,7 +474,9 @@ export function Campaigns({
                 <summary>Tek seferlik yayın zamanı, medya ve bağlantı</summary>
                 <label>
                   Bağlantı
-                  <input
+                  <TextField
+                    hideLabel
+                    label=""
                     type="url"
                     placeholder="https://"
                     value={variant.link ?? ""}
@@ -475,7 +489,9 @@ export function Campaigns({
                 </label>
                 <label>
                   Tek seferlik planlama zamanı · bu bilgisayarın saat dilimi
-                  <input
+                  <TextField
+                    hideLabel
+                    label=""
                     type="datetime-local"
                     required
                     value={dateInput(variant.scheduledAt)}
@@ -490,7 +506,9 @@ export function Campaigns({
                 "youtube" ? (
                   <label>
                     HTTPS görsel URL
-                    <input
+                    <TextField
+                      hideLabel
+                      label=""
                       type="url"
                       placeholder="https://"
                       value={variant.media[0]?.url ?? ""}
@@ -514,7 +532,9 @@ export function Campaigns({
                 ) ? (
                   <label>
                     Görseli host'a yükle
-                    <input
+                    <TextField
+                      hideLabel
+                      label=""
                       type="file"
                       accept="image/jpeg,image/png"
                       onChange={(event) => {
@@ -533,29 +553,35 @@ export function Campaigns({
                 ) : null}
                 <label>
                   Doğrulanmış bilgi
-                  <select
+                  <SearchableSelect
                     value=""
-                    onChange={(event) => {
-                      const fact = publicFacts.find((item) => item.id === event.target.value);
+                    label={"Doğrulanmış bilgi"}
+                    options={[
+                      { value: "", label: "İçeriğe bilgi ekle" },
+                      ...publicFacts.map((fact) => ({
+                        value: fact.id,
+                        label: [fact.topic, ":", fact.text].join(" "),
+                      })),
+                    ]}
+                    onChange={(nextValue) => {
+                      const fact = publicFacts.find((item) => item.id === nextValue);
                       if (fact)
                         update(variant.accountId, {
                           text: [variant.text, fact.text].filter(Boolean).join("\n"),
                           factIds: [...new Set([...variant.factIds, fact.id])],
                         });
                     }}
-                  >
-                    <option value="">İçeriğe bilgi ekle</option>
-                    {publicFacts.map((fact) => (
-                      <option key={fact.id} value={fact.id}>
-                        {fact.topic}: {fact.text}
-                      </option>
-                    ))}
-                  </select>
+                    searchLocale="tr"
+                  />
                 </label>
                 {variant.media.length ? (
-                  <button type="button" onClick={() => update(variant.accountId, { media: [] })}>
+                  <Button
+                    variant="secondary"
+                    type="button"
+                    onClick={() => update(variant.accountId, { media: [] })}
+                  >
                     Eklenen medyayı kaldır
-                  </button>
+                  </Button>
                 ) : null}
               </details>
               {!hasDraftAccess(variant.accountId) ? (
@@ -569,7 +595,8 @@ export function Campaigns({
                   seçin veya kampanyayı yeniden hazırlayın.
                 </Notice>
               ) : null}
-              <button
+              <Button
+                variant="secondary"
                 type="button"
                 onClick={() =>
                   setVariants((current) =>
@@ -578,14 +605,16 @@ export function Campaigns({
                 }
               >
                 Bu hesabı kampanyadan çıkar
-              </button>
+              </Button>
             </fieldset>
           ))}
           <p className="social-muted">
             Düzenli paylaşım için bu taslağı Otomasyonlar bölümünde bir yayın planına
             ekleyebilirsiniz.
           </p>
-          <button
+          <Button
+            type="submit"
+            variant="secondary"
             disabled={
               !name.trim() ||
               !variants.length ||
@@ -595,7 +624,7 @@ export function Campaigns({
             }
           >
             Kampanya taslağını kaydet
-          </button>
+          </Button>
           {!name.trim() || !variants.length || !validProjects ? (
             <small className="social-muted">
               Kaydetmek için kampanya adını, projeyi, hesabı ve içeriği tamamlayın.
@@ -608,7 +637,8 @@ export function Campaigns({
             <Notice kind="loading">Video yüklemesi bitince kaydedebilirsiniz.</Notice>
           ) : null}
           {editingId ? (
-            <button
+            <Button
+              variant="secondary"
               type="button"
               onClick={(event) => {
                 setEditingId(undefined);
@@ -618,7 +648,7 @@ export function Campaigns({
               }}
             >
               Düzenlemeyi bırak
-            </button>
+            </Button>
           ) : null}
         </form>
       </Composer>
@@ -630,7 +660,7 @@ export function Campaigns({
           <label>
             Kampanya ara
             <SearchInput
-              standalone
+              appearance="field"
               type="search"
               value={search}
               onChange={(event) => setSearch(event.target.value)}
@@ -639,7 +669,10 @@ export function Campaigns({
           </label>
           <label>
             Durum
-            <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}>
+            <NativeSelect
+              value={statusFilter}
+              onChange={(event) => setStatusFilter(event.target.value)}
+            >
               <option value="">Tüm kampanyalar</option>
               <option value="draft">Taslak</option>
               <option value="queued">Planlandı</option>
@@ -650,11 +683,13 @@ export function Campaigns({
               <option value="review">İnceleme gerekli</option>
               <option value="paused">Durduruldu</option>
               <option value="cancelled">İptal edildi</option>
-            </select>
+            </NativeSelect>
           </label>
           {snapshot.campaigns.length ? (
             visibleCampaigns.map((campaign) => (
-              <button
+              <Button
+                type="submit"
+                variant="tab"
                 className="social-row"
                 aria-pressed={selectedId === campaign.id}
                 key={campaign.id}
@@ -676,7 +711,7 @@ export function Campaigns({
                 <span>
                   {campaign.projectIds.length} proje · {campaign.variants.length} hesap
                 </span>
-              </button>
+              </Button>
             ))
           ) : (
             <Empty title="İlk kampanyanızı hazırlayın">
@@ -759,7 +794,9 @@ export function Campaigns({
               <section className="social-workflow-steps" aria-label="Yayın onayı ve planlama">
                 <h3>Kontrol et ve yayınla</h3>
                 <div className="social-actions">
-                  <button
+                  <Button
+                    type="submit"
+                    variant="secondary"
                     onClick={() =>
                       void run(async () => {
                         setPreview(
@@ -772,12 +809,11 @@ export function Campaigns({
                     }
                   >
                     1. Hesap ve içeriği kontrol et
-                  </button>
+                  </Button>
                 </div>
                 {currentPreview && canApprove ? (
                   <label className="social-check">
-                    <input
-                      type="checkbox"
+                    <Checkbox
                       checked={approvalConfirmed}
                       onChange={(event) => setApprovalConfirmed(event.target.checked)}
                     />
@@ -785,7 +821,9 @@ export function Campaigns({
                   </label>
                 ) : null}
                 <div className="social-actions">
-                  <button
+                  <Button
+                    type="submit"
+                    variant="secondary"
                     disabled={!canApprove || !approvalConfirmed || approved}
                     onClick={() =>
                       void run(async () => {
@@ -795,8 +833,10 @@ export function Campaigns({
                     }
                   >
                     {approved ? "2. İçerik onaylandı" : "2. İçeriğe yayın onayı ver"}
-                  </button>
-                  <button
+                  </Button>
+                  <Button
+                    type="submit"
+                    variant="secondary"
                     disabled={!canSchedule}
                     onClick={() =>
                       void run(async () => {
@@ -807,7 +847,7 @@ export function Campaigns({
                     }
                   >
                     3. Tek seferlik yayınları planla
-                  </button>
+                  </Button>
                 </div>
                 {scheduleReason ? (
                   <Notice kind={currentPreview && !canApprove ? "warning" : "info"}>
@@ -820,7 +860,9 @@ export function Campaigns({
                 </p>
               </section>
               <div className="social-actions">
-                <button
+                <Button
+                  type="submit"
+                  variant="secondary"
                   onClick={() =>
                     void run(
                       () =>
@@ -835,8 +877,10 @@ export function Campaigns({
                   }
                 >
                   {selected.paused ? "Kampanyayı devam ettir" : "Kampanyayı durdur"}
-                </button>
-                <button
+                </Button>
+                <Button
+                  type="submit"
+                  variant="secondary"
                   disabled={editBlocked}
                   onClick={() => {
                     setEditVersion((value) => value + 1);
@@ -853,7 +897,7 @@ export function Campaigns({
                   }}
                 >
                   Taslağı düzenle
-                </button>
+                </Button>
               </div>
               {editBlocked ? (
                 <small className="social-muted">
@@ -935,18 +979,20 @@ function ProjectProfile({
       </p>
       <label>
         Proje
-        <select
+        <SearchableSelect
           value={activeProject}
-          onChange={(event) => setProjectId(event.target.value)}
           disabled={!projects.length}
-        >
-          {!projects.length ? <option value="">Proje bulunamadı</option> : null}
-          {projects.map((project) => (
-            <option key={project.id} value={project.id}>
-              {project.name || project.cwd}
-            </option>
-          ))}
-        </select>
+          label={"Proje"}
+          options={[
+            ...(!projects.length ? [{ value: "", label: "Proje bulunamadı" }] : []),
+            ...projects.map((project) => ({
+              value: project.id,
+              label: project.name || project.cwd,
+            })),
+          ]}
+          onChange={(nextValue) => setProjectId(nextValue)}
+          searchLocale="tr"
+        />
       </label>
       <form
         className="social-form"
@@ -958,7 +1004,9 @@ function ProjectProfile({
         <h3>Ürün profili</h3>
         <label>
           Ürün adı
-          <input
+          <TextField
+            hideLabel
+            label=""
             required
             maxLength={200}
             value={productName}
@@ -967,7 +1015,9 @@ function ProjectProfile({
         </label>
         <label>
           Marka dili
-          <input
+          <TextField
+            hideLabel
+            label=""
             required
             maxLength={1000}
             value={voice}
@@ -975,7 +1025,9 @@ function ProjectProfile({
             onChange={(event) => updateDraft({ voice: event.target.value })}
           />
         </label>
-        <button disabled={!activeProject}>Ürün profilini kaydet</button>
+        <Button type="submit" variant="secondary" disabled={!activeProject}>
+          Ürün profilini kaydet
+        </Button>
       </form>
       <form
         className="social-form"
@@ -1005,7 +1057,9 @@ function ProjectProfile({
         <h3>{draft.factId ? "Doğrulanmış bilgiyi düzenle" : "Doğrulanmış bilgi ekle"}</h3>
         <label>
           Bilgi konusu
-          <input
+          <TextField
+            hideLabel
+            label=""
             required
             maxLength={200}
             value={draft.topic ?? ""}
@@ -1014,7 +1068,9 @@ function ProjectProfile({
         </label>
         <label>
           Doğrulanmış, duyurulabilir bilgi
-          <textarea
+          <TextareaField
+            hideLabel
+            label=""
             required
             maxLength={4000}
             value={draft.text ?? ""}
@@ -1023,14 +1079,18 @@ function ProjectProfile({
         </label>
         <label>
           Doğrulama kaynağı
-          <input
+          <TextField
+            hideLabel
+            label=""
             required
             maxLength={1000}
             value={draft.source ?? ""}
             onChange={(event) => updateDraft({ source: event.target.value })}
           />
         </label>
-        <button
+        <Button
+          type="submit"
+          variant="secondary"
           disabled={
             !activeProject ||
             !productName.trim() ||
@@ -1039,9 +1099,10 @@ function ProjectProfile({
           }
         >
           Herkese açık bilgiyi kaydet
-        </button>
+        </Button>
         {draft.factId ? (
-          <button
+          <Button
+            variant="secondary"
             type="button"
             onClick={() =>
               updateDraft({
@@ -1053,7 +1114,7 @@ function ProjectProfile({
             }
           >
             Düzenlemeyi bırak
-          </button>
+          </Button>
         ) : null}
       </form>
       {!profile?.facts.length ? (
@@ -1068,7 +1129,8 @@ function ProjectProfile({
             {" "}
             {fact.source} · {time(fact.verifiedAt)}
           </small>
-          <button
+          <Button
+            variant="secondary"
             type="button"
             onClick={() =>
               updateDraft({
@@ -1080,7 +1142,7 @@ function ProjectProfile({
             }
           >
             Bilgiyi düzenle
-          </button>
+          </Button>
         </p>
       ))}
     </details>

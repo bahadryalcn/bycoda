@@ -1,8 +1,11 @@
+import { Alert } from "../../shared/ui/Alert";
+import { NumberField } from "../../shared/ui/NumberField";
+import { TextField } from "../../shared/ui/TextField";
 import { t, useLocale } from "../../shared/i18n/technical";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { SearchableSelect } from "../../shared/ui/SearchableSelect";
 import { Button } from "../../shared/ui/Button";
-import { Switch } from "../../shared/ui/arc/switch/switch";
+import { Switch } from "../../shared/ui/Switch";
 import { ImagePlus, Plus, RefreshCw } from "../../shared/ui/icons";
 import "./DevicePanel.css";
 import type {
@@ -79,11 +82,7 @@ export function DevicePanel({
         let value = await api.status();
         if (!active) return;
         // Reuse an installed runtime. SDK/tool downloads remain an explicit action.
-        if (
-          !value.running &&
-          value.installed &&
-          value.platforms.some((item) => item.available)
-        )
+        if (!value.running && value.installed && value.platforms.some((item) => item.available))
           value = await api.start();
         if (active) setStatus(value);
       } catch (cause) {
@@ -97,16 +96,12 @@ export function DevicePanel({
     };
   }, [api]);
   const execute = useCallback(
-    async <T,>(
-      operation: (isCurrent: () => boolean) => Promise<T>,
-      commit: (value: T) => void,
-    ) => {
+    async <T,>(operation: (isCurrent: () => boolean) => Promise<T>, commit: (value: T) => void) => {
       if (pending.current) return;
       const token = {};
       const requestScope = scope;
       pending.current = token;
-      const current = () =>
-        mounted.current && currentScope.current === requestScope;
+      const current = () => mounted.current && currentScope.current === requestScope;
       setBusy(true);
       setError(undefined);
       try {
@@ -132,8 +127,7 @@ export function DevicePanel({
       capturePending.current = operation;
       void operation
         .finally(() => {
-          if (capturePending.current === operation)
-            capturePending.current = null;
+          if (capturePending.current === operation) capturePending.current = null;
         })
         .catch(() => {});
       return operation;
@@ -156,9 +150,7 @@ export function DevicePanel({
     (value: Awaited<ReturnType<DevicePanelApi["list"]>>) => {
       setDevices(value.devices);
       setError(value.errors.length ? value.errors.join("\n") : undefined);
-      const current = value.devices.find(
-        (device) => device.id === selectedRef.current,
-      );
+      const current = value.devices.find((device) => device.id === selectedRef.current);
       if (!current) {
         // Prefer a connected phone. Opening the panel starts viewing, never input or boot.
         const preferred =
@@ -261,23 +253,13 @@ export function DevicePanel({
   const device = devices.find((item) => item.id === selected);
   const canView = !!device?.booted && !busy && !loadingDevices;
   const canControl = canView && control && !!status?.agentInstalled;
-  const windowsAndroid =
-    status?.platform === "win32" && device?.platform === "android";
+  const windowsAndroid = status?.platform === "win32" && device?.platform === "android";
   const coordinatesValid =
-    Number.isFinite(x) &&
-    Number.isFinite(y) &&
-    x >= 0 &&
-    y >= 0 &&
-    x <= 20000 &&
-    y <= 20000;
+    Number.isFinite(x) && Number.isFinite(y) && x >= 0 && y >= 0 && x <= 20000 && y <= 20000;
   const platformLabel = (platform: DeviceSummary["platform"]) =>
     platform === "ios" ? t("iOS") : t("Android");
   const kindLabel = (item: DeviceSummary) =>
-    item.physical
-      ? t("Physical device")
-      : item.platform === "ios"
-        ? t("Simulator")
-        : t("Emulator");
+    item.physical ? t("Physical device") : item.platform === "ios" ? t("Simulator") : t("Emulator");
   const sdkAvailable = !!status?.platforms.some((item) => item.available);
   const refreshDevices = () => void execute(api.list, applyDevices);
   return (
@@ -287,7 +269,7 @@ export function DevicePanel({
       aria-busy={busy || loadingDevices}
     >
       {error && (
-        <div role="alert" className="device-panel-error">
+        <Alert role="alert" tone="danger">
           <p>
             <strong>{t("Could not load devices")}</strong>{" "}
             {status?.running
@@ -300,7 +282,7 @@ export function DevicePanel({
             <summary>{t("Details")}</summary>
             <pre>{error}</pre>
           </details>
-        </div>
+        </Alert>
       )}
       {!status && !error && (
         <p role="status" className="device-panel-state">
@@ -308,10 +290,7 @@ export function DevicePanel({
         </p>
       )}
       {!status && error && (
-        <Button
-          disabled={busy}
-          onClick={() => void execute(api.status, setStatus)}
-        >
+        <Button disabled={busy} onClick={() => void execute(api.status, setStatus)}>
           {t("Retry")}
         </Button>
       )}
@@ -346,9 +325,7 @@ export function DevicePanel({
               <div
                 className="device-panel-choice"
                 title={
-                  device
-                    ? `${kindLabel(device)} · ${device.version} · ${device.id}`
-                    : undefined
+                  device ? `${kindLabel(device)} · ${device.version} · ${device.id}` : undefined
                 }
               >
                 <SearchableSelect
@@ -360,10 +337,7 @@ export function DevicePanel({
                   emptyLabel={t("No matching devices")}
                   onChange={(id) => {
                     if (id !== selected)
-                      selectDevice(
-                        id,
-                        !!devices.find((item) => item.id === id)?.booted,
-                      );
+                      selectDevice(id, !!devices.find((item) => item.id === id)?.booted);
                   }}
                   options={devices.map((item) => ({
                     value: item.id,
@@ -373,10 +347,7 @@ export function DevicePanel({
                 />
               </div>
             ) : (
-              <p
-                className="host-tool-muted device-panel-bar-text"
-                role="status"
-              >
+              <p className="host-tool-muted device-panel-bar-text" role="status">
                 {loadingDevices
                   ? t("Loading devices…")
                   : t(
@@ -398,9 +369,7 @@ export function DevicePanel({
                         setSelected(device.id);
                         setLive(device.booted);
                         setDevices((items) =>
-                          items.map((item) =>
-                            item.id === selected ? device : item,
-                          ),
+                          items.map((item) => (item.id === selected ? device : item)),
                         );
                       },
                     )
@@ -424,9 +393,7 @@ export function DevicePanel({
                   iconOnly
                   label={t("Capture")}
                   disabled={!canView}
-                  onClick={() =>
-                    void execute(() => capture(selected), setFrame)
-                  }
+                  onClick={() => void execute(() => capture(selected), setFrame)}
                 >
                   <ImagePlus size={16} aria-hidden />
                 </Button>
@@ -449,10 +416,7 @@ export function DevicePanel({
                         };
                       } catch (cause) {
                         return {
-                          text:
-                            cause instanceof Error
-                              ? cause.message
-                              : String(cause),
+                          text: cause instanceof Error ? cause.message : String(cause),
                           error: true,
                         };
                       }
@@ -487,9 +451,7 @@ export function DevicePanel({
           {deviceNotice ? (
             <p
               className={
-                deviceNotice.error
-                  ? "device-panel-note"
-                  : "host-tool-muted device-panel-note"
+                deviceNotice.error ? "device-panel-note" : "host-tool-muted device-panel-note"
               }
               role={deviceNotice.error ? "alert" : "status"}
             >
@@ -498,11 +460,7 @@ export function DevicePanel({
           ) : null}
           {control && !status.agentInstalled ? (
             <div className="device-panel-note device-panel-setup-control">
-              <span>
-                {t(
-                  "Run setup with control enabled to install the control tools.",
-                )}
-              </span>
+              <span>{t("Run setup with control enabled to install the control tools.")}</span>
               <Button
                 variant="primary"
                 disabled={busy || !sdkAvailable}
@@ -530,12 +488,10 @@ export function DevicePanel({
                   action({
                     type: "press",
                     x: Math.round(
-                      ((event.clientX - bounds.left) * image.naturalWidth) /
-                        bounds.width,
+                      ((event.clientX - bounds.left) * image.naturalWidth) / bounds.width,
                     ),
                     y: Math.round(
-                      ((event.clientY - bounds.top) * image.naturalHeight) /
-                        bounds.height,
+                      ((event.clientY - bounds.top) * image.naturalHeight) / bounds.height,
                     ),
                   });
                 }}
@@ -549,9 +505,7 @@ export function DevicePanel({
               {loadingDevices
                 ? t("Loading devices…")
                 : device && !device.booted
-                  ? t(
-                      "Boot the selected device before viewing or controlling it.",
-                    )
+                  ? t("Boot the selected device before viewing or controlling it.")
                   : device?.booted && !error
                     ? live
                       ? t("Loading device screen…")
@@ -566,12 +520,15 @@ export function DevicePanel({
               <div className="host-tool-toolbar">
                 <label className="host-tool-field host-tool-grow">
                   {t("App name or bundle ID")}
-                  <input
+                  <TextField
                     disabled={!canControl}
                     value={app}
                     maxLength={256}
                     placeholder={windowsAndroid ? "com.example.app" : undefined}
                     onChange={(event) => setApp(event.target.value)}
+                    label=""
+                    hideLabel
+                    fieldClassName="min-w-0 flex-1"
                   />
                 </label>
                 <Button
@@ -582,11 +539,14 @@ export function DevicePanel({
                 </Button>
                 <label className="host-tool-field host-tool-grow">
                   {t("Text to type on device")}
-                  <input
+                  <TextField
                     disabled={!canControl}
                     value={text}
                     maxLength={4096}
                     onChange={(event) => setText(event.target.value)}
+                    label=""
+                    hideLabel
+                    fieldClassName="min-w-0 flex-1"
                   />
                 </label>
                 <Button
@@ -595,16 +555,10 @@ export function DevicePanel({
                 >
                   {t("Type text")}
                 </Button>
-                <Button
-                  disabled={!canControl}
-                  onClick={() => action({ type: "home" })}
-                >
+                <Button disabled={!canControl} onClick={() => action({ type: "home" })}>
                   {t("Home")}
                 </Button>
-                <Button
-                  disabled={!canControl}
-                  onClick={() => action({ type: "snapshot" })}
-                >
+                <Button disabled={!canControl} onClick={() => action({ type: "snapshot" })}>
                   {t("Accessibility snapshot")}
                 </Button>
               </div>
@@ -618,9 +572,7 @@ export function DevicePanel({
               ) : null}
               {windowsAndroid ? (
                 <p className="host-tool-muted">
-                  {t(
-                    "For Android, enter Settings or an app package ID such as com.example.app.",
-                  )}{" "}
+                  {t("For Android, enter Settings or an app package ID such as com.example.app.")}{" "}
                   {t("Android text input supports printable ASCII characters.")}
                 </p>
               ) : null}
@@ -629,28 +581,32 @@ export function DevicePanel({
                 <div className="host-tool-toolbar">
                   <label className="host-tool-field">
                     X
-                    <input
-                      type="number"
+                    <NumberField
                       aria-label={t("Device X coordinate")}
                       disabled={!canControl}
                       min={0}
                       max={20000}
-                      className="host-tool-coordinate"
+
                       value={x}
                       onChange={(event) => setX(Number(event.target.value))}
+                      label=""
+                      hideLabel
+                      fieldClassName="min-w-0 flex-1"
                     />
                   </label>
                   <label className="host-tool-field">
                     Y
-                    <input
-                      type="number"
+                    <NumberField
                       aria-label={t("Device Y coordinate")}
                       disabled={!canControl}
                       min={0}
                       max={20000}
-                      className="host-tool-coordinate"
+
                       value={y}
                       onChange={(event) => setY(Number(event.target.value))}
+                      label=""
+                      hideLabel
+                      fieldClassName="min-w-0 flex-1"
                     />
                   </label>
                   <Button
@@ -682,9 +638,7 @@ export function DevicePanel({
             {t("Setup and access")}
             <span className="host-tool-muted device-panel-setup-summary">
               {hostLabel ? `${hostLabel} · ` : ""}
-              {status.running
-                ? t("Device host running")
-                : t("Device host stopped")}
+              {status.running ? t("Device host running") : t("Device host stopped")}
               {" · "}
               {t("{p0} devices found", { p0: devices.length })}
             </span>
@@ -710,13 +664,9 @@ export function DevicePanel({
               </Button>
               <Button
                 disabled={busy || !sdkAvailable}
-                onClick={() =>
-                  void execute(() => api.setup(control), setStatus)
-                }
+                onClick={() => void execute(() => api.setup(control), setStatus)}
               >
-                {status.installed
-                  ? t("Update setup")
-                  : t("Set up device tools")}
+                {status.installed ? t("Update setup") : t("Set up device tools")}
               </Button>
               <Button
                 disabled={busy || !status.installed || status.running}

@@ -1,3 +1,4 @@
+import { Button } from "../../shared/ui/Button";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { FULLSCREEN_SHORTCUT } from "../../platform/tauri/platform";
@@ -71,17 +72,21 @@ export function FullscreenButton() {
   return (
     <>
       {error ? <TransientNotice message={error} onDismiss={() => setError(null)} /> : null}
-      <button
+      <Button
+        iconOnly
+        label={label}
+        variant="ghost"
+        motion="none"
         type="button"
         title={shortcut ? `${label} (${shortcut})` : label}
         aria-label={label}
         aria-pressed={fullscreen}
         data-tauri-drag-region="false"
         onClick={() => void toggle()}
-        className="grid size-6 place-items-center rounded-md [@media(hover:hover)_and_(pointer:fine)]:hover:bg-content/10 [@media(hover:hover)_and_(pointer:fine)]:hover:text-content focus-visible:outline-2 focus-visible:outline-accent active:bg-content/20"
+        className="grid place-items-center"
       >
         <Icon className="size-3.5" strokeWidth={1.75} />
-      </button>
+      </Button>
     </>
   );
 }

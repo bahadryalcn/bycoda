@@ -1,3 +1,4 @@
+import { Button } from "../../../shared/ui/Button";
 import { t, useLocale } from "../../../shared/i18n";
 import {
   Check,
@@ -115,7 +116,7 @@ export function BuildTargetButton({
       menuLabel="Build this plan with another model or provider"
       includeCurrent
       disabled={disabled}
-      triggerClassName="flex h-6 w-6 shrink-0 items-center justify-center rounded-r-md border-l border-background-base/20 bg-content text-background-base hover:bg-content/90 disabled:pointer-events-none disabled:opacity-40"
+      triggerClassName="flex h-6 w-6 shrink-0 items-center justify-center rounded-r-md border-l border-(--ui-tone-neutral-border) bg-(--ui-tone-neutral-solid) text-(--ui-tone-neutral-on-solid) hover:bg-(--ui-surface-raised) disabled:pointer-events-none disabled:opacity-40"
     />
   );
 }
@@ -361,7 +362,11 @@ export function SecondOpinionButton({
 
   return (
     <>
-      <button
+      <Button
+        className={triggerClassName}
+        iconOnly
+        label={label}
+        variant="ghost"
         ref={button}
         type="button"
         title={label}
@@ -369,21 +374,14 @@ export function SecondOpinionButton({
         aria-haspopup="menu"
         aria-expanded={open}
         disabled={disabled}
-        className={
-          triggerClassName ??
-          `rounded-md p-1 disabled:pointer-events-none disabled:opacity-40 ${
-            open
-              ? "bg-content/8 text-content/70"
-              : "text-content/40 hover:bg-content/8 hover:text-content/70"
-          }`
-        }
+
         onClick={() => {
           if (disabled) return;
           setOpen((value) => !value);
         }}
       >
         <Icon className="size-3.5" strokeWidth={1.75} />
-      </button>
+      </Button>
       {open ? (
         <>
           <Popover
@@ -402,11 +400,13 @@ export function SecondOpinionButton({
             className="p-1 font-sans"
           >
             <div className="px-1.5 pb-2 pt-1.5">
-              <p className="text-[11px] leading-3 text-content/50 text-balance">{description}</p>
+              <p className="text-[11px] leading-3 text-(--ui-text-secondary) text-balance">
+                {description}
+              </p>
             </div>
-            <div className="mx-1 mb-1 h-px bg-content/10" />
+            <div className="mx-1 mb-1 h-px bg-(--ui-surface-raised)" />
             {targets.length === 0 ? (
-              <div className="px-2.5 py-2 text-[12px] leading-4 text-content/50">
+              <div className="px-2.5 py-2 text-[12px] leading-4 text-(--ui-text-secondary)">
                 {disabledTitle}
               </div>
             ) : (
@@ -414,7 +414,11 @@ export function SecondOpinionButton({
                 const highlighted = index === active;
                 const available = isHarnessAvailable(harness);
                 return (
-                  <button
+                  <Button
+                    className="w-full text-left"
+                    fullWidth
+                    selected={highlighted}
+                    variant="item"
                     key={harness}
                     ref={highlighted ? setActiveRow : undefined}
                     data-provider-index={index}
@@ -433,23 +437,16 @@ export function SecondOpinionButton({
                       setActive(index);
                       if (modelsFor(harness).length > 0) setMenuLevel("models");
                     }}
-                    className={`flex h-8 w-full items-center gap-2 rounded-lg px-2 text-left text-[13px] leading-none ${
-                      !available && probed
-                        ? "text-content/30"
-                        : highlighted
-                          ? "bg-selection text-content"
-                          : "text-content hover:bg-content/5"
-                    }`}
                   >
                     <HarnessIcon harness={harness} className="size-3.5" />
                     <span className="min-w-0 flex-1 truncate">{HARNESS_TITLE[harness]}</span>
                     {modelsFor(harness).length > 0 ? (
                       <ChevronRight
-                        className="size-3.5 shrink-0 text-content/40"
+                        className="size-3.5 shrink-0 text-(--ui-text-secondary)"
                         strokeWidth={1.75}
                       />
                     ) : null}
-                  </button>
+                  </Button>
                 );
               })
             )}
@@ -477,7 +474,11 @@ export function SecondOpinionButton({
               {models.map((model, index) => {
                 const highlighted = index === modelActive;
                 return (
-                  <button
+                  <Button
+                    className="w-full text-left"
+                    fullWidth
+                    selected={highlighted}
+                    variant="item"
                     key={model.id}
                     ref={highlighted ? setActiveModelRow : undefined}
                     data-model-index={index}
@@ -494,21 +495,21 @@ export function SecondOpinionButton({
                       setModelActive(index);
                       openEffortOrPick(model);
                     }}
-                    className={`flex h-8 w-full items-center gap-2 rounded-lg px-2 text-left text-[13px] leading-none ${
-                      highlighted ? "bg-selection text-content" : "text-content hover:bg-content/5"
-                    }`}
                   >
                     <span className="min-w-0 flex-1 truncate">{model.name}</span>
                     {model.id === preferred ? (
-                      <Check className="size-3 shrink-0 text-content/45" strokeWidth={2} />
+                      <Check
+                        className="size-3 shrink-0 text-(--ui-text-secondary)"
+                        strokeWidth={2}
+                      />
                     ) : null}
                     {modelEffortSetting(model)?.options.length ? (
                       <ChevronRight
-                        className="size-3.5 shrink-0 text-content/40"
+                        className="size-3.5 shrink-0 text-(--ui-text-secondary)"
                         strokeWidth={1.75}
                       />
                     ) : null}
-                  </button>
+                  </Button>
                 );
               })}
             </Popover>
@@ -532,7 +533,11 @@ export function SecondOpinionButton({
                 const highlighted = index === effortActive;
                 const selected = option.value === selectedEffortValue;
                 return (
-                  <button
+                  <Button
+                    className="w-full text-left"
+                    fullWidth
+                    selected={highlighted}
+                    variant="item"
                     key={option.value}
                     type="button"
                     role="menuitemradio"
@@ -540,15 +545,15 @@ export function SecondOpinionButton({
                     onMouseDown={(event) => event.preventDefault()}
                     onMouseEnter={() => setEffortActive(index)}
                     onClick={() => pick(activeModel, option.value)}
-                    className={`flex h-8 w-full items-center gap-2 rounded-lg px-2 text-left text-[13px] text-content ${
-                      highlighted ? "bg-selection" : "hover:bg-content/5"
-                    }`}
                   >
                     <span className="min-w-0 flex-1 truncate">{option.label}</span>
                     {selected ? (
-                      <Check className="size-3.5 shrink-0 text-content/50" strokeWidth={2} />
+                      <Check
+                        className="size-3.5 shrink-0 text-(--ui-text-secondary)"
+                        strokeWidth={2}
+                      />
                     ) : null}
-                  </button>
+                  </Button>
                 );
               })}
             </Popover>

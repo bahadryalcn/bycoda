@@ -3,18 +3,9 @@
   inline-size: min(440px, 100vw);
 }
 
-.notification-sheet-tab:focus-visible {
-  outline: 2px solid currentColor;
-  outline-offset: 2px;
-}
-
 .notification-sheet .approval-toast {
   border-style: solid;
   box-shadow: none;
-}
-
-.notification-sheet-tab:active {
-  background: color-mix(in oklch, currentColor 15%, transparent);
 }
 
 .notification-project-name,
@@ -35,7 +26,7 @@
 }
 
 .notification-history-details summary:active {
-  background: color-mix(in oklch, currentColor 15%, transparent);
+  background: var(--ui-surface-pressed);
 }
 
 .notification-history-preview {
@@ -56,10 +47,7 @@
 
 @media (hover: hover) and (pointer: fine) {
   .notification-history-details summary:hover {
-    background: color-mix(in oklch, currentColor 10%, transparent);
-  }
-  .notification-sheet-tab:hover {
-    background: color-mix(in oklch, currentColor 10%, transparent);
+    background: var(--ui-surface-hover);
   }
 }
 

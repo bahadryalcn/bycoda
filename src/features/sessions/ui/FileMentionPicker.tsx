@@ -1,3 +1,4 @@
+import { Button } from "../../../shared/ui/Button";
 import { t, useLocale } from "../../../shared/i18n";
 import { StickyNote } from "../../../shared/ui/icons";
 import { useEffect, useRef, type MouseEvent as ReactMouseEvent } from "react";
@@ -61,10 +62,10 @@ export function FileMentionPicker({
   return (
     <div
       data-mention-picker
-      className="overflow-hidden rounded-lg border border-content/10 bg-content/5 backdrop-blur-xl"
+      className="overflow-hidden rounded-lg border border-(--ui-tone-neutral-border) bg-(--ui-surface-raised) backdrop-blur-xl"
     >
       {files.length === 0 ? (
-        <p className="px-3 py-2.5 text-[12px] text-content/50">
+        <p className="px-3 py-2.5 text-[12px] text-(--ui-text-secondary)">
           {loading
             ? t("Indexing files…")
             : query.trim()
@@ -93,7 +94,11 @@ export function FileMentionPicker({
               ? file.positions
               : file.positions.filter((pos) => pos >= nameOffset).map((pos) => pos - nameOffset);
             return (
-              <button
+              <Button
+                className="w-full text-left"
+                fullWidth
+                selected={highlighted}
+                variant="item"
                 key={file.path}
                 ref={highlighted ? activeRef : undefined}
                 type="button"
@@ -102,9 +107,6 @@ export function FileMentionPicker({
                 onMouseDown={(e) => e.preventDefault()}
                 onMouseEnter={() => onRowEnter(index)}
                 onClick={() => onPick(file)}
-                className={`flex h-8 w-full items-center gap-2 rounded-md px-2 text-left text-[13px] leading-none ${
-                  highlighted ? "bg-selection text-content" : "text-content"
-                }`}
               >
                 <span className="shrink-0">
                   {isNoteMentionPath(file.path) ? (
@@ -122,11 +124,11 @@ export function FileMentionPicker({
                   {file.isDir ? "/" : null}
                 </span>
                 {note ? (
-                  <span className="shrink-0 font-mono text-[11px] text-content/40">
+                  <span className="shrink-0 font-mono text-[11px] text-(--ui-text-secondary)">
                     {t("Note")}
                   </span>
                 ) : dir ? (
-                  <span className="min-w-0 max-w-[45%] truncate font-mono text-[11px] text-content/40">
+                  <span className="min-w-0 max-w-[45%] truncate font-mono text-[11px] text-(--ui-text-secondary)">
                     <MatchText
                       text={dir}
                       positions={file.positions.filter((pos) => pos < slash)}
@@ -134,7 +136,7 @@ export function FileMentionPicker({
                     />
                   </span>
                 ) : null}
-              </button>
+              </Button>
             );
           })}
         </div>

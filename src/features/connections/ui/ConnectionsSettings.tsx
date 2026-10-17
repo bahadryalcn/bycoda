@@ -1,8 +1,14 @@
+import { Alert } from "../../../shared/ui/Alert";
+import { NumberField } from "../../../shared/ui/NumberField";
+import { TextField } from "../../../shared/ui/TextField";
+import { Button } from "../../../shared/ui/Button";
+import { Badge, type BadgeTone } from "../../../shared/ui/Badge";
 import { t, useLocale } from "../../../shared/i18n";
 import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
 import { invoke } from "@tauri-apps/api/core";
 import { Group, Row } from "../../settings/ui/settingsControls";
 import { SecondaryButton } from "../../../shared/ui/SecondaryButton";
+import { PasswordField } from "../../../shared/ui/PasswordField";
 import { RemoteOutboxNotice } from "./RemoteOutboxNotice";
 import { LocalHostUpdateNotice } from "./LocalHostUpdateNotice";
 import { PhoneConnectionPanel } from "./PhoneConnectionPanel";
@@ -47,11 +53,6 @@ import {
   type SshSetup,
 } from "../model/protocol";
 
-const input =
-  "w-full rounded-lg border border-content/15 bg-content/3 px-3 py-2 text-[13px] outline-none focus:border-content/35";
-const button =
-  "rounded-lg bg-selection px-3 py-2 text-[13px] font-medium hover:bg-selection-hover disabled:opacity-40";
-
 /** A machine's connection line. Until this page's own check returns, it shows
  * what the rest of the app (the project rail) last learned about the machine,
  * so the two never disagree. */
@@ -72,17 +73,16 @@ function MachineConnectionLine({
     indicator.tone === "down"
       ? indicator.label
       : (probed ?? (indicator.tone === "connected" ? "Connected" : "Checking connection…"));
-  const tone =
+  const tone: BadgeTone =
     indicator.tone === "down" || label.startsWith("Offline")
-      ? "bg-warning"
+      ? "warning"
       : indicator.tone === "connected" || label.startsWith("Connected")
-        ? "bg-success"
-        : "bg-content/30";
+        ? "success"
+        : "neutral";
   return (
-    <div className="mt-1 flex items-center gap-1.5 text-[12px] text-content/60">
-      <span aria-hidden="true" className={`size-1.5 shrink-0 rounded-full ${tone}`} />
+    <Badge tone={tone} className="mbs-1">
       {t(label)}
-    </div>
+    </Badge>
   );
 }
 
@@ -93,18 +93,19 @@ function SyncLine({ machineId }: { machineId: string }) {
   return (
     <div className="mt-1 flex items-center gap-2 text-[12px]">
       <span
-        className={`min-w-0 truncate ${failed ? "text-danger" : "text-content/50"}`}
+        className={`min-w-0 truncate ${failed ? "text-danger" : "text-(--ui-text-muted)"}`}
         title={sync.lastError}
       >
         {describeSyncStatus(sync, Date.now())}
       </span>
-      <button
-        className="shrink-0 rounded px-1.5 py-0.5 text-content/60 hover:bg-selection hover:text-content disabled:opacity-40"
+      <Button
         disabled={sync.state === "syncing"}
         onClick={() => void syncNow(machineId)}
+        variant="secondary"
+        type="button"
       >
         {t("Sync now")}
-      </button>
+      </Button>
     </div>
   );
 }
@@ -467,7 +468,11 @@ ${t("The new address is saved. Edit it again, or choose Reconnect to retry.")}`
       ? "Save"
       : "Save and reconnect";
   return (
-    <div id="setting-remote-machines" data-setting-id="remote-machines" className="flex flex-col gap-5">
+    <div
+      id="setting-remote-machines"
+      data-setting-id="remote-machines"
+      className="flex flex-col gap-5"
+    >
       <Group
         title={t("Connection targets")}
         layout="full"
@@ -508,7 +513,7 @@ ${t("The new address is saved. Edit it again, or choose Reconnect to retry.")}`
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div className="min-w-0">
           <h2 className="text-[13px] font-semibold text-content">{t("Your machines")}</h2>
-          <p className="mt-1 text-[12px] leading-relaxed text-content/45">
+          <p className="mt-1 text-[12px] leading-relaxed text-(--ui-text-muted)">
             {t(
               "Run agents on another computer and return to them from your laptop. The host keeps working when you close ",
             )}
@@ -516,16 +521,12 @@ ${t("The new address is saved. Edit it again, or choose Reconnect to retry.")}`
           </p>
         </div>
         <div className="flex flex-col items-end gap-1.5">
-          <button
-            className={`${button} flex shrink-0 items-center gap-2`}
-            disabled={busy}
-            onClick={startAdd}
-          >
+          <Button disabled={busy} onClick={startAdd} variant="secondary" type="button">
             <Plus className="size-4" />
             {t(" Add machine")}
-          </button>
+          </Button>
           {busy ? (
-            <p className="max-w-64 text-right text-[11px] leading-relaxed text-content/45">
+            <p className="max-w-64 text-right text-[11px] leading-relaxed text-(--ui-text-muted)">
               {t("Finish or cancel the current connection before adding another machine.")}
             </p>
           ) : null}
@@ -545,11 +546,11 @@ ${t("The new address is saved. Edit it again, or choose Reconnect to retry.")}`
             <h3 className="text-[14px] font-medium">
               {editing ? t("Edit {p0}", { p0: editing.name }) : t("Add a new machine")}
             </h3>
-            <span className="rounded bg-selection px-2 py-1 text-[11px] text-content/60">
+            <span className="rounded bg-selection px-2 py-1 text-[11px] text-(--ui-text-muted)">
               {"SSH"}
             </span>
           </div>
-          <p className="text-[12px] leading-relaxed text-content/65">
+          <p className="text-[12px] leading-relaxed text-(--ui-text-muted)">
             {editing
               ? t(
                   "Changes apply to this machine. To connect a different computer, choose Add machine.",
@@ -565,52 +566,61 @@ ${t("The new address is saved. Edit it again, or choose Reconnect to retry.")}`
             )}
             persistence={{ mode: "explicit", state: busy ? "saving" : "dirty" }}
           />
-          <label className="flex flex-col gap-1.5 text-[12px] text-content/65">
+          <label className="flex flex-col gap-1.5 text-[12px] text-(--ui-text-muted)">
             {t("SSH address")}
-            <input
+            <TextField
               autoFocus
               required
               disabled={busy}
-              className={input}
+
               value={target}
               onChange={(event) => setTarget(event.target.value)}
               placeholder={t("user@my-mac-mini or an SSH alias")}
               autoComplete="off"
               spellCheck={false}
+              label=""
+              hideLabel
+              fieldClassName="min-w-0 flex-1"
             />
-            <span className="text-[11px] leading-relaxed text-content/45">
+            <span className="text-[11px] leading-relaxed text-(--ui-text-muted)">
               {t("A hostname works too, such as a Mac's Bonjour name (")}
-              <code className="rounded bg-content/10 px-1">{"user@MacBook-Pro.local"}</code>
+              <code className="rounded bg-(--ui-surface-raised) px-1">
+                {"user@MacBook-Pro.local"}
+              </code>
               {t(") or an alias from")}{" "}
-              <code className="rounded bg-content/10 px-1">{"~/.ssh/config"}</code>
+              <code className="rounded bg-(--ui-surface-raised) px-1">{"~/.ssh/config"}</code>
               {t(". Then the address does not need editing when the IP changes.")}
             </span>
             {suggestion && (
-              <button
+              <Button
                 type="button"
                 disabled={busy}
-                className="self-start rounded-md bg-content/8 px-2 py-1 text-[11px] text-content/80 hover:bg-content/15 hover:text-content disabled:opacity-40"
+
                 title={t("Fills the address. Nothing is saved or tested until you save.")}
                 onClick={() => setTarget(suggestion)}
+                variant="secondary"
               >
                 {t("Use ")}
                 {suggestion}
                 {t(" instead of the IP")}
-              </button>
+              </Button>
             )}
           </label>
-          <label className="flex flex-col gap-1.5 text-[12px] text-content/65">
+          <label className="flex flex-col gap-1.5 text-[12px] text-(--ui-text-muted)">
             {t("Other address (optional)")}
-            <input
+            <TextField
               disabled={busy}
-              className={input}
+
               value={alternate}
               onChange={(event) => setAlternate(event.target.value)}
               placeholder={t("Optional, e.g. user@100.64.0.5 (Tailscale)")}
               autoComplete="off"
               spellCheck={false}
+              label=""
+              hideLabel
+              fieldClassName="min-w-0 flex-1"
             />
-            <span className="text-[11px] leading-relaxed text-content/45">
+            <span className="text-[11px] leading-relaxed text-(--ui-text-muted)">
               {t(
                 "Optional fallback for this same machine, such as its Tailscale address. If the first address cannot connect,",
               )}{" "}
@@ -620,11 +630,11 @@ ${t("The new address is saved. Edit it again, or choose Reconnect to retry.")}`
               )}
             </span>
           </label>
-          <label className="flex flex-col gap-1.5 text-[12px] text-content/65">
+          <label className="flex flex-col gap-1.5 text-[12px] text-(--ui-text-muted)">
             {t("Name (optional)")}
-            <input
+            <TextField
               disabled={busy}
-              className={input}
+
               value={name}
               onChange={(event) => setName(event.target.value)}
               placeholder={t("Optional, e.g. Home Mac mini")}
@@ -632,66 +642,77 @@ ${t("The new address is saved. Edit it again, or choose Reconnect to retry.")}`
               autoCorrect="off"
               autoCapitalize="off"
               spellCheck={false}
+              label=""
+              hideLabel
+              fieldClassName="min-w-0 flex-1"
             />
           </label>
           {editing ? (
-            <label className="flex flex-col gap-1.5 text-[12px] text-content/65">
+            <label className="flex flex-col gap-1.5 text-[12px] text-(--ui-text-muted)">
               {t("Host port")}
-              <input
+              <NumberField
                 aria-label={t("Host port")}
                 disabled={busy}
-                type="number"
+
                 min={1}
                 max={65535}
-                className={`${input} max-w-40`}
+
                 value={remotePort}
                 onChange={(event) => setRemotePort(event.target.value)}
+                label=""
+                hideLabel
+                fieldClassName="min-w-0 flex-1"
               />
-              <span className="text-[11px] leading-relaxed text-content/45">
+              <span className="text-[11px] leading-relaxed text-(--ui-text-muted)">
                 {t(
                   "The Host service port on this machine, separate from the SSH port. Saving reconnects to this port without changing the service. Reconnects keep this value.",
                 )}
               </span>
             </label>
           ) : null}
-          <details open={!!editing} className="text-[12px] text-content/50">
+          <details open={!!editing} className="text-[12px] text-(--ui-text-muted)">
             <summary className="cursor-pointer">{t("Advanced")}</summary>
             <label className="mt-3 flex max-w-40 flex-col gap-1.5">
               {t("SSH port")}
-              <input
+              <NumberField
                 disabled={busy}
-                type="number"
+
                 min={1}
                 max={65535}
-                className={input}
+
                 value={port}
                 onChange={(event) => setPort(event.target.value)}
                 placeholder={t("From SSH config")}
+                label=""
+                hideLabel
+                fieldClassName="min-w-0 flex-1"
               />
             </label>
           </details>
-          <details className="text-[12px] text-content/50">
+          <details className="text-[12px] text-(--ui-text-muted)">
             <summary className="cursor-pointer">{t("Connection help")}</summary>
             <div className="mt-3 flex flex-col gap-2">
               {editing ? (
-                <p className="text-[12px] leading-relaxed text-content/45">
+                <p className="text-[12px] leading-relaxed text-(--ui-text-muted)">
                   {t(
                     "Saving a new address closes the current connection and connects to it. If this computer has not connected to that address before, SSH asks you here whether to trust its host key. The machine's projects, sessions and history stay linked to it. If the address turns out to be another machine, the change stays saved so you can fix it; nothing is installed there.",
                   )}
                 </p>
               ) : (
                 <>
-                  <p className="text-[12px] leading-relaxed text-content/45">
+                  <p className="text-[12px] leading-relaxed text-(--ui-text-muted)">
                     {PRODUCT_IDENTITY.displayName}
                     {t(
                       " installs and starts its background host, then connects securely. Your SSH keys and config are used automatically. Enable SSH on the host and sign in to Codex or Claude Code there. On Windows and Mac, keep the host’s desktop account signed in and the machine awake. Locking the desktop is fine.",
                     )}
                   </p>
-                  <p className="text-[12px] leading-relaxed text-content/45">
+                  <p className="text-[12px] leading-relaxed text-(--ui-text-muted)">
                     {t(
                       "On Linux, setup installs a systemd user service and turns on lingering for your account (",
                     )}
-                    <code className="rounded bg-content/10 px-1">{"loginctl enable-linger"}</code>
+                    <code className="rounded bg-(--ui-surface-raised) px-1">
+                      {"loginctl enable-linger"}
+                    </code>
                     {t(
                       "), so the host and your other user services keep running after you log out. The host keeps running until you stop it on that machine; removing it here only disconnects this desktop.",
                     )}
@@ -701,23 +722,21 @@ ${t("The new address is saved. Edit it again, or choose Reconnect to retry.")}`
             </div>
           </details>
           {error && (
-            <p
-              role="alert"
-              className="whitespace-pre-wrap break-words rounded-lg bg-danger/5 p-3 text-[12px] leading-relaxed text-danger"
-            >
+            <Alert role="alert" tone="danger">
               {error}
-            </p>
+            </Alert>
           )}
           <div className="flex justify-end gap-2">
-            <button
+            <Button
               type="button"
               disabled={busy}
-              className="px-3 py-2 text-[13px] text-content/50"
+
               onClick={closeForm}
+              variant="secondary"
             >
               {t("Cancel")}
-            </button>
-            <button className={button} disabled={busy || !target.trim()}>
+            </Button>
+            <Button disabled={busy || !target.trim()} variant="secondary" type="submit">
               {editing
                 ? busy
                   ? t("Saving…")
@@ -725,7 +744,7 @@ ${t("The new address is saved. Edit it again, or choose Reconnect to retry.")}`
                 : busy
                   ? t("Connecting…")
                   : t("Connect")}
-            </button>
+            </Button>
           </div>
         </form>
       )}
@@ -748,64 +767,63 @@ ${t("The new address is saved. Edit it again, or choose Reconnect to retry.")}`
                 void respond(job.prompt!.confirm ? "yes" : answer);
               }}
             >
-              <p className="whitespace-pre-wrap break-words text-[12px] leading-relaxed text-content/70">
+              <p className="whitespace-pre-wrap break-words text-[12px] leading-relaxed text-content">
                 {job.prompt.message}
               </p>
               {!job.prompt.confirm && (
-                <input
+                <PasswordField
                   key={job.prompt.id}
                   autoFocus
-                  type="password"
+                  label={t("SSH password or passphrase")}
+                  hideLabel
                   aria-label={t("SSH password or passphrase")}
                   autoComplete="off"
                   disabled={answering}
-                  className={input}
                   value={answer}
                   onChange={(event) => setAnswer(event.target.value)}
                 />
               )}
               <div className="flex gap-2">
-                <button className={button} disabled={answering}>
+                <Button disabled={answering} variant="primary" type="submit">
                   {job.prompt.confirm ? t("Trust host and continue") : t("Continue")}
-                </button>
+                </Button>
                 {job.prompt.confirm && (
-                  <button
+                  <Button
                     type="button"
-                    className={button}
+
                     disabled={answering}
                     onClick={() => void respond("no")}
+                    variant="primary"
                   >
                     {t("Reject")}
-                  </button>
+                  </Button>
                 )}
               </div>
             </form>
           )}
-          <button
+          <Button
             type="button"
-            className="self-start text-[12px] text-content/50 hover:text-content"
+
             onClick={() => {
               if (jobId)
                 void invoke("remote_ssh_cancel", { jobId }).catch((reason) =>
                   setError(String(reason)),
                 );
             }}
+            variant="secondary"
           >
             {t("Cancel connection")}
-          </button>
+          </Button>
         </div>
       )}
       {error && !adding && (
-        <p
-          role="alert"
-          className="whitespace-pre-wrap break-words rounded-lg bg-danger/5 p-3 text-[12px] leading-relaxed text-danger"
-        >
+        <Alert role="alert" tone="danger">
           {error}
-        </p>
+        </Alert>
       )}
       {error && !adding && !busy && retryMachine ? (
         <div className="flex flex-wrap items-center gap-2">
-          <span className="text-[12px] text-content/65">
+          <span className="text-[12px] text-(--ui-text-muted)">
             {t("Remote target: {p0}", { p0: retryMachine.name })}
           </span>
           <SecondaryButton onClick={() => startEdit(retryMachine)}>
@@ -826,29 +844,29 @@ ${t("The new address is saved. Edit it again, or choose Reconnect to retry.")}`
           {machines.map((machine) => (
             <div key={machine.id}>
               <div
-                className={`flex flex-wrap items-center gap-3 px-4 py-3 ${editing?.id === machine.id ? "bg-selection/50" : ""}`}
+                className={`flex flex-wrap items-center gap-3 px-4 py-3 ${editing?.id === machine.id ? "bg-selection" : ""}`}
               >
-                <Internet className="size-5 shrink-0 text-content/45" />
+                <Internet className="size-5 shrink-0 text-(--ui-text-muted)" />
                 <div className="min-w-0 flex-1 basis-48">
                   <div className="flex min-w-0 items-center gap-2">
                     <span className="truncate text-[13px] font-medium">{machine.name}</span>
                     {isLocalSyncMachine(machine) ? (
-                      <span className="shrink-0 rounded bg-content/5 px-1.5 py-0.5 text-[10px] text-content/50">
+                      <span className="shrink-0 rounded bg-(--ui-surface-raised) px-1.5 py-0.5 text-[10px] text-(--ui-text-muted)">
                         {t("This computer")}
                       </span>
                     ) : (
-                      <span className="shrink-0 text-[11px] text-content/50">
+                      <span className="shrink-0 text-[11px] text-(--ui-text-muted)">
                         {t("Remote computer")}
                       </span>
                     )}
                   </div>
                   {machine.ssh?.alternate && (
-                    <div className="mt-1 break-all text-[12px] text-content/60">
+                    <div className="mt-1 break-all text-[12px] text-(--ui-text-muted)">
                       {t("Other address · ")}
                       {machine.ssh.alternate}
                     </div>
                   )}
-                  <div className="mt-1 break-all text-[12px] text-content/45">
+                  <div className="mt-1 break-all text-[12px] text-(--ui-text-muted)">
                     {isLocalSyncMachine(machine)
                       ? t("Syncs projects and groups with the {p0} on this computer", {
                           p0: PRODUCT_IDENTITY.displayName,
@@ -858,16 +876,16 @@ ${t("The new address is saved. Edit it again, or choose Reconnect to retry.")}`
                         : machine.endpoint}
                   </div>
                   {machine.ssh ? (
-                    <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-content/50">
+                    <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-(--ui-text-muted)">
                       <span>
                         {t("SSH port")}{" "}
-                        <span className="font-mono text-content/70">
+                        <span className="font-mono text-content">
                           {machine.ssh.port ?? t("From SSH config")}
                         </span>
                       </span>
                       <span>
                         {t("Host port")}{" "}
-                        <span className="font-mono text-content/70">{machine.ssh.remotePort}</span>
+                        <span className="font-mono text-content">{machine.ssh.remotePort}</span>
                       </span>
                     </div>
                   ) : null}
@@ -877,7 +895,7 @@ ${t("The new address is saved. Edit it again, or choose Reconnect to retry.")}`
                   />
                   <SyncLine machineId={machine.id} />
                   {machine.ssh && needsUpdate[machine.id] ? (
-                    <div className="mt-1 text-[11px] text-content/45">
+                    <div className="mt-1 text-[11px] text-(--ui-text-muted)">
                       {t("Updating restarts the host and interrupts active agent turns.")}
                     </div>
                   ) : null}
@@ -885,34 +903,41 @@ ${t("The new address is saved. Edit it again, or choose Reconnect to retry.")}`
                 {machine.ssh && (
                   <div className="flex shrink-0 flex-wrap items-center gap-2">
                     {needsUpdate[machine.id] ? (
-                      <button
-                        className={button}
+                      <Button
                         disabled={busy}
                         title={t(
                           "Downloads the matching host package and restarts the host; active agent turns will be interrupted",
                         )}
                         onClick={() => void begin(machine, true)}
+                        variant="secondary"
+                        type="button"
                       >
                         {t("Update Host")}
-                      </button>
+                      </Button>
                     ) : null}
-                    <button className={button} disabled={busy} onClick={() => void begin(machine)}>
+                    <Button
+                      disabled={busy}
+                      onClick={() => void begin(machine)}
+                      variant="secondary"
+                      type="button"
+                    >
                       {t("Reconnect")}
-                    </button>
-                    <button
-                      className="rounded p-2 text-content/40 hover:bg-selection hover:text-content disabled:opacity-40"
+                    </Button>
+                    <Button
                       disabled={busy}
                       aria-label={t("Edit {p0}", { p0: machine.name })}
                       title={t("Edit name and address…")}
                       onClick={() => startEdit(machine)}
+                      variant="secondary"
+                      type="button"
                     >
                       <Pencil className="size-4" />
-                    </button>
+                    </Button>
                   </div>
                 )}
-                <button
+                <Button
                   disabled={busy || revoking}
-                  className="rounded p-2 text-content/40 hover:bg-selection hover:text-content disabled:opacity-40"
+
                   aria-label={t("Remove {p0}", { p0: machine.name })}
                   title={t("Remove connection…")}
                   onClick={() => {
@@ -922,15 +947,17 @@ ${t("The new address is saved. Edit it again, or choose Reconnect to retry.")}`
                     setNotice("");
                     setRemoving(machine.id);
                   }}
+                  variant="secondary"
+                  type="button"
                 >
                   <Trash2 className="size-4" />
-                </button>
+                </Button>
               </div>
               {removing === machine.id && (
                 <div
                   role="group"
                   aria-label={t("Confirm removing {p0}", { p0: machine.name })}
-                  className="flex flex-col gap-3 border-t border-stroke bg-content/3 px-4 py-4 text-[12px] leading-relaxed text-content/60"
+                  className="flex flex-col gap-3 border-t border-stroke bg-(--ui-surface-raised) px-4 py-4 text-[12px] leading-relaxed text-(--ui-text-muted)"
                 >
                   <p className="text-[13px] font-medium text-content">
                     {t("Remove ")}
@@ -959,37 +986,40 @@ ${t("The new address is saved. Edit it again, or choose Reconnect to retry.")}`
                   </p>
                   <p>
                     {t("To stop the host and turn off its background service, run")}{" "}
-                    <code className="rounded bg-content/10 px-1">
+                    <code className="rounded bg-(--ui-surface-raised) px-1">
                       {"~/.bycoda-host/bin/bycoda-host service uninstall"}
                     </code>{" "}
                     {t("on that machine (")}
-                    <code className="rounded bg-content/10 px-1">
+                    <code className="rounded bg-(--ui-surface-raised) px-1">
                       {"%USERPROFILE%\\.bycoda-host\\bin\\bycoda-host.cmd service uninstall"}
                     </code>{" "}
                     {t("on Windows). Its sessions and history are kept.")}
                   </p>
                   <div className="flex flex-wrap gap-2">
-                    <button
-                      className={button}
+                    <Button
                       disabled={revoking}
                       onClick={() => void remove(machine, true)}
+                      variant="secondary"
+                      type="button"
                     >
                       {t("Revoke access and remove")}
-                    </button>
-                    <button
-                      className={button}
+                    </Button>
+                    <Button
                       disabled={revoking}
                       onClick={() => void remove(machine, false)}
+                      variant="secondary"
+                      type="button"
                     >
                       {t("Remove from this desktop only")}
-                    </button>
-                    <button
-                      className="px-3 py-2 text-[13px] text-content/50"
+                    </Button>
+                    <Button
                       disabled={revoking}
                       onClick={() => setRemoving(undefined)}
+                      variant="secondary"
+                      type="button"
                     >
                       {t("Cancel")}
-                    </button>
+                    </Button>
                   </div>
                 </div>
               )}
@@ -997,12 +1027,12 @@ ${t("The new address is saved. Edit it again, or choose Reconnect to retry.")}`
           ))}
         </div>
       ) : loaded && !loading && !loadError && !adding ? (
-        <div className="rounded-xl border border-dashed border-content/15 px-5 py-8 text-center text-[13px] text-content/45">
+        <div className="rounded-xl border border-dashed border-stroke px-5 py-8 text-center text-[13px] text-(--ui-text-muted)">
           {t("Add your always-on Windows, Mac, or Linux machine to get started.")}
         </div>
       ) : null}
       {!adding && !removing ? (
-        <details className="text-[12px] text-content/45">
+        <details className="text-[12px] text-(--ui-text-muted)">
           <summary className="cursor-pointer">{t("Connect to an existing host by URL")}</summary>
           <form
             className="mt-4 flex flex-col gap-3"
@@ -1031,32 +1061,31 @@ ${t("The new address is saved. Edit it again, or choose Reconnect to retry.")}`
             />
             <label>
               {t("Host URL")}
-              <input
+              <TextField
                 required
                 disabled={busy}
                 type="url"
                 autoComplete="url"
                 spellCheck={false}
-                className={`${input} mt-1`}
+
                 value={url}
                 onChange={(event) => setUrl(event.target.value)}
+                label=""
+                hideLabel
+                fieldClassName="min-w-0 flex-1"
               />
             </label>
-            <label>
-              {t("Device token")}
-              <input
-                required
-                disabled={busy}
-                type="password"
-                autoComplete="off"
-                className={`${input} mt-1`}
-                value={token}
-                onChange={(event) => setToken(event.target.value)}
-              />
-            </label>
-            <button className={`${button} self-start`} disabled={busy}>
+            <PasswordField
+              label={t("Device token")}
+              required
+              disabled={busy}
+              autoComplete="off"
+              value={token}
+              onChange={(event) => setToken(event.target.value)}
+            />
+            <Button disabled={busy} variant="secondary" type="submit">
               {busy ? t("Connecting…") : error ? t("Retry connection") : t("Connect by URL")}
-            </button>
+            </Button>
           </form>
         </details>
       ) : null}

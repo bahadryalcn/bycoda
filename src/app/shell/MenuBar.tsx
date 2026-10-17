@@ -1,3 +1,4 @@
+import { Button } from "../../shared/ui/Button";
 import { t, useLocale } from "../../shared/i18n";
 import { invoke } from "@tauri-apps/api/core";
 import { memo, useCallback, useEffect, useRef, useState } from "react";
@@ -516,7 +517,10 @@ export const MenuBar = memo(function MenuBar({
       {MENUS.map(({ key, label }) => {
         const isActive = activeMenu === key;
         return (
-          <button
+          <Button
+            selected={isActive}
+            variant="ghost"
+            motion="none"
             key={key}
             type="button"
             data-tauri-drag-region="false"
@@ -532,14 +536,10 @@ export const MenuBar = memo(function MenuBar({
                 openDropdown(key, e.currentTarget);
               }
             }}
-            className={`rounded px-2 py-0.5 transition-colors ${
-              isActive
-                ? "bg-selection-hover text-content"
-                : "text-content/70 hover:bg-content/10 hover:text-content"
-            }`}
+            className={``}
           >
             {label}
-          </button>
+          </Button>
         );
       })}
 

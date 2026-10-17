@@ -1,3 +1,5 @@
+import { Alert } from "../../../shared/ui/Alert";
+import { Badge } from "../../../shared/ui/Badge";
 import { useClearComposerDraft } from "../hooks/useClearComposerDraft";
 import {
   useComposerTranslationSelection,
@@ -401,20 +403,18 @@ function ToolButton({
 }) {
   useLocale();
   return (
-    <button
+    <Button
+      className="shrink-0"
+      selected={active}
+      variant="ghost"
       type="button"
       title={label}
       aria-label={label}
       disabled={disabled}
       onClick={onClick}
-      className={`grid size-6.5 shrink-0 place-items-center rounded-md ${
-        active
-          ? "bg-selection-emphasis text-content"
-          : "bg-selection text-content/50 hover:bg-selection-hover hover:text-content"
-      } disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-content/50`}
     >
       {children}
-    </button>
+    </Button>
   );
 }
 
@@ -505,45 +505,42 @@ function MessageQueue({
   };
 
   return (
-    <div className="px-2 text-content/55" data-message-queue data-usage-guide="queue">
+    <div className="px-2 text-(--ui-text-secondary)" data-message-queue data-usage-guide="queue">
       <div
-        className="relative z-0 rounded-t-[10px] border border-b-0 border-content/10 bg-content/3 px-2 py-1"
+        className="relative z-0 rounded-t-[10px] border border-b-0 border-(--ui-tone-neutral-border) bg-(--ui-surface-raised) px-2 py-1"
         data-message-queue-card
         ref={card}
       >
         {paused ? (
-          <div className="flex h-7 items-center gap-2 border-b border-stroke text-[12px]">
+          <div className="flex h-7 items-center gap-2 border-b border-(--ui-tone-neutral-border) text-[12px]">
             <Pause className="size-3.5" />
             <span className="min-w-0 flex-1 truncate">
               {t("Queue paused because you interrupted")}
             </span>
-            <button
-              type="button"
-              onClick={onResume}
-              className="flex h-6 shrink-0 items-center gap-1.5 rounded-md px-1.5 hover:bg-content/10 hover:text-content"
-            >
+            <Button variant="ghost" type="button" onClick={onResume} className="shrink-0">
               <Play className="size-3.5" />
               {t("Resume")}
-            </button>
+            </Button>
           </div>
         ) : null}
         {restored ? (
-          <div className="flex h-7 items-center gap-2 border-b border-stroke text-[12px]">
+          <div className="flex h-7 items-center gap-2 border-b border-(--ui-tone-neutral-border) text-[12px]">
             <Pause className="size-3.5" />
             <span className="min-w-0 flex-1 truncate">
               {messages.length === 1
                 ? t("1 queued message restored")
                 : t("{p0} queued messages restored", { p0: messages.length })}
             </span>
-            <button
+            <Button
+              variant="ghost"
               type="button"
               disabled={!canSend(messages[0])}
               onClick={() => onSteer?.(messages[0].id)}
-              className="flex h-6 shrink-0 items-center gap-1.5 rounded-md px-1.5 hover:bg-content/10 hover:text-content disabled:opacity-30"
+              className="shrink-0"
             >
               <Play className="size-3.5" />
               {t("Send next")}
-            </button>
+            </Button>
           </div>
         ) : null}
         {messages.map((message, index) => {
@@ -555,12 +552,15 @@ function MessageQueue({
             <div
               key={message.id}
               ref={(node) => sortable.setItemRef(message.id, node)}
-              className={`reorder-item flex min-h-7 items-center gap-2 text-[12px] data-[dragging]:rounded-md data-[dragging]:bg-background-base data-[dragging]:shadow-lg ${
-                index > 0 ? "border-t border-stroke" : ""
+              className={`reorder-item flex min-h-7 items-center gap-2 text-[12px] data-[dragging]:rounded-md data-[dragging]:bg-(--ui-surface) data-[dragging]:shadow-lg ${
+                index > 0 ? "border-t border-(--ui-tone-neutral-border)" : ""
               }`}
             >
               {messages.length > 1 ? (
-                <button
+                <Button
+                  iconOnly
+                  label={t("Reorder queued message")}
+                  variant="ghost"
                   type="button"
                   data-queue-handle={message.id}
                   title={t("Drag to reorder")}
@@ -568,17 +568,17 @@ function MessageQueue({
                   aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown"
                   onPointerDown={(event) => sortable.onItemPointerDown(message.id, event)}
                   onKeyDown={(event) => moveByKey(event, message.id, index)}
-                  className="grid size-6 shrink-0 cursor-grab touch-none place-items-center rounded-md hover:bg-content/10 hover:text-content active:cursor-grabbing"
+                  className="shrink-0"
                 >
                   <ListEnd className="size-3.5" />
-                </button>
+                </Button>
               ) : (
                 <ListEnd className="size-3.5 shrink-0" />
               )}
-              <span className="min-w-0 flex-1 truncate text-content/80">{label}</span>
+              <span className="min-w-0 flex-1 truncate text-(--ui-text-secondary)">{label}</span>
               {attachmentGone ? (
                 <span
-                  className="shrink-0 text-warning"
+                  className="shrink-0 text-(--ui-tone-warning-fg)"
                   title={t(
                     "An attached file is gone. Edit this message to drop it, or remove the message.",
                   )}
@@ -587,7 +587,8 @@ function MessageQueue({
                 </span>
               ) : null}
               {remote ? null : (
-                <button
+                <Button
+                  variant="ghost"
                   type="button"
                   disabled={!canSend(message)}
                   title={
@@ -596,35 +597,41 @@ function MessageQueue({
                       : undefined
                   }
                   onClick={() => onSteer?.(message.id)}
-                  className="flex h-6 shrink-0 items-center gap-1.5 rounded-md px-1.5 hover:bg-content/10 hover:text-content disabled:opacity-30"
+                  className="shrink-0"
                 >
                   <CornerDownRight className="size-3.5" />
                   {t("Steer")}
-                </button>
+                </Button>
               )}
-              <button
+              <Button
+                iconOnly
+                label={t("Edit queued message")}
+                variant="ghost"
                 type="button"
                 title={t("Edit queued message")}
                 aria-label={t("Edit queued message")}
                 onClick={() => startEdit(message)}
-                className="grid size-6 shrink-0 place-items-center rounded-md hover:bg-content/10 hover:text-content"
+                className="shrink-0"
               >
                 <Pencil className="size-3.5" />
-              </button>
-              <button
+              </Button>
+              <Button
+                iconOnly
+                label={t("Remove queued message")}
+                variant="ghost"
                 type="button"
                 title={t("Remove queued message")}
                 aria-label={t("Remove queued message")}
                 onClick={() => onDelete?.(message.id)}
-                className="grid size-6 shrink-0 place-items-center rounded-md hover:bg-content/10 hover:text-content"
+                className="shrink-0"
               >
                 <Trash2 className="size-3.5" />
-              </button>
+              </Button>
             </div>
           );
         })}
         {remote ? (
-          <div className="border-t border-stroke py-1 text-[11px] text-content/40">
+          <div className="border-t border-(--ui-tone-neutral-border) py-1 text-[11px] text-(--ui-text-secondary)">
             {t("Sent one at a time when the host finishes this turn, while {p0} is open.", {
               p0: PRODUCT_IDENTITY.displayName,
             })}
@@ -1935,11 +1942,29 @@ export const Composer = memo(function Composer({
     }
     const value = ref.current?.value ?? submittedValue;
     if (disabled || worktreeRemoved || sendHeldReason) return;
-    if (isClearSessionCommand(value) && !onNewSession) {
-      setPasteError(t("Starting a fresh conversation is unavailable in this composer."));
+    if (isClearSessionCommand(value)) {
+      if (busy || onSubmit(value.trim(), [], { intent: "default" }) === false) {
+        setPasteError(t("Stop the current turn before clearing the conversation."));
+        return;
+      }
+      pasteGenerationRef.current += 1;
+      clearComposer();
+      historyRef.current = null;
+      borrowedAttachmentIdsRef.current.clear();
+      attachmentsRef.current = [];
+      setAttachments([]);
+      setSelectedMcp([]);
+      setPlanSelected(false);
+      setOperatorSelected(false);
+      setOrchestrationSelected(false);
+      setSlash(null);
+      setMention(null);
+      setResendEdited(false);
+      onEditingLastTurnChange?.(false);
+      syncHasValue("", []);
       return;
     }
-    if ((isNewSessionCommand(value) || isClearSessionCommand(value)) && onNewSession) {
+    if (isNewSessionCommand(value) && onNewSession) {
       // Retain attachments and context cards in the old session. Clear only
       // the navigation command before switching tabs so it cannot reappear.
       if (ref.current) ref.current.value = "";
@@ -1947,8 +1972,7 @@ export const Composer = memo(function Composer({
       onDraftChange?.("");
       setSlash(null);
       syncHasValue("", attachmentsRef.current);
-      if (isClearSessionCommand(value)) onNewSession({ preserveSettings: true });
-      else onNewSession();
+      onNewSession();
       return;
     }
     if (isResumeCommand(value)) {
@@ -2738,50 +2762,39 @@ export const Composer = memo(function Composer({
           ref={boxRef}
           data-composer-box
           data-composer-editing={resendEdited ? "" : undefined}
-          className={`relative z-10 border bg-content/3 backdrop-blur-sm ${
+          className={`relative z-10 border bg-(--ui-surface-raised) backdrop-blur-sm ${
             resendEdited
               ? "edit-last-turn-composer rounded-lg"
-              : "rounded-lg border-content/10 has-focus:border-content/20"
+              : "rounded-lg border-(--ui-tone-neutral-border) has-focus:border-(--ui-tone-neutral-border)"
           } ${
             fileDrag
-              ? "border-accent/60"
+              ? "border-(--ui-tone-accent-border)"
               : resendEdited
                 ? ""
-                : "border-content/10 has-focus:border-content/20"
+                : "border-(--ui-tone-neutral-border) has-focus:border-(--ui-tone-neutral-border)"
           }`}
         >
           {fileDrag ? (
-            <div className="pointer-events-none absolute inset-0 z-20 grid place-items-center rounded-lg bg-accent/8 text-[12px] text-content/70">
+            <div className="pointer-events-none absolute inset-0 z-20 grid place-items-center rounded-lg bg-(--ui-tone-accent-subtle) text-[12px] text-(--ui-text-secondary)">
               {t("Drop files to attach")}
             </div>
           ) : null}
-          {hideTopBar ? null : (
+          {!hideTopBar && !remote && !hideProjectPicker ? (
             <div
               data-composer-context
-              className="flex min-w-0 flex-wrap items-center justify-between gap-2.5 px-3 pt-2.5"
+              className="flex min-w-0 flex-wrap items-center gap-2 px-3 pt-2"
             >
-              {!remote && !hideProjectPicker ? (
-                <CwdPicker
-                  cwd={cwd}
-                  recents={recents}
-                  projectLogoPath={projectLogoPath}
-                  enabled={enabled}
-                  onCwdChange={onCwdChange}
-                  onNewTerminal={worktreeRemoved ? undefined : onNewTerminal}
-                  onClose={() => ref.current?.focus()}
-                />
-              ) : null}
-              <div className="composer-context-actions flex shrink-0 items-center">
-                <ContextMeter
-                  usage={context}
-                  empty={contextEmpty}
-                  sessionUsage={sessionUsage}
-                  onCompact={compactSupported && !worktreeRemoved ? onCompactContext : undefined}
-                  compactDisabled={busy}
-                />
-              </div>
+              <CwdPicker
+                cwd={cwd}
+                recents={recents}
+                projectLogoPath={projectLogoPath}
+                enabled={enabled}
+                onCwdChange={onCwdChange}
+                onNewTerminal={worktreeRemoved ? undefined : onNewTerminal}
+                onClose={() => ref.current?.focus()}
+              />
             </div>
-          )}
+          ) : null}
 
           {attachments.length > 0 ? (
             <div className="flex flex-wrap gap-1.5 px-3 pt-2">
@@ -2798,9 +2811,9 @@ export const Composer = memo(function Composer({
           ) : null}
 
           {pasteError ? (
-            <p role="alert" className="px-3 pt-2 text-xs text-danger">
+            <Alert tone="danger" role="alert">
               {pasteError}
-            </p>
+            </Alert>
           ) : null}
 
           {inboxCard ? <InboxMiniCard card={inboxCard} onDismiss={onInboxCardDismiss} /> : null}
@@ -2817,7 +2830,7 @@ export const Composer = memo(function Composer({
                 ref={highlightRef}
                 aria-hidden
                 style={{ textIndent: modeIndent }}
-                className={`composer-highlight pointer-events-none absolute inset-0 max-h-40 overflow-hidden whitespace-pre-wrap wrap-break-word px-3 text-sm leading-5.5 text-content font-sans ${
+                className={`composer-highlight pointer-events-none absolute inset-0 max-h-40 overflow-hidden whitespace-pre-wrap wrap-break-word px-3 text-sm leading-5.5 text-(--ui-tone-neutral-fg) font-sans ${
                   shell ? "py-4" : "py-3"
                 }`}
               >
@@ -2970,10 +2983,13 @@ export const Composer = memo(function Composer({
                   data-composer-plus
                   className="p-1.5"
                 >
-                  <p className="px-2 pb-1 pt-0.5 text-[10px] font-medium uppercase tracking-wide text-content/40">
+                  <p className="px-2 pb-1 pt-0.5 text-[10px] font-medium uppercase tracking-wide text-(--ui-text-secondary)">
                     {t("Add to message")}
                   </p>
-                  <button
+                  <Button
+                    fullWidth
+                    layout="stacked"
+                    variant="item"
                     type="button"
                     disabled={!attachmentsSupported}
                     onMouseDown={(e) => e.preventDefault()}
@@ -2981,12 +2997,12 @@ export const Composer = memo(function Composer({
                       setPlusOpen(false);
                       attachFromPicker();
                     }}
-                    className="flex w-full items-start gap-2.5 rounded-lg px-2 py-2 text-left text-content hover:bg-content/10 disabled:cursor-not-allowed disabled:opacity-40"
+                    className="w-full text-left"
                   >
                     <FilePlus className="mt-0.5 size-4 shrink-0" />
                     <span className="min-w-0">
                       <span className="block text-[13px]">{t("Upload file")}</span>
-                      <span className="block truncate whitespace-nowrap text-[11px] leading-4 text-content/45">
+                      <span className="block truncate whitespace-nowrap text-[11px] leading-4 text-(--ui-text-secondary)">
                         {attachmentsSupported
                           ? t("Attach files or images")
                           : remote && !remoteFeatures?.attachments
@@ -2996,9 +3012,12 @@ export const Composer = memo(function Composer({
                               })}
                       </span>
                     </span>
-                  </button>
+                  </Button>
                   {!remote ? (
-                    <button
+                    <Button
+                      fullWidth
+                      layout="stacked"
+                      variant="item"
                       type="button"
                       onMouseDown={(event) => event.preventDefault()}
                       onClick={() => {
@@ -3023,21 +3042,24 @@ export const Composer = memo(function Composer({
                         setPlusOpen(false);
                         el.focus();
                       }}
-                      className="flex w-full items-start gap-2.5 rounded-lg px-2 py-2 text-left text-content hover:bg-content/10"
+                      className="w-full text-left"
                     >
-                      <CursorMagicSelection className="mt-0.5 size-4 shrink-0 text-content/70" />
+                      <CursorMagicSelection className="mt-0.5 size-4 shrink-0 text-(--ui-text-secondary)" />
                       <span className="min-w-0 flex-1">
                         <span className="block text-[13px]">{t("Skills")}</span>
-                        <span className="block text-[11px] leading-4 text-content/45">
+                        <span className="block text-[11px] leading-4 text-(--ui-text-secondary)">
                           {harness === "codex"
                             ? t("Choose a skill or type $name")
                             : t("Choose a skill or type /name")}
                         </span>
                       </span>
-                    </button>
+                    </Button>
                   ) : null}
                   {!remote || remoteFeatures?.plan ? (
-                    <button
+                    <Button
+                      fullWidth
+                      layout="stacked"
+                      variant="item"
                       type="button"
                       aria-pressed={planActive}
                       disabled={!!planUnavailableReason(harness)}
@@ -3052,24 +3074,27 @@ export const Composer = memo(function Composer({
                         setPlusOpen(false);
                         ref.current?.focus();
                       }}
-                      className="flex w-full items-start gap-2.5 rounded-lg px-2 py-2 text-left text-content hover:bg-content/10 disabled:cursor-not-allowed disabled:opacity-40"
+                      className="w-full text-left"
                     >
-                      <AiIdea className="mt-0.5 size-4 shrink-0 text-warning/80" />
+                      <AiIdea className="mt-0.5 size-4 shrink-0 text-(--ui-tone-warning-fg)" />
                       <span className="min-w-0 flex-1">
                         <span className="block text-[13px]">{t("Plan mode")}</span>
-                        <span className="block truncate whitespace-nowrap text-[11px] leading-4 text-content/45">
+                        <span className="block truncate whitespace-nowrap text-[11px] leading-4 text-(--ui-text-secondary)">
                           {planUnavailableReason(harness)
                             ? t("Unavailable: {p0}", { p0: planUnavailableReason(harness) })
                             : t("Review a plan before building")}
                         </span>
                       </span>
                       {planActive ? (
-                        <Check className="mt-0.5 size-3.5 shrink-0 text-accent" />
+                        <Check className="mt-0.5 size-3.5 shrink-0 text-(--ui-tone-accent-fg)" />
                       ) : null}
-                    </button>
+                    </Button>
                   ) : null}
                   {!remote ? (
-                    <button
+                    <Button
+                      fullWidth
+                      layout="stacked"
+                      variant="item"
                       type="button"
                       aria-pressed={operatorActive}
                       onMouseDown={(event) => event.preventDefault()}
@@ -3084,22 +3109,25 @@ export const Composer = memo(function Composer({
                         setPlusOpen(false);
                         ref.current?.focus();
                       }}
-                      className="flex w-full items-start gap-2.5 rounded-lg px-2 py-2 text-left text-content hover:bg-content/10"
+                      className="w-full text-left"
                     >
-                      <CursorMagicSelection className="mt-0.5 size-4 shrink-0 text-info/80" />
+                      <CursorMagicSelection className="mt-0.5 size-4 shrink-0 text-(--ui-tone-info-fg)" />
                       <span className="min-w-0 flex-1">
                         <span className="block text-[13px]">{t("Operator")}</span>
-                        <span className="block truncate whitespace-nowrap text-[11px] leading-4 text-content/45">
+                        <span className="block truncate whitespace-nowrap text-[11px] leading-4 text-(--ui-text-secondary)">
                           {t("Give this thread access to")} {PRODUCT_IDENTITY.displayName}
                         </span>
                       </span>
                       {operatorActive ? (
-                        <Check className="mt-0.5 size-3.5 shrink-0 text-info/80" />
+                        <Check className="mt-0.5 size-3.5 shrink-0 text-(--ui-tone-info-fg)" />
                       ) : null}
-                    </button>
+                    </Button>
                   ) : null}
                   {!remote && !hideTopBar && (
-                    <button
+                    <Button
+                      fullWidth
+                      layout="stacked"
+                      variant="item"
                       type="button"
                       aria-pressed={orchestrationActive}
                       onMouseDown={(event) => event.preventDefault()}
@@ -3114,27 +3142,30 @@ export const Composer = memo(function Composer({
                         setPlusOpen(false);
                         ref.current?.focus();
                       }}
-                      className="flex w-full items-start gap-2.5 rounded-lg px-2 py-2 text-left text-content hover:bg-content/10"
+                      className="w-full text-left"
                     >
                       <Share className="mt-0.5 size-4 shrink-0 text-orchestration/65" />
                       <span className="min-w-0 flex-1">
                         <span className="flex items-center gap-1.5">
                           <span className="text-[13px]">{t("Orchestrator")}</span>
-                          <span className="rounded-full bg-orchestration/10 px-1.5 py-0.5 text-[9px] font-medium leading-none tracking-wide text-orchestration/55 mb-px">
+                          <Badge tone="neutral" className="mb-px">
                             v1
-                          </span>
+                          </Badge>
                         </span>
-                        <span className="block truncate whitespace-nowrap text-[11px] leading-4 text-content/45">
+                        <span className="block truncate whitespace-nowrap text-[11px] leading-4 text-(--ui-text-secondary)">
                           {t("Plan and coordinate agent work")}
                         </span>
                       </span>
                       {orchestrationActive && (
                         <Check className="mt-0.5 size-3.5 shrink-0 text-orchestration/80" />
                       )}
-                    </button>
+                    </Button>
                   )}
                   {canSaveDraft && onSaveDraft ? (
-                    <button
+                    <Button
+                      fullWidth
+                      layout="stacked"
+                      variant="item"
                       type="button"
                       aria-pressed={draftActive}
                       onMouseDown={(event) => event.preventDefault()}
@@ -3147,19 +3178,19 @@ export const Composer = memo(function Composer({
                         setPlusOpen(false);
                         ref.current?.focus();
                       }}
-                      className="flex w-full items-start gap-2.5 rounded-lg px-2 py-2 text-left text-content hover:bg-content/10"
+                      className="w-full text-left"
                     >
-                      <CircleDashed className="mt-0.5 size-4 shrink-0 text-content/60" />
+                      <CircleDashed className="mt-0.5 size-4 shrink-0 text-(--ui-text-secondary)" />
                       <span className="min-w-0 flex-1">
                         <span className="block text-[13px]">{t("Draft")}</span>
-                        <span className="block truncate whitespace-nowrap text-[11px] leading-4 text-content/45">
+                        <span className="block truncate whitespace-nowrap text-[11px] leading-4 text-(--ui-text-secondary)">
                           {t("Save this message without starting the agent")}
                         </span>
                       </span>
                       {draftActive ? (
-                        <Check className="mt-0.5 size-3.5 shrink-0 text-accent" />
+                        <Check className="mt-0.5 size-3.5 shrink-0 text-(--ui-tone-accent-fg)" />
                       ) : null}
-                    </button>
+                    </Button>
                   ) : null}
                 </Popover>
               ) : null}
@@ -3206,22 +3237,32 @@ export const Composer = memo(function Composer({
             ) : null}
 
             {resendEdited ? (
-              <button
+              <Button
+                variant="ghost"
                 type="button"
                 title={t("Stop editing last message")}
                 aria-label={t("Stop editing last message")}
                 onMouseDown={(event) => event.preventDefault()}
                 onClick={exitEditMode}
-                className="edit-last-turn-button flex h-6.5 shrink-0 items-center gap-1 rounded-md border border-current/20 px-2 text-[11px] font-medium transition-[background-color,color,border-color] hover:border-current/35 hover:bg-content/15 hover:text-content focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent"
+                className="shrink-0"
               >
                 <X className="size-3" strokeWidth={1.8} />
                 <span>{t("Cancel edit")}</span>
-              </button>
+              </Button>
             ) : null}
             <div
               className="composer-send-controls flex shrink-0 items-center gap-1"
               data-usage-guide="send-controls"
             >
+              {!hideTopBar ? (
+                <ContextMeter
+                  usage={context}
+                  empty={contextEmpty}
+                  sessionUsage={sessionUsage}
+                  onCompact={compactSupported && !worktreeRemoved ? onCompactContext : undefined}
+                  compactDisabled={busy}
+                />
+              ) : null}
               <ComposerAction
                 busy={busy}
                 disabled={disabled}
@@ -3281,7 +3322,7 @@ export const Composer = memo(function Composer({
             data-composer-workspace
             role="group"
             aria-label={t("Chat workspace")}
-            className="mx-3 flex min-w-0 items-center justify-between gap-2 rounded-b-xl border border-t-0 border-content/10 bg-content/2 px-3 pb-1.5 pt-2"
+            className="flex min-w-0 items-center justify-between gap-2 rounded-b-xl border border-t-0 border-(--ui-tone-neutral-border) bg-(--ui-surface-raised) px-3 pb-1.5 pt-2"
           >
             {draftWorkspace && onWorkspaceModeChange && onWorktreeBaseChange ? (
               <>

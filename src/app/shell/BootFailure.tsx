@@ -1,3 +1,4 @@
+import { Button } from "../../shared/ui/Button";
 import { t, useLocale } from "../../shared/i18n";
 import { useState } from "react";
 import { PRODUCT_IDENTITY } from "../../shared/lib/productIdentity";
@@ -18,22 +19,26 @@ export function BootFailure({ error, onRetry }: { error: unknown; onRetry: () =>
           {t("Your saved workspace is still available. Reload the app to try again.")}
         </p>
         <div className="flex flex-wrap gap-3">
-          <button
+          <Button
+            variant="ghost"
+            motion="none"
             type="button"
             autoFocus
             onClick={onRetry}
-            className="rounded-md bg-content px-4 py-2 text-sm text-background-base focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+            className=""
           >
             {t("Reload app")}
-          </button>
-          <button
+          </Button>
+          <Button
+            variant="ghost"
+            motion="none"
             type="button"
             aria-expanded={details}
             onClick={() => setDetails(!details)}
-            className="rounded-md px-3 py-2 text-sm underline focus-visible:outline-2 focus-visible:outline-accent"
+            className=""
           >
             {details ? t("Hide details") : t("Show details")}
-          </button>
+          </Button>
         </div>
         {details ? (
           <pre className="max-h-48 overflow-auto whitespace-pre-wrap break-words rounded-md border border-content/15 p-3 text-xs">

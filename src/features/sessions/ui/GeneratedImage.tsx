@@ -1,3 +1,5 @@
+import { Alert } from "../../../shared/ui/Alert";
+import { Button } from "../../../shared/ui/Button";
 import { t, useLocale } from "../../../shared/i18n";
 import { useEffect, useState } from "react";
 import { readBinaryFile } from "../../../platform/tauri/fs";
@@ -48,7 +50,7 @@ export function GeneratedImage({ image }: { image: GeneratedImageMeta }) {
 
   if (state.status === "loading") {
     return (
-      <div className="px-4 py-3 text-xs text-content/45" role="status">
+      <div className="px-4 py-3 text-xs text-(--ui-text-secondary)" role="status">
         {t("Loading generated image…")}
       </div>
     );
@@ -56,21 +58,25 @@ export function GeneratedImage({ image }: { image: GeneratedImageMeta }) {
 
   if (state.status === "error") {
     return (
-      <div className="px-4 py-3 text-xs text-content/50" role="alert">
+      <Alert tone="info" role="alert">
         {t("Could not open generated image.")}
-      </div>
+      </Alert>
     );
   }
 
   const alt = image.alt || image.name;
   return (
     <div className="min-w-0 px-4 pb-3 pt-3">
-      <button
+      <Button
+        fullWidth
+        iconOnly
+        label={t("Open {p0} full screen", { p0: image.name })}
+        variant="item"
         type="button"
         aria-label={t("Open {p0} full screen", { p0: image.name })}
         title={t("Open {p0} full screen", { p0: image.name })}
         onClick={() => setOpen(true)}
-        className="block max-w-full cursor-zoom-in overflow-hidden rounded-xl border border-content/10 bg-content/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+        className="block max-w-full"
       >
         <img
           src={state.url}
@@ -78,8 +84,8 @@ export function GeneratedImage({ image }: { image: GeneratedImageMeta }) {
           draggable={false}
           className="max-h-[min(70vh,640px)] max-w-full object-contain"
         />
-      </button>
-      <div className="mt-1 flex min-w-0 items-center gap-2 text-[11px] text-content/45">
+      </Button>
+      <div className="mt-1 flex min-w-0 items-center gap-2 text-[11px] text-(--ui-text-secondary)">
         <span className="truncate">{image.name}</span>
         <span>{formatFileSize(state.size)}</span>
       </div>

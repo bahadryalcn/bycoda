@@ -842,6 +842,46 @@ it("opens transcript files and diffs through the shared remote tabs", async () =
   expect(onOpenDiff).toHaveBeenCalledWith("remote://env/home/me/repo/src/app.ts", undefined);
 });
 
+it("loads an existing conversation through a host-verified legacy project alias", async () => {
+  dispatch({
+    type: "create",
+    commandId: "create-alias",
+    projectId: "project",
+    harness: "codex",
+    model: gpt.id,
+    runtimeMode: "supervised",
+  });
+  host = {
+    ...host!,
+    projectId: "canonical-project",
+    session: {
+      ...host!.session,
+      blocks: [{ id: "old", role: "assistant", text: "Conversation through alias" }],
+    },
+  };
+  rememberRemoteSession("shell", "host-session");
+  const original = vi.mocked(invoke).getMockImplementation()!;
+  vi.mocked(invoke).mockImplementation(async (command, input) => {
+    const call = input as { method?: string } | undefined;
+    if (command === "remote_request" && call?.method === "projects.list")
+      return [
+        { id: "project", cwd: "/home/me/repo" },
+        { id: "canonical-project", cwd: "/home/me/repo/" },
+      ];
+    if (command === "remote_request" && call?.method === "projects.open")
+      return { id: "canonical-project", cwd: "/home/me/repo" };
+    return original(command, input);
+  });
+  await render();
+  expect(container.textContent).toContain("Conversation through alias");
+  expect(container.textContent).not.toContain("This session belongs to a different host project");
+  expect(container.textContent).not.toContain("Loading conversation");
+  await send("Continue here");
+  expect(
+    commands.some((command) => command.type === "send" && command.sessionId === "host-session"),
+  ).toBe(true);
+});
+
 it("opens a host conversation in an already mounted empty tab", async () => {
   await render();
   dispatch({

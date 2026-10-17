@@ -224,6 +224,34 @@ it("sends the current unsaved note as a composer card", async () => {
   }
 });
 
+it("confirms copying the current draft only after clipboard success and permits retry after rejection", async () => {
+  await render();
+  await input(body(), "Current clipboard draft");
+  let finish!: () => void;
+  const pending = new Promise<void>((resolve) => {
+    finish = resolve;
+  });
+  const write = vi
+    .spyOn(navigator.clipboard, "writeText")
+    .mockRejectedValueOnce(new Error("Clipboard unavailable"))
+    .mockImplementationOnce(() => pending);
+  const copyButton = () => container.querySelector<HTMLButtonElement>('[data-id="copy"]')!;
+  try {
+    await click("Copy note");
+    expect(copyButton().dataset.state).toBe("idle");
+    await click("Copy note");
+    await click("Copy note");
+    expect(write).toHaveBeenCalledTimes(2);
+    expect(write).toHaveBeenLastCalledWith("Current clipboard draft");
+    expect(copyButton().getAttribute("aria-busy")).toBe("true");
+    expect(copyButton().dataset.state).toBe("idle");
+    await act(async () => finish());
+    expect(copyButton().dataset.state).toBe("done");
+  } finally {
+    write.mockRestore();
+  }
+});
+
 it("opens the dropdown without waiting for a pending save or fetching the list again", async () => {
   await render();
   let finish!: (note: Note) => void;

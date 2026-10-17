@@ -1,3 +1,6 @@
+import { Progress } from "../../shared/ui/Progress";
+import { EmptyState } from "../../shared/ui/EmptyState";
+import { TextField } from "../../shared/ui/TextField";
 import { useDismissPopover } from "../../shared/hooks/useDismissPopover";
 import { t, useLocale, getLocale } from "../../shared/i18n";
 import { ProjectMascot } from "../../features/projects/ui/ProjectMascot";
@@ -46,7 +49,6 @@ import {
 } from "../../features/providers/model/accountUsage";
 import {
   AccountStatusLabel,
-  barClass,
   meterWindows,
   UsageMeter,
 } from "../../features/providers/ui/ProviderAccountUsage";
@@ -225,10 +227,13 @@ export function UsageProviderChip({
 
   return (
     <>
-      <button
+      <Button
+        variant="ghost"
+        motion="none"
         ref={trigger}
         type="button"
-        className="-mx-1 inline-flex h-5 min-w-0 shrink-0 items-center gap-1.5 whitespace-nowrap rounded px-1 text-content/55 motion-safe:transition-[background-color,color,transform] duration-150 ease-out hover:bg-content/10 hover:text-content focus-visible:outline-2 focus-visible:outline-accent active:scale-[0.97]"
+        size="sm"
+        className="min-w-0 shrink-0 gap-1.5 whitespace-nowrap"
         aria-label={t("{p0} usage details", { p0: providerLabel })}
         aria-expanded={open}
         aria-haspopup="dialog"
@@ -239,26 +244,28 @@ export function UsageProviderChip({
         }
         onClick={() => setOpen((value) => !value)}
       >
-        <HarnessIcon harness={iconHarness} className="size-3 shrink-0" />
+        <HarnessIcon harness={iconHarness} className="size-3.5 shrink-0" />
         {accounts.length > 1 && activeAccount ? (
           <span className="inline-flex min-w-0 items-center gap-1">
             <AccountColorDot account={activeAccount} className="size-1.5" />
-            <span className="max-w-24 truncate text-content/45">{activeAccount.label}</span>
+            <span className="max-w-24 truncate text-(--ui-text-secondary)">
+              {activeAccount.label}
+            </span>
           </span>
         ) : null}
         {loading ? (
-          <span className="animate-pulse text-content/35">···</span>
+          <span className="animate-pulse text-(--ui-text-secondary)">···</span>
         ) : disconnected ? (
-          <span className="text-content/35">{t("not connected")}</span>
+          <span className="text-(--ui-text-secondary)">{t("not connected")}</span>
         ) : windows.length === 0 ? (
-          <span className="text-content/35">{emptyUsageLabel(limits)}</span>
+          <span className="text-(--ui-text-secondary)">{emptyUsageLabel(limits)}</span>
         ) : (
           <>
             {tightest ? <MiniBar usedPct={tightest.usedPercent} /> : null}
             <span className="flex min-w-0 items-center gap-1 tabular-nums">
               {windows.map((entry, index) => (
                 <span key={entry.key} className="inline-flex items-center gap-1">
-                  {index > 0 ? <span className="text-content/25">·</span> : null}
+                  {index > 0 ? <span className="text-(--ui-text-secondary)">·</span> : null}
                   <span>
                     {formatUsagePercent(
                       showRemaining
@@ -272,7 +279,7 @@ export function UsageProviderChip({
             </span>
           </>
         )}
-      </button>
+      </Button>
       {open ? (
         <Popover
           anchor={trigger}
@@ -382,9 +389,11 @@ export function UsageProviderChip({
                   {canManageAccounts ? (
                     <div className="pointer-events-none relative mt-1 -ml-1 inline-flex max-w-full items-center gap-1 rounded px-1 py-0.5 text-[10px] text-content/55">
                       {/* Keep account switching separate from email revelation. */}
-                      <button
+                      <Button
+                        variant="ghost"
+                        motion="none"
                         type="button"
-                        className="pointer-events-auto absolute inset-0 rounded hover:bg-content/10 focus-visible:outline-2 focus-visible:outline-accent"
+                        className="pointer-events-auto absolute inset-0"
                         aria-label={t("Switch {p0} account", { p0: providerLabel })}
                         onClick={() => setAccountView("accounts")}
                       />
@@ -489,9 +498,11 @@ function AccountSwitchRow({
   useLocale();
   return (
     <div className="px-2.5 pt-2.5">
-      <button
+      <Button
+        variant="ghost"
+        motion="none"
         type="button"
-        className="flex h-8 w-full items-center gap-2 rounded-lg bg-content/[0.045] px-2.5 text-left text-[11px] ring-1 ring-inset ring-content/[0.06] hover:bg-content/[0.08]"
+        className="flex w-full items-center gap-2"
         aria-label={t("Switch account from {p0}", { p0: accountLabel })}
         onClick={onClick}
       >
@@ -499,7 +510,7 @@ function AccountSwitchRow({
         <span className="min-w-0 flex-1 truncate">{accountLabel}</span>
         <span className="text-[10px] text-content/40">{t("Switch account")}</span>
         <ChevronRight className="size-3 shrink-0 text-content/35" strokeWidth={1.75} aria-hidden />
-      </button>
+      </Button>
     </div>
   );
 }
@@ -532,14 +543,18 @@ function ProviderAccountPicker({
   return (
     <div>
       <div className="flex h-7 items-center gap-1">
-        <button
+        <Button
+          iconOnly
+          label={t("Back to usage")}
+          variant="ghost"
+          motion="none"
           type="button"
-          className="grid size-6 place-items-center rounded-md text-content/45 hover:bg-content/10 hover:text-content"
+          className="grid place-items-center"
           aria-label={t("Back to usage")}
           onClick={onBack}
         >
           <ArrowLeft className="size-3.5" strokeWidth={1.75} aria-hidden />
-        </button>
+        </Button>
         <h2 className="text-[13px] font-medium">
           {providerLabel}
           {t(" accounts")}
@@ -569,12 +584,14 @@ function ProviderAccountPicker({
               }`}
             >
               {/* A sibling target keeps the email button out of the selection button. */}
-              <button
+              <Button
+                variant="ghost"
+                motion="none"
                 type="button"
                 aria-pressed={selected}
                 aria-label={account.label}
                 aria-describedby={`${statusId}-${account.id}`}
-                className="pointer-events-auto absolute inset-0 rounded-lg hover:bg-content/[0.04] focus-visible:outline-2 focus-visible:outline-accent"
+                className="pointer-events-auto absolute inset-0"
                 onClick={() => onSelect(account.id)}
               />
               <span className="min-w-0 flex-1 py-0.5">
@@ -622,24 +639,28 @@ function ProviderAccountPicker({
           );
         })}
       </div>
-      <button
+      <Button
+        variant="ghost"
+        motion="none"
         type="button"
-        className="mt-2 flex h-8 w-full items-center gap-2 rounded-lg px-2.5 text-left text-[11px] text-content/55 hover:bg-content/[0.07] hover:text-content"
+        className="mt-2 flex w-full items-center gap-2"
         onClick={onAdd}
       >
         <Plus className="size-3.5" strokeWidth={1.75} aria-hidden />
         {t("Add account")}
-      </button>
+      </Button>
       {onManage ? (
-        <button
+        <Button
+          variant="ghost"
+          motion="none"
           type="button"
-          className="mt-0.5 flex h-8 w-full items-center gap-2 rounded-lg px-2.5 text-left text-[11px] text-content/45 hover:bg-content/[0.07] hover:text-content"
+          className="mt-0.5 flex w-full items-center gap-2"
           onClick={() => {
             onManage();
           }}
         >
           {t("Manage accounts…")}
-        </button>
+        </Button>
       ) : null}
     </div>
   );
@@ -672,13 +693,9 @@ function SwitchSuggestion({
           <AccountStatusLabel status={accountStatus(limits, now)} className="text-[10px]" />
         </p>
       </div>
-      <button
-        type="button"
-        className="h-7 shrink-0 rounded-md bg-content px-2.5 text-[11px] font-medium text-background-base motion-safe:transition-transform duration-150 hover:bg-content/85 active:scale-[0.97]"
-        onClick={onSwitch}
-      >
+      <Button variant="ghost" motion="none" type="button" className="shrink-0" onClick={onSwitch}>
         {t("Switch account")}
-      </button>
+      </Button>
     </section>
   );
 }
@@ -716,15 +733,19 @@ function AddProviderAccount({
   return (
     <form onSubmit={(event) => void submit(event)}>
       <div className="flex h-7 items-center gap-1">
-        <button
+        <Button
+          iconOnly
+          label={t("Back to accounts")}
+          variant="ghost"
+          motion="none"
           type="button"
-          className="grid size-6 place-items-center rounded-md text-content/45 hover:bg-content/10 hover:text-content disabled:opacity-40"
+          className="grid place-items-center"
           aria-label={t("Back to accounts")}
           disabled={running}
           onClick={onBack}
         >
           <ArrowLeft className="size-3.5" strokeWidth={1.75} aria-hidden />
-        </button>
+        </Button>
         <h2 className="text-[13px] font-medium">
           {t("Add ")}
           {providerLabel}
@@ -736,25 +757,30 @@ function AddProviderAccount({
       </p>
       <label className="mt-3 block text-[10px] font-medium text-content/55">
         {t("Account name")}
-        <input
+        <TextField
+          fieldClassName="min-w-0 flex-1"
+          hideLabel
+          label={t("Account name")}
           autoFocus
           type="text"
           maxLength={48}
           value={label}
           disabled={running}
           placeholder={t("Work or Personal")}
-          className="mt-1.5 h-8 w-full rounded-lg border border-content/10 bg-content/[0.04] px-2.5 text-[11px] text-content outline-none placeholder:text-content/25 focus:border-accent/45 disabled:opacity-55"
+          className="mt-1.5 w-full"
           onChange={(event) => setLabel(event.target.value)}
         />
       </label>
-      <button
+      <Button
+        variant="ghost"
+        motion="none"
         type="submit"
-        className="mt-3 inline-flex h-8 w-full items-center justify-center gap-1.5 rounded-lg bg-content px-3 text-[11px] font-medium text-background-base hover:bg-content/85 disabled:cursor-default disabled:opacity-45"
+        className="mt-3 inline-flex w-full items-center justify-center gap-1.5"
         disabled={running || !label.trim()}
       >
         {running ? <RefreshCw className="size-3.5 motion-safe:animate-spin" aria-hidden /> : null}
         {running ? t("Waiting for browser…") : t("Sign in and add account")}
-      </button>
+      </Button>
       {error ? (
         <p className="mt-2 text-[10px] leading-4 text-danger" role="status">
           {error}
@@ -802,19 +828,13 @@ function UsageWindowCard({
           {formatUsagePercent(shown)} {showRemaining ? t("remaining") : t("used")}
         </span>
       </div>
-      <div
-        className="mt-2 h-1.5 overflow-hidden rounded-full bg-content/10"
-        role="progressbar"
+      <Progress
+        compact
+        className="mt-2"
         aria-label={`${title} ${showRemaining ? "remaining" : "used"}`}
-        aria-valuemin={0}
-        aria-valuemax={100}
-        aria-valuenow={Math.round(shown)}
-      >
-        <span
-          className={`block h-full rounded-full ${barClass(pct)}`}
-          style={{ width: `${shown}%` }}
-        />
-      </div>
+        value={Math.round(shown)}
+        tone={pct >= 90 ? "danger" : pct >= 80 ? "warning" : "neutral"}
+      />
       <div className="mt-1.5 flex items-center justify-between gap-3 text-[10px] leading-4 text-content/40">
         <span className="tabular-nums">
           {formatUsagePercent(showRemaining ? pct : remaining)}{" "}
@@ -1009,34 +1029,28 @@ function BankedResetRow({
             {action === "error" ? error : resetOutcomeLabel(action)}
           </span>
         ) : canUse && action !== "confirming" ? (
-          <button
+          <Button
+            variant="ghost"
+            motion="none"
             type="button"
-            className="h-6 shrink-0 rounded-md bg-content/[0.07] px-2.5 text-[10px] font-medium text-content/70 ring-1 ring-inset ring-content/[0.08] motion-safe:transition-[background-color,color,transform] duration-150 ease-out hover:bg-content/[0.11] hover:text-content active:scale-[0.97] disabled:pointer-events-none disabled:opacity-35"
+            className="shrink-0 disabled:pointer-events-none"
             disabled={disabled}
             onClick={onConfirm}
           >
             {t("Use reset")}
-          </button>
+          </Button>
         ) : null}
       </div>
       {action === "confirming" ? (
         <div className="mt-2 flex items-center justify-between gap-2 border-t border-content/[0.07] pt-2">
           <p className="text-[10px] leading-4 text-content/50">{t("Spend this reset now?")}</p>
           <div className="flex shrink-0 gap-1">
-            <button
-              type="button"
-              className="h-6 rounded-md px-2 text-[10px] text-content/50 hover:bg-content/10 hover:text-content"
-              onClick={onCancel}
-            >
+            <Button variant="ghost" motion="none" type="button" className="" onClick={onCancel}>
               {t("Cancel")}
-            </button>
-            <button
-              type="button"
-              className="h-6 rounded-md bg-content px-2.5 text-[10px] font-medium text-background-base motion-safe:transition-transform duration-150 ease-out active:scale-[0.97]"
-              onClick={onUse}
-            >
+            </Button>
+            <Button variant="ghost" motion="none" type="button" className="" onClick={onUse}>
               {t("Confirm")}
-            </button>
+            </Button>
           </div>
         </div>
       ) : null}
@@ -1047,20 +1061,16 @@ function BankedResetRow({
 function EmptyUsageState({ limits, loading }: { limits: ProviderRateLimits; loading: boolean }) {
   useLocale();
   return (
-    <div className="rounded-lg bg-content/[0.04] px-3 py-4 text-center ring-1 ring-inset ring-content/[0.06]">
-      <p className="text-[11px] font-medium text-content/65">
-        {loading
+    <EmptyState
+      title={
+        loading
           ? t("Loading usage…")
           : limits.status === "unavailable"
             ? t("Not connected")
-            : t("Usage unavailable")}
-      </p>
-      {limits.error ? (
-        <p className="mx-auto mt-1 max-w-[15rem] text-[10px] leading-4 text-content/40">
-          {limits.error}
-        </p>
-      ) : null}
-    </div>
+            : t("Usage unavailable")
+      }
+      description={limits.error ?? ""}
+    />
   );
 }
 
@@ -1096,15 +1106,15 @@ function emptyUsageLabel(limits: ProviderRateLimits): string {
 }
 
 function MiniBar({ usedPct }: { usedPct: number }) {
-  useLocale();
   const showRemaining = useShowRemainingUsage();
   const pct = clampUsedPercent(usedPct);
   return (
-    <span className="h-1 w-8 shrink-0 overflow-hidden rounded-full bg-content/10" aria-hidden>
-      <span
-        className={`block h-full rounded-full ${barClass(pct)}`}
-        style={{ width: `${showRemaining ? 100 - pct : pct}%` }}
-      />
-    </span>
+    <Progress
+      compact
+      aria-hidden="true"
+      className="w-8 shrink-0"
+      value={showRemaining ? 100 - pct : pct}
+      tone={pct >= 90 ? "danger" : pct >= 80 ? "warning" : "neutral"}
+    />
   );
 }

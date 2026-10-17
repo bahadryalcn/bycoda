@@ -122,6 +122,21 @@ function type(label: string, value: string) {
 }
 
 describe("project folder browser", () => {
+  it("filters growing folder lists without losing selected paths and opens the filtered keyboard target", async () => {
+    await render(true);
+    const selected = container.querySelector<HTMLInputElement>('[aria-label="Select Projects"]')!;
+    await act(async () => selected.click());
+    type("Search folders", "note");
+    expect(container.querySelectorAll('[role="option"]')).toHaveLength(1);
+    expect(container.querySelector('[role="option"]')?.textContent).toContain("Notes");
+    await key("Enter");
+    expect(fs.listDir).toHaveBeenLastCalledWith("C:/Users/me/Notes");
+    expect(container.querySelector<HTMLInputElement>('[aria-label="Search folders"]')?.value).toBe(
+      "",
+    );
+    await click("Add (1)");
+    expect(onPick).toHaveBeenCalledWith(["C:/Users/me/Projects"]);
+  });
   it("lists folders including ignored ones, navigates with keys and adds the current directory", async () => {
     await render();
     expect(container.querySelectorAll('[role="option"]')).toHaveLength(2);

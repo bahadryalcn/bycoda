@@ -1,3 +1,4 @@
+import { Button } from "../../shared/ui/Button";
 import { WorkspaceFeatureGate } from "../../features/settings/ui/WorkspaceFeatureGate";
 import { t, useLocale } from "../../shared/i18n";
 import {
@@ -352,7 +353,7 @@ function TitleTabItem({
         sortable.setItemRef(tab.id, el);
         itemRef?.(el);
       }}
-      className="reorder-item tab-motion group @container relative flex h-full cursor-default touch-none items-center self-stretch min-w-0 w-full"
+      className={`reorder-item tab-motion group @container relative flex h-full cursor-default touch-none items-center self-stretch min-w-0 w-full ${closable ? "pr-[var(--ui-control-height-compact)]" : ""}`}
       data-tauri-drag-region="false"
       data-tab-draggable={canDrag || undefined}
       onDragStart={(event) => event.preventDefault()}
@@ -378,7 +379,10 @@ function TitleTabItem({
         if (canDrag) sortable.onItemPointerDown(tab.id, event);
       }}
     >
-      <button
+      <Button
+        selected={active}
+        variant="item"
+        motion="none"
         type="button"
         title={accessibleTooltip}
         aria-label={accessibleTooltip}
@@ -390,13 +394,7 @@ function TitleTabItem({
         onDoubleClick={() => {
           if (tab.previewFileId) onPinFile?.(tab.previewFileId);
         }}
-        className={`relative flex h-7.5 min-w-0 flex-1 cursor-default items-center gap-1.5 self-center rounded-md px-2 text-left ${
-          closable ? "pr-7" : "pr-2.5"
-        } ${
-          active
-            ? "bg-selection text-content"
-            : "text-content/50 hover:bg-content/5 hover:text-content"
-        }`}
+        className="relative min-w-0 flex-1 self-center"
       >
         {tab.harnesses.length > 0 ? (
           <TabHarnesses
@@ -458,9 +456,13 @@ function TitleTabItem({
             </TabLabel>
           ) : null}
         </span>
-      </button>
+      </Button>
       {closable ? (
-        <button
+        <Button
+          iconOnly
+          label={t("Close {p0}", { p0: headline })}
+          variant="ghost"
+          motion="none"
           type="button"
           title={t("Close Tab")}
           aria-label={t("Close {p0}", { p0: headline })}
@@ -471,10 +473,10 @@ function TitleTabItem({
             e.stopPropagation();
             onClose(tab.id);
           }}
-          className="absolute right-1 top-1/2 grid size-5 -translate-y-1/2 place-items-center rounded text-content/50 opacity-0 hover:bg-content/10 hover:text-content group-hover:opacity-100"
+          className="absolute right-0 top-1/2 -translate-y-1/2 opacity-0 transition-opacity group-hover:opacity-100 group-has-[:focus-visible]:opacity-100"
         >
           <X className="size-3" strokeWidth={1.75} />
-        </button>
+        </Button>
       ) : null}
     </div>
   );
@@ -485,19 +487,21 @@ function TabStripChevron({ side, onClick }: { side: "left" | "right"; onClick: (
   const label = side === "left" ? "Scroll tabs left" : "Scroll tabs right";
   const Icon = side === "left" ? ChevronLeft : ChevronRight;
   return (
-    <button
+    <Button
+      iconOnly
+      label={label}
+      variant="ghost"
+      motion="none"
       type="button"
       title={label}
       aria-label={label}
       data-tauri-drag-region="false"
       onPointerDown={(event) => event.stopPropagation()}
       onClick={onClick}
-      className={`absolute top-1/2 z-40 grid size-6.5 -translate-y-1/2 place-items-center rounded-md bg-content/10 backdrop-blur-xl text-content/70 hover:bg-content/15 hover:text-content ${
-        side === "left" ? "left-1" : "right-1"
-      }`}
+      className={`absolute top-1/2 z-40 -translate-y-1/2 ${side === "left" ? "left-1" : "right-1"}`}
     >
       <Icon className="size-3.5" strokeWidth={1.75} />
-    </button>
+    </Button>
   );
 }
 
@@ -520,7 +524,11 @@ export function IconButton({
 }) {
   useLocale();
   return (
-    <button
+    <Button
+      iconOnly
+      label={label}
+      variant="ghost"
+      motion="none"
       type="button"
       title={label}
       aria-label={label}
@@ -555,18 +563,9 @@ export function IconButton({
             }
           : undefined
       }
-      className={`grid size-6.5 place-items-center rounded-md ${
-        disabled
-          ? "text-content/25"
-          : accent
-            ? "text-accent hover:bg-content/10"
-            : active
-              ? "text-content hover:bg-content/10"
-              : "text-content/50 hover:bg-content/10 hover:text-content"
-      }`}
     >
       {children}
-    </button>
+    </Button>
   );
 }
 
@@ -750,142 +749,139 @@ function TitleBarComponent({
   const paneDropArmed = useRef(false);
   const nativeTabDrag = useRef<ReturnType<typeof beginWindowTabDrag> | undefined>(undefined);
   useEffect(() => () => nativeTabDrag.current?.finish(), []);
-  const externalTabDrop = useMemo<ReorderExternalDrop<string> | undefined>(
-    () => {
-      // A sideways reorder may sag below the strip. Require a deliberate pull
-      // before targeting panes, and disarm when the pointer returns to the tabs.
-      const pulledBelowTabs = (event: PointerEvent) => {
-        const strip = tabStripRef.current;
-        if (!strip) return false;
-        const bottom = strip.getBoundingClientRect().bottom;
-        if (event.clientY <= bottom) paneDropArmed.current = false;
-        else if (event.clientY >= bottom + 32) paneDropArmed.current = true;
-        return paneDropArmed.current;
-      };
-      return onPlaceOnPane || onMoveToNewWindow
-        ? {
-            onMove: (tabId, event) => {
-              if (onMoveToNewWindow && popOutTab(tabId)) {
-                const source = tabs.find((tab) => tab.id === tabId);
-                nativeTabDrag.current ??= beginWindowTabDrag(
-                  source?.fileDragId ? `file:${source.fileDragId}` : tabId,
-                  source?.paneIds,
-                );
-                nativeTabDrag.current.move(event);
-              }
-              if (
-                onMoveToNewWindow &&
-                popOutTab(tabId) &&
-                isPointerOutsideWindow(
-                  event.clientX,
-                  event.clientY,
-                  window.innerWidth,
-                  window.innerHeight,
-                )
-              ) {
-                setDropFeedback(
-                  "window",
-                  event,
-                  tabs.find((tab) => tab.id === tabId)?.busyHarnesses.length
-                    ? "Move after response finishes"
-                    : undefined,
-                );
-                setExternalPaneDrop(null);
-                return true;
-              }
-              const overStrip = document
-                .elementFromPoint(event.clientX, event.clientY)
-                ?.closest("[data-title-tab-strip]");
-              setDropFeedback(
-                overStrip ? "move" : "blocked",
-                event,
-                overStrip ? "Release to reorder tabs" : undefined,
+  const externalTabDrop = useMemo<ReorderExternalDrop<string> | undefined>(() => {
+    // A sideways reorder may sag below the strip. Require a deliberate pull
+    // before targeting panes, and disarm when the pointer returns to the tabs.
+    const pulledBelowTabs = (event: PointerEvent) => {
+      const strip = tabStripRef.current;
+      if (!strip) return false;
+      const bottom = strip.getBoundingClientRect().bottom;
+      if (event.clientY <= bottom) paneDropArmed.current = false;
+      else if (event.clientY >= bottom + 32) paneDropArmed.current = true;
+      return paneDropArmed.current;
+    };
+    return onPlaceOnPane || onMoveToNewWindow
+      ? {
+          onMove: (tabId, event) => {
+            if (onMoveToNewWindow && popOutTab(tabId)) {
+              const source = tabs.find((tab) => tab.id === tabId);
+              nativeTabDrag.current ??= beginWindowTabDrag(
+                source?.fileDragId ? `file:${source.fileDragId}` : tabId,
+                source?.paneIds,
               );
-              if (!onPlaceOnPane) {
-                setExternalPaneDrop(null);
-                return !overStrip;
-              }
-              if (!pulledBelowTabs(event)) {
-                setExternalPaneDrop(null);
-                setDropFeedback("move", event, "Release to reorder tabs");
-                return false;
-              }
-              const over = paneDropFromPoint(event.clientX, event.clientY);
-              if (
-                over &&
-                tabId === activeId &&
-                tabs.find((tab) => tab.id === tabId)?.focusedPaneId === over.id &&
-                over.edge === "center"
-              ) {
-                setExternalPaneDrop(null);
-                return true;
-              }
-              setExternalPaneDrop({
-                fromId: tabId,
-                overId: over?.id ?? null,
-                edge: over?.edge ?? "left",
-                tabPosition: over?.tabPosition,
-                invalid: over?.invalid,
-              });
-              if (over && !over.invalid)
-                setDropFeedback(
-                  "move",
-                  event,
-                  tabId === activeId &&
-                    tabs.find((tab) => tab.id === tabId)?.focusedPaneId === over.id
-                    ? `Split ${over.edge} with a new session`
-                    : over.edge === "center"
-                      ? "Add as pane tab"
-                      : `Place ${over.edge}`,
-                );
-              return over != null || !overStrip;
-            },
-            onDrop: (tabId, event) => {
-              if (
-                onMoveToNewWindow &&
-                popOutTab(tabId) &&
-                isPointerOutsideWindow(
-                  event.clientX,
-                  event.clientY,
-                  window.innerWidth,
-                  window.innerHeight,
-                )
-              ) {
-                onMoveToNewWindow(tabId, {
-                  position: pointerWindowMovePosition(event),
-                });
-                return true;
-              }
-              const overStrip = document
-                .elementFromPoint(event.clientX, event.clientY)
-                ?.closest("[data-title-tab-strip]");
-              if (!onPlaceOnPane) return !overStrip;
-              if (!pulledBelowTabs(event)) return false;
-              const over = paneDropFromPoint(event.clientX, event.clientY);
-              if (!over) return !overStrip;
-              if (
-                tabId === activeId &&
-                tabs.find((tab) => tab.id === tabId)?.focusedPaneId === over.id &&
-                over.edge === "center"
+              nativeTabDrag.current.move(event);
+            }
+            if (
+              onMoveToNewWindow &&
+              popOutTab(tabId) &&
+              isPointerOutsideWindow(
+                event.clientX,
+                event.clientY,
+                window.innerWidth,
+                window.innerHeight,
               )
-                return true;
-              if (!over.invalid) {
-                if (over.tabPosition) onPlaceOnPane(tabId, over.id, over.edge, over.tabPosition);
-                else onPlaceOnPane(tabId, over.id, over.edge);
-              }
-              return true;
-            },
-            onEnd: () => {
-              paneDropArmed.current = false;
-              nativeTabDrag.current?.finish();
-              nativeTabDrag.current = undefined;
+            ) {
+              setDropFeedback(
+                "window",
+                event,
+                tabs.find((tab) => tab.id === tabId)?.busyHarnesses.length
+                  ? "Move after response finishes"
+                  : undefined,
+              );
               setExternalPaneDrop(null);
-            },
-          }
-        : undefined;
-    },
-    [activeId, tabs, onPlaceOnPane, onMoveToNewWindow, popOutTab],
-  );
+              return true;
+            }
+            const overStrip = document
+              .elementFromPoint(event.clientX, event.clientY)
+              ?.closest("[data-title-tab-strip]");
+            setDropFeedback(
+              overStrip ? "move" : "blocked",
+              event,
+              overStrip ? "Release to reorder tabs" : undefined,
+            );
+            if (!onPlaceOnPane) {
+              setExternalPaneDrop(null);
+              return !overStrip;
+            }
+            if (!pulledBelowTabs(event)) {
+              setExternalPaneDrop(null);
+              setDropFeedback("move", event, "Release to reorder tabs");
+              return false;
+            }
+            const over = paneDropFromPoint(event.clientX, event.clientY);
+            if (
+              over &&
+              tabId === activeId &&
+              tabs.find((tab) => tab.id === tabId)?.focusedPaneId === over.id &&
+              over.edge === "center"
+            ) {
+              setExternalPaneDrop(null);
+              return true;
+            }
+            setExternalPaneDrop({
+              fromId: tabId,
+              overId: over?.id ?? null,
+              edge: over?.edge ?? "left",
+              tabPosition: over?.tabPosition,
+              invalid: over?.invalid,
+            });
+            if (over && !over.invalid)
+              setDropFeedback(
+                "move",
+                event,
+                tabId === activeId &&
+                  tabs.find((tab) => tab.id === tabId)?.focusedPaneId === over.id
+                  ? `Split ${over.edge} with a new session`
+                  : over.edge === "center"
+                    ? "Add as pane tab"
+                    : `Place ${over.edge}`,
+              );
+            return over != null || !overStrip;
+          },
+          onDrop: (tabId, event) => {
+            if (
+              onMoveToNewWindow &&
+              popOutTab(tabId) &&
+              isPointerOutsideWindow(
+                event.clientX,
+                event.clientY,
+                window.innerWidth,
+                window.innerHeight,
+              )
+            ) {
+              onMoveToNewWindow(tabId, {
+                position: pointerWindowMovePosition(event),
+              });
+              return true;
+            }
+            const overStrip = document
+              .elementFromPoint(event.clientX, event.clientY)
+              ?.closest("[data-title-tab-strip]");
+            if (!onPlaceOnPane) return !overStrip;
+            if (!pulledBelowTabs(event)) return false;
+            const over = paneDropFromPoint(event.clientX, event.clientY);
+            if (!over) return !overStrip;
+            if (
+              tabId === activeId &&
+              tabs.find((tab) => tab.id === tabId)?.focusedPaneId === over.id &&
+              over.edge === "center"
+            )
+              return true;
+            if (!over.invalid) {
+              if (over.tabPosition) onPlaceOnPane(tabId, over.id, over.edge, over.tabPosition);
+              else onPlaceOnPane(tabId, over.id, over.edge);
+            }
+            return true;
+          },
+          onEnd: () => {
+            paneDropArmed.current = false;
+            nativeTabDrag.current?.finish();
+            nativeTabDrag.current = undefined;
+            setExternalPaneDrop(null);
+          },
+        }
+      : undefined;
+  }, [activeId, tabs, onPlaceOnPane, onMoveToNewWindow, popOutTab]);
   const sortable = useAnimatedReorder(tabIds, onReorder, "x", externalTabDrop);
   const paneToTabDrop = useExternalTitleTabDrop();
   const lockOverscroll = useLockOverscroll<HTMLDivElement>();
@@ -1148,18 +1144,19 @@ function TitleBarComponent({
     (!sessionSidebarOpen && !projectless);
   const showLayoutControl = Boolean(layout);
   const trailingControls =
-    showCurrentProject ||
-    showTrailingActions ||
-    showLayoutControl ||
-    !IS_MAC ? (
+    showCurrentProject || showTrailingActions || showLayoutControl || !IS_MAC ? (
       <div className="flex h-full shrink-0 items-stretch">
         {showLayoutControl ? (
           <div ref={layoutAnchorRef} className="flex items-center pl-1 pr-1" data-layout-control>
-            <button
+            <Button
+              iconOnly
+              label={t("Layout")}
+              variant="ghost"
+              selected={layoutMenu != null}
+              motion="none"
               type="button"
               aria-label={t("Layout")}
               title={t("Split and arrange panes")}
-              className={`flex size-7 items-center justify-center rounded text-xs ${layoutMenu != null ? "bg-content/10 text-content" : "text-content/60 hover:bg-content/10 hover:text-content"}`}
               onClick={() => {
                 if (layoutMenu) {
                   setLayoutMenu(null);
@@ -1174,7 +1171,7 @@ function TitleBarComponent({
               }}
             >
               <SplitSquare className="size-3.5" strokeWidth={1.75} aria-hidden="true" />
-            </button>
+            </Button>
           </div>
         ) : null}
         {showTrailingActions ? (
@@ -1366,17 +1363,21 @@ function TitleBarComponent({
         </div>
 
         {detached && onReturnToMain ? (
-          <button
+          <Button
+            iconOnly
+            label={t("Return to main window")}
+            variant="ghost"
+            motion="none"
             type="button"
             onClick={onReturnToMain}
-            className="return-to-main my-1 grid size-7 shrink-0 place-items-center rounded text-xs text-content/70 hover:bg-content/10 hover:text-content"
+            className="return-to-main my-1 shrink-0"
             aria-label={t("Return to main window")}
             title={t(
               "Return all sessions to the main window; running responses finish before moving",
             )}
           >
             <AppWindow className="size-4" aria-hidden />
-          </button>
+          </Button>
         ) : null}
         {trailingControls}
       </div>

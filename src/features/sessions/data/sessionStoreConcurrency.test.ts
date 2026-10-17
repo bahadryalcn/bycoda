@@ -41,6 +41,19 @@ afterEach(() => {
 });
 
 describe("session persistence concurrency", () => {
+  it("writes an explicitly cleared empty transcript instead of leaving old history on disk", async () => {
+    const { upsertClearedSession, upsertSession } = await loadStore();
+    const cleared = { ...session("cleared"), busy: false, blocks: [] };
+    mocks.invoke.mockResolvedValue({ ...cleared, createdAt: 1, updatedAt: 2 });
+    expect(await upsertSession(cleared)).toBeNull();
+    expect(mocks.invoke).not.toHaveBeenCalled();
+    await upsertClearedSession(cleared);
+    expect(mocks.invoke).toHaveBeenCalledWith("session_upsert", expect.objectContaining({
+      session: expect.objectContaining({ id: "cleared", blocks: [] }),
+    }));
+    expect(mocks.invoke.mock.calls[0][1].session.providerSessionId).toBeUndefined();
+  });
+
   it("drains worker writes before deleting a lead and strips ownership from later snapshots", async () => {
     const firstWrite = deferred<unknown>();
     const commands: string[] = [];

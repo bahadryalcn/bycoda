@@ -1,3 +1,5 @@
+import { Slider } from "../../../shared/ui/Slider";
+import { Checkbox } from "../../../shared/ui/Checkbox";
 import { t } from "../../../shared/i18n";
 import { type RailBackgrounds, railBackgroundColor } from "../../workspace/model/tabGroups";
 
@@ -13,8 +15,8 @@ export function RailBackgroundControls({
   onChange: (value: RailBackgrounds) => void;
 }) {
   return (
-    <details className="rounded-md border border-content/10 text-xs">
-      <summary className="cursor-pointer px-2 py-1.5 text-content/75">
+    <details className="rounded-md border border-[var(--color-stroke)] text-xs">
+      <summary className="cursor-pointer px-2 py-1.5 text-[var(--color-content)]">
         {t("Background colors")}
       </summary>
       <div className="space-y-2 p-2">
@@ -36,8 +38,7 @@ export function RailBackgroundControls({
             >
               <div className="flex items-center gap-2">
                 <label className="flex flex-1 items-center gap-2">
-                  <input
-                    type="checkbox"
+                  <Checkbox
                     checked={!!current}
                     onChange={(event) =>
                       onChange({
@@ -54,19 +55,20 @@ export function RailBackgroundControls({
                   value={current?.color ?? color}
                   disabled={!current}
                   onChange={(event) => update({ color: event.target.value })}
-                  className="h-6 w-8 cursor-pointer rounded border border-content/15 bg-transparent disabled:opacity-40"
+                  className="h-6 w-8 cursor-pointer rounded border border-[var(--color-stroke)] bg-transparent disabled:opacity-40"
                 />
               </div>
-              <label className="flex items-center gap-2 text-content/65">
+              <label className="flex items-center gap-2 text-[var(--ui-text-muted)]">
                 <span>{t("Opacity")}</span>
-                <input
-                  type="range"
+                <Slider
+                  hideLabel
+                  label={`${label}: ${t("Opacity")}`}
                   min={0}
                   max={100}
                   value={current?.opacity ?? 15}
                   disabled={!current}
-                  onChange={(event) => update({ opacity: Number(event.target.value) })}
-                  className="min-w-0 flex-1 accent-accent"
+                  onValueChange={(next) => update({ opacity: next })}
+                  className="min-w-0 flex-1"
                 />
                 <span className="w-8 text-end">{current?.opacity ?? 15}%</span>
               </label>

@@ -806,7 +806,7 @@ describe("GitChangesPanel action feedback", () => {
     await act(async () => {
       container.querySelector<HTMLButtonElement>('[aria-label="Commit options"]')!.click();
     });
-    const pushItem = [...container.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find(
+    const pushItem = [...document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find(
       (item) => item.textContent?.trim() === "Commit & Push",
     )!;
     await act(async () => pushItem.click());
@@ -962,7 +962,7 @@ describe("GitChangesPanel navigation", () => {
     await typeMessage("Commit draft");
     await click("Commit options");
     await act(async () =>
-      [...container.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')]
+      [...document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')]
         .find((item) => item.textContent?.trim() === "Commit & Push")!
         .click(),
     );
@@ -1227,7 +1227,7 @@ describe("GitChangesPanel loading and publication recovery", () => {
       container.querySelector<HTMLButtonElement>('[aria-label="Commit options"]')!.click(),
     );
     await act(async () =>
-      [...container.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')]
+      [...document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')]
         .find((button) => button.textContent?.trim() === "Commit & Push")!
         .click(),
     );
@@ -1813,4 +1813,22 @@ it("keeps a collapsed repository summary but stops index polls until expanded", 
   } finally {
     vi.useRealTimers();
   }
+});
+it("keeps Amend reachable while the empty primary commit action is disabled, without committing on selection", async () => {
+  const cwd = "/amend-empty-message";
+  vi.mocked(gitDiffIndex).mockResolvedValue(index({ headPushed: false }));
+  await renderPanel(cwd);
+  const main = container.querySelector<HTMLButtonElement>(
+    '[role="group"][aria-label="Commit"] > button',
+  )!;
+  expect(main.disabled).toBe(true);
+  const options = container.querySelector<HTMLButtonElement>('[aria-label="Commit options"]')!;
+  expect(options.disabled).toBe(false);
+  await act(async () => options.click());
+  const amend = document.querySelector<HTMLButtonElement>('[role="menuitemcheckbox"]')!;
+  expect(amend.textContent).toContain("Amend Last Commit");
+  expect(amend.disabled).toBe(false);
+  await act(async () => amend.click());
+  expect(container.querySelector('[role="group"][aria-label="Amend Commit"]')).not.toBeNull();
+  expect(gitCommit).not.toHaveBeenCalled();
 });

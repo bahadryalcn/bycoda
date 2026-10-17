@@ -49,8 +49,7 @@ export function SidebarUpdateFooter({
     let checking = false;
 
     const probe = async () => {
-      if (checking || phaseRef.current === "downloading")
-        return;
+      if (checking || phaseRef.current === "downloading") return;
       checking = true;
       try {
         const currentVersion = await readAppVersion();
@@ -76,7 +75,9 @@ export function SidebarUpdateFooter({
           setSnapshot({ phase: "current", currentVersion });
         } catch {
           if (cancelled) return;
-          setSnapshot((previous) => previous.phase === "available" ? previous : { phase: "idle", currentVersion });
+          setSnapshot((previous) =>
+            previous.phase === "available" ? previous : { phase: "idle", currentVersion },
+          );
         }
       } finally {
         checking = false;
@@ -107,11 +108,15 @@ export function SidebarUpdateFooter({
       {promptOpen && actionable ? (
         <Modal title={t("Update available")} size="sm" onClose={() => setPromptOpen(false)}>
           <div className="flex flex-col gap-3 p-4">
-            <p className="text-sm text-content">v{snapshot.currentVersion} → v{snapshot.availableVersion}</p>
+            <p className="text-sm text-content">
+              v{snapshot.currentVersion} → v{snapshot.availableVersion}
+            </p>
             {notes ? (
               <details className="text-sm text-content">
                 <summary className="cursor-pointer">{t("Release notes")}</summary>
-                <pre className="max-h-48 overflow-y-auto whitespace-pre-wrap break-words font-sans text-sm [margin-block-start:0.5rem]">{notes}</pre>
+                <pre className="max-h-48 overflow-y-auto whitespace-pre-wrap break-words font-sans text-sm [margin-block-start:0.5rem]">
+                  {notes}
+                </pre>
               </details>
             ) : null}
             <div className="flex flex-wrap justify-end gap-2">

@@ -1,7 +1,11 @@
+import { Popover } from "../../../shared/ui/Popover";
+import { TextField } from "../../../shared/ui/TextField";
+import { Button } from "../../../shared/ui/Button";
 import { SearchInput } from "../../../shared/ui/SearchInput";
 import { t, useLocale } from "../../../shared/i18n";
 import {
   CaseSensitive,
+  ListFilter,
   ChevronLeft,
   LoaderCircle,
   Regex,
@@ -64,6 +68,7 @@ function ProjectSearchContent({
 }: Props) {
   useLocale();
   const inputRef = useRef<HTMLInputElement>(null);
+  const [filtersAnchor, setFiltersAnchor] = useState<HTMLButtonElement | null>(null);
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
   const stateKey = `find-in-files:${pathKey(cwd)}`;
@@ -173,80 +178,124 @@ function ProjectSearchContent({
   };
 
   if (!cwd || cwd === "~") {
-    return <p className="px-3 py-2 text-[12px] text-content/50">{t("No project folder")}</p>;
+    return (
+      <p className="px-3 py-2 text-[12px] text-[var(--ui-text-muted)]">{t("No project folder")}</p>
+    );
   }
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       {showHeader ? (
         <div className="flex shrink-0 items-center gap-1 border-b border-stroke px-1.5 py-1">
-          <button
+          <Button
+            variant="ghost"
+            motion="none"
             type="button"
             onClick={onClose}
             title={t("Back to files")}
             aria-label={t("Back to files")}
-            className="grid size-7 shrink-0 place-items-center rounded-md text-content/50 hover:bg-content/10 hover:text-content"
+            className="grid size-7 shrink-0 place-items-center"
           >
             <ChevronLeft className="size-4" strokeWidth={1.75} />
-          </button>
-          <span className="min-w-0 flex-1 truncate text-[12px] text-content/55">
+          </Button>
+          <span className="min-w-0 flex-1 truncate text-[12px] text-[var(--ui-text-muted)]">
             {t("Search in files")}
           </span>
         </div>
       ) : null}
-      <div className="shrink-0 space-y-2 border-b border-stroke p-2">
-        <div className="flex items-center gap-1 rounded-md border border-content/10 bg-content/5 px-2 pr-1">
-          <SearchInput
-            ref={inputRef}
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            onKeyDown={onQueryKeyDown}
-            placeholder={t("Search")}
-            aria-label={t("Search")}
-            spellCheck={false}
-            className="min-w-0 flex-1 bg-transparent py-1.5 text-[12px] text-content outline-none placeholder:text-content/35"
-          />
-          <Toggle
-            label={t("Match case")}
-            active={caseSensitive}
-            onClick={() => setCaseSensitive((value) => !value)}
-          >
-            <CaseSensitive className="size-3.5" strokeWidth={1.75} />
-          </Toggle>
-          <Toggle
-            label={t("Match whole word")}
-            active={wholeWord}
-            onClick={() => setWholeWord((value) => !value)}
-          >
-            <WholeWord className="size-3.5" strokeWidth={1.75} />
-          </Toggle>
-          <Toggle
-            label={t("Use regular expression")}
-            active={regex}
-            onClick={() => setRegex((value) => !value)}
-          >
-            <Regex className="size-3.5" strokeWidth={1.75} />
-          </Toggle>
-        </div>
-        <input
-          value={include}
-          onChange={(event) => setInclude(event.target.value)}
-          placeholder={t("files to include")}
-          aria-label={t("files to include")}
+      <div className="flex shrink-0 items-center gap-1 border-b border-stroke p-2">
+        <SearchInput
+          standalone
+          ref={inputRef}
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          onKeyDown={onQueryKeyDown}
+          placeholder={t("Search")}
+          aria-label={t("Search")}
           spellCheck={false}
-          className="w-full rounded-md border border-content/10 bg-content/5 px-2 py-1.5 text-[11px] text-content outline-none placeholder:text-content/35"
+          containerClassName="min-w-0 flex-1"
         />
-        <input
-          value={exclude}
-          onChange={(event) => setExclude(event.target.value)}
-          placeholder={t("files to exclude")}
-          aria-label={t("files to exclude")}
-          spellCheck={false}
-          className="w-full rounded-md border border-content/10 bg-content/5 px-2 py-1.5 text-[11px] text-content outline-none placeholder:text-content/35"
-        />
+        <Button
+          variant="ghost"
+          iconOnly
+          label={t("Filters")}
+          selected={!!include || !!exclude || caseSensitive || wholeWord || regex}
+          aria-haspopup="dialog"
+          aria-expanded={!!filtersAnchor}
+          onClick={(event) => setFiltersAnchor(filtersAnchor ? null : event.currentTarget)}
+        >
+          <ListFilter className="size-4" />
+        </Button>
       </div>
+      {filtersAnchor ? (
+        <Popover
+          anchor={filtersAnchor}
+          role="dialog"
+          aria-label={t("Filters")}
+          width={280}
+          onDismiss={() => setFiltersAnchor(null)}
+          className="space-y-2 p-2"
+        >
+          <div className="flex items-center gap-1">
+            {" "}
+            <Toggle
+              label={t("Match case")}
+              active={caseSensitive}
+              onClick={() => setCaseSensitive((value) => !value)}
+            >
+              <CaseSensitive className="size-3.5" strokeWidth={1.75} />
+            </Toggle>
+            <Toggle
+              label={t("Match whole word")}
+              active={wholeWord}
+              onClick={() => setWholeWord((value) => !value)}
+            >
+              <WholeWord className="size-3.5" strokeWidth={1.75} />
+            </Toggle>
+            <Toggle
+              label={t("Use regular expression")}
+              active={regex}
+              onClick={() => setRegex((value) => !value)}
+            >
+              <Regex className="size-3.5" strokeWidth={1.75} />
+            </Toggle>
+          </div>
+          <TextField
+            hideLabel
+            label=""
+            value={include}
+            onChange={(event) => setInclude(event.target.value)}
+            placeholder={t("files to include")}
+            aria-label={t("files to include")}
+            spellCheck={false}
+            className="w-full"
+          />
+          <TextField
+            hideLabel
+            label=""
+            value={exclude}
+            onChange={(event) => setExclude(event.target.value)}
+            placeholder={t("files to exclude")}
+            aria-label={t("files to exclude")}
+            spellCheck={false}
+            className="w-full"
+          />
 
-      <div className="flex min-h-8 shrink-0 items-center gap-2 px-3 py-1.5 text-[11px] text-content/45">
+          <Button
+            variant="secondary"
+            onClick={() => {
+              setInclude("");
+              setExclude("");
+              setCaseSensitive(false);
+              setWholeWord(false);
+              setRegex(false);
+            }}
+          >
+            {t("Reset")}
+          </Button>
+        </Popover>
+      ) : null}
+      <div className="flex min-h-8 shrink-0 items-center gap-2 px-3 py-1.5 text-[11px] text-[var(--ui-text-muted)]">
         {loading ? (
           <>
             <LoaderCircle className="size-3 animate-spin" strokeWidth={1.75} />
@@ -281,26 +330,31 @@ function ProjectSearchContent({
             <div className="flex items-center gap-1.5 px-2 py-1.5">
               <FileTypeIcon name={group.name} isDir={false} size={16} />
               <span className="min-w-0 flex-1 truncate text-[12px] text-content">{group.name}</span>
-              <span className="rounded-full bg-accent/20 px-1.5 py-0.5 text-[10px] tabular-nums text-accent">
+              <span className="rounded-full bg-[var(--ui-tone-accent-subtle)] px-1.5 py-0.5 text-[10px] tabular-nums text-accent">
                 {group.matches.length}
               </span>
             </div>
-            <p className="truncate px-2 pb-1 text-[10px] text-content/40" title={group.relative}>
+            <p
+              className="truncate px-2 pb-1 text-[10px] text-[var(--ui-text-muted)]"
+              title={group.relative}
+            >
               {group.relative}
             </p>
             <ul>
               {group.matches.map((match) => (
                 <li key={`${match.path}:${match.line}:${match.column}`}>
-                  <button
+                  <Button
+                    variant="item"
+                    motion="none"
                     type="button"
                     onClick={() => openMatch(match)}
                     onDoubleClick={() => openMatch(match, true)}
-                    className="flex w-full items-start gap-2 px-2 py-1 text-left hover:bg-content/5"
+                    className="flex w-full items-start gap-2 text-left"
                   >
-                    <span className="w-7 shrink-0 pt-px text-right font-mono text-[11px] text-content/35 tabular-nums">
+                    <span className="w-7 shrink-0 pt-px text-right font-mono text-[11px] text-[var(--ui-text-muted)] tabular-nums">
                       {match.line}
                     </span>
-                    <span className="min-w-0 flex-1 truncate font-mono text-[11px] leading-5 text-content/80">
+                    <span className="min-w-0 flex-1 truncate font-mono text-[11px] leading-5 text-[var(--color-content)]">
                       <MatchPreview
                         preview={match.preview.trimEnd()}
                         query={query.trim()}
@@ -308,7 +362,7 @@ function ProjectSearchContent({
                         regex={regex}
                       />
                     </span>
-                  </button>
+                  </Button>
                 </li>
               ))}
             </ul>
@@ -332,20 +386,18 @@ function Toggle({
 }) {
   useLocale();
   return (
-    <button
+    <Button
+      variant="ghost"
+      motion="none"
       type="button"
       title={label}
       aria-label={label}
       aria-pressed={active}
       onClick={onClick}
-      className={`grid size-6 place-items-center rounded-sm ${
-        active
-          ? "bg-selection-hover text-content"
-          : "text-content/40 hover:bg-content/10 hover:text-content/70"
-      }`}
+      className={` grid size-6 place-items-center  ${active ? "" : ""}  `}
     >
       {children}
-    </button>
+    </Button>
   );
 }
 
@@ -390,7 +442,9 @@ function MatchPreview({
       return (
         <>
           {preview.slice(0, start)}
-          <mark className="rounded-sm bg-accent/35 text-content">{preview.slice(start, end)}</mark>
+          <mark className="rounded-sm bg-[var(--ui-tone-accent-subtle)] text-content">
+            {preview.slice(start, end)}
+          </mark>
           {preview.slice(end)}
         </>
       );
@@ -407,7 +461,9 @@ function MatchPreview({
   return (
     <>
       {preview.slice(0, index)}
-      <mark className="rounded-sm bg-accent/35 text-content">{preview.slice(index, end)}</mark>
+      <mark className="rounded-sm bg-[var(--ui-tone-accent-subtle)] text-content">
+        {preview.slice(index, end)}
+      </mark>
       {preview.slice(end)}
     </>
   );

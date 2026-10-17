@@ -1,3 +1,4 @@
+import { Button } from "../../../shared/ui/Button";
 import { t, useLocale } from "../../../shared/i18n/git";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { GitHistoryCommit } from "../../../platform/tauri/fs";
@@ -59,28 +60,32 @@ export function GitGraphHoverCard({
       className="space-y-2 p-3 text-[12px] text-content"
     >
       <p className="font-medium leading-snug break-words">{commit.subject || commit.shortSha}</p>
-      <div className="flex items-center gap-2 text-content/70">
+      <div className="flex items-center gap-2 text-[var(--ui-text-secondary)]">
         <GraphAvatar name={commit.author} size={18} />
         <span className="min-w-0 truncate">{commit.author || t("Unknown author")}</span>
       </div>
-      <p className="text-content/55">
+      <p className="text-[var(--ui-text-secondary)]">
         {formatAbsoluteTime(commit.timestamp)} ({formatRelativeTime(commit.timestamp, Date.now())})
       </p>
       <div className="flex items-center gap-1.5">
-        <code className="font-mono text-[11px] text-content/70">{commit.shortSha}</code>
-        <button
+        <code className="font-mono text-[11px] text-[var(--ui-text-secondary)]">
+          {commit.shortSha}
+        </code>
+        <Button
+          variant="ghost"
+          motion="none"
           type="button"
           title={t("Copy commit ID")}
           aria-label={t("Copy commit ID")}
           onClick={copy}
-          className="grid size-5 place-items-center rounded-md text-content/50 hover:bg-content/8 hover:text-content"
+          className="grid size-5 place-items-center"
         >
           {copied ? (
             <Check className="size-3" strokeWidth={2} />
           ) : (
             <Copy className="size-3" strokeWidth={1.75} />
           )}
-        </button>
+        </Button>
       </div>
       {refs.length > 0 ? (
         <div className="flex flex-wrap gap-1">
@@ -90,7 +95,7 @@ export function GitGraphHoverCard({
         </div>
       ) : null}
       {commit.parents.length > 0 ? (
-        <p className="text-content/55">
+        <p className="text-[var(--ui-text-secondary)]">
           {commit.parents.length > 1 ? t("Parents") : t("Parent")}{" "}
           <code className="font-mono text-[11px]">
             {commit.parents.map((parent) => parent.slice(0, 7)).join(", ")}

@@ -384,7 +384,7 @@ describe("model picker", () => {
     const trigger = container.querySelector<HTMLButtonElement>('button[aria-haspopup="menu"]')!;
     expect(trigger.textContent).toBe("Grok 4.6High");
     expect(trigger.getAttribute("aria-label")).toBe("Grok Build Grok 4.6, effort High");
-    expect(trigger.querySelector(".text-content\\/50")?.textContent).toBe("High");
+    expect(trigger.querySelector("[data-model-effort]")?.textContent).toBe("High");
     expect(trigger.querySelector("svg")).not.toBeNull();
 
     act(() => trigger.click());
@@ -410,7 +410,7 @@ describe("model picker", () => {
     const grokTab = container.querySelector<HTMLButtonElement>(
       '[role="tab"][aria-label="Grok Build"]',
     )!;
-    expect(grokTab.className).toContain("rounded-md");
+    expect(grokTab.className).toContain("bycoda-arc");
     expect(grokTab.className).not.toContain("transition");
     movePointer(grokTab);
     expect(grokTab.getAttribute("aria-selected")).toBe("true");
@@ -426,8 +426,8 @@ describe("model picker", () => {
     const favoriteButton = selectedRow.querySelector<HTMLButtonElement>(
       'button[aria-label="Add to favorites"]',
     )!;
-    expect(favoriteButton.className).toContain("opacity-0");
-    expect(favoriteButton.className).toContain("group-hover:opacity-100");
+    expect(favoriteButton.className).toContain("bycoda-arc");
+
     expect(selectedRow.lastElementChild?.querySelector("svg")).not.toBeNull();
     const unselectedOption = container.querySelector<HTMLButtonElement>(
       '[role="option"][aria-selected="false"]',
@@ -679,7 +679,9 @@ describe("model picker", () => {
     expect(effortTrigger.textContent).toBe("High");
     expect(effortTrigger.querySelector("svg")).not.toBeNull();
     act(() => effortTrigger.click());
-    const effortMenu = container.querySelector<HTMLElement>('[role="menu"][aria-label="Effort"]')!;
+    const effortMenu = container.querySelector<HTMLElement>(
+      'button[role="combobox"][aria-label="Effort: High"]',
+    )!;
     expect(effortMenu).not.toBeNull();
     keyDown(effortMenu, "ArrowUp");
     keyDown(effortMenu, "Enter");
@@ -784,7 +786,7 @@ describe("model picker", () => {
     )!;
     expect(variantPill.textContent).toBe("High");
     act(() => variantPill.click());
-    expect(container.querySelector('[role="menu"][aria-label="Variant"]')).not.toBeNull();
+    expect(container.querySelector('[role="listbox"]')).not.toBeNull();
   });
 
   it.each(["pi", "omp"] as const)("shows an effort icon for %s thinking levels", (harness) => {
@@ -825,7 +827,7 @@ describe("model picker", () => {
       'button[aria-label="Thinking: Extra High"]',
     )!;
     expect(effortPill.textContent).toBe("Extra High");
-    expect(effortPill.querySelectorAll("svg")).toHaveLength(2);
+    expect(effortPill.querySelector("svg")).not.toBeNull();
   });
 
   it("shows a speed icon on the service-tier pill", () => {
@@ -865,10 +867,10 @@ describe("model picker", () => {
       'button[aria-label="Service Tier: Standard"]',
     )!;
     expect(serviceTierPill.textContent).toBe("Standard");
-    expect(serviceTierPill.querySelectorAll("svg")).toHaveLength(2);
+    expect(serviceTierPill.querySelector("svg")).not.toBeNull();
   });
 
-  it("shimmers only Codex max and ultra effort options", () => {
+  it("keeps all consequential effort options in shared selectable rows", () => {
     setHarnessModels("codex", [
       {
         id: "codex:gpt-5.6",
@@ -910,24 +912,13 @@ describe("model picker", () => {
     )!;
     hover(effortRow);
 
-    expect(container.querySelectorAll('[data-effort-tone="max"]')).toHaveLength(1);
-    expect(container.querySelectorAll('[data-effort-tone="ultra"]')).toHaveLength(1);
-    expect(container.querySelector('[data-effort-tone="max"] .codex-effort-tile')).not.toBeNull();
-    expect(container.querySelectorAll('[data-effort-tone="max"] .codex-effort-tile')).toHaveLength(
-      160,
-    );
-    const filledTiles = container.querySelectorAll(
-      '[data-effort-tone="max"] .codex-effort-tile--filled',
-    );
-    expect(filledTiles.length).toBeGreaterThanOrEqual(96);
-    expect(filledTiles.length).toBeLessThanOrEqual(112);
-    const high = [...container.querySelectorAll<HTMLButtonElement>('[role="menuitemradio"]')].find(
-      (button) => button.textContent === "High",
-    )!;
-    expect(high.classList.contains("codex-effort-option")).toBe(false);
+    expect(container.querySelectorAll('[role="menuitemradio"]')).toHaveLength(4);
+    expect(
+      container.querySelector('[role="menuitemradio"][aria-checked="true"]')?.textContent,
+    ).toBe("High");
   });
 
-  it("groups the service tier inside the effort popover", () => {
+  it("keeps service tier independent while preserving effort on a change", () => {
     setHarnessModels("codex", [
       {
         id: "codex:gpt-5.6-sol",
@@ -971,26 +962,16 @@ describe("model picker", () => {
       ),
     );
 
-    expect(container.querySelector('button[aria-label="Service Tier: Standard"]')).toBeNull();
-    const effortPill = container.querySelector<HTMLButtonElement>(
-      'button[aria-label="Reasoning: High"]',
+    const tier = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="Service Tier: Standard"]',
     )!;
-    act(() => effortPill.click());
-
-    const menu = container.querySelector<HTMLElement>(
-      '[role="menu"][aria-label="Reasoning and Service Tier"]',
-    )!;
-    expect(menu.querySelector('[role="separator"]')).not.toBeNull();
-    expect(menu.querySelector('[role="group"][aria-label="Reasoning"]')).not.toBeNull();
-    const serviceTierGroup = menu.querySelector<HTMLElement>(
-      '[role="group"][aria-label="Service Tier"]',
-    )!;
-    expect(serviceTierGroup.textContent).toContain("Standard");
-    expect(serviceTierGroup.textContent).toContain("Fast");
-
-    const fast = [...serviceTierGroup.querySelectorAll("button")].find(
-      (button) => button.textContent === "Fast",
-    )!;
+    expect(tier).not.toBeNull();
+    act(() => tier.click());
+    const fast =
+      container.querySelector<HTMLElement>('[role="option"][data-value="fast"]') ??
+      [...container.querySelectorAll<HTMLElement>('[role="option"]')].find((el) =>
+        el.textContent?.includes("Fast"),
+      )!;
     act(() => fast.click());
     expect(onSettingsChange).toHaveBeenCalledWith({
       reasoningEffort: "high",
@@ -998,7 +979,7 @@ describe("model picker", () => {
     });
   });
 
-  it("groups fast mode inside the effort popover", () => {
+  it("keeps fast mode independent while preserving effort on a change", () => {
     setHarnessModels("claude", [
       {
         id: "claude:opus-5",
@@ -1042,21 +1023,11 @@ describe("model picker", () => {
       ),
     );
 
-    expect(container.querySelector('button[aria-label="Fast: Off"]')).toBeNull();
-    const effortPill = container.querySelector<HTMLButtonElement>(
-      'button[aria-label="Effort: High"]',
-    )!;
-    act(() => effortPill.click());
-
-    const menu = container.querySelector<HTMLElement>(
-      '[role="menu"][aria-label="Effort and Fast"]',
-    )!;
-    const fastGroup = menu.querySelector<HTMLElement>('[role="group"][aria-label="Fast"]')!;
-    expect(fastGroup.textContent).toContain("Off");
-    expect(fastGroup.textContent).toContain("On");
-
-    const on = [...fastGroup.querySelectorAll("button")].find(
-      (button) => button.textContent === "On",
+    const fast = container.querySelector<HTMLButtonElement>('button[aria-label="Fast: Off"]')!;
+    expect(fast).not.toBeNull();
+    act(() => fast.click());
+    const on = [...container.querySelectorAll<HTMLElement>('[role="option"]')].find((el) =>
+      el.textContent?.includes("On"),
     )!;
     act(() => on.click());
     expect(onSettingsChange).toHaveBeenCalledWith({
@@ -1162,7 +1133,7 @@ describe("model picker", () => {
     )!;
     expect(extras).not.toBeNull();
     expect(container.querySelector('[role="listbox"]')).toBeNull();
-    const toggle = extras.querySelector<HTMLInputElement>('input[role="switch"]')!;
+    const toggle = extras.querySelector<HTMLInputElement>('button[role="switch"]')!;
     act(() => toggle.click());
     expect(onSettingsChange).toHaveBeenCalledWith(expect.objectContaining({ fast: "true" }));
     act(() => extras.querySelector<HTMLButtonElement>('button[aria-label="Back"]')!.click());
@@ -1353,13 +1324,13 @@ describe("model picker", () => {
     // The composer can retain focus after opening its toolbar menu. Recent
     // model navigation still needs to own these keys in that state.
     trigger.focus();
-    expect(grokModel.className).toContain("bg-selection");
+    expect(grokModel.dataset.buttonSelected).toBe("true");
     keyDown(trigger, "ArrowUp");
-    expect(claudeModel.className).toContain("bg-selection");
+    expect(claudeModel.dataset.buttonSelected).toBe("true");
     keyDown(trigger, "ArrowDown");
-    expect(grokModel.className).toContain("bg-selection");
+    expect(grokModel.dataset.buttonSelected).toBe("true");
     keyDown(trigger, "ArrowDown");
-    expect(cursorModel.className).toContain("bg-selection");
+    expect(cursorModel.dataset.buttonSelected).toBe("true");
 
     keyDown(trigger, "Enter");
     expect(onChange).toHaveBeenCalledWith("cursor", "cursor:composer-2.5");

@@ -1,5 +1,6 @@
 import { useState, type ReactNode } from "react";
 import { t, useLocale } from "../../../shared/i18n";
+import { Button } from "../../../shared/ui/Button";
 import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
 import { Shield } from "../../../shared/ui/icons";
 import { SecondaryButton } from "../../../shared/ui/SecondaryButton";
@@ -40,13 +41,9 @@ export function PrivacyLaunchGate({ children }: { children: ReactNode }) {
             {t("Show workspace")}
           </SecondaryButton>
           {lock.hasPassword ? (
-            <button
-              type="button"
-              className="text-xs text-content/55 hover:text-content focus-visible:outline-2 focus-visible:outline-accent"
-              onClick={() => setDialog("recovery")}
-            >
+            <Button type="button" variant="ghost" onClick={() => setDialog("recovery")}>
               {t("Forgot the password?")}
-            </button>
+            </Button>
           ) : null}
         </section>
       </div>

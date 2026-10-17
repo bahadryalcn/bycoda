@@ -1,3 +1,5 @@
+import { Progress } from "../../../shared/ui/Progress";
+import { Button } from "../../../shared/ui/Button";
 import { t, useLocale } from "../../../shared/i18n/technical";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AlertCircle, Check, Copy, Folder, Minus, Plus, RotateCcw } from "../../../shared/ui/icons";
@@ -87,9 +89,8 @@ export function BinaryFileView({ path, cwd }: Props) {
 
   if (state.status === "loading") {
     return (
-      <div className="grid h-full place-items-center text-[12px] text-content/45">
-        {t("Opening ")}
-        {basename(path)}…
+      <div className="grid h-full place-items-center p-3">
+        <Progress label={t("Opening ") + basename(path) + "…"} compact />
       </div>
     );
   }
@@ -181,13 +182,15 @@ function ImageView({
         role="group"
         aria-label={t("Image preview: {p0}", { p0: basename(path) })}
         {...imageZoom.bindings}
-        onDoubleClick={(event) => { clearTimeout(clickTimer.current); imageZoom.bindings.onDoubleClick(event); }}
+        onDoubleClick={(event) => {
+          clearTimeout(clickTimer.current);
+          imageZoom.bindings.onDoubleClick(event);
+        }}
         className="grid min-h-0 flex-1 place-items-center overflow-clip overscroll-contain p-4"
         style={{
           // A checkerboard so transparent PNGs read as transparent rather than
           // as whatever the theme background happens to be.
-          backgroundImage:
-            "linear-gradient(45deg, rgba(128,128,128,0.10) 25%, transparent 25%, transparent 75%, rgba(128,128,128,0.10) 75%), linear-gradient(45deg, rgba(128,128,128,0.10) 25%, transparent 25%, transparent 75%, rgba(128,128,128,0.10) 75%)",
+          backgroundImage: "var(--ui-transparency-grid-image)",
           backgroundSize: "16px 16px",
           backgroundPosition: "0 0, 8px 8px",
         }}
@@ -227,7 +230,7 @@ function ImageView({
           style={imageZoom.style}
         />
       </div>
-      <footer className="flex h-8 shrink-0 items-center gap-3 border-t border-stroke px-3 text-[11px] text-content/50">
+      <footer className="flex h-8 shrink-0 items-center gap-3 border-t border-stroke px-3 text-[11px] text-[var(--ui-text-secondary)]">
         <span className="tabular-nums">{natural ? `${natural.w} × ${natural.h}` : "—"}</span>
         <span className="tabular-nums">{formatFileSize(size)}</span>
         <span className="uppercase">{mime.replace(/^image\//, "")}</span>
@@ -241,24 +244,23 @@ function ImageView({
             )}
           </ZoomButton>
         ) : null}
-        <ZoomButton
-          label={t("Zoom out")}
-          onClick={() => imageZoom.zoom(1 / 1.5)}
-        >
+        <ZoomButton label={t("Zoom out")} onClick={() => imageZoom.zoom(1 / 1.5)}>
           <Minus className="size-3" strokeWidth={1.75} />
         </ZoomButton>
-        <button
+        <Button
+          size="sm"
+          variant="ghost"
+          motion="none"
           type="button"
           title={t("Fit to window")}
           onClick={imageZoom.reset}
-          className="w-11 rounded text-center tabular-nums hover:text-content"
+          className="w-11 text-center tabular-nums"
         >
-          {zoom === 1 ? t("Fit") : `${Math.round(zoom * (natural && imageRef.current?.offsetWidth ? imageRef.current.offsetWidth / natural.w : 1) * 100)}%`}
-        </button>
-        <ZoomButton
-          label={t("Zoom in")}
-          onClick={() => imageZoom.zoom(1.5)}
-        >
+          {zoom === 1
+            ? t("Fit")
+            : `${Math.round(zoom * (natural && imageRef.current?.offsetWidth ? imageRef.current.offsetWidth / natural.w : 1) * 100)}%`}
+        </Button>
+        <ZoomButton label={t("Zoom in")} onClick={() => imageZoom.zoom(1.5)}>
           <Plus className="size-3" strokeWidth={1.75} />
         </ZoomButton>
       </footer>
@@ -297,15 +299,18 @@ function ZoomButton({
 }) {
   useLocale();
   return (
-    <button
+    <Button
+      size="sm"
+      variant="ghost"
+      motion="none"
       type="button"
       title={label}
       aria-label={label}
       onClick={onClick}
-      className="grid size-5 place-items-center rounded hover:bg-content/10 hover:text-content"
+      className="grid place-items-center"
     >
       {children}
-    </button>
+    </Button>
   );
 }
 
@@ -330,8 +335,8 @@ function FileCard({
       <div className="max-w-md text-center">
         {icon}
         <p className="text-[13px] text-content">{title}</p>
-        <p className="mt-1 text-[12px] leading-5 text-content/50">{detail}</p>
-        <p className="mt-1 truncate font-mono text-[11px] text-content/35">
+        <p className="mt-1 text-[12px] leading-5 text-[var(--ui-text-secondary)]">{detail}</p>
+        <p className="mt-1 truncate font-mono text-[11px] text-[var(--ui-text-muted)]">
           {displayPath(path, cwd)}
         </p>
         <div className="mt-4 flex items-center justify-center gap-2">
@@ -369,12 +374,15 @@ function FileCard({
 function CardButton({ onClick, children }: { onClick: () => void; children: React.ReactNode }) {
   useLocale();
   return (
-    <button
+    <Button
+      size="sm"
+      variant="ghost"
+      motion="none"
       type="button"
       onClick={onClick}
-      className="flex h-7 items-center gap-1.5 rounded-md bg-content/10 px-2.5 text-[12px] text-content hover:bg-content/15"
+      className="flex items-center gap-1.5"
     >
       {children}
-    </button>
+    </Button>
   );
 }

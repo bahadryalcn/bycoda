@@ -1,3 +1,4 @@
+import { Button } from "../../../shared/ui/Button";
 import { t, useLocale } from "../../../shared/i18n";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
@@ -148,13 +149,9 @@ export function QuickGitPopupPicker({
         <p role="status" className="flex-1 text-content/60">
           {settled ? t("Couldn’t load branches for this project.") : t("Loading branches…")}
         </p>
-        <button
-          type="button"
-          className="rounded-md px-2 py-1 text-content/70 hover:bg-content/10"
-          onClick={() => finish()}
-        >
+        <Button variant="ghost" motion="none" type="button" className="" onClick={() => finish()}>
           {t("Close")}
-        </button>
+        </Button>
       </div>
     );
   if (request.kind === "branch")

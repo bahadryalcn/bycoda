@@ -32,7 +32,6 @@ for (const theme of ["dark", "light"]) {
         await actions.click();
         const menu = page.getByRole("menu", { name: "Actions for arc", exact: true });
         await expect(menu).toBeVisible();
-        await page.keyboard.press("ArrowDown");
         await expect(page.getByRole("menuitem", { name: "Copy path of arc" })).toBeFocused();
         await page.keyboard.press("End");
         await expect(page.getByRole("menuitem", { name: "Delete arc" })).toBeFocused();

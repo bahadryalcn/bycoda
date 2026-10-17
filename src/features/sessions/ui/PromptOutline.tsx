@@ -1,3 +1,4 @@
+import { Button } from "../../../shared/ui/Button";
 import { t, useLocale } from "../../../shared/i18n";
 import {
   memo,
@@ -256,7 +257,11 @@ export const PromptOutline = memo(function PromptOutline({
         // fill goes back to marking the scroll position.
         const lit = hoverIndex >= 0 ? index === hoverIndex : prompt.id === activeId;
         return (
-          <button
+          <Button
+            fullWidth
+            iconOnly
+            label={promptLabel(prompt)}
+            variant="item"
             key={prompt.id}
             type="button"
             data-prompt-bar={prompt.id}
@@ -274,7 +279,7 @@ export const PromptOutline = memo(function PromptOutline({
             }}
             onClick={() => jumpTo(prompt.id)}
             style={{ height: BAR_HEIGHT_PX + stack.gap }}
-            className="flex w-full shrink-0 items-center justify-end outline-none"
+            className="w-full shrink-0"
           >
             <span
               aria-hidden="true"
@@ -285,9 +290,9 @@ export const PromptOutline = memo(function PromptOutline({
                 // The wave reaches the outer bars a beat after the hovered one.
                 transitionDelay: `${Math.min(distance, RIPPLE_SPAN) * RIPPLE_STEP_MS}ms`,
               }}
-              className="rounded-full bg-content transition-[width,opacity] duration-200 ease-out"
+              className="rounded-full bg-(--ui-tone-neutral-solid) transition-[width,opacity] duration-200 ease-out"
             />
-          </button>
+          </Button>
         );
       })}
       {open && preview && hoverIndex >= 0 ? (
@@ -301,12 +306,16 @@ export const PromptOutline = memo(function PromptOutline({
           aria-label={t("Prompt preview")}
           className="pointer-events-none flex flex-col gap-1.5 p-3 font-sans"
         >
-          <p className="line-clamp-2 text-sm leading-snug text-content">{preview.title}</p>
+          <p className="line-clamp-2 text-sm leading-snug text-(--ui-tone-neutral-fg)">
+            {preview.title}
+          </p>
           {preview.reply ? (
-            <p className="line-clamp-2 text-sm leading-snug text-content/45">{preview.reply}</p>
+            <p className="line-clamp-2 text-sm leading-snug text-(--ui-text-secondary)">
+              {preview.reply}
+            </p>
           ) : null}
           {preview.detail ? (
-            <p className="line-clamp-2 border-l-2 border-content/15 pl-3 text-sm leading-snug text-content/35">
+            <p className="line-clamp-2 border-l-2 border-(--ui-tone-neutral-border) pl-3 text-sm leading-snug text-(--ui-text-secondary)">
               {preview.detail}
             </p>
           ) : null}

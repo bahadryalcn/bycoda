@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { initAppearancePreferences } from "../../src/features/settings/model/appearancePreferences";
 import { createRoot } from "react-dom/client";
 import { mockIPC, mockWindows } from "@tauri-apps/api/mocks";
 import { SettingsView } from "../../src/features/settings/ui/SettingsView";
@@ -97,6 +98,7 @@ const params = new URLSearchParams(location.search);
 const theme = params.get("theme") === "light" ? "light" : "dark";
 saveThemePreference(theme);
 applyThemePreference(theme);
+initAppearancePreferences();
 const language = params.get("lang");
 const initial = params.get("section");
 function Fixture() {

@@ -1,3 +1,7 @@
+import { Alert } from "../../../shared/ui/Alert";
+import { Button } from "../../../shared/ui/Button";
+import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
+import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
 import { SearchInput } from "../../../shared/ui/SearchInput";
 import { useRetainedState } from "../../../shared/hooks/useRetainedState";
 import { useEffect, useRef, useState, type PointerEvent } from "react";
@@ -444,7 +448,8 @@ export function JiraBoardView({
         onPointerCancel={(event) => pointerEnd(event, true)}
         onDragStart={(e) => e.preventDefault()}
       >
-        <button
+        <Button
+          variant="ghost"
           className="jira-board-card-open"
           type="button"
           onClick={() => {
@@ -453,12 +458,13 @@ export function JiraBoardView({
         >
           <span className="jira-board-key">{issue.identifier}</span>
           <span className="jira-board-summary">{issue.title}</span>
-        </button>
+        </Button>
         <div className="jira-board-card-meta">
           <span>{issue.state}</span>
           <span>{issue.assignees[0]?.login ?? t("Unassigned")}</span>
         </div>
-        <button
+        <Button
+          variant="ghost"
           type="button"
           disabled={locked}
           className="jira-board-move"
@@ -466,14 +472,15 @@ export function JiraBoardView({
           onClick={() => setMoveKey(moveKey === issue.identifier ? null : issue.identifier)}
         >
           {t("Move")}
-        </button>
+        </Button>
         {moveKey === issue.identifier ? (
           <div className="jira-board-move-menu" aria-label={t("Move issue")}>
             {mode === "kanban"
               ? configuration?.columns
                   .filter((c) => c.statusIds.length > 0 && !c.statusIds.includes(issue.statusId))
                   .map((c, index) => (
-                    <button
+                    <Button
+                      variant="ghost"
                       key={index}
                       type="button"
                       onClick={() => {
@@ -486,17 +493,23 @@ export function JiraBoardView({
                       }}
                     >
                       {c.name}
-                    </button>
+                    </Button>
                   ))
               : groups
                   .filter((g) => g.id !== group.id)
                   .map((g) => (
-                    <button key={g.id} type="button" onClick={() => void dropGroup(issue, g)}>
+                    <Button
+                      variant="ghost"
+                      key={g.id}
+                      type="button"
+                      onClick={() => void dropGroup(issue, g)}
+                    >
                       {g.name}
-                    </button>
+                    </Button>
                   ))}
             {canRank && position > 0 ? (
-              <button
+              <Button
+                variant="ghost"
                 type="button"
                 onClick={() =>
                   void mutate(() =>
@@ -508,10 +521,11 @@ export function JiraBoardView({
                 }
               >
                 {t("Rank earlier")}
-              </button>
+              </Button>
             ) : null}
             {canRank && position >= 0 && position < ordered.length - 1 ? (
-              <button
+              <Button
+                variant="ghost"
                 type="button"
                 onClick={() =>
                   void mutate(() =>
@@ -523,11 +537,11 @@ export function JiraBoardView({
                 }
               >
                 {t("Rank later")}
-              </button>
+              </Button>
             ) : null}
-            <button type="button" onClick={() => setMoveKey(null)}>
+            <Button variant="ghost" type="button" onClick={() => setMoveKey(null)}>
               {t("Cancel")}
-            </button>
+            </Button>
           </div>
         ) : null}
       </article>
@@ -572,85 +586,72 @@ export function JiraBoardView({
       <div className="jira-board-toolbar">
         <label>
           {t("Board")}
-          <select
-            aria-label={t("Jira board")}
+          <SearchableSelect
+            label={t("Jira board")}
+            options={
+              boards.length
+                ? boards.map((b) => ({ value: String(b.id), label: `${b.name} · ${b.kind}` }))
+                : [{ value: "0", label: t("Select allowed boards in Settings → Inbox → Jira") }]
+            }
             disabled={locked}
-            value={boardId}
-            onChange={(event) => {
-              setBoardId(Number(event.target.value));
+            value={String(boardId)}
+            onChange={(value) => {
+              setBoardId(Number(value));
               setScope("board");
               setError(null);
               setNotice("");
             }}
-          >
-            {!boards.length ? (
-              <option value={0}>{t("Select allowed boards in Settings → Inbox → Jira")}</option>
-            ) : (
-              boards.map((b) => (
-                <option key={b.id} value={b.id}>
-                  {b.name} · {b.kind}
-                </option>
-              ))
-            )}
-          </select>
+          />
         </label>
-        <div className="jira-board-tabs" role="group" aria-label={t("Board view")}>
-          <button
-            type="button"
-            disabled={locked}
-            aria-pressed={mode === "kanban"}
-            onClick={() => {
-              setMode("kanban");
+        <fieldset disabled={locked} className="jira-board-mode">
+          <SegmentedControl
+            selectionRole="pressed"
+            label={t("Board view")}
+            value={mode}
+            onValueChange={(value) => {
+              setMode(value as "kanban" | "planning");
               setError(null);
             }}
-          >
-            {t("Kanban")}
-          </button>
-          <button
-            type="button"
-            disabled={locked}
-            aria-pressed={mode === "planning"}
-            onClick={() => {
-              setMode("planning");
-              setError(null);
-            }}
-          >
-            {t("Backlog & sprints")}
-          </button>
-        </div>
+            options={[
+              { value: "kanban", label: t("Kanban") },
+              { value: "planning", label: t("Backlog & sprints") },
+            ]}
+          />
+        </fieldset>
         {mode === "kanban" ? (
           <label>
             {t("Issue scope")}
-            <select
-              aria-label={t("Issue scope")}
+            <SearchableSelect
+              label={t("Issue scope")}
+              options={[
+                { value: "board", label: t("All board issues") },
+                { value: "backlog", label: t("Backlog") },
+                ...(configuration?.sprints.map((s) => ({
+                  value: `sprint:${s.id}`,
+                  label: `${s.name} · ${s.state === "active" ? t("Active sprint") : t("Future sprint")}`,
+                })) ?? []),
+              ]}
               disabled={locked}
               value={scope}
-              onChange={(event) => {
-                setScope(event.target.value);
+              onChange={(value) => {
+                setScope(value);
                 setError(null);
                 setNotice("");
               }}
-            >
-              <option value="board">{t("All board issues")}</option>
-              <option value="backlog">{t("Backlog")}</option>
-              {configuration?.sprints.map((s) => (
-                <option key={s.id} value={`sprint:${s.id}`}>
-                  {s.name} · {s.state === "active" ? t("Active sprint") : t("Future sprint")}
-                </option>
-              ))}
-            </select>
+            />
           </label>
         ) : null}
         <label className="jira-board-search">
           {t("Filter issues")}
           <SearchInput
-            standalone
+            appearance="field"
             type="search"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
         </label>
-        <button
+        <Button
+          variant="ghost"
           type="button"
           disabled={busy || pick !== null}
           onClick={() => {
@@ -659,7 +660,7 @@ export function JiraBoardView({
           }}
         >
           {t("Refresh")}
-        </button>
+        </Button>
       </div>
       {backlogUnavailable ? (
         <p className="jira-board-hint">
@@ -682,9 +683,9 @@ export function JiraBoardView({
         </p>
       ) : null}
       {error ? (
-        <div className="jira-board-error" role="alert">
+        <Alert tone="danger" className="jira-board-error" role="alert">
           {error}
-        </div>
+        </Alert>
       ) : null}
       {pick ? (
         <div
@@ -697,7 +698,8 @@ export function JiraBoardView({
           </strong>
           {pick.choices.length ? (
             pick.choices.map((choice) => (
-              <button
+              <Button
+                variant="ghost"
                 key={choice.id}
                 type="button"
                 disabled={choice.requiresFields}
@@ -705,22 +707,23 @@ export function JiraBoardView({
               >
                 {choice.name}
                 {choice.requiresFields ? ` · ${t("Requires fields in Jira")}` : ""}
-              </button>
+              </Button>
             ))
           ) : (
             <p>{t("No allowed transition to this column.")}</p>
           )}
-          <button
+          <Button
+            variant="ghost"
             type="button"
             onClick={() =>
               void openUrl(pick.issue.url).catch((reason) => setError(message(reason)))
             }
           >
             {t("Open in Jira")}
-          </button>
-          <button type="button" onClick={() => setPick(null)}>
+          </Button>
+          <Button variant="ghost" type="button" onClick={() => setPick(null)}>
             {t("Cancel")}
-          </button>
+          </Button>
         </div>
       ) : null}
       {!loading && !boards.length && !error ? (
@@ -803,23 +806,29 @@ export function JiraBoardView({
                 <p className="jira-board-empty">{t("Drop issues here")}</p>
               ) : null}
               {group.token ? (
-                <button type="button" disabled={locked} onClick={() => void loadMore(group)}>
+                <Button
+                  variant="ghost"
+                  type="button"
+                  disabled={locked}
+                  onClick={() => void loadMore(group)}
+                >
                   {t("Load more issues")}
-                </button>
+                </Button>
               ) : null}
             </section>
           ))}
         </div>
       )}
       {mode === "kanban" && groups[0]?.token ? (
-        <button
+        <Button
+          variant="ghost"
           type="button"
           className="jira-board-load"
           disabled={locked}
           onClick={() => void loadMore(groups[0])}
         >
           {t("Load more issues")}
-        </button>
+        </Button>
       ) : null}
       {groups.some((g) => g.token) ? (
         <p className="jira-board-hint">

@@ -1,3 +1,4 @@
+import { applyThemePreference } from "../../src/features/settings/model/appearance";
 import { createRoot } from "react-dom/client";
 import { SessionHostTools } from "../../src/features/host-tools/SessionHostTools";
 import { setLanguagePreference, setDomainLanguagePreference } from "../../src/shared/i18n";
@@ -10,6 +11,7 @@ import { registerBrowserComposer } from "../../src/features/host-tools/browserCo
 import { requestToolsUi } from "../../src/features/host-tools/toolsUiControl";
 
 const query = new URLSearchParams(location.search);
+applyThemePreference(query.get("theme") === "light" ? "light" : "dark");
 const locale = query.get("lang") === "tr" ? "tr" : "en";
 await setLanguagePreference(locale);
 await setDomainLanguagePreference("technical", locale);

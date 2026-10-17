@@ -20,12 +20,12 @@
   position: absolute;
   pointer-events: none;
   border: 2px dashed var(--color-accent);
-  background: color-mix(in oklch, var(--color-accent) 12%, transparent);
+  background: var(--ui-annotation-highlight);
   box-sizing: border-box;
 }
 .host-browser-highlight[data-selected="true"] {
   border-style: solid;
-  background: color-mix(in oklch, var(--color-accent) 22%, transparent);
+  background: var(--ui-annotation-highlight-selected);
 }
 .browser-annotation-details {
   min-inline-size: 0;
@@ -39,7 +39,7 @@
   margin-block: 8px;
 }
 .browser-annotation-details dt {
-  color: color-mix(in oklch, var(--color-content) 65%, transparent);
+  color: var(--ui-text-secondary);
 }
 .browser-annotation-details dd {
   margin-inline-start: 0;
@@ -92,7 +92,7 @@
   opacity: 0.55;
 }
 .browser-annotation-details .host-tool-muted {
-  color: color-mix(in oklch, var(--color-content) 65%, transparent);
+  color: var(--ui-text-secondary);
 }
 .browser-annotation-attachment {
   display: flex;

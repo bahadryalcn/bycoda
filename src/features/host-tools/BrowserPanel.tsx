@@ -1,3 +1,4 @@
+import { Alert } from "../../shared/ui/Alert";
 import { t, useLocale } from "../../shared/i18n/technical";
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { hostFeatureRequest, hostToolRequest } from "../connections/model/hostFeatureClient";
@@ -596,7 +597,9 @@ function ProjectBrowserPanel({
       ) : null}
       {error ? (
         <div className="host-tool-actions">
-          <p role="alert">{error}</p>
+          <Alert tone="danger" role="alert">
+            {error}
+          </Alert>
           {!state ? (
             <Button disabled={busy} onClick={() => void action(() => request("browser.status"))}>
               {t("Retry")}
@@ -605,9 +608,9 @@ function ProjectBrowserPanel({
         </div>
       ) : null}
       {notice ? (
-        <p role="status" className="host-tool-muted">
+        <Alert tone="info" role="status">
           {notice}
-        </p>
+        </Alert>
       ) : null}
       {setupRequired ? (
         <section className="host-tool-card" aria-label={t("Browser setup required")}>
@@ -641,9 +644,9 @@ function ProjectBrowserPanel({
             </p>
           ) : null}
           {limitation ? (
-            <p role="status" className="host-tool-muted">
+            <Alert tone="info" role="status">
               {limitation}
-            </p>
+            </Alert>
           ) : null}
           {frame ? (
             <div
@@ -940,9 +943,9 @@ function ProjectBrowserPanel({
               {controlStatus ? <span className="host-tool-muted">{controlStatus}</span> : null}
             </div>
             {busy ? (
-              <p role="status" className="host-tool-muted">
+              <Alert tone="info" role="status">
                 {t("Working on the host…")}
-              </p>
+              </Alert>
             ) : null}
             <div className="host-tool-actions">
               <Button

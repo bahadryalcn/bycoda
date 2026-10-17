@@ -45,15 +45,29 @@ async function key(target: Element, key: string) {
 
 describe("settings keyboard controls", () => {
   it("associates native form labels and inherited scope without replacing caller descriptions", async () => {
-    await act(async () => root.render(createElement(Group, {
-      title: "Project settings", scope: "Applies to this project", persistence: { mode: "automatic" },
-      children: createElement(Row, {
-        label: "Shell path", controlId: "shell-path", description: "Choose an executable", dependency: "Enable terminal first",
-        children: createElement("input", { id: "shell-path", "aria-describedby": "caller-description" }),
-      }),
-    })));
+    await act(async () =>
+      root.render(
+        createElement(Group, {
+          title: "Project settings",
+          scope: "Applies to this project",
+          persistence: { mode: "automatic" },
+          children: createElement(Row, {
+            label: "Shell path",
+            controlId: "shell-path",
+            description: "Choose an executable",
+            dependency: "Enable terminal first",
+            children: createElement("input", {
+              id: "shell-path",
+              "aria-describedby": "caller-description",
+            }),
+          }),
+        }),
+      ),
+    );
     const input = container.querySelector<HTMLInputElement>("input")!;
-    expect(container.querySelector<HTMLLabelElement>('label[for="shell-path"]')?.textContent).toBe("Shell path");
+    expect(container.querySelector<HTMLLabelElement>('label[for="shell-path"]')?.textContent).toBe(
+      "Shell path",
+    );
     const ids = input.getAttribute("aria-describedby")!.split(/\s+/);
     expect(ids).toContain("caller-description");
     const descriptions = ids.map((id) => document.getElementById(id)?.textContent).join(" ");

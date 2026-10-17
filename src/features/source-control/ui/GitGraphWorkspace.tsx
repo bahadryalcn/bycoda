@@ -1,3 +1,4 @@
+import { Button } from "../../../shared/ui/Button";
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { t, useLocale } from "../../../shared/i18n/git";
 import {
@@ -44,8 +45,7 @@ type Props = {
   onBranch: (commit: GitHistoryCommit) => void;
   graph: ReactNode;
 };
-const ACTION =
-  "h-8 rounded-md border border-stroke px-3 text-[12px] text-content/85 hover:bg-content/8 disabled:opacity-40 focus-visible:ring-2 focus-visible:ring-accent";
+const ACTION = "shrink-0";
 let inspectorWidth = 520;
 
 export function GitGraphWorkspace({
@@ -142,49 +142,65 @@ export function GitGraphWorkspace({
     setConflict({ path, relative });
   };
   return (
-    <div className="flex min-h-0 flex-1 flex-col bg-background-base text-content">
-      <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-stroke bg-content/3 px-3 py-2">
-        <button
+    <div className="flex min-h-0 flex-1 flex-col bg-[var(--ui-surface)] text-content">
+      <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-stroke bg-[var(--ui-surface)] px-3 py-2">
+        <Button
+          size="sm"
+          iconOnly
+          label={t("Toggle branches")}
+          variant="ghost"
+          motion="none"
           type="button"
           aria-label={t("Toggle branches")}
           aria-pressed={rail}
           onClick={() => setRail(!rail)}
-          className="grid size-8 place-items-center rounded-md hover:bg-content/10"
         >
           <PanelLeft className="size-4" />
-        </button>
+        </Button>
         <span className="mr-2 flex min-w-0 items-center gap-2 text-[12px] font-medium">
           <GitBranch className="size-4 text-accent" />
           <span className="max-w-44 truncate">{index.data?.branch ?? t("Detached HEAD")}</span>
-          <span className="text-[11px] text-content/60">
+          <span className="text-[11px] text-[var(--ui-text-secondary)]">
             ↑{index.data?.ahead ?? 0} ↓{index.data?.behind ?? 0}
           </span>
         </span>
-        <button
+        <Button
+          size="sm"
+          variant="ghost"
+          motion="none"
           type="button"
           disabled={!supported || !!busy || !index.data?.remote}
           onClick={() => void run("Fetching…", () => gitFetch(cwd))}
           className={ACTION}
         >
           {t("Fetch")}
-        </button>
-        <button
+        </Button>
+        <Button
+          size="sm"
+          variant="ghost"
+          motion="none"
           type="button"
           disabled={!supported || !!busy || !index.data?.upstream || !!index.data?.operation}
           onClick={() => void run("Pulling…", () => gitPull(cwd))}
           className={ACTION}
         >
           {t("Pull")}
-        </button>
-        <button
+        </Button>
+        <Button
+          size="sm"
+          variant="ghost"
+          motion="none"
           type="button"
           disabled={!supported || !!busy || !index.data?.remote || !!index.data?.operation}
           onClick={() => void run("Pushing…", () => gitPush(cwd))}
           className={ACTION}
         >
           {t("Push")}
-        </button>
-        <button
+        </Button>
+        <Button
+          size="sm"
+          variant="ghost"
+          motion="none"
           type="button"
           disabled={
             !supported || !!busy || !index.data?.files.length || !!index.data?.conflicts?.length
@@ -193,8 +209,11 @@ export function GitGraphWorkspace({
           className={ACTION}
         >
           {t("Stash")}
-        </button>
-        <button
+        </Button>
+        <Button
+          size="sm"
+          variant="ghost"
+          motion="none"
           type="button"
           disabled={
             !supported ||
@@ -207,22 +226,31 @@ export function GitGraphWorkspace({
           title={t("Stage All Changes")}
         >
           {t("Stage")}
-        </button>
-        <button
+        </Button>
+        <Button
+          size="sm"
+          variant="ghost"
+          motion="none"
           type="button"
           disabled={!supported || !!busy || !index.data?.files.some((file) => file.staged)}
           onClick={() => void run("Unstaging…", () => gitUnstageAll(cwd))}
           className={ACTION}
         >
           {t("Unstage")}
-        </button>
+        </Button>
         {busy ? (
-          <span role="status" className="flex items-center gap-2 text-[12px] text-content/65">
+          <span
+            role="status"
+            className="flex items-center gap-2 text-[12px] text-[var(--ui-text-secondary)]"
+          >
             <Loader className="size-3.5 animate-spin" />
             {busy}
           </span>
         ) : null}
-        <span title={cwd} className="ml-auto max-w-60 truncate text-[11px] text-content/50">
+        <span
+          title={cwd}
+          className="ml-auto max-w-60 truncate text-[11px] text-[var(--ui-text-secondary)]"
+        >
           {cwd.split(/[/\\]/).slice(-1)[0]}
         </span>
       </div>
@@ -251,7 +279,7 @@ export function GitGraphWorkspace({
       ) : null}
       <div className="flex min-h-0 flex-1 overflow-x-auto">
         {rail ? (
-          <aside className="flex w-52 shrink-0 flex-col border-r border-stroke bg-content/2 max-h-full">
+          <aside className="flex w-52 shrink-0 flex-col border-r border-stroke bg-[var(--ui-surface)] max-h-full">
             <GitGraphBranches
               cwd={cwd}
               disabled={!supported || !!busy || !!index.data?.operation}
@@ -268,20 +296,23 @@ export function GitGraphWorkspace({
           </aside>
         ) : null}
         <section aria-label={t("Commit Graph")} className="flex min-w-[300px] flex-1 flex-col">
-          <button
+          <Button
+            size="sm"
+            variant="ghost"
+            motion="none"
             type="button"
             aria-pressed={!commit}
             onClick={() => onCommit(null)}
-            className={`flex h-11 shrink-0 items-center justify-between gap-3 border-b border-stroke px-3 text-left text-[12px] ${!commit ? "bg-selection" : "hover:bg-content/5"}`}
+            className={" flex  shrink-0 items-center justify-between gap-3 text-left "}
           >
             <span className="font-medium">{t("Working tree")}</span>
-            <span className="text-content/65">
+            <span className="text-[var(--ui-text-secondary)]">
               {index.data?.files.length ?? 0} {t("files")}
               {index.data?.conflicts?.length
                 ? ` · ${index.data.conflicts.length} ${t("conflicts")}`
                 : ""}
             </span>
-          </button>
+          </Button>
           {graph}
         </section>
         <div
@@ -289,7 +320,7 @@ export function GitGraphWorkspace({
           aria-label={t("Resize inspector")}
           onPointerDown={resize.onPointerDown}
           onDoubleClick={resize.onDoubleClick}
-          className={`w-1 shrink-0 cursor-col-resize touch-none focus-visible:bg-accent ${resize.dragging ? "bg-accent" : "bg-stroke hover:bg-accent/50"}`}
+          className={`w-1 shrink-0 cursor-col-resize touch-none focus-visible:bg-accent ${resize.dragging ? "bg-accent" : "bg-stroke hover:bg-[var(--ui-tone-accent-subtle)]"}`}
         />
         <aside
           ref={resize.setPaneRef}

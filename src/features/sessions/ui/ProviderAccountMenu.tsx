@@ -1,3 +1,4 @@
+import { Button } from "../../../shared/ui/Button";
 import { t, useLocale } from "../../../shared/i18n";
 import { useEffect, useRef, useState } from "react";
 import { Check, ChevronDown } from "../../../shared/ui/icons";
@@ -65,7 +66,9 @@ export function ProviderAccountMenu({
 
   return (
     <>
-      <button
+      <Button
+        className="max-w-28 shrink-0"
+        variant="ghost"
         ref={trigger}
         type="button"
         title={
@@ -79,23 +82,16 @@ export function ProviderAccountMenu({
         data-model-control={variant === "pill" ? true : undefined}
         onMouseDown={(event) => event.preventDefault()}
         onClick={() => setOpen((value) => !value)}
-        className={
-          variant === "pill"
-            ? `flex h-6.5 max-w-28 items-center gap-1 rounded-md px-1.5 text-content ${
-                open ? "bg-selection" : "bg-selection hover:bg-selection-hover"
-              }`
-            : "flex h-6 shrink-0 items-center gap-1.5 rounded-md px-1.5 hover:bg-content/10 hover:text-content"
-        }
       >
         {current ? <AccountColorDot account={current} /> : null}
         <span className={variant === "pill" ? "min-w-0 truncate text-[11px]" : ""}>
           {variant === "pill" ? label : t("Switch account")}
         </span>
         <ChevronDown
-          className={`size-3 shrink-0 text-content/50 ${open ? "rotate-180" : ""}`}
+          className={`size-3 shrink-0 text-(--ui-text-secondary) ${open ? "rotate-180" : ""}`}
           strokeWidth={1.75}
         />
-      </button>
+      </Button>
       {open ? (
         <Popover
           anchor={trigger}
@@ -114,7 +110,9 @@ export function ProviderAccountMenu({
             const selected = account.id === accountId;
             const status = accountStatus(usage.usage[accountUsageKey(account)], usage.now);
             return (
-              <button
+              <Button
+                fullWidth
+                variant="item"
                 key={account.id}
                 type="button"
                 role="menuitemradio"
@@ -124,7 +122,7 @@ export function ProviderAccountMenu({
                   dismiss(true);
                   if (!selected) onSelect(account.id);
                 }}
-                className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-[12px] text-content hover:bg-content/5"
+                className="w-full text-left"
               >
                 <AccountColorDot account={account} />
                 <span className="flex min-w-0 flex-1 flex-col gap-0.5">
@@ -134,9 +132,9 @@ export function ProviderAccountMenu({
                   </span>
                 </span>
                 {selected ? (
-                  <Check className="size-3.5 shrink-0 text-content/50" strokeWidth={2} />
+                  <Check className="size-3.5 shrink-0 text-(--ui-text-secondary)" strokeWidth={2} />
                 ) : null}
-              </button>
+              </Button>
             );
           })}
         </Popover>

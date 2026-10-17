@@ -67,9 +67,6 @@
   max-inline-size: 100%;
 }
 .host-tools-tabs button {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
   white-space: nowrap;
   flex: none;
 }
@@ -240,71 +237,11 @@
   background: currentColor;
   flex-shrink: 0;
 }
-.host-tools-content
-  button:not(.bycoda-arc):not([data-search-clear]):not([aria-haspopup="dialog"]):not(
-    [role="option"]
-  ):not([data-device-action]):not([role="switch"]) {
-  border: 1px solid var(--color-stroke);
-  border-radius: 6px;
-  padding: 7px 10px;
-  font-size: 12px;
-  color: var(--color-content);
-  background: var(--color-background-base);
-  min-block-size: var(--ui-control-height, 36px);
-  line-height: 1.4;
-  text-align: center;
-}
-.host-tools-content .host-tool-primary {
-  background: var(--color-selection);
-  font-weight: 600;
-}
-.host-tools button:not(.bycoda-arc):disabled {
-  opacity: 0.45;
-  cursor: default;
-}
-.host-tools button:not(.bycoda-arc):active:not(:disabled):not([aria-haspopup="dialog"]) {
-  background: var(--color-selection);
-}
-.host-tools :is(input:not([type="checkbox"]):not(.bycoda-arc-field input), select) {
-  border: 1px solid var(--color-stroke);
-  border-radius: 6px;
-  padding: 8px 10px;
-  min-inline-size: 0;
-  max-inline-size: 100%;
-  color: var(--color-content);
-  background: var(--color-background-base);
-  font-size: 12px;
-  font-family: inherit;
-  min-block-size: var(--ui-control-height, 36px);
-  line-height: 1.4;
-  color-scheme: inherit;
-}
-.host-tools option {
-  color: var(--color-content);
-  background: var(--color-background-base);
-}
-.host-tools select {
-  inline-size: 100%;
-}
-.host-tools input:not(.bycoda-arc-field input):disabled {
-  opacity: 0.55;
-}
-.host-tools
-  :is(button, input, select, summary, [role="tabpanel"]):not(.bycoda-arc):not(
-    .bycoda-arc-field input,
-    [data-ui-focus]
-  ):focus-visible {
+.host-tools :is(summary, [role="tabpanel"]):focus-visible {
   outline: 2px solid var(--color-accent);
   outline-offset: 2px;
 }
-.host-tools [role="alert"] {
-  border: 1px solid color-mix(in oklab, var(--color-danger) 30%, transparent);
-  background: color-mix(in oklab, var(--color-danger) 8%, transparent);
-  border-radius: 8px;
-  padding: 9px 12px;
-  font-size: 12px;
-  line-height: 1.6;
-  color: var(--color-content);
+.host-tool-error-payload {
   overflow-wrap: anywhere;
   white-space: pre-wrap;
 }
@@ -392,38 +329,9 @@
   font-variant-numeric: tabular-nums;
   overflow-wrap: anywhere;
 }
-.terminal-tools-button {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  inline-size: 100%;
-  padding: 9px 10px;
-  border-block-end: 1px solid var(--terminal-border);
-  text-align: start;
-  color: var(--terminal-muted);
-  font-size: 11px;
-  line-height: 1.4;
-}
-.terminal-tools-button[aria-pressed="true"],
-.terminal-tools-button:active {
-  color: var(--terminal-text);
-  background: var(--terminal-selected);
-}
-.terminal-tools-button:focus-visible {
-  outline: 1px solid var(--terminal-muted);
-  outline-offset: -3px;
-}
 @media (hover: hover) and (pointer: fine) {
-  .host-tools button:not(.bycoda-arc):hover:not(:disabled):not([aria-haspopup="dialog"]) {
-    background: var(--color-selection-subtle);
-    color: var(--color-content);
-  }
   .host-tool-help summary:hover {
     color: var(--color-content);
-  }
-  .terminal-tools-button:hover {
-    color: var(--terminal-text);
-    background: var(--terminal-selected);
   }
 }
 

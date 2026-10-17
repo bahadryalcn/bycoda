@@ -716,7 +716,7 @@ export const JsonViewer = forwardRef<HTMLDivElement, JsonViewerProps>(function J
       {searchable || rows.length > 1 ? (
         <div className={styles.toolbar}>
           {searchable ? (
-            <label className={styles.search}>
+            <label className={styles.search} data-ui-focus-group="">
               <Search
                 size={15}
                 strokeWidth={1.75}
@@ -726,6 +726,7 @@ export const JsonViewer = forwardRef<HTMLDivElement, JsonViewerProps>(function J
               <SearchInput
                 ref={searchRef}
                 type="search"
+                focusOwner="group"
                 className={styles.input}
                 value={query}
                 placeholder={t("Search keys and values")}

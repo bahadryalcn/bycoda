@@ -1,9 +1,9 @@
+import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import { labelColor } from "../../../shared/lib/colorUtils";
 import { t, useLocale } from "../../../shared/i18n";
 import type { CiRepairRequest } from "../model/ciRepair";
 import {
   CheckCircle,
-  ChevronDown,
   CircleDot,
   CircleX,
   GitMerge,
@@ -12,7 +12,7 @@ import {
   GitPullRequestDraft,
   type IconComponent,
 } from "../../../shared/ui/icons";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { ProjectLogoIcon } from "../../projects/ui/ProjectLogoIcon";
 import { ProjectMascot } from "../../projects/ui/ProjectMascot";
 import { useTabGroupLogos } from "../../projects/hooks/useTabGroupLogos";
@@ -31,15 +31,6 @@ import {
 
 // One height for the whole detail action row; `border` is inside it, so the
 // outline variant lines up with the filled and ghost ones.
-export const ACTION = "inline-flex items-center gap-1.5 rounded-md px-3 text-[12px]";
-
-export const ACTION_FILLED = `${ACTION} h-6.5 bg-content text-background-base hover:bg-content/80`;
-
-export const ACTION_OUTLINE = `${ACTION} h-7 border border-content/15 text-content/80 hover:bg-content/5`;
-
-export const ACTION_PANEL_HEADER = `${ACTION} h-6.5 text-content/70 hover:bg-content/10 hover:text-content`;
-
-export const ACTION_GHOST = `${ACTION} h-7 text-content/70 hover:bg-content/10 hover:text-content`;
 
 export type InboxProjectOption = {
   path: string;
@@ -114,12 +105,12 @@ export function inboxStatusMark(item: InboxItem): InboxStatusMark {
   if (label === "Draft") {
     return {
       Icon: GitPullRequestDraft,
-      className: "text-content/50",
+      className: "text-(--ui-text-secondary)",
       label,
     };
   }
   if (label === "Merged") {
-    return { Icon: GitMerge, className: "text-feature/90", label };
+    return { Icon: GitMerge, className: "text-(--color-feature)", label };
   }
   if (label === "Closed") {
     if (
@@ -127,17 +118,17 @@ export function inboxStatusMark(item: InboxItem): InboxStatusMark {
       item.kind === "issue" &&
       item.stateReason?.trim().toLowerCase() === "completed"
     ) {
-      return { Icon: CheckCircle, className: "text-feature/90", label };
+      return { Icon: CheckCircle, className: "text-(--color-feature)", label };
     }
     return {
       Icon: pr ? GitPullRequestClosed : CircleX,
-      className: "text-danger/90",
+      className: "text-(--ui-tone-danger-fg)",
       label,
     };
   }
   return {
     Icon: pr ? GitPullRequest : CircleDot,
-    className: "text-success/90",
+    className: "text-(--ui-tone-success-fg)",
     label,
   };
 }
@@ -172,13 +163,13 @@ export function InboxPerson({
           referrerPolicy="no-referrer"
           draggable={false}
           onError={() => setFailed(true)}
-          className="shrink-0 rounded-full bg-content/10 object-cover"
+          className="shrink-0 rounded-full bg-(--ui-surface-raised) object-cover"
           style={{ width: size, height: size }}
         />
       ) : (
         <span
           aria-hidden
-          className="grid shrink-0 place-items-center rounded-full bg-content/12 font-medium text-content/55"
+          className="grid shrink-0 place-items-center rounded-full bg-(--ui-surface-raised) font-medium text-(--ui-text-secondary)"
           style={{
             width: size,
             height: size,
@@ -203,78 +194,22 @@ export function InboxProjectPicker({
   onChange: (path: string) => void;
 }) {
   useLocale();
-  const [open, setOpen] = useState(false);
-  const button = useRef<HTMLButtonElement>(null);
-  const menu = useRef<HTMLDivElement>(null);
   const selected =
     projects.find((project) => sameProjectPath(project.path, value)) ?? projects[0] ?? null;
-
-  useEffect(() => {
-    if (!open) return;
-    const onPointerDown = (event: PointerEvent) => {
-      const target = event.target as Node;
-      if (button.current?.contains(target) || menu.current?.contains(target)) {
-        return;
-      }
-      setOpen(false);
-    };
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key !== "Escape") return;
-      event.preventDefault();
-      setOpen(false);
-    };
-    window.addEventListener("pointerdown", onPointerDown);
-    window.addEventListener("keydown", onKey, true);
-    return () => {
-      window.removeEventListener("pointerdown", onPointerDown);
-      window.removeEventListener("keydown", onKey, true);
-    };
-  }, [open]);
-
   return (
-    <div className="relative">
-      <button
-        ref={button}
-        type="button"
-        disabled={projects.length === 0}
-        onClick={() => setOpen((next) => !next)}
-        className="inline-flex h-7 max-w-48 items-center gap-1.5 rounded-md border border-content/10 bg-content/5 px-2 text-[12px] text-content/80 hover:bg-content/10 hover:text-content disabled:cursor-default disabled:opacity-40"
-      >
-        {selected ? <InboxProjectMark project={selected} /> : null}
-        <span className="min-w-0 truncate">{selected?.name ?? t("Choose project")}</span>
-        <ChevronDown className="size-3 shrink-0 text-content/45" strokeWidth={1.75} />
-      </button>
-      {open ? (
-        <div
-          ref={menu}
-          role="listbox"
-          className="absolute left-0 top-full z-30 mt-1 max-h-64 min-w-full max-w-64 overflow-y-auto rounded-lg border border-content/10 bg-content/10 p-1 shadow-xl backdrop-blur-xl outline-none"
-        >
-          {projects.map((project) => {
-            const active = selected ? sameProjectPath(project.path, selected.path) : false;
-            return (
-              <button
-                key={project.path}
-                type="button"
-                role="option"
-                aria-selected={active}
-                onClick={() => {
-                  onChange(project.path);
-                  setOpen(false);
-                }}
-                className={`flex h-7 w-full items-center gap-1.5 rounded-md px-2 text-left text-[12px] ${
-                  active
-                    ? "bg-selection text-content"
-                    : "text-content/80 hover:bg-content/5 hover:text-content"
-                }`}
-              >
-                <InboxProjectMark project={project} />
-                <span className="min-w-0 truncate">{project.name}</span>
-              </button>
-            );
-          })}
-        </div>
-      ) : null}
+    <div className="flex min-w-0 items-center gap-1">
+      {selected ? <InboxProjectMark project={selected} /> : null}
+      <SearchableSelect
+        label={t("Choose project")}
+        disabled={!projects.length}
+        value={selected?.path ?? ""}
+        options={projects.map((project) => ({
+          value: project.path,
+          label: project.name,
+          description: project.path,
+        }))}
+        onChange={onChange}
+      />
     </div>
   );
 }
@@ -284,7 +219,7 @@ export function InboxLabel({ label, compact = false }: { label: GithubLabel; com
   const color = labelColor(label.color);
   return (
     <span
-      className={`inline-flex min-w-0 items-center gap-1 rounded px-1.5 py-px text-content/50 bg-content/8 ${
+      className={`inline-flex min-w-0 items-center gap-1 rounded px-1.5 py-px text-(--ui-text-secondary) bg-(--ui-surface-raised) ${
         compact ? "max-w-20 text-[10px]" : "text-[11px]"
       }`}
     >

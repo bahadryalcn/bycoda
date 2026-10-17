@@ -1,3 +1,4 @@
+import { Button } from "../../../shared/ui/Button";
 import { t, useLocale } from "../../../shared/i18n";
 import { SecondaryButton } from "../../../shared/ui/SecondaryButton";
 import { Internet } from "../../../shared/ui/icons";
@@ -21,37 +22,38 @@ export function PhoneConnectionPanel({
 
   return (
     <section
-      className="flex flex-col gap-3 rounded-xl border border-stroke bg-content/3 p-4"
+      className="flex flex-col gap-3 rounded-xl border border-stroke bg-(--ui-surface-raised) p-4"
       aria-label={t("Connect your phone")}
     >
       <div className="flex flex-wrap items-center gap-3">
-        <Internet className="size-5 shrink-0 text-content/60" />
+        <Internet className="size-5 shrink-0 text-(--ui-text-muted)" />
         <div className="min-w-0 flex-1 basis-48">
           <h2 className="text-[14px] font-medium text-content">{t("Connect your phone")}</h2>
-          <p className="mbs-1 text-[13px] leading-relaxed text-content/55">
+          <p className="mbs-1 text-[13px] leading-relaxed text-(--ui-text-muted)">
             {t("Scan a QR code to manage your computers from your phone.")}
           </p>
         </div>
-        <button
+        <Button
           type="button"
-          className="min-h-10 rounded-lg bg-selection px-3 py-2 text-[13px] font-medium hover:bg-selection-hover active:bg-selection-strong focus-visible:outline-2 focus-visible:outline-accent disabled:opacity-40"
+
           disabled={!machine || loading || !loaded}
           onClick={() => {
             if (machine) void coordinator.open(machine);
           }}
+          variant="secondary"
         >
           {t("Connect your phone")}
-        </button>
+        </Button>
       </div>
       {machine ? (
-        <p className="text-[12px] text-content/65">
+        <p className="text-[12px] text-(--ui-text-muted)">
           {t("Pairing target: {p0}. You can choose another computer in the pairing screen.", {
             p0: isLocalSyncMachine(machine) ? t("This computer") : machine.name,
           })}
         </p>
       ) : null}
       {loaded && !loading && !machine ? (
-        <div className="flex flex-wrap items-center gap-3 text-[12px] text-content/55">
+        <div className="flex flex-wrap items-center gap-3 text-[12px] text-(--ui-text-muted)">
           <p>
             {t(
               "Your local host is not connected yet. Check again after bycoda finishes starting, or add a computer below.",

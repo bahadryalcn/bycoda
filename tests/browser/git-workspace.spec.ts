@@ -261,7 +261,7 @@ test("branch, commit ve dosya karşılaştırması panel içinde kalır", async 
   await dialog.getByRole("button", { name: "Full screen", exact: true }).click();
   const bounds = await dialog.boundingBox();
   expect(bounds?.x).toBe(0);
-  expect(bounds?.width).toBe(1000);
+  expect(bounds?.width).toBe(page.viewportSize()?.width);
   await expect(dialog.getByRole("button", { name: "Restore window", exact: true })).toBeVisible();
 });
 

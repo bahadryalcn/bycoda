@@ -1,3 +1,4 @@
+import { Button } from "../../../shared/ui/Button";
 import { SearchInput } from "../../../shared/ui/SearchInput";
 import { useRetainedState } from "../../../shared/hooks/useRetainedState";
 import { pathKey } from "../../../shared/lib/paths";
@@ -127,42 +128,45 @@ export function GitGraphBranches({
   return (
     <section aria-label={t("Branches")} className="flex min-h-0 flex-1 flex-col">
       <div className="flex h-9 shrink-0 items-center justify-between px-3">
-        <h3 className="text-[11px] font-semibold uppercase tracking-wide text-content/65">
+        <h3 className="text-[11px] font-semibold uppercase tracking-wide text-[var(--ui-text-secondary)]">
           {t("Branches")}
         </h3>
-        <button
+        <Button
+          iconOnly
+          label={t("New branch")}
+          variant="ghost"
+          motion="none"
           type="button"
           aria-label={t("New branch")}
           title={t("New branch")}
           disabled={disabled}
           onClick={() => create("HEAD")}
-          className="grid size-7 place-items-center rounded hover:bg-content/10 disabled:opacity-40"
         >
           <Plus className="size-3.5" />
-        </button>
+        </Button>
       </div>
       <label className="mx-2 mb-2">
         <span className="sr-only">{t("Filter branches")}</span>
         <SearchInput
+          appearance="field"
           standalone
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder={t("Filter branches")}
           containerClassName="w-full"
-          className="h-7 rounded border border-stroke bg-content/5 px-2 text-[12px] outline-none focus:border-accent"
         />
       </label>
       <div className="min-h-0 overflow-y-auto pb-3">
         {error ? (
           <div role="alert" className="px-3 text-[12px] text-danger">
             {error}
-            <button onClick={refresh} className="ml-2 underline">
+            <Button variant="ghost" motion="none" onClick={refresh} className="ml-2 underline">
               {t("Retry")}
-            </button>
+            </Button>
           </div>
         ) : null}
         {loading && !data ? (
-          <p role="status" className="px-3 text-[12px] text-content/60">
+          <p role="status" className="px-3 text-[12px] text-[var(--ui-text-secondary)]">
             {t("Loading branches…")}
           </p>
         ) : null}
@@ -171,7 +175,7 @@ export function GitGraphBranches({
         ) : null}
         {[false, true].map((remote) => (
           <div key={String(remote)}>
-            <h4 className="px-3 pt-3 pb-1 text-[10px] uppercase tracking-wide text-content/50">
+            <h4 className="px-3 pt-3 pb-1 text-[10px] uppercase tracking-wide text-[var(--ui-text-secondary)]">
               {t(remote ? "Remotes" : "Local")}
             </h4>
             {branches
@@ -179,15 +183,17 @@ export function GitGraphBranches({
               .map((branch) => (
                 <div
                   key={reference(branch)}
-                  className={`group flex h-8 items-center px-2 ${branch.current && !remote ? "bg-selection text-content" : "text-content/75 hover:bg-content/5"}`}
+                  className={`group flex h-8 items-center px-2 ${branch.current && !remote ? "bg-selection text-content" : "text-[var(--ui-text-secondary)] hover:bg-[var(--ui-surface-hover)]"}`}
                 >
-                  <button
+                  <Button
+                    variant="ghost"
+                    motion="none"
                     type="button"
                     disabled={disabled || (branch.current && !remote)}
                     title={t("Switch to {p0}", { p0: reference(branch) })}
                     aria-label={t("Switch to {p0}", { p0: reference(branch) })}
                     onClick={() => void pick("checkout", branch)}
-                    className="flex h-full min-w-0 flex-1 items-center gap-2 text-left text-[12px] disabled:opacity-70"
+                    className="flex h-full min-w-0 flex-1 items-center gap-2 text-left"
                   >
                     {branch.current && !remote ? (
                       <Check className="size-3.5 shrink-0 text-accent" />
@@ -195,24 +201,31 @@ export function GitGraphBranches({
                       <GitBranch className="size-3.5 shrink-0" />
                     )}
                     <span className="truncate">{reference(branch)}</span>
-                  </button>
-                  <button
+                  </Button>
+                  <Button
+                    iconOnly
+                    label={t("Actions for {p0}", {
+                      p0: reference(branch),
+                    })}
+                    variant="ghost"
+                    motion="none"
                     type="button"
                     disabled={disabled}
                     aria-label={t("Actions for {p0}", {
                       p0: reference(branch),
                     })}
                     onClick={(e) => setMenu({ branch, anchor: e.currentTarget })}
-                    className="grid size-7 shrink-0 place-items-center rounded hover:bg-content/10 disabled:opacity-40"
                   >
                     <MoreHorizontal className="size-3.5" />
-                  </button>
+                  </Button>
                 </div>
               ))}
           </div>
         ))}
         {!loading && branches.length === 0 ? (
-          <p className="px-3 py-3 text-[12px] text-content/55">{t("No matching branches")}</p>
+          <p className="px-3 py-3 text-[12px] text-[var(--ui-text-secondary)]">
+            {t("No matching branches")}
+          </p>
         ) : null}
       </div>
       {menu ? (

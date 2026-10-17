@@ -1,3 +1,6 @@
+import { TextField } from "../../../shared/ui/TextField";
+import { TreeRow } from "../../../shared/ui/TreeRow";
+import { Button } from "../../../shared/ui/Button";
 import { getLocale, t, useLocale } from "../../../shared/i18n/technical";
 import {
   CheckCircle,
@@ -1464,7 +1467,7 @@ export const FileTree = memo(function FileTree({
       <TreeStateCtx.Provider value={treeStore}>
         <div className="flex h-full min-h-0 flex-col">
           <div
-            className="flex h-9 shrink-0 items-center gap-px overflow-visible border-b border-stroke px-2"
+            className="flex min-h-[calc(var(--ui-control-height-compact)+0.5rem)] shrink-0 items-center gap-px overflow-visible border-b border-stroke px-2"
             onContextMenu={(e) => e.stopPropagation()}
           >
             <HeaderIcon
@@ -1523,8 +1526,12 @@ export const FileTree = memo(function FileTree({
               onKeyDown={onKeyDown}
               onContextMenu={onBackgroundMenu}
             >
-              <div className="@container/explorer-root flex h-8 shrink-0 items-center">
-                <button
+              <div className="@container/explorer-root flex min-h-[var(--ui-control-height-compact)] shrink-0 items-center">
+                <Button
+                  size="sm"
+                  variant="tab"
+                  selected={dragOverPath === cwd}
+                  motion="none"
                   type="button"
                   data-explorer-root
                   aria-expanded={rootOpen}
@@ -1538,21 +1545,21 @@ export const FileTree = memo(function FileTree({
                     e.stopPropagation();
                     openMenu({ path: cwd, isDir: true, isRoot: true }, e.clientX, e.clientY);
                   }}
-                  className={`flex min-w-0 flex-1 items-center gap-1 h-full pl-2 text-left outline-none focus-visible:outline-1 focus-visible:-outline-offset-1 focus-visible:outline-accent/40 ${
-                    dragOverPath === cwd ? "bg-selection" : ""
-                  }`}
+                  className={`  flex min-w-0 flex-1 items-center gap-1 h-full text-left focus-visible:-outline-offset-1  ${
+                    dragOverPath === cwd ? "" : ""
+                  }   `}
                 >
-                  <span className="grid size-4 shrink-0 place-items-center text-content/50">
+                  <span className="grid size-4 shrink-0 place-items-center text-[var(--ui-text-secondary)]">
                     {rootOpen ? (
                       <ChevronDown className="size-3.5" strokeWidth={1.75} />
                     ) : (
                       <ChevronRight className="size-3.5" strokeWidth={1.75} />
                     )}
                   </span>
-                  <span className="min-w-0 truncate text-[11px] font-semibold tracking-[0.08em] text-content/50 uppercase">
+                  <span className="min-w-0 truncate text-[11px] font-semibold tracking-[0.08em] text-[var(--ui-text-secondary)] uppercase">
                     {name}
                   </span>
-                </button>
+                </Button>
                 <ExplorerSyncStatus state={rootDataState} onRefresh={refreshRoot} />
               </div>
               <div ref={lockOverscroll} className="min-h-0 flex-1 overflow-y-auto overscroll-none">
@@ -1626,21 +1633,23 @@ function HeaderIcon({
 }) {
   useLocale();
   return (
-    <button
+    <Button
+      size="sm"
+      selected={active}
+      variant="ghost"
+      motion="none"
       type="button"
       title={label}
       aria-label={label}
       aria-pressed={active || undefined}
       onMouseDown={(e) => e.preventDefault()}
       onClick={onClick}
-      className={`flex h-6 min-w-0 flex-1 items-center justify-center self-center rounded-md ${
-        active
-          ? "bg-selection text-content"
-          : "text-content/50 hover:bg-content/5 hover:text-content"
-      }`}
+      className={`  flex  min-w-0 flex-1 items-center justify-center self-center  ${
+        active ? "" : ""
+      }   `}
     >
       {children}
-    </button>
+    </Button>
   );
 }
 
@@ -1678,7 +1687,7 @@ function ExplorerSyncStatus({
       aria-busy={busy}
       role={state.phase === "error" ? "alert" : undefined}
       title={title || undefined}
-      className="flex shrink-0 items-center gap-1 pr-1.5 text-[11px] leading-none text-content/40"
+      className="flex shrink-0 items-center gap-1 pr-1.5 text-[11px] leading-none text-[var(--ui-text-muted)]"
     >
       <span className="hidden items-center gap-1 @min-[140px]/explorer-root:inline-flex">
         {warn ? (
@@ -1690,7 +1699,10 @@ function ExplorerSyncStatus({
           <span className="hidden tabular-nums @min-[200px]/explorer-root:inline">{time}</span>
         ) : null}
       </span>
-      <button
+      <Button
+        size="sm"
+        variant="ghost"
+        motion="none"
         type="button"
         onClick={onRefresh}
         disabled={busy}
@@ -1700,14 +1712,14 @@ function ExplorerSyncStatus({
             : t("Refresh {p0}", { p0: "files" })
         }
         title={t("Refresh")}
-        className="grid size-6 shrink-0 place-items-center rounded-md text-content/50 hover:bg-content/8 hover:text-content disabled:opacity-60"
+        className="grid size-6 shrink-0 place-items-center"
       >
         {busy ? (
           <Loader aria-hidden className="size-3.5 animate-spin" />
         ) : (
           <RefreshCw aria-hidden className="size-3.5" />
         )}
-      </button>
+      </Button>
     </div>
   );
 }
@@ -1791,16 +1803,19 @@ function TreeChildren({
           style={pad}
         >
           <span className="min-w-0 flex-1 break-words">{error}</span>
-          <button
+          <Button
+            size="sm"
+            variant="ghost"
+            motion="none"
             type="button"
-            className="shrink-0 text-content/60 hover:text-content"
+            className="shrink-0"
             onClick={onRetry}
           >
             {t("Retry")}
-          </button>
+          </Button>
         </p>
       ) : loading && entries === null ? (
-        <p className="py-1 pr-2 text-[12px] text-content/40" style={pad}>
+        <p className="py-1 pr-2 text-[12px] text-[var(--ui-text-muted)]" style={pad}>
           {t("Loading…")}
         </p>
       ) : null}
@@ -1809,25 +1824,29 @@ function TreeChildren({
       {show && ctx.creating && !ctx.creating.isDir ? row : null}
       {files.map(renderNode)}
       {hidden > 0 ? (
-        <p className="flex gap-3 pr-2 text-[12px] text-content/50" style={pad}>
-          <button
+        <p className="flex gap-3 pr-2 text-[12px] text-[var(--ui-text-secondary)]" style={pad}>
+          <Button
+            size="sm"
+            variant="ghost"
+            motion="none"
             type="button"
-            className="hover:text-content"
             onClick={() => setLimit((n) => n + TREE_WINDOW_CHUNK)}
           >
             {t("Show ")}
             {Math.min(TREE_WINDOW_CHUNK, hidden)}
             {t(" more…")}
-          </button>
+          </Button>
           {hidden > TREE_WINDOW_CHUNK ? (
-            <button
+            <Button
+              size="sm"
+              variant="ghost"
+              motion="none"
               type="button"
-              className="hover:text-content"
               onClick={() => setLimit(Number.POSITIVE_INFINITY)}
             >
               {t("Show all ")}
               {hidden}
-            </button>
+            </Button>
           ) : null}
         </p>
       ) : null}
@@ -1938,7 +1957,10 @@ const TreeNode = memo(function TreeNode({
           onCancel={onRenameCancel}
         />
       ) : (
-        <button
+        <TreeRow
+          depth={depth}
+          cut={cut}
+          dropTarget={dragOver}
           type="button"
           role="treeitem"
           title={entry.path}
@@ -1955,12 +1977,8 @@ const TreeNode = memo(function TreeNode({
             onFilePointerDown(entry.path, event);
           }}
           onContextMenu={(e) => onItemContextMenu(entry, e)}
-          style={{ paddingLeft: 8 + depth * 12 }}
-          className={`flex h-7.5 w-full cursor-default items-center gap-1 pr-2 text-left text-[14px] select-none active:bg-content/10 focus-visible:outline-1 focus-visible:-outline-offset-1 focus-visible:outline-accent/40 leading-none data-[explorer-dragging]:opacity-50 ${
-            selected ? "bg-selection text-content" : "text-content hover:bg-content/5"
-          } ${cut ? "opacity-50" : ""} ${dragOver ? "bg-selection" : ""}`}
         >
-          <span className="grid size-4 shrink-0 place-items-center text-content/50">
+          <span className="grid size-4 shrink-0 place-items-center text-[var(--ui-text-secondary)]">
             {entry.isDir ? (
               open ? (
                 <ChevronDown className="size-3.5" strokeWidth={1.75} />
@@ -1974,12 +1992,12 @@ const TreeNode = memo(function TreeNode({
           </span>
           <span
             className={`min-w-0 truncate leading-label ${
-              entry.ignored ? "italic text-content/50" : (gitColor ?? "")
+              entry.ignored ? "italic text-[var(--ui-text-secondary)]" : (gitColor ?? "")
             }`}
           >
             {entry.name}
           </span>
-        </button>
+        </TreeRow>
       )}
       {entry.isDir && open ? (
         <TreeChildren
@@ -2066,15 +2084,18 @@ export function NameRow({
     <div>
       <div
         style={{ paddingLeft: 8 + depth * 12 }}
-        className="flex h-7.5 w-full items-center gap-1 bg-content/10 pr-2"
+        className="flex h-[var(--ui-control-height-compact)] w-full items-center gap-1 bg-[var(--ui-surface-muted)] pr-2"
       >
-        <span className="grid size-4 shrink-0 place-items-center text-content/50">
+        <span className="grid size-4 shrink-0 place-items-center text-[var(--ui-text-secondary)]">
           {isDir ? <ChevronRight className="size-3.5" strokeWidth={1.75} /> : null}
         </span>
         <span className="shrink-0">
           <FileTypeIcon name={leaf} isDir={isDir} />
         </span>
-        <input
+        <TextField
+          hideLabel
+          label=""
+          fieldClassName="min-w-0 flex-1"
           ref={inputRef}
           value={value}
           disabled={busy}
@@ -2100,7 +2121,7 @@ export function NameRow({
             }
           }}
           onBlur={() => finish(issue === null || issue.severity !== "error")}
-          className="h-5 min-w-0 flex-1 rounded-sm bg-content/10 px-1 text-[14px] leading-none text-content outline-none ring-1 ring-accent"
+          className="h-5 min-w-0 flex-1 leading-none"
         />
       </div>
       {showIssue ? <NameIssueView depth={depth} issue={issue} fallback={submitError} /> : null}

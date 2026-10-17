@@ -1,3 +1,5 @@
+import { Button } from "../../../shared/ui/Button";
+import { TextField } from "../../../shared/ui/TextField";
 import { t, useLocale } from "../../../shared/i18n/git";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Loader } from "../../../shared/ui/icons";
@@ -18,9 +20,6 @@ type Props = {
   onSubmit: (name: string, extra: string) => void;
   onCancel: () => void;
 };
-
-const INPUT =
-  "h-9 rounded-md border border-content/10 bg-content/5 px-2.5 font-sans text-[13px] text-content outline-none placeholder:text-content/30 focus:border-content/25 disabled:opacity-50";
 
 /** Asks for a name (a branch, tag, or remote), and optionally one more value. */
 export function RefNameDialog({
@@ -74,8 +73,10 @@ export function RefNameDialog({
     >
       <form className="flex flex-col gap-4 p-4" onSubmit={submit}>
         <label className="flex flex-col gap-1.5">
-          <span className="text-[12px] font-medium text-content/70">{label}</span>
-          <input
+          <span className="text-[12px] font-medium text-[var(--ui-text-secondary)]">{label}</span>
+          <TextField
+            hideLabel
+            label=""
             ref={input}
             type="text"
             value={name}
@@ -87,13 +88,16 @@ export function RefNameDialog({
             autoCapitalize="off"
             disabled={busy}
             onChange={(event) => setName(event.target.value)}
-            className={INPUT}
           />
         </label>
         {extra ? (
           <label className="flex flex-col gap-1.5">
-            <span className="text-[12px] font-medium text-content/70">{extra.label}</span>
-            <input
+            <span className="text-[12px] font-medium text-[var(--ui-text-secondary)]">
+              {extra.label}
+            </span>
+            <TextField
+              hideLabel
+              label=""
               type="text"
               value={extraValue}
               placeholder={extra.placeholder}
@@ -104,34 +108,38 @@ export function RefNameDialog({
               autoCapitalize="off"
               disabled={busy}
               onChange={(event) => setExtraValue(event.target.value)}
-              className={INPUT}
             />
           </label>
         ) : null}
 
         {error ? (
-          <p role="alert" className="text-[11px] leading-4 text-danger/90">
+          <p role="alert" className="text-[11px] leading-4 text-danger">
             {error}
           </p>
         ) : null}
 
         <div className="flex justify-end gap-2">
-          <button
+          <Button
+            size="sm"
+            variant="ghost"
+            motion="none"
             type="button"
             disabled={busy}
             onClick={onCancel}
-            className="rounded-md px-3 py-1.5 text-[12px] text-content/70 hover:bg-content/8 hover:text-content disabled:opacity-40"
           >
             {t("Cancel")}
-          </button>
-          <button
+          </Button>
+          <Button
+            size="sm"
+            variant="primary"
+            motion="none"
             type="submit"
             disabled={!complete || busy}
-            className="inline-flex items-center gap-1.5 rounded-md bg-content px-3 py-1.5 text-[12px] font-medium text-background-base hover:bg-content/80 disabled:opacity-40"
+            className="inline-flex items-center gap-1.5"
           >
             {busy ? <Loader className="size-3.5 animate-spin" strokeWidth={1.75} /> : null}
             {submitLabel}
-          </button>
+          </Button>
         </div>
       </form>
     </Modal>

@@ -1,3 +1,5 @@
+import { Badge } from "../../shared/ui/Badge";
+import { Button } from "../../shared/ui/Button";
 import { t, useLocale } from "../../shared/i18n";
 import { useState } from "react";
 import { Check, Clock } from "../../shared/ui/icons";
@@ -30,34 +32,40 @@ export function SessionRecoveryControl({
     }
   };
   return (
-    <div className="recovery-rail-row" aria-busy={pending}>
-      <button
+    <div className="recovery-rail-row group" aria-busy={pending}>
+      <Button
+        variant="item"
+        motion="none"
         type="button"
         title={`${label} (${count})`}
         aria-label={`${label} (${count})`}
-        className="recovery-rail-control flex min-w-0 flex-1 items-center justify-start gap-2 rounded-md px-2 py-2 text-xs text-content/80 hover:bg-content/8 active:bg-content/12 focus-visible:outline-2 focus-visible:outline-accent disabled:opacity-40"
+        className="recovery-rail-control flex min-w-0 flex-1 items-center justify-start gap-2"
         disabled={pending}
         onClick={onOpen}
       >
         <Clock className="size-4 shrink-0" aria-hidden="true" />
-        <span className="truncate @max-[140px]/rail:hidden [[data-compact-project-rail]_&]:hidden">
+        <span className="min-w-0 flex-1 truncate @max-[140px]/rail:hidden [[data-compact-project-rail]_&]:hidden">
           {label}
         </span>
-        <span className="recovery-rail-count" aria-hidden="true">
+        <Badge className="recovery-rail-count" aria-hidden="true">
           {count > 99 ? "99+" : count}
-        </span>
-      </button>
+        </Badge>
+      </Button>
       {onClear ? (
-        <button
+        <Button
+          iconOnly
+          label={t("Clear list")}
+          variant="ghost"
+          motion="none"
           type="button"
-          className="recovery-rail-clear recovery-remove"
+          className="recovery-rail-clear recovery-remove opacity-0 group-hover:opacity-100 group-focus-within:opacity-100"
           title={t("Clear list")}
           aria-label={t("Clear list")}
           disabled={pending}
           onClick={() => void clear()}
         >
-          <Check className="size-4" aria-hidden="true" />
-        </button>
+          <Check className="size-3.5" aria-hidden="true" />
+        </Button>
       ) : null}
       {error ? (
         <span role="alert" className="recovery-rail-error text-xs text-danger">

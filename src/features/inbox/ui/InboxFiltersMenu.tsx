@@ -1,6 +1,11 @@
+import { Checkbox } from "../../../shared/ui/Checkbox";
+import { NativeSelect } from "../../../shared/ui/Select";
+import { Alert } from "../../../shared/ui/Alert";
+import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
+import { Button } from "../../../shared/ui/Button";
 import type { CodeHostScope } from "../model/codeHostScopes";
 import { t, useLocale } from "../../../shared/i18n";
-import { Check, CircleDot, GitPullRequest } from "../../../shared/ui/icons";
+import { CircleDot, GitPullRequest } from "../../../shared/ui/icons";
 import { type ReactNode } from "react";
 import type { InboxKind } from "../model/githubTasks";
 import {
@@ -15,7 +20,6 @@ import {
 import type { JiraProject } from "../model/jira";
 import type { LinearTeam } from "../model/linear";
 import { Popover } from "../../../shared/ui/Popover";
-import { ProjectLogoIcon } from "../../projects/ui/ProjectLogoIcon";
 
 export const INBOX_FILTER_MENU_WIDTH = 228;
 
@@ -117,12 +121,10 @@ export function InboxFiltersMenu({
   onClose,
 }: Props) {
   useLocale();
-  const hiddenProjects = new Set(filters.hiddenProjects);
-  const hiddenLinearProjects = new Set(filters.hiddenLinearProjects);
-  const hiddenTeams = new Set(hiddenLinearTeamIds);
+
   const hiddenKinds = new Set(filters.hiddenKinds);
   const teamsActive = source === "linear" && hiddenLinearTeamIds.length > 0;
-  const hiddenJira = new Set(hiddenJiraProjectIds);
+
   const jiraProjectsActive = source === "jira" && hiddenJiraProjectIds.length > 0;
   const tracker = isTrackerSource(source);
   const codeHostProjectsActive =
@@ -137,34 +139,6 @@ export function InboxFiltersMenu({
     if (next.has(kind)) next.delete(kind);
     else next.add(kind);
     onChange({ ...filters, hiddenKinds: [...next] });
-  };
-
-  const toggleProject = (path: string) => {
-    const next = new Set(hiddenProjects);
-    if (next.has(path)) next.delete(path);
-    else next.add(path);
-    onChange({ ...filters, hiddenProjects: [...next] });
-  };
-
-  const toggleLinearTeam = (id: string) => {
-    const next = new Set(hiddenTeams);
-    if (next.has(id)) next.delete(id);
-    else next.add(id);
-    onLinearTeamsChange([...next]);
-  };
-
-  const toggleJiraProject = (id: string) => {
-    const next = new Set(hiddenJira);
-    if (next.has(id)) next.delete(id);
-    else next.add(id);
-    onJiraProjectsChange([...next]);
-  };
-
-  const toggleLinearProject = (id: string) => {
-    const next = new Set(hiddenLinearProjects);
-    if (next.has(id)) next.delete(id);
-    else next.add(id);
-    onChange({ ...filters, hiddenLinearProjects: [...next] });
   };
 
   const setTime = (time: InboxTimeFilter) => {
@@ -185,7 +159,7 @@ export function InboxFiltersMenu({
       width={INBOX_FILTER_MENU_WIDTH}
       maxHeight={480}
       onDismiss={onClose}
-      role="menu"
+      role="dialog"
       aria-label={t("Filter inbox")}
       onContextMenu={(event) => event.preventDefault()}
       className="overflow-y-auto overscroll-none p-1"
@@ -227,14 +201,17 @@ export function InboxFiltersMenu({
       ) : null}
 
       <SectionLabel>{t("Time")}</SectionLabel>
-      {TIME_OPTIONS.map((option) => (
-        <FilterItem
-          key={option.id}
-          label={option.label}
-          checked={filters.time === option.id}
-          onClick={() => setTime(option.id)}
-        />
-      ))}
+      <NativeSelect
+        aria-label={t("Time")}
+        value={filters.time}
+        onChange={(event) => setTime(event.target.value as InboxTimeFilter)}
+      >
+        {TIME_OPTIONS.map((option) => (
+          <option key={option.id} value={option.id}>
+            {option.label}
+          </option>
+        ))}
+      </NativeSelect>
 
       {!tracker ? (
         <>
@@ -254,66 +231,97 @@ export function InboxFiltersMenu({
       {source === "linear" && linearTeams.length > 0 ? (
         <>
           <SectionLabel>{t("Teams")}</SectionLabel>
-          {linearTeams.map((team) => (
-            <FilterItem
-              key={team.id}
-              label={team.name || team.key}
-              checked={!hiddenTeams.has(team.id)}
-              onClick={() => toggleLinearTeam(team.id)}
-            />
-          ))}
+          <SearchableSelect
+            multiple
+            label={t("Teams")}
+            options={linearTeams.map((item) => ({
+              value: item.id,
+              label: item.name || item.key,
+              keywords: item.id,
+            }))}
+            value={linearTeams
+              .filter((item) => !hiddenLinearTeamIds.includes(item.id))
+              .map((item) => item.id)}
+            onChange={(values) => {
+              const keys = linearTeams.map((item) => item.id);
+              const next = hiddenAfterSelection(keys, values, hiddenLinearTeamIds);
+              onLinearTeamsChange(next);
+            }}
+          />
         </>
       ) : null}
 
       {source === "linear" && linearProjects.length > 0 ? (
         <>
           <SectionLabel>{t("Projects")}</SectionLabel>
-          {linearProjects.map((project) => (
-            <FilterItem
-              key={project.id}
-              label={project.name}
-              checked={!hiddenLinearProjects.has(project.id)}
-              onClick={() => toggleLinearProject(project.id)}
-            />
-          ))}
+          <SearchableSelect
+            multiple
+            label={t("Projects")}
+            options={linearProjects.map((item) => ({
+              value: item.id,
+              label: item.name,
+              keywords: item.id,
+            }))}
+            value={linearProjects
+              .filter((item) => !filters.hiddenLinearProjects.includes(item.id))
+              .map((item) => item.id)}
+            onChange={(values) => {
+              const keys = linearProjects.map((item) => item.id);
+              const next = hiddenAfterSelection(keys, values, filters.hiddenLinearProjects);
+              onChange({ ...filters, hiddenLinearProjects: next });
+            }}
+          />
         </>
       ) : null}
 
       {source === "jira" && jiraProjects.length > 0 ? (
         <>
           <SectionLabel>{t("Projects")}</SectionLabel>
-          {jiraProjects.map((project) => (
-            <FilterItem
-              key={project.id}
-              label={project.name || project.key}
-              checked={!hiddenJira.has(project.id)}
-              onClick={() => toggleJiraProject(project.id)}
-            />
-          ))}
+          <SearchableSelect
+            multiple
+            label={t("Projects")}
+            options={jiraProjects.map((item) => ({
+              value: item.id,
+              label: item.name || item.key,
+              keywords: item.id,
+            }))}
+            value={jiraProjects
+              .filter((item) => !hiddenJiraProjectIds.includes(item.id))
+              .map((item) => item.id)}
+            onChange={(values) => {
+              const keys = jiraProjects.map((item) => item.id);
+              const next = hiddenAfterSelection(keys, values, hiddenJiraProjectIds);
+              onJiraProjectsChange(next);
+            }}
+          />
         </>
       ) : null}
 
       {source === "gitlab" || source === "azuredevops" ? (
         <>
           {codeHostError ? (
-            <p role="alert" className="px-3 py-2 text-xs text-danger">
+            <Alert tone="danger" role="alert">
               {codeHostError}
-            </p>
+            </Alert>
           ) : null}
           {codeHostProjects.length ? <SectionLabel>{t("Projects")}</SectionLabel> : null}
-          {codeHostProjects.map((project) => (
-            <FilterItem
-              key={project.id}
-              label={project.name}
-              checked={!hiddenCodeHostProjects.includes(project.id)}
-              onClick={() => {
-                const next = hiddenCodeHostProjects.includes(project.id)
-                  ? hiddenCodeHostProjects.filter((id) => id !== project.id)
-                  : [...hiddenCodeHostProjects, project.id];
-                onCodeHostProjectsChange?.(next);
-              }}
-            />
-          ))}
+          <SearchableSelect
+            multiple
+            label={t("Projects")}
+            options={codeHostProjects.map((item) => ({
+              value: item.id,
+              label: item.name,
+              keywords: item.id,
+            }))}
+            value={codeHostProjects
+              .filter((item) => !hiddenCodeHostProjects.includes(item.id))
+              .map((item) => item.id)}
+            onChange={(values) => {
+              const keys = codeHostProjects.map((item) => item.id);
+              const next = hiddenAfterSelection(keys, values, hiddenCodeHostProjects);
+              onCodeHostProjectsChange?.(next);
+            }}
+          />
         </>
       ) : null}
 
@@ -322,33 +330,33 @@ export function InboxFiltersMenu({
       projects.length > 0 ? (
         <>
           <SectionLabel>{t("Projects")}</SectionLabel>
-          {projects.map((project) => (
-            <FilterItem
-              key={project.path}
-              label={project.name}
-              checked={!hiddenProjects.has(project.path)}
-              icon={
-                project.logoPath ? (
-                  <ProjectLogoIcon
-                    path={project.logoPath}
-                    className="size-3.5 shrink-0 rounded-sm"
-                    imageClassName="size-3.5"
-                  />
-                ) : undefined
-              }
-              onClick={() => toggleProject(project.path)}
-            />
-          ))}
+          <SearchableSelect
+            multiple
+            label={t("Projects")}
+            options={projects.map((item) => ({
+              value: item.path,
+              label: item.name,
+              keywords: item.path,
+            }))}
+            value={projects
+              .filter((item) => !filters.hiddenProjects.includes(item.path))
+              .map((item) => item.path)}
+            onChange={(values) => {
+              const keys = projects.map((item) => item.path);
+              const next = hiddenAfterSelection(keys, values, filters.hiddenProjects);
+              onChange({ ...filters, hiddenProjects: next });
+            }}
+          />
         </>
       ) : null}
 
       {hasActiveInboxFilters(filters, source, hiddenLinearTeamIds, hiddenJiraProjectIds) ||
       codeHostProjectsActive ? (
         <>
-          <div role="separator" className="my-1 h-px bg-content/10" />
-          <button
+          <div role="separator" className="my-1 h-px bg-(--ui-surface-raised)" />
+          <Button
+            variant="item"
             type="button"
-            role="menuitem"
             onMouseDown={(event) => event.preventDefault()}
             onClick={() => {
               onChange(DEFAULT_INBOX_FILTERS);
@@ -356,10 +364,10 @@ export function InboxFiltersMenu({
               if (jiraProjectsActive) onJiraProjectsChange([]);
               if (codeHostProjectsActive) onCodeHostProjectsChange?.([]);
             }}
-            className="flex h-7 w-full items-center rounded-lg px-2 text-left text-[13px] leading-none text-content/70 hover:bg-content/5 hover:text-content"
+            className="w-full text-left"
           >
             {t("Clear filters")}
-          </button>
+          </Button>
         </>
       ) : null}
     </Popover>
@@ -369,7 +377,7 @@ export function InboxFiltersMenu({
 function SectionLabel({ children }: { children: string }) {
   useLocale();
   return (
-    <div className="px-2 pb-0.5 pt-2 text-[10px] font-semibold uppercase tracking-[0.08em] text-content/40">
+    <div className="px-2 pb-0.5 pt-2 text-[10px] font-medium text-(--ui-text-secondary)">
       {children}
     </div>
   );
@@ -388,17 +396,21 @@ function FilterItem({
 }) {
   useLocale();
   return (
-    <button
-      type="button"
-      role="menuitemcheckbox"
-      aria-checked={checked}
-      onMouseDown={(event) => event.preventDefault()}
-      onClick={onClick}
-      className="flex h-7 w-full items-center gap-2 rounded-lg px-2 text-left text-[13px] leading-none text-content hover:bg-content/5"
-    >
+    <label className="flex min-w-0 items-center gap-2 px-2 py-1 text-[12px] text-(--ui-tone-neutral-fg)">
+      <Checkbox checked={checked} onChange={onClick} />
       {icon}
       <span className="min-w-0 flex-1 truncate">{label}</span>
-      {checked ? <Check className="size-3.5 shrink-0" strokeWidth={2.25} /> : null}
-    </button>
+    </label>
   );
+}
+
+function hiddenAfterSelection(
+  keys: readonly string[],
+  selected: readonly string[],
+  previous: readonly string[],
+) {
+  return [
+    ...previous.filter((key) => !keys.includes(key)),
+    ...keys.filter((key) => !selected.includes(key)),
+  ];
 }

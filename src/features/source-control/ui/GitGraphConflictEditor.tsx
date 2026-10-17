@@ -1,3 +1,4 @@
+import { Button } from "../../../shared/ui/Button";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   gitConflictStages,
@@ -169,31 +170,34 @@ export function GitGraphConflictEditor({
         >
           {relative}
         </span>
-        <button
+        <Button
+          variant="ghost"
+          motion="none"
           type="button"
           disabled={disabled}
           onClick={() => take("ours")}
-          className="rounded border border-stroke px-2 py-1 text-[11px] hover:bg-content/10 disabled:opacity-40"
         >
           {t("Use current")}
-        </button>
-        <button
+        </Button>
+        <Button
+          variant="ghost"
+          motion="none"
           type="button"
           disabled={disabled}
           onClick={() => take("theirs")}
-          className="rounded border border-stroke px-2 py-1 text-[11px] hover:bg-content/10 disabled:opacity-40"
         >
           {t("Use incoming")}
-        </button>
+        </Button>
         {editable && hasConflictMarkers(draft) ? (
-          <button
+          <Button
+            variant="ghost"
+            motion="none"
             type="button"
             disabled={disabled}
             onClick={() => setDraft(resolveConflictMarkers(draft, "both"))}
-            className="rounded border border-stroke px-2 py-1 text-[11px] hover:bg-content/10"
           >
             {t("Use both")}
-          </button>
+          </Button>
         ) : null}
       </header>
       {editable ? (
@@ -201,14 +205,16 @@ export function GitGraphConflictEditor({
           path={path}
           dirty={dirty}
           resultActions={
-            <button
+            <Button
+              variant="ghost"
+              motion="none"
               type="button"
               disabled={disabled || hasConflictMarkers(draft)}
               onClick={() => void save()}
-              className="shrink-0 rounded bg-content px-3 py-1 text-[12px] text-background-base disabled:opacity-40"
+              className="shrink-0"
             >
               {t("Save and stage")}
-            </button>
+            </Button>
           }
           ours={{
             text: loaded.stages.ours,
@@ -234,7 +240,7 @@ export function GitGraphConflictEditor({
               disabled={disabled}
               spellCheck={false}
               onChange={(e) => setDraft(e.target.value)}
-              className="min-h-0 flex-1 resize-none bg-background-base p-3 font-mono text-[12px] leading-5 text-content outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-accent"
+              className="min-h-0 flex-1 resize-none font-mono leading-5"
             />
           </div>
         </ConflictLayout>
@@ -243,7 +249,7 @@ export function GitGraphConflictEditor({
           <div className="flex min-h-0 flex-1 flex-col">
             <UnifiedDiffView files={models} />
           </div>
-          <p className="px-3 py-2 text-[12px] text-content/65">
+          <p className="px-3 py-2 text-[12px] text-[var(--ui-text-secondary)]">
             {t("Choose a whole-file version to resolve this conflict")}
           </p>
         </>

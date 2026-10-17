@@ -1,3 +1,6 @@
+import { useState } from "react";
+import { UsageOverview } from "../../src/features/usage/ui/UsageOverview";
+import { saveDecorativeMotionEnabled } from "../../src/features/settings/model/decorativeMotion";
 import { createRoot } from "react-dom/client";
 import { mockIPC } from "@tauri-apps/api/mocks";
 import { UsageBudgets } from "../../src/features/usage/ui/UsageBudgets";
@@ -47,7 +50,13 @@ setCachedRateLimits("codex", "default", {
   session: { usedPercent: 32, windowMinutes: 300, resetsAt: Date.now() + 3_600_000 },
   weekly: { usedPercent: 60, windowMinutes: 10_080, resetsAt: Date.now() + 86_400_000 },
 });
+let usageMultiplier = 1;
 mockIPC((command) => {
+  if (command === "provider_model_prices")
+    return {
+      models: [{ id: "fixture", input: 0.000001, output: 0.000002, cacheRead: 0.0000001 }],
+      fetchedAt: Date.now() / 1000,
+    };
   if (command === "provider_usage_report")
     return {
       rows: [
@@ -55,8 +64,8 @@ mockIPC((command) => {
           slot: Math.floor(Date.now() / 1000) - 60,
           model: "fixture",
           project: cwd,
-          input: 1000,
-          output: 200,
+          input: 1000 * usageMultiplier,
+          output: 200 * usageMultiplier,
           cacheRead: 50,
           cacheWrite5m: 0,
           cacheWrite1h: 0,
@@ -71,8 +80,19 @@ mockIPC((command) => {
 const params = new URLSearchParams(location.search);
 applyThemePreference(params.get("theme") === "light" ? "light" : "dark");
 await setLanguagePreference(params.get("lang") === "tr" ? "tr" : "en");
+if (params.get("motion") === "off") saveDecorativeMotionEnabled(false);
+function OverviewFixture() {
+  const [refresh, setRefresh] = useState(0);
+  Object.assign(window, {
+    refreshUsageFixture: () => {
+      usageMultiplier++;
+      setRefresh((value) => value + 1);
+    },
+  });
+  return <UsageOverview refresh={refresh} />;
+}
 createRoot(document.getElementById("root")!).render(
   <main className="mx-auto max-w-4xl p-4">
-    <UsageBudgets />
+    {params.get("overview") === "1" ? <OverviewFixture /> : <UsageBudgets />}
   </main>,
 );

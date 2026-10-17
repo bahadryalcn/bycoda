@@ -1,0 +1,127 @@
+/* Arc free radio-group presentation, adapted to shared bycoda semantic roles. */
+.group:global(.bycoda-arc) {
+  display: grid;
+  min-inline-size: 0;
+  margin: 0;
+  border: 0;
+  padding: 0;
+  gap: 0;
+}
+.group:global(.bycoda-arc) > legend {
+  margin-block-end: var(--space-2);
+  padding: 0;
+  color: var(--ui-text-secondary);
+  font-size: var(--ui-font-caption);
+  font-weight: 500;
+}
+.options {
+  position: relative;
+  display: grid;
+  gap: var(--space-2);
+  min-inline-size: 0;
+}
+.highlight {
+  position: absolute;
+  inset-block-start: 0;
+  inset-inline: 0;
+  z-index: 1;
+  box-sizing: border-box;
+  border: 1px solid var(--ui-tone-neutral-border);
+  border-radius: var(--ui-control-radius);
+  background: var(--ui-surface-selected);
+  opacity: 0;
+  pointer-events: none;
+}
+.option {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-inline-size: 0;
+  min-block-size: var(--ui-control-height-compact);
+  border: 1px solid var(--ui-tone-neutral-border);
+  border-radius: var(--ui-control-radius);
+  padding: var(--space-3);
+  cursor: pointer;
+  background: var(--ui-surface);
+}
+.group[data-compact] .option {
+  padding-block: var(--space-2);
+}
+@media (hover: hover) and (pointer: fine) {
+  .option:not(:has(input:disabled)):hover {
+    background: var(--ui-surface-hover);
+  }
+}
+.option:not(:has(input:disabled)):active {
+  background: var(--ui-surface-pressed);
+}
+.options:not([data-ready]) .option:has(input:checked) {
+  border-color: var(--ui-tone-neutral-border);
+  background: var(--ui-surface-selected);
+}
+.option input {
+  position: absolute;
+  opacity: 0;
+  inline-size: 1px;
+  block-size: 1px;
+}
+.option:has(input:focus-visible) {
+  outline: var(--ui-focus-width) solid var(--ui-focus-ring-color);
+  outline-offset: var(--ui-focus-offset);
+}
+.option:has(input:disabled) {
+  color: var(--ui-control-disabled-fg);
+  background: var(--ui-control-disabled-surface);
+  cursor: not-allowed;
+}
+.option > span {
+  position: relative;
+  z-index: 2;
+}
+.mark {
+  display: grid;
+  inline-size: var(--ui-control-checkbox-size);
+  block-size: var(--ui-control-checkbox-size);
+  flex: none;
+  place-items: center;
+  border: 1px solid var(--ui-tone-neutral-border);
+  border-radius: 50%;
+}
+.dot {
+  inline-size: 7px;
+  block-size: 7px;
+  border-radius: 50%;
+  background: var(--ui-tone-neutral-fg);
+}
+.option:has(input:checked) .mark {
+  border-color: var(--ui-tone-neutral-solid);
+  background: var(--ui-tone-neutral-solid);
+}
+.option:has(input:checked) .dot {
+  background: var(--ui-tone-neutral-on-solid);
+}
+.copy {
+  min-inline-size: 0;
+  overflow-wrap: anywhere;
+}
+.option strong,
+.option small {
+  display: block;
+}
+.option strong {
+  color: var(--ui-text-secondary);
+  font-size: var(--ui-font-caption);
+  font-weight: 500;
+}
+.option:has(input:checked) strong {
+  color: var(--ui-tone-neutral-fg);
+}
+.option small {
+  margin-block-start: var(--space-1);
+  color: var(--ui-text-secondary);
+  font-size: var(--ui-font-caption);
+}
+.option:has(input:disabled) :is(strong, small) {
+  color: var(--ui-control-disabled-fg);
+}

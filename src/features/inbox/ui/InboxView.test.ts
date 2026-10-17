@@ -51,11 +51,11 @@ describe("InboxDetail layout", () => {
   it("uses GitHub's purple check for issues closed as completed", () => {
     const completed = inboxStatusMark(item({ state: "closed", stateReason: "completed" }));
     expect(completed.Icon.displayName).toBe("CheckCircle");
-    expect(completed.className).toBe("text-feature/90");
+    expect(completed.className).toBe("text-(--color-feature)");
 
     const notPlanned = inboxStatusMark(item({ state: "closed", stateReason: "not_planned" }));
     expect(notPlanned.Icon.displayName).toBe("CircleX");
-    expect(notPlanned.className).toBe("text-danger/90");
+    expect(notPlanned.className).toBe("text-(--ui-tone-danger-fg)");
   });
 
   it("renders a linked item as a standalone, closable side panel", () => {
@@ -261,9 +261,7 @@ describe("InboxDetail layout", () => {
     expect(markup).not.toContain("Related thread");
     expect(fixedHeader).not.toContain("Review Bycoda Pull Request");
     // The PR watch panel may offer linked threads as repair targets inside the scroller.
-    expect(reviewButton).toContain("h-6.5");
-    expect(reviewButton).toContain("hover:bg-content/10");
-    expect(reviewButton).not.toContain("h-6.5 bg-content/10");
+    expect(reviewButton).toContain('data-button-variant="ghost"');
     expect(fixedHeader).toContain("pr-[34px]");
   });
 

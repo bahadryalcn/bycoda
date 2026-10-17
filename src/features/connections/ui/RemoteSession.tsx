@@ -1,3 +1,4 @@
+import { Button } from "../../../shared/ui/Button";
 import { applySessionSync } from "../model/protocol";
 import { mergePreviewBlocks } from "../model/mergePreviewBlocks";
 import { t, useLocale } from "../../../shared/i18n";
@@ -95,6 +96,7 @@ import {
   parseRemotePath,
   remotePath,
   remoteProjectFor,
+  verifyRemoteProjectAlias,
   type RemoteProject,
 } from "../model/remoteProjects";
 import {
@@ -242,7 +244,7 @@ export function RemoteSession({
   if (!project || !machine)
     return (
       <div className="flex h-full flex-col items-center justify-center gap-3 p-6 text-center">
-        <p className="text-[13px] text-content/60">
+        <p className="text-[13px] text-(--ui-text-muted)">
           {!project
             ? t(
                 "This project’s machine details are missing. Add the project again from the project rail.",
@@ -252,13 +254,14 @@ export function RemoteSession({
               : t("Connecting to the machine…")}
         </p>
         {project && loaded ? (
-          <button
+          <Button
             type="button"
-            className="rounded-lg bg-selection px-3 py-1.5 text-[12px] hover:bg-selection-hover"
+
             onClick={() => window.dispatchEvent(new Event(OPEN_CONNECTIONS_EVENT))}
+            variant="secondary"
           >
             {t("Manage machines")}
-          </button>
+          </Button>
         ) : null}
       </div>
     );
@@ -567,6 +570,7 @@ function ConnectedRemoteSession({
     // Every request carries the expected host identity; describe again only
     // after a failure, when the host may have been replaced.
     let described = false;
+    const verifiedProjects = new Set([project.projectId]);
     const poll = async () => {
       if (disposed || deletedHostBinding.current === bindingKey) return;
       if (polling) {
@@ -663,7 +667,11 @@ function ConnectedRemoteSession({
                   ) {
                     try {
                       const next = applySessionSync(current, hint.sync);
-                      if (next.projectId !== project.projectId || next.session.id !== sessionId)
+                      if (
+                        !verifiedProjects.has(next.projectId) ||
+                        next.projectId !== current.projectId ||
+                        next.session.id !== sessionId
+                      )
                         throw new Error("Inline sync does not match this host session");
                       snapshotRef.current = next;
                       setSnapshot(next);
@@ -795,6 +803,15 @@ function ConnectedRemoteSession({
         // A reset invalidates replies from the previous host generation even
         // when its revision happens to match the replacement host.
         if (stale() || readGeneration !== ownerResetGeneration) return;
+        if (next && !verifiedProjects.has(next.projectId)) {
+          await verifyRemoteProjectAlias(
+            (method, params) => remoteRequest(machine.id, method, params),
+            { projectId: project.projectId, cwd: project.cwd },
+            next.projectId,
+          );
+          if (stale() || readGeneration !== ownerResetGeneration) return;
+          verifiedProjects.add(next.projectId);
+        }
         const latest = snapshotRef.current;
         if (
           !pageCacheOnly &&
@@ -824,8 +841,6 @@ function ConnectedRemoteSession({
           setRemoteHistoryLoading(false);
         }
         historyGeneration.loaded();
-        if (next && next.projectId !== project.projectId)
-          throw new Error("This session belongs to a different host project");
         setOnline(true);
         reportRemoteMachineStatus(machine.id, true);
         // A catalog request that failed while offline is retried on recovery.
@@ -945,6 +960,7 @@ function ConnectedRemoteSession({
     machine.id,
     machine.environmentId,
     project.projectId,
+    project.cwd,
     sessionId,
     refresh,
     pageCacheOnly,
@@ -2769,7 +2785,7 @@ function ConnectedRemoteSession({
     <ModelSourceContext.Provider value={modelSource}>
       <div className="relative flex h-full min-h-0 flex-col">
         {uploadProgress ? (
-          <div role="status" className="shrink-0 px-4 py-2 text-xs text-content/65">
+          <div role="status" className="shrink-0 px-4 py-2 text-xs text-(--ui-text-muted)">
             {t("Uploading attachment: ")}
             {Math.round(
               uploadProgress.size ? (uploadProgress.offset / uploadProgress.size) * 100 : 100,
@@ -2778,7 +2794,7 @@ function ConnectedRemoteSession({
           </div>
         ) : null}
         {snapshot?.historyLoading ? (
-          <div role="status" className="shrink-0 px-4 py-2 text-xs text-content/65">
+          <div role="status" className="shrink-0 px-4 py-2 text-xs text-(--ui-text-muted)">
             {t("Loading earlier messages…")}
           </div>
         ) : null}
@@ -2797,21 +2813,24 @@ function ConnectedRemoteSession({
         {notice ? (
           <div
             role={error ? "alert" : "status"}
-            className="flex shrink-0 items-center gap-3 border-b border-stroke px-4 py-2 text-[12px] text-content/65"
+            className="flex shrink-0 items-center gap-3 border-b border-stroke px-4 py-2 text-[12px] text-(--ui-text-muted)"
           >
             <span className="min-w-0 flex-1 truncate" title={notice.detail}>
               {notice.text}
-              {notice.detail ? <span className="text-content/40"> {notice.detail}</span> : null}
+              {notice.detail ? (
+                <span className="text-(--ui-text-muted)"> {notice.detail}</span>
+              ) : null}
             </span>
             {notice.action ? (
-              <button
+              <Button
                 type="button"
                 disabled={!online && !queue.error && notice.action.label !== "Dismiss"}
-                className="shrink-0 rounded-md px-2 py-1 text-content/70 hover:bg-content/8 hover:text-content disabled:opacity-40"
+
                 onClick={notice.action.run}
+                variant="secondary"
               >
                 {notice.action.label}
-              </button>
+              </Button>
             ) : null}
           </div>
         ) : null}

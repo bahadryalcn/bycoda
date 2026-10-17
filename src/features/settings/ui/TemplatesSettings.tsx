@@ -1,3 +1,8 @@
+import { Alert } from "../../../shared/ui/Alert";
+import { Badge } from "../../../shared/ui/Badge";
+import { TextareaField } from "../../../shared/ui/TextareaField";
+import { TextField } from "../../../shared/ui/TextField";
+import { Button } from "../../../shared/ui/Button";
 import { t, useLocale } from "../../../shared/i18n";
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { Plus, Trash2 } from "../../../shared/ui/icons";
@@ -12,9 +17,6 @@ import {
   TRIGGER_PREFIX,
   type PromptTemplate,
 } from "../../sessions/model/promptTemplates";
-
-const FIELD =
-  "rounded-md border border-content/10 bg-transparent px-2 text-[12px] text-content placeholder:text-content/35 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent";
 
 function sameTemplates(a: readonly PromptTemplate[], b: readonly PromptTemplate[]) {
   return (
@@ -88,7 +90,9 @@ export function TemplatesSettings() {
         error,
       }}
       action={
-        <button
+        <Button
+          variant="ghost"
+          size="sm"
           type="button"
           disabled={rows.length >= MAX_TEMPLATES}
           onClick={() => {
@@ -96,11 +100,10 @@ export function TemplatesSettings() {
             setError(null);
             setRows((current) => [...current, { id: crypto.randomUUID(), name: "", body: "" }]);
           }}
-          className="flex h-7 shrink-0 items-center gap-1.5 rounded-md border border-content/10 px-2.5 text-[12px] text-content/80 hover:bg-content/10 hover:text-content disabled:cursor-default disabled:opacity-40"
         >
           <Plus className="size-3.5" strokeWidth={1.75} />
           {t("Add template")}
-        </button>
+        </Button>
       }
     >
       <div className="settings-templates">
@@ -125,32 +128,39 @@ export function TemplatesSettings() {
                 <div className="flex flex-wrap items-center gap-2">
                   <label className="flex min-w-0 flex-1 basis-40 flex-col gap-1 text-[12px] text-content/65">
                     {t("Template name")}
-                    <input
+                    <TextField
+                      hideLabel
+                      label={t("Template name")}
                       value={row.name}
                       onChange={(event) => update(row.id, { name: event.target.value })}
                       placeholder={t("Name")}
                       aria-label={t("Template name")}
                       spellCheck={false}
                       autoComplete="off"
-                      className={`${FIELD} h-7 min-w-0 w-full`}
                     />
                   </label>
                   <label className="flex w-36 max-w-full flex-col gap-1 text-[12px] text-content/65">
                     {t("Template trigger")}
                     <span className="flex h-7 items-center gap-1 rounded-md border border-content/10 px-2">
                       {TRIGGER_PREFIX}
-                      <input
+                      <TextField
+                        hideLabel
+                        label={t("Template trigger")}
                         value={row.trigger ?? ""}
                         onChange={(event) => update(row.id, { trigger: event.target.value })}
                         placeholder={t("trigger (optional)")}
                         aria-label={t("Template trigger")}
                         spellCheck={false}
                         autoComplete="off"
-                        className="min-w-0 flex-1 bg-transparent text-content placeholder:text-content/35 focus-visible:outline-2 focus-visible:outline-accent"
                       />
                     </span>
                   </label>
-                  <button
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    tone="danger"
+                    iconOnly
+                    label={t("Delete template")}
                     type="button"
                     title={t("Delete template")}
                     aria-label={t("Delete template")}
@@ -159,14 +169,15 @@ export function TemplatesSettings() {
                       setError(null);
                       setRows((current) => current.filter((item) => item.id !== row.id));
                     }}
-                    className="grid size-7 shrink-0 place-items-center rounded-md text-content/45 hover:bg-content/10 hover:text-content"
                   >
                     <Trash2 className="size-3.5" strokeWidth={1.75} />
-                  </button>
+                  </Button>
                 </div>
                 <label className="flex flex-col gap-1 text-[12px] text-content/65">
                   {t("Template text")}
-                  <textarea
+                  <TextareaField
+                    hideLabel
+                    label={t("Template text")}
                     value={row.body}
                     onChange={(event) => update(row.id, { body: event.target.value })}
                     placeholder={t('Text to insert, e.g. "Review {p0} for bugs"', {
@@ -176,7 +187,6 @@ export function TemplatesSettings() {
                     rows={3}
                     maxLength={MAX_TEMPLATE_BODY}
                     spellCheck={false}
-                    className={`${FIELD} min-h-16 w-full resize-y py-1.5 font-mono leading-5`}
                   />
                 </label>
               </div>
@@ -184,31 +194,34 @@ export function TemplatesSettings() {
           )}
         </div>
         <div className="flex flex-wrap items-center gap-3 px-4 py-3">
-          <button
+          <Button
+            variant="primary"
+            size="sm"
             type="button"
             disabled={!dirty || changedElsewhere}
             onClick={save}
-            className="primary-action h-7 rounded-md px-3 text-[12px] font-medium disabled:cursor-default disabled:opacity-40"
           >
             {t("Save templates")}
-          </button>
+          </Button>
           {dirty && !error && !changedElsewhere ? (
             <span className="text-[12px] text-content/45">{t("Unsaved changes")}</span>
           ) : null}
           {error ? (
-            <span role="alert" className="text-[12px] text-danger">
+            <Badge tone="danger" role="alert">
               {error}
-            </span>
+            </Badge>
           ) : null}
         </div>
         {changedElsewhere && dirty ? (
-          <div role="alert" className="flex flex-wrap items-center gap-3 py-3 text-[12px]">
+          <Alert tone="danger" role="alert">
             <span>
               {t(
                 "Templates changed in another window. Reload before saving to avoid overwriting those changes.",
               )}
             </span>
-            <button
+            <Button
+              variant="ghost"
+              size="sm"
               type="button"
               onClick={() => {
                 setRows([...saved]);
@@ -216,11 +229,10 @@ export function TemplatesSettings() {
                 setError(null);
                 setSavedMessage(false);
               }}
-              className="rounded-md border border-content/10 px-3 py-1.5 active:bg-content/10 focus-visible:outline-2 focus-visible:outline-accent"
             >
               {t("Discard changes and reload")}
-            </button>
-          </div>
+            </Button>
+          </Alert>
         ) : null}
       </div>
     </Group>

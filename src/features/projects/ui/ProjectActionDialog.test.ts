@@ -69,3 +69,58 @@ it("explains missing fields and saves a preset with a recorded shortcut and brow
     host.remove();
   }
 });
+
+it("selects an action glyph without submitting or discarding the current draft", async () => {
+  const host = document.createElement("div");
+  document.body.append(host);
+  const root = createRoot(host);
+  const onSave = vi.fn();
+  try {
+    await act(async () =>
+      root.render(
+        createElement(ProjectActionDialog, {
+          action: {
+            id: "existing",
+            name: "Keep this name",
+            icon: "play",
+            command: "pnpm test",
+            url: "",
+          },
+          actions: [],
+          cwd: "C:/fixture/project",
+          editing: true,
+          error: "",
+          onSave,
+          onClose: vi.fn(),
+          onDelete: vi.fn(),
+        }),
+      ),
+    );
+    await act(async () =>
+      document.querySelector<HTMLButtonElement>('[aria-haspopup="listbox"]')!.click(),
+    );
+    const choice = [...document.querySelectorAll<HTMLButtonElement>('[role="option"]')].find(
+      (item) => item.textContent?.includes("Code"),
+    )!;
+    await act(async () => choice.click());
+    expect(onSave).not.toHaveBeenCalled();
+    expect(document.querySelector<HTMLInputElement>("input[required]")?.value).toBe(
+      "Keep this name",
+    );
+    await act(async () =>
+      [...document.querySelectorAll<HTMLButtonElement>("button")]
+        .find((item) => item.textContent === "Save action")!
+        .click(),
+    );
+    expect(onSave).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({
+        name: "Keep this name",
+        command: "pnpm test",
+        icon: "code",
+      }),
+    );
+  } finally {
+    await act(async () => root.unmount());
+    host.remove();
+  }
+});

@@ -336,16 +336,16 @@ it.each(["/repo", tree.path])(
     const selected = document.querySelector<HTMLElement>('[role="option"][aria-selected="true"]')!;
     const other = document.querySelector<HTMLElement>('[role="option"][aria-selected="false"]')!;
     expect(selected.title).toBe(executionCwd);
-    expect(selected.classList.contains("bg-selection")).toBe(true);
-    expect(other.classList.contains("bg-selection")).toBe(false);
+    expect(selected.hasAttribute("data-button-selected")).toBe(true);
+    expect(other.hasAttribute("data-button-selected")).toBe(false);
     await act(async () => other.dispatchEvent(new MouseEvent("mouseover", { bubbles: true })));
-    expect(other.classList.contains("bg-selection")).toBe(true);
+    expect(other.hasAttribute("data-button-selected")).toBe(true);
     await act(async () => trigger.click());
     await act(async () => trigger.click());
     expect(
       document
         .querySelector('[role="option"][aria-selected="true"]')
-        ?.classList.contains("bg-selection"),
+        ?.hasAttribute("data-button-selected"),
     ).toBe(true);
     const search = document.querySelector<HTMLInputElement>(
       '[aria-label="Search working copies"]',
@@ -381,23 +381,23 @@ it("highlights the current worktree after a cold load and keeps navigation throu
   expect(
     document
       .querySelector('[role="option"][aria-selected="true"]')
-      ?.classList.contains("bg-selection"),
+      ?.hasAttribute("data-button-selected"),
   ).toBe(true);
   const search = document.querySelector<HTMLInputElement>('[aria-label="Search working copies"]')!;
   await act(async () =>
     search.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowUp", bubbles: true })),
   );
-  expect(document.querySelector('.bg-selection[role="option"]')?.getAttribute("title")).toBe(
-    main.path,
-  );
+  expect(
+    document.querySelector('[data-button-selected][role="option"]')?.getAttribute("title"),
+  ).toBe(main.path);
   vi.mocked(listWorktrees).mockResolvedValue({
     ...result(),
     worktrees: [tree, main],
   });
   await act(async () => notifyGitChanged());
-  expect(document.querySelector('.bg-selection[role="option"]')?.getAttribute("title")).toBe(
-    main.path,
-  );
+  expect(
+    document.querySelector('[data-button-selected][role="option"]')?.getAttribute("title"),
+  ).toBe(main.path);
 });
 
 it("highlights search results and restores the current worktree when search is cleared", async () => {
@@ -413,16 +413,16 @@ it("highlights search results and restores the current worktree when search is c
   await act(async () => container.querySelector<HTMLButtonElement>("button")!.click());
   const search = document.querySelector<HTMLInputElement>('[aria-label="Search working copies"]')!;
   await act(async () => type(search, "main"));
-  expect(document.querySelector('.bg-selection[role="option"]')?.getAttribute("title")).toBe(
-    "/repo",
-  );
+  expect(
+    document.querySelector('[data-button-selected][role="option"]')?.getAttribute("title"),
+  ).toBe("/repo");
   await act(async () => type(search, "no matches"));
-  expect(document.querySelector('.bg-selection[role="option"]')).toBeNull();
+  expect(document.querySelector('[data-button-selected][role="option"]')).toBeNull();
   await act(async () => type(search, ""));
   expect(
     document
       .querySelector('[role="option"][aria-selected="true"]')
-      ?.classList.contains("bg-selection"),
+      ?.hasAttribute("data-button-selected"),
   ).toBe(true);
 });
 
@@ -452,8 +452,8 @@ it.each([
     );
     const trigger = container.querySelector<HTMLButtonElement>("button")!;
     expect(trigger.classList.contains("-ml-1.5")).toBe(true);
-    expect(trigger.classList.contains("px-1.5")).toBe(true);
-    expect(trigger.classList.contains("hover:bg-content/8")).toBe(true);
+    expect(trigger.getAttribute("data-button-variant")).toBe("ghost");
+    expect(trigger.getAttribute("data-button-hierarchy")).toBe("ghost");
     expect(trigger.textContent?.includes("Worktree")).toBe(executionCwd !== "/repo");
     expect(trigger.querySelector("svg")?.outerHTML).toBe(
       renderToStaticMarkup(
@@ -468,7 +468,7 @@ it.each([
       expect(options[index].querySelector("svg")?.outerHTML).toBe(
         renderToStaticMarkup(
           createElement(Icon, {
-            className: "size-3.5 shrink-0 text-content/50",
+            className: "size-3.5 shrink-0 text-[var(--ui-text-secondary)]",
           }),
         ),
       );
@@ -534,13 +534,13 @@ it("uses the shared project picker without leaking late worktree responses", asy
   expect(picker.parentElement?.className).toContain("w-fit");
   expect(picker.parentElement?.className).not.toContain("flex-1");
   expect(picker.className.split(/\s+/)).not.toContain("w-full");
-  expect(picker.className).toContain("h-7.5");
+  expect(picker.getAttribute("data-button-size")).toBe("sm");
   expect(picker.querySelectorAll("svg").length).toBeGreaterThanOrEqual(2);
   const create = button("Create worktree");
-  expect(create.className).toContain("h-7.5");
+  expect(create.getAttribute("data-button-size")).toBe("sm");
   const refresh = container.querySelector<HTMLButtonElement>('[aria-label="Refresh worktrees"]')!;
   expect(refresh.textContent).toBe("Refresh");
-  expect(refresh.className).toContain("bg-content/8");
+  expect(refresh.getAttribute("data-button-variant")).toBe("ghost");
   expect(refresh.parentElement?.textContent).toContain(
     "Deleting one keeps its sessions by default",
   );

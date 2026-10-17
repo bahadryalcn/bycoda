@@ -9,7 +9,14 @@ import { SettingsView } from "./SettingsView";
 import { setHarnessModels, resetHarnessModelOverlays } from "../../sessions/model/models";
 import { providerSessionDefaults } from "../../sessions/model/providerSessionDefaults";
 import { rememberNotificationProjects } from "../../notifications/model/notificationProjects";
-import { SETTINGS_INDEX, SETTINGS_SECTIONS, currentKeybindings, keybindingSettingId, searchSettings, type SettingsSectionId } from "../model/settings";
+import {
+  SETTINGS_INDEX,
+  SETTINGS_SECTIONS,
+  currentKeybindings,
+  keybindingSettingId,
+  searchSettings,
+  type SettingsSectionId,
+} from "../model/settings";
 import {
   providerAccounts,
   saveProviderAccount,
@@ -334,12 +341,12 @@ describe("settings pages", () => {
     const emails = container.querySelectorAll<HTMLButtonElement>('[aria-label="Reveal email"]');
     expect(emails).toHaveLength(2);
     expect(
-      [...emails].every((email) => email.querySelector("span")?.className.includes("blur-[5px]")),
+      [...emails].every((email) => email.querySelector("span[aria-hidden]")?.className.includes("blur-[5px]")),
     ).toBe(true);
     expect(container.textContent).toContain("Pro");
     await act(async () => emails[0].click());
     expect(emails[0].getAttribute("aria-label")).toBe("Hide email");
-    expect(emails[0].querySelector("span")?.className).not.toContain("blur");
+    expect(emails[0].querySelector("span[aria-hidden]")?.className).not.toContain("blur");
     expect(emails[1].getAttribute("aria-label")).toBe("Reveal email");
     await act(async () => emails[0].click());
     expect(emails[0].getAttribute("aria-label")).toBe("Reveal email");
@@ -780,7 +787,7 @@ describe("settings pages", () => {
     )!;
     const card = project.closest("fieldset")!;
     const section = container.querySelector('[data-setting-id="project-notifications"]')!;
-    const highlight = () => section.querySelector('[data-highlighted]');
+    const highlight = () => section.querySelector("[data-highlighted]");
     expect(highlight()).not.toBeNull();
     expect(project.getAttribute("aria-expanded")).toBe("true");
     expect(document.activeElement).toBe(card);
@@ -825,13 +832,13 @@ describe("settings pages", () => {
     });
     const section = container.querySelector('[data-setting-id="project-notifications"]')!;
     const project = section.querySelector('button[aria-label="Notification categories for repo"]')!;
-    expect(section.querySelector('[data-highlighted]')).not.toBeNull();
+    expect(section.querySelector("[data-highlighted]")).not.toBeNull();
     expect(project.getAttribute("aria-expanded")).toBe("true");
     expect(document.activeElement).toBe(project.closest("fieldset"));
 
     await act(async () => vi.advanceTimersByTimeAsync(1800));
 
-    expect(section.querySelector('[data-highlighted]')).toBeNull();
+    expect(section.querySelector("[data-highlighted]")).toBeNull();
     expect(project.getAttribute("aria-expanded")).toBe("true");
     expect(document.activeElement).toBe(project.closest("fieldset"));
   });
@@ -1085,8 +1092,11 @@ describe("settings pages", () => {
       for (const id of renderedSettingIds()) {
         expect(
           SETTINGS_INDEX.some((entry) => entry.id === id) ||
-            currentKeybindings().some((row) => keybindingSettingId(row.command) === id &&
-              searchSettings(row.command).some((result) => result.settingId === id)),
+            currentKeybindings().some(
+              (row) =>
+                keybindingSettingId(row.command) === id &&
+                searchSettings(row.command).some((result) => result.settingId === id),
+            ),
           `${section}: ${id}`,
         ).toBe(true);
       }
@@ -1096,12 +1106,22 @@ describe("settings pages", () => {
 
 describe("settings search", () => {
   async function type(value: string) {
-    const input = container.querySelector<HTMLInputElement>('[aria-label="Search settings"]')!;
+    const input = container.querySelector<HTMLInputElement>('input[aria-label="Search settings"]')!;
+    if (input.inert) {
+      await act(async () =>
+        container.querySelector<HTMLButtonElement>('button[aria-label="Search settings"]')!.click(),
+      );
+    }
     await act(async () => {
       Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, value);
       input.dispatchEvent(new Event("input", { bubbles: true }));
     });
     return input;
+  }
+
+  async function choose(index = 0) {
+    await act(async () => options()[index]!.click());
+    await act(async () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())));
   }
 
   function options(): HTMLButtonElement[] {
@@ -1117,7 +1137,7 @@ describe("settings search", () => {
     await type("coffeehouse");
     expect(options().map((item) => item.textContent)).toEqual(["Agent crewAppearance"]);
 
-    await act(async () => options()[0]!.click());
+    await choose();
     expect(onSelectSection).toHaveBeenCalledWith("appearance");
   });
 
@@ -1128,12 +1148,12 @@ describe("settings search", () => {
       "Project notificationsNotifications",
     ]);
 
-    await act(async () => options()[0]!.click());
+    await choose();
     expect(onSelectSection).toHaveBeenCalledWith("notifications");
     await render("notifications");
     const section = container.querySelector('[data-setting-id="project-notifications"]');
     expect(section?.querySelector('[aria-label="Project notifications"]')).not.toBeNull();
-    expect(section?.querySelector('[data-highlighted]')).not.toBeNull();
+    expect(section?.querySelector("[data-highlighted]")).not.toBeNull();
   });
 
   // A page whose name starts with the query beats a setting that merely
@@ -1141,12 +1161,18 @@ describe("settings search", () => {
   it("ranks a page against the settings that mention it", async () => {
     await render("general");
     await type("archive");
-    expect(options().map((item) => item.querySelector("span")!.textContent)).toEqual(searchSettings("archive").map((item) => item.label));
-    expect(options()[0]?.querySelector("span")!.textContent).toBe("Archive");
+    expect(
+      options().map((item) => item.querySelector("[data-search-result-title]")!.textContent),
+    ).toEqual(searchSettings("archive").map((item) => item.label));
+    expect(options()[0]?.querySelector("[data-search-result-title]")!.textContent).toBe("Archive");
 
     await type("notification");
-    expect(options().map((item) => item.querySelector("span")!.textContent)).toEqual(searchSettings("notification").map((item) => item.label));
-    expect(options()[0]?.querySelector("span")!.textContent).toBe("Notifications");
+    expect(
+      options().map((item) => item.querySelector("[data-search-result-title]")!.textContent),
+    ).toEqual(searchSettings("notification").map((item) => item.label));
+    expect(options()[0]?.querySelector("[data-search-result-title]")!.textContent).toBe(
+      "Notifications",
+    );
   });
 
   it("closes the results without touching the page when cleared", async () => {
@@ -1309,7 +1335,7 @@ describe("settings search", () => {
   it("reveals a setting on the current page", async () => {
     await render("notifications");
     await type("sounds");
-    await act(async () => options()[0]!.click());
+    await choose();
     expect(onSelectSection).not.toHaveBeenCalled();
     const row = container.querySelector('[data-setting-id="sounds"]')!;
     expect(row.className).toContain("bg-accent/10");

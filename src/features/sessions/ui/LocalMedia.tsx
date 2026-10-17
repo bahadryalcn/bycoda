@@ -1,3 +1,4 @@
+import { Button } from "../../../shared/ui/Button";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { useEffect, useRef, useState, type MouseEvent, type ReactNode } from "react";
 import { prepareLocalFile, readBinaryFile } from "../../../platform/tauri/fs";
@@ -95,7 +96,7 @@ export function LocalMedia({
       <span
         ref={box}
         data-local-media={path}
-        className="[margin-block:0.5rem] block aspect-video w-80 max-w-full overflow-clip rounded-xl border border-content/10 bg-content/5"
+        className="[margin-block:0.5rem] block aspect-video w-80 max-w-full overflow-clip rounded-xl border border-(--ui-tone-neutral-border) bg-(--ui-surface-raised)"
       >
         {url && video ? (
           <video
@@ -108,16 +109,19 @@ export function LocalMedia({
             className="block size-full object-contain"
           />
         ) : onOpen && image ? (
-          <button
+          <Button
+            variant="ghost"
             type="button"
             aria-label={label}
             onClick={onOpen}
             onContextMenu={onContextMenu}
-            className="block size-full cursor-zoom-in [@media(hover:hover)_and_(pointer:fine)]:hover:bg-content/10 active:bg-content/15 focus-visible:outline-2 focus-visible:outline-accent focus-visible:-outline-offset-2"
+            className="block"
           >
             {image}
-          </button>
-        ) : image}
+          </Button>
+        ) : (
+          image
+        )}
       </span>
       {fallback}
     </>

@@ -1,3 +1,5 @@
+import { Alert } from "../../../shared/ui/Alert";
+import { Badge } from "../../../shared/ui/Badge";
 import { t, useLocale, getLocale } from "../../../shared/i18n";
 import { ChevronDown, File, GripVertical, Loader, X } from "../../../shared/ui/icons";
 import { sessionPerformanceTrace } from "../../../shared/lib/performanceTrace";
@@ -276,9 +278,9 @@ function RewoundHistoryDisclosure({
   return (
     <details
       data-rewind-history
-      className="mx-auto max-h-64 w-full max-w-4xl shrink-0 overflow-y-auto border-b border-stroke px-3 py-2 text-xs text-[var(--ui-text-secondary)]"
+      className="mx-auto max-h-64 w-full max-w-4xl shrink-0 overflow-y-auto border-b border-(--ui-tone-neutral-border) px-3 py-2 text-xs text-[var(--ui-text-secondary)]"
     >
-      <summary className="cursor-pointer hover:text-content">
+      <summary className="cursor-pointer hover:text-(--ui-tone-neutral-fg)">
         {t("Rewound history ({p0})", { p0: history.length })}
       </summary>
       {truncated ? (
@@ -308,7 +310,7 @@ function RewoundHistoryDisclosure({
                   className="min-w-0 rounded-md bg-[var(--ui-surface)] px-2.5 py-2"
                 >
                   {block.text ? (
-                    <pre className="select-text whitespace-pre-wrap break-words font-sans text-content">
+                    <pre className="select-text whitespace-pre-wrap break-words font-sans text-(--ui-tone-neutral-fg)">
                       {block.text}
                     </pre>
                   ) : null}
@@ -1182,15 +1184,16 @@ const LocalSessionPane = memo(function LocalSessionPane({
 
   const hasPaneHeader = inSplit || Boolean(onPaneDragStart);
   const workingBadge = workingMachine ? (
-    <span
+    <Badge
+      tone="neutral"
       role="status"
       data-working-machine
       title={`${t("Working on ")}${workingMachine}.`}
-      className="min-w-0 truncate rounded-full border border-accent/20 bg-accent/5 px-2 py-0.5 text-[11px] text-content/80"
+      className="min-w-0"
     >
       {t("Working on ")}
       {workingMachine}.
-    </span>
+    </Badge>
   ) : null;
   const projectActions = visible ? (
     <ProjectQuickActions
@@ -1252,7 +1255,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
       {hasPaneHeader ? (
         <div
           data-session-header
-          className={`session-pane-header shrink-0 touch-none items-center gap-1.5 border-b border-stroke px-2 select-none ${
+          className={`session-pane-header shrink-0 touch-none items-center gap-1.5 border-b border-(--ui-tone-neutral-border) px-2 select-none ${
             onPaneDragStart ? "cursor-grab active:cursor-grabbing" : ""
           }`}
           onDragStart={(event) => event.preventDefault()}
@@ -1268,12 +1271,18 @@ const LocalSessionPane = memo(function LocalSessionPane({
             className={`session-header-title flex min-w-0 items-center gap-1.5 ${workingBadge ? "" : "flex-1"}`}
           >
             {onPaneDragStart ? (
-              <GripVertical className="size-3.5 shrink-0 text-content/35" strokeWidth={1.75} />
+              <GripVertical
+                className="size-3.5 shrink-0 text-(--ui-text-secondary)"
+                strokeWidth={1.75}
+              />
             ) : null}
             <span
-              className={`size-2 shrink-0 rounded-full ${focused ? "bg-accent" : "bg-transparent"}`}
+              className={`size-2 shrink-0 rounded-full ${focused ? "bg-(--ui-tone-accent-subtle)" : "bg-transparent"}`}
             />
-            <span className="min-w-0 flex-1 truncate text-xs text-content" title={title}>
+            <span
+              className="min-w-0 flex-1 truncate text-xs text-(--ui-tone-neutral-fg)"
+              title={title}
+            >
               {title}
             </span>
           </div>
@@ -1305,7 +1314,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
       {!hasPaneHeader && workingBadge ? (
         <div
           data-session-agent-header
-          className="flex h-9 shrink-0 items-center gap-3 border-b border-stroke px-12"
+          className="flex h-9 shrink-0 items-center gap-3 border-b border-(--ui-tone-neutral-border) px-12"
         >
           {workingBadge}
         </div>
@@ -1352,7 +1361,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
           {session.retryMessage && (session.busy || session.continuingElsewhere) ? (
             <div
               role="status"
-              className="shrink-0 border-b border-warning/25 bg-warning/5 px-3 py-2 text-xs text-warning"
+              className="shrink-0 border-b border-(--ui-tone-warning-border) bg-(--ui-tone-warning-subtle) px-3 py-2 text-xs text-(--ui-tone-warning-fg)"
             >
               <strong>{t("Retrying")}</strong>
               {" · "}
@@ -1368,7 +1377,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
           {remoteSessionLoading ? (
             <div
               role="status"
-              className="flex h-full min-h-0 items-center justify-center gap-2 text-[13px] text-content/50"
+              className="flex h-full min-h-0 items-center justify-center gap-2 text-[13px] text-(--ui-text-secondary)"
             >
               <Loader className="size-4 shrink-0 animate-spin" strokeWidth={1.75} aria-hidden />
               {t("Loading conversation…")}
@@ -1476,16 +1485,18 @@ const LocalSessionPane = memo(function LocalSessionPane({
               />
               {showJumpToBottom ? (
                 <div className="pointer-events-none absolute inset-x-0 bottom-2 z-30 flex justify-center">
-                  <button
+                  <Button
+                    iconOnly
+                    label={t("Jump to latest")}
+                    variant="ghost"
                     type="button"
                     title={t("Jump to latest")}
                     aria-label={t("Jump to latest")}
                     data-jump-to-bottom
                     onClick={() => jumpToBottomRef.current?.()}
-                    className="pointer-events-auto grid size-6 place-items-center rounded-md border border-content/15 bg-content/10 text-content shadow-md hover:bg-content/5 backdrop-blur-md"
                   >
                     <ChevronDown className="size-4" strokeWidth={2} />
-                  </button>
+                  </Button>
                 </div>
               ) : null}
             </>
@@ -1550,9 +1561,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
     <>
       <div className="session-notes-layout relative flex h-full min-h-0 min-w-0 flex-1">
         {pane}
-        {showNotesPanel ? (
-          <SessionNotesPanel sessionId={session.id} cwd={session.cwd} />
-        ) : null}
+        {showNotesPanel ? <SessionNotesPanel sessionId={session.id} cwd={session.cwd} /> : null}
       </div>
       {pendingRewind ? (
         <Modal
@@ -1571,7 +1580,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
         >
           <div className="flex flex-col gap-4 p-4">
             {rewindIncludesGroupedTurn ? (
-              <p className="text-sm text-warning">
+              <p className="text-sm text-(--ui-tone-warning-fg)">
                 {t(
                   "This message belongs to a grouped Codex turn. Rewinding it also removes earlier steers in that provider turn.",
                 )}
@@ -1589,9 +1598,9 @@ const LocalSessionPane = memo(function LocalSessionPane({
               </p>
             )}
             {rewindError ? (
-              <p role="alert" className="text-sm text-danger">
+              <Alert tone="danger" role="alert">
                 {rewindError}
-              </p>
+              </Alert>
             ) : null}
             <div className="flex justify-end gap-2">
               <Button

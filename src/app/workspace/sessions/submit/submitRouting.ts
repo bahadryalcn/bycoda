@@ -5,6 +5,8 @@ import { remoteSessionActions } from "../../../../features/connections/model/rem
 import { sharedLocalQueueClaiming, submitSharedLocalQueue } from "../../../../features/connections/model/useSharedLocalQueues";
 import { sessionsRef } from "../../../../features/sessions/model/sessionsStore";
 import { parseShellCommand } from "../../../../features/sessions/model/shellRun";
+import { isClearSessionCommand } from "../../../../features/sessions/model/newSessionCommand";
+import { submitClearConversation } from "./submitClearConversation";
 import { type SubmissionAcceptance } from "../../../model/submissionAcceptance";
 
 export function routeSubmitSession(ctx: SubmitDeps, input: SubmitInput): SubmissionAcceptance | undefined {
@@ -48,6 +50,9 @@ export function routeSubmitSession(ctx: SubmitDeps, input: SubmitInput): Submiss
   }
   // `!command` typed in the composer runs in the shell; it is not a turn,
   // so nothing below about queues, drafts or a busy session applies.
+  if (isClearSessionCommand(text) && !options?.managed && !options?.queuedMessageId &&
+      !options?.draftBlockId && !options?.resendEdited && !options?.appRequestId && !options?.ciRepair)
+    return submitClearConversation(ctx, sessionId);
   const shellCommand =
     attachments.length === 0 &&
     !options?.managed &&

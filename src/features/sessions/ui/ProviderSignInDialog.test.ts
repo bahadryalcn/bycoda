@@ -1,3 +1,4 @@
+import { visibleSessionTestText } from "./sessionUiTestText";
 // @vitest-environment happy-dom
 // Keep this as .ts because the project test glob intentionally excludes .test.tsx.
 import { act, createElement } from "react";
@@ -33,7 +34,7 @@ afterEach(() => {
 
 function button(label: string): HTMLButtonElement {
   const result = [...document.querySelectorAll<HTMLButtonElement>("button")].find(
-    (item) => (item.getAttribute("aria-label") ?? item.textContent) === label,
+    (item) => (item.getAttribute("aria-label") ?? visibleSessionTestText(item)) === label,
   );
   expect(result, label).toBeDefined();
   return result!;

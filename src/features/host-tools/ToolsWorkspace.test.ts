@@ -74,7 +74,7 @@ it("retains multiple project panes while moving the reserved workspace region", 
       select.click();
     });
     await act(async () => {
-      [...document.querySelectorAll<HTMLButtonElement>(".tools-workspace-placement-menu button")]
+      [...document.querySelectorAll<HTMLButtonElement>('[role="menuitemradio"]')]
         .find((option) => option.textContent === "Dock Bottom")!
         .click();
     });

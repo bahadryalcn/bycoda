@@ -1,3 +1,11 @@
+import { DropdownMenu } from "../../../shared/ui/DropdownMenu";
+import { Popover } from "../../../shared/ui/Popover";
+import { Badge, type BadgeTone } from "../../../shared/ui/Badge";
+import { Alert } from "../../../shared/ui/Alert";
+import { EmptyState } from "../../../shared/ui/EmptyState";
+import { TextareaField } from "../../../shared/ui/TextareaField";
+import { Checkbox } from "../../../shared/ui/Checkbox";
+import { NumberField } from "../../../shared/ui/NumberField";
 import { useTaskBoardQueries } from "../model/useTaskBoardQueries";
 import { useStableCallback } from "../../../shared/hooks/useStableCallback";
 import { projectDisplayName } from "../../projects/model/projectNames";
@@ -6,7 +14,7 @@ import { OverlayParent, useOverlay } from "../../../shared/ui/overlay";
 import { Modal } from "../../../shared/ui/Modal";
 import { Button } from "../../../shared/ui/Button";
 import { TextField } from "../../../shared/ui/TextField";
-import SegmentedControl from "../../../shared/ui/arc/segmented-control/segmented-control";
+import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
 import { TaskWorkspacePicker } from "./TaskWorkspacePicker";
 import { startTask, retargetTask, reorderTasks } from "../model/taskClient";
 import type { TaskWorkspace } from "../model/taskWorkspace";
@@ -32,7 +40,9 @@ import {
 import { AccessPicker } from "../../sessions/ui/AccessPicker";
 import { HarnessIcon } from "../../sessions/ui/HarnessIcon";
 import {
-  AlertCircle,
+  MoreHorizontal,
+  ListFilter,
+  CircleHelp,
   Bot,
   Check,
   ChevronDown,
@@ -189,15 +199,6 @@ type Props = {
   onOpenBackgroundSession: (target: BackgroundSessionTarget) => void | Promise<void>;
 };
 
-const ACTION =
-  "inline-flex items-center gap-1.5 rounded-md px-3 text-[12px] disabled:cursor-default disabled:opacity-40";
-const ACTION_FILLED = `${ACTION} h-6.5 bg-content font-medium text-background-base hover:bg-content/80`;
-const ACTION_OUTLINE = `${ACTION} h-7 border border-content/15 text-content/80 hover:border-content/30 hover:bg-content/10 hover:text-content`;
-const CARD_ACTION =
-  "inline-flex h-6 items-center gap-1 rounded-md px-1.5 text-[11px] text-content/60 hover:bg-content/10 hover:text-content disabled:cursor-default disabled:opacity-40";
-
-const CHECKBOX = "size-3.5 cursor-pointer rounded border border-content/20 accent-accent";
-
 const COLUMN_LABELS: Record<TaskColumn, string> = {
   todo: "To do",
   queued: "Queued",
@@ -271,13 +272,13 @@ const GOAL_STATUS_LABELS: Record<GoalStatus, string> = {
   cancelled: "Cancelled",
 };
 
-const GOAL_STATUS_STYLES: Record<GoalStatus, string> = {
-  planning: "bg-active/12 text-active",
-  "awaiting-approval": "bg-warning/12 text-warning",
-  running: "bg-active/12 text-active",
-  done: "bg-success/12 text-success",
-  blocked: "bg-danger/12 text-danger",
-  cancelled: "bg-content/8 text-content/50",
+const GOAL_STATUS_TONES: Record<GoalStatus, BadgeTone> = {
+  planning: "info",
+  "awaiting-approval": "warning",
+  running: "info",
+  done: "success",
+  blocked: "danger",
+  cancelled: "neutral",
 };
 
 const ALL_GOALS = "all";
@@ -305,10 +306,10 @@ export function TasksView({
       role="region"
       aria-label={t("Tasks")}
       data-app-tasks
-      className="flex min-h-0 min-w-0 flex-1 flex-col text-content"
+      className="flex min-h-0 min-w-0 flex-1 flex-col text-(--ui-tone-neutral-fg)"
     >
       <div
-        className="flex h-10 shrink-0 select-none items-center border-b border-stroke"
+        className="flex h-10 shrink-0 select-none items-center border-b border-(--ui-tone-neutral-border)"
         data-tauri-drag-region="deep"
       >
         {IS_MAC && compactRail ? <div className="w-4 shrink-0" /> : null}
@@ -316,8 +317,11 @@ export function TasksView({
         {besideRail ? null : <OverlayNav onBack={onClose} onToggleSidebar={onToggleSidebar} />}
         <ToolHeader>
           <div className="flex min-w-0 flex-1 items-center gap-2 px-3 text-[13px]">
-            <DashboardSquare className="size-3.5 shrink-0 text-content/45" strokeWidth={1.75} />
-            <span className="min-w-0 truncate text-content">{t("Tasks")}</span>
+            <DashboardSquare
+              className="size-3.5 shrink-0 text-(--ui-text-secondary)"
+              strokeWidth={1.75}
+            />
+            <span className="min-w-0 truncate text-(--ui-tone-neutral-fg)">{t("Tasks")}</span>
           </div>
         </ToolHeader>
         {IS_MAC ? null : <WindowControls />}
@@ -370,6 +374,11 @@ function TasksContent({
   const [editingGoal, setEditingGoal] = useState<BoardGoal | null>(null);
   const [goalSettingsError, setGoalSettingsError] = useState<string | null>(null);
   const [goalFilter, setGoalFilter] = useState(ALL_GOALS);
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [boardActionMenu, setBoardActionMenu] = useState<HTMLElement | null>(null);
+  const filterTrigger = useRef<HTMLButtonElement>(null);
+  const [helpOpen, setHelpOpen] = useState(false);
+  const helpTrigger = useRef<HTMLButtonElement>(null);
   const [goalSessions, setGoalSessions] = useState<BoardGoal | null>(null);
   // Machines whose host runs project stewards, and their stewards.
   const [stewardCapable, setStewardCapable] = useState<RemoteMachine[]>([]);
@@ -912,140 +921,245 @@ function TasksContent({
   }, [loading, selected, selectedKey]);
 
   return (
-    <div className="bycoda-tasks flex min-h-0 min-w-0 flex-1 flex-col text-content">
-      <header className="bycoda-workspace-heading">
-        <div className="bycoda-heading-mark" aria-hidden="true">
-          <DashboardSquare className="size-6" />
-        </div>
-        <div className="min-w-0 flex-1">
-          <h1>{t("Work in motion")}</h1>
-          <p>{t("Follow an idea from its first step to a reviewed result.")}</p>
-        </div>
-        <div className="bycoda-heading-count">
-          <strong>{visibleTasks.length}</strong>
-          <span>{t("tasks")}</span>
-        </div>
+    <div className="bycoda-tasks flex min-h-0 min-w-0 flex-1 flex-col text-(--ui-tone-neutral-fg)">
+      <header className="flex h-10 shrink-0 items-center gap-2 border-b border-(--ui-tone-neutral-border) px-3">
+        <h1 className="min-w-0 flex-1 text-[13px] font-medium">{t("Tasks")}</h1>
+        <Badge className="tabular-nums">{visibleTasks.length}</Badge>
+        <Button
+          ref={helpTrigger}
+          variant="ghost"
+          iconOnly
+          label={t("Help")}
+          tooltip={t("Help")}
+          aria-haspopup="dialog"
+          aria-expanded={helpOpen}
+          onClick={() => setHelpOpen((open) => !open)}
+        >
+          <CircleHelp className="size-3.5" />
+        </Button>
+        {helpOpen ? (
+          <Popover
+            anchor={helpTrigger}
+            align="end"
+            width={280}
+            onDismiss={(reason) => {
+              setHelpOpen(false);
+              if (reason === "escape") helpTrigger.current?.focus();
+            }}
+          >
+            <p className="task-filter-popover text-(--ui-text-secondary)">
+              {t("Each task runs on its project’s machine, with this app open or closed.")}
+            </p>
+          </Popover>
+        ) : null}
       </header>
-      <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-stroke px-3 py-2">
-        <span className="min-w-[min(100%,14rem)] flex-1 text-[12px] text-content/45">
-          {machines.length > 0
-            ? t("Each task runs on its project’s machine, with this app open or closed.")
-            : loading
+      <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-(--ui-tone-neutral-border) px-3 py-2">
+        {machines.length === 0 ? (
+          <span className="min-w-[min(100%,14rem)] flex-1 text-[12px] text-(--ui-text-secondary)">
+            {loading
               ? t("Looking for machines…")
               : t("No connected machine has a task board. Connect one, or update its {p0} Host.", {
                   p0: PRODUCT_IDENTITY.displayName,
                 })}
-        </span>
+          </span>
+        ) : null}
         {newReviewNotes > 0 ? (
-          <span data-new-review-notes className="shrink-0 text-[11px] text-warning">
+          <span data-new-review-notes className="shrink-0 text-[11px] text-(--ui-tone-warning-fg)">
             {newReviewNotes}
             {t(" new review ")}
             {newReviewNotes === 1 ? t("note") : t("notes")}
           </span>
         ) : null}
         {goals.length > 0 ? (
-          <SearchableSelect
-            variant="pill"
-            searchable={goals.length > 8}
-            align="end"
-            label={t("Show goal")}
-            value={goalFilter}
-            options={[
+          <>
+            <Button
+              ref={filterTrigger}
+              variant="ghost"
+              iconOnly
+              label={t("Filters")}
+              tooltip={t("Filters")}
+              aria-haspopup="dialog"
+              aria-expanded={filtersOpen}
+              selected={goalFilter !== ALL_GOALS}
+              aria-pressed={goalFilter !== ALL_GOALS}
+              onClick={() => setFiltersOpen((open) => !open)}
+            >
+              <ListFilter className="size-3.5" />
+              {goalFilter !== ALL_GOALS ? (
+                <span className="task-filter-active" aria-hidden="true" />
+              ) : null}
+            </Button>
+            {filtersOpen ? (
+              <Popover
+                anchor={filterTrigger}
+                align="end"
+                width={280}
+                onDismiss={(reason) => {
+                  setFiltersOpen(false);
+                  if (reason === "escape") filterTrigger.current?.focus();
+                }}
+              >
+                <div className="task-filter-popover" role="dialog" aria-label={t("Filters")}>
+                  <SearchableSelect
+                    variant="pill"
+                    align="end"
+                    label={t("Show goal")}
+                    value={goalFilter}
+                    options={[
+                      {
+                        value: ALL_GOALS,
+                        get label() {
+                          return t("All tasks");
+                        },
+                      },
+                      ...goals.map((goal) => ({
+                        value: goalKey(goal.machineId, goal.id),
+                        label: goal.title,
+                      })),
+                    ]}
+                    onChange={setGoalFilter}
+                  />
+                  <Button
+                    variant="ghost"
+                    disabled={goalFilter === ALL_GOALS}
+                    onClick={() => setGoalFilter(ALL_GOALS)}
+                  >
+                    {t("Reset")}
+                  </Button>
+                </div>
+              </Popover>
+            ) : null}
+          </>
+        ) : null}
+        <Button
+          variant="ghost"
+          size="sm"
+          iconOnly
+          label={t("More actions")}
+          aria-haspopup="menu"
+          aria-expanded={!!boardActionMenu}
+          onClick={(event) => setBoardActionMenu(event.currentTarget)}
+        >
+          <MoreHorizontal className="size-3.5" />
+        </Button>
+        {boardActionMenu ? (
+          <DropdownMenu
+            anchor={boardActionMenu}
+            label={t("More actions")}
+            items={[
               {
-                value: ALL_GOALS,
-                get label() {
-                  return t("All tasks");
-                },
+                kind: "item",
+                id: "summary",
+                label: t("Summary"),
+                checked: summaryOpen,
+                icon: <Check className="size-3.5" />,
               },
-              ...goals.map((goal) => ({
-                value: goalKey(goal.machineId, goal.id),
-                label: goal.title,
-              })),
+              ...(stewardCapable.length > 0
+                ? [
+                    {
+                      kind: "item" as const,
+                      id: "stewards",
+                      label: t("Stewards"),
+                      checked: stewardsOpen,
+                      icon: <Bot className="size-3.5" />,
+                    },
+                  ]
+                : []),
+              ...(limits.length > 0
+                ? [
+                    {
+                      kind: "item" as const,
+                      id: "limits",
+                      label: t("Limits"),
+                      checked: limitsOpen,
+                      icon: <Gauge className="size-3.5" />,
+                    },
+                  ]
+                : []),
+              {
+                kind: "item",
+                id: "goal",
+                label: t("New goal"),
+                disabled: goalDraft != null || draft != null,
+                icon: <Sparkles className="size-3.5" />,
+              },
             ]}
-            onChange={setGoalFilter}
+            onClose={() => setBoardActionMenu(null)}
+            onPick={(id) => {
+              if (id === "summary") setSummaryOpen((open) => !open);
+              if (id === "stewards") setStewardsOpen((open) => !open);
+              if (id === "limits") setLimitsOpen((open) => !open);
+              if (id === "goal") beginGoal();
+            }}
           />
         ) : null}
-        {stewardCapable.length > 0 ? (
-          <button
-            type="button"
-            aria-expanded={stewardsOpen}
-            onClick={() => setStewardsOpen((open) => !open)}
-            className={ACTION_OUTLINE}
-          >
-            <Bot className="size-3.5" strokeWidth={1.75} />
-            {t("Stewards")}
-            {stewards.length > 0 ? (
-              <span className="tabular-nums text-content/45">{stewards.length}</span>
-            ) : null}
-          </button>
-        ) : null}
-        <button
-          type="button"
-          aria-expanded={summaryOpen}
-          onClick={() => setSummaryOpen((open) => !open)}
-          className={ACTION_OUTLINE}
-        >
-          <Check className="size-3.5" strokeWidth={1.75} />
-          {t("Summary")}
-        </button>
-        {limits.length > 0 ? (
-          <button
-            type="button"
-            aria-expanded={limitsOpen}
-            onClick={() => setLimitsOpen((open) => !open)}
-            className={ACTION_OUTLINE}
-          >
-            <Gauge className="size-3.5" strokeWidth={1.75} />
-            {t("Limits")}
-          </button>
-        ) : null}
-        <button
-          type="button"
-          onClick={beginGoal}
-          disabled={goalDraft != null || draft != null}
-          className={ACTION_OUTLINE}
-        >
-          <Sparkles className="size-3.5" strokeWidth={1.75} />
-          {t("New goal")}
-        </button>
-        <button
+        <Button
+          variant="secondary"
           type="button"
           onClick={beginCreate}
           disabled={draft != null || goalDraft != null}
-          className={ACTION_OUTLINE}
         >
           <Plus className="size-3.5" strokeWidth={1.75} />
           {t("New task")}
-        </button>
+        </Button>
       </div>
-      <RemoteDataStatus state={boardDataState} onRefresh={retryBoard} label={t("task board")} />
+      <RemoteDataStatus
+        state={boardDataState}
+        onRefresh={retryBoard}
+        label={t("task board")}
+        connectionIssueHandled={!!missingNotice}
+      />
       {error ? (
-        <div className="mx-4 mt-4 flex shrink-0 items-start gap-2 rounded-lg border border-danger/20 bg-danger/8 px-3 py-2 text-[12px] text-danger">
-          <AlertCircle className="mt-0.5 size-3.5 shrink-0" />
-          <span>{error}</span>
-        </div>
+        <Alert tone="danger" className="mx-4 mt-4 shrink-0">
+          {error}
+        </Alert>
       ) : null}
       {missingNotice ? (
-        <div className="mx-4 mt-4 flex shrink-0 items-start gap-2 rounded-lg border border-content/10 bg-content/4 px-3 py-2 text-[12px] text-content/60">
-          <AlertCircle className="mt-0.5 size-3.5 shrink-0" />
-          <span className="min-w-0 flex-1">{missingNotice}</span>
-          {localHost === "stopped" ? (
-            <LocalHostStartButton
-              className="-my-1 shrink-0"
-              onStarted={retryBoard}
-              onError={(message) => setError(message ?? null)}
-            />
-          ) : null}
-        </div>
+        <Alert
+          tone={boardDataState.error ? "warning" : "info"}
+          role="status"
+          aria-busy={board.pending}
+          className="mx-3 mbs-3 shrink-0"
+          data-remote-data-state={boardDataState.phase}
+        >
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="min-w-0 flex-1">
+              <span>{missingNotice}</span>
+              {boardDataState.error ? (
+                <p className="mbs-1 break-words text-(--ui-text-muted)">{boardDataState.error}</p>
+              ) : null}
+              {boardDataState.updatedAt ? (
+                <span className="ms-1 text-(--ui-text-muted)">
+                  {t("Last verified {p0}", {
+                    p0: new Date(boardDataState.updatedAt).toLocaleString(getLocale()),
+                  })}
+                </span>
+              ) : null}
+            </div>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={retryBoard}
+              loading={board.pending}
+              disabled={board.pending}
+            >
+              <RefreshCw className="size-3.5" />
+              {t("Retry")}
+            </Button>
+            {localHost === "stopped" ? (
+              <LocalHostStartButton
+                className="-my-1 shrink-0"
+                onStarted={retryBoard}
+                onError={(message) => setError(message ?? null)}
+              />
+            ) : null}
+          </div>
+        </Alert>
       ) : null}
       {dailyNotice ? (
-        <div
-          role="status"
-          className="mx-4 mt-4 flex shrink-0 items-start gap-2 rounded-lg border border-warning/20 bg-warning/8 px-3 py-2 text-[12px] text-warning"
-        >
-          <AlertCircle className="mt-0.5 size-3.5 shrink-0" />
-          <span>{dailyNotice}</span>
-        </div>
+        <Alert tone="warning" role="status" className="mx-4 mt-4 shrink-0">
+          {dailyNotice}
+        </Alert>
       ) : null}
       {summaryOpen ? (
         <SummaryPanel
@@ -1068,9 +1182,9 @@ function TasksContent({
           }}
         >
           {error ? (
-            <div role="alert" className="p-3 text-danger">
+            <Alert tone="danger" role="alert" className="">
               {error}
-            </div>
+            </Alert>
           ) : null}
           <TaskForm
             key={draft.id ?? "new"}
@@ -1128,9 +1242,9 @@ function TasksContent({
           }}
         >
           {error ? (
-            <div role="alert" className="p-3 text-danger">
+            <Alert tone="danger" role="alert" className="">
               {error}
-            </div>
+            </Alert>
           ) : null}
           <GoalForm
             draft={goalDraft}
@@ -1164,7 +1278,11 @@ function TasksContent({
                 "The completed task stays on its branch. Pending tasks in this goal and project will use the selected integration worktree.",
               )}
             </p>
-            {error ? <div role="alert">{error}</div> : null}
+            {error ? (
+              <Alert tone="danger" role="alert">
+                {error}
+              </Alert>
+            ) : null}
             <TaskWorkspacePicker
               machine={machines.find((machine) => machine.id === deliveryTask.machineId)}
               cwd={deliveryTask.cwd}
@@ -1174,9 +1292,10 @@ function TasksContent({
               onBusyChange={setDeliveryBusy}
               onValidityChange={setDeliveryValid}
             />
-            <button
+            <Button
+              variant="primary"
               type="button"
-              className={ACTION_FILLED}
+
               disabled={Boolean(acting) || deliveryBusy || !deliveryValid}
               onClick={() =>
                 void act(
@@ -1191,7 +1310,7 @@ function TasksContent({
               }
             >
               {t("Save delivery target")}
-            </button>
+            </Button>
           </div>
         </Modal>
       ) : null}
@@ -1222,7 +1341,7 @@ function TasksContent({
       {goals.length > 0 ? (
         <ul
           aria-label={t("Goals")}
-          className="flex max-h-[45%] shrink-0 flex-col gap-1.5 overflow-y-auto border-b border-stroke p-3"
+          className="flex max-h-[45%] shrink-0 flex-col gap-1.5 overflow-y-auto border-b border-(--ui-tone-neutral-border) p-3"
         >
           {goals
             .filter(
@@ -1274,7 +1393,10 @@ function TasksContent({
                 .map((task) => {
                   const sessions = taskSessionIds(task);
                   return (
-                    <div key={task.id} className="grid gap-1 rounded-md border border-stroke p-3">
+                    <div
+                      key={task.id}
+                      className="grid gap-1 rounded-md border border-(--ui-tone-neutral-border) p-3"
+                    >
                       <strong>{task.title}</strong>
                       <span>{t(STATUS_LABELS[task.status])}</span>
                       <span className="break-all text-[11px]">
@@ -1282,30 +1404,32 @@ function TasksContent({
                       </span>
                       <div className="flex flex-wrap gap-2">
                         {sessions.worker ? (
-                          <button
+                          <Button
+                            variant="secondary"
                             type="button"
-                            className={ACTION_OUTLINE}
+
                             onClick={() => {
                               setGoalSessions(null);
                               void onOpenSession(task, sessions.worker!);
                             }}
                           >
                             {t("Open worker session")}
-                          </button>
+                          </Button>
                         ) : (
                           <span>{t("Session will appear when this task starts.")}</span>
                         )}
                         {sessions.review ? (
-                          <button
+                          <Button
+                            variant="secondary"
                             type="button"
-                            className={ACTION_OUTLINE}
+
                             onClick={() => {
                               setGoalSessions(null);
                               void onOpenSession(task, sessions.review!);
                             }}
                           >
                             {t("Open review session")}
-                          </button>
+                          </Button>
                         ) : null}
                       </div>
                     </div>
@@ -1316,14 +1440,14 @@ function TasksContent({
         ) : null}
         <div
           ref={boardLock}
-          className="min-h-0 min-w-0 flex-1 overflow-auto overscroll-none p-3 @max-[640px]/task-area:has-[+aside]:hidden"
+          className="min-h-0 min-w-0 flex-1 overflow-x-scroll overflow-y-auto overscroll-none p-3 [scrollbar-gutter:stable] @max-[640px]/task-area:has-[+aside]:hidden"
         >
           {loading ? (
-            <div className="grid h-full place-items-center text-content/35">
+            <div className="grid h-full place-items-center text-(--ui-text-secondary)">
               <LoaderCircle className="size-4 animate-spin" />
             </div>
           ) : (
-            <div className="grid h-full min-w-[1200px] grid-cols-6 gap-3">
+            <div className="grid h-full grid-cols-[repeat(6,minmax(10rem,1fr))] gap-3">
               {TASK_COLUMNS.map((status) => {
                 const column = boardIndexes.columns.get(status)!;
                 return (
@@ -1359,11 +1483,11 @@ function TasksContent({
                       );
                       if (dragged) void onTaskDrop(dragged, status);
                     }}
-                    className="bycoda-task-column flex min-h-0 min-w-0 flex-col rounded-md border border-content/10 bg-content/3"
+                    className="bycoda-task-column flex min-h-0 min-w-0 flex-col rounded-md bg-(--ui-surface-raised)"
                   >
-                    <h2 className="flex h-9 shrink-0 items-center gap-2 px-3 text-[12px] font-medium text-content/60">
-                      {t(COLUMN_LABELS[status])}
-                      <span className="tabular-nums text-content/35">{column.length}</span>
+                    <h2 className="flex h-9 shrink-0 items-center gap-2 px-3 text-[12px] font-medium text-(--ui-text-secondary)">
+                      <span className="min-w-0 flex-1 truncate">{t(COLUMN_LABELS[status])}</span>
+                      <Badge className="shrink-0 tabular-nums">{column.length}</Badge>
                     </h2>
                     <ul className="min-h-0 flex-1 space-y-1.5 overflow-y-auto px-1.5 pb-1.5">
                       {column.map((task) => (
@@ -1416,8 +1540,8 @@ function TasksContent({
                         </li>
                       ))}
                       {column.length === 0 ? (
-                        <li className="px-2 py-6 text-center text-[11px] text-content/35">
-                          {t(COLUMN_EMPTY[status])}
+                        <li>
+                          <EmptyState description={t(COLUMN_EMPTY[status])} />
                         </li>
                       ) : null}
                     </ul>
@@ -1532,63 +1656,64 @@ function TaskCardBody({
       onKeyDown={(event) => {
         if (event.target === event.currentTarget && event.key === "Enter") onOpen();
       }}
-      className={`cursor-pointer rounded-md border bg-background-base px-2.5 py-2 hover:border-content/20 ${
-        selected ? "border-content/30" : "border-content/10"
+      className={`cursor-pointer rounded-md border bg-(--ui-surface) px-2.5 py-2 hover:border-(--ui-tone-neutral-border) ${
+        selected ? "border-(--ui-tone-neutral-border)" : "border-(--ui-tone-neutral-border)"
       }`}
     >
       {goal ? (
         <p
           data-task-goal
           title={t("Part of the goal “{p0}”", { p0: goal })}
-          className="mb-1 flex min-w-0 items-center gap-1 text-[10px] text-content/45"
+          className="mb-1 flex min-w-0 items-center gap-1 text-[10px] text-(--ui-text-secondary)"
         >
           <Sparkles className="size-2.5 shrink-0" />
           <span className="min-w-0 truncate">{goal}</span>
         </p>
       ) : null}
       {task.source === "steward" ? (
-        <p
+        <Badge
           data-task-suggested
           title={t("Suggested by a project steward")}
-          className="mb-1 inline-flex h-4 items-center gap-1 rounded-full bg-feature/12 px-1.5 text-[10px] font-medium text-feature"
+          tone="info"
+          className="mb-1"
         >
           <Bot className="size-2.5 shrink-0" />
           {t("Suggested")}
-        </p>
+        </Badge>
       ) : null}
       <h3
         title={description}
-        className="line-clamp-2 text-[13px] font-semibold leading-snug text-content"
+        className="line-clamp-2 text-[13px] font-semibold leading-snug text-(--ui-tone-neutral-fg)"
       >
         {task.title}
       </h3>
       {description ? (
         <p
           data-task-description
-          className="mt-0.5 line-clamp-2 whitespace-pre-line break-words text-[11px] leading-snug text-content/45"
+          className="mt-0.5 line-clamp-2 whitespace-pre-line break-words text-[11px] leading-snug text-(--ui-text-secondary)"
         >
           {description}
         </p>
       ) : null}
-      <p className="mt-1 truncate text-[11px] text-content/45">
+      <p className="mt-1 truncate text-[11px] text-(--ui-text-secondary)">
         {project}
         {t(" · on ")}
         {task.machineName}
         {task.stale ? t(" (offline, last known)") : ""}
       </p>
-      <p className="mt-1 flex min-w-0 items-center gap-1 text-[11px] text-content/50">
+      <p className="mt-1 flex min-w-0 items-center gap-1 text-[11px] text-(--ui-text-secondary)">
         <HarnessIcon harness={task.harness} className="size-3.5 shrink-0" />
         <span title={model.name} className="min-w-0 truncate">
           {model.name}
         </span>
-        <span className="ml-auto shrink-0 tabular-nums text-content/40">
+        <span className="ml-auto shrink-0 tabular-nums text-(--ui-text-secondary)">
           {taskTimeLabel(task, now)}
         </span>
       </p>
       {task.branch ? (
         <p
           title={task.merged ? t("Merged into {p0}", { p0: task.baseBranch }) : task.branch}
-          className="mt-1 flex min-w-0 items-center gap-1 text-[11px] text-content/45"
+          className="mt-1 flex min-w-0 items-center gap-1 text-[11px] text-(--ui-text-secondary)"
         >
           <GitBranch className="size-3 shrink-0" />
           <span className="min-w-0 truncate">
@@ -1599,43 +1724,40 @@ function TaskCardBody({
         </p>
       ) : null}
       {task.autoMerged ? (
-        <p
-          data-task-auto-merged
-          className="mt-1 inline-flex h-4 items-center rounded-full bg-success/12 px-1.5 text-[10px] font-medium text-success"
-        >
+        <Badge data-task-auto-merged tone="success" className="mt-1">
           {t("Merged automatically")}
-        </p>
+        </Badge>
       ) : null}
       {waitingFor.length > 0 ? (
-        <p className="mt-1 break-words text-[11px] leading-snug text-content/50">
+        <p className="mt-1 break-words text-[11px] leading-snug text-(--ui-text-secondary)">
           {t("Waiting for: ")}
           {waitingFor.join(", ")}
         </p>
       ) : null}
       {task.status === "verifying" ? (
-        <p className="mt-1.5 mr-1 inline-flex h-5 items-center rounded-full bg-info/12 px-2 text-[11px] font-medium text-info">
+        <Badge tone="info" className="mt-1.5 mr-1">
           {t("Verifying")}
-        </p>
+        </Badge>
       ) : null}
       {task.needsInput || taskRequiresInstructions(task) ? (
-        <p className="mt-1.5 inline-flex h-5 items-center rounded-full bg-warning/12 px-2 text-[11px] font-medium text-warning">
+        <Badge tone="warning" className="mt-1.5">
           {t("Needs input")}
-        </p>
+        </Badge>
       ) : null}
       {task.repairAttempts ? (
-        <p title={task.repairNote} className="mt-1.5 text-[11px] text-warning">
+        <p title={task.repairNote} className="mt-1.5 text-[11px] text-(--ui-tone-warning-fg)">
           {task.status === "blocked" ? t("Automatic corrections used") : t("Automatic correction")}
           {t(" · attempt ")}
           {task.repairAttempts}
         </p>
       ) : null}
       {repairStopLabel(task) ? (
-        <p className="mt-1.5 text-[11px] text-warning">{repairStopLabel(task)}</p>
+        <p className="mt-1.5 text-[11px] text-(--ui-tone-warning-fg)">{repairStopLabel(task)}</p>
       ) : null}
       {task.reviewNotes?.length ? (
         <p
           data-task-review-notes
-          className={`mt-1.5 text-[11px] ${unread ? "text-warning" : "text-content/50"}`}
+          className={`mt-1.5 text-[11px] ${unread ? "text-(--ui-tone-warning-fg)" : "text-(--ui-text-secondary)"}`}
         >
           {unread
             ? t(unread === 1 ? "{p0} new review note" : "{p0} new review notes", { p0: unread })
@@ -1645,7 +1767,7 @@ function TaskCardBody({
         </p>
       ) : null}
       {task.status === "blocked" && task.error ? (
-        <p className="mt-1.5 line-clamp-4 break-words text-[11px] leading-snug text-danger">
+        <p className="mt-1.5 line-clamp-4 break-words text-[11px] leading-snug text-(--ui-tone-danger-fg)">
           {task.error}
         </p>
       ) : null}
@@ -1655,18 +1777,18 @@ function TaskCardBody({
       {task.status === "review" && task.diffStat ? (
         <pre
           aria-label={"Changes"}
-          className="mt-1.5 max-h-32 overflow-auto rounded bg-content/5 px-1.5 py-1 font-mono text-[10px] leading-snug text-content/60"
+          className="mt-1.5 max-h-32 overflow-auto rounded bg-(--ui-surface-raised) px-1.5 py-1 font-mono text-[10px] leading-snug text-(--ui-text-secondary)"
         >
           {task.diffStat}
         </pre>
       ) : null}
       {task.status === "review" && task.mergeError ? (
-        <p role="alert" className="mt-1.5 break-words text-[11px] leading-snug text-danger">
+        <Alert tone="danger" role="alert" className="mt-1.5 break-words">
           {task.mergeError}
-        </p>
+        </Alert>
       ) : null}
       {task.status === "review" ? (
-        <p className="mbs-1 text-[11px] text-warning">
+        <p className="mbs-1 text-[11px] text-(--ui-tone-warning-fg)">
           {hasUnmergedBranch(task)
             ? task.mergeError
               ? t("Delivery is blocked")
@@ -1726,147 +1848,216 @@ function TaskActions({
   onRecheckReview,
 }: { task: BoardTask } & TaskActionHandlers) {
   useLocale();
+  const [menu, setMenu] = useState(false);
+  const trigger = useRef<HTMLButtonElement>(null);
   const can = (to: TaskStatus) => canMoveTask(task.status, to);
+  type Action = {
+    id: string;
+    label: string;
+    icon: ReactNode;
+    run: () => void;
+    disabled?: boolean;
+    loading?: boolean;
+    danger?: boolean;
+  };
+  const primary: Action[] = [],
+    secondary: Action[] = [];
+  if (onEarlier)
+    primary.push({
+      id: "earlier",
+      label: t("Move earlier"),
+      icon: <ChevronRight className="size-3" />,
+      run: onEarlier,
+      disabled: busy,
+    });
+  if (onLater)
+    primary.push({
+      id: "later",
+      label: t("Move later"),
+      icon: <ChevronDown className="size-3" />,
+      run: onLater,
+      disabled: busy,
+    });
+  if (task.status === "queued" && task.workspaceControlsSupported)
+    primary.push({
+      id: "start-now",
+      label: t("Start now"),
+      icon: <Play className="size-3" />,
+      run: onStart,
+      disabled: busy,
+    });
+  if (task.status === "review" && hasUnmergedBranch(task) && task.workspaceControlsSupported) {
+    secondary.push({
+      id: "delivery",
+      label: t("Choose delivery target"),
+      icon: <GitBranch className="size-3" />,
+      run: onDelivery,
+      disabled: busy,
+    });
+    if (task.autoMerge || task.deliveryRequested)
+      secondary.push({
+        id: "pause-merge",
+        label: t("Pause automatic merge"),
+        icon: <Square className="size-3" />,
+        run: onPauseMerge,
+        disabled: busy,
+      });
+  }
+  if (can("done"))
+    primary.push({
+      id: "done",
+      label: hasUnmergedBranch(task)
+        ? t("Merge into {p0}", { p0: task.baseBranch })
+        : task.status === "todo"
+          ? t("Mark done")
+          : t("Approve"),
+      icon: hasUnmergedBranch(task) ? (
+        <GitMerge className="size-3" />
+      ) : (
+        <Check className="size-3" />
+      ),
+      run: () => onMove("done"),
+      disabled: busy,
+    });
+  if (can("queued") && !taskRequiresInstructions(task) && !canTakeOverBlockedTask(task))
+    primary.push({
+      id: "queued",
+      label:
+        task.status === "todo"
+          ? t("Start")
+          : task.status === "blocked"
+            ? t("Retry")
+            : t("Run again"),
+      icon:
+        task.status === "blocked" ? <RotateCcw className="size-3" /> : <Play className="size-3" />,
+      run: () => onMove("queued"),
+      disabled: busy,
+    });
+  if (
+    task.status === "blocked" &&
+    !taskRequiresInstructions(task) &&
+    !canTakeOverBlockedTask(task) &&
+    task.reviewRecheckSupported &&
+    task.verification?.review?.verdict === "fail" &&
+    task.sessionId
+  )
+    secondary.push({
+      id: "recheck",
+      label: t("Recheck review"),
+      icon: <RefreshCw className="size-3" />,
+      run: onRecheckReview,
+      disabled: busy,
+    });
+  if (can("todo"))
+    secondary.push({
+      id: "todo",
+      label: task.status === "done" ? t("Reopen") : t("Move to To do"),
+      icon: <Undo2 className="size-3" />,
+      run: () => onMove("todo"),
+      disabled: busy,
+    });
+  if (can("blocked"))
+    primary.push({
+      id: "blocked",
+      label: t("Stop"),
+      icon: <Square className="size-3" />,
+      run: () => onMove("blocked"),
+      disabled: busy,
+    });
+  if (onOpenSession)
+    primary.push({
+      id: "worker",
+      label: t("Open worker session"),
+      icon: <MessageSquare className="size-3" />,
+      run: onOpenSession,
+      disabled: openingWorkerSession,
+      loading: openingWorkerSession,
+    });
+  if (onOpenReviewSession)
+    primary.push({
+      id: "review",
+      label: t("Open review session"),
+      icon: <MessageSquare className="size-3" />,
+      run: onOpenReviewSession,
+      disabled: openingReviewSession,
+      loading: openingReviewSession,
+    });
+  if (canEditTask(task.status))
+    (taskRequiresInstructions(task) ? primary : secondary).push({
+      id: "edit",
+      label: taskRequiresInstructions(task) ? t("Update instructions") : t("Edit"),
+      icon: <Pencil className="size-3" />,
+      run: onEdit,
+      disabled: busy,
+    });
+  if (isStewardProposal(task))
+    secondary.push({
+      id: "decline",
+      label: t("Decline"),
+      icon: <X className="size-3" />,
+      run: onDecline,
+      disabled: busy,
+    });
+  else if (task.status !== "running" && task.status !== "verifying")
+    secondary.push({
+      id: "delete",
+      label: t("Delete"),
+      icon: <Trash2 className="size-3" />,
+      run: onDelete,
+      disabled: busy,
+      danger: true,
+    });
   return (
     <div
-      className="mt-1.5 flex flex-wrap items-center gap-0.5"
+      className="mt-1.5 flex flex-wrap items-center gap-1"
       onClick={(event) => event.stopPropagation()}
       onKeyDown={(event) => event.stopPropagation()}
     >
-      {busy ? <LoaderCircle className="mx-1.5 size-3 animate-spin text-content/40" /> : null}
-      {onEarlier ? (
-        <CardAction label={t("Move earlier")} disabled={busy} onClick={onEarlier}>
-          <ChevronRight className="size-3" />
-        </CardAction>
-      ) : null}
-      {onLater ? (
-        <CardAction label={t("Move later")} disabled={busy} onClick={onLater}>
-          <ChevronDown className="size-3" />
-        </CardAction>
-      ) : null}
-      {task.status === "queued" && task.workspaceControlsSupported ? (
-        <CardAction label={t("Start now")} disabled={busy} onClick={onStart}>
-          <Play className="size-3" />
-        </CardAction>
-      ) : null}
-      {task.status === "review" && hasUnmergedBranch(task) && task.workspaceControlsSupported ? (
-        <>
-          <CardAction label={t("Choose delivery target")} disabled={busy} onClick={onDelivery}>
-            <GitBranch className="size-3" />
-          </CardAction>
-          {task.autoMerge || task.deliveryRequested ? (
-            <CardAction label={t("Pause automatic merge")} disabled={busy} onClick={onPauseMerge}>
-              <Square className="size-3" />
-            </CardAction>
-          ) : null}
-        </>
-      ) : null}
-      {can("done") ? (
-        hasUnmergedBranch(task) ? (
-          <CardAction
-            label={t("Merge into {p0}", { p0: task.baseBranch })}
-            disabled={busy}
-            onClick={() => onMove("done")}
-          >
-            <GitMerge className="size-3" />
-          </CardAction>
-        ) : (
-          <CardAction
-            label={task.status === "todo" ? t("Mark done") : t("Approve")}
-            disabled={busy}
-            onClick={() => onMove("done")}
-          >
-            <Check className="size-3" />
-          </CardAction>
-        )
-      ) : null}
-      {can("queued") && !taskRequiresInstructions(task) && !canTakeOverBlockedTask(task) ? (
-        <CardAction
-          label={
-            task.status === "todo"
-              ? t("Start")
-              : task.status === "blocked"
-                ? t("Retry")
-                : t("Run again")
-          }
+      {primary.map((action) => (
+        <Button
+          key={action.id}
+          variant="ghost"
+          disabled={action.disabled}
+          loading={action.loading}
+          onClick={action.run}
+        >
+          {action.icon}
+          {action.label}
+        </Button>
+      ))}
+      {secondary.length ? (
+        <Button
+          ref={trigger}
+          variant="ghost"
+          iconOnly
+          label={t("More actions")}
+          aria-haspopup="menu"
+          aria-expanded={menu}
           disabled={busy}
-          onClick={() => onMove("queued")}
+          onClick={() => setMenu((open) => !open)}
         >
-          {task.status === "blocked" ? (
-            <RotateCcw className="size-3" />
-          ) : (
-            <Play className="size-3" />
-          )}
-        </CardAction>
+          <MoreHorizontal className="size-3.5" />
+        </Button>
       ) : null}
-      {task.status === "blocked" &&
-      !taskRequiresInstructions(task) &&
-      !canTakeOverBlockedTask(task) &&
-      task.reviewRecheckSupported &&
-      task.verification?.review?.verdict === "fail" &&
-      task.sessionId ? (
-        <CardAction label={t("Recheck review")} disabled={busy} onClick={onRecheckReview}>
-          <RefreshCw className="size-3" />
-        </CardAction>
+      {menu ? (
+        <DropdownMenu
+          anchor={trigger}
+          label={t("More actions")}
+          items={secondary.map(({ id, label, icon, disabled, danger }) => ({
+            kind: "item" as const,
+            id,
+            label,
+            icon,
+            disabled,
+            danger,
+          }))}
+          onClose={() => setMenu(false)}
+          onPick={(id) => {
+            const action = secondary.find((item) => item.id === id);
+            if (action && !action.disabled) action.run();
+          }}
+        />
       ) : null}
-      {can("todo") ? (
-        <CardAction
-          label={task.status === "done" ? t("Reopen") : t("Move to To do")}
-          disabled={busy}
-          onClick={() => onMove("todo")}
-        >
-          <Undo2 className="size-3" />
-        </CardAction>
-      ) : null}
-      {can("blocked") ? (
-        <CardAction label={t("Stop")} disabled={busy} onClick={() => onMove("blocked")}>
-          <Square className="size-3" />
-        </CardAction>
-      ) : null}
-      {onOpenSession ? (
-        <CardAction
-          label={t("Open worker session")}
-          disabled={openingWorkerSession}
-          onClick={onOpenSession}
-        >
-          {openingWorkerSession ? (
-            <LoaderCircle className="size-3 animate-spin" />
-          ) : (
-            <MessageSquare className="size-3" />
-          )}
-        </CardAction>
-      ) : null}
-      {onOpenReviewSession ? (
-        <CardAction
-          label={t("Open review session")}
-          disabled={openingReviewSession}
-          onClick={onOpenReviewSession}
-        >
-          {openingReviewSession ? (
-            <LoaderCircle className="size-3 animate-spin" />
-          ) : (
-            <MessageSquare className="size-3" />
-          )}
-        </CardAction>
-      ) : null}
-      {canEditTask(task.status) ? (
-        <CardAction
-          label={taskRequiresInstructions(task) ? t("Update instructions") : t("Edit")}
-          disabled={busy}
-          onClick={onEdit}
-        >
-          <Pencil className="size-3" />
-        </CardAction>
-      ) : null}
-      {isStewardProposal(task) ? (
-        <CardAction label={t("Decline")} disabled={busy} onClick={onDecline}>
-          <X className="size-3" />
-        </CardAction>
-      ) : task.status === "running" || task.status === "verifying" ? null : (
-        <CardAction label={t("Delete")} disabled={busy} onClick={onDelete}>
-          <Trash2 className="size-3" />
-        </CardAction>
-      )}
     </div>
   );
 }
@@ -1889,8 +2080,8 @@ function DetailRow({ label, children }: { label: string; children: ReactNode }) 
   useLocale();
   return (
     <div className="flex min-w-0 gap-2 text-[12px] leading-snug">
-      <dt className="w-24 shrink-0 text-content/45">{label}</dt>
-      <dd className="min-w-0 flex-1 break-words text-content/80">{children}</dd>
+      <dt className="w-24 shrink-0 text-(--ui-text-secondary)">{label}</dt>
+      <dd className="min-w-0 flex-1 break-words text-(--ui-text-secondary)">{children}</dd>
     </div>
   );
 }
@@ -1961,88 +2152,94 @@ function TaskDetail({
       <aside
         ref={detailRoot}
         aria-label={t("Task details")}
-        className="flex min-h-0 w-[380px] max-w-[45%] shrink-0 flex-col border-l border-stroke @max-[640px]/task-area:w-full @max-[640px]/task-area:max-w-none @max-[640px]/task-area:border-is-0"
+        className="flex min-h-0 w-[380px] max-w-[45%] shrink-0 flex-col border-l border-(--ui-tone-neutral-border) @max-[640px]/task-area:w-full @max-[640px]/task-area:max-w-none @max-[640px]/task-area:border-is-0"
       >
-        <div className="flex h-9 shrink-0 items-center gap-2 border-b border-stroke px-3">
-          <span className="inline-flex h-5 items-center rounded-full bg-content/8 px-2 text-[11px] font-medium text-content/70">
+        <div className="flex h-9 shrink-0 items-center gap-2 border-b border-(--ui-tone-neutral-border) px-3">
+          <Badge tone="neutral" className="">
             {t(STATUS_LABELS[task.status])}
-          </span>
+          </Badge>
           {task.needsInput || taskRequiresInstructions(task) ? (
-            <span className="inline-flex h-5 items-center rounded-full bg-warning/12 px-2 text-[11px] font-medium text-warning">
+            <Badge tone="warning" className="">
               {t("Needs input")}
-            </span>
+            </Badge>
           ) : null}
           {task.source === "steward" ? (
-            <span
-              data-task-suggested
-              className="inline-flex h-5 items-center rounded-full bg-feature/12 px-2 text-[11px] font-medium text-feature"
-            >
+            <Badge data-task-suggested tone="info" className="">
               {t("Suggested")}
-            </span>
+            </Badge>
           ) : null}
-          <button
+          <Button
+            iconOnly
+            label={t("Close details")}
+            variant="ghost"
             type="button"
             aria-label={t("Close details")}
             onClick={onClose}
-            className="ml-auto grid size-6 place-items-center rounded-md text-content/50 hover:bg-content/10 hover:text-content"
+            className="ml-auto"
           >
             <X className="size-3.5" />
-          </button>
+          </Button>
         </div>
         <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-4 py-3">
           {editing ? (
             <form aria-label={t("Edit details")} onSubmit={save} className="space-y-2">
-              <input
+              <TextField
+                hideLabel
+                label=""
                 autoFocus
                 aria-label={t("Title")}
                 value={title}
                 onChange={(event) => setTitle(event.target.value)}
-                className="w-full rounded-md border border-content/10 bg-content/3 px-2 py-1 text-[14px] font-semibold text-content outline-none focus:border-content/20"
+                fieldClassName="w-full"
               />
-              <textarea
+              <TextareaField
+                hideLabel
+                label=""
                 aria-label={t("Description")}
                 value={prompt}
                 onChange={(event) => setPrompt(event.target.value)}
                 placeholder={t("Details, acceptance criteria, links…")}
                 rows={8}
-                className="block w-full resize-y rounded-md border border-content/10 bg-content/3 px-2 py-1.5 text-[13px] leading-relaxed text-content outline-none placeholder:text-content/35 focus:border-content/20"
+                fieldClassName="block w-full"
+                className="resize-y"
               />
               <div className="flex items-center gap-2">
-                <button type="submit" disabled={!canSave} className={ACTION_FILLED}>
+                <Button variant="primary" type="submit" disabled={!canSave}>
                   {saving ? <LoaderCircle className="size-3.5 animate-spin" /> : null}
                   {t("Save")}
-                </button>
-                <button type="button" onClick={() => setEditing(false)} className={ACTION_OUTLINE}>
+                </Button>
+                <Button variant="secondary" type="button" onClick={() => setEditing(false)}>
                   {t("Cancel")}
-                </button>
+                </Button>
               </div>
             </form>
           ) : (
             <>
               <div className="flex items-start gap-2">
-                <h2 className="min-w-0 flex-1 break-words text-[15px] font-semibold leading-snug text-content">
+                <h2 className="min-w-0 flex-1 break-words text-[15px] font-semibold leading-snug text-(--ui-tone-neutral-fg)">
                   {task.title}
                 </h2>
                 {editable ? (
-                  <button
+                  <Button
+                    variant="ghost"
                     type="button"
                     onClick={beginEdit}
-                    className={CARD_ACTION}
+
                     aria-label={t("Edit title and description")}
                   >
                     <Pencil className="size-3" />
                     {t("Edit")}
-                  </button>
+                  </Button>
                 ) : null}
               </div>
-              <div data-task-detail-description className="text-[13px] text-content/80">
+              <div data-task-detail-description className="text-[13px] text-(--ui-text-secondary)">
                 {description ? (
                   <AgentMarkdown
                     text={taskInstructionsMarkdown(task.prompt)}
                     allowRemoteMedia={false}
                   />
                 ) : (
-                  <p className="text-content/45">{t("No description.")}</p>
+                  <p className="text-(--ui-text-secondary)">{t("No description.")}</p>
                 )}
               </div>
             </>
@@ -2064,7 +2261,7 @@ function TaskDetail({
             />
           ) : null}
           {goal ? (
-            <p className="flex min-w-0 items-center gap-1 text-[12px] text-content/55">
+            <p className="flex min-w-0 items-center gap-1 text-[12px] text-(--ui-text-secondary)">
               <Sparkles className="size-3 shrink-0" />
               <span className="min-w-0 truncate">
                 {t("Part of the goal “")}
@@ -2073,9 +2270,9 @@ function TaskDetail({
             </p>
           ) : null}
           {task.status === "blocked" && task.error ? (
-            <p role="alert" className="break-words text-[12px] leading-snug text-danger">
+            <Alert tone="danger" role="alert" className="break-words">
               {task.error}
-            </p>
+            </Alert>
           ) : null}
           <dl className="space-y-1.5">
             <DetailRow label={t("Project")}>{project}</DetailRow>
@@ -2141,11 +2338,13 @@ function TaskDetail({
           </dl>
           {command ? (
             <section aria-label={t("Check output")} className="space-y-1">
-              <h3 className="text-[12px] text-content/55">
+              <h3 className="text-[12px] text-(--ui-text-secondary)">
                 {t("Check command")}{" "}
                 <span
                   className={
-                    !command.timedOut && command.exitCode === 0 ? "text-success" : "text-danger"
+                    !command.timedOut && command.exitCode === 0
+                      ? "text-(--ui-tone-success-fg)"
+                      : "text-(--ui-tone-danger-fg)"
                   }
                 >
                   {!command.timedOut && command.exitCode === 0
@@ -2157,15 +2356,21 @@ function TaskDetail({
                         : t("failed (exit code {p0})", { p0: command.exitCode })}
                 </span>
               </h3>
-              <pre className="max-h-64 overflow-auto whitespace-pre-wrap break-words rounded bg-content/5 px-2 py-1.5 font-mono text-[11px] text-content/65">
+              <pre className="max-h-64 overflow-auto whitespace-pre-wrap break-words rounded bg-(--ui-surface-raised) px-2 py-1.5 font-mono text-[11px] text-(--ui-text-secondary)">
                 {command.output.trim() || "No output."}
               </pre>
             </section>
           ) : null}
           {review ? (
-            <p className="break-words text-[12px] leading-snug text-content/65">
+            <p className="break-words text-[12px] leading-snug text-(--ui-text-secondary)">
               {t("Reviewer")}{" "}
-              <span className={review.verdict === "pass" ? "text-success" : "text-danger"}>
+              <span
+                className={
+                  review.verdict === "pass"
+                    ? "text-(--ui-tone-success-fg)"
+                    : "text-(--ui-tone-danger-fg)"
+                }
+              >
                 {review.verdict === "pass" ? t("passed") : t("failed")}
               </span>
               {review.note ? ` · ${review.note}` : null}
@@ -2174,18 +2379,21 @@ function TaskDetail({
           {task.diffStat ? (
             <pre
               aria-label={"Diff stat"}
-              className="max-h-48 overflow-auto rounded bg-content/5 px-2 py-1.5 font-mono text-[11px] leading-snug text-content/65"
+              className="max-h-48 overflow-auto rounded bg-(--ui-surface-raised) px-2 py-1.5 font-mono text-[11px] leading-snug text-(--ui-text-secondary)"
             >
               {task.diffStat}
             </pre>
           ) : null}
           {task.mergeError ? (
-            <p role="alert" className="break-words text-[12px] leading-snug text-danger">
+            <Alert tone="danger" role="alert" className="break-words">
               {task.mergeError}
-            </p>
+            </Alert>
           ) : null}
           {task.deliveryNote ? (
-            <p role="status" className="break-words text-[12px] leading-snug text-warning">
+            <p
+              role="status"
+              className="break-words text-[12px] leading-snug text-(--ui-tone-warning-fg)"
+            >
               {task.deliveryNote}
             </p>
           ) : null}
@@ -2203,12 +2411,12 @@ function VerificationSummary({ verification }: { verification: TaskVerification 
   if (!command && !review) return null;
   const passed = command && !command.timedOut && command.exitCode === 0;
   return (
-    <div className="mt-1.5 space-y-1 text-[11px] leading-snug text-content/60">
+    <div className="mt-1.5 space-y-1 text-[11px] leading-snug text-(--ui-text-secondary)">
       {command ? (
         <details>
           <summary className="cursor-pointer select-none">
             {t("Check command")}{" "}
-            <span className={passed ? "text-success" : "text-danger"}>
+            <span className={passed ? "text-(--ui-tone-success-fg)" : "text-(--ui-tone-danger-fg)"}>
               {passed
                 ? t("passed")
                 : command.timedOut
@@ -2218,7 +2426,7 @@ function VerificationSummary({ verification }: { verification: TaskVerification 
                     : t("failed (exit code {p0})", { p0: command.exitCode })}
             </span>
           </summary>
-          <pre className="mt-1 max-h-40 overflow-auto whitespace-pre-wrap break-words rounded bg-content/5 px-1.5 py-1 font-mono text-[10px] text-content/60">
+          <pre className="mt-1 max-h-40 overflow-auto whitespace-pre-wrap break-words rounded bg-(--ui-surface-raised) px-1.5 py-1 font-mono text-[10px] text-(--ui-text-secondary)">
             {command.output.trim() || "No output."}
           </pre>
         </details>
@@ -2226,33 +2434,19 @@ function VerificationSummary({ verification }: { verification: TaskVerification 
       {review ? (
         <p className="break-words">
           {t("Reviewer")}{" "}
-          <span className={review.verdict === "pass" ? "text-success" : "text-danger"}>
+          <span
+            className={
+              review.verdict === "pass"
+                ? "text-(--ui-tone-success-fg)"
+                : "text-(--ui-tone-danger-fg)"
+            }
+          >
             {review.verdict === "pass" ? t("passed") : t("failed")}
           </span>
           {review.note ? ` · ${review.note}` : null}
         </p>
       ) : null}
     </div>
-  );
-}
-
-function CardAction({
-  label,
-  disabled,
-  onClick,
-  children,
-}: {
-  label: string;
-  disabled: boolean;
-  onClick: () => void;
-  children: ReactNode;
-}) {
-  useLocale();
-  return (
-    <button type="button" disabled={disabled} onClick={onClick} className={CARD_ACTION}>
-      {children}
-      {label}
-    </button>
   );
 }
 
@@ -2308,11 +2502,14 @@ function useTaskMachineProjects(target: RemoteMachine | undefined, enabled = tru
 
 function ProjectDiscoveryStatus({ state }: { state: ReturnType<typeof useTaskMachineProjects> }) {
   return state.error ? (
-    <span role="alert" className="inline-flex min-w-0 flex-wrap items-center gap-2 text-warning">
+    <span
+      role="alert"
+      className="inline-flex min-w-0 flex-wrap items-center gap-2 text-(--ui-tone-warning-fg)"
+    >
       <span>{state.error}</span>
-      <button type="button" onClick={state.retry} className={ACTION_OUTLINE}>
+      <Button variant="secondary" type="button" onClick={state.retry}>
         {t("Retry")}
-      </button>
+      </Button>
     </span>
   ) : state.loading ? (
     <span role="status" className="inline-flex items-center gap-1.5">
@@ -2399,48 +2596,50 @@ function TaskForm({
           if (canSave) onSubmit("save");
         } else if (canTodo) onSubmit("todo");
       }}
-      className="shrink-0 border-b border-stroke px-4 py-3"
+      className="shrink-0 border-b border-(--ui-tone-neutral-border) px-4 py-3"
     >
       <div className="flex flex-wrap items-start gap-4">
-        <input
+        <TextField
+          hideLabel
+          label=""
           autoFocus
           aria-label={t("Task title")}
           value={draft.title}
           onChange={(event) => update("title", event.target.value)}
           placeholder={t("What should get done?")}
-          className="min-w-[min(100%,14rem)] flex-1 bg-transparent text-[16px] font-semibold leading-tight text-content outline-none placeholder:text-content/35"
+          fieldClassName="task-title-field"
         />
         <div className="flex min-w-0 flex-wrap items-center gap-2 [max-inline-size:100%]">
-          <button type="button" onClick={onCancel} className={ACTION_OUTLINE}>
+          <Button variant="secondary" type="button" onClick={onCancel}>
             {t("Cancel")}
-          </button>
+          </Button>
           {draft.id ? (
-            <button type="submit" disabled={!canSave || saving} className={ACTION_FILLED}>
+            <Button variant="primary" type="submit" disabled={!canSave || saving}>
               {saving ? <LoaderCircle className="size-3.5 animate-spin" /> : null}
               {t("Save")}
-            </button>
+            </Button>
           ) : (
             <>
-              <button
+              <Button
+                variant="secondary"
                 type="button"
                 disabled={!ready || !hasDescription || saving}
                 title={
                   hasDescription ? undefined : t("Add a description to start this with an agent.")
                 }
                 onClick={() => onSubmit("queued")}
-                className={ACTION_OUTLINE}
               >
                 {t("Add and start")}
-              </button>
-              <button type="submit" disabled={!canTodo || saving} className={ACTION_FILLED}>
+              </Button>
+              <Button variant="primary" type="submit" disabled={!canTodo || saving}>
                 {saving ? <LoaderCircle className="size-3.5 animate-spin" /> : null}
                 {t("Add to To do")}
-              </button>
+              </Button>
             </>
           )}
         </div>
       </div>
-      <div className="mt-2 flex min-w-0 flex-wrap items-center gap-2 text-[12px] text-content/50">
+      <div className="mt-2 flex min-w-0 flex-wrap items-center gap-2 text-[12px] text-(--ui-text-secondary)">
         {!draft.id ? (
           <SearchableSelect
             variant="pill"
@@ -2484,7 +2683,7 @@ function TaskForm({
           />
         )}
         <ProjectDiscoveryStatus state={projectState} />
-        <span aria-hidden className="h-3 w-px shrink-0 bg-content/15" />
+        <span aria-hidden className="h-3 w-px shrink-0 bg-(--ui-surface-raised)" />
         {target && !looksLikeProject(draft.cwd) ? (
           <span>{t("Choose project")}</span>
         ) : machine ? (
@@ -2493,17 +2692,20 @@ function TaskForm({
             {machine}
           </span>
         ) : (
-          <span role="alert" className="text-warning">
+          <span role="alert" className="text-(--ui-tone-warning-fg)">
             {TASK_MACHINE_ERROR}
           </span>
         )}
         {!draft.id && todoUnsupported ? (
-          <span role="status" className="text-warning">
+          <span role="status" className="text-(--ui-tone-warning-fg)">
             {todoUnsupported}
           </span>
         ) : null}
       </div>
-      <div className="relative mt-2 rounded-md border border-content/10 bg-content/3 has-focus:border-content/20">
+      <div
+        data-ui-focus-group=""
+        className="relative mt-2 rounded-md border border-(--ui-tone-neutral-border) bg-(--ui-surface-raised) has-focus:border-(--ui-tone-neutral-border)"
+      >
         <SkillPromptField
           value={draft.prompt}
           harness={draft.harness}
@@ -2511,6 +2713,7 @@ function TaskForm({
           onChange={(prompt) => update("prompt", prompt)}
           label={t("Description")}
           placeholder={t("Details, acceptance criteria, links…")}
+          focusOwner="group"
         />
       </div>
       <TaskExecutionMode
@@ -2530,18 +2733,19 @@ function TaskForm({
         onValidityChange={setWorkspaceValid}
       />
       <MachineConcurrency machineId={targetId} limits={limits} onChange={onChangeLimits} />
-      <button
+      <Button
+        variant="ghost"
         type="button"
         aria-expanded={agentOpen}
         onClick={() => setAgentOpen((open) => !open)}
-        className="mt-2 inline-flex h-6 items-center gap-1 rounded-md text-[12px] text-content/55 hover:text-content"
+        className="mt-2"
       >
         {agentOpen ? <ChevronDown className="size-3" /> : <ChevronRight className="size-3" />}
         {t("Agent settings")}
-      </button>
+      </Button>
       {agentOpen ? (
         <div className="mt-1 space-y-2">
-          <div className="flex flex-wrap items-center gap-1 rounded-md border border-content/10 bg-content/3 px-2 py-2">
+          <div className="flex flex-wrap items-center gap-1 rounded-md border border-(--ui-tone-neutral-border) bg-(--ui-surface-raised) px-2 py-2">
             <ModelPicker
               harness={draft.harness}
               model={draft.model}
@@ -2556,7 +2760,7 @@ function TaskForm({
                 onChange={(runtimeMode) => update("runtimeMode", runtimeMode)}
               />
             ) : null}
-            <span className="ml-auto flex items-center gap-2 text-[11px] text-content/45">
+            <span className="ml-auto flex items-center gap-2 text-[11px] text-(--ui-text-secondary)">
               {t("Time limit")}
               <SearchableSelect
                 variant="pill"
@@ -2569,13 +2773,11 @@ function TaskForm({
               />
             </span>
           </div>
-          <div className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-2 text-[12px] text-content/60">
+          <div className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-2 text-[12px] text-(--ui-text-secondary)">
             <label className="flex cursor-pointer items-center gap-1.5">
-              <input
-                type="checkbox"
+              <Checkbox
                 checked={draft.review}
                 onChange={(event) => update("review", event.target.checked)}
-                className={CHECKBOX}
               />
               {t("Review with a second agent")}
             </label>
@@ -2590,13 +2792,16 @@ function TaskForm({
             />
             <label className="flex min-w-[220px] flex-1 items-center gap-2">
               <span className="shrink-0">{t("Check command")}</span>
-              <input
+              <TextField
+                hideLabel
+                label=""
                 aria-label={t("Check command")}
                 value={draft.verifyCommand}
                 onChange={(event) => update("verifyCommand", event.target.value)}
                 placeholder={"npm test"}
                 spellCheck={false}
-                className="h-7 min-w-0 flex-1 rounded-md border border-content/10 bg-content/3 px-2 font-mono text-[12px] text-content outline-none placeholder:text-content/30 focus:border-content/20"
+                fieldClassName="min-w-0 flex-1"
+                className="font-mono"
               />
             </label>
           </div>
@@ -2615,15 +2820,10 @@ function ContinueUntilDoneField({
 }) {
   return (
     <label className="flex cursor-pointer items-start gap-2">
-      <input
-        type="checkbox"
-        checked={checked}
-        onChange={(event) => onChange(event.target.checked)}
-        className={CHECKBOX}
-      />
+      <Checkbox checked={checked} onChange={(event) => onChange(event.target.checked)} />
       <span>
         <span className="block">{t("Continue until complete")}</span>
-        <span className="block text-[11px] text-content/45">
+        <span className="block text-[11px] text-(--ui-text-secondary)">
           {t("Keeps correcting while progress is made; asks for input when needed.")}
         </span>
       </span>
@@ -2671,15 +2871,13 @@ function AutoMergeField({
   useLocale();
   return (
     <label className={`flex items-center gap-1.5 ${disabled ? "opacity-50" : "cursor-pointer"}`}>
-      <input
-        type="checkbox"
+      <Checkbox
         checked={checked}
         disabled={disabled}
         onChange={(event) => onChange(event.target.checked)}
-        className={CHECKBOX}
       />
       {t("Merge automatically")}
-      <span className="text-[11px] text-content/40">
+      <span className="text-[11px] text-(--ui-text-secondary)">
         {t("Merges into the base branch when every check passes")}
       </span>
     </label>
@@ -2703,7 +2901,8 @@ const SUMMARY_TIME = new Intl.DateTimeFormat(undefined, {
   minute: "2-digit",
 });
 
-const SUMMARY_HEADING = "text-[11px] font-medium uppercase tracking-wide text-content/45";
+const SUMMARY_HEADING =
+  "text-[11px] font-medium uppercase tracking-wide text-(--ui-text-secondary)";
 
 /** What the agents did over a period, across every machine. */
 function SummaryPanel({
@@ -2729,15 +2928,16 @@ function SummaryPanel({
         </h3>
         <ul className="flex flex-col gap-0.5">
           {items.map((item) => (
-            <li key={item.key} className="min-w-0 text-[12px] text-content/60">
-              <button
+            <li key={item.key} className="min-w-0 text-[12px] text-(--ui-text-secondary)">
+              <Button
+                variant="ghost"
                 type="button"
                 onClick={() => onOpenTask(item.key)}
-                className="max-w-full truncate text-left font-medium text-content/85 hover:text-content hover:underline"
+                className="max-w-full truncate text-left"
               >
                 {item.title}
-              </button>{" "}
-              <span className="text-content/45">
+              </Button>{" "}
+              <span className="text-(--ui-text-secondary)">
                 {item.project} · {item.machineName}
                 {item.detail ? ` · ${item.detail}` : ""}
               </span>
@@ -2754,9 +2954,12 @@ function SummaryPanel({
         </h3>
         <ul className="flex flex-col gap-0.5">
           {goals.map((goal) => (
-            <li key={`${goal.machineName}:${goal.title}`} className="text-[12px] text-content/60">
-              <span className="font-medium text-content/85">{goal.title}</span>{" "}
-              <span className="text-content/45">
+            <li
+              key={`${goal.machineName}:${goal.title}`}
+              className="text-[12px] text-(--ui-text-secondary)"
+            >
+              <span className="font-medium text-(--ui-text-secondary)">{goal.title}</span>{" "}
+              <span className="text-(--ui-text-secondary)">
                 {goal.done}
                 {t(" of ")}
                 {goal.total}
@@ -2779,10 +2982,10 @@ function SummaryPanel({
   return (
     <section
       aria-label={t("Summary")}
-      className="mx-4 mt-4 flex max-h-[45%] shrink-0 flex-col gap-3 overflow-y-auto rounded-lg border border-content/10 bg-content/3 p-3"
+      className="mx-4 mt-4 flex max-h-[45%] shrink-0 flex-col gap-3 overflow-y-auto rounded-lg border border-(--ui-tone-neutral-border) bg-(--ui-surface-raised) p-3"
     >
       <div className="flex items-center gap-2">
-        <p className="min-w-0 flex-1 text-[12px] text-content/50">
+        <p className="min-w-0 flex-1 text-[12px] text-(--ui-text-secondary)">
           {summary
             ? t("From {p0} to {p1}", {
                 p0: SUMMARY_TIME.format(summary.since),
@@ -2790,16 +2993,16 @@ function SummaryPanel({
               })
             : t("No summary yet. One is sent every day at the time set in Settings.")}
         </p>
-        <button type="button" onClick={onRefresh} disabled={busy} className={ACTION_OUTLINE}>
+        <Button variant="secondary" type="button" onClick={onRefresh} disabled={busy}>
           <RefreshCw className="size-3.5" strokeWidth={1.75} />
           {busy ? t("Refreshing…") : t("Refresh now")}
-        </button>
+        </Button>
       </div>
-      {error ? <p className="text-[12px] text-danger">{error}</p> : null}
+      {error ? <p className="text-[12px] text-(--ui-tone-danger-fg)">{error}</p> : null}
       {summary ? (
         <>
           {empty ? (
-            <p className="text-[12px] text-content/50">{t("No background activity.")}</p>
+            <p className="text-[12px] text-(--ui-text-secondary)">{t("No background activity.")}</p>
           ) : null}
           {taskSection(
             "Finished",
@@ -2816,8 +3019,10 @@ function SummaryPanel({
               <h3 className={SUMMARY_HEADING}>{t("Agent time today")}</h3>
               <ul className="flex flex-col gap-0.5">
                 {summary.usage.map((entry) => (
-                  <li key={entry.machineName} className="text-[12px] text-content/60">
-                    <span className="font-medium text-content/85">{entry.machineName}</span>{" "}
+                  <li key={entry.machineName} className="text-[12px] text-(--ui-text-secondary)">
+                    <span className="font-medium text-(--ui-text-secondary)">
+                      {entry.machineName}
+                    </span>{" "}
                     {formatAgentMinutes(entry.usedMinutes)}
                     {entry.dailyAgentMinutes
                       ? t(" of {p0}", { p0: formatAgentMinutes(entry.dailyAgentMinutes) })
@@ -2828,7 +3033,7 @@ function SummaryPanel({
             </section>
           ) : null}
           {summary.unreachable.length || summary.outdated.length ? (
-            <p className="text-[12px] text-content/50">
+            <p className="text-[12px] text-(--ui-text-secondary)">
               {t("Not included:")}{" "}
               {[
                 ...summary.unreachable.map((name) => `${name} (not reachable)`),
@@ -2867,20 +3072,22 @@ function CustomDailyLimit({
     >
       <label className="flex items-center gap-2">
         {t("Hours")}
-        <input
-          type="number"
+        <NumberField
+          hideLabel
+          label=""
+
           min="0"
           step="any"
           aria-label={t("Daily agent hours on {p0}", { p0: entry.machineName })}
           value={hours}
           onChange={(event) => setHours(event.target.value)}
-          className="w-24 rounded border border-content/15 bg-content/5 px-2 py-1 text-content outline-none focus:border-content/40"
+          fieldClassName="w-24 max-w-24"
         />
       </label>
-      <button type="submit" disabled={!valid} className={ACTION_OUTLINE}>
+      <Button variant="secondary" type="submit" disabled={!valid}>
         {t("Save")}
-      </button>
-      <span className="text-[11px] text-content/40">{t("0 = no limit")}</span>
+      </Button>
+      <span className="text-[11px] text-(--ui-text-secondary)">{t("0 = no limit")}</span>
     </form>
   );
 }
@@ -2933,14 +3140,16 @@ function LimitsPanel({
   return (
     <ul
       aria-label={t("Work limits")}
-      className="mx-4 mt-4 flex shrink-0 flex-col gap-2 rounded-lg border border-content/10 bg-content/3 p-3"
+      className="mx-4 mt-4 flex shrink-0 flex-col gap-2 rounded-lg border border-(--ui-tone-neutral-border) bg-(--ui-surface-raised) p-3"
     >
       {limits.map((entry) => (
         <li
           key={entry.machineId}
-          className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-2 text-[12px] text-content/60"
+          className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-2 text-[12px] text-(--ui-text-secondary)"
         >
-          <span className="min-w-24 font-medium text-content/80">{entry.machineName}</span>
+          <span className="min-w-24 font-medium text-(--ui-text-secondary)">
+            {entry.machineName}
+          </span>
           <span className="flex items-center gap-2">
             {t("Max concurrent tasks")}
             <SearchableSelect
@@ -2967,7 +3176,7 @@ function LimitsPanel({
             />
           </span>
           <CustomDailyLimit entry={entry} onChange={onChange} />
-          <span className="tabular-nums text-content/50">
+          <span className="tabular-nums text-(--ui-text-secondary)">
             {t("Used today: ")}
             {formatAgentMinutes(entry.usedMinutes)}
           </span>
@@ -3006,6 +3215,8 @@ function GoalCard({
 }) {
   useLocale();
   const [replanning, setReplanning] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuTrigger = useRef<HTMLButtonElement>(null);
   const [feedback, setFeedback] = useState("");
   const progress = goalProgress(goal, tasks);
   const failedPlanning = goal.status === "blocked" && goal.taskIds.length === 0;
@@ -3018,34 +3229,37 @@ function GoalCard({
     <article
       aria-label={goal.title}
       data-goal-status={goal.status}
-      className="rounded-md border border-content/10 bg-content/3 px-3 py-2"
+      className="rounded-md border border-(--ui-tone-neutral-border) bg-(--ui-surface-raised) px-3 py-2"
     >
       <div className="flex min-w-0 items-center gap-2">
-        <Sparkles className="size-3.5 shrink-0 text-content/45" />
-        <h3 title={goal.prompt} className="min-w-0 truncate text-[13px] font-semibold text-content">
+        <Sparkles className="size-3.5 shrink-0 text-(--ui-text-secondary)" />
+        <h3
+          title={goal.prompt}
+          className="min-w-0 truncate text-[13px] font-semibold text-(--ui-tone-neutral-fg)"
+        >
           {goal.title}
         </h3>
-        <span
-          className={`inline-flex h-5 shrink-0 items-center rounded-full px-2 text-[11px] font-medium ${GOAL_STATUS_STYLES[goal.status]}`}
-        >
+        <Badge tone={GOAL_STATUS_TONES[goal.status]} className="shrink-0">
           {goal.status === "planning" ? (
             <LoaderCircle className="mr-1 size-3 animate-spin" />
           ) : null}
           {t(GOAL_STATUS_LABELS[goal.status])}
-        </span>
+        </Badge>
         {progress.total > 0 ? (
-          <span className="shrink-0 tabular-nums text-[11px] text-content/50">
+          <span className="shrink-0 tabular-nums text-[11px] text-(--ui-text-secondary)">
             {progress.done}/{progress.total}
             {t(" done")}
           </span>
         ) : null}
-        <span className="min-w-0 truncate text-[11px] text-content/40">
+        <span className="min-w-0 truncate text-[11px] text-(--ui-text-secondary)">
           {goal.projects.map((project) => project.name).join(", ")}
           {t(" · on")} {goal.machineName}
           {goal.stale ? t(" (offline, last known)") : ""}
         </span>
         <div className="ml-auto flex shrink-0 items-center gap-0.5">
-          {busy ? <LoaderCircle className="mx-1.5 size-3 animate-spin text-content/40" /> : null}
+          {busy ? (
+            <LoaderCircle className="mx-1.5 size-3 animate-spin text-(--ui-text-secondary)" />
+          ) : null}
           {goal.status !== "done" && goal.status !== "cancelled" ? (
             <Button
               variant="ghost"
@@ -3063,43 +3277,89 @@ function GoalCard({
             </Button>
           ) : null}
           {goal.status === "awaiting-approval" ? (
-            <CardAction label={t("Approve")} disabled={busy} onClick={onApprove}>
+            <Button variant="ghost" disabled={busy} onClick={onApprove}>
               <Check className="size-3" />
-            </CardAction>
+              {t("Approve")}
+            </Button>
           ) : null}
           {canReplan ? (
-            <CardAction
-              label={t("Replan")}
+            <Button
+              variant="ghost"
+
               disabled={busy}
               onClick={() => setReplanning((open) => !open)}
             >
               <RotateCcw className="size-3" />
-            </CardAction>
+              {t("Replan")}
+            </Button>
           ) : null}
           {onOpenPlanner ? (
-            <CardAction label={t("Open planner")} disabled={false} onClick={onOpenPlanner}>
+            <Button variant="ghost" disabled={false} onClick={onOpenPlanner}>
               <MessageSquare className="size-3" />
-            </CardAction>
+              {t("Open planner")}
+            </Button>
           ) : null}
           {goal.taskIds.length > 0 ? (
-            <CardAction label={t("Task sessions")} disabled={false} onClick={onSessions}>
+            <Button variant="ghost" disabled={false} onClick={onSessions}>
               <MessageSquare className="size-3" />
-            </CardAction>
+              {t("Task sessions")}
+            </Button>
           ) : null}
-          {goal.status === "done" || goal.status === "cancelled" ? null : (
-            <CardAction label={t("Cancel")} disabled={busy} onClick={onCancel}>
-              <Square className="size-3" />
-            </CardAction>
-          )}
-          {goal.status === "planning" || goal.status === "running" ? null : (
-            <CardAction label={t("Delete")} disabled={busy} onClick={onDelete}>
-              <Trash2 className="size-3" />
-            </CardAction>
-          )}
+          <Button
+            ref={menuTrigger}
+            variant="ghost"
+            iconOnly
+            label={t("More actions")}
+            aria-haspopup="menu"
+            aria-expanded={menuOpen}
+            disabled={busy}
+            onClick={() => setMenuOpen((open) => !open)}
+          >
+            <MoreHorizontal className="size-3.5" />
+          </Button>
+          {menuOpen ? (
+            <DropdownMenu
+              anchor={menuTrigger}
+              label={t("More actions")}
+              onClose={() => setMenuOpen(false)}
+              items={[
+                ...(goal.status === "done" || goal.status === "cancelled"
+                  ? []
+                  : [
+                      {
+                        kind: "item" as const,
+                        id: "cancel",
+                        label: t("Cancel"),
+                        disabled: busy,
+                        icon: <Square className="size-3" />,
+                      },
+                    ]),
+                ...(goal.status === "planning" || goal.status === "running"
+                  ? []
+                  : [
+                      {
+                        kind: "item" as const,
+                        id: "delete",
+                        label: t("Delete"),
+                        disabled: busy,
+                        danger: true,
+                        icon: <Trash2 className="size-3" />,
+                      },
+                    ]),
+              ]}
+              onPick={(id) => {
+                if (busy) return;
+                if (id === "cancel") onCancel();
+                else if (id === "delete") onDelete();
+              }}
+            />
+          ) : null}
         </div>
       </div>
       {goal.status === "blocked" && reason ? (
-        <p className="mt-1 break-words text-[11px] leading-snug text-danger">{reason}</p>
+        <p className="mt-1 break-words text-[11px] leading-snug text-(--ui-tone-danger-fg)">
+          {reason}
+        </p>
       ) : null}
       {goal.status === "awaiting-approval" && goal.plan ? (
         <ol aria-label={t("Plan")} className="mt-1.5 space-y-1">
@@ -3109,13 +3369,13 @@ function GoalCard({
               title={task.prompt}
               className="flex min-w-0 flex-wrap items-baseline gap-x-1.5 text-[12px] leading-snug"
             >
-              <span className="text-content/80">{task.title}</span>
-              <span className="text-[11px] text-content/45">
+              <span className="text-(--ui-text-secondary)">{task.title}</span>
+              <span className="text-[11px] text-(--ui-text-secondary)">
                 {t("in ")}
                 {projectOf(task.projectId, task.project)}
               </span>
               {task.dependsOn.length ? (
-                <span className="text-[11px] text-content/45">
+                <span className="text-[11px] text-(--ui-text-secondary)">
                   {t("· after ")}
                   {task.dependsOn.map(titleOf).join(", ")}
                 </span>
@@ -3136,18 +3396,21 @@ function GoalCard({
             });
           }}
         >
-          <textarea
+          <TextareaField
+            hideLabel
+            label=""
             autoFocus
             aria-label={t("Plan feedback")}
             value={feedback}
             onChange={(event) => setFeedback(event.target.value)}
             placeholder={t("What should the plan do differently? (optional)")}
             rows={2}
-            className="min-w-0 flex-1 resize-y rounded-md border border-content/10 bg-background-base px-2 py-1 text-[12px] text-content outline-none placeholder:text-content/30 focus:border-content/20"
+            fieldClassName="min-w-0 flex-1"
+            className="resize-y"
           />
-          <button type="submit" disabled={busy} className={ACTION_FILLED}>
+          <Button variant="primary" type="submit" disabled={busy}>
             {t("Plan again")}
-          </button>
+          </Button>
         </form>
       ) : null}
     </article>
@@ -3244,9 +3507,9 @@ function GoalSettingsForm({
         ) : null}
       </fieldset>
       {error ? (
-        <p role="alert" className="text-danger">
+        <Alert tone="danger" role="alert" className="">
           {t(error)}
-        </p>
+        </Alert>
       ) : null}
       <div className="flex flex-wrap justify-end gap-2">
         <Button disabled={saving} onClick={onCancel}>
@@ -3329,28 +3592,30 @@ function GoalForm({
         }
         onSubmit(event);
       }}
-      className="shrink-0 border-b border-stroke px-4 py-3"
+      className="shrink-0 border-b border-(--ui-tone-neutral-border) px-4 py-3"
     >
       <div className="flex flex-wrap items-start gap-4">
-        <input
+        <TextField
+          hideLabel
+          label=""
           autoFocus
           aria-label={t("Goal title")}
           value={draft.title}
           onChange={(event) => update("title", event.target.value)}
           placeholder={t("Name the main job")}
-          className="min-w-[min(100%,14rem)] flex-1 bg-transparent text-[16px] font-semibold leading-tight text-content outline-none placeholder:text-content/35"
+          fieldClassName="task-title-field"
         />
         <div className="flex shrink-0 items-center gap-2">
-          <button type="button" onClick={onCancel} className={ACTION_OUTLINE}>
+          <Button variant="secondary" type="button" onClick={onCancel}>
             {t("Cancel")}
-          </button>
-          <button type="submit" disabled={!valid || saving} className={ACTION_FILLED}>
+          </Button>
+          <Button variant="primary" type="submit" disabled={!valid || saving}>
             {saving ? <LoaderCircle className="size-3.5 animate-spin" /> : null}
             {t("Plan it")}
-          </button>
+          </Button>
         </div>
       </div>
-      <div className="mt-2 flex min-w-0 flex-wrap items-center gap-1.5 text-[12px] text-content/50">
+      <div className="mt-2 flex min-w-0 flex-wrap items-center gap-1.5 text-[12px] text-(--ui-text-secondary)">
         <SearchableSelect
           variant="pill"
           label={t("Machine")}
@@ -3364,26 +3629,29 @@ function GoalForm({
             onChange({ ...draft, machineId, cwds: [], leadCwd: "", workspaces: undefined })
           }
         />
-        <span aria-hidden className="h-3 w-px shrink-0 bg-content/15" />
+        <span aria-hidden className="h-3 w-px shrink-0 bg-(--ui-surface-raised)" />
         <span className="shrink-0">{t("Projects")}</span>
         {draft.cwds.map((cwd) => (
           <span
             key={cwd}
             data-goal-project={cwd}
-            className="inline-flex h-6 max-w-[220px] items-center gap-1 rounded-full border border-content/12 pl-2 pr-1 text-[12px] text-content/75"
+            className="inline-flex h-6 max-w-[220px] items-center gap-1 rounded-full border border-(--ui-tone-neutral-border) pl-2 pr-1 text-[12px] text-(--ui-text-secondary)"
           >
             <span className="min-w-0 truncate">{projectDisplayName(cwd)}</span>
             {cwd === lead ? (
-              <span className="shrink-0 text-[10px] text-content/45">{t("lead")}</span>
+              <span className="shrink-0 text-[10px] text-(--ui-text-secondary)">{t("lead")}</span>
             ) : null}
-            <button
+            <Button
+              iconOnly
+              label={t("Remove {p0}", { p0: projectDisplayName(cwd) })}
+              variant="ghost"
               type="button"
               aria-label={t("Remove {p0}", { p0: projectDisplayName(cwd) })}
               onClick={() => onChange(toggleGoalProject(draft, cwd))}
-              className="grid size-4 shrink-0 place-items-center rounded-full text-content/45 hover:bg-content/10 hover:text-content"
+              className="shrink-0"
             >
               <X className="size-3" />
-            </button>
+            </Button>
           </span>
         ))}
         {draft.cwds.length < MAX_GOAL_PROJECTS ? (
@@ -3403,7 +3671,7 @@ function GoalForm({
         <ProjectDiscoveryStatus state={projectState} />
         {draft.cwds.length > 1 ? (
           <span className="flex items-center gap-1.5">
-            <span aria-hidden className="h-3 w-px shrink-0 bg-content/15" />
+            <span aria-hidden className="h-3 w-px shrink-0 bg-(--ui-surface-raised)" />
             {t("Lead")}
             <SearchableSelect
               variant="pill"
@@ -3418,22 +3686,24 @@ function GoalForm({
             />
           </span>
         ) : null}
-        <span aria-hidden className="h-3 w-px shrink-0 bg-content/15" />
+        <span aria-hidden className="h-3 w-px shrink-0 bg-(--ui-surface-raised)" />
         {machine ? (
           <span className="truncate">
             {t("Runs on ")}
             {machine}
           </span>
         ) : draft.cwds.length ? (
-          <span role="alert" className="text-warning">
+          <span role="alert" className="text-(--ui-tone-warning-fg)">
             {TASK_MACHINE_ERROR}
           </span>
         ) : (
           <span>{t("Choose the projects the job may touch, all on one machine.")}</span>
         )}
       </div>
-      <div className="relative mt-2 rounded-md border border-content/10 bg-content/3 has-focus:border-content/20">
-        <textarea
+      <div className="relative mt-2 rounded-md border border-(--ui-tone-neutral-border) bg-(--ui-surface-raised) has-focus:border-(--ui-tone-neutral-border)">
+        <TextareaField
+          hideLabel
+          label=""
           aria-label={t("Main job")}
           value={draft.prompt}
           onChange={(event) => update("prompt", event.target.value)}
@@ -3441,7 +3711,8 @@ function GoalForm({
             "Describe the whole job. A planner agent reads the projects and splits it into tasks, which agents then carry out.",
           )}
           rows={4}
-          className="block w-full resize-y bg-transparent px-3 py-2 text-[13px] leading-relaxed text-content outline-none placeholder:text-content/35"
+          fieldClassName="block w-full"
+          className="resize-y"
         />
         <div className="flex flex-wrap items-center gap-1 px-2 pb-2">
           <ModelPicker
@@ -3458,7 +3729,7 @@ function GoalForm({
               onChange={(runtimeMode) => update("runtimeMode", runtimeMode)}
             />
           ) : null}
-          <span className="ml-auto flex items-center gap-2 text-[11px] text-content/45">
+          <span className="ml-auto flex items-center gap-2 text-[11px] text-(--ui-text-secondary)">
             {t("Time limit")}
             <SearchableSelect
               variant="pill"
@@ -3472,25 +3743,21 @@ function GoalForm({
           </span>
         </div>
       </div>
-      <div className="mt-2 flex min-w-0 flex-wrap items-center gap-x-4 gap-y-2 text-[12px] text-content/60">
+      <div className="mt-2 flex min-w-0 flex-wrap items-center gap-x-4 gap-y-2 text-[12px] text-(--ui-text-secondary)">
         <label
           title={t("The planned tasks are created only once you approve the plan.")}
           className="flex cursor-pointer items-center gap-1.5"
         >
-          <input
-            type="checkbox"
+          <Checkbox
             checked={draft.approvePlan}
             onChange={(event) => update("approvePlan", event.target.checked)}
-            className={CHECKBOX}
           />
           {t("Review the plan before starting")}
         </label>
         <label className="flex cursor-pointer items-center gap-1.5">
-          <input
-            type="checkbox"
+          <Checkbox
             checked={draft.review}
             onChange={(event) => update("review", event.target.checked)}
-            className={CHECKBOX}
           />
           {t("Review each task with a second agent")}
         </label>
@@ -3508,7 +3775,7 @@ function GoalForm({
           checked={draft.continueUntilDone}
           onChange={(checked) => update("continueUntilDone", checked)}
         />
-        <span className="text-[11px] text-content/40">
+        <span className="text-[11px] text-(--ui-text-secondary)">
           {draft.isolate === false
             ? t("Tasks work directly in the selected checkout. You review and commit the changes.")
             : draft.autoMerge
@@ -3646,21 +3913,28 @@ function StewardsPanel({
   onDelete: (steward: BoardSteward) => void;
 }) {
   useLocale();
+  const [menu, setMenu] = useState<{ key: string; anchor: HTMLButtonElement } | null>(null);
+  const menuSteward = menu
+    ? stewards.find((steward) => `${steward.machineId}:${steward.id}` === menu.key)
+    : undefined;
+  const menuBusy = menuSteward
+    ? acting === `steward:${menuSteward.machineId}:${menuSteward.id}`
+    : true;
   return (
     <section
       aria-label={t("Stewards")}
-      className="flex max-h-[45%] shrink-0 flex-col gap-1.5 overflow-y-auto border-b border-stroke p-3"
+      className="flex max-h-[45%] shrink-0 flex-col gap-1.5 overflow-y-auto border-b border-(--ui-tone-neutral-border) p-3"
     >
       <div className="flex items-center gap-2">
-        <p className="min-w-0 flex-1 text-[12px] text-content/50">
+        <p className="min-w-0 flex-1 text-[12px] text-(--ui-text-secondary)">
           {t(
             "A steward reads its project on a schedule and suggests the next work as To do items. Nothing runs until you start it.",
           )}
         </p>
-        <button type="button" onClick={onAdd} disabled={draft != null} className={ACTION_OUTLINE}>
+        <Button variant="secondary" type="button" onClick={onAdd} disabled={draft != null}>
           <Plus className="size-3.5" strokeWidth={1.75} />
           {t("Add steward")}
-        </button>
+        </Button>
       </div>
       {draft ? (
         <StewardForm
@@ -3682,17 +3956,17 @@ function StewardsPanel({
               <article
                 aria-label={t("Steward for {p0}", { p0: stewardProjectName(steward) })}
                 data-steward-status={steward.lastRunStatus}
-                className="rounded-md border border-content/10 bg-content/3 px-3 py-2"
+                className="rounded-md border border-(--ui-tone-neutral-border) bg-(--ui-surface-raised) px-3 py-2"
               >
                 <div className="flex min-w-0 items-center gap-2">
-                  <Bot className="size-3.5 shrink-0 text-content/45" />
+                  <Bot className="size-3.5 shrink-0 text-(--ui-text-secondary)" />
                   <h3
                     title={steward.focus || undefined}
-                    className="min-w-0 truncate text-[13px] font-semibold text-content"
+                    className="min-w-0 truncate text-[13px] font-semibold text-(--ui-tone-neutral-fg)"
                   >
                     {stewardProjectName(steward)}
                   </h3>
-                  <span className="min-w-0 truncate text-[11px] text-content/40">
+                  <span className="min-w-0 truncate text-[11px] text-(--ui-text-secondary)">
                     {t("on ")}
                     {steward.machineName}
                     {steward.stale ? t(" (offline, last known)") : ""} ·{" "}
@@ -3700,39 +3974,49 @@ function StewardsPanel({
                   </span>
                   <div className="ml-auto flex shrink-0 items-center gap-0.5">
                     {busy ? (
-                      <LoaderCircle className="mx-1.5 size-3 animate-spin text-content/40" />
+                      <LoaderCircle className="mx-1.5 size-3 animate-spin text-(--ui-text-secondary)" />
                     ) : null}
-                    <label className="flex cursor-pointer items-center gap-1.5 px-1.5 text-[11px] text-content/60">
-                      <input
-                        type="checkbox"
+                    <label className="flex cursor-pointer items-center gap-1.5 px-1.5 text-[11px] text-(--ui-text-secondary)">
+                      <Checkbox
                         aria-label={t("Enabled")}
                         checked={steward.enabled}
                         disabled={busy}
                         onChange={() => onToggle(steward)}
-                        className={CHECKBOX}
                       />
                       {t("Enabled")}
                     </label>
-                    <CardAction
-                      label={t("Run now")}
+                    <Button
+                      variant="ghost"
+
                       disabled={busy || running}
                       onClick={() => onRunNow(steward)}
                     >
                       <Play className="size-3" />
-                    </CardAction>
-                    <CardAction label={t("Edit")} disabled={busy} onClick={() => onEdit(steward)}>
+                      {t("Run now")}
+                    </Button>
+                    <Button variant="ghost" disabled={busy} onClick={() => onEdit(steward)}>
                       <Pencil className="size-3" />
-                    </CardAction>
-                    <CardAction
-                      label={t("Delete")}
+                      {t("Edit")}
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      iconOnly
+                      label={t("More actions")}
                       disabled={busy}
-                      onClick={() => onDelete(steward)}
+                      aria-haspopup="menu"
+                      aria-expanded={menu?.key === `${steward.machineId}:${steward.id}`}
+                      onClick={(event) =>
+                        setMenu({
+                          key: `${steward.machineId}:${steward.id}`,
+                          anchor: event.currentTarget,
+                        })
+                      }
                     >
-                      <Trash2 className="size-3" />
-                    </CardAction>
+                      <MoreHorizontal className="size-3.5" />
+                    </Button>
                   </div>
                 </div>
-                <p className="mt-1 break-words text-[11px] leading-snug text-content/50">
+                <p className="mt-1 break-words text-[11px] leading-snug text-(--ui-text-secondary)">
                   {steward.lastRunStatus ? (
                     <>
                       {t("Last run: ")}
@@ -3758,7 +4042,9 @@ function StewardsPanel({
                 (steward.lastRunStatus === "failed" || steward.lastRunStatus === "skipped") ? (
                   <p
                     className={`mt-0.5 break-words text-[11px] leading-snug ${
-                      steward.lastRunStatus === "failed" ? "text-danger" : "text-content/45"
+                      steward.lastRunStatus === "failed"
+                        ? "text-(--ui-tone-danger-fg)"
+                        : "text-(--ui-text-secondary)"
                     }`}
                   >
                     {steward.lastRunError}
@@ -3769,9 +4055,31 @@ function StewardsPanel({
           );
         })}
         {stewards.length === 0 && !draft ? (
-          <li className="px-1 py-2 text-[11px] text-content/35">{t("No stewards yet.")}</li>
+          <li>
+            <EmptyState description={t("No stewards yet.")} />
+          </li>
         ) : null}
       </ul>
+      {menu && menuSteward ? (
+        <DropdownMenu
+          anchor={menu.anchor}
+          label={t("More actions")}
+          items={[
+            {
+              kind: "item",
+              id: "delete",
+              label: t("Delete"),
+              danger: true,
+              disabled: menuBusy,
+              icon: <Trash2 className="size-3" />,
+            },
+          ]}
+          onClose={() => setMenu(null)}
+          onPick={() => {
+            if (!menuBusy) onDelete(menuSteward);
+          }}
+        />
+      ) : null}
     </section>
   );
 }
@@ -3808,8 +4116,10 @@ function StewardForm({
   ) => (
     <label className="flex items-center gap-2">
       <span className="shrink-0">{label}</span>
-      <input
-        type="number"
+      <NumberField
+        hideLabel
+        label=""
+
         aria-label={label}
         min={min}
         max={max}
@@ -3818,7 +4128,7 @@ function StewardForm({
           const next = Math.trunc(Number(event.target.value));
           if (Number.isFinite(next)) update(key, Math.min(max, Math.max(min, next)));
         }}
-        className="h-7 w-16 rounded-md border border-content/10 bg-content/3 px-2 text-[12px] text-content outline-none focus:border-content/20"
+        fieldClassName="w-16 max-w-16"
       />
     </label>
   );
@@ -3826,9 +4136,9 @@ function StewardForm({
     <form
       aria-label={draft.id ? t("Edit steward") : t("New steward")}
       onSubmit={onSubmit}
-      className="rounded-md border border-content/10 bg-background-base px-3 py-2"
+      className="rounded-md border border-(--ui-tone-neutral-border) bg-(--ui-surface) px-3 py-2"
     >
-      <div className="flex min-w-0 flex-wrap items-center gap-2 text-[12px] text-content/50">
+      <div className="flex min-w-0 flex-wrap items-center gap-2 text-[12px] text-(--ui-text-secondary)">
         {draft.id ? (
           // A steward stays with the project it was created for.
           <span className="truncate">{projectDisplayName(draft.cwd)}</span>
@@ -3839,28 +4149,30 @@ function StewardForm({
             onSelectProject={(cwd) => update("cwd", cwd)}
           />
         )}
-        <span aria-hidden className="h-3 w-px shrink-0 bg-content/15" />
+        <span aria-hidden className="h-3 w-px shrink-0 bg-(--ui-surface-raised)" />
         {machine ? (
           <span className="truncate">
             {t("Runs on ")}
             {machine}
           </span>
         ) : (
-          <span role="alert" className="text-warning">
+          <span role="alert" className="text-(--ui-tone-warning-fg)">
             {TASK_MACHINE_ERROR}
           </span>
         )}
         <div className="ml-auto flex items-center gap-2">
-          <button type="button" onClick={onCancel} className={ACTION_OUTLINE}>
+          <Button variant="secondary" type="button" onClick={onCancel}>
             {t("Cancel")}
-          </button>
-          <button type="submit" disabled={!valid || saving} className={ACTION_FILLED}>
+          </Button>
+          <Button variant="primary" type="submit" disabled={!valid || saving}>
             {saving ? <LoaderCircle className="size-3.5 animate-spin" /> : null}
             {t("Save")}
-          </button>
+          </Button>
         </div>
       </div>
-      <textarea
+      <TextareaField
+        hideLabel
+        label=""
         aria-label={t("Focus")}
         value={draft.focus}
         onChange={(event) => update("focus", event.target.value)}
@@ -3868,9 +4180,10 @@ function StewardForm({
           "What should it look for? e.g. follow docs/ROADMAP.md, or find bugs and missing tests",
         )}
         rows={2}
-        className="mt-2 block w-full resize-y rounded-md border border-content/10 bg-content/3 px-2 py-1.5 text-[13px] leading-relaxed text-content outline-none placeholder:text-content/35 focus:border-content/20"
+        fieldClassName="mt-2 block w-full"
+        className="resize-y"
       />
-      <div className="mt-2 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2 text-[12px] text-content/60">
+      <div className="mt-2 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2 text-[12px] text-(--ui-text-secondary)">
         <span className="shrink-0">{t("Look")}</span>
         <SearchableSelect
           variant="pill"
@@ -3896,21 +4209,22 @@ function StewardForm({
         {draft.scheduleKind === "hourly" ? (
           number("Minute", draft.minute, 59, "minute", 0)
         ) : (
-          <input
+          <TextField
+            hideLabel
+            label=""
             type="time"
             aria-label={t("Time")}
             value={draft.time}
             onChange={(event) => {
               if (event.target.value) update("time", event.target.value);
             }}
-            className="h-7 rounded-md border border-content/10 bg-content/3 px-2 text-[12px] text-content outline-none focus:border-content/20"
           />
         )}
-        <span className="text-[11px] text-content/40">
+        <span className="text-[11px] text-(--ui-text-secondary)">
           {automationScheduleLabel(scheduleOf(draft))}
         </span>
       </div>
-      <div className="mt-2 flex flex-wrap items-center gap-1 rounded-md border border-content/10 bg-content/3 px-2 py-2">
+      <div className="mt-2 flex flex-wrap items-center gap-1 rounded-md border border-(--ui-tone-neutral-border) bg-(--ui-surface-raised) px-2 py-2">
         <ModelPicker
           harness={draft.harness}
           model={draft.model}
@@ -3926,15 +4240,13 @@ function StewardForm({
           />
         ) : null}
       </div>
-      <div className="mt-2 flex min-w-0 flex-wrap items-center gap-x-4 gap-y-2 text-[12px] text-content/60">
+      <div className="mt-2 flex min-w-0 flex-wrap items-center gap-x-4 gap-y-2 text-[12px] text-(--ui-text-secondary)">
         {number("Max suggestions per run", draft.maxProposals, MAX_PROPOSALS_LIMIT, "maxProposals")}
         {number("Pause at open suggestions", draft.maxOpen, MAX_OPEN_LIMIT, "maxOpen")}
         <label className="flex cursor-pointer items-center gap-1.5">
-          <input
-            type="checkbox"
+          <Checkbox
             checked={draft.autoStart}
             onChange={(event) => update("autoStart", event.target.checked)}
-            className={CHECKBOX}
           />
           {t("Start suggestions automatically")}
         </label>
@@ -3943,7 +4255,7 @@ function StewardForm({
           onChange={(checked) => update("autoMerge", checked)}
         />
         {draft.autoStart ? (
-          <span role="status" className="text-[11px] text-warning">
+          <span role="status" className="text-[11px] text-(--ui-tone-warning-fg)">
             {t("Suggestions will run without you reviewing the idea first.")}
             {draft.autoMerge ? "" : t(" Each still waits for your review before it is merged.")}
           </span>

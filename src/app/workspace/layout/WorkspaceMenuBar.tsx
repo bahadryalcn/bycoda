@@ -14,10 +14,5 @@ export function WorkspaceMenuBar({
   onCloseCurrentTab,
   ...props
 }: WorkspaceMenuBarProps) {
-  return (
-    <MenuBar
-      {...props}
-      onCloseCurrentTab={activeTabId ? onCloseCurrentTab : undefined}
-    />
-  );
+  return <MenuBar {...props} onCloseCurrentTab={activeTabId ? onCloseCurrentTab : undefined} />;
 }

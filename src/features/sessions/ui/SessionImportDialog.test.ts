@@ -181,6 +181,24 @@ describe("SessionImportDialog", () => {
     expect(text()).toContain("Nothing matches these filters.");
   });
 
+  it("clears the common search field through the native event path without losing discovery candidates", async () => {
+    await render();
+    const field = document.querySelector<HTMLInputElement>('[aria-label="Filter conversations"]')!;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
+        field,
+        "not-a-fixture-match",
+      );
+      field.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    expect(text()).toContain("Nothing matches these filters.");
+    const clear = document.querySelector<HTMLButtonElement>('[aria-label="Clear search"]')!;
+    await act(async () => clear.click());
+    expect(field.value).toBe("");
+    expect(document.activeElement).toBe(field);
+    expect(text()).toContain("Fix the login bug");
+    expect(text()).toContain("Explain the schema");
+  });
   it("imports the selection and reports what happened", async () => {
     await render();
     const importButton = [...document.querySelectorAll("button")].find((b) =>

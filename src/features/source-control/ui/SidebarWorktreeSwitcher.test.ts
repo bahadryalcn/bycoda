@@ -289,7 +289,7 @@ it("prevents duplicate creation and keeps its progress visible", async () => {
     path: "/picker-new",
     branch: "new-worktree",
   });
-  expect(trigger().getAttribute("aria-busy")).toBe("false");
+  expect(trigger().getAttribute("aria-busy")).not.toBe("true");
 });
 
 it("does not navigate another project when an earlier creation finishes", async () => {

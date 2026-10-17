@@ -16,6 +16,7 @@
   --accent-subtle: var(--color-selection-subtle);
   --accent-foreground: var(--user-accent-foreground, var(--ui-text-on-active));
   --danger: var(--color-danger);
+  --info: var(--color-info);
   --warning: var(--color-warning);
   --success: var(--color-success);
   --control-on: var(--color-active);
@@ -28,7 +29,7 @@
   --control-thumb-shadow: none;
   --shadow-resting: none;
   --shadow-raised: none;
-  --radius-control: 0.375rem;
+  --radius-control: var(--ui-control-radius);
   --radius-panel: 0.75rem;
   --radius-surface: 0.75rem;
   --radius-pill: 9999px;
@@ -51,9 +52,9 @@
   --font-display: var(--font-sans);
   --leading-body: 1.4;
   --tracking-body: normal;
-  --control-height-sm: var(--ui-control-height-compact);
-  --control-height-md: var(--ui-control-height);
-  --control-height-lg: 2.5rem;
+  --control-height-sm: var(--ui-control-height-sm);
+  --control-height-md: var(--ui-control-height-md);
+  --control-height-lg: var(--ui-control-height-lg);
   --duration-instant: 80ms;
   --duration-fast: var(--motion-feedback-duration);
   --duration-standard: var(--motion-reorder-duration);
@@ -67,6 +68,18 @@
 /* The camera island stays black in both themes to join the physical cutout. */
 .bycoda-arc[data-ui-appearance="island"],
 .bycoda-arc[data-ui-appearance="island"] .bycoda-arc {
+  --ui-tone-neutral-fg: var(--ui-island-text);
+  --ui-tone-neutral-solid: var(--ui-island-text);
+  --ui-tone-neutral-on-solid: var(--ui-island-surface);
+  --ui-tone-neutral-subtle: var(--ui-island-hover);
+  --ui-tone-neutral-border: var(--ui-island-border);
+  --ui-tone-neutral-hover: var(--ui-island-hover);
+  --ui-tone-neutral-pressed: var(--ui-island-hover);
+  --ui-tone-neutral-solid-hover: var(--ui-island-text-secondary);
+  --ui-tone-neutral-solid-pressed: var(--ui-island-text-secondary);
+  --ui-tone-neutral-disabled-fg: var(--ui-island-text-secondary);
+  --ui-tone-neutral-disabled-surface: var(--ui-island-surface);
+  --ui-tone-neutral-disabled-border: var(--ui-island-border);
   --surface: var(--ui-island-surface);
   --surface-muted: var(--ui-island-hover);
   --foreground: var(--ui-island-text);
@@ -82,7 +95,7 @@
 /* Preserve bycoda keyboard focus even for upstream border-only controls. */
 :is(button, input, textarea, [tabindex]).bycoda-arc:focus-visible,
 .bycoda-arc :is(button, input, textarea, [tabindex]):focus-visible {
-  outline: var(--ui-focus-width) solid var(--color-accent);
+  outline: var(--ui-focus-width) solid var(--ui-focus-ring-color);
   outline-offset: var(--ui-focus-offset);
 }
 
@@ -92,7 +105,7 @@
 }
 
 .bycoda-arc-segmented {
-  --control-height-sm: 1.5rem;
+  --control-height-sm: var(--ui-segment-height, 1.5rem);
   --surface: var(--color-selection);
   --surface-muted: transparent;
 }
@@ -100,6 +113,109 @@
 .bycoda-arc-field {
   min-inline-size: 0;
   inline-size: 100%;
+}
+
+/* Generic choice presentation must also work outside the settings workbench. */
+.bycoda-arc.bycoda-arc-checkbox {
+  inline-size: var(--ui-control-checkbox-size);
+  block-size: var(--ui-control-checkbox-size);
+  flex: none;
+  margin: 0;
+  accent-color: var(--color-active);
+  vertical-align: middle;
+}
+
+.bycoda-arc.bycoda-arc-checkbox:disabled {
+  cursor: not-allowed;
+}
+
+/* Membership inputs retain native state; their associated label owns the target. */
+html[data-control-density="touch"] label:has(.bycoda-arc-checkbox) {
+  display: inline-flex;
+  align-items: center;
+  min-block-size: var(--ui-control-height);
+  min-inline-size: var(--ui-control-height);
+}
+html[data-control-density="touch"] .bycoda-arc-checkbox:not(label *) {
+  inline-size: var(--ui-control-height);
+  block-size: var(--ui-control-height);
+}
+html[data-control-density="touch"] .bycoda-arc-switch {
+  min-inline-size: var(--ui-control-height);
+}
+
+.bycoda-arc.bycoda-arc-select {
+  display: inline-flex;
+  min-block-size: var(--ui-control-height-md);
+  inline-size: 100%;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding-block: var(--space-2);
+  padding-inline: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: var(--surface);
+  color: var(--foreground);
+  font-size: var(--text-sm);
+  text-align: start;
+}
+
+.bycoda-arc.bycoda-arc-select:disabled {
+  color: var(--ui-control-disabled-fg);
+  background: var(--ui-control-disabled-surface);
+  cursor: not-allowed;
+}
+
+.bycoda-arc.bycoda-arc-select:active:not(:disabled),
+.bycoda-arc.bycoda-arc-select[data-state="open"] {
+  background: var(--ui-surface-pressed);
+}
+
+.bycoda-arc-select-chevron {
+  color: var(--ui-text-secondary);
+}
+
+.bycoda-selection-values,
+.bycoda-selection-value {
+  display: flex;
+  min-inline-size: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+/* The group owns one moving highlight; Button still owns action state and focus. */
+.bycoda-arc-floating {
+  --ui-tone-neutral-hover: transparent;
+  --ui-tone-neutral-pressed: transparent;
+}
+
+.bycoda-select-description {
+  color: var(--ui-text-secondary);
+  font-size: var(--ui-font-caption);
+  font-weight: 400;
+  line-height: var(--leading-body);
+}
+
+.bycoda-arc-select-option:has(.bycoda-select-description) {
+  min-block-size: var(--ui-control-height-lg);
+}
+
+.bycoda-arc .bycoda-arc-select-option:is([data-highlighted], [aria-selected="true"]) {
+  background: var(--ui-surface-selected);
+  color: var(--foreground);
+}
+
+.bycoda-arc .bycoda-arc-select-option:active {
+  background: var(--ui-surface-pressed);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .bycoda-arc.bycoda-arc-select:hover:not(:disabled),
+  .bycoda-arc .bycoda-arc-select-option:hover:not([data-highlighted], [aria-selected="true"]) {
+    background: var(--ui-surface-hover);
+  }
 }
 
 /* Text controls match :focus-visible on pointer focus too. Keep their focus

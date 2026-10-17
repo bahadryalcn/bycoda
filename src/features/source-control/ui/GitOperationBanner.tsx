@@ -1,3 +1,4 @@
+import { Button } from "../../../shared/ui/Button";
 import { errorText } from "../../../shared/lib/errors";
 import { t, useLocale } from "../../../shared/i18n/git";
 import { ask } from "@tauri-apps/plugin-dialog";
@@ -20,8 +21,7 @@ type Props = {
   onChanged: () => void;
 };
 
-const ACTION =
-  "shrink-0 rounded-md px-1.5 py-0.5 text-[11px] text-content/65 hover:bg-content/10 hover:text-content disabled:opacity-40";
+const ACTION = "shrink-0";
 
 /**
  * Shown while git is stopped in the middle of a merge, rebase, cherry-pick, or
@@ -66,10 +66,12 @@ export function GitOperationBanner({ cwd, operation, conflictCount, onChanged }:
   return (
     <div
       role="status"
-      className="flex shrink-0 items-center gap-1 border-b border-stroke bg-content/5 px-3 py-1.5 text-[12px] text-content/80"
+      className="flex shrink-0 items-center gap-1 border-b border-stroke bg-[var(--ui-surface)] px-3 py-1.5 text-[12px] text-[var(--color-content)]"
     >
       <span className="min-w-0 flex-1 truncate">{operationSummary(label, conflictCount)}</span>
-      <button
+      <Button
+        variant="ghost"
+        motion="none"
         type="button"
         disabled={!!busy || conflictCount > 0}
         title={
@@ -81,8 +83,10 @@ export function GitOperationBanner({ cwd, operation, conflictCount, onChanged }:
         className={ACTION}
       >
         {t("Continue")}
-      </button>
-      <button
+      </Button>
+      <Button
+        variant="ghost"
+        motion="none"
         type="button"
         disabled={!!busy}
         title={t("Abort the {p0}", { p0: label.toLowerCase() })}
@@ -90,7 +94,7 @@ export function GitOperationBanner({ cwd, operation, conflictCount, onChanged }:
         className={ACTION}
       >
         {t("Abort")}
-      </button>
+      </Button>
     </div>
   );
 }

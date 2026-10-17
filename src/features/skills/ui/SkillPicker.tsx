@@ -1,3 +1,7 @@
+import { Alert } from "../../../shared/ui/Alert";
+import { RadioGroup } from "../../../shared/ui/RadioGroup";
+import { TextField } from "../../../shared/ui/TextField";
+import { Button } from "../../../shared/ui/Button";
 import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
 import { t, useLocale } from "../../../shared/i18n";
 import { Plus } from "../../../shared/ui/icons";
@@ -81,15 +85,17 @@ export function SkillPicker({
             onPick={onPick}
           />
           {showCreate ? (
-            <button
+            <Button
+              variant="ghost"
+              size="sm"
               type="button"
               onMouseDown={(e) => e.preventDefault()}
               onClick={onStartCreate}
-              className="flex w-full items-center gap-2 border-t border-stroke px-2.5 py-2 text-left text-[12px] text-content/70 hover:bg-content/10 hover:text-content"
+              className="flex w-full items-center gap-2"
             >
               <Plus className="size-3.5 shrink-0" strokeWidth={1.75} />
               {t("New skill")}
-            </button>
+            </Button>
           ) : null}
         </>
       )}
@@ -171,7 +177,11 @@ function SkillList({
                 {t("Templates")}
               </p>
             ) : null}
-            <button
+            <Button
+              variant="item"
+              motion="none"
+              fullWidth
+              layout={compact ? "inline" : "stacked"}
               ref={highlighted ? activeRef : undefined}
               type="button"
               role="option"
@@ -179,9 +189,6 @@ function SkillList({
               onMouseDown={(e) => e.preventDefault()}
               onMouseEnter={() => onRowEnter(index)}
               onClick={() => onPick(skill)}
-              className={`flex w-full rounded-md px-2 text-left ${
-                compact ? "h-8 items-center" : "flex-col gap-0.5 py-1.5"
-              } ${highlighted ? "bg-content/10 text-content" : "text-content"}`}
             >
               <span className="flex min-w-0 w-full items-baseline gap-2">
                 <span className="truncate text-[13px]">
@@ -203,7 +210,7 @@ function SkillList({
                     skill.subcommands?.map((sub) => sub.usage || sub.name).join(" · ")}
                 </span>
               ) : null}
-            </button>
+            </Button>
           </Fragment>
         );
       })}
@@ -264,7 +271,10 @@ export function CreateSkillForm({
       <p className="mb-2 text-[11px] text-content/50">
         {t("Writes a starter SKILL.md you can edit.")}
       </p>
-      <input
+      <TextField
+        className={monospace ? "font-mono" : "font-sans"}
+        hideLabel
+        label={t("Skill name")}
         ref={input}
         value={name}
         spellCheck={false}
@@ -272,26 +282,23 @@ export function CreateSkillForm({
         aria-label={t("Skill name")}
         disabled={busy}
         onChange={(e) => setName(e.target.value)}
-        className={`mb-2 w-full rounded-md bg-content/10 px-2 py-1.5 text-[13px] text-content focus-visible:outline-2 focus-visible:outline-accent placeholder:text-content/40 ${monospace ? "font-mono" : "font-sans"}`}
       />
-      <div className="mb-2 flex gap-1">
-        <ScopeButton
-          label={t("Project")}
-          hint=".agents/skills"
-          monospace={monospace}
-          selected={scope === "project"}
-          disabled={!project || busy}
-          onClick={() => setScope("project")}
-        />
-        <ScopeButton
-          label={t("Personal")}
-          hint="~/.agents/skills"
-          monospace={monospace}
-          selected={scope === "user"}
-          disabled={busy}
-          onClick={() => setScope("user")}
-        />
-      </div>
+      <RadioGroup
+        compact
+        label={t("Scope")}
+        value={scope}
+        disabled={busy}
+        onValueChange={(value) => setScope(value as "project" | "user")}
+        options={[
+          {
+            value: "project",
+            label: t("Project"),
+            description: ".agents/skills",
+            disabled: !project,
+          },
+          { value: "user", label: t("Personal"), description: "~/.agents/skills" },
+        ]}
+      />
       {showScopeHelp ? (
         <p className="[margin-block-end:0.5rem] break-all text-[12px] text-content/65">
           {project && scope === "project"
@@ -303,67 +310,23 @@ export function CreateSkillForm({
         </p>
       ) : null}
       {error ? (
-        <p role="alert" className="mb-2 text-[12px] text-danger">
+        <Alert tone="danger" role="alert">
           {error}
-        </p>
+        </Alert>
       ) : !name.trim() || valid ? null : (
         <p className="mb-2 text-[12px] text-content/50">
           {t("Use lowercase letters, numbers, and hyphens.")}
         </p>
       )}
       <div className="flex items-center justify-end gap-1">
-        <button
-          type="button"
-          disabled={busy}
-          onClick={onCancel}
-          className="rounded-md px-2 py-1 text-[12px] text-content/50 hover:bg-content/10 hover:text-content"
-        >
+        <Button variant="ghost" size="sm" type="button" disabled={busy} onClick={onCancel}>
           {t("Cancel")}
-        </button>
-        <button
-          type="submit"
-          disabled={!valid || busy}
-          className="rounded-md bg-content/20 px-2 py-1 text-[12px] text-content disabled:opacity-40"
-        >
+        </Button>
+        <Button variant="ghost" size="sm" type="submit" disabled={!valid || busy}>
           {busy ? t("Creating…") : t("Create")}
-        </button>
+        </Button>
       </div>
     </form>
-  );
-}
-
-function ScopeButton({
-  label,
-  hint,
-  monospace,
-  selected,
-  disabled,
-  onClick,
-}: {
-  label: string;
-  hint: string;
-  monospace: boolean;
-  selected: boolean;
-  disabled?: boolean;
-  onClick: () => void;
-}) {
-  useLocale();
-  return (
-    <button
-      type="button"
-      disabled={disabled}
-      onClick={onClick}
-      className={`flex min-w-0 flex-1 flex-col rounded-md px-2 py-1.5 text-left ${
-        selected ? "bg-selection-emphasis text-content" : "bg-selection text-content/70"
-      } disabled:opacity-40`}
-    >
-      <span className="text-[12px]">{label}</span>
-      <span
-        className={`truncate text-[10px] text-content/40 ${monospace ? "font-mono" : "font-sans"}`}
-      >
-        {hint}
-      </span>
-    </button>
   );
 }
 

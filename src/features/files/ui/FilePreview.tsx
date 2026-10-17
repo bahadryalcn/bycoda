@@ -1,3 +1,4 @@
+import { Button } from "../../../shared/ui/Button";
 import { t, useLocale } from "../../../shared/i18n/technical";
 import { CircleDashed, X } from "../../../shared/ui/icons";
 import { MAX_PREVIEW_LINES } from "../../../integrations/harness/core/preview";
@@ -82,24 +83,26 @@ export function FilePreview({ preview, status, cwd, onOpenFile, variant = "card"
     <div
       className={
         variant === "card"
-          ? "overflow-hidden rounded-[10px] border border-content/10 bg-content/6"
+          ? "overflow-hidden rounded-[10px] border border-[var(--color-stroke)] bg-[var(--ui-surface)]"
           : "min-w-0"
       }
     >
       <div className="flex items-center gap-2 px-2.5 py-2">
         <FileTypeIcon name={fileName || "file"} isDir={false} />
         {filePath && onOpenFile ? (
-          <button
+          <Button
+            variant="ghost"
+            motion="none"
             type="button"
-            className="min-w-0 flex-1 truncate text-left font-mono text-[12px] font-medium text-content/85 hover:text-info hover:underline"
+            className="min-w-0 flex-1 truncate text-left font-mono hover:underline"
             title={path}
             onClick={() => onOpenFile(filePath)}
           >
             {label}
-          </button>
+          </Button>
         ) : (
           <span
-            className="min-w-0 flex-1 truncate font-mono text-[12px] font-medium text-content/85"
+            className="min-w-0 flex-1 truncate font-mono text-[12px] font-medium text-[var(--color-content)]"
             title={path}
           >
             {label}
@@ -119,7 +122,7 @@ export function FilePreview({ preview, status, cwd, onOpenFile, variant = "card"
       </div>
       {showDiff ? (
         <>
-          <div className="h-px bg-content/10" />
+          <div className="h-px bg-[var(--ui-surface-muted)]" />
           <div
             className={
               variant === "popover"
@@ -130,7 +133,9 @@ export function FilePreview({ preview, status, cwd, onOpenFile, variant = "card"
             aria-label={variant === "popover" ? t("Preview lines") : undefined}
           >
             {preview.contentOnly && !lines.length ? (
-              <p className="px-3 py-2 font-mono text-xs text-content/50">{t("Empty file")}</p>
+              <p className="px-3 py-2 font-mono text-xs text-[var(--ui-text-secondary)]">
+                {t("Empty file")}
+              </p>
             ) : null}
             {lines.map((line, index) => (
               <PreviewLine
@@ -171,7 +176,7 @@ function PreviewLine({
   return (
     <div className={`relative flex items-baseline ${scrollable ? "w-max min-w-full" : ""} ${bg}`}>
       <span className={`absolute inset-y-0 left-0 w-0.5 ${bar}`} />
-      <span className="w-7 shrink-0 pr-1 text-right font-mono text-[10px] text-content/35">
+      <span className="w-7 shrink-0 pr-1 text-right font-mono text-[10px] text-[var(--ui-text-muted)]">
         {line.number ?? " "}
       </span>
       {showGutter ? (
@@ -194,7 +199,9 @@ function StatusIcon({ status }: { status: Status }) {
     return <X className="size-3.5 shrink-0 text-danger" strokeWidth={2} />;
   }
   if (status === "pending") {
-    return <CircleDashed className="size-3.5 shrink-0 text-content/40" strokeWidth={1.75} />;
+    return (
+      <CircleDashed className="size-3.5 shrink-0 text-[var(--ui-text-muted)]" strokeWidth={1.75} />
+    );
   }
   return null;
 }
@@ -203,7 +210,7 @@ function highlight(text: string, dimmed: boolean) {
   const dim = dimmed ? "opacity-70" : "";
   const trimmed = text.trimStart();
   if (trimmed.startsWith("//") || trimmed.startsWith("///") || trimmed.startsWith("#")) {
-    return <span className={`text-content/45 ${dim}`}>{text}</span>;
+    return <span className={`text-[var(--ui-text-muted)] ${dim}`}>{text}</span>;
   }
 
   const parts: { text: string; color: string }[] = [];
@@ -215,18 +222,14 @@ function highlight(text: string, dimmed: boolean) {
       parts.push({ text: text.slice(last, match.index), color: "" });
     }
     const token = match[1];
-    const color = KEYWORDS.has(token)
-      ? "text-success"
-      : /^[A-Z]/.test(token)
-        ? "text-warning/90"
-        : "";
+    const color = KEYWORDS.has(token) ? "text-success" : /^[A-Z]/.test(token) ? "text-warning" : "";
     parts.push({ text: token, color });
     last = match.index + token.length;
   }
   if (last < text.length) parts.push({ text: text.slice(last), color: "" });
 
   return (
-    <span className={`text-content/80 ${dim}`}>
+    <span className={`text-[var(--color-content)] ${dim}`}>
       {parts.map((part, index) =>
         part.color ? (
           <span key={index} className={part.color}>

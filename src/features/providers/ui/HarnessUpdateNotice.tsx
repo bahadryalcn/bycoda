@@ -1,3 +1,5 @@
+import { Alert } from "../../../shared/ui/Alert";
+import { Button } from "../../../shared/ui/Button";
 import { t, useLocale } from "../../../shared/i18n";
 import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
@@ -130,23 +132,27 @@ export function HarnessUpdateNotice({
             {updates.length === 1 ? t("Harness update available") : t("Harness updates available")}
           </span>
           {pending.length > 1 ? (
-            <button
+            <Button
+              variant="ghost"
+              size="sm"
               type="button"
-              className="rounded-md px-2 py-1 text-[11px] font-medium text-content/70 hover:bg-content/10 hover:text-content"
+
               onClick={() => start(pending)}
             >
               {t("Update all")}
-            </button>
+            </Button>
           ) : null}
-          <button
+          <Button
+            variant="ghost"
+            size="sm"
             type="button"
-            aria-label={t("Dismiss harness updates")}
+            iconOnly
+            label={t("Dismiss harness updates")}
             disabled={busy}
-            className="grid size-6 shrink-0 place-items-center rounded-md text-content/40 hover:bg-content/10 hover:text-content disabled:opacity-40 disabled:hover:bg-transparent"
             onClick={dismiss}
           >
             <X className="size-3" strokeWidth={2} />
-          </button>
+          </Button>
         </div>
         <div className="divide-y divide-stroke">
           {updates.map((update) => (
@@ -197,10 +203,12 @@ function HarnessUpdateRow({
             <span className="shrink-0 font-mono text-[11px] text-content/50">
               {update.installed} → {update.latest}
             </span>
-            <button
+            <Button
+              variant="ghost"
+              size="sm"
               type="button"
               disabled={state.status === "updating"}
-              className="inline-flex shrink-0 items-center gap-1.5 rounded-md bg-content/10 px-2 py-1 text-[11px] font-medium hover:bg-content/15 disabled:opacity-60 disabled:hover:bg-content/10"
+              className="inline-flex shrink-0 items-center gap-1.5"
               onClick={onUpdate}
             >
               {state.status === "updating" ? (
@@ -213,18 +221,19 @@ function HarnessUpdateRow({
               ) : (
                 t("Update")
               )}
-            </button>
+            </Button>
           </>
         )}
       </div>
       {state.status === "failed" ? (
-        <p
+        <Alert
+          tone="danger"
           role="alert"
-          className="mt-1.5 line-clamp-2 text-[11px] leading-relaxed text-danger/90"
+
           title={state.error}
         >
           {state.error}
-        </p>
+        </Alert>
       ) : null}
     </article>
   );

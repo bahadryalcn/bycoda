@@ -1,3 +1,4 @@
+import { Alert } from "../../../shared/ui/Alert";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import { useContext, useEffect, useLayoutEffect, useRef, useState } from "react";
@@ -251,9 +252,9 @@ export function TerminalProfileDiscovery({
               </p>
             ) : null}
             {error ? (
-              <p role="alert" className="mbs-2 text-danger">
+              <Alert tone="danger" role="alert">
                 {error}
-              </p>
+              </Alert>
             ) : null}
           </div>
         </Popover>

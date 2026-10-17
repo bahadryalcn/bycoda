@@ -1,3 +1,4 @@
+import { Button } from "../../../shared/ui/Button";
 import { t, useLocale } from "../../../shared/i18n";
 import { File, X } from "../../../shared/ui/icons";
 import { useState } from "react";
@@ -36,9 +37,8 @@ export function NoteMiniCard({ card, onDismiss, embedded = false }: Props) {
 
   const inner = (
     <div
-      className={`relative rounded-md border border-content/10 bg-content/6 px-2.5 py-2 ${
-        onDismiss ? "pr-8" : ""
-      }`}
+      style={{ background: "var(--ui-surface)", borderColor: "var(--color-stroke)" }}
+      className={`relative rounded-md border px-2.5 py-2 ${onDismiss ? "pr-8" : ""}`}
     >
       <div className="flex w-full flex-col text-left">
         <span className="flex min-w-0 items-center gap-1.5">
@@ -72,15 +72,19 @@ export function NoteMiniCard({ card, onDismiss, embedded = false }: Props) {
         ) : null}
       </div>
       {onDismiss ? (
-        <button
+        <Button
+          variant="ghost"
+          size="sm"
           type="button"
           title={t("Remove")}
           aria-label={t("Remove note {p0}", { p0: card.title || "Untitled" })}
           onClick={onDismiss}
-          className="absolute right-1.5 top-1.5 grid size-5 place-items-center rounded text-content/40 hover:bg-content/10 hover:text-content"
+          iconOnly
+          label={t("Remove note {p0}", { p0: card.title || "Untitled" })}
+          className="absolute right-1.5 top-1.5"
         >
           <X className="size-3" strokeWidth={2} />
-        </button>
+        </Button>
       ) : null}
     </div>
   );

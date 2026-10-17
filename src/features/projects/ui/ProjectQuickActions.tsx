@@ -1,3 +1,5 @@
+import { Alert } from "../../../shared/ui/Alert";
+import { Button } from "../../../shared/ui/Button";
 import { t, useLocale } from "../../../shared/i18n";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
@@ -51,9 +53,6 @@ const emptyAction = (): ProjectAction => ({
   command: "",
   url: "",
 });
-const buttonClass =
-  "grid size-6 shrink-0 place-items-center rounded text-content/65 hover:bg-content/10 hover:text-content focus-visible:outline focus-visible:outline-accent";
-
 export function ProjectQuickActions({
   cwd,
   actionsCwd = cwd,
@@ -271,8 +270,9 @@ export function ProjectQuickActions({
   return (
     <div className="flex shrink-0 items-center gap-1" data-no-drag data-tauri-drag-region="false">
       {selected ? (
-        <button
-          className={buttonClass}
+        <Button
+          variant="ghost"
+          motion="none"
           title={`${selected.name}\n${selected.command || selected.url}\n${cwd}`}
           aria-label={t("Run {p0}", { p0: selected.name })}
           disabled={
@@ -281,10 +281,11 @@ export function ProjectQuickActions({
           onClick={() => run(selected)}
         >
           <SelectedIcon className="size-3.5 text-accent" />
-        </button>
+        </Button>
       ) : null}
-      <button
-        className={buttonClass}
+      <Button
+        variant="ghost"
+        motion="none"
         aria-label={t("Project actions")}
         title={`${t("Project actions")}\n${cwd}`}
         aria-haspopup="menu"
@@ -297,10 +298,11 @@ export function ProjectQuickActions({
         }}
       >
         <Play className="size-3.5" />
-      </button>
+      </Button>
       {local ? (
-        <button
-          className={buttonClass}
+        <Button
+          variant="ghost"
+          motion="none"
           aria-label={t("Open project in")}
           title={`${t("Open project in")}\n${cwd}`}
           aria-haspopup="menu"
@@ -311,7 +313,7 @@ export function ProjectQuickActions({
           }}
         >
           <FolderOpen className="size-3.5" />
-        </button>
+        </Button>
       ) : null}
       {menu ? (
         <ExplorerMenu
@@ -343,9 +345,7 @@ export function ProjectQuickActions({
       ) : null}
       {error && !draft && !launch ? (
         <Modal title={t("Project action failed")} onClose={() => setError("")} size="sm">
-          <p className="break-words p-5 text-sm text-content" role="alert">
-            {error}
-          </p>
+          <Alert tone="danger">{error}</Alert>
         </Modal>
       ) : null}
       {launch ? (
@@ -358,11 +358,7 @@ export function ProjectQuickActions({
           }}
         >
           <div className="host-tools host-tools-content">
-            {error ? (
-              <p className="p-3 text-sm" role="alert">
-                {error}
-              </p>
-            ) : null}
+            {error ? <Alert tone="danger">{error}</Alert> : null}
             <DevServersPanel cwd={cwd} launch={launch} />
           </div>
         </Modal>

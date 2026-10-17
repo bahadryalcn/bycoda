@@ -1,3 +1,4 @@
+import { Badge } from "../../../shared/ui/Badge";
 import { t, useLocale } from "../../../shared/i18n";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { useCallback, useEffect, useId, useRef, useState, type MouseEvent } from "react";
@@ -84,10 +85,10 @@ function GenericLinkPreview({ link }: { link: UserLink }) {
       data-user-link-preview
       title={link.url}
       aria-label={t("Open {p0}", { p0: title })}
-      className="user-link-preview group mx-0.5 text-info/90 hover:text-info hover:underline"
+      className="user-link-preview group mx-0.5 text-(--ui-tone-info-fg) hover:text-(--ui-tone-info-fg) hover:underline"
       onClick={(event) => openExternalLink(event, link.url)}
     >
-      <span className="mr-1 inline-flex size-4 items-center justify-center overflow-hidden rounded bg-background-base/50 align-[-0.125em] text-[9px] font-semibold uppercase text-content/55">
+      <span className="mr-1 inline-flex size-4 items-center justify-center overflow-hidden rounded bg-(--ui-surface) align-[-0.125em] text-[9px] font-semibold uppercase text-(--ui-text-secondary)">
         {favicon ? (
           <img
             src={favicon}
@@ -235,7 +236,7 @@ function GithubWorkItemPreview({
           p3: itemTitle ? `: ${itemTitle}` : "",
         })}
         aria-describedby={open ? tooltipId : undefined}
-        className={`group mx-px inline-flex max-w-full items-center gap-1 rounded-md border-0 bg-transparent p-0 text-content/70 no-underline shadow-none outline-none transition-[color,transform] duration-[140ms] ease-[var(--motion-ease-out)] hover:text-content focus-visible:ring-2 focus-visible:ring-accent/60 active:scale-[0.98] motion-reduce:transition-none pb-px ${
+        className={`group mx-px inline-flex max-w-full items-center gap-1 rounded-md border-0 bg-transparent p-0 text-(--ui-text-secondary) no-underline shadow-none outline-none transition-[color,transform] duration-[140ms] ease-[var(--motion-ease-out)] hover:text-(--ui-tone-neutral-fg) focus-visible:ring-2 focus-visible:ring-(--ui-focus-ring-color) active:scale-[0.98] motion-reduce:transition-none pb-px ${
           compact ? "align-middle text-xs leading-4" : "align-[-0.25em] text-[11px] leading-4"
         }`}
         onMouseEnter={showAfterDelay}
@@ -252,8 +253,8 @@ function GithubWorkItemPreview({
             compact ? "h-[18px] gap-0.5 rounded-[6px] px-1.5" : "h-5 gap-1 rounded-[5px] px-1.5"
           } ${
             workItem.kind === "pr"
-              ? "bg-feature/10 text-feature/90"
-              : "bg-success/10 text-success/90"
+              ? "bg-(--ui-tone-accent-subtle) text-(--ui-tone-accent-fg)"
+              : "bg-(--ui-tone-success-subtle) text-(--ui-tone-success-fg)"
           }`}
         >
           {workItem.kind === "pr" ? (
@@ -276,7 +277,7 @@ function GithubWorkItemPreview({
           id={tooltipId}
           role="tooltip"
           data-github-work-item-popover
-          className="p-3.5 font-sans text-content"
+          className="p-3.5 font-sans text-(--ui-tone-neutral-fg)"
           onMouseEnter={clearCloseTimer}
           onMouseLeave={hideAfterDelay}
         >
@@ -315,23 +316,23 @@ function GithubWorkItemCard({
     <div className="min-w-0 text-left">
       <div className="flex min-w-0 items-center gap-2 text-[11px]">
         <status.Icon className={`size-4 shrink-0 ${status.className}`} aria-hidden="true" />
-        <span className="min-w-0 truncate font-medium text-content/65">{parsed.repo}</span>
-        <span className="shrink-0 text-content/35">·</span>
-        <span className="shrink-0 font-mono tabular-nums text-content/50">#{parsed.number}</span>
-        <span
-          className={`ml-auto shrink-0 rounded-full bg-content/[0.07] px-2 py-0.5 font-medium ${status.className}`}
-        >
-          {status.label}
+        <span className="min-w-0 truncate font-medium text-(--ui-text-secondary)">
+          {parsed.repo}
         </span>
+        <span className="shrink-0 text-(--ui-text-secondary)">·</span>
+        <span className="shrink-0 font-mono tabular-nums text-(--ui-text-secondary)">
+          #{parsed.number}
+        </span>
+        <Badge tone="neutral">{status.label}</Badge>
       </div>
 
       {item ? (
         <>
-          <h3 className="mt-2 line-clamp-2 text-[13px] font-semibold leading-[1.35] text-content">
+          <h3 className="mt-2 line-clamp-2 text-[13px] font-semibold leading-[1.35] text-(--ui-tone-neutral-fg)">
             {item.title}
           </h3>
           {summary ? (
-            <p className="mt-1.5 line-clamp-3 text-[11px] leading-[1.45] text-content/55">
+            <p className="mt-1.5 line-clamp-3 text-[11px] leading-[1.45] text-(--ui-text-secondary)">
               {summary}
             </p>
           ) : null}
@@ -340,15 +341,15 @@ function GithubWorkItemCard({
         <GithubWorkItemCardSkeleton />
       ) : (
         <div className="mt-2">
-          <h3 className="text-[13px] font-semibold text-content">
+          <h3 className="text-[13px] font-semibold text-(--ui-tone-neutral-fg)">
             {parsed.kind === "pr" ? t("Pull request") : t("Issue")} #{parsed.number}
           </h3>
           {summary ? (
-            <p className="mt-1.5 line-clamp-3 text-[11px] leading-[1.45] text-content/55">
+            <p className="mt-1.5 line-clamp-3 text-[11px] leading-[1.45] text-(--ui-text-secondary)">
               {summary}
             </p>
           ) : (
-            <p className="mt-1 text-[11px] leading-relaxed text-content/50">
+            <p className="mt-1 text-[11px] leading-relaxed text-(--ui-text-secondary)">
               {t("Details aren't available here, but the link can still be opened on GitHub.")}
             </p>
           )}
@@ -356,7 +357,7 @@ function GithubWorkItemCard({
       )}
 
       {details?.author || updated ? (
-        <div className="mt-2.5 flex min-w-0 items-center gap-1.5 text-[10px] text-content/45">
+        <div className="mt-2.5 flex min-w-0 items-center gap-1.5 text-[10px] text-(--ui-text-secondary)">
           {details?.author ? (
             <GithubPerson name={details.author} avatarUrl={details.authorAvatarUrl} />
           ) : null}
@@ -371,7 +372,7 @@ function GithubWorkItemCard({
       ) : null}
 
       {hasBranches ? (
-        <div className="mt-2 flex min-w-0 items-center gap-1.5 rounded-md bg-content/[0.045] px-2 py-1.5 text-[10px] text-content/50">
+        <div className="mt-2 flex min-w-0 items-center gap-1.5 rounded-md bg-(--ui-tone-neutral-solid)/[0.045] px-2 py-1.5 text-[10px] text-(--ui-text-secondary)">
           <GitCompare className="size-3.5 shrink-0" aria-hidden="true" />
           <span className="min-w-0 truncate font-mono">
             {details.baseRefName} ← {details.headRefName}
@@ -383,20 +384,19 @@ function GithubWorkItemCard({
         <div className="mt-2.5 flex min-w-0 items-center gap-1.5">
           <div className="flex min-w-0 flex-1 flex-wrap gap-1">
             {labels.slice(0, 3).map((label) => (
-              <span
-                key={label.name}
-                className="inline-flex max-w-28 items-center gap-1 rounded-full border border-content/10 bg-content/[0.035] px-1.5 py-0.5 text-[9px] text-content/55"
-              >
+              <Badge tone="neutral" key={label.name} className="max-w-28">
                 <span
                   aria-hidden="true"
                   className="size-1.5 shrink-0 rounded-full"
                   style={{ backgroundColor: labelColor(label.color) }}
                 />
                 <span className="truncate">{label.name}</span>
-              </span>
+              </Badge>
             ))}
             {labels.length > 3 ? (
-              <span className="px-1 text-[9px] text-content/35">+{labels.length - 3}</span>
+              <span className="px-1 text-[9px] text-(--ui-text-secondary)">
+                +{labels.length - 3}
+              </span>
             ) : null}
           </div>
           {assignees.length > 0 ? (
@@ -419,7 +419,7 @@ function GithubWorkItemCard({
         </div>
       ) : null}
 
-      <div className="mt-3 flex items-center gap-1.5 border-t border-content/[0.07] pt-2 text-[10px] text-content/35">
+      <div className="mt-3 flex items-center gap-1.5 border-t border-(--ui-tone-neutral-border)/[0.07] pt-2 text-[10px] text-(--ui-text-secondary)">
         <ExternalLink className="size-3" aria-hidden="true" />
         {t("Click the chip to open on GitHub")}
       </div>
@@ -431,9 +431,9 @@ function GithubWorkItemCardSkeleton() {
   useLocale();
   return (
     <div aria-label={t("Loading GitHub details")} className="mt-2.5 space-y-2">
-      <div className="h-3 w-4/5 rounded bg-content/10 motion-safe:animate-pulse" />
-      <div className="h-2 w-full rounded bg-content/[0.07] motion-safe:animate-pulse" />
-      <div className="h-2 w-2/3 rounded bg-content/[0.07] motion-safe:animate-pulse" />
+      <div className="h-3 w-4/5 rounded bg-(--ui-surface-raised) motion-safe:animate-pulse" />
+      <div className="h-2 w-full rounded bg-(--ui-tone-neutral-solid)/[0.07] motion-safe:animate-pulse" />
+      <div className="h-2 w-2/3 rounded bg-(--ui-tone-neutral-solid)/[0.07] motion-safe:animate-pulse" />
     </div>
   );
 }
@@ -443,7 +443,7 @@ function GithubPerson({ name, avatarUrl }: { name: string; avatarUrl?: string })
   return (
     <span className="inline-flex min-w-0 items-center gap-1.5">
       <GithubAvatar name={name} avatarUrl={avatarUrl} size={16} />
-      <span className="min-w-0 truncate font-medium text-content/55">{name}</span>
+      <span className="min-w-0 truncate font-medium text-(--ui-text-secondary)">{name}</span>
     </span>
   );
 }
@@ -463,7 +463,7 @@ function GithubAvatar({
     return (
       <span
         aria-hidden="true"
-        className="grid shrink-0 place-items-center rounded-full border border-background-base bg-content/10 font-medium text-content/50"
+        className="grid shrink-0 place-items-center rounded-full border border-(--ui-tone-neutral-border) bg-(--ui-surface-raised) font-medium text-(--ui-text-secondary)"
         style={{
           width: size,
           height: size,
@@ -483,7 +483,7 @@ function GithubAvatar({
       referrerPolicy="no-referrer"
       draggable={false}
       onError={() => setFailed(true)}
-      className="shrink-0 rounded-full border border-background-base bg-content/10 object-cover"
+      className="shrink-0 rounded-full border border-(--ui-tone-neutral-border) bg-(--ui-surface-raised) object-cover"
       style={{ width: size, height: size }}
     />
   );
@@ -497,7 +497,7 @@ function workItemStatus(
     return {
       Icon: kind === "pr" ? GitPullRequest : CircleDot,
       label: kind === "pr" ? "Pull request" : "Issue",
-      className: "text-content/50",
+      className: "text-(--ui-text-secondary)",
     };
   }
   if (item?.draft) {
@@ -506,7 +506,7 @@ function workItemStatus(
       get label() {
         return t("Draft");
       },
-      className: "text-content/50",
+      className: "text-(--ui-text-secondary)",
     };
   }
   if (item?.state === "merged") {
@@ -515,7 +515,7 @@ function workItemStatus(
       get label() {
         return t("Merged");
       },
-      className: "text-feature/90",
+      className: "text-(--ui-tone-accent-fg)",
     };
   }
   if (item?.state === "closed") {
@@ -524,7 +524,7 @@ function workItemStatus(
       get label() {
         return t("Closed");
       },
-      className: "text-danger/90",
+      className: "text-(--ui-tone-danger-fg)",
     };
   }
   return {
@@ -532,7 +532,7 @@ function workItemStatus(
     get label() {
       return t("Open");
     },
-    className: "text-success/90",
+    className: "text-(--ui-tone-success-fg)",
   };
 }
 

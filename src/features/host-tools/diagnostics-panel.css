@@ -16,7 +16,6 @@
   margin-inline-start: auto;
 }
 .resource-sampling [role="status"] {
-  font-size: 11px;
   font-variant-numeric: tabular-nums;
 }
 .resource-empty {

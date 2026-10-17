@@ -1,3 +1,4 @@
+import { Button } from "../../../shared/ui/Button";
 import { t, useLocale } from "../../../shared/i18n";
 import {
   AiIdea,
@@ -27,7 +28,7 @@ type ModeCommandStyle = {
 export const MODE_COMMAND_STYLES: Record<string, ModeCommandStyle> = {
   [PLAN_COMMAND.name]: {
     Icon: AiIdea,
-    className: "text-warning dark:text-warning/90",
+    className: "text-(--ui-tone-warning-fg) dark:text-(--ui-tone-warning-fg)",
     pill: {
       get label() {
         return t("Plan");
@@ -35,7 +36,8 @@ export const MODE_COMMAND_STYLES: Record<string, ModeCommandStyle> = {
       get title() {
         return t("Plan mode");
       },
-      className: "bg-warning/12 text-warning hover:bg-warning/18 dark:text-warning/90",
+      className:
+        "bg-(--ui-tone-warning-subtle) text-(--ui-tone-warning-fg) hover:bg-(--ui-tone-warning-subtle) dark:text-(--ui-tone-warning-fg)",
     },
     menu: {
       get label() {
@@ -44,12 +46,12 @@ export const MODE_COMMAND_STYLES: Record<string, ModeCommandStyle> = {
       get description() {
         return t("Review a plan before building");
       },
-      iconClassName: "text-warning/80",
+      iconClassName: "text-(--ui-tone-warning-fg)",
     },
   },
   [OPERATOR_COMMAND.name]: {
     Icon: CursorMagicSelection,
-    className: "text-info dark:text-info/90",
+    className: "text-(--ui-tone-info-fg) dark:text-(--ui-tone-info-fg)",
     pill: {
       get label() {
         return t("Operator");
@@ -58,7 +60,7 @@ export const MODE_COMMAND_STYLES: Record<string, ModeCommandStyle> = {
         return t("Operator");
       },
       className:
-        "bg-info/15 font-medium text-info hover:bg-info/20 dark:bg-info/10 dark:text-info/90 dark:hover:bg-info/15",
+        "bg-(--ui-tone-info-subtle) font-medium text-(--ui-tone-info-fg) hover:bg-(--ui-tone-info-subtle) dark:bg-(--ui-tone-info-subtle) dark:text-(--ui-tone-info-fg) dark:hover:bg-(--ui-tone-info-subtle)",
     },
     menu: {
       get label() {
@@ -67,7 +69,7 @@ export const MODE_COMMAND_STYLES: Record<string, ModeCommandStyle> = {
       get description() {
         return t("Give this thread access to bycoda");
       },
-      iconClassName: "text-info/80",
+      iconClassName: "text-(--ui-tone-info-fg)",
     },
   },
   [ORCHESTRATOR_COMMAND.name]: {
@@ -95,7 +97,7 @@ export const MODE_COMMAND_STYLES: Record<string, ModeCommandStyle> = {
   },
   [DRAFT_COMMAND.name]: {
     Icon: CircleDashed,
-    className: "text-content/70",
+    className: "text-(--ui-text-secondary)",
     pill: {
       get label() {
         return t("Draft");
@@ -104,7 +106,7 @@ export const MODE_COMMAND_STYLES: Record<string, ModeCommandStyle> = {
         return t("Draft mode");
       },
       className:
-        "border border-dashed border-content/25 bg-content/5 text-content/70 hover:bg-content/10 hover:text-content",
+        "border border-dashed border-(--ui-tone-neutral-border) bg-(--ui-surface-raised) text-(--ui-text-secondary) hover:bg-(--ui-surface-raised) hover:text-(--ui-tone-neutral-fg)",
     },
     menu: {
       get label() {
@@ -113,12 +115,12 @@ export const MODE_COMMAND_STYLES: Record<string, ModeCommandStyle> = {
       get description() {
         return t("Save this message without starting the agent");
       },
-      iconClassName: "text-content/60",
+      iconClassName: "text-(--ui-text-secondary)",
     },
   },
   [BTW_COMMAND.name]: {
     Icon: MessageSquare,
-    className: "text-success dark:text-success/90",
+    className: "text-(--ui-tone-success-fg) dark:text-(--ui-tone-success-fg)",
   },
 };
 
@@ -127,7 +129,7 @@ export const SHELL_MODE_NAME = "shell";
 
 const SHELL_MODE_STYLE: ModeCommandStyle = {
   Icon: Terminal,
-  className: "text-danger dark:text-danger",
+  className: "text-(--ui-tone-danger-fg) dark:text-(--ui-tone-danger-fg)",
 };
 
 /** First-line indent that, with the `/`, makes room for a mode icon. */
@@ -196,17 +198,18 @@ export function ModeCommandPill({ name, onClear }: { name: string; onClear: () =
   if (!style?.pill) return null;
   const { Icon, pill } = style;
   return (
-    <button
+    <Button
+      className="shrink-0"
+      variant="ghost"
       type="button"
       title={t("Turn off {p0}", { p0: pill.title })}
       aria-label={t("Turn off {p0}", { p0: pill.title })}
       onMouseDown={(event) => event.preventDefault()}
       onClick={onClear}
-      className={`flex h-6.5 shrink-0 items-center gap-1 rounded-md px-1.5 text-[11px] ${pill.className}`}
     >
       <Icon className="size-3.5" />
       <span className="composer-mode-shimmer">{pill.label}</span>
       <X className="size-3" />
-    </button>
+    </Button>
   );
 }

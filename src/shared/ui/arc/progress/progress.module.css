@@ -1,0 +1,90 @@
+/* Official free Arc registry source, adapted for bycoda. */
+.progress {
+  inline-size: 100%;
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+}
+.meta {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-block-end: var(--space-2);
+  line-height: var(--leading-body);
+}
+.label {
+  position: relative;
+  min-inline-size: 0;
+}
+.line {
+  display: block;
+}
+.value {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+.count {
+  display: inline-grid;
+  justify-items: end;
+} /* A hidden "100%" row reserves the widest count, so the check never shifts as the number gains a digit. */
+.count::before {
+  content: "100%";
+  block-size: 0;
+  overflow: hidden;
+  visibility: hidden;
+}
+.done {
+  display: grid;
+  place-items: center;
+  color: var(--ui-tone-success-fg);
+}
+.track {
+  block-size: 8px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  background: var(--ui-surface-muted);
+}
+.fill {
+  display: block;
+  inline-size: 100%;
+  block-size: 100%;
+  border-radius: inherit;
+  background: var(--progress-fill, var(--ui-tone-accent-solid));
+}
+.progress[data-tone="neutral"] {
+  --progress-fill: var(--ui-tone-neutral-solid);
+}
+.progress[data-tone="info"] {
+  --progress-fill: var(--ui-tone-info-solid);
+}
+.progress[data-tone="success"] {
+  --progress-fill: var(--ui-tone-success-solid);
+}
+.progress[data-tone="warning"] {
+  --progress-fill: var(--ui-tone-warning-solid);
+}
+.progress[data-tone="danger"] {
+  --progress-fill: var(--ui-tone-danger-solid);
+}
+.progress[data-compact] .track {
+  block-size: 4px;
+  border: 0;
+}
+.progress[data-indeterminate] .fill {
+  opacity: 0.5;
+  transform: none !important;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .progress[data-indeterminate] .fill {
+    animation: progress-wait var(--duration-slower, 1.8s) var(--ease-standard) 12;
+  }
+}
+@keyframes progress-wait {
+  50% {
+    opacity: 1;
+  }
+}

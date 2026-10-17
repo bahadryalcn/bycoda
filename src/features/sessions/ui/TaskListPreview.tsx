@@ -1,3 +1,4 @@
+import { Badge } from "../../../shared/ui/Badge";
 import { t, useLocale } from "../../../shared/i18n";
 import { Check, ListEnd, Loader, Minus } from "../../../shared/ui/icons";
 import type { TaskListItem, TaskListItemStatus } from "../model/session";
@@ -13,19 +14,21 @@ export function TaskListPreview({ items, explanation }: Props) {
   return (
     <section
       aria-label={t("Task progress")}
-      className="mb-2 overflow-hidden rounded-[10px] border border-content/10 bg-content/[0.035]"
+      className="mb-2 overflow-hidden rounded-[10px] border border-(--ui-tone-neutral-border) bg-(--ui-tone-neutral-solid)/[0.035]"
     >
-      <div className="flex items-start gap-2 border-b border-stroke px-2.5 py-2">
-        <ListEnd className="mt-0.5 size-4 shrink-0 text-content/45" strokeWidth={1.75} />
+      <div className="flex items-start gap-2 border-b border-(--ui-tone-neutral-border) px-2.5 py-2">
+        <ListEnd className="mt-0.5 size-4 shrink-0 text-(--ui-text-secondary)" strokeWidth={1.75} />
         <div className="min-w-0 flex-1">
           <div className="flex items-center justify-between gap-3">
-            <h3 className="font-mono text-[12px] font-medium text-content/85">{t("Tasks")}</h3>
-            <span className="shrink-0 rounded-full bg-content/7 px-2 py-0.5 font-mono text-[10px] text-content/50">
+            <h3 className="font-mono text-[12px] font-medium text-(--ui-text-secondary)">
+              {t("Tasks")}
+            </h3>
+            <Badge tone="neutral" className="shrink-0">
               {taskListProgressLabel(items)}
-            </span>
+            </Badge>
           </div>
           {explanation ? (
-            <p className="mt-0.5 line-clamp-2 font-sans text-[11.5px] leading-4 text-content/50">
+            <p className="mt-0.5 line-clamp-2 font-sans text-[11.5px] leading-4 text-(--ui-text-secondary)">
               {explanation}
             </p>
           ) : null}
@@ -41,12 +44,12 @@ export function TaskListPreview({ items, explanation }: Props) {
             <span
               className={`min-w-0 flex-1 font-sans text-[12.5px] leading-4.5 ${
                 item.status === "completed"
-                  ? "text-content/40 line-through decoration-content/25"
+                  ? "text-(--ui-text-secondary) line-through decoration-content/25"
                   : item.status === "cancelled"
-                    ? "text-content/35 line-through decoration-content/20"
+                    ? "text-(--ui-text-secondary) line-through decoration-content/20"
                     : item.status === "in_progress"
-                      ? "text-content/85"
-                      : "text-content/60"
+                      ? "text-(--ui-text-secondary)"
+                      : "text-(--ui-text-secondary)"
               }`}
             >
               {item.text}
@@ -64,7 +67,7 @@ function TaskState({ status }: { status: TaskListItemStatus }) {
     return (
       <span
         aria-label={t("Completed")}
-        className="mt-px grid size-4 shrink-0 place-items-center rounded-full bg-success text-on-solid"
+        className="mt-px grid size-4 shrink-0 place-items-center rounded-full bg-(--ui-tone-success-subtle) text-on-solid"
       >
         <Check className="size-2.5" strokeWidth={3} />
       </span>
@@ -74,7 +77,7 @@ function TaskState({ status }: { status: TaskListItemStatus }) {
     return (
       <span
         aria-label={t("In progress")}
-        className="mt-px grid size-4 shrink-0 place-items-center text-info"
+        className="mt-px grid size-4 shrink-0 place-items-center text-(--ui-tone-info-fg)"
       >
         <Loader className="size-4 motion-safe:animate-spin" strokeWidth={2} />
       </span>
@@ -84,7 +87,7 @@ function TaskState({ status }: { status: TaskListItemStatus }) {
     return (
       <span
         aria-label={t("Cancelled")}
-        className="mt-px grid size-4 shrink-0 place-items-center rounded-full bg-content/8 text-content/35"
+        className="mt-px grid size-4 shrink-0 place-items-center rounded-full bg-(--ui-surface-raised) text-(--ui-text-secondary)"
       >
         <Minus className="size-2.5" strokeWidth={2} />
       </span>
@@ -93,7 +96,7 @@ function TaskState({ status }: { status: TaskListItemStatus }) {
   return (
     <span
       aria-label={t("Pending")}
-      className="mt-px size-4 shrink-0 rounded-full border border-content/25 bg-content/[0.02]"
+      className="mt-px size-4 shrink-0 rounded-full border border-(--ui-tone-neutral-border) bg-(--ui-tone-neutral-solid)/[0.02]"
     />
   );
 }

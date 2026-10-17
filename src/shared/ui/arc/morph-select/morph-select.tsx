@@ -5,6 +5,7 @@ import {
   useEffect,
   useId,
   useLayoutEffect,
+  useImperativeHandle,
   useMemo,
   useRef,
   useState,
@@ -12,6 +13,7 @@ import {
 } from "react";
 import type {
   CSSProperties,
+  ComponentPropsWithRef,
   FocusEvent as ReactFocusEvent,
   KeyboardEvent as ReactKeyboardEvent,
   ReactNode,
@@ -73,6 +75,11 @@ export interface MorphSelectProps {
   className?: string;
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
+  triggerProps?: Pick<
+    ComponentPropsWithRef<"button">,
+    "ref" | "onMouseDown" | "title" | "aria-label" | "onFocus" | "onBlur"
+  >;
+  onClose?: (restoreFocus: boolean) => void;
   clearSearchLabel?: string;
   closeLabel?: string;
   emptyLabel?: string;
@@ -143,9 +150,9 @@ function matches(option: MorphSelectOption, needle: string) {
 const valueVariants: Variants = {
   enter: (change: Change) =>
     change.fly
-      ? { opacity: 1, x: change.fly.x, y: change.fly.y,}
-      : { opacity: 0, x: 0, y: `${change.dir * 0.5}em`,},
-  rest: { opacity: 1, x: 0, y: 0,},
+      ? { opacity: 1, x: change.fly.x, y: change.fly.y }
+      : { opacity: 0, x: 0, y: `${change.dir * 0.5}em` },
+  rest: { opacity: 1, x: 0, y: 0 },
   exit: (change: Change) => ({
     opacity: 0,
     x: 0,
@@ -155,7 +162,7 @@ const valueVariants: Variants = {
 };
 const valueFade: Variants = {
   enter: { opacity: 0 },
-  rest: { opacity: 1, x: 0, y: 0,},
+  rest: { opacity: 1, x: 0, y: 0 },
   exit: { opacity: 0, transition: { duration: 0.1 } },
 };
 
@@ -185,6 +192,8 @@ export function MorphSelect({
   className,
   open: controlledOpen,
   onOpenChange,
+  triggerProps,
+  onClose,
   clearSearchLabel = "Clear search",
   closeLabel = "Close",
   emptyLabel = "No matching options",
@@ -200,6 +209,7 @@ export function MorphSelect({
   const listFaceRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
+  useImperativeHandle(triggerProps?.ref, () => triggerRef.current!, []);
   const inputRef = useRef<HTMLInputElement>(null);
   const slotRef = useRef<HTMLSpanElement>(null);
   const optionRefs = useRef(new Map<string, HTMLElement>());
@@ -399,8 +409,9 @@ export function MorphSelect({
       typeahead.current.buffer = "";
       if (restoreFocus) pendingFocus.current = "trigger";
       setOpen(false);
+      onClose?.(restoreFocus);
     },
-    [setOpen],
+    [setOpen, onClose],
   );
 
   const commit = (option: MorphSelectOption | undefined, source?: HTMLElement | null) => {
@@ -451,6 +462,7 @@ export function MorphSelect({
   };
 
   const onKey = (event: ReactKeyboardEvent<HTMLElement>, fromInput: boolean) => {
+    if (event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229) return;
     const { key } = event;
     if (key === " " && !fromInput) suppressClick.current = true;
     const printable = key.length === 1 && !event.metaKey && !event.ctrlKey && !event.altKey;
@@ -614,11 +626,12 @@ export function MorphSelect({
         >
           <div className={styles.lid}>
             <button
+              {...triggerProps}
               ref={triggerRef}
               type="button"
               className={styles.trigger}
               role="combobox"
-              aria-labelledby={labelId}
+              aria-labelledby={triggerProps?.["aria-label"] ? undefined : labelId}
               aria-haspopup="listbox"
               aria-expanded={open}
               aria-controls={listId}
@@ -678,11 +691,7 @@ export function MorphSelect({
                 className={styles.searchRow}
                 inert={!showSearch || undefined}
                 initial={false}
-                animate={
-                  showSearch
-                    ? { opacity: 1,}
-                    : { opacity: 0,}
-                }
+                animate={showSearch ? { opacity: 1 } : { opacity: 0 }}
                 transition={
                   showSearch
                     ? { duration: 0.18, ease: enter, delay: reduced ? 0 : 0.04 }
@@ -763,7 +772,7 @@ export function MorphSelect({
             initial={false}
             animate={
               open
-                ? { opacity: 1, y: 0,}
+                ? { opacity: 1, y: 0 }
                 : {
                     opacity: 0,
                     y: reduced ? 0 : -6,

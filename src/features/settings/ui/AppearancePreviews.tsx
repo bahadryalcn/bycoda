@@ -1,28 +1,30 @@
 import { themePalette } from "../../../shared/theme/palette";
 import { t, useLocale } from "../../../shared/i18n";
 import type { CSSProperties } from "react";
-import { Group, Row, Select, Slider, Toggle, Segmented } from "./settingsControls";
-import type { AppearanceSettings } from "./useAppearanceSettings";
-import { CODE_FONTS, INTERFACE_FONTS } from "../model/appearancePreferences";
-import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
-import { useColorScheme } from "../../../shared/hooks/useColorScheme";
-import "./AppearancePreviews.css";
-import { Button } from "../../../shared/ui/Button";
 import {
-  ArrowUp,
-  Check,
-  Chatting,
-  ChevronDown,
-  FileScript,
-  Folder,
-  GitBranch,
-  MoreHorizontal,
-  PanelLeft,
-  Plus,
-  Search,
-  Settings,
-  Terminal,
-} from "../../../shared/ui/icons";
+  AdvancedSettings,
+  Group,
+  Row,
+  Select,
+  Slider,
+  Toggle,
+  Segmented,
+} from "./settingsControls";
+import type { AppearanceSettings } from "./useAppearanceSettings";
+import { APPEARANCE_DEFAULTS, CODE_FONTS, INTERFACE_FONTS } from "../model/appearancePreferences";
+import {
+  ACCENT_COLOR_DEFAULT,
+  DIFF_PALETTE_DEFAULT,
+  THEME_HUE_DEFAULT,
+  THEME_SATURATION_DEFAULT,
+  THEME_DARK_LIGHTNESS_DEFAULT,
+  THEME_PREFERENCE_DEFAULT,
+} from "../model/appearance";
+import { UI_SCALE_DEFAULT, UI_SCALE_PERCENTS } from "../model/uiScale";
+import { useColorScheme } from "../../../shared/hooks/useColorScheme";
+import { ControlSpecimen } from "../../../shared/ui/ControlSpecimen";
+import { Button } from "../../../shared/ui/Button";
+import "./AppearancePreviews.css";
 
 const presets = [
   {
@@ -77,8 +79,7 @@ const presets = [
 
 export function AppearanceStudio({ appearance: a }: { appearance: AppearanceSettings }) {
   useLocale();
-  const scheme = useColorScheme();
-  const light = scheme === "light";
+  const light = useColorScheme() === "light";
   const selected = presets.find(
     (p) =>
       p.hue === a.themeHue &&
@@ -86,219 +87,47 @@ export function AppearanceStudio({ appearance: a }: { appearance: AppearanceSett
       p.lightness === a.themeDarkLightness &&
       p.accent.toLowerCase() === a.accentColor?.toLowerCase(),
   );
-  const workspaceStyle = {
-    "--studio-base": "var(--color-background-base)",
-    "--studio-raised": "var(--ui-surface)",
-    "--studio-ink": "var(--color-content)",
-    "--studio-line": "var(--color-stroke)",
-    "--studio-secondary": "var(--ui-text-secondary)",
-    "--studio-chat-span":
-      a.preferences.chatWidth === "full"
-        ? "100%"
-        : a.preferences.chatWidth === "wide"
-          ? "94%"
-          : "80%",
-    "--studio-sidebar-opacity": light ? 1 : a.opacity,
-    "--studio-body-opacity": light || !a.bodyGlass ? 1 : a.mainOpacity,
-  } as CSSProperties;
+  const resetColors = () => {
+    a.onThemePreference(THEME_PREFERENCE_DEFAULT);
+    a.onTint(THEME_HUE_DEFAULT, THEME_SATURATION_DEFAULT);
+    a.onDarkLightness(THEME_DARK_LIGHTNESS_DEFAULT);
+    a.onAccentColor(ACCENT_COLOR_DEFAULT);
+  };
   return (
-    <div className="appearance-studio">
+    <section className="appearance-studio" aria-label={t("Theme and colors")}>
       <div className="appearance-studio-heading">
-        <div>
-          <h2>{t("Theme and colors")}</h2>
-          <p>{t("Choose a color mode and palette, then check the example workspace below.")}</p>
-        </div>
-        <div id="setting-theme" data-setting-id="theme" className="appearance-scheme-control">
-          <span>{t("Color mode")}</span>
-          <span role="status">
-            {t("Active mode: {p0}", { p0: light ? t("Light") : t("Dark") })}
-          </span>
-          <Segmented
-            label={t("Color scheme")}
-            value={a.themePreference}
-            options={[
-              {
-                value: "system",
-                get label() {
-                  return t("System");
-                },
-              },
-              {
-                value: "light",
-                get label() {
-                  return t("Light");
-                },
-              },
-              {
-                value: "dark",
-                get label() {
-                  return t("Dark");
-                },
-              },
-            ]}
-            onChange={a.onThemePreference}
-          />
-        </div>
+        <h2>{t("Theme and colors")}</h2>
+        <Button variant="ghost" onClick={resetColors}>
+          {t("Reset colors")}
+        </Button>
+      </div>
+      <div id="setting-theme" data-setting-id="theme" className="appearance-scheme-control">
+        <Segmented
+          label={t("Color scheme")}
+          value={a.themePreference}
+          options={[
+            { value: "system", label: t("System") },
+            { value: "light", label: t("Light") },
+            { value: "dark", label: t("Dark") },
+          ]}
+          onChange={a.onThemePreference}
+        />
+        <span role="status">{t("Active mode: {p0}", { p0: light ? t("Light") : t("Dark") })}</span>
       </div>
       <div className="appearance-studio-body">
         <div
-          className="appearance-desk"
-          data-ui
-          style={workspaceStyle}
+          className="appearance-control-preview"
           role="region"
-          aria-label={t("Live workspace preview")}
+          aria-label={t("Live control preview")}
         >
-          <div className="appearance-desk-top">
-            <span>
-              <img src={PRODUCT_IDENTITY.logoSrc} alt="" />
-              <img
-                className="bycoda-brand-lettering"
-                style={{ width: 90, height: 18 }}
-                src={PRODUCT_IDENTITY.wordmarkSrc}
-                alt={PRODUCT_IDENTITY.displayName}
-              />
-            </span>
-            <span className="appearance-desk-tab">{t("Workspace")}</span>
-            <span className="appearance-live-label">
-              <i />
-              {t("Live preview")}
-            </span>
-          </div>
-          <div className="appearance-desk-content">
-            <div className="appearance-project-rail" aria-hidden="true">
-              <span className="appearance-project-mark">b</span>
-              <span>
-                <Folder />
-              </span>
-              <span>
-                <Plus />
-              </span>
-              <span className="appearance-project-settings">
-                <Settings />
-              </span>
-            </div>
-            <aside className="appearance-desk-sidebar" aria-label={t("Sidebar preview")}>
-              <div className="appearance-preview-project">
-                <strong>bycoda</strong>
-                <ChevronDown aria-hidden />
-              </div>
-              <div className="appearance-preview-shortcuts" aria-hidden="true">
-                <Chatting />
-                <GitBranch />
-                <Search />
-                <MoreHorizontal />
-              </div>
-              <div className="appearance-preview-new">
-                <Plus aria-hidden />
-                {t("New session")}
-              </div>
-              <span className="appearance-desk-caption appearance-desk-later">{t("Today")}</span>
-              <div className="appearance-desk-current">
-                <Chatting aria-hidden />
-                <span>
-                  {t("Welcome home")}
-                  <small>Codex · main</small>
-                </span>
-              </div>
-              <div className="appearance-preview-session">
-                <Chatting aria-hidden />
-                <span>{t("Small ideas")}</span>
-              </div>
-              <div className="appearance-preview-session">
-                <Chatting aria-hidden />
-                <span>{t("Next steps")}</span>
-              </div>
-              <div className="appearance-preview-sidebar-footer">
-                <GitBranch aria-hidden />
-                <span>main</span>
-              </div>
-            </aside>
-            <div className="appearance-desk-chat">
-              <div className="appearance-preview-tabs">
-                <span>
-                  <Chatting aria-hidden />
-                  {t("Welcome home")}
-                </span>
-                <span aria-hidden="true">
-                  <Plus />
-                  <PanelLeft />
-                </span>
-              </div>
-              <div className="appearance-desk-conversation">
-                <div className="appearance-preview-branch">
-                  <GitBranch aria-hidden />
-                  main<span>{t("Local")}</span>
-                </div>
-                <div className="appearance-desk-user">
-                  {t("Let’s make something good together.")}
-                </div>
-                <div className="appearance-desk-response">
-                  <span className="appearance-preview-agent">
-                    <img src={PRODUCT_IDENTITY.logoSrc} alt="" />
-                    Codex
-                  </span>
-                  <p className="appearance-preview-reply">
-                    {t("Good work starts with a little clarity.")}
-                  </p>
-                  <p>{t("Your ideas, a quiet workspace, and room for the next step.")}</p>
-                </div>
-                <div className="appearance-desk-code" aria-label={t("Code and diff preview")}>
-                  <div>
-                    <span className="appearance-preview-filename">
-                      <FileScript aria-hidden />
-                      welcome.ts
-                    </span>
-                    <span className="appearance-desk-caption">−1 +1</span>
-                  </div>
-                  <pre>
-                    <code>
-                      <span className="appearance-code-keyword">{"export function"}</span>
-                      {" welcome(name: string) {\n"}
-                      <span className="appearance-deletion">{'−  return "Hello " + name;\n'}</span>
-                      <span className="appearance-addition">
-                        {
-                          " + return `Merhaba ${name}, let’s build something thoughtful together.`;\n"
-                        }
-                      </span>
-                      {"}"}
-                    </code>
-                  </pre>
-                </div>
-                <div className="appearance-desk-terminal">
-                  <Check aria-hidden />
-                  {t(" Workspace ready")}
-                </div>
-                <div className="appearance-desk-composer">
-                  <span>{t("What shall we work on?")}</span>
-                  <div className="appearance-preview-composer-toolbar">
-                    <span>
-                      <Plus aria-hidden />
-                      <span>Codex</span>
-                      <ChevronDown aria-hidden />
-                    </span>
-                    <span className="appearance-preview-send" aria-hidden="true">
-                      <ArrowUp />
-                    </span>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-          <div className="appearance-desk-footer">
-            <span>
-              <GitBranch aria-hidden />
-              main
-            </span>
-            <span>
-              <Terminal aria-hidden />
-              {t("Terminal")}
-            </span>
-          </div>
+          <ControlSpecimen />
+          <AdvancedSettings title={t("All control states")}>
+            <ControlSpecimen expanded />
+          </AdvancedSettings>
         </div>
         <div className="appearance-material-library">
           <div className="appearance-library-heading">
             <h3>{t("Theme palettes")}</h3>
-            <p>{t("Surface · ink · accent")}</p>
           </div>
           <div
             id="setting-theme-palettes"
@@ -310,35 +139,36 @@ export function AppearanceStudio({ appearance: a }: { appearance: AppearanceSett
               <Button
                 variant="item"
                 selected={selected?.name === p.name}
-                type="button"
                 key={p.name}
                 className="appearance-palette"
+                tooltip={t(p.note)}
                 aria-pressed={selected?.name === p.name}
                 onClick={() => {
                   a.onTint(p.hue, p.saturation);
                   a.onDarkLightness(p.lightness);
                   a.onAccentColor(p.accent);
                 }}
-                style={
-                  {
-                    "--material-base": `hsl(${p.hue} ${p.saturation}% ${light ? 94 : p.lightness + 5}%)`,
-                    "--material-ink": `hsl(${p.hue} ${p.saturation}% ${light ? 24 : 82}%)`,
-                    "--material-accent": p.accent,
-                  } as CSSProperties
-                }
               >
-                <span className="appearance-material-sample" aria-hidden="true">
+                {/* Swatches display the selectable palette data; control colors remain semantic. */}
+                <span
+                  className="appearance-material-sample"
+                  aria-hidden="true"
+                  style={
+                    {
+                      "--material-base": `hsl(${p.hue} ${p.saturation}% ${light ? 94 : p.lightness + 5}%)`,
+                      "--material-ink": `hsl(${p.hue} ${p.saturation}% ${light ? 24 : 82}%)`,
+                      "--material-accent": p.accent,
+                    } as CSSProperties
+                  }
+                >
                   <i />
                   <i />
                   <i />
                 </span>
                 <span className="appearance-material-name">
                   <strong>{p.name}</strong>
-                  <small>{t(p.note)}</small>
                 </span>
-                <span className="appearance-material-check" aria-hidden="true">
-                  {selected?.name === p.name ? "✓" : ""}
-                </span>
+                <span aria-hidden="true">{selected?.name === p.name ? "✓" : ""}</span>
               </Button>
             ))}
           </div>
@@ -351,15 +181,14 @@ export function AppearanceStudio({ appearance: a }: { appearance: AppearanceSett
           </p>
         </div>
       </div>
-      <div className="appearance-studio-caption">
-        <span>{t("Make it yours.")}</span>
-        <p>
+      <AdvancedSettings title={t("About this preview")}>
+        <p className="appearance-preview-help">
           {t(
             "This is an example workspace. Your choices apply throughout the app and are saved automatically.",
           )}
         </p>
-      </div>
-    </div>
+      </AdvancedSettings>
+    </section>
   );
 }
 
@@ -368,11 +197,61 @@ export function AppearanceInterface({ appearance: a }: { appearance: AppearanceS
   const p = a.preferences;
   return (
     <Group
-      title={t("Reading & space")}
+      title={t("Scale and accessibility")}
       persistence={{ mode: "automatic" }}
       layout="full"
-      description={t("Adjust contrast, diff highlights and conversation width.")}
+      action={
+        <Button
+          variant="ghost"
+          onClick={() => {
+            a.onPreferences({
+              ...p,
+              contrast: APPEARANCE_DEFAULTS.contrast,
+              controlDensity: APPEARANCE_DEFAULTS.controlDensity,
+              chatWidth: APPEARANCE_DEFAULTS.chatWidth,
+            });
+            a.onDiffPalette(DIFF_PALETTE_DEFAULT);
+            a.onUiScale(Math.round(UI_SCALE_DEFAULT * 100));
+          }}
+        >
+          {t("Reset reading settings")}
+        </Button>
+      }
     >
+      <Row
+        id="interface-scale"
+        label={t("Interface scale")}
+        description={t(
+          "Zoom the whole interface. You can also use Ctrl+=, Ctrl+-, and Ctrl+0 (Cmd on macOS).",
+        )}
+      >
+        <Select
+          label={t("Interface scale")}
+          value={String(Math.round(a.uiScale * 100))}
+          options={UI_SCALE_PERCENTS.map((percent) => ({
+            value: String(percent),
+            label: `${percent}%`,
+          }))}
+          onChange={(value) => a.onUiScale(Number(value))}
+        />
+      </Row>
+      <Row id="control-density" label={t("Control density")}>
+        <Select
+          label={t("Control density")}
+          value={p.controlDensity}
+          options={[
+            { value: "compact", label: t("Compact") },
+            { value: "comfortable", label: t("Comfortable") },
+            { value: "touch", label: t("Touch") },
+          ]}
+          onChange={(value) =>
+            a.onPreferences({
+              ...p,
+              controlDensity: value === "comfortable" || value === "touch" ? value : "compact",
+            })
+          }
+        />
+      </Row>
       <Row
         id="interface-contrast"
         label={t("Contrast")}
@@ -475,9 +354,22 @@ export function AppearanceTypography({ appearance: a }: { appearance: Appearance
       title={t("Fonts and code")}
       persistence={{ mode: "automatic" }}
       layout="full"
-      description={t(
-        "Try your fonts in the workspace above. Unavailable fonts fall back to your device’s default.",
-      )}
+      action={
+        <Button
+          variant="ghost"
+          onClick={() =>
+            a.onPreferences({
+              ...p,
+              interfaceFont: APPEARANCE_DEFAULTS.interfaceFont,
+              codeFont: APPEARANCE_DEFAULTS.codeFont,
+              codeSize: APPEARANCE_DEFAULTS.codeSize,
+              wordWrap: APPEARANCE_DEFAULTS.wordWrap,
+            })
+          }
+        >
+          {t("Reset fonts")}
+        </Button>
+      }
     >
       <Row
         id="interface-font"
@@ -529,6 +421,9 @@ export function AppearanceTypography({ appearance: a }: { appearance: Appearance
           onChange={(wordWrap) => a.onPreferences({ ...p, wordWrap })}
         />
       </Row>
+      <pre className="appearance-code-sample" aria-label={t("Code font preview")}>
+        <code>{'const message = "Hello, bycoda";\nconsole.log(message);'}</code>
+      </pre>
     </Group>
   );
 }

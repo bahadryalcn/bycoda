@@ -1,3 +1,7 @@
+import { Badge } from "../../shared/ui/Badge";
+import { EmptyState } from "../../shared/ui/EmptyState";
+import { Alert } from "../../shared/ui/Alert";
+import { Button } from "../../shared/ui/Button";
 import { t, useLocale, getLocale } from "../../shared/i18n/technical";
 import { useEffect, useRef, useState } from "react";
 import { hostFeatureRequest, hostToolRequest } from "../connections/model/hostFeatureClient";
@@ -189,26 +193,32 @@ function ProjectDiagnosticsPanel({ cwd, hostTarget = { kind: "project" }, hostLa
           <span className="host-tool-muted">{hostLabel ?? t("Host process")}</span>
         </div>
         <div className="resource-sampling">
-          <button
+          <Button
+            motion="none"
+            variant="ghost"
+            size="sm"
             type="button"
-            className="host-tool-primary"
             disabled={busy}
             onClick={() => void read()}
           >
             {busy ? t("Measuring…") : error ? t("Retry") : t("Sample now")}
-          </button>
-          <span className="host-tool-muted" role="status">
+          </Button>
+          <Badge role="status">
             {busy
               ? t("Measuring…")
               : sample
                 ? `${t("Sampled at")} ${time(sample.at)}`
                 : t("No samples yet")}
-          </span>
+          </Badge>
         </div>
       </header>
-      {error ? <p role="alert">{error}</p> : null}
+      {error ? (
+        <Alert tone="danger" role="alert">
+          {error}
+        </Alert>
+      ) : null}
       {!sample && !busy && !error ? (
-        <p className="resource-empty">{t("Take a sample to start the charts.")}</p>
+        <EmptyState description={t("Take a sample to start the charts.")} />
       ) : null}
       <div className="resource-cards">
         <article className="resource-card">

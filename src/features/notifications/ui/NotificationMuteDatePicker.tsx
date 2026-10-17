@@ -1,5 +1,7 @@
 import { t, useLocale } from "../../../shared/i18n";
 import { useState } from "react";
+import { Button } from "../../../shared/ui/Button";
+import { Alert } from "../../../shared/ui/Alert";
 import {
   loadNotificationPreferences,
   updateNotificationPreferences,
@@ -67,25 +69,22 @@ export function NotificationMuteDatePicker({ projectIds, onChanged, onCancel }: 
         autoFocus
       />
       {error ? (
-        <p role="alert" className="mt-3 px-1 text-xs text-danger">
+        <Alert tone="danger" className="mt-3">
           {error}
-        </p>
+        </Alert>
       ) : null}
       <div className="mt-3 flex items-center justify-between gap-2 border-t border-stroke pt-2.5">
-        <button
-          type="button"
-          onClick={onCancel}
-          className="rounded px-2 py-1.5 text-xs text-content/50 hover:bg-content/5 hover:text-content focus-visible:outline-2 focus-visible:outline-accent"
-        >
+        <Button type="button" onClick={onCancel} aria-label={t("Cancel")} variant="ghost">
           {t("Cancel")}
-        </button>
-        <button
+        </Button>
+        <Button
           type="submit"
+          aria-label={t("Mute until then")}
           disabled={!projectIds.length}
-          className="primary-action flex shrink-0 items-center rounded-md border border-transparent px-2.5 py-1 text-[12px] focus-visible:outline-2 focus-visible:outline-accent disabled:cursor-default"
+          variant="primary"
         >
           {t("Mute until then")}
-        </button>
+        </Button>
       </div>
     </form>
   );

@@ -89,7 +89,13 @@ afterEach(async () => {
 });
 
 async function click(text: string, within: Element = container) {
-  const button = [...within.querySelectorAll("button")].find((entry) => entry.textContent === text);
+  const button =
+    [...within.querySelectorAll<HTMLElement>("button")].find(
+      (entry) => entry.textContent === text,
+    ) ??
+    [...within.querySelectorAll<HTMLInputElement>('input[type="radio"]')].find((entry) =>
+      [...(entry.labels ?? [])].some((label) => label.textContent?.trim() === text),
+    );
   expect(button, text).toBeDefined();
   await act(async () => button!.click());
 }

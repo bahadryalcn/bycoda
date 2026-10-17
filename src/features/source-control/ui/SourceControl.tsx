@@ -67,7 +67,7 @@ export function SourceControl({
         {error ? (
           <p
             role="status"
-            className="shrink-0 border-b border-stroke px-2 py-1 text-[11px] text-content/50"
+            className="shrink-0 border-b border-stroke px-2 py-1 text-[11px] text-[var(--ui-text-secondary)]"
           >
             {t("Could not refresh worktrees. Showing the last available list.")}
           </p>

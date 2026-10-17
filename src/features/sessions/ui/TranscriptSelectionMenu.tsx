@@ -1,8 +1,11 @@
 import { t, useLocale } from "../../../shared/i18n";
 import { FilePlusCorner, MessageSquarePlus } from "../../../shared/ui/icons";
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Popover } from "../../../shared/ui/Popover";
-import { Button } from "../../../shared/ui/Button";
+import {
+  FloatingButtonGroup,
+  type FloatingButtonGroupAction,
+} from "../../../shared/ui/FloatingButtonGroup";
 import { type TranscriptSelection } from "../model/transcriptSelection";
 import { translationTargets, type TranslationTarget } from "../model/translation";
 
@@ -57,7 +60,80 @@ export function TranscriptSelectionMenu({
     };
   }, [selection]);
 
+  const [pending, setPending] = useState<Record<string, boolean>>({});
+  const [errors, setErrors] = useState<Record<string, string>>({});
+  const running = useRef(new Set<string>());
+  const generation = useRef(0);
+  useEffect(() => {
+    if (selection) return;
+    generation.current += 1;
+    running.current.clear();
+    setPending({});
+    setErrors({});
+  }, [selection]);
+
   if (!selection) return null;
+
+  const run = async (id: string, onSelect: () => void | Promise<void>) => {
+    if (running.current.has(id)) return;
+    running.current.add(id);
+    const requestGeneration = generation.current;
+    setPending((current) => ({ ...current, [id]: true }));
+    setErrors((current) => ({ ...current, [id]: "" }));
+    try {
+      const result = onSelect();
+      if (result) await result;
+      if (requestGeneration !== generation.current) return;
+      window.getSelection()?.removeAllRanges();
+      onDismiss();
+    } catch (error) {
+      if (requestGeneration !== generation.current) return;
+      setErrors((current) => ({
+        ...current,
+        [id]: error instanceof Error ? error.message : String(error),
+      }));
+    } finally {
+      if (requestGeneration === generation.current) {
+        running.current.delete(id);
+        setPending((current) => ({ ...current, [id]: false }));
+      }
+    }
+  };
+  const action = (
+    id: string,
+    label: string,
+    icon: FloatingButtonGroupAction["icon"],
+    onSelect: () => void | Promise<void>,
+  ): FloatingButtonGroupAction => ({
+    id,
+    label,
+    icon,
+    loading: pending[id],
+    onSelect: () => {
+      void run(id, onSelect);
+    },
+  });
+  const items: FloatingButtonGroupAction[] = [];
+  if (onTranslate) {
+    for (const target of targets?.text === selection.text ? targets.values : []) {
+      items.push(
+        action(
+          `translate-${target}`,
+          target === "en" ? t("Translate to English") : t("Translate to Chinese"),
+          <span className="text-xs">{target === "en" ? "EN" : "中"}</span>,
+          () => onTranslate(target),
+        ),
+      );
+    }
+  }
+  if (onAddToChat)
+    items.push(
+      action("chat", t("Add to chat"), <MessageSquarePlus />, () => onAddToChat(selection.text)),
+    );
+  if (onAddToNotes)
+    items.push(
+      action("notes", t("Add to notes"), <FilePlusCorner />, () => onAddToNotes(selection.text)),
+    );
 
   return (
     <Popover
@@ -69,101 +145,26 @@ export function TranscriptSelectionMenu({
         if (reason === "escape") window.getSelection()?.removeAllRanges();
         onDismiss();
       }}
-      role="toolbar"
-      aria-label={t("Selected text actions")}
       className="p-1.5"
     >
-      <div className="flex min-w-0 flex-col items-stretch gap-1">
-        {onTranslate
-          ? (targets?.text === selection.text ? targets.values : []).map((target) => (
-              <SelectionAction
-                key={target}
-                label={target === "en" ? t("Translate to English") : t("Translate to Chinese")}
-                onSelect={() => onTranslate(target)}
-                onDismiss={onDismiss}
-              >
-                <span aria-hidden="true" className="text-xs">
-                  {target === "en" ? "EN" : "中"}
-                </span>
-              </SelectionAction>
-            ))
-          : null}
-        {onAddToChat ? (
-          <SelectionAction
-            label={t("Add to chat")}
-            onSelect={() => onAddToChat(selection.text)}
-            onDismiss={onDismiss}
+      <FloatingButtonGroup
+        label={t("Selected text actions")}
+        items={items}
+        orientation="vertical"
+        preserveSelection
+      />
+      {items.map(({ id }) =>
+        errors[id] ? (
+          <span
+            key={id}
+            role="alert"
+            className="min-w-0 px-3 py-1 text-xs text-(--ui-text-secondary) break-words"
           >
-            <MessageSquarePlus aria-hidden="true" className="size-3.5" strokeWidth={1.75} />
-          </SelectionAction>
-        ) : null}
-        {onAddToNotes ? (
-          <SelectionAction
-            label={t("Add to notes")}
-            onSelect={() => onAddToNotes(selection.text)}
-            onDismiss={onDismiss}
-          >
-            <FilePlusCorner aria-hidden="true" className="size-3.5" strokeWidth={1.75} />
-          </SelectionAction>
-        ) : null}
-      </div>
-    </Popover>
-  );
-}
-
-function SelectionAction({
-  label,
-  children,
-  onSelect,
-  onDismiss,
-}: {
-  label: string;
-  children: ReactNode;
-  onSelect: () => void | Promise<void>;
-  onDismiss: () => void;
-}) {
-  useLocale();
-  const [pending, setPending] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  return (
-    <>
-      <Button
-        variant="item"
-        size="md"
-        type="button"
-        loading={pending}
-        startIcon={
-          <span className="flex size-5 shrink-0 items-center justify-center text-[var(--text-secondary)]">
-            {children}
+            {t("Could not save note. ")}
+            {errors[id]}
           </span>
-        }
-        onMouseDown={(event) => event.preventDefault()}
-        onClick={async () => {
-          setPending(true);
-          setError(null);
-          try {
-            const result = onSelect();
-            if (result) await result;
-            window.getSelection()?.removeAllRanges();
-            onDismiss();
-          } catch (error) {
-            setError(error instanceof Error ? error.message : String(error));
-          } finally {
-            setPending(false);
-          }
-        }}
-      >
-        <span className="min-w-0 whitespace-normal break-words">{label}</span>
-      </Button>
-      {error && (
-        <span
-          role="alert"
-          className="min-w-0 px-3 py-1 text-xs text-[var(--text-secondary)] break-words"
-        >
-          {t("Could not save note. ")}
-          {error}
-        </span>
+        ) : null,
       )}
-    </>
+    </Popover>
   );
 }

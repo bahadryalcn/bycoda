@@ -1,3 +1,4 @@
+import { Button } from "../../../shared/ui/Button";
 import { t, useLocale } from "../../../shared/i18n";
 import { useRef, useState } from "react";
 import { Check } from "../../../shared/ui/icons";
@@ -29,7 +30,9 @@ export function AccountColorPicker({
   };
   return (
     <>
-      <button
+      <Button
+        variant="ghost"
+        size="sm"
         ref={trigger}
         type="button"
         disabled={disabled}
@@ -38,11 +41,11 @@ export function AccountColorPicker({
         aria-expanded={open}
         aria-haspopup="dialog"
         onClick={() => setOpen((value) => !value)}
-        className="inline-flex h-7 shrink-0 items-center gap-1.5 rounded-md border border-content/10 px-2 text-[11px] text-content/70 hover:bg-content/10 focus-visible:outline-2 focus-visible:outline-accent disabled:opacity-40"
+        className="inline-flex shrink-0 items-center gap-1.5"
       >
         <AccountColorDot account={account} className="size-2.5" />
         <span>{t("Color")}</span>
-      </button>
+      </Button>
       {open ? (
         <Popover
           anchor={trigger}
@@ -59,7 +62,9 @@ export function AccountColorPicker({
             {PROVIDER_ACCOUNT_COLORS.map((color) => {
               const selected = current.id === color.id;
               return (
-                <button
+                <Button
+                  variant="ghost"
+                  size="sm"
                   key={color.id}
                   type="button"
                   title={color.label}
@@ -67,7 +72,7 @@ export function AccountColorPicker({
                   aria-pressed={selected}
                   onMouseDown={(event) => event.preventDefault()}
                   onClick={() => pick(color.id)}
-                  className="flex h-9 items-center gap-2 rounded-md px-2 text-xs hover:bg-content/10 focus-visible:outline-2 focus-visible:outline-accent"
+                  className="flex items-center gap-2"
                 >
                   <span
                     className="grid size-4 place-items-center rounded-full"
@@ -78,19 +83,21 @@ export function AccountColorPicker({
                     ) : null}
                   </span>
                   <span>{color.label}</span>
-                </button>
+                </Button>
               );
             })}
           </div>
           {account.color ? (
-            <button
+            <Button
+              variant="ghost"
+              size="sm"
               type="button"
               onMouseDown={(event) => event.preventDefault()}
               onClick={() => pick(undefined)}
-              className="mt-1.5 w-full rounded-md px-2 py-1 text-left text-[11px] text-content/55 hover:bg-content/10 hover:text-content"
+              className="mt-1.5 w-full"
             >
               {t("Use automatic color")}
-            </button>
+            </Button>
           ) : null}
         </Popover>
       ) : null}

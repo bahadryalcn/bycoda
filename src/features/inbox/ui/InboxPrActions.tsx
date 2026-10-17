@@ -1,6 +1,8 @@
+import { Alert } from "../../../shared/ui/Alert";
+import { SplitButton } from "../../../shared/ui/SplitButton";
+import { Button } from "../../../shared/ui/Button";
 import { t, useLocale } from "../../../shared/i18n";
 import {
-  ChevronDown,
   GitMerge,
   GitPullRequest,
   GitPullRequestClosed,
@@ -10,7 +12,6 @@ import {
 import { useRef, useState } from "react";
 import { Popover } from "../../../shared/ui/Popover";
 import { githubPrAction, type GithubPrAction, type InboxItem } from "../model/githubTasks";
-import { ACTION_OUTLINE } from "./InboxPresentation";
 
 export type GithubPrMergeAction = Extract<GithubPrAction, "merge" | "squash" | "rebase">;
 
@@ -47,9 +48,6 @@ export const GITHUB_PR_MERGE_OPTIONS: Array<{
     },
   },
 ];
-
-export const PR_ACTION_PRESS =
-  "transition-transform duration-[120ms] ease-[var(--motion-ease-out)] active:scale-[0.97] motion-reduce:transition-none";
 
 export function githubPrActionCopy(
   action: GithubPrAction,
@@ -195,131 +193,83 @@ export function GithubPrActions({
   const confirmCopy = confirmation
     ? githubPrActionCopy(confirmation.action, baseRef, headRef)
     : null;
-  const stateButton = `${ACTION_OUTLINE} ${PR_ACTION_PRESS} disabled:cursor-default disabled:opacity-40`;
 
   return (
     <>
       {state === "open" && !item.draft ? (
-        <div
-          ref={mergeGroup}
-          role="group"
-          aria-label={t("Merge pull request")}
-          className="inline-flex h-7 overflow-hidden rounded-md bg-content text-background-base"
-        >
-          <button
-            type="button"
-            disabled={busy}
-            onClick={(event) => askToRun(mergeAction, event.currentTarget)}
-            className={`inline-flex items-center gap-1.5 px-3 text-[12px] font-medium hover:bg-background-base/10 disabled:cursor-default disabled:opacity-40 ${PR_ACTION_PRESS}`}
-          >
-            <GitMerge className="size-3.5" strokeWidth={1.75} />
-            {selectedMerge?.action === "merge" ? t("Merge pull request") : selectedMerge?.label}
-          </button>
-          <button
-            type="button"
-            title={t("Merge options")}
-            aria-label={t("Merge options")}
-            aria-haspopup="menu"
-            aria-expanded={mergeMenuOpen}
-            disabled={busy}
-            onClick={() => setMergeMenuOpen((open) => !open)}
-            className={`grid w-7 place-items-center border-l border-background-base/20 hover:bg-background-base/10 disabled:cursor-default disabled:opacity-40 ${PR_ACTION_PRESS}`}
-          >
-            <ChevronDown className="size-3" strokeWidth={1.75} />
-          </button>
-        </div>
+        <SplitButton
+          groupRef={mergeGroup}
+          variant="primary"
+          type="button"
+          label={
+            selectedMerge?.action === "merge"
+              ? t("Merge pull request")
+              : (selectedMerge?.label ?? t("Merge pull request"))
+          }
+          menuLabel={t("Merge options")}
+          disabled={busy}
+          menuOpen={mergeMenuOpen}
+          onMenuOpenChange={setMergeMenuOpen}
+          startIcon={<GitMerge className="size-3.5" strokeWidth={1.75} />}
+          onClick={(event) => askToRun(mergeAction, event.currentTarget)}
+          actions={GITHUB_PR_MERGE_OPTIONS.map((option) => ({
+            id: option.action,
+            label: option.label,
+            description: option.description,
+            checked: option.action === mergeAction,
+            selectionRole: "radio",
+            onSelect: () => setMergeAction(option.action),
+          }))}
+        />
       ) : null}
       {state === "open" && item.draft ? (
-        <button
+        <Button
+          variant="secondary"
           type="button"
           disabled={busy}
           onClick={(event) => askToRun("ready", event.currentTarget)}
-          className={stateButton}
         >
           <GitPullRequest className="size-3.5" strokeWidth={1.75} />
           {t("Ready for review")}
-        </button>
+        </Button>
       ) : null}
       {state === "open" && !item.draft ? (
-        <button
+        <Button
+          variant="secondary"
           type="button"
           disabled={busy}
           onClick={(event) => askToRun("draft", event.currentTarget)}
-          className={stateButton}
         >
           <GitPullRequestDraft className="size-3.5" strokeWidth={1.75} />
           {t("Convert to draft")}
-        </button>
+        </Button>
       ) : null}
       {state === "open" ? (
-        <button
+        <Button
+          variant="secondary"
           type="button"
           disabled={busy}
           onClick={(event) => askToRun("close", event.currentTarget)}
-          className={`${stateButton} hover:text-danger`}
         >
           <GitPullRequestClosed className="size-3.5" strokeWidth={1.75} />
           {t("Close pull request")}
-        </button>
+        </Button>
       ) : null}
       {state === "closed" ? (
-        <button
+        <Button
+          variant="secondary"
           type="button"
           disabled={busy}
           onClick={(event) => askToRun("reopen", event.currentTarget)}
-          className={stateButton}
         >
           <GitPullRequest className="size-3.5" strokeWidth={1.75} />
           {t("Reopen pull request")}
-        </button>
+        </Button>
       ) : null}
       {notice ? (
-        <span role="status" className="text-[11px] text-content/55">
+        <span role="status" className="text-[11px] text-(--ui-text-secondary)">
           {notice}
         </span>
-      ) : null}
-      {mergeMenuOpen && state === "open" && !item.draft ? (
-        <Popover
-          anchor={mergeGroup}
-          gap={4}
-          width={260}
-          autoFocus
-          onDismiss={() => setMergeMenuOpen(false)}
-          role="menu"
-          tabIndex={-1}
-          aria-label={t("Merge method")}
-          className="p-1"
-        >
-          {GITHUB_PR_MERGE_OPTIONS.map((option) => (
-            <button
-              key={option.action}
-              type="button"
-              role="menuitemradio"
-              aria-checked={option.action === mergeAction}
-              onMouseDown={(event) => event.preventDefault()}
-              onClick={() => {
-                setMergeAction(option.action);
-                setMergeMenuOpen(false);
-              }}
-              className={`flex w-full items-start gap-2 rounded-lg px-2 py-2 text-left hover:bg-content/8 ${
-                option.action === mergeAction ? "bg-selection text-content" : "text-content/75"
-              }`}
-            >
-              <span
-                aria-hidden
-                className={`mt-1 size-1.5 shrink-0 rounded-full ${
-                  option.action === mergeAction ? "bg-success" : "bg-content/20"
-                }`}
-              />
-              <span className="min-w-0">
-                <span className="block text-[12px] font-medium leading-tight">{option.label}</span>
-                <span className="mt-0.5 block text-[11px] leading-snug text-content/45">
-                  {option.description}
-                </span>
-              </span>
-            </button>
-          ))}
-        </Popover>
       ) : null}
       {confirmation && confirmCopy ? (
         <Popover
@@ -334,40 +284,26 @@ export function GithubPrActions({
           className="p-3"
         >
           <div className="flex flex-col gap-1">
-            <h2 className="text-[13px] font-medium text-content">{confirmCopy.title}</h2>
-            <p className="text-[12px] leading-snug text-content/55">{confirmCopy.detail}</p>
+            <h2 className="text-[13px] font-medium text-(--ui-tone-neutral-fg)">
+              {confirmCopy.title}
+            </h2>
+            <p className="text-[12px] leading-snug text-(--ui-text-secondary)">
+              {confirmCopy.detail}
+            </p>
           </div>
           {actionError ? (
-            <p role="alert" className="mt-2 break-words text-[11px] leading-snug text-danger">
+            <Alert tone="danger" role="alert" className="mt-2">
               {actionError}
-            </p>
+            </Alert>
           ) : null}
           <div className="mt-3 flex justify-end gap-2">
-            <button
-              type="button"
-              disabled={busy}
-              onClick={dismissConfirmation}
-              className={`h-7 rounded-md px-3 text-[12px] text-content/65 hover:bg-content/8 hover:text-content disabled:cursor-default disabled:opacity-40 ${PR_ACTION_PRESS}`}
-            >
+            <Button variant="ghost" type="button" disabled={busy} onClick={dismissConfirmation}>
               {t("Cancel")}
-            </button>
-            <button
-              type="button"
-              disabled={busy}
-              onClick={() => void runAction()}
-              className={`inline-flex h-7 items-center gap-1.5 rounded-md px-3 text-[12px] font-medium disabled:cursor-default disabled:opacity-60 ${
-                confirmation.action === "close"
-                  ? "bg-danger/20 text-danger hover:bg-danger/30 dark:text-danger"
-                  : confirmation.action === "merge" ||
-                      confirmation.action === "squash" ||
-                      confirmation.action === "rebase"
-                    ? "bg-success/20 text-success hover:bg-success/30 dark:text-success"
-                    : "bg-content text-background-base hover:bg-content/80"
-              } ${PR_ACTION_PRESS}`}
-            >
+            </Button>
+            <Button variant="ghost" type="button" disabled={busy} onClick={() => void runAction()}>
               {busy ? <LoaderCircle className="size-3.5 animate-spin" strokeWidth={1.75} /> : null}
               {busy ? confirmCopy.progress : confirmCopy.confirm}
-            </button>
+            </Button>
           </div>
         </Popover>
       ) : null}

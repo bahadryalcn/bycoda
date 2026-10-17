@@ -1,3 +1,4 @@
+import { Button } from "../../../shared/ui/Button";
 import { t, useLocale, getLocale } from "../../../shared/i18n";
 import { LoaderCircle } from "../../../shared/ui/icons";
 import { Timeline } from "../../../shared/ui/Timeline";
@@ -37,9 +38,12 @@ export function TaskAttemptHistory({
   const stop = repairStopLabel(task);
   if (!stop && !task.attemptHistory?.length) return null;
   return (
-    <section aria-label={t("Attempt history")} className="space-y-2 border-t border-stroke pt-3">
+    <section
+      aria-label={t("Attempt history")}
+      className="space-y-2 border-t border-(--ui-tone-neutral-border) pt-3"
+    >
       {stop ? (
-        <div className="space-y-1 text-[12px] text-warning">
+        <div className="space-y-1 text-[12px] text-(--ui-tone-warning-fg)">
           <p className="font-medium">{stop}</p>
           <p className="whitespace-pre-wrap break-words">
             {canTakeOverBlockedTask(task)
@@ -51,7 +55,7 @@ export function TaskAttemptHistory({
                 : (task.repairStop?.message ??
                   t("Inspect the previous worker and review before retrying."))}
           </p>
-          <p className="text-content/55">
+          <p className="text-(--ui-text-secondary)">
             {taskRequiresInstructions(task) ? `${TASK_INPUT_REQUIRED} ` : ""}
             {t(
               "Dependent tasks stay queued until this task passes its checks and is delivered. Independent queued tasks can continue.",
@@ -61,8 +65,10 @@ export function TaskAttemptHistory({
       ) : null}
       {task.attemptHistory?.length ? (
         <>
-          <h3 className="text-[12px] font-medium text-content/80">{t("Attempt outcomes")}</h3>
-          <p className="text-[11px] text-content/45">
+          <h3 className="text-[12px] font-medium text-(--ui-text-secondary)">
+            {t("Attempt outcomes")}
+          </h3>
+          <p className="text-[11px] text-(--ui-text-secondary)">
             {t(
               "Worker summaries describe what the agent reported. The review below records verification.",
             )}
@@ -84,21 +90,22 @@ export function TaskAttemptHistory({
               meta: new Date(entry.at).toLocaleString(getLocale()),
               detail: (
                 <>
-                  <p className="whitespace-pre-wrap break-words text-content/70">
+                  <p className="whitespace-pre-wrap break-words text-(--ui-text-secondary)">
                     {entry.workerSummary}
                   </p>
-                  <p className="mt-2 whitespace-pre-wrap break-words text-content/70">
+                  <p className="mt-2 whitespace-pre-wrap break-words text-(--ui-text-secondary)">
                     {t("Review: ")}
                     {entry.note}
                   </p>
                 </>
               ),
               actions: (
-                <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-info">
+                <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-(--ui-tone-info-fg)">
                   {entry.workerSessionId ? (
-                    <button
+                    <Button
+                      variant="ghost"
                       type="button"
-                      className="inline-flex items-center gap-1 disabled:cursor-wait disabled:opacity-60"
+
                       disabled={isOpeningSession(entry.workerSessionId)}
                       onClick={() => onOpenSession(entry.workerSessionId!)}
                     >
@@ -106,12 +113,13 @@ export function TaskAttemptHistory({
                         <LoaderCircle className="size-3 animate-spin" />
                       ) : null}
                       {t("Open worker session")}
-                    </button>
+                    </Button>
                   ) : null}
                   {entry.reviewerSessionId ? (
-                    <button
+                    <Button
+                      variant="ghost"
                       type="button"
-                      className="inline-flex items-center gap-1 disabled:cursor-wait disabled:opacity-60"
+
                       disabled={isOpeningSession(entry.reviewerSessionId)}
                       onClick={() => onOpenSession(entry.reviewerSessionId)}
                     >
@@ -119,7 +127,7 @@ export function TaskAttemptHistory({
                         <LoaderCircle className="size-3 animate-spin" />
                       ) : null}
                       {t("Open review session")}
-                    </button>
+                    </Button>
                   ) : null}
                 </div>
               ),

@@ -1,3 +1,4 @@
+import { Button } from "../../../shared/ui/Button";
 import { t, useLocale } from "../../../shared/i18n";
 import { useEffect, useId, useRef, useState } from "react";
 import { Check, Lock, Pencil, Shield, Sparkles } from "../../../shared/ui/icons";
@@ -93,7 +94,10 @@ export function QuickPermissions({
       {RUNTIME_MODES.map((mode, index) => {
         const reason = unavailable?.[mode];
         return (
-          <button
+          <Button
+            fullWidth
+            variant="item"
+            motion="none"
             key={mode}
             id={`${id}-${index}`}
             type="button"
@@ -110,7 +114,7 @@ export function QuickPermissions({
               if (!reason) setActive(index);
             }}
             onClick={() => pick(mode)}
-            className={`flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left ${reason ? "cursor-not-allowed text-content/40" : (embedded ? value === mode : active === index) ? "bg-selection-emphasis text-content" : "text-content/75 hover:bg-selection-hover"}`}
+            className={`flex w-full items-center gap-3 `}
           >
             <QuickPermissionIcon mode={mode} className="size-4 shrink-0" />
             <span className="min-w-0 flex-1">
@@ -120,7 +124,7 @@ export function QuickPermissions({
               </span>
             </span>
             {value === mode ? <Check className="size-3.5 shrink-0 text-accent" /> : null}
-          </button>
+          </Button>
         );
       })}
     </div>

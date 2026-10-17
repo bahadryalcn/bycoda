@@ -32,7 +32,11 @@ const blocks: Block[] = Array.from({ length: 20 }, (_, index): Block[] => [
 
 // Like the transcript pool, parking detaches the transcript from the page.
 const root = document.getElementById("root")!;
-if (new URLSearchParams(window.location.search).has("artifacts") || new URLSearchParams(window.location.search).has("rewind")) {
+if (
+  new URLSearchParams(window.location.search).has("artifacts") ||
+  new URLSearchParams(window.location.search).has("rewind") ||
+  new URLSearchParams(location.search).has("streaming")
+) {
   root.style.width = "100%";
   root.style.height = "100dvh";
 }
@@ -42,11 +46,17 @@ root.appendChild(host);
 
 function Fixture() {
   const [parked, setParked] = useState(false);
+  const streaming = new URLSearchParams(location.search).has("streaming");
+  const [streamText, setStreamText] = useState("Streaming response");
+  const [running, setRunning] = useState(true);
   const longText = new URLSearchParams(window.location.search).has("longText");
   const artifacts = new URLSearchParams(window.location.search).has("artifacts");
   const rewind = new URLSearchParams(window.location.search).has("rewind");
   useEffect(() => {
     Object.assign(window, {
+      appendFixtureStream: (text: string) => setStreamText((value) => value + text),
+      finishFixtureStream: () => setRunning(false),
+      savedFixtureNotes: [] as string[],
       parkTranscript: () => {
         host.remove();
         setParked(true);
@@ -60,75 +70,102 @@ function Fixture() {
   return (
     <AgentTranscript
       blocks={
-        rewind
+        streaming
           ? [
-              { id: "prior-request", role: "user", text: "Keep this conversation." },
-              { id: "prior-answer", role: "assistant", text: "Earlier response." },
-              { id: "wrong-request", role: "user", text: "Sent to the wrong session.", turnOutcome: "stopped" },
-            ]
-          : artifacts
-          ? [
+              ...blocks,
               {
-                id: "artifact-user",
+                id: "stream-user",
                 role: "user",
-                text: "Inspect these results and the attached table.",
-                attachments: [
-                  {
-                    id: "table",
-                    kind: "file",
-                    name: "results.csv",
-                    mimeType: "text/csv",
-                    size: 26,
-                    data: btoa("Name,Result\nBuild,passed\n"),
-                  },
-                ],
+                text: "Preserve my place while streaming.",
+                durationMs: running ? undefined : 1200,
               },
-              {
-                id: "artifact-write",
-                role: "tool",
-                text: "Write src/App.tsx",
-                tool: {
-                  kind: "write",
-                  status: "completed",
-                  preview: {
-                    kind: "write",
-                    path: "src/App.tsx",
-                    contentOnly: true,
-                    lines: [{ kind: "context", text: "export const ready = true;" }],
-                    inspection: {
-                      kind: "content",
-                      text: "export function App() {\n  return <main>Connected workspace</main>;\n}\n// saved-code-marker",
-                    },
-                  },
-                },
-              },
-              {
-                id: "artifact-output",
-                role: "tool",
-                text: "Run pnpm build",
-                tool: {
-                  kind: "shell",
-                  status: "completed",
-                  detail: "Build succeeded: output-marker",
-                },
-              },
+              { id: "stream-reply", role: "assistant", text: streamText },
             ]
-          : longText
+          : rewind
             ? [
+                { id: "prior-request", role: "user", text: "Keep this conversation." },
+                { id: "prior-answer", role: "assistant", text: "Earlier response." },
                 {
-                  id: "long-text",
+                  id: "wrong-request",
                   role: "user",
-                  text: "Selectable excerpt\n" + "Long content ".repeat(200),
+                  text: "Sent to the wrong session.",
+                  turnOutcome: "stopped",
                 },
               ]
-            : blocks
+            : artifacts
+              ? [
+                  {
+                    id: "artifact-user",
+                    role: "user",
+                    text: "Inspect these results and the attached table.",
+                    attachments: [
+                      {
+                        id: "table",
+                        kind: "file",
+                        name: "results.csv",
+                        mimeType: "text/csv",
+                        size: 26,
+                        data: btoa("Name,Result\nBuild,passed\n"),
+                      },
+                    ],
+                  },
+                  {
+                    id: "artifact-write",
+                    role: "tool",
+                    text: "Write src/App.tsx",
+                    tool: {
+                      kind: "write",
+                      status: "completed",
+                      preview: {
+                        kind: "write",
+                        path: "src/App.tsx",
+                        contentOnly: true,
+                        lines: [{ kind: "context", text: "export const ready = true;" }],
+                        inspection: {
+                          kind: "content",
+                          text: "export function App() {\n  return <main>Connected workspace</main>;\n}\n// saved-code-marker",
+                        },
+                      },
+                    },
+                  },
+                  {
+                    id: "artifact-output",
+                    role: "tool",
+                    text: "Run pnpm build",
+                    tool: {
+                      kind: "shell",
+                      status: "completed",
+                      detail: "Build succeeded: output-marker",
+                    },
+                  },
+                ]
+              : longText
+                ? [
+                    {
+                      id: "long-text",
+                      role: "user",
+                      text: "Selectable excerpt\n" + "Long content ".repeat(200),
+                    },
+                  ]
+                : blocks
       }
       visible={!parked}
-      busy={artifacts}
+      busy={streaming ? running : artifacts}
+      onSaveNote={
+        streaming
+          ? async (text) => {
+              (window as unknown as { savedFixtureNotes: string[] }).savedFixtureNotes.push(text);
+            }
+          : undefined
+      }
       canRewindMessage={rewind ? () => true : undefined}
-      onRewindMessage={rewind ? (block, action) => {
-        Object.assign(window, { lastRewind: { blockId: block.id, action } });
-      } : undefined}
+      onRewindMessage={
+        rewind
+          ? (block, action) => {
+              Object.assign(window, { lastRewind: { blockId: block.id, action } });
+            }
+          : undefined
+      }
       parked={parked}
     />
   );

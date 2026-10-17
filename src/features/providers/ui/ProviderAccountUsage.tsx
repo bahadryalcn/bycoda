@@ -9,22 +9,18 @@ import {
 } from "../model/rateLimits";
 import type { AccountStatus, AccountStatusTone, AccountUsage } from "../model/accountUsage";
 import { RefreshCw } from "../../../shared/ui/icons";
+import { Button } from "../../../shared/ui/Button";
+import { Badge, type BadgeTone } from "../../../shared/ui/Badge";
+import { Progress } from "../../../shared/ui/Progress";
+import { Skeleton } from "../../../shared/ui/Skeleton";
 import { useShowRemainingUsage } from "../../settings/model/displayPrefs";
 
-const STATUS_DOT: Record<AccountStatusTone, string> = {
-  ready: "bg-success",
-  low: "bg-warning",
-  exhausted: "bg-danger",
-  checking: "animate-pulse bg-content/25",
-  unknown: "bg-content/25",
-};
-
-const STATUS_TEXT: Record<AccountStatusTone, string> = {
-  ready: "text-content/60",
-  low: "text-warning/90",
-  exhausted: "text-danger/90",
-  checking: "text-content/35",
-  unknown: "text-content/35",
+const STATUS_TONE: Record<AccountStatusTone, BadgeTone> = {
+  ready: "success",
+  low: "warning",
+  exhausted: "danger",
+  checking: "neutral",
+  unknown: "neutral",
 };
 
 /** Dot + word, e.g. "● Ready" or "● Exhausted back in 31m". */
@@ -41,14 +37,11 @@ export function AccountStatusLabel({
       className={`inline-flex min-w-0 items-center gap-1.5 ${className}`}
       title={status.detail ? `${status.label} · ${status.detail}` : status.label}
     >
-      <span className={`size-1.5 shrink-0 rounded-full ${STATUS_DOT[status.tone]}`} aria-hidden />
-      <span
-        className={`${status.tone === "unknown" ? "min-w-0 truncate" : "shrink-0"} ${STATUS_TEXT[status.tone]}`}
-      >
+      <Badge tone={STATUS_TONE[status.tone]} size="sm">
         {status.label}
-      </span>
+      </Badge>
       {status.detail ? (
-        <span className="min-w-0 truncate text-content/40">{status.detail}</span>
+        <span className="min-w-0 truncate text-[var(--ui-text-muted)]">{status.detail}</span>
       ) : null}
     </span>
   );
@@ -57,19 +50,19 @@ export function AccountStatusLabel({
 export function AccountUsageRefresh({ usage }: { usage: AccountUsage }) {
   useLocale();
   return (
-    <button
+    <Button
       type="button"
+      variant="ghost"
+      iconOnly
+      label={t("Refresh usage limits")}
+      loading={usage.refreshing}
       disabled={usage.refreshing}
       onClick={usage.refresh}
       aria-label={t("Refresh usage limits")}
       title={t("Refresh usage limits")}
-      className="grid size-7 place-items-center rounded-md text-content/40 transition-transform duration-150 hover:bg-content/10 hover:text-content active:scale-[0.96] disabled:opacity-40"
     >
-      <RefreshCw
-        className={`size-3.5 ${usage.refreshing ? "animate-spin" : ""}`}
-        strokeWidth={1.75}
-      />
-    </button>
+      <RefreshCw className="size-3.5" strokeWidth={1.75} />
+    </Button>
   );
 }
 
@@ -168,11 +161,11 @@ export function UsageMeter({
       }
     >
       <div className="flex items-baseline justify-between gap-2 text-[10px] leading-3">
-        <span className="min-w-0 truncate text-content/40">
+        <span className="min-w-0 truncate text-[var(--ui-text-muted)]">
           {title} · <span className="tabular-nums">{reset}</span>
         </span>
         <span
-          className={`shrink-0 tabular-nums ${full ? "font-medium text-danger" : "text-content/60"}`}
+          className={`shrink-0 tabular-nums ${full ? "font-medium text-danger" : "text-[var(--ui-text-secondary)]"}`}
         >
           {showRemaining
             ? t("{p0} left", { p0: formatUsagePercent(remaining) })
@@ -181,31 +174,20 @@ export function UsageMeter({
               : formatUsagePercent(pct)}
         </span>
       </div>
-      <div
-        className="mt-1.5 h-1 overflow-hidden rounded-full bg-content/10"
-        role="progressbar"
+      <Progress
+        compact
+        tone={pct >= 90 ? "danger" : pct >= 80 ? "warning" : "neutral"}
+        className="mt-1.5"
+        value={Math.round(shown)}
         aria-label={t(showRemaining ? "{p0} limit remaining" : "{p0} limit used", { p0: title })}
-        aria-valuemin={0}
-        aria-valuemax={100}
-        aria-valuenow={Math.round(shown)}
-      >
-        <span
-          className={`block h-full rounded-full transition-[width] duration-300 ${barClass(pct)}`}
-          style={{ width: `${shown}%` }}
-        />
-      </div>
+      />
     </div>
   );
 }
 
 function MeterSkeleton() {
   useLocale();
-  return (
-    <div className="w-36 animate-pulse" aria-hidden>
-      <div className="h-3 w-20 rounded bg-content/10" />
-      <div className="mt-1.5 h-1 rounded-full bg-content/10" />
-    </div>
-  );
+  return <Skeleton className="w-36" lines={2} label={t("Loading…")} />;
 }
 
 /** Bar colour by percent used; shared with the footer usage chip. */

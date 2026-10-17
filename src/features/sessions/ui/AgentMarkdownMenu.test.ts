@@ -11,6 +11,13 @@ const actions = vi.hoisted(() => ({
   openUrl: vi.fn(async () => {}),
   revealPath: vi.fn(async () => {}),
   isLocalDirectory: vi.fn(async () => false),
+  statFiles: vi.fn(async (paths: string[]) =>
+    paths.map((path) => ({
+      path,
+      mtimeMs: path === "/repo/docs/guide.md" ? 1 : null,
+      isDir: path === "/repo/My Folder",
+    })),
+  ),
 }));
 
 vi.mock("@tauri-apps/plugin-opener", () => ({
@@ -26,6 +33,7 @@ vi.mock("../../../platform/tauri/fs", async (importOriginal) => ({
   openPathWithDefaultApp: actions.openPathWithDefaultApp,
   revealPath: actions.revealPath,
   isLocalDirectory: actions.isLocalDirectory,
+  statFiles: actions.statFiles,
 }));
 
 let container: HTMLDivElement;
@@ -55,7 +63,7 @@ async function pick(label: string, link = container.querySelector("a")!) {
   await act(async () => item.click());
 }
 
-beforeEach(() => {
+beforeEach(async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   vi.clearAllMocks();
   actions.isLocalDirectory.mockResolvedValue(false);
@@ -68,6 +76,7 @@ beforeEach(() => {
   document.body.append(container);
   root = createRoot(container);
   render();
+  await act(async () => {});
 });
 
 afterEach(() => {
@@ -82,6 +91,7 @@ describe("AgentMarkdown file link context menu", () => {
     props = { ...props, text: "`/repo/My Folder`" };
     render();
     actions.isLocalDirectory.mockResolvedValue(true);
+    await act(async () => {});
     await act(async () =>
       container.querySelector<HTMLButtonElement>('[aria-label="Open containing folder"]')!.click(),
     );

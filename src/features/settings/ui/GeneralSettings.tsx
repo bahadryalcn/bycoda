@@ -10,6 +10,7 @@ import { IS_MAC, IS_WIN } from "../../../platform/tauri/platform";
 import { t, useLocale } from "../../../shared/i18n";
 import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
 import { MorphSelect } from "../../../shared/ui/MorphSelect";
+import { Progress } from "../../../shared/ui/Progress";
 import { ArrowDownCircle, Loader, RefreshCw } from "../../../shared/ui/icons";
 import { SecondaryButton } from "../../../shared/ui/SecondaryButton";
 import { OPEN_ONBOARDING_EVENT } from "../../onboarding/model/onboarding";
@@ -191,7 +192,11 @@ export function GeneralPage({ onOpenWhatsNew }: { onOpenWhatsNew: (version: stri
         title={t("Setup")}
         description={t("Connect computers, set up agents, and choose your projects.")}
       >
-        <Row id="getting-started" label={t("Getting started")} description={t("Reopen the setup guide at any time.")}>
+        <Row
+          id="getting-started"
+          label={t("Getting started")}
+          description={t("Reopen the setup guide at any time.")}
+        >
           <SecondaryButton onClick={() => window.dispatchEvent(new Event(OPEN_ONBOARDING_EVENT))}>
             {t("Open setup…")}
           </SecondaryButton>
@@ -306,6 +311,15 @@ export function UpdateRow({ onOpenWhatsNew }: { onOpenWhatsNew: (version: string
             {hasUpdate ? t("Download") : t("Check for updates")}
           </SecondaryButton>
         )}
+        {snapshot.phase === "downloading" ? (
+          <Progress
+            compact
+            label={t("Downloading…")}
+            value={snapshot.progress ?? undefined}
+            max={100}
+            className="w-32"
+          />
+        ) : null}
       </div>
     </Row>
   );

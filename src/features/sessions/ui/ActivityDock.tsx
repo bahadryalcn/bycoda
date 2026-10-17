@@ -1,3 +1,4 @@
+import { Button } from "../../../shared/ui/Button";
 import { t, useLocale } from "../../../shared/i18n";
 import { memo, useEffect, useRef, useState } from "react";
 import { useLockOverscroll } from "../../../shared/hooks/useLockOverscroll";
@@ -175,7 +176,7 @@ function DockBody({
     <section
       aria-label={t("Turn activity")}
       data-activity-dock={dock.state}
-      className={`mb-1.5 overflow-hidden rounded-lg border border-content/10 bg-content/5 font-sans text-xs ${
+      className={`mb-1.5 overflow-hidden rounded-lg border border-(--ui-tone-neutral-border) bg-(--ui-surface-raised) font-sans text-xs ${
         dock.state === "done" ? "activity-dock-done" : ""
       }`}
     >
@@ -197,9 +198,9 @@ function DockBody({
             <span
               className={`min-w-0 truncate ${
                 dock.state === "needs-input"
-                  ? "text-warning"
+                  ? "text-(--ui-tone-warning-fg)"
                   : dock.state === "done"
-                    ? "text-success"
+                    ? "text-(--ui-tone-success-fg)"
                     : "activity-dock-label"
               }`}
             >
@@ -215,14 +216,13 @@ function DockBody({
           </div>
           <span className="flex-1" />
           {stopAll ? (
-            <button
+            <Button
+              className="shrink-0"
+              variant="ghost"
               type="button"
               title={stopAll.title}
               disabled={stop.stopping.has(STOP_ALL)}
               onClick={() => stop.request(STOP_ALL, () => stop.onAll!())}
-              className={`flex shrink-0 items-center gap-1.5 rounded-md px-1.5 py-1 text-[11px] hover:bg-content/8 hover:text-content focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent disabled:pointer-events-none ${
-                stop.failed.has(STOP_ALL) ? "text-danger" : "text-content/50"
-              }`}
             >
               <Square className="size-3" strokeWidth={1.75} />
               {stop.stopping.has(STOP_ALL)
@@ -230,10 +230,11 @@ function DockBody({
                 : stop.failed.has(STOP_ALL)
                   ? t("Could not stop. Retry")
                   : stopAll.label}
-            </button>
+            </Button>
           ) : null}
           {hasAgents ? (
-            <button
+            <Button
+              variant="ghost"
               type="button"
               aria-expanded={open}
               aria-controls={listId}
@@ -243,7 +244,7 @@ function DockBody({
               )}
               title={open ? t("Hide agents") : t("Show agents")}
               onClick={() => setExpanded(!open)}
-              className="flex shrink-0 items-center gap-1.5 rounded-md px-1.5 py-1 text-[11px] text-content/50 hover:bg-content/8 hover:text-content focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent"
+              className="shrink-0"
             >
               <Bot className="size-3" strokeWidth={1.75} />
               <span className="tabular-nums">{counts}</span>
@@ -253,7 +254,7 @@ function DockBody({
                 }`}
                 strokeWidth={1.75}
               />
-            </button>
+            </Button>
           ) : null}
         </div>
       </div>
@@ -261,7 +262,7 @@ function DockBody({
         <div
           id={listId}
           ref={lockList}
-          className="flex max-h-40 flex-col gap-px overflow-y-auto overscroll-none border-t border-content/10 px-1 py-1"
+          className="flex max-h-40 flex-col gap-px overflow-y-auto overscroll-none border-t border-(--ui-tone-neutral-border) px-1 py-1"
         >
           {/* Running rows lead, so their Stop buttons are not buried under
               finished ones. The sort is stable: transcript order otherwise. */}
@@ -289,19 +290,23 @@ function DockMark({ state }: { state: ActivityDockModel["state"] }) {
     return (
       <Check
         className={`size-3.5 shrink-0 ${
-          state === "done" ? "activity-dock-check text-success" : "text-success/70"
+          state === "done"
+            ? "activity-dock-check text-(--ui-tone-success-fg)"
+            : "text-(--ui-tone-success-fg)"
         }`}
         strokeWidth={2.25}
       />
     );
   }
   if (state === "needs-input") {
-    return <CircleAlert className="size-3.5 shrink-0 text-warning" strokeWidth={1.75} />;
+    return (
+      <CircleAlert className="size-3.5 shrink-0 text-(--ui-tone-warning-fg)" strokeWidth={1.75} />
+    );
   }
   return (
     <span
       aria-hidden
-      className={`size-1.5 shrink-0 rounded-full bg-accent ${
+      className={`size-1.5 shrink-0 rounded-full bg-(--ui-tone-accent-subtle) ${
         state === "working"
           ? "shadow-[0_0_8px_var(--color-accent)] motion-safe:animate-pulse"
           : "activity-dock-waiting"
@@ -325,40 +330,43 @@ function DockAgentRow({
   const stoppable = canStopAgent(agent, stop.perItem);
   const stopping = stop.stopping.has(key);
   return (
-    <div className="group flex min-w-0 items-center rounded-md hover:bg-content/8">
-      <button
+    <div className="group flex min-w-0 items-center rounded-md hover:bg-(--ui-surface-raised)">
+      <Button
+        variant="ghost"
         type="button"
         aria-label={`${agent.kind === "agent" ? "Open" : "Show"} ${summary}`}
         title={agent.name}
         data-dock-agent={agent.blockId}
         onClick={() => onOpen(agent)}
-        className="flex min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-1 text-left focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent"
+        className="min-w-0 flex-1 text-left"
       >
         <AgentStatusDot status={agent.status} />
-        <span className="min-w-0 flex-1 truncate text-[12px] text-content/75 group-hover:text-content">
+        <span className="min-w-0 flex-1 truncate text-[12px] text-(--ui-text-secondary) group-hover:text-(--ui-tone-neutral-fg)">
           {agent.name}
         </span>
         {agent.model ? (
-          <span className="max-w-[35%] shrink-0 truncate text-[11px] text-content/40">
+          <span className="max-w-[35%] shrink-0 truncate text-[11px] text-(--ui-text-secondary)">
             {agent.model}
           </span>
         ) : null}
         {agent.detail ? (
-          <span className="shrink-0 text-[11px] text-content/40">{agent.detail}</span>
+          <span className="shrink-0 text-[11px] text-(--ui-text-secondary)">{agent.detail}</span>
         ) : null}
         <AgentClock
           startedAt={agent.startedAt}
           endedAt={agent.endedAt}
           live={agent.status === "running"}
-          className="text-[11px] text-content/40"
+          className="text-[11px] text-(--ui-text-secondary)"
         />
         <ChevronRight
-          className="size-3 shrink-0 text-content/35 group-hover:text-content/60"
+          className="size-3 shrink-0 text-(--ui-text-secondary) group-hover:text-(--ui-text-secondary)"
           strokeWidth={1.75}
         />
-      </button>
+      </Button>
       {stoppable ? (
-        <button
+        <Button
+          className="mr-1 shrink-0"
+          variant="ghost"
           type="button"
           disabled={stopping}
           aria-label={`${stopping ? "Stopping" : "Stop"} ${agent.name}`}
@@ -372,13 +380,10 @@ function DockAgentRow({
                   : t("Stop this command")
           }
           onClick={() => stop.request(key, () => stop.onAgent!(agent))}
-          className={`mr-1 flex shrink-0 items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] hover:bg-content/10 hover:text-content focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent disabled:pointer-events-none ${
-            stop.failed.has(key) ? "text-danger" : "text-content/50"
-          }`}
         >
           <Square className="size-3" strokeWidth={1.75} />
           {stopping ? t("Stopping…") : t("Stop")}
-        </button>
+        </Button>
       ) : null}
     </div>
   );
@@ -387,16 +392,18 @@ function DockAgentRow({
 function AgentStatusDot({ status }: { status: DockAgent["status"] }) {
   useLocale();
   if (status === "failed") {
-    return <X className="size-3 shrink-0 text-danger" strokeWidth={2} />;
+    return <X className="size-3 shrink-0 text-(--ui-tone-danger-fg)" strokeWidth={2} />;
   }
   if (status === "stopped") {
-    return <Square className="size-3 shrink-0 text-warning/80" strokeWidth={2} />;
+    return <Square className="size-3 shrink-0 text-(--ui-tone-warning-fg)" strokeWidth={2} />;
   }
   return (
     <span
       aria-hidden
       className={`size-1.5 shrink-0 rounded-full ${
-        status === "running" ? "bg-accent motion-safe:animate-pulse" : "bg-success/70"
+        status === "running"
+          ? "bg-(--ui-tone-accent-subtle) motion-safe:animate-pulse"
+          : "bg-(--ui-tone-success-subtle)"
       }`}
     />
   );

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import { CheckoutList } from "./CheckoutList";
 import {
   checkoutSelectionScope,
@@ -14,7 +14,7 @@ import {
   type GitFileDiffKind,
   type GitHistoryCommit,
 } from "../../../platform/tauri/fs";
-import { RefreshCw } from "../../../shared/ui/icons";
+import { ChevronDown, ChevronRight, RefreshCw } from "../../../shared/ui/icons";
 import { GitChangesPanel } from "./GitChangesPanel";
 import type { HarnessId } from "../../sessions/model/session";
 import type { RepositoryReviewRequest } from "../model/workspaceRepositories";
@@ -62,11 +62,14 @@ export function WorkspaceSourceControl({
   const scope = checkouts ? checkoutSelectionScope(cwd, paths) : projectKey(cwd);
   // Checkouts: null until the user (or storage) chooses; "" is the explicit "All checkouts".
   const stateKey = `source-control:${checkouts ? "checkouts" : "repositories"}:${scope}`;
+  const repositoryListId = useId();
+  const [listOpen, setListOpen] = useRetainedState(`${stateKey}:list-open`, true);
   const [selected, setSelected] = useRetainedState<string | null>(`${stateKey}:selected`, () =>
     checkouts ? loadCheckoutSelection(scope) : loadRepositorySelection(scope),
   );
   const choose = (value: string) => {
     setSelected(value);
+    setListOpen(true);
     if (checkouts) saveCheckoutSelection(scope, value);
     else saveRepositorySelection(scope, value);
   };
@@ -145,8 +148,20 @@ export function WorkspaceSourceControl({
       data-workspace-source-control={cwd}
     >
       {!plain || error ? (
-        <div className="flex shrink-0 items-center gap-2 border-b border-stroke px-2 py-1.5">
-          {!checkouts ? <span className="text-xs text-content/65">{t("Repository")}</span> : null}
+        <div className="flex shrink-0 items-center gap-1 border-b border-stroke px-2 py-1">
+          {!checkouts ? (
+            <Button
+              variant="item"
+              motion="none"
+              className="w-auto shrink-0 gap-1"
+              aria-expanded={listOpen}
+              aria-controls={repositoryListId}
+              onClick={() => setListOpen((open) => !open)}
+            >
+              {listOpen ? <ChevronDown className="size-3" /> : <ChevronRight className="size-3" />}
+              {t("Repository")}
+            </Button>
+          ) : null}
           <div
             className="min-w-0 flex-1"
             title={checkouts ? `${t("Working copy")} · ${active || t("All checkouts")}` : undefined}
@@ -211,59 +226,64 @@ export function WorkspaceSourceControl({
           {t("Could not refresh submodules. Refresh source control to retry.")}
         </p>
       ) : null}
-      {checkouts && active && modules[active]?.length ? (
-        <WorkspaceSourceControl
-          key={active}
-          cwd={active}
-          paths={[active]}
-          enabled={enabled}
-          textHarness={textHarness}
-          selectedPath={own(active) ? selectedPath : undefined}
-          selectedKind={own(active) ? selectedKind : undefined}
-          selectedSha={own(active) ? selectedSha : undefined}
-          onOpen={onOpen}
-        />
-      ) : active || plain ? (
-        <GitChangesPanel
-          key={active || cwd}
-          cwd={active || cwd}
-          enabled={enabled}
-          textHarness={textHarness}
-          selectedPath={own(active || cwd) ? selectedPath : undefined}
-          selectedKind={own(active || cwd) ? selectedKind : undefined}
-          selectedSha={own(active || cwd) ? selectedSha : undefined}
-          {...callbacks(active || cwd)}
-        />
-      ) : checkouts ? (
-        <CheckoutList
-          enabled={enabled}
-          cwd={cwd}
-          worktrees={paths.flatMap((path) => (worktrees[path] ? [worktrees[path]] : []))}
-          onSelect={choose}
-        />
-      ) : (
-        <div className="min-h-0 flex-1 overflow-y-auto">
-          {repositories.map((path) => (
-            <GitChangesPanel
-              key={path}
-              cwd={path}
-              enabled={enabled}
-              textHarness={textHarness}
-              selectedPath={own(path) ? selectedPath : undefined}
-              selectedKind={own(path) ? selectedKind : undefined}
-              selectedSha={own(path) ? selectedSha : undefined}
-              embedded
-              repository={{
-                name: name(path),
-                expanded: expanded[projectKey(path)],
-                onToggle: (value) =>
-                  setExpanded((current) => ({ ...current, [projectKey(path)]: value })),
-              }}
-              {...callbacks(path)}
-            />
-          ))}
-        </div>
-      )}
+      <div
+        id={repositoryListId}
+        className={!plain && !checkouts && !listOpen ? "hidden" : "flex min-h-0 flex-1 flex-col"}
+      >
+        {checkouts && active && modules[active]?.length ? (
+          <WorkspaceSourceControl
+            key={active}
+            cwd={active}
+            paths={[active]}
+            enabled={enabled}
+            textHarness={textHarness}
+            selectedPath={own(active) ? selectedPath : undefined}
+            selectedKind={own(active) ? selectedKind : undefined}
+            selectedSha={own(active) ? selectedSha : undefined}
+            onOpen={onOpen}
+          />
+        ) : active || plain ? (
+          <GitChangesPanel
+            key={active || cwd}
+            cwd={active || cwd}
+            enabled={enabled}
+            textHarness={textHarness}
+            selectedPath={own(active || cwd) ? selectedPath : undefined}
+            selectedKind={own(active || cwd) ? selectedKind : undefined}
+            selectedSha={own(active || cwd) ? selectedSha : undefined}
+            {...callbacks(active || cwd)}
+          />
+        ) : checkouts ? (
+          <CheckoutList
+            enabled={enabled}
+            cwd={cwd}
+            worktrees={paths.flatMap((path) => (worktrees[path] ? [worktrees[path]] : []))}
+            onSelect={choose}
+          />
+        ) : (
+          <div className="min-h-0 flex-1 overflow-y-auto">
+            {repositories.map((path) => (
+              <GitChangesPanel
+                key={path}
+                cwd={path}
+                enabled={enabled}
+                textHarness={textHarness}
+                selectedPath={own(path) ? selectedPath : undefined}
+                selectedKind={own(path) ? selectedKind : undefined}
+                selectedSha={own(path) ? selectedSha : undefined}
+                embedded
+                repository={{
+                  name: name(path),
+                  expanded: expanded[projectKey(path)],
+                  onToggle: (value) =>
+                    setExpanded((current) => ({ ...current, [projectKey(path)]: value })),
+                }}
+                {...callbacks(path)}
+              />
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

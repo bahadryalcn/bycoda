@@ -1,3 +1,5 @@
+import { Alert } from "../../../shared/ui/Alert";
+import { Button } from "../../../shared/ui/Button";
 import { fetchCheckDetails, hasCheckDetails } from "../model/prChecks";
 import { t, useLocale } from "../../../shared/i18n";
 import { CheckRepairForm, type CheckRepair } from "./CheckRepairForm";
@@ -40,28 +42,26 @@ import {
   type GithubCheckDetails,
 } from "../model/githubPrChecks";
 
-const TAB = "relative flex h-9 items-center gap-1.5 text-[12px] leading-none select-none";
-
 function overallMark(overall: GithubPrChecksOverall): {
   Icon: IconComponent;
   className: string;
 } {
   switch (overall.kind) {
     case "loading":
-      return { Icon: LoaderCircle, className: "animate-spin text-content/45" };
+      return { Icon: LoaderCircle, className: "animate-spin text-(--ui-text-secondary)" };
     case "error":
-      return { Icon: AlertCircle, className: "text-danger/90" };
+      return { Icon: AlertCircle, className: "text-(--ui-tone-danger-fg)" };
     case "fail":
-      return { Icon: CircleX, className: "text-danger/90" };
+      return { Icon: CircleX, className: "text-(--ui-tone-danger-fg)" };
     case "pending":
       return {
         Icon: LoaderCircle,
-        className: "animate-spin text-warning/70",
+        className: "animate-spin text-(--ui-tone-warning-fg)",
       };
     case "pass":
-      return { Icon: CheckCircle, className: "text-success/90" };
+      return { Icon: CheckCircle, className: "text-(--ui-tone-success-fg)" };
     case "neutral":
-      return { Icon: CircleDashed, className: "text-content/45" };
+      return { Icon: CircleDashed, className: "text-(--ui-text-secondary)" };
   }
 }
 
@@ -71,17 +71,17 @@ function checkMark(state: GithubPrCheckState): {
 } {
   switch (state) {
     case "pass":
-      return { Icon: CheckCircle, className: "text-success/90" };
+      return { Icon: CheckCircle, className: "text-(--ui-tone-success-fg)" };
     case "fail":
-      return { Icon: CircleX, className: "text-danger/90" };
+      return { Icon: CircleX, className: "text-(--ui-tone-danger-fg)" };
     case "pending":
-      return { Icon: LoaderCircle, className: "animate-spin text-content/55" };
+      return { Icon: LoaderCircle, className: "animate-spin text-(--ui-text-secondary)" };
     case "cancel":
-      return { Icon: Minus, className: "text-content/45" };
+      return { Icon: Minus, className: "text-(--ui-text-secondary)" };
     case "unknown":
-      return { Icon: CircleHelp, className: "text-content/45" };
+      return { Icon: CircleHelp, className: "text-(--ui-text-secondary)" };
     case "skipping":
-      return { Icon: CircleDashed, className: "text-content/40" };
+      return { Icon: CircleDashed, className: "text-(--ui-text-secondary)" };
   }
 }
 
@@ -100,27 +100,26 @@ export function PrChecksTab({
   const label = `Checks: ${overall.description}`;
   const failClass = mark.className.split(" ").find((entry) => entry.startsWith("text-")) ?? "";
   return (
-    <button
+    <Button
+      variant="tab"
       type="button"
       role="tab"
       aria-selected={selected}
       aria-label={label}
       title={label}
       onClick={onSelect}
-      className={`${TAB} ${selected ? "text-content" : "text-content/50 hover:text-content"}`}
     >
       <span className="leading-none">{t("Checks")}</span>
       <mark.Icon className={`size-3.5 shrink-0 ${mark.className}`} strokeWidth={1.75} />
       {overall.kind === "fail" ? (
         <span className={`tabular-nums leading-none ${failClass}`}>{overall.failed}</span>
       ) : null}
-      {selected ? <span className="absolute inset-x-0 bottom-0 h-0.5 bg-content" /> : null}
-    </button>
+      {selected ? (
+        <span className="absolute inset-x-0 bottom-0 h-0.5 bg-(--ui-tone-neutral-solid)" />
+      ) : null}
+    </Button>
   );
 }
-
-const REFRESH_BUTTON =
-  "grid size-6 shrink-0 place-items-center rounded-md text-content/45 hover:bg-content/10 hover:text-content disabled:cursor-default disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-content/45";
 
 function selectedChecksStillFailed(
   selected: readonly GithubPrCheck[],
@@ -265,12 +264,12 @@ function PrCheckRow({
           <span
             data-check-name
             title={check.name}
-            className="min-w-0 truncate text-[14px] font-medium leading-snug tracking-[-0.15px] text-content @max-[420px]/checks:text-[12px]"
+            className="min-w-0 truncate text-[14px] font-medium leading-snug tracking-[-0.15px] text-(--ui-tone-neutral-fg) @max-[420px]/checks:text-[12px]"
           >
             {check.name}
           </span>
           {workflow ? (
-            <span className="min-w-0 shrink-[2] truncate text-[11px] text-content/40 @max-[560px]/checks:hidden">
+            <span className="min-w-0 shrink-[2] truncate text-[11px] text-(--ui-text-secondary) @max-[560px]/checks:hidden">
               {workflow}
             </span>
           ) : null}
@@ -278,7 +277,7 @@ function PrCheckRow({
         {(!repairItem || expanded) && (failureMessage || failedStep) ? (
           <span
             title={subtitle}
-            className="mt-0.5 min-w-0 truncate text-[12px] leading-relaxed text-content/55 @max-[420px]/checks:text-[11px]"
+            className="mt-0.5 min-w-0 truncate text-[12px] leading-relaxed text-(--ui-text-secondary) @max-[420px]/checks:text-[11px]"
           >
             {subtitle}
           </span>
@@ -295,32 +294,38 @@ function PrCheckRow({
     <li
       ref={rowRef}
       tabIndex={-1}
-      className={`min-w-0 rounded-xl outline-none ${expanded ? "bg-content/[0.02]" : ""}`}
+      className={`min-w-0 rounded-xl outline-none ${expanded ? "bg-(--ui-surface-hover)" : ""}`}
     >
-      <div className="group/check flex min-w-0 items-center gap-2 rounded-xl px-2 py-2 hover:bg-content/[0.02] @max-[420px]/checks:gap-1">
+      <div className="group/check flex min-w-0 items-center gap-2 rounded-xl px-2 py-2 hover:bg-(--ui-surface-hover) @max-[420px]/checks:gap-1">
         {expandable ? (
-          <button
+          <Button
+            variant="item"
+            fullWidth
+            motion="none"
+            className="w-full min-w-0 flex-1 text-left"
             type="button"
             aria-label={t("{p0} details", { p0: check.name })}
             aria-expanded={expanded}
             aria-controls={detailsId}
             onClick={() => setExpanded(!expanded)}
-            className={`${className} min-w-0 flex-1 focus-visible:outline focus-visible:outline-1 focus-visible:outline-content/50`}
           >
             {body}
-          </button>
+          </Button>
         ) : linked ? (
           // The desktop WebView cannot rely on target=_blank, so rows open
           // through the same opener as every other external link.
-          <button
+          <Button
+            variant="item"
+            fullWidth
+            motion="none"
+            className="w-full min-w-0 flex-1 text-left"
             type="button"
             title={title}
             aria-label={title}
             onClick={() => void openUrl(url)}
-            className={className}
           >
             {body}
-          </button>
+          </Button>
         ) : (
           <div title={title} className={className}>
             {body}
@@ -335,11 +340,14 @@ function PrCheckRow({
             </span>
           )}
         </span>
-        <span className="mr-1 w-11 shrink-0 whitespace-nowrap text-right text-[10px] tabular-nums text-content/40 @max-[480px]/checks:hidden">
+        <span className="mr-1 w-11 shrink-0 whitespace-nowrap text-right text-[10px] tabular-nums text-(--ui-text-secondary) @max-[480px]/checks:hidden">
           {duration}
         </span>
         {onFix ? (
-          <button
+          <Button
+            iconOnly
+            label={t("Fix {p0} with AI", { p0: check.name })}
+            variant="ghost"
             type="button"
             ref={fixRef}
             onClick={(event) => onFix(event.currentTarget)}
@@ -348,15 +356,20 @@ function PrCheckRow({
             aria-expanded={fixOpen}
             aria-label={t("Fix {p0} with AI", { p0: check.name })}
             title={t("Fix with AI")}
-            className="grid size-7 shrink-0 place-items-center rounded-lg bg-content/[0.03] text-content/65 hover:bg-selection hover:text-content focus-visible:outline focus-visible:outline-1 focus-visible:outline-content/50"
+            className="shrink-0"
           >
             <Sparkles className="size-3.5" strokeWidth={1.75} />
-          </button>
+          </Button>
         ) : (
           <span className="size-7 shrink-0" aria-hidden="true" />
         )}
         {expandable ? (
-          <button
+          <Button
+            iconOnly
+            label={t(expanded ? "Collapse {p1} details" : "Expand {p1} details", {
+              p1: check.name,
+            })}
+            variant="ghost"
             type="button"
             aria-label={t(expanded ? "Collapse {p1} details" : "Expand {p1} details", {
               p1: check.name,
@@ -364,26 +377,29 @@ function PrCheckRow({
             aria-expanded={expanded}
             aria-controls={detailsId}
             onClick={() => setExpanded(!expanded)}
-            className="grid size-7 shrink-0 place-items-center rounded-lg text-content/40 hover:bg-content/5 hover:text-content focus-visible:outline focus-visible:outline-1 focus-visible:outline-content/50"
+            className="shrink-0"
           >
             <ChevronRight
               className={`size-3 transition-transform motion-reduce:transition-none ${expanded ? "rotate-90" : ""}`}
               strokeWidth={1.75}
             />
-          </button>
+          </Button>
         ) : (
           <span className="size-7 shrink-0" aria-hidden="true" />
         )}
         {linked ? (
-          <button
+          <Button
+            iconOnly
+            label={t("Open {p0} check", { p0: check.name })}
+            variant="ghost"
             type="button"
             title={t("View full log")}
+            className="opacity-60 group-hover/check:opacity-100 focus-visible:opacity-100"
             aria-label={t("Open {p0} check", { p0: check.name })}
             onClick={() => void openUrl(url)}
-            className={`${REFRESH_BUTTON} opacity-60 group-hover/check:opacity-100 focus-visible:opacity-100`}
           >
             <ExternalLink className="size-3" strokeWidth={1.75} />
-          </button>
+          </Button>
         ) : (
           <span className="size-6 shrink-0" aria-hidden="true" />
         )}
@@ -394,23 +410,22 @@ function PrCheckRow({
           className="min-w-0 space-y-3 py-3 pl-10 pr-3 text-[12px] @max-[420px]/checks:pl-3"
         >
           {loading && !details ? (
-            <p role="status" className="flex items-center gap-2 px-2 py-1 text-content/50">
+            <p
+              role="status"
+              className="flex items-center gap-2 px-2 py-1 text-(--ui-text-secondary)"
+            >
               <LoaderCircle className="size-4 shrink-0 animate-spin" strokeWidth={1.75} />
               {t("Loading steps…")}
             </p>
           ) : null}
           {error ? (
-            <div role="alert" className="space-y-2 text-content/60">
+            <Alert tone="info" role="alert">
               <p>{t("Could not load job details.")}</p>
               <p className="break-words text-[11px]">{error}</p>
-              <button
-                type="button"
-                onClick={() => setRetry((value) => value + 1)}
-                className="rounded px-2 py-1 hover:bg-content/5"
-              >
+              <Button variant="ghost" type="button" onClick={() => setRetry((value) => value + 1)}>
                 {t("Retry details")}
-              </button>
-            </div>
+              </Button>
+            </Alert>
           ) : null}
           {details ? (
             <>
@@ -424,10 +439,10 @@ function PrCheckRow({
               ) : null}
               {details.steps.length ? (
                 <details className="group/steps">
-                  <summary className="flex cursor-pointer list-none items-center gap-1 text-[11px] text-content/50 hover:text-content [&::-webkit-details-marker]:hidden">
+                  <summary className="flex cursor-pointer list-none items-center gap-1 text-[11px] text-(--ui-text-secondary) hover:text-(--ui-tone-neutral-fg) [&::-webkit-details-marker]:hidden">
                     <ChevronRight className="size-3 transition-transform group-open/steps:rotate-90 motion-reduce:transition-none" />
                     {t("View run steps")}
-                    <span className="ml-auto pl-2 text-right text-[10px] text-content/35 @max-[420px]/checks:hidden">
+                    <span className="ml-auto pl-2 text-right text-[10px] text-(--ui-text-secondary) @max-[420px]/checks:hidden">
                       {describeCheckCounts(countChecks(details.steps))}
                     </span>
                   </summary>
@@ -437,17 +452,17 @@ function PrCheckRow({
                       return (
                         <li
                           key={index}
-                          className={`flex items-center gap-2 rounded px-2 py-1 ${step.state === "fail" ? "bg-danger/5" : ""}`}
+                          className={`flex items-center gap-2 rounded px-2 py-1 ${step.state === "fail" ? "bg-(--ui-tone-danger-subtle)" : ""}`}
                         >
                           <stepMark.Icon
                             className={`size-4 shrink-0 ${stepMark.className}`}
                             strokeWidth={1.75}
                           />
-                          <span className="min-w-0 flex-1 break-words text-content/80">
+                          <span className="min-w-0 flex-1 break-words text-(--ui-text-secondary)">
                             {step.name}
                             <span className="sr-only">: {checkStateLabel(step.state)}</span>
                           </span>
-                          <span className="shrink-0 tabular-nums text-content/45">
+                          <span className="shrink-0 tabular-nums text-(--ui-text-secondary)">
                             {checkDuration(step.startedAt, step.completedAt)}
                           </span>
                         </li>
@@ -456,10 +471,10 @@ function PrCheckRow({
                   </ol>
                 </details>
               ) : (
-                <p className="text-content/50">{t("No steps reported for this job.")}</p>
+                <p className="text-(--ui-text-secondary)">{t("No steps reported for this job.")}</p>
               )}
               {check.state === "fail" && !details.annotations.length && !details.notice ? (
-                <p className="mt-3 text-content/50">
+                <p className="mt-3 text-(--ui-text-secondary)">
                   {t("No error annotations reported. View the full log at the check URL.")}
                 </p>
               ) : null}
@@ -472,7 +487,7 @@ function PrCheckRow({
                 </details>
               ) : null}
               {details.notice ? (
-                <p role="status" className="mt-3 text-content/50">
+                <p role="status" className="mt-3 text-(--ui-text-secondary)">
                   {details.notice}
                 </p>
               ) : null}
@@ -531,7 +546,7 @@ export function InboxPrChecks({
   }, [selection, selectionValid]);
   if (loading) {
     return (
-      <div className="flex justify-center py-10 text-content/40">
+      <div className="flex justify-center py-10 text-(--ui-text-secondary)">
         <LoaderCircle className="size-4 animate-spin" strokeWidth={1.75} />
       </div>
     );
@@ -539,19 +554,19 @@ export function InboxPrChecks({
   if (!checks && error) {
     return (
       <div className="flex flex-col items-start gap-2" data-inbox-pr-checks>
-        <p role="alert" className="text-[13px] text-content/50">
+        <Alert tone="info" role="alert">
           {error}
-        </p>
-        <button
+        </Alert>
+        <Button
+          variant="ghost"
           type="button"
           title={t("Retry loading checks")}
           aria-label={t("Retry loading checks")}
           onClick={onRefresh}
-          className="inline-flex h-7 items-center gap-1.5 rounded-md border border-content/15 px-3 text-[12px] text-content/80 hover:bg-content/5"
         >
           <RefreshCw className="size-3.5" strokeWidth={1.75} />
           {t("Retry")}
-        </button>
+        </Button>
       </div>
     );
   }
@@ -585,7 +600,7 @@ export function InboxPrChecks({
       className="@container/checks flex min-w-0 flex-col gap-2"
     >
       {checks?.pipelineOid && checks.pipelineOid !== checks.headOid ? (
-        <p className="px-2 text-xs text-content/50">
+        <p className="px-2 text-xs text-(--ui-text-secondary)">
           {t("Pipeline commit")}: {checks.pipelineOid.slice(0, 12)} · {t("Source commit")}:{" "}
           {checks.headOid.slice(0, 12)}
         </p>
@@ -598,7 +613,7 @@ export function InboxPrChecks({
                 {headline}
               </h2>
               {summary ? (
-                <p className="mt-1 text-[12px] text-content/55">
+                <p className="mt-1 text-[12px] text-(--ui-text-secondary)">
                   {summary.charAt(0).toUpperCase() + summary.slice(1)}.
                 </p>
               ) : null}
@@ -608,7 +623,8 @@ export function InboxPrChecks({
         </div>
         <div className="flex shrink-0 items-center gap-2">
           {repair && rows.some((row) => row.state === "fail") ? (
-            <button
+            <Button
+              variant="ghost"
               ref={allFixRef}
               type="button"
               disabled={refreshing || stale || Boolean(error)}
@@ -622,7 +638,7 @@ export function InboxPrChecks({
               aria-haspopup="dialog"
               aria-label={t("Fix all failed")}
               aria-expanded={Boolean(selection && selection.anchor === allFixRef.current)}
-              className="primary-action inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg px-2.5 text-[12px] font-medium focus-visible:outline focus-visible:outline-1 focus-visible:outline-content/50"
+              className="shrink-0"
             >
               <Sparkles className="size-3.5" strokeWidth={1.75} />
               {t("Fix all failed")}
@@ -632,22 +648,22 @@ export function InboxPrChecks({
               >
                 {counts.fail}
               </span>
-            </button>
+            </Button>
           ) : null}
-          <button
+          <Button
+            variant="ghost"
             type="button"
             title={t("Refresh checks")}
             aria-label={t("Refresh checks")}
             disabled={refreshing}
             onClick={onRefresh}
-            className={REFRESH_BUTTON}
           >
             {refreshing ? (
               <LoaderCircle className="size-3.5 animate-spin" strokeWidth={1.75} />
             ) : (
               <RefreshCw className="size-3.5" strokeWidth={1.75} />
             )}
-          </button>
+          </Button>
         </div>
       </div>
       {repair ? (
@@ -669,7 +685,7 @@ export function InboxPrChecks({
         />
       ) : null}
       {stale && error ? (
-        <p role="status" className="px-2 text-[12px] text-content/55">
+        <p role="status" className="px-2 text-[12px] text-(--ui-text-secondary)">
           {t("Saved results may be out of date.")}
         </p>
       ) : null}
@@ -689,7 +705,7 @@ export function InboxPrChecks({
       {rows.length > 0 ? (
         <div className="flex items-center justify-between gap-3 py-2">
           <div
-            className="inline-flex gap-0.5 rounded-lg border border-stroke bg-content/[0.02] p-0.5"
+            className="inline-flex gap-0.5 rounded-lg border border-(--ui-tone-neutral-border) bg-(--ui-surface-hover) p-0.5"
             aria-label={t("Filter checks")}
           >
             {(
@@ -698,7 +714,8 @@ export function InboxPrChecks({
                 ["all", "All checks", rows.length],
               ] as const
             ).map(([value, label, count]) => (
-              <button
+              <Button
+                variant="ghost"
                 key={value}
                 type="button"
                 aria-label={`${label}: ${count}`}
@@ -709,28 +726,29 @@ export function InboxPrChecks({
                   setShowOthers(false);
                   setSelection(null);
                 }}
-                className={`inline-flex items-center gap-2 rounded-md px-2.5 py-1 text-[12px] disabled:opacity-40 ${activeFilter === value ? "bg-selection text-content shadow-sm" : "text-content/50 hover:text-content"}`}
               >
                 {label}
-                <span className="tabular-nums text-content/40">{count}</span>
-              </button>
+                <span className="tabular-nums text-(--ui-text-secondary)">{count}</span>
+              </Button>
             ))}
           </div>
-          <span className="text-[10px] text-content/40 @max-[420px]/checks:hidden">
+          <span className="text-[10px] text-(--ui-text-secondary) @max-[420px]/checks:hidden">
             {counts.fail ? t("Failures first") : ""}
           </span>
         </div>
       ) : null}
       {rows.length === 0 ? (
-        <p className="text-[13px] text-content/45">{t("No checks reported")}</p>
+        <p className="text-[13px] text-(--ui-text-secondary)">{t("No checks reported")}</p>
       ) : (
         <>
           {groups.map((group) =>
             group.rows.length ? (
               <div key={group.state} hidden={group.hidden} className={group.hidden ? "hidden" : ""}>
-                <h3 className="mb-1.5 mt-3 flex items-center gap-2 px-2 text-[12px] font-normal text-content/55">
+                <h3 className="mb-1.5 mt-3 flex items-center gap-2 px-2 text-[12px] font-normal text-(--ui-text-secondary)">
                   {checkStateLabel(group.state)}
-                  <span className="text-[10px] text-content/35">{group.rows.length}</span>
+                  <span className="text-[10px] text-(--ui-text-secondary)">
+                    {group.rows.length}
+                  </span>
                 </h3>
                 <ul className="flex flex-col gap-0.5">
                   {group.rows.map((check, index) => (
@@ -789,11 +807,12 @@ export function InboxPrChecks({
             ) : null,
           )}
           {activeFilter === "attention" && counts.pass + counts.skipping > 0 ? (
-            <button
+            <Button
+              variant="ghost"
               type="button"
               aria-expanded={showOthers}
               onClick={() => setShowOthers(!showOthers)}
-              className="mt-3 flex items-center gap-2 border-t border-stroke px-2 pt-4 text-left text-[11px] text-content/50 hover:text-content"
+              className="mt-3 text-left"
             >
               <ChevronRight className={`size-3 ${showOthers ? "rotate-90" : ""}`} />
               {describeCheckCounts({
@@ -801,7 +820,7 @@ export function InboxPrChecks({
                 pass: counts.pass,
                 skipping: counts.skipping,
               })}
-            </button>
+            </Button>
           ) : null}
         </>
       )}

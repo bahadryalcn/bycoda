@@ -24,10 +24,6 @@
   color: var(--color-content);
 }
 
-.row[data-session] {
-  background: var(--ui-surface-selected);
-}
-
 .identity {
   display: flex;
   flex: 1;
@@ -54,21 +50,6 @@
 .folder {
   flex-shrink: 2;
   color: var(--ui-text-muted);
-}
-
-.tag {
-  flex-shrink: 0;
-  padding: 0 6px;
-  border-radius: 999px;
-  background: var(--ui-surface-muted);
-  font-size: var(--ui-font-caption);
-  line-height: 18px;
-  white-space: nowrap;
-  color: var(--ui-text-secondary);
-}
-
-.tag[data-tone="accent"] {
-  color: var(--color-accent);
 }
 
 .badges {
@@ -99,12 +80,6 @@
 /* Delete stays reachable but recedes until its row is hovered or focused. */
 .delete {
   flex-shrink: 0;
-  opacity: 0.45;
-}
-
-.item:hover .delete,
-.item:focus-within .delete {
-  opacity: 1;
 }
 
 .deleteSlot {
@@ -119,10 +94,4 @@
   padding: 10px 8px 4px;
   font-size: var(--ui-font-caption);
   color: var(--ui-text-secondary);
-}
-
-@media (prefers-reduced-motion: no-preference) {
-  .delete {
-    transition: opacity 120ms ease;
-  }
 }

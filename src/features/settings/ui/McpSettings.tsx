@@ -1,3 +1,7 @@
+import { Alert } from "../../../shared/ui/Alert";
+import { Badge } from "../../../shared/ui/Badge";
+import { Select as SharedSelect, NativeSelect } from "../../../shared/ui/Select";
+import { TextareaField } from "../../../shared/ui/TextareaField";
 import { t, useLocale } from "../../../shared/i18n";
 import { useRetainedState } from "../../../shared/hooks/useRetainedState";
 import { pathKey } from "../../../shared/lib/paths";
@@ -21,9 +25,7 @@ import { TextField } from "../../../shared/ui/TextField";
 import styles from "./McpSettings.module.css";
 import { ExternalMcpAccess } from "./ExternalMcpAccess";
 import { Modal } from "../../../shared/ui/Modal";
-import { Popover } from "../../../shared/ui/Popover";
-import { LAYER } from "../../../shared/lib/layers";
-import { Globe, Plus, RefreshCw, ChevronDown, ListFilter, Check } from "../../../shared/ui/icons";
+import { Globe, Plus, RefreshCw, ListFilter } from "../../../shared/ui/icons";
 import { MCP_PROVIDER_LABELS, type McpConnection } from "../model/mcp";
 import { AdvancedSettings, Row } from "./settingsControls";
 import {
@@ -85,83 +87,14 @@ function McpPicker<T extends string>({
   options: { value: T; label: string; icon?: ReactNode }[];
   onChange: (value: T) => void;
 }) {
-  useLocale();
-  const [open, setOpen] = useState(false);
-  const anchor = useRef<HTMLDivElement>(null);
-  const trigger = useRef<HTMLButtonElement>(null);
-  const selected = options.find((option) => option.value === value);
   return (
-    <div ref={anchor} className="relative min-w-0">
-      <span className="text-xs text-content/65">{label}</span>
-      <button
-        ref={trigger}
-        type="button"
-        aria-label={`${label}: ${selected?.label ?? value}`}
-        aria-haspopup="listbox"
-        aria-expanded={open}
-        onClick={() => setOpen(!open)}
-        className="mt-1 flex h-8 w-full items-center gap-2 rounded-md border border-content/10 bg-content/5 px-2 text-left text-[12px] text-content outline-none hover:border-content/20 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-accent"
-      >
-        {selected?.icon}
-        <span className="min-w-0 flex-1 truncate">{selected?.label ?? value}</span>
-        <ChevronDown
-          className={`size-3.5 shrink-0 text-content/50 transition-transform ${open ? "rotate-180" : ""}`}
-          strokeWidth={1.75}
-        />
-      </button>
-      {open ? (
-        <Popover
-          anchor={anchor}
-          side="bottom"
-          align="start"
-          width={240}
-          maxHeight={320}
-          layer={LAYER.dialogPopover}
-          autoFocus
-          onDismiss={() => setOpen(false)}
-          role="listbox"
-          aria-label={label}
-          data-dialog-popover
-          onKeyDown={(event) => {
-            if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
-            event.preventDefault();
-            const choices = Array.from(
-              event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="option"]'),
-            );
-            if (choices.length === 0) return;
-            const current = choices.indexOf(document.activeElement as HTMLButtonElement);
-            const direction = event.key === "ArrowDown" ? 1 : -1;
-            const next =
-              current < 0
-                ? direction === 1
-                  ? 0
-                  : choices.length - 1
-                : (current + direction + choices.length) % choices.length;
-            choices[next].focus();
-          }}
-          className="overflow-y-auto overscroll-contain p-1"
-        >
-          {options.map((option) => (
-            <button
-              key={option.value}
-              type="button"
-              role="option"
-              aria-selected={value === option.value}
-              onClick={() => {
-                onChange(option.value);
-                setOpen(false);
-                trigger.current?.focus();
-              }}
-              className={`flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-[12px] focus-visible:outline-2 focus-visible:outline-accent ${value === option.value ? "bg-selection text-content" : "text-content hover:bg-content/5"}`}
-            >
-              {option.icon}
-              <span className="min-w-0 flex-1 truncate">{option.label}</span>
-              {value === option.value ? <Check className="size-3.5 shrink-0" /> : null}
-            </button>
-          ))}
-        </Popover>
-      ) : null}
-    </div>
+    <SharedSelect
+      loopNavigation
+      label={label}
+      value={value}
+      options={options}
+      onValueChange={(value) => onChange(value as T)}
+    />
   );
 }
 
@@ -252,23 +185,27 @@ function AddServerModal({
         <label className="block text-xs text-content/65">
           {t("Name")}{" "}
           <span className="text-content/40">{t("(optional for an mcpServers block)")}</span>
-          <input
+          <TextField
+            hideLabel
+            label={t("Name")}
             value={name}
             pattern={provider === "opencode" ? undefined : "[A-Za-z0-9_-]*"}
             onChange={(event) => setName(event.target.value)}
-            className="mt-1 block h-8 w-full rounded-md border border-content/10 bg-transparent px-2 text-[12px] text-content outline-none placeholder:text-content/30 focus:border-content/20"
+
             placeholder={t("my-server")}
           />
         </label>
         <label className="block text-xs text-content/65">
           {t("JSON configuration")}
-          <textarea
+          <TextareaField
+            hideLabel
+            label={t("JSON configuration")}
             required
             value={config}
             onChange={(event) => setConfig(event.target.value)}
             rows={7}
             spellCheck={false}
-            className="mt-1 block w-full rounded-md border border-content/10 bg-transparent px-2 py-1.5 font-mono text-[12px] text-content outline-none placeholder:text-content/30 focus:border-content/20"
+
             placeholder={
               '{"mcpServers":{"my-server":{"command":"npx","args":["-y","example-mcp"]}}}'
             }
@@ -288,29 +225,17 @@ function AddServerModal({
           />
         </AdvancedSettings>
         {error ? (
-          <p
-            role="alert"
-            className="rounded-md border border-danger/30 bg-danger/10 p-2 text-xs text-danger"
-          >
+          <Alert tone="danger" role="alert">
             {error}
-          </p>
+          </Alert>
         ) : null}
         <div className="flex justify-end gap-2">
-          <button
-            type="button"
-            onClick={onClose}
-            disabled={busy}
-            className="rounded-md border border-content/10 px-2.5 py-1 text-[12px] text-content/70 hover:bg-content/10 hover:text-content"
-          >
+          <Button variant="ghost" size="sm" type="button" onClick={onClose} disabled={busy}>
             {t("Cancel")}
-          </button>
-          <button
-            type="submit"
-            disabled={busy}
-            className="rounded-md border border-content/10 px-2.5 py-1 text-[12px] text-content/70 hover:bg-content/10 hover:text-content disabled:opacity-40"
-          >
+          </Button>
+          <Button variant="primary" size="sm" type="submit" loading={busy} disabled={busy}>
             {busy ? t("Adding…") : t("Add server")}
-          </button>
+          </Button>
         </div>
       </form>
     </Modal>
@@ -332,7 +257,7 @@ export function McpSettings({ cwd, recents = [] }: { cwd: string; recents?: Rece
             railCwd={cwd}
             recents={recents}
             className="w-fit max-w-full shrink-0"
-            buttonClassName="h-7.5 max-w-full gap-2 bg-content/5 px-2.5 text-[13px] hover:bg-content/12 active:scale-[0.98]"
+            buttonClassName="max-w-full"
             onSelectProject={(path) => setSelection({ initialCwd: cwd, project: path })}
           />
         }
@@ -560,12 +485,9 @@ function McpConnections({ cwd, projectPicker }: { cwd: string; projectPicker: Re
         ))}
       </div>
       {error ? (
-        <p
-          role="alert"
-          className="rounded-md border border-danger/30 bg-danger/10 p-3 text-xs text-danger"
-        >
+        <Alert tone="danger" role="alert">
           {error}
-        </p>
+        </Alert>
       ) : null}
       {claudeError && (filter === "all" || filter === "claude") ? (
         <p className="text-xs text-content/55">
@@ -623,7 +545,7 @@ function McpConnections({ cwd, projectPicker }: { cwd: string; projectPicker: Re
                   </div>
                 </details>
               </div>
-              <span className={styles.status}>{server.status}</span>
+              <Badge className={styles.status}>{server.status}</Badge>
               <div className={styles.actions}>
                 {server.provider !== "claude_desktop" &&
                 server.transport &&
@@ -637,7 +559,7 @@ function McpConnections({ cwd, projectPicker }: { cwd: string; projectPicker: Re
                     {!server.configPath ? (
                       <label className="text-xs text-content/55">
                         {t("Scope")}{" "}
-                        <select
+                        <NativeSelect
                           aria-label={t("Scope to remove {p0} from", { p0: server.name })}
                           value={removeScopes[server.name] ?? "local"}
                           onChange={(event) =>
@@ -646,12 +568,11 @@ function McpConnections({ cwd, projectPicker }: { cwd: string; projectPicker: Re
                               [server.name]: event.target.value as Scope,
                             }))
                           }
-                          className="rounded border border-stroke bg-background-base px-1 py-1 text-content"
                         >
                           <option value="local">{t("Local project")}</option>
                           <option value="project">{t("Project")}</option>
                           <option value="user">{t("Personal")}</option>
-                        </select>
+                        </NativeSelect>
                       </label>
                     ) : null}
                     <Button

@@ -1,4 +1,5 @@
-import { SearchInput } from "../../../shared/ui/SearchInput";
+import { Button } from "../../../shared/ui/Button";
+import { SearchInput, SearchInputGroup } from "../../../shared/ui/SearchInput";
 import { t, useLocale } from "../../../shared/i18n/technical";
 import {
   useCallback,
@@ -340,13 +341,11 @@ export function FilePreviewSearch({
           className="relative z-30 flex h-[35px] shrink-0 items-center gap-1 border-b border-stroke px-2 py-1 text-content"
           onKeyDown={onKeyDown}
         >
-          <div
-            className={`flex h-[26px] min-w-0 flex-1 items-center rounded-md border bg-content/[0.06] px-2 ${
-              (query && total === 0) || result.invalid ? "border-danger/55" : "border-content/10"
-            }`}
-          >
+          <SearchInputGroup appearance="field" className="min-w-0 flex-1">
             <SearchInput
               ref={inputRef}
+              focusOwner="group"
+              aria-invalid={Boolean((query && total === 0) || result.invalid)}
               type="text"
               value={query}
               aria-label={t("Find")}
@@ -356,17 +355,19 @@ export function FilePreviewSearch({
               autoCapitalize="off"
               spellCheck={false}
               onChange={(event) => updateQuery(event.currentTarget.value)}
-              className="h-6 min-w-0 flex-1 border-0 bg-transparent p-0 font-mono text-[12px] text-content outline-none"
+              className="min-w-0 flex-1"
             />
             <span
               aria-live="polite"
               className={`w-[13ch] shrink-0 overflow-hidden pl-2 text-right font-mono text-[11px] tabular-nums text-ellipsis whitespace-nowrap ${
-                (query && total === 0) || result.invalid ? "text-danger" : "text-content/45"
+                (query && total === 0) || result.invalid
+                  ? "text-danger"
+                  : "text-[var(--ui-text-muted)]"
               }`}
             >
               {count}
             </span>
-          </div>
+          </SearchInputGroup>
           <FindToggle
             label={t("Aa")}
             title={t("Match Case ({p0}C)", { p0: ALT })}
@@ -426,19 +427,19 @@ function FindToggle({
 }) {
   useLocale();
   return (
-    <button
+    <Button
+      variant="ghost"
+      motion="none"
       type="button"
       title={title}
       aria-label={title.slice(0, title.lastIndexOf(" ("))}
       aria-pressed={pressed}
       onMouseDown={(event) => event.preventDefault()}
       onClick={onClick}
-      className={`grid size-6 shrink-0 place-items-center rounded-md font-mono text-[11px] font-semibold hover:bg-content/10 hover:text-content ${
-        pressed ? "bg-accent/25 text-content" : "text-content/60"
-      }`}
+      className={" grid size-6 shrink-0 place-items-center font-mono "}
     >
       {label}
-    </button>
+    </Button>
   );
 }
 
@@ -457,17 +458,19 @@ function FindButton({
 }) {
   useLocale();
   return (
-    <button
+    <Button
+      variant="ghost"
+      motion="none"
       type="button"
       title={title}
       aria-label={label}
       disabled={disabled}
       onMouseDown={(event) => event.preventDefault()}
       onClick={onClick}
-      className="grid size-6 shrink-0 place-items-center rounded-md text-content/60 hover:bg-content/10 hover:text-content disabled:opacity-35"
+      className="grid size-6 shrink-0 place-items-center"
     >
       {children}
-    </button>
+    </Button>
   );
 }
 
@@ -613,12 +616,10 @@ function ensureHighlightStyles(document: Document | null | undefined) {
   style.id = HIGHLIGHT_STYLE_ID;
   style.textContent = `
     ::highlight(${MATCH_HIGHLIGHT}) {
-      background-color: rgba(226, 192, 141, 0.46);
-      background-color: color-mix(in srgb, var(--color-search) 46%, transparent);
+      background-color: var(--color-selection);
     }
     ::highlight(${CURRENT_HIGHLIGHT}) {
-      background-color: rgba(69, 155, 247, 0.62);
-      background-color: color-mix(in srgb, var(--color-accent) 62%, transparent);
+      background-color: var(--color-selection-strong);
     }
   `;
   document.head.append(style);

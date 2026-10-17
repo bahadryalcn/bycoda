@@ -1,8 +1,10 @@
+import { Progress } from "../../../shared/ui/Progress";
+import { Button } from "../../../shared/ui/Button";
 import { errorText } from "../../../shared/lib/errors";
 import { t, useLocale, getLocale } from "../../../shared/i18n/git";
 import { useEffect, useState } from "react";
 import { GitFeedback } from "./GitFeedback";
-import { Loader } from "../../../shared/ui/icons";
+
 import { Modal } from "../../../shared/ui/Modal";
 import {
   gitBlame,
@@ -91,12 +93,7 @@ type DialogProps = {
 
 function Loading() {
   useLocale();
-  return (
-    <div role="status" className="flex items-center gap-2 p-4 text-[12px] text-content/50">
-      <Loader className="size-3.5 animate-spin" strokeWidth={1.75} />
-      {t("Loading…")}
-    </div>
-  );
+  return <Progress label={t("Loading…")} compact />;
 }
 
 function FileHistoryDialog({ request, onClose, onOpenCommit }: DialogProps) {
@@ -136,25 +133,31 @@ function FileHistoryDialog({ request, onClose, onOpenCommit }: DialogProps) {
       ) : !commits ? (
         <Loading />
       ) : commits.length === 0 ? (
-        <p className="p-4 text-[12px] text-content/50">{t("No commits touch this file")}</p>
+        <p className="p-4 text-[12px] text-[var(--ui-text-secondary)]">
+          {t("No commits touch this file")}
+        </p>
       ) : (
         <ul className="min-h-0 overflow-y-auto p-1.5">
           {commits.map((commit) => (
             <li key={commit.sha}>
-              <button
+              <Button
+                variant="item"
+                motion="none"
                 type="button"
                 onClick={() => onOpenCommit(commit)}
-                className="flex h-8 w-full items-center gap-2 rounded-md px-2 text-left text-[12px] hover:bg-content/5"
+                className="flex h-8 w-full items-center gap-2 text-left"
               >
-                <span className="shrink-0 font-mono text-[11px] text-content/45">
+                <span className="shrink-0 font-mono text-[11px] text-[var(--ui-text-muted)]">
                   {commit.shortSha}
                 </span>
                 <span className="min-w-0 flex-1 truncate text-content">{commit.subject}</span>
-                <span className="shrink-0 truncate text-content/45">{commit.author}</span>
-                <span className="shrink-0 tabular-nums text-content/40">
+                <span className="shrink-0 truncate text-[var(--ui-text-muted)]">
+                  {commit.author}
+                </span>
+                <span className="shrink-0 tabular-nums text-[var(--ui-text-muted)]">
                   {shortDate(commit.timestamp)}
                 </span>
-              </button>
+              </Button>
             </li>
           ))}
         </ul>
@@ -216,7 +219,9 @@ function BlameDialog({ request, onClose, onOpenCommit }: DialogProps) {
                 key={entry.line}
                 className={`flex whitespace-pre ${first ? "border-t border-stroke/60" : ""}`}
               >
-                <button
+                <Button
+                  variant="ghost"
+                  motion="none"
                   type="button"
                   disabled={uncommitted}
                   title={
@@ -234,15 +239,15 @@ function BlameDialog({ request, onClose, onOpenCommit }: DialogProps) {
                       head: false,
                     })
                   }
-                  className="w-48 shrink-0 truncate pr-3 text-left font-sans text-[11px] text-content/50 enabled:hover:text-content enabled:hover:underline"
+                  className="w-48 shrink-0 truncate text-left"
                 >
                   {first
                     ? uncommitted
                       ? t("Not committed yet")
                       : `${entry.author} · ${shortDate(entry.timestamp)} · ${entry.summary}`
                     : ""}
-                </button>
-                <span className="w-10 shrink-0 pr-3 text-right text-content/35 select-none">
+                </Button>
+                <span className="w-10 shrink-0 pr-3 text-right text-[var(--ui-text-muted)] select-none">
                   {entry.line}
                 </span>
                 <span className="text-content">{data.lines[entry.line - 1] ?? ""}</span>

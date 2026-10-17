@@ -1,3 +1,4 @@
+import { Button } from "../../../shared/ui/Button";
 import { SearchInput } from "../../../shared/ui/SearchInput";
 import { t, useLocale } from "../../../shared/i18n/git";
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
@@ -71,6 +72,7 @@ export function GitPickDialog({
     >
       <div className="flex min-h-0 flex-col gap-2 p-3">
         <SearchInput
+          appearance="field"
           standalone
           type="text"
           value={query}
@@ -86,35 +88,36 @@ export function GitPickDialog({
             setActive(0);
           }}
           onKeyDown={onKeyDown}
-          containerClassName=""
-          className="h-8 rounded-md border border-content/10 bg-content/5 px-2.5 font-sans text-[13px] text-content outline-none placeholder:text-content/30 focus:border-content/25"
         />
         {shown.length === 0 ? (
-          <p className="px-1 py-2 text-[12px] text-content/45">
+          <p className="px-1 py-2 text-[12px] text-[var(--ui-text-muted)]">
             {items.length === 0 ? emptyText : t("Nothing matches")}
           </p>
         ) : (
           <ul ref={list} role="listbox" className="max-h-72 overflow-y-auto">
             {shown.map((item, index) => (
               <li key={item.id} role="option" aria-selected={index === active}>
-                <button
+                <Button
+                  selected={index === active}
+                  variant="item"
+                  motion="none"
                   type="button"
                   tabIndex={-1}
                   data-pick-index={index}
                   title={item.detail ? `${item.label} · ${item.detail}` : item.label}
                   onMouseEnter={() => setActive(index)}
                   onClick={() => onPick(item.id)}
-                  className={`flex h-8 w-full items-center gap-2 rounded-md px-2 text-left text-[13px] text-content ${
-                    index === active ? "bg-selection" : "hover:bg-content/5"
-                  }`}
+                  className={`  flex h-8 w-full items-center gap-2 text-left  ${
+                    index === active ? "" : ""
+                  }   `}
                 >
                   <span className="min-w-0 truncate">{item.label}</span>
                   {item.detail ? (
-                    <span className="min-w-0 flex-1 truncate text-[11px] text-content/45">
+                    <span className="min-w-0 flex-1 truncate text-[11px] text-[var(--ui-text-muted)]">
                       {item.detail}
                     </span>
                   ) : null}
-                </button>
+                </Button>
               </li>
             ))}
           </ul>

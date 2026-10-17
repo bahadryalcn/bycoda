@@ -224,14 +224,17 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(function Input(
   const Control = clearable || props.type === "search" ? SearchInput : "input";
   return (
     <div className={[styles.field, fieldClassName].filter(Boolean).join(" ")}>
-      <label className={hideLabel ? styles.srOnly : styles.label} htmlFor={controlId}>
-        {label}
-      </label>
+      {!hideLabel && (
+        <label className={styles.label} htmlFor={controlId}>
+          {label}
+        </label>
+      )}
       <Control
         {...props}
         {...(Control === SearchInput ? { standalone: true } : {})}
         id={controlId}
         ref={ref}
+        aria-label={props["aria-label"] ?? (hideLabel && label ? label : undefined)}
         className={[styles.input, className].filter(Boolean).join(" ")}
         aria-invalid={error ? true : props["aria-invalid"]}
         aria-describedby={describedBy}

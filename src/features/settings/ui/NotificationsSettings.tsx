@@ -1,3 +1,4 @@
+import { Badge } from "../../../shared/ui/Badge";
 import { useEffect, useState } from "react";
 import { IS_MAC, IS_WIN } from "../../../platform/tauri/platform";
 import { t, useLocale } from "../../../shared/i18n";
@@ -216,11 +217,11 @@ function NotificationsBlocked() {
         <span>{t("Allow notifications in your system settings to receive desktop alerts.")}</span>
       )}
       {error ? (
-        <span role="alert" className="text-danger">
+        <Badge tone="danger" role="alert">
           {t(
             "Could not open system settings. Open notification permissions from your system settings.",
           )}
-        </span>
+        </Badge>
       ) : null}
     </span>
   );

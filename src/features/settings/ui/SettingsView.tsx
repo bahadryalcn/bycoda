@@ -1,3 +1,4 @@
+import { Button } from "../../../shared/ui/Button";
 import { t, useLocale } from "../../../shared/i18n";
 import { ConnectionsSettings } from "../../connections/ui/ConnectionsSettings";
 import { TemplatesSettings } from "./TemplatesSettings";
@@ -250,16 +251,17 @@ export function SettingsView({
       >
         {IS_MAC && !besideRail ? <div className="w-[78px] shrink-0" /> : null}
         <div className="flex min-w-0 flex-1 items-center gap-2 px-3 text-[13px]">
-          <button
+          <Button
+            variant="ghost"
+            size="sm"
             type="button"
             onClick={onClose}
             aria-label={t("Back to workspace")}
             data-tauri-drag-region="false"
-            className="flex min-w-0 items-center gap-1.5 rounded-md px-2 py-1.5 text-content/70 hover:bg-content/10 hover:text-content"
           >
             <ArrowLeft className="size-3.5 shrink-0" aria-hidden="true" />
             <span className="truncate">{t("Back to workspace")}</span>
-          </button>
+          </Button>
           <span className="min-w-0 truncate text-content/60">
             {section === "usage" ? t("Usage / This machine") : t("Settings")}
           </span>
@@ -279,14 +281,10 @@ export function SettingsView({
         <div className="bycoda-settings-toolbar-actions">
           <SettingsSearch onReveal={onReveal} />
           {section === "appearance" ? (
-            <button
-              type="button"
-              onClick={appearance.restoreDefaults}
-              className="flex shrink-0 items-center gap-1.5 rounded-md px-2 py-1 text-[12px] text-content/50 hover:bg-content/10 hover:text-content"
-            >
+            <Button variant="ghost" size="sm" type="button" onClick={appearance.restoreDefaults}>
               <RotateCcw className="size-3.5" strokeWidth={1.75} />
               {t("Restore defaults")}
-            </button>
+            </Button>
           ) : null}
         </div>
       </header>
@@ -307,7 +305,10 @@ export function SettingsView({
                   const index = categories.findIndex((item) => item.id === category.id);
                   const Icon = SETTINGS_SECTION_ICONS[category.id];
                   return (
-                    <button
+                    <Button
+                      variant="item"
+                      motion="none"
+                      selected={category.id === section}
                       key={category.id}
                       ref={(node) => {
                         if (node) categoryRefs.current.set(category.id, node);
@@ -346,7 +347,7 @@ export function SettingsView({
                     >
                       <Icon aria-hidden strokeWidth={1.75} />
                       <span>{category.label}</span>
-                    </button>
+                    </Button>
                   );
                 })}
               </div>

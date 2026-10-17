@@ -96,7 +96,9 @@ it("keeps a failed deletion open and prevents dismissal while it is pending", as
       ),
     );
     const button = (label: string) =>
-      Array.from(document.querySelectorAll("button")).find((item) => item.textContent === label)!;
+      Array.from(document.querySelectorAll("button")).find(
+        (item) => item.getAttribute("aria-label") === label || item.textContent === label,
+      )!;
     await act(async () => button("Delete").click());
     expect(document.querySelector('[role="dialog"]')?.getAttribute("aria-busy")).toBe("true");
     expect(button("Cancel").disabled).toBe(true);

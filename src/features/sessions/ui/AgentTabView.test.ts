@@ -1,3 +1,4 @@
+import { visibleSessionTestText } from "./sessionUiTestText";
 // @vitest-environment happy-dom
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
@@ -107,7 +108,7 @@ it.each(["worker", "main"])("offers the correct selection actions in %s chat", a
     expect(toolbar!.textContent).toContain("Add to notes");
     expect(toolbar!.textContent!.includes("Add to chat")).toBe(view === "main");
     const notes = [...toolbar!.querySelectorAll("button")].find(
-      (button) => button.textContent === "Add to notes",
+      (button) => visibleSessionTestText(button) === "Add to notes",
     )!;
     await act(async () => notes.click());
     if (view === "main") expect(save).toHaveBeenCalledWith("Keep this sentence");

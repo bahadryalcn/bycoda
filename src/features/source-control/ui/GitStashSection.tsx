@@ -1,3 +1,4 @@
+import { Button } from "../../../shared/ui/Button";
 import { errorText } from "../../../shared/lib/errors";
 import { t, useLocale } from "../../../shared/i18n/git";
 import { useCallback, useState } from "react";
@@ -40,8 +41,7 @@ export function stashCommit(entry: GitStashEntry): GitHistoryCommit {
   };
 }
 
-const ACTION =
-  "shrink-0 rounded-md px-1.5 py-0.5 text-[11px] text-content/65 hover:bg-content/10 hover:text-content disabled:opacity-40";
+const ACTION = "shrink-0";
 
 /** Lists the repository's stashes. On another machine, needs a host with `git.actions`. */
 export function GitStashSection({ cwd, enabled, hasChanges, onOpenCommit }: Props) {
@@ -90,7 +90,9 @@ export function GitStashSection({ cwd, enabled, hasChanges, onOpenCommit }: Prop
   return (
     <div className="shrink-0 border-t border-stroke">
       <div className="flex h-7 items-center gap-1 px-1.5">
-        <button
+        <Button
+          variant="ghost"
+          motion="none"
           type="button"
           aria-expanded={open}
           onClick={() => {
@@ -100,36 +102,50 @@ export function GitStashSection({ cwd, enabled, hasChanges, onOpenCommit }: Prop
           className="flex min-w-0 flex-1 items-center gap-1 text-left"
         >
           {open ? (
-            <ChevronDown className="size-3.5 shrink-0 text-content/50" strokeWidth={1.75} />
+            <ChevronDown
+              className="size-3.5 shrink-0 text-[var(--ui-text-secondary)]"
+              strokeWidth={1.75}
+            />
           ) : (
-            <ChevronRight className="size-3.5 shrink-0 text-content/50" strokeWidth={1.75} />
+            <ChevronRight
+              className="size-3.5 shrink-0 text-[var(--ui-text-secondary)]"
+              strokeWidth={1.75}
+            />
           )}
-          <span className="min-w-0 truncate text-[10px] font-semibold tracking-[0.04em] text-content/55 uppercase">
+          <span className="min-w-0 truncate text-[10px] font-semibold tracking-[0.04em] text-[var(--ui-text-secondary)] uppercase">
             {t("Stashes")}
           </span>
-          <span className="text-[10px] tabular-nums text-content/40">{entries.length}</span>
-        </button>
-        <button
+          <span className="text-[10px] tabular-nums text-[var(--ui-text-muted)]">
+            {entries.length}
+          </span>
+        </Button>
+        <Button
+          iconOnly
+          label={t("Refresh stashes")}
+          variant="ghost"
+          motion="none"
           type="button"
           title={t("Refresh stashes")}
           aria-label={t("Refresh stashes")}
           aria-busy={loading}
           disabled={loading}
           onClick={refresh}
-          className="grid size-5 shrink-0 place-items-center rounded-md text-content/50 hover:bg-content/8 hover:text-content"
         >
           <RefreshCw className={`size-3.5 ${loading ? "animate-spin" : ""}`} strokeWidth={1.75} />
-        </button>
-        <button
+        </Button>
+        <Button
+          iconOnly
+          label={t("Stash all changes")}
+          variant="ghost"
+          motion="none"
           type="button"
           title={t("Stash all changes, including untracked files")}
           aria-label={t("Stash all changes")}
           disabled={!!busy || !hasChanges}
           onClick={() => void run(() => gitStash(cwd))}
-          className="grid size-5 shrink-0 place-items-center rounded-md text-content/50 hover:bg-content/8 hover:text-content disabled:opacity-40"
         >
           <Plus className="size-3.5" strokeWidth={1.75} />
-        </button>
+        </Button>
       </div>
       {error ? (
         <GitFeedback
@@ -141,20 +157,24 @@ export function GitStashSection({ cwd, enabled, hasChanges, onOpenCommit }: Prop
       ) : null}
       {open ? (
         entries.length === 0 && !loading && !error ? (
-          <p className="px-3 pb-2 text-[12px] text-content/45">{t("No stashes")}</p>
+          <p className="px-3 pb-2 text-[12px] text-[var(--ui-text-muted)]">{t("No stashes")}</p>
         ) : (
           <ul className="max-h-[min(10rem,20vh)] overflow-y-auto pb-1">
             {entries.map((entry) => (
               <li key={entry.sha} className="flex items-center gap-0.5 px-3 py-0.5">
-                <button
+                <Button
+                  variant="ghost"
+                  motion="none"
                   type="button"
                   title={entry.message}
                   onClick={() => onOpenCommit(stashCommit(entry))}
-                  className="min-w-0 flex-1 truncate text-left text-[12px] text-content hover:underline"
+                  className="min-w-0 flex-1 truncate text-left hover:underline"
                 >
                   {entry.message}
-                </button>
-                <button
+                </Button>
+                <Button
+                  variant="ghost"
+                  motion="none"
                   type="button"
                   disabled={!!busy}
                   title={t("Apply and keep the stash")}
@@ -162,8 +182,10 @@ export function GitStashSection({ cwd, enabled, hasChanges, onOpenCommit }: Prop
                   className={ACTION}
                 >
                   {t("Apply")}
-                </button>
-                <button
+                </Button>
+                <Button
+                  variant="ghost"
+                  motion="none"
                   type="button"
                   disabled={!!busy}
                   title={t("Apply and remove the stash")}
@@ -171,15 +193,17 @@ export function GitStashSection({ cwd, enabled, hasChanges, onOpenCommit }: Prop
                   className={ACTION}
                 >
                   {t("Pop")}
-                </button>
-                <button
+                </Button>
+                <Button
+                  variant="ghost"
+                  motion="none"
                   type="button"
                   disabled={!!busy}
                   onClick={() => void drop(entry)}
                   className={ACTION}
                 >
                   {t("Drop")}
-                </button>
+                </Button>
               </li>
             ))}
           </ul>

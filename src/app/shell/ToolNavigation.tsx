@@ -1,3 +1,4 @@
+import { Alert } from "../../shared/ui/Alert";
 import { Activity, createContext, useContext, useRef, useState, type ReactNode } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { AppWindow, DashboardSquare, Globe, Inbox, StickyNote, Zap } from "../../shared/ui/icons";
@@ -103,7 +104,9 @@ export function ToolNavigation() {
         {tools.map((tool) => {
           const Icon = icons[tool];
           return (
-            <button
+            <Button
+              variant="tab"
+              motion="none"
               key={tool}
               type="button"
               role="tab"
@@ -119,7 +122,7 @@ export function ToolNavigation() {
             >
               <Icon className="size-3.5 shrink-0" aria-hidden />
               <span>{t(labels[tool])}</span>
-            </button>
+            </Button>
           );
         })}
       </div>
@@ -153,14 +156,14 @@ export function ToolNavigation() {
         </Button>
       </div>
       {error ? (
-        <div className="tool-window-error" role="alert" data-tauri-drag-region="false">
+        <Alert tone="danger" role="alert" data-tauri-drag-region="false">
           <span>
             {t("Could not open window")}: {error}
           </span>
           <Button variant="ghost" motion="none" onClick={() => setError("")}>
             {t("Dismiss")}
           </Button>
-        </div>
+        </Alert>
       ) : null}
     </div>
   );

@@ -1,3 +1,4 @@
+import { Button } from "../../../shared/ui/Button";
 import { SearchInput } from "../../../shared/ui/SearchInput";
 import { t, useLocale } from "../../../shared/i18n";
 import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
@@ -182,7 +183,11 @@ export function SearchableProjectPicker({
       ref={pickerRef}
       className={`relative flex h-full min-w-0 items-center${className ? ` ${className}` : ""}`}
     >
-      <button
+      <Button
+        variant="item"
+        iconOnly={compact}
+        label={t("Choose project for note")}
+        motion="none"
         type="button"
         title={inProject ? cwd : undefined}
         aria-label={
@@ -190,6 +195,7 @@ export function SearchableProjectPicker({
             ? t("{p0}, current project {p1}", { p0: action, p1: label })
             : t("Choose project for note")
         }
+        selected={open || appearance === "filled"}
         aria-expanded={open}
         aria-haspopup="dialog"
         data-tauri-drag-region="false"
@@ -200,15 +206,9 @@ export function SearchableProjectPicker({
           event.preventDefault();
           openPicker();
         }}
-        className={`flex min-w-0 items-center rounded-md text-[12px] leading-none ${
-          compact ? "size-8 justify-center p-0" : "h-6.5 gap-1.5 px-2"
-        } ${
-          open
-            ? "bg-selection text-content"
-            : appearance === "filled"
-              ? "bg-content/10 text-content hover:bg-content/[0.14]"
-              : "text-content/50 hover:bg-content/5 hover:text-content"
-        }${buttonClassName ? ` ${buttonClassName}` : ""}`}
+        className={` flex min-w-0 items-center leading-none  ${
+          compact ? "justify-center" : "gap-1.5"
+        }     ${buttonClassName ? `   ${buttonClassName}  ` : ""}  `}
       >
         {!inProject ? null : logoPath ? (
           <ProjectLogoIcon
@@ -227,16 +227,18 @@ export function SearchableProjectPicker({
         )}
         {compact ? null : (
           <>
-            <span className="min-w-0 truncate font-medium text-content/90">{label}</span>
+            <span className="min-w-0 truncate font-medium text-[var(--color-content)]">
+              {label}
+            </span>
             <ChevronDown
-              className={`size-3 shrink-0 text-content/45 transition-transform ${
+              className={`size-3 shrink-0 text-[var(--ui-text-muted)] transition-transform ${
                 open ? "rotate-180" : ""
               }`}
               strokeWidth={1.75}
             />
           </>
         )}
-      </button>
+      </Button>
       {open ? (
         <Popover
           anchor={pickerRef}
@@ -251,7 +253,7 @@ export function SearchableProjectPicker({
           onKeyDown={onPickerKeyDown}
           className="flex flex-col overflow-hidden"
         >
-          <label className="flex h-11 shrink-0 items-center gap-2.5 border-b border-stroke px-3 text-content/45 focus-within:text-content/70">
+          <label className="flex h-11 shrink-0 items-center gap-2.5 border-b border-stroke px-3 text-[var(--ui-text-muted)] focus-within:text-[var(--ui-text-muted)]">
             <Search className="size-4 shrink-0" strokeWidth={1.75} />
             <span className="sr-only">{t("Search projects")}</span>
             <SearchInput
@@ -262,7 +264,7 @@ export function SearchableProjectPicker({
                 setActive(0);
               }}
               placeholder={t("Search projects...")}
-              className="min-w-0 flex-1 bg-transparent text-[13px] text-content outline-none placeholder:text-content/35"
+              className="min-w-0 flex-1"
             />
           </label>
           <div ref={listRef} className="min-h-0 flex-1 overflow-y-auto overscroll-none p-1.5">
@@ -284,10 +286,13 @@ export function SearchableProjectPicker({
                   itemSeed,
                 );
                 return (
-                  <button
+                  <Button
+                    variant="item"
+                    motion="none"
                     key={item.path}
                     type="button"
                     title={item.path}
+                    selected={active === index}
                     onMouseEnter={() => setActive(index)}
                     onClick={() => pickProject(item.path)}
                     onContextMenu={
@@ -304,11 +309,7 @@ export function SearchableProjectPicker({
                           }
                         : undefined
                     }
-                    className={`flex h-9 w-full items-center gap-2.5 rounded-lg px-2.5 text-left ${
-                      active === index
-                        ? "bg-selection text-content"
-                        : "text-content/75 hover:bg-content/5 hover:text-content"
-                    }`}
+                    className={` flex h-9 w-full items-center gap-2.5 text-left    `}
                   >
                     <span className="grid size-4 shrink-0 place-items-center">
                       {current ? (
@@ -331,31 +332,33 @@ export function SearchableProjectPicker({
                     <span className="min-w-0 max-w-[calc(100%_-_36px)] shrink-0 truncate text-[13px] font-medium">
                       {itemLabel}
                     </span>
-                    <span className="min-w-0 max-w-28 flex-1 truncate font-mono text-[11px] text-content/40">
+                    <span className="min-w-0 max-w-28 flex-1 truncate font-mono text-[11px] text-[var(--ui-text-muted)]">
                       {prettyParent(item.path)}
                     </span>
-                  </button>
+                  </Button>
                 );
               })
             ) : (
-              <p className="px-2.5 py-5 text-center text-[12px] text-content/45">
+              <p className="px-2.5 py-5 text-center text-[12px] text-[var(--ui-text-muted)]">
                 {t("No projects found")}
               </p>
             )}
           </div>
           {onOpenProject ? (
             <div className="shrink-0 border-t border-stroke p-1.5">
-              <button
+              <Button
+                variant="item"
+                motion="none"
                 type="button"
                 onClick={() => {
                   closePicker();
                   onOpenProject();
                 }}
-                className="flex h-9 w-full items-center gap-2.5 rounded-lg px-2.5 text-left text-[13px] text-content/75 hover:bg-content/8 hover:text-content"
+                className="flex h-9 w-full items-center gap-2.5 text-left"
               >
                 <Plus className="size-4 shrink-0" strokeWidth={1.75} />
                 <span>{t("New project")}</span>
-              </button>
+              </Button>
             </div>
           ) : null}
         </Popover>

@@ -1,3 +1,8 @@
+import { NativeSearchableSelect } from "../../../shared/ui/NativeSearchableSelect";
+import { Switch } from "../../../shared/ui/Switch";
+import { Button } from "../../../shared/ui/Button";
+
+import { NativeSelect } from "../../../shared/ui/Select";
 import { useEffect, useId, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import { ChevronDown, CircleHelp, SlidersHorizontal } from "../../../shared/ui/icons";
@@ -98,75 +103,78 @@ export function ModelExtrasPanel({
     return (
       <div
         key={setting.id}
-        className={dependent ? "ml-2 border-l border-stroke pl-2.5" : undefined}
+        className={dependent ? "ml-2 border-l border-(--ui-tone-neutral-border) pl-2.5" : undefined}
       >
         <div className="flex min-h-8 items-center gap-2 text-[12px]">
           <span
-            className={`flex min-w-0 flex-1 items-center gap-1 ${inactive ? "text-content/45" : ""}`}
+            className={`flex min-w-0 flex-1 items-center gap-1 ${inactive ? "text-(--ui-text-secondary)" : ""}`}
           >
             <span className="min-w-0 leading-4 break-words">{label}</span>
             {modified && (
               <span
-                className="size-1.5 shrink-0 rounded-full bg-content/70"
+                className="size-1.5 shrink-0 rounded-full bg-(--ui-surface-raised)"
                 title={t("Changed from default")}
               />
             )}
             {setting.description && (
-              <button
+              <Button
+                className="shrink-0"
+                iconOnly
+                label={t("About {p0}", { p0: label })}
+                variant="ghost"
                 type="button"
                 aria-label={t("About {p0}", { p0: label })}
                 aria-expanded={showHelp}
                 aria-controls={descriptionId}
                 onClick={() => setExplained(showHelp ? null : setting.id)}
-                className={`shrink-0 rounded p-0.5 hover:text-content ${showHelp ? "text-content" : "text-content/40"}`}
               >
                 <CircleHelp className="size-3" />
-              </button>
+              </Button>
             )}
           </span>
           {setting.kind === "toggle" ? (
-            <span className="relative inline-flex shrink-0">
-              <input
-                type="checkbox"
-                role="switch"
-                aria-label={label}
-                aria-describedby={setting.description ? descriptionId : undefined}
-                checked={value === "true"}
-                disabled={disabled || inactive}
-                onChange={(e) => update(String(e.target.checked))}
-                className="peer absolute inset-0 z-[1] m-0 cursor-pointer opacity-0 disabled:cursor-default"
-              />
-              <span
-                aria-hidden
-                className="h-4 w-7 rounded-full bg-content/20 transition-colors peer-checked:bg-active peer-focus-visible:outline peer-focus-visible:outline-1 peer-focus-visible:outline-offset-2 peer-disabled:opacity-40"
-              />
-              <span
-                aria-hidden
-                className="pointer-events-none absolute top-0.5 left-0.5 size-3 rounded-full bg-background-base shadow transition-transform peer-checked:translate-x-3"
-              />
-            </span>
-          ) : (
-            <select
+            <Switch
+              aria-label={label}
+              aria-describedby={setting.description ? descriptionId : undefined}
+              checked={value === "true"}
+              disabled={disabled || inactive}
+              onCheckedChange={(next) => update(String(next))}
+            />
+          ) : ["advisor", "subagentModel"].includes(setting.id) ? (
+            <NativeSearchableSelect
+              label={label}
               aria-label={label}
               aria-describedby={setting.description ? descriptionId : undefined}
               value={value}
               disabled={disabled || inactive}
               onChange={(e) => update(e.target.value)}
-              className="h-7 w-[52%] max-w-[11.5rem] min-w-0 shrink-0 truncate rounded-md border border-stroke bg-background-base px-1.5 text-[11px] text-content disabled:opacity-40"
+              options={setting.options.map((option) => ({
+                value: option.value,
+                label: t(option.label),
+              }))}
+            />
+          ) : (
+            <NativeSelect
+              aria-label={label}
+              aria-describedby={setting.description ? descriptionId : undefined}
+              value={value}
+              disabled={disabled || inactive}
+              onChange={(e) => update(e.target.value)}
+              className="w-[52%] max-w-[11.5rem] min-w-0 shrink-0 truncate"
             >
               {setting.options.map((option) => (
                 <option key={option.value} value={option.value}>
                   {t(option.label)}
                 </option>
               ))}
-            </select>
+            </NativeSelect>
           )}
         </div>
         {setting.description && (
           <p
             id={descriptionId}
             hidden={!showHelp}
-            className="mb-1 rounded-md bg-selection/60 px-2 py-1.5 text-[10.5px] leading-4 text-content/60"
+            className="mb-1 rounded-md bg-selection/60 px-2 py-1.5 text-[10.5px] leading-4 text-(--ui-text-secondary)"
           >
             {t(setting.description)}
           </p>
@@ -176,24 +184,25 @@ export function ModelExtrasPanel({
   };
   return (
     <>
-      <div className="sticky top-0 z-10 border-b border-stroke bg-background-base/80 px-3 backdrop-blur-xl pt-2.5 pb-2">
+      <div className="sticky top-0 z-10 border-b border-(--ui-tone-neutral-border) bg-(--ui-surface) px-3 backdrop-blur-xl pt-2.5 pb-2">
         <div className="flex items-center justify-between gap-2">
           {leading}
           <span className="min-w-0 flex-1 truncate text-[12px] font-medium">
             {title ?? `${HARNESS_TITLE[harness]} · ${t("Extras")}`}
           </span>
-          <button
+          <Button
+            variant="ghost"
             type="button"
             disabled={disabled || changed === 0}
             onClick={() => {
               if (!disabled) onSettingsChange(defaultModelSettings(current));
             }}
-            className="shrink-0 rounded px-1.5 py-0.5 text-[11px] text-content/60 hover:bg-selection hover:text-content disabled:pointer-events-none disabled:opacity-40"
+            className="shrink-0"
           >
             {t("Reset extras")}
-          </button>
+          </Button>
         </div>
-        <p className="mt-0.5 text-[10.5px] leading-4 text-content/50">
+        <p className="mt-0.5 text-[10.5px] leading-4 text-(--ui-text-secondary)">
           {t("Extras apply to this model selection. They do not change the main model.")}
         </p>
       </div>
@@ -201,7 +210,7 @@ export function ModelExtrasPanel({
         {groups.map((group) => (
           <section key={group.title ?? "all"}>
             {group.title && (
-              <h3 className="mb-1 text-[10px] font-medium tracking-wide text-content/45 uppercase">
+              <h3 className="mb-1 text-[10px] font-medium tracking-wide text-(--ui-text-secondary) uppercase">
                 {t(group.title)}
               </h3>
             )}
@@ -257,7 +266,8 @@ export function ModelExtras({
   };
   return (
     <>
-      <button
+      <Button
+        variant="ghost"
         ref={anchor}
         type="button"
         data-model-control
@@ -267,15 +277,17 @@ export function ModelExtras({
         disabled={disabled}
         onClick={() => setOpen((v) => !v)}
         data-extras-trigger
-        className="flex h-6.5 shrink-0 items-center gap-1 rounded-md bg-selection px-1.5 text-[11px] text-content hover:bg-selection-hover focus-visible:outline focus-visible:outline-1 disabled:opacity-40"
+        className="shrink-0"
       >
         <SlidersHorizontal className="size-3 shrink-0" strokeWidth={1.75} />
         <span data-extras-label>{t("Extras")}</span>
         {changed > 0 && (
-          <span className="rounded bg-selection px-1 text-[10px] text-content">{changed}</span>
+          <span className="rounded bg-selection px-1 text-[10px] text-(--ui-tone-neutral-fg)">
+            {changed}
+          </span>
         )}
         {showSummary && changed > 0 && (
-          <span data-extras-summary className="max-w-40 truncate text-content/50">
+          <span data-extras-summary className="max-w-40 truncate text-(--ui-text-secondary)">
             {active
               .map((s) =>
                 t(s.options.find((o) => o.value === effective[s.id])?.label ?? effective[s.id]),
@@ -284,7 +296,7 @@ export function ModelExtras({
           </span>
         )}
         <ChevronDown className="size-3" />
-      </button>
+      </Button>
       {open && (
         <Popover
           anchor={anchor}

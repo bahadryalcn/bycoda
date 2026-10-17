@@ -56,7 +56,6 @@
 }
 .social-header-controls > button {
   flex: none;
-  white-space: nowrap;
 }
 .social-view .social-header-field {
   display: flex;
@@ -75,9 +74,7 @@
 }
 .social-header-field select {
   min-inline-size: 0;
-  inline-size: 100%;
   max-inline-size: 100%;
-  color: var(--color-content);
 }
 .social-tabs {
   grid-column: 1;
@@ -94,19 +91,7 @@
   border-inline-end: 1px solid var(--color-stroke);
 }
 .social-view .social-tabs button {
-  display: flex;
-  align-items: center;
   justify-content: space-between;
-  gap: 8px;
-  text-align: start;
-  border-color: transparent;
-  padding: 0.5rem 0.625rem;
-  color: var(--ui-text-secondary);
-}
-.social-view .social-tabs button[aria-current] {
-  background: var(--color-selection);
-  color: var(--color-content);
-  font-weight: 500;
 }
 .social-nav-label {
   flex: 1;
@@ -116,7 +101,6 @@
   inline-size: 1rem;
   block-size: 1rem;
   flex: none;
-  opacity: 0.7;
 }
 .social-nav-count {
   font-size: var(--ui-font-caption);
@@ -147,7 +131,7 @@
   background: var(--ui-text-secondary);
 }
 .social-status-dot[data-online="true"] {
-  background: var(--color-active);
+  background: var(--ui-tone-success-fg);
 }
 .social-status-details {
   position: relative;
@@ -162,7 +146,7 @@
   border: 1px solid var(--color-stroke);
   border-radius: 8px;
   background: var(--color-background-base);
-  box-shadow: 0 8px 24px color-mix(in oklch, var(--color-content) 10%, transparent);
+  box-shadow: none;
 }
 .social-status-details > summary {
   cursor: pointer;
@@ -193,9 +177,6 @@
 }
 .social-view fieldset {
   min-inline-size: 0;
-}
-.social-workspace:disabled {
-  opacity: 0.75;
 }
 .social-columns {
   display: grid;
@@ -245,17 +226,6 @@
   cursor: pointer;
   margin-block-start: 12px;
 }
-.social-view .social-primary {
-  color: var(--color-background-base);
-  background: var(--color-content);
-  border-color: var(--color-content);
-  font-weight: 500;
-}
-@media (hover: hover) and (pointer: fine) {
-  .social-view .social-primary:enabled:hover {
-    background: var(--ui-primary-hover);
-  }
-}
 
 .social-view h2 {
   font-size: 0.9375rem;
@@ -279,38 +249,14 @@
   margin-block: 0.5rem;
   overflow-wrap: break-word;
 }
-.social-view small {
+.social-view small:not(.bycoda-arc small) {
   display: block;
   font-size: var(--ui-font-caption);
   color: var(--ui-text-secondary);
   margin-block-start: 5px;
 }
 .social-view button {
-  cursor: pointer;
-  border: 1px solid var(--color-stroke);
-  background: transparent;
-  border-radius: 6px;
-  padding: 6px 10px;
-  font: inherit;
-  color: inherit;
-  min-block-size: 36px;
   max-inline-size: 100%;
-  line-height: 1.4;
-}
-.social-view .social-icon-button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex: none;
-  inline-size: 2.25rem;
-  padding: 0.5rem;
-  border-color: transparent;
-  color: var(--ui-text-secondary);
-}
-.social-icon-button > svg {
-  flex: none;
-  inline-size: 1.125em;
-  block-size: 1.125em;
 }
 .social-sr-only {
   position: absolute;
@@ -322,12 +268,6 @@
   clip-path: inset(50%);
   white-space: nowrap;
   border: 0;
-}
-.social-view button:enabled:active {
-  background: var(--color-selection-hover);
-}
-.social-view .social-primary:enabled:active {
-  background: var(--ui-primary-pressed);
 }
 .social-workspace > [hidden] {
   display: none;
@@ -346,51 +286,18 @@
   padding: 12px;
   border-radius: 8px;
 }
-@media (hover: hover) and (pointer: fine) {
-  .social-view button:enabled:hover {
-    background: color-mix(in oklch, var(--color-content) 7%, transparent);
-  }
-}
-
-.social-view button:disabled {
-  opacity: 0.4;
-  cursor: default;
-}
 .social-view summary:has(+ .social-editor) {
   list-style: none;
-}
-.social-view :is(button, input, textarea, select, summary):focus-visible {
-  outline: 2px solid var(--color-accent);
-  outline-offset: 2px;
 }
 .social-view input:not([type="checkbox"]),
 .social-view textarea,
 .social-view select {
   min-inline-size: 0;
-  inline-size: 100%;
   max-inline-size: 100%;
-  box-sizing: border-box;
-  border: 1px solid var(--color-stroke);
-  border-radius: 5px;
-  background: color-mix(in oklch, var(--color-content) 3%, transparent);
-  color: inherit;
-  padding: 7px 9px;
-  font: inherit;
 }
-.social-view select option {
-  background: var(--color-background-base);
-  color: var(--color-content);
-}
-.social-view textarea {
-  field-sizing: content;
-  resize: vertical;
-  min-block-size: 4lh;
-  max-block-size: 14lh;
-}
-.social-view :is(input, textarea, select):user-invalid {
-  border-color: var(--color-danger);
-}
-.social-view label {
+.social-view
+  :is(.social-form, .social-editor, .social-toolbar, .social-form-grid)
+  label:not(.bycoda-arc):not(.bycoda-arc label) {
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -429,26 +336,6 @@
   flex-wrap: wrap;
   margin-block: 0.75rem;
 }
-.social-actions > button:has(> svg) {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.5rem;
-}
-.social-actions > button > svg {
-  inline-size: 1rem;
-  block-size: 1rem;
-  flex: none;
-}
-.social-view button:has(> svg) {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.5rem;
-}
-.social-view button > svg {
-  inline-size: 1rem;
-  block-size: 1rem;
-  flex: none;
-}
 .social-checks {
   display: flex;
   flex-wrap: wrap;
@@ -469,37 +356,20 @@
   font-size: var(--ui-font-caption);
   color: var(--ui-text-secondary);
 }
-.social-checks input {
-  accent-color: var(--color-active);
-}
 .social-row {
   display: block;
   inline-size: 100%;
-  text-align: start !important;
-  border: 0 !important;
-  border-radius: 6px !important;
-  padding: 0.75rem 0.625rem !important;
   margin-block-end: 0.25rem;
 }
 .social-row strong {
   display: block;
   font-weight: 500;
 }
-.social-row span {
+.social-row > span:not(.bycoda-arc) {
   display: block;
   font-size: var(--ui-font-caption);
   color: var(--ui-text-secondary);
   margin-block-start: 4px;
-}
-.social-row[aria-pressed="true"] {
-  background: var(--color-selection);
-  color: var(--color-content);
-}
-.social-row .social-contact-status {
-  display: inline-block;
-  padding: 0.1875rem 0.375rem;
-  border-radius: 4px;
-  background: color-mix(in oklch, var(--color-content) 5%, transparent);
 }
 .social-variant {
   border: 1px solid var(--color-stroke);
@@ -517,35 +387,10 @@
   padding: 0.875rem 1rem;
   margin-block: 0.875rem;
   min-inline-size: 0;
-  background: color-mix(in oklch, var(--color-content) 2%, transparent);
+  background: var(--ui-surface);
 }
 .social-message {
   white-space: pre-wrap;
-}
-.social-empty {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: safe center;
-  gap: 0.5rem;
-  padding: 2rem 0.5rem;
-  text-align: center;
-  color: var(--ui-text-secondary);
-}
-.social-empty > strong {
-  color: var(--color-content);
-  font-size: 0.9375rem;
-  font-weight: 500;
-}
-.social-empty > svg {
-  inline-size: 1.5rem;
-  block-size: 1.5rem;
-  margin-block-end: 0.5rem;
-  opacity: 0.45;
-}
-.social-view .social-empty > p {
-  max-inline-size: 42ch;
-  margin: 0;
 }
 .social-columns > section:last-child > .social-empty {
   min-block-size: 0;
@@ -561,7 +406,7 @@
   margin-block: 0.625rem;
   margin-inline: var(--social-gutter);
   padding: 10px 12px;
-  border: 1px solid color-mix(in oklch, var(--color-content) 28%, transparent);
+  border: 1px solid var(--color-stroke);
   color: var(--color-content);
   border-radius: 6px;
   overflow-wrap: break-word;
@@ -613,11 +458,6 @@
   margin-inline-start: 28px;
   background: var(--color-selection-subtle);
 }
-.social-link {
-  border: 0 !important;
-  padding: 0 !important;
-  text-decoration: underline;
-}
 @container social (width < 55rem) {
   .social-columns,
   .social-rules-page .social-columns {
@@ -668,9 +508,6 @@
     border-block-end: 1px solid var(--color-stroke);
     padding: 8px;
   }
-  .social-tabs button {
-    white-space: normal;
-  }
   .social-nav-count {
     display: none;
   }
@@ -719,17 +556,9 @@
   gap: 8px;
   margin: 10px 0 4px;
 }
-.social-view input[type="checkbox"] {
-  inline-size: 16px;
-  block-size: 16px;
-  flex-shrink: 0;
-}
 .social-view .social-checks label,
 .social-view label.social-inline-check {
   min-block-size: 32px;
-}
-.social-inline-check input {
-  accent-color: var(--color-active);
 }
 .social-field-grid {
   display: grid;

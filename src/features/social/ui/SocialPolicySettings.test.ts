@@ -197,7 +197,9 @@ it("rejects invalid character limits locally without making a request", async ()
   for (const value of ["0", "1.5", "20001"]) {
     await input("maxContentCharacters", value);
     await save();
-    expect(container.textContent).toContain("1 ile 20000 arasında tam sayı");
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain(
+      "1 ile 20000 arasında tam sayı",
+    );
   }
   expect(request).not.toHaveBeenCalled();
 });

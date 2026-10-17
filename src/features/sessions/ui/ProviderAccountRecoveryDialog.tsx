@@ -1,3 +1,5 @@
+import { Alert } from "../../../shared/ui/Alert";
+import { Button } from "../../../shared/ui/Button";
 import { useEffect, useState } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import { Modal } from "../../../shared/ui/Modal";
@@ -40,30 +42,33 @@ export function ProviderAccountRecoveryDialog({
     <Modal title={t("Continue with another account")} size="sm" onClose={onClose}>
       <div className="space-y-2">
         {providerAccounts(provider).map((account) => (
-          <button
+          <Button
+            fullWidth
+            variant="item"
             key={account.id}
             type="button"
             disabled={busy}
-            className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left hover:bg-selection disabled:opacity-50"
+            className="w-full text-left"
             onClick={() => void select(account.id)}
           >
             <AccountColorDot account={account} />
             <span>{account.label}</span>
-          </button>
+          </Button>
         ))}
         {error ? (
-          <p role="alert" className="text-sm text-danger">
+          <Alert tone="danger" role="alert">
             {error}
-          </p>
+          </Alert>
         ) : null}
-        <button
+        <Button
+          variant="ghost"
           type="button"
           disabled={busy}
-          className="text-sm text-content/70 hover:text-content"
+
           onClick={onManage}
         >
           {t("Accounts")}
-        </button>
+        </Button>
       </div>
     </Modal>
   );

@@ -112,8 +112,8 @@ export function RefPill({ refInfo }: { refInfo: GraphRefChip }) {
       title={refTitle(refInfo)}
       className={`flex h-3.5 min-w-0 shrink items-center gap-0.5 px-1.5 text-[10px] leading-none ${
         refInfo.kind === "tag" ? "rounded-[4px]" : "rounded-full"
-      } ${refInfo.color ? "" : "bg-content/10 text-content/55"} ${
-        refInfo.current ? "font-semibold ring-1 ring-content/60" : ""
+      } ${refInfo.color ? "" : "bg-[var(--ui-surface-muted)] text-[var(--ui-text-secondary)]"} ${
+        refInfo.current ? "font-semibold ring-1 ring-[var(--color-stroke)]" : ""
       }`}
       style={{
         maxWidth: PILL_MAX_PX,
@@ -169,7 +169,7 @@ export function RefPills({
       {hidden.length > 0 ? (
         <span
           title={hidden.map(refTitle).join("\n")}
-          className="flex h-3.5 shrink-0 items-center rounded-full bg-content/10 px-1.5 text-[10px] leading-none text-content/55"
+          className="flex h-3.5 shrink-0 items-center rounded-full bg-[var(--ui-surface-muted)] px-1.5 text-[10px] leading-none text-[var(--ui-text-secondary)]"
         >
           +{hidden.length}
         </span>
@@ -192,6 +192,7 @@ export function GraphSearchInput({
   useLocale();
   return (
     <SearchInput
+      appearance="field"
       standalone
       type="text"
       value={value}
@@ -211,7 +212,6 @@ export function GraphSearchInput({
           : undefined
       }
       containerClassName="w-full"
-      className="h-6 rounded-md border border-content/10 bg-content/5 px-2 font-sans text-[12px] text-content outline-none placeholder:text-content/30 focus:border-content/25"
     />
   );
 }

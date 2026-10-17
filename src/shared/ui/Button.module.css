@@ -1,31 +1,158 @@
+/* Pin Tailwind's layer order even when this module loads before the global stylesheet;
+   otherwise `components` would precede `base` and Preflight's button reset would win. */
+@layer theme, base, components, utilities;
 .control {
   box-sizing: border-box;
-  min-inline-size: 0;
+}
+/* Box layout shares Arc's layer, so consumer Tailwind utilities can size, align,
+   hide or reveal a control. Color, border and state presentation stay unlayered. */
+@layer components {
+  .control {
+    min-inline-size: 0;
+  }
+  /* Start-aligned text means start-aligned content: native buttons never centered
+     flex children, and migrated rows rely on `text-left`. `justify-*` still wins. */
+  .control:is(:global(.text-left), :global(.text-start)) {
+    justify-content: flex-start;
+  }
+  .control.fullWidth {
+    inline-size: 100%;
+  }
+  .control.iconOnly {
+    flex-shrink: 0;
+    inline-size: var(--control-height-sm);
+    block-size: var(--control-height-sm);
+    min-block-size: var(--control-height-sm);
+    padding: 0;
+    aspect-ratio: 1;
+  }
+  .control.iconOnly[data-button-size="md"] {
+    inline-size: var(--control-height-md);
+    block-size: var(--control-height-md);
+    min-block-size: var(--control-height-md);
+  }
+  .control.iconOnly[data-button-size="lg"] {
+    inline-size: var(--control-height-lg);
+    block-size: var(--control-height-lg);
+    min-block-size: var(--control-height-lg);
+  }
+  .control.link {
+    padding-inline: var(--space-1);
+  }
+  .control.item,
+  .control.tab {
+    white-space: normal;
+    font-weight: 400;
+    text-align: start;
+  }
+  .control.item {
+    inline-size: 100%;
+    justify-content: flex-start;
+  }
+  .control.tab {
+    justify-content: center;
+  }
+  .control[data-button-structural][data-button-layout="stacked"] {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0;
+    padding-block: var(--space-2);
+  }
+}
+
+.control[data-button-tone="neutral"] {
+  --button-fg: var(--ui-tone-neutral-fg);
+  --button-solid: var(--ui-tone-neutral-solid);
+  --button-on-solid: var(--ui-tone-neutral-on-solid);
+  --button-subtle: var(--ui-tone-neutral-subtle);
+  --button-border: var(--ui-tone-neutral-border);
+  --button-solid-hover: var(--ui-tone-neutral-solid-hover);
+  --button-solid-pressed: var(--ui-tone-neutral-solid-pressed);
+  --button-hover: var(--ui-tone-neutral-hover);
+  --button-pressed: var(--ui-tone-neutral-pressed);
+  --button-disabled-fg: var(--ui-tone-neutral-disabled-fg);
+  --button-disabled-surface: var(--ui-tone-neutral-disabled-surface);
+  --button-disabled-border: var(--ui-tone-neutral-disabled-border);
+}
+
+.control[data-button-tone="accent"] {
+  --button-fg: var(--ui-tone-accent-fg);
+  --button-solid: var(--ui-tone-accent-solid);
+  --button-on-solid: var(--ui-tone-accent-on-solid);
+  --button-subtle: var(--ui-tone-accent-subtle);
+  --button-border: var(--ui-tone-accent-border);
+  --button-solid-hover: var(--ui-tone-accent-solid-hover);
+  --button-solid-pressed: var(--ui-tone-accent-solid-pressed);
+  --button-hover: var(--ui-tone-accent-hover);
+  --button-pressed: var(--ui-tone-accent-pressed);
+  --button-disabled-fg: var(--ui-tone-accent-disabled-fg);
+  --button-disabled-surface: var(--ui-tone-accent-disabled-surface);
+  --button-disabled-border: var(--ui-tone-accent-disabled-border);
+}
+
+.control[data-button-tone="info"] {
+  --button-fg: var(--ui-tone-info-fg);
+  --button-solid: var(--ui-tone-info-solid);
+  --button-on-solid: var(--ui-tone-info-on-solid);
+  --button-subtle: var(--ui-tone-info-subtle);
+  --button-border: var(--ui-tone-info-border);
+  --button-solid-hover: var(--ui-tone-info-solid-hover);
+  --button-solid-pressed: var(--ui-tone-info-solid-pressed);
+  --button-hover: var(--ui-tone-info-hover);
+  --button-pressed: var(--ui-tone-info-pressed);
+  --button-disabled-fg: var(--ui-tone-info-disabled-fg);
+  --button-disabled-surface: var(--ui-tone-info-disabled-surface);
+  --button-disabled-border: var(--ui-tone-info-disabled-border);
+}
+
+.control[data-button-tone="success"] {
+  --button-fg: var(--ui-tone-success-fg);
+  --button-solid: var(--ui-tone-success-solid);
+  --button-on-solid: var(--ui-tone-success-on-solid);
+  --button-subtle: var(--ui-tone-success-subtle);
+  --button-border: var(--ui-tone-success-border);
+  --button-solid-hover: var(--ui-tone-success-solid-hover);
+  --button-solid-pressed: var(--ui-tone-success-solid-pressed);
+  --button-hover: var(--ui-tone-success-hover);
+  --button-pressed: var(--ui-tone-success-pressed);
+  --button-disabled-fg: var(--ui-tone-success-disabled-fg);
+  --button-disabled-surface: var(--ui-tone-success-disabled-surface);
+  --button-disabled-border: var(--ui-tone-success-disabled-border);
+}
+
+.control[data-button-tone="warning"] {
+  --button-fg: var(--ui-tone-warning-fg);
+  --button-solid: var(--ui-tone-warning-solid);
+  --button-on-solid: var(--ui-tone-warning-on-solid);
+  --button-subtle: var(--ui-tone-warning-subtle);
+  --button-border: var(--ui-tone-warning-border);
+  --button-solid-hover: var(--ui-tone-warning-solid-hover);
+  --button-solid-pressed: var(--ui-tone-warning-solid-pressed);
+  --button-hover: var(--ui-tone-warning-hover);
+  --button-pressed: var(--ui-tone-warning-pressed);
+  --button-disabled-fg: var(--ui-tone-warning-disabled-fg);
+  --button-disabled-surface: var(--ui-tone-warning-disabled-surface);
+  --button-disabled-border: var(--ui-tone-warning-disabled-border);
+}
+
+.control[data-button-tone="danger"] {
+  --button-fg: var(--ui-tone-danger-fg);
+  --button-solid: var(--ui-tone-danger-solid);
+  --button-on-solid: var(--ui-tone-danger-on-solid);
+  --button-subtle: var(--ui-tone-danger-subtle);
+  --button-border: var(--ui-tone-danger-border);
+  --button-solid-hover: var(--ui-tone-danger-solid-hover);
+  --button-solid-pressed: var(--ui-tone-danger-solid-pressed);
+  --button-hover: var(--ui-tone-danger-hover);
+  --button-pressed: var(--ui-tone-danger-pressed);
+  --button-disabled-fg: var(--ui-tone-danger-disabled-fg);
+  --button-disabled-surface: var(--ui-tone-danger-disabled-surface);
+  --button-disabled-border: var(--ui-tone-danger-disabled-border);
 }
 
 .control[data-button-shape="pill"] {
   border-radius: var(--radius-pill);
-}
-.control.fullWidth {
-  inline-size: 100%;
-}
-.control.iconOnly {
-  flex-shrink: 0;
-  inline-size: var(--control-height-sm);
-  block-size: var(--control-height-sm);
-  min-block-size: var(--control-height-sm);
-  padding: 0;
-  aspect-ratio: 1;
-}
-.control.iconOnly[data-button-size="md"] {
-  inline-size: var(--control-height-md);
-  block-size: var(--control-height-md);
-  min-block-size: var(--control-height-md);
-}
-.control.iconOnly[data-button-size="lg"] {
-  inline-size: var(--control-height-lg);
-  block-size: var(--control-height-lg);
-  min-block-size: var(--control-height-lg);
 }
 .icon {
   display: inline-flex;
@@ -41,32 +168,9 @@
   gap: var(--space-2);
 }
 
-.control.link {
-  padding-inline: var(--space-1);
-  border-color: transparent;
-  background: transparent;
-  color: var(--text-secondary);
-}
 .control.item,
 .control.tab {
-  white-space: normal;
-  font-weight: 400;
-  text-align: start;
   transform: none;
-}
-.control.item {
-  inline-size: 100%;
-  justify-content: flex-start;
-}
-.control.tab {
-  justify-content: center;
-}
-.control[data-button-selected]:not([data-button-variant="danger"]) {
-  background: var(--accent-subtle);
-  color: var(--foreground);
-}
-.control.tab[data-button-selected] {
-  border-color: var(--accent);
 }
 .control[aria-disabled="true"] {
   cursor: not-allowed;
@@ -74,15 +178,7 @@
 .control[aria-busy="true"] {
   cursor: progress;
 }
-.control[aria-disabled="true"]:not([aria-busy="true"]) {
-  color: var(--text-muted);
-}
-.control.item:active:not([aria-disabled="true"]),
-.control.tab:active:not([aria-disabled="true"]) {
-  background: var(--surface-muted);
-}
 .control.link:active:not([aria-disabled="true"]) {
-  color: var(--foreground);
   text-decoration: underline;
 }
 .structuralLoader {
@@ -98,15 +194,138 @@
 
 @media (hover: hover) and (pointer: fine) {
   .control.link:hover:not([aria-disabled="true"]) {
-    color: var(--foreground);
     text-decoration: underline;
   }
-  .control.item:hover:not([aria-disabled="true"]),
-  .control.tab:hover:not([aria-disabled="true"]) {
-    background: var(--surface-muted);
-    color: var(--foreground);
+}
+
+/* Hierarchy and intent share one presentation in both rendering paths. */
+.control[data-button-tone] {
+  color: var(--button-fg);
+  box-shadow: none;
+}
+.control[data-button-hierarchy="primary"] {
+  color: var(--button-on-solid);
+  background: var(--button-solid);
+  border-color: var(--button-solid);
+}
+.control[data-button-hierarchy="secondary"] {
+  background: var(--surface);
+  border-color: var(--button-border);
+}
+.control:is(
+  [data-button-hierarchy="ghost"],
+  [data-button-hierarchy="link"],
+  [data-button-hierarchy="item"],
+  [data-button-hierarchy="tab"]
+) {
+  background: transparent;
+  border-color: transparent;
+}
+.control[data-button-tone="neutral"]:is(
+    [data-button-hierarchy="ghost"],
+    [data-button-hierarchy="link"],
+    [data-button-hierarchy="item"],
+    [data-button-hierarchy="tab"]
+  ) {
+  color: var(--text-secondary);
+}
+.control[data-button-selected][data-button-tone="neutral"] {
+  background: var(--accent-subtle);
+  color: var(--foreground);
+}
+.control[data-button-selected]:not([data-button-tone="neutral"]) {
+  background: var(--button-subtle);
+  color: var(--button-fg);
+  border-color: var(--button-border);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .control[data-button-hierarchy]:hover:not([aria-disabled="true"]) {
+    background: var(--button-hover);
+    color: var(--button-fg);
+    border-color: var(--button-border);
+    opacity: 1;
+    box-shadow: none;
+  }
+  .control[data-button-hierarchy="primary"]:hover:not([aria-disabled="true"]) {
+    background: var(--button-solid-hover);
+    color: var(--button-on-solid);
+    border-color: var(--button-solid-hover);
   }
   .control[data-button-selected]:hover:not([aria-disabled="true"]) {
-    background: var(--accent-subtle);
+    background: var(--button-subtle);
+    color: var(--button-fg);
+    border-color: var(--button-border);
   }
+  .control[data-button-selected][data-button-tone="neutral"]:hover:not([aria-disabled="true"]) {
+    background: var(--accent-subtle);
+    color: var(--foreground);
+  }
+}
+.control[data-button-hierarchy]:active:not([aria-disabled="true"]) {
+  background: var(--button-pressed);
+  color: var(--button-fg);
+  border-color: var(--button-border);
+  opacity: 1;
+}
+.control[data-button-hierarchy="primary"]:active:not([aria-disabled="true"]) {
+  background: var(--button-solid-pressed);
+  color: var(--button-on-solid);
+  border-color: var(--button-solid-pressed);
+}
+.control[data-button-hierarchy][aria-disabled="true"]:not([aria-busy="true"]) {
+  color: var(--button-disabled-fg);
+  background: var(--button-disabled-surface);
+  border-color: var(--button-disabled-border);
+  opacity: 1;
+}
+.control[data-button-hierarchy][aria-busy="true"] {
+  color: var(--button-fg);
+  background: var(--surface);
+  border-color: var(--button-border);
+  opacity: 1;
+  box-shadow: none;
+}
+.control[data-button-hierarchy="primary"][aria-busy="true"] {
+  color: var(--button-on-solid);
+  background: var(--button-solid);
+  border-color: var(--button-solid);
+}
+.control[data-button-selected][aria-busy="true"] {
+  background: var(--button-subtle);
+  color: var(--button-fg);
+}
+.control[data-button-selected][data-button-tone="neutral"][aria-busy="true"] {
+  background: var(--accent-subtle);
+  color: var(--foreground);
+}
+.control[data-button-hierarchy][aria-disabled="true"]:not([aria-busy="true"]):is(
+    [data-button-hierarchy="ghost"],
+    [data-button-hierarchy="link"],
+    [data-button-hierarchy="item"],
+    [data-button-hierarchy="tab"]
+  ) {
+  background: transparent;
+  border-color: transparent;
+}
+.control[data-button-selected][aria-busy="true"]:is(
+    [data-button-hierarchy="ghost"],
+    [data-button-hierarchy="link"],
+    [data-button-hierarchy="item"],
+    [data-button-hierarchy="tab"]
+  ) {
+  background: var(--button-subtle);
+  border-color: var(--button-border);
+}
+
+/* Quiet hierarchies show state through fill only. A border on hover, press or
+   selection reads as a second, nested button inside rows, tabs and tool strips.
+   The extra attributes outrank the hover, active and selected rules above. */
+.control[data-button-tone][data-button-hierarchy]:is(
+    [data-button-hierarchy="ghost"],
+    [data-button-hierarchy="link"],
+    [data-button-hierarchy="item"],
+    [data-button-hierarchy="tab"]
+  ):is(:hover, :active, [data-button-selected]) {
+  border-color: transparent;
 }

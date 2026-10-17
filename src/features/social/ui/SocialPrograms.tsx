@@ -1,3 +1,11 @@
+import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
+import { TextField } from "../../../shared/ui/TextField";
+import { NativeSelect } from "../../../shared/ui/Select";
+import { NativeSearchableSelect } from "../../../shared/ui/NativeSearchableSelect";
+import { RadioGroup } from "../../../shared/ui/RadioGroup";
+import { TextareaField } from "../../../shared/ui/TextareaField";
+import { Button } from "../../../shared/ui/Button";
+import { Checkbox } from "../../../shared/ui/Checkbox";
 import { dateTimeFormat } from "../../../shared/lib/intl";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useQueryVisible } from "../../../shared/hooks/useQueryVisible";
@@ -50,21 +58,70 @@ const states: Record<string, string> = {
   failed: "Failed",
   cancelled: "Cancelled",
 };
+/** Connect domain field labels to native inputs and shared adapters alike. */
 function Label({ text, children }: { text: string; children: ReactNode }) {
-  const id = useId();
+  const generatedId = useId();
+  const firstControl = Children.toArray(children).find(
+    (child) =>
+      isValidElement<Record<string, unknown>>(child) &&
+      [
+        TextField,
+        TextareaField,
+        NativeSelect,
+        NativeSearchableSelect,
+        Checkbox,
+        SearchableSelect,
+      ].includes(child.type as typeof TextField),
+  );
+  const id =
+    isValidElement<Record<string, unknown>>(firstControl) &&
+    typeof firstControl.props.id === "string"
+      ? firstControl.props.id
+      : generatedId;
   return (
-    <label className="social-program-field">
-      <span id={id}>{t(text)}</span>
-      {Children.map(children, (child) =>
-        isValidElement<Record<string, unknown>>(child) &&
-        typeof child.type === "string" &&
-        ["input", "select", "textarea"].includes(child.type)
-          ? cloneElement(child, { "aria-labelledby": id })
-          : child,
-      )}
-    </label>
+    <div className="social-program-field">
+      <label id={`${id}-label`} htmlFor={id}>
+        {t(text)}
+      </label>
+      {Children.map(children, (child) => {
+        if (!isValidElement<Record<string, unknown>>(child)) return child;
+        if (child.type === SearchableSelect) {
+          const triggerProps = (child.props.triggerProps ?? {}) as Record<string, unknown>;
+          return cloneElement(child, {
+            triggerProps: {
+              ...triggerProps,
+              id,
+              "aria-labelledby": [triggerProps["aria-labelledby"], `${id}-label`]
+                .filter(Boolean)
+                .join(" "),
+            },
+          });
+        }
+        if (
+          ![
+            TextField,
+            TextareaField,
+            NativeSelect,
+            NativeSearchableSelect,
+            Checkbox,
+            "input",
+            "select",
+            "textarea",
+          ].includes(child.type as typeof TextField)
+        )
+          return child;
+        const controlId = child.props.id ?? id;
+        return cloneElement(child, {
+          id: controlId,
+          "aria-labelledby": [child.props["aria-labelledby"], `${id}-label`]
+            .filter(Boolean)
+            .join(" "),
+        });
+      })}
+    </div>
   );
 }
+
 const localInput = (at: number) => {
   const d = new Date(at);
   return new Date(at - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
@@ -198,10 +255,21 @@ export function SocialPrograms({ client, snapshot, projects, initialProject, run
             <legend>{t("Purpose and content")}</legend>
             <div className="social-program-grid">
               <Label text="Campaign name">
-                <input required value={config.name} onChange={(e) => set("name", e.target.value)} />
+                <TextField
+                  hideLabel
+                  label=""
+                  required
+                  value={config.name}
+                  onChange={(e) => set("name", e.target.value)}
+                />
               </Label>
               <Label text="Project">
-                <select
+                <NativeSearchableSelect
+                  label={t("Project")}
+                  options={[
+                    { value: "", label: t("Select project") },
+                    ...projects.map((p) => ({ value: p.id, label: p.name })),
+                  ]}
                   required
                   value={config.projectId}
                   onChange={(e) =>
@@ -217,31 +285,30 @@ export function SocialPrograms({ client, snapshot, projects, initialProject, run
                       },
                     }))
                   }
-                >
-                  <option value="">{t("Select project")}</option>
-                  {projects.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.name}
-                    </option>
-                  ))}
-                </select>
+                />
               </Label>
               <Label text="Topic">
-                <input
+                <TextField
+                  hideLabel
+                  label=""
                   required
                   value={config.brief.topic}
                   onChange={(e) => brief("topic", e.target.value)}
                 />
               </Label>
               <Label text="Title">
-                <input
+                <TextField
+                  hideLabel
+                  label=""
                   value={config.brief.title}
                   onChange={(e) => brief("title", e.target.value)}
                 />
               </Label>
             </div>
             <Label text="Description">
-              <textarea
+              <TextareaField
+                hideLabel
+                label=""
                 required
                 rows={3}
                 value={config.brief.description}
@@ -250,28 +317,41 @@ export function SocialPrograms({ client, snapshot, projects, initialProject, run
             </Label>
             <div className="social-program-grid">
               <Label text="Audience">
-                <input
+                <TextField
+                  hideLabel
+                  label=""
                   value={config.brief.audience}
                   onChange={(e) => brief("audience", e.target.value)}
                 />
               </Label>
               <Label text="Content language">
-                <input
+                <TextField
+                  hideLabel
+                  label=""
                   value={config.brief.language}
                   onChange={(e) => brief("language", e.target.value)}
                 />
               </Label>
               <Label text="Brand voice">
-                <input
+                <TextField
+                  hideLabel
+                  label=""
                   value={config.brief.voice}
                   onChange={(e) => brief("voice", e.target.value)}
                 />
               </Label>
               <Label text="Call to action">
-                <input value={config.brief.cta} onChange={(e) => brief("cta", e.target.value)} />
+                <TextField
+                  hideLabel
+                  label=""
+                  value={config.brief.cta}
+                  onChange={(e) => brief("cta", e.target.value)}
+                />
               </Label>
               <Label text="Content angles (comma separated)">
-                <input
+                <TextField
+                  hideLabel
+                  label=""
                   value={config.brief.angles?.join(", ") ?? ""}
                   onChange={(e) =>
                     set("brief", {
@@ -285,7 +365,9 @@ export function SocialPrograms({ client, snapshot, projects, initialProject, run
                 />
               </Label>
               <Label text="Public link">
-                <input
+                <TextField
+                  hideLabel
+                  label=""
                   type="url"
                   value={config.brief.link ?? ""}
                   onChange={(e) => brief("link", e.target.value)}
@@ -293,7 +375,7 @@ export function SocialPrograms({ client, snapshot, projects, initialProject, run
               </Label>
             </div>
             <Label text="Content template">
-              <select
+              <NativeSelect
                 defaultValue=""
                 onChange={(e) => {
                   if (e.target.value)
@@ -309,9 +391,10 @@ export function SocialPrograms({ client, snapshot, projects, initialProject, run
                 <option value="">{t("Custom brief")}</option>
                 <option value="workflow">{t("Workflow and tips")}</option>
                 <option value="launch">{t("Product launch")}</option>
-              </select>
+              </NativeSelect>
             </Label>
-            <button
+            <Button
+              variant="secondary"
               type="button"
               disabled={!config.brief.link}
               onClick={() => {
@@ -327,7 +410,7 @@ export function SocialPrograms({ client, snapshot, projects, initialProject, run
               }}
             >
               {t("Add campaign UTM tags")}
-            </button>
+            </Button>
             <SocialMultiSelect
               label={t("Verified public facts")}
               selected={config.brief.factIds}
@@ -348,7 +431,8 @@ export function SocialPrograms({ client, snapshot, projects, initialProject, run
                 disabled: !a.grants[config.projectId]?.includes("draft"),
               }))}
             />
-            <button
+            <Button
+              variant="secondary"
               type="button"
               onClick={() =>
                 void run(async () =>
@@ -357,7 +441,7 @@ export function SocialPrograms({ client, snapshot, projects, initialProject, run
               }
             >
               {t("Check model and platform availability")}
-            </button>
+            </Button>
             {features ? (
               <ul>
                 {config.accountIds.map((id) => (
@@ -373,7 +457,7 @@ export function SocialPrograms({ client, snapshot, projects, initialProject, run
             <legend>{t("AI models and media")}</legend>
             <div className="social-program-grid">
               <Label text="Text provider">
-                <select
+                <NativeSelect
                   value={config.textAgent?.provider ?? ""}
                   onChange={(e) =>
                     set(
@@ -394,10 +478,12 @@ export function SocialPrograms({ client, snapshot, projects, initialProject, run
                       {id}
                     </option>
                   ))}
-                </select>
+                </NativeSelect>
               </Label>
               <Label text="Text model">
-                <input
+                <TextField
+                  hideLabel
+                  label=""
                   list={`${formId}-models`}
                   value={config.textAgent?.model ?? ""}
                   disabled={!config.textAgent}
@@ -417,7 +503,7 @@ export function SocialPrograms({ client, snapshot, projects, initialProject, run
                 </datalist>
               </Label>
               <Label text="Media source">
-                <select
+                <NativeSelect
                   value={config.image.mode}
                   onChange={(e) =>
                     set("image", {
@@ -431,12 +517,12 @@ export function SocialPrograms({ client, snapshot, projects, initialProject, run
                   <option value="generate" disabled={config.strategy === "pool"}>
                     {t("Generate image")}
                   </option>
-                </select>
+                </NativeSelect>
               </Label>
               {config.image.mode === "generate" ? (
                 <>
                   <Label text="Image provider">
-                    <select
+                    <NativeSelect
                       value={config.image.provider}
                       onChange={(e) =>
                         set("image", {
@@ -460,10 +546,12 @@ export function SocialPrograms({ client, snapshot, projects, initialProject, run
                           {id === "openai-api" ? t("OpenAI API (separately billed)") : id}
                         </option>
                       ))}
-                    </select>
+                    </NativeSelect>
                   </Label>
                   <Label text="Image model">
-                    <input
+                    <TextField
+                      hideLabel
+                      label=""
                       disabled={config.image.provider === "automatic"}
                       value={config.image.model ?? ""}
                       list={`${formId}-image-models`}
@@ -478,7 +566,7 @@ export function SocialPrograms({ client, snapshot, projects, initialProject, run
                     </datalist>
                   </Label>
                   <Label text="Aspect ratio">
-                    <select
+                    <NativeSelect
                       value={config.image.aspectRatio}
                       onChange={(e) =>
                         set("image", {
@@ -495,7 +583,7 @@ export function SocialPrograms({ client, snapshot, projects, initialProject, run
                           {x}
                         </option>
                       ))}
-                    </select>
+                    </NativeSelect>
                   </Label>
                   {features?.images.map((i) => (
                     <p key={i.provider}>
@@ -507,33 +595,37 @@ export function SocialPrograms({ client, snapshot, projects, initialProject, run
               {config.image.mode === "existing" ? (
                 <>
                   <Label text="Media library">
-                    <select
+                    <SearchableSelect
                       value=""
-                      onChange={(e) => {
+                      label={t("Media library")}
+                      options={[
+                        { value: "", label: t("Select saved media") },
+                        ...[
+                          ...new Map(
+                            snapshot.campaigns
+                              .flatMap((c) => c.variants)
+                              .flatMap((v) => v.media)
+                              .map((m) => [m.uploadId ?? m.url, m]),
+                          ).values(),
+                        ].map((m, i) => ({
+                          value: m.uploadId ?? m.url ?? "",
+                          label: m.alt || `${m.kind} ${i + 1}`,
+                        })),
+                      ]}
+                      onChange={(nextValue) => {
                         const media = snapshot.campaigns
                           .flatMap((c) => c.variants)
                           .flatMap((v) => v.media)
-                          .find((m) => (m.uploadId ?? m.url) === e.target.value);
+                          .find((m) => (m.uploadId ?? m.url) === nextValue);
                         if (media) set("image", { ...config.image, media: [media] });
                       }}
-                    >
-                      <option value="">{t("Select saved media")}</option>
-                      {[
-                        ...new Map(
-                          snapshot.campaigns
-                            .flatMap((c) => c.variants)
-                            .flatMap((v) => v.media)
-                            .map((m) => [m.uploadId ?? m.url, m]),
-                        ).values(),
-                      ].map((m, i) => (
-                        <option key={i} value={m.uploadId ?? m.url}>
-                          {m.alt || `${m.kind} ${i + 1}`}
-                        </option>
-                      ))}
-                    </select>
+                      searchLocale="tr"
+                    />
                   </Label>
                   <Label text="Upload image or video">
-                    <input
+                    <TextField
+                      hideLabel
+                      label=""
                       type="file"
                       accept="image/png,image/jpeg,video/mp4,video/webm"
                       onChange={(e) => {
@@ -557,7 +649,9 @@ export function SocialPrograms({ client, snapshot, projects, initialProject, run
                     />
                   </Label>
                   <Label text="Public image URL">
-                    <input
+                    <TextField
+                      hideLabel
+                      label=""
                       type="url"
                       value={config.image.media[0]?.url ?? ""}
                       onChange={(e) =>
@@ -573,28 +667,30 @@ export function SocialPrograms({ client, snapshot, projects, initialProject, run
               ) : null}
             </div>
             <Label text="Content strategy">
-              <select
+              <SearchableSelect
                 value={config.strategy}
-                onChange={(e) => set("strategy", e.target.value as ProgramConfig["strategy"])}
-              >
-                <option value="unique">{t("Unique content for every post")}</option>
-                <option
-                  value="repeat"
-                  disabled={config.accountIds.some(
-                    (id) => snapshot.accounts.find((a) => a.id === id)?.platform === "x",
-                  )}
-                >
-                  {t("Repeat approved content")}
-                </option>
-                <option
-                  value="pool"
-                  disabled={config.accountIds.some(
-                    (id) => snapshot.accounts.find((a) => a.id === id)?.platform === "x",
-                  )}
-                >
-                  {t("Rotate approved content pool")}
-                </option>
-              </select>
+                searchable={false}
+                label={t("Content strategy")}
+                options={[
+                  { value: "unique", label: t("Unique content for every post") },
+                  {
+                    value: "repeat",
+                    label: t("Repeat approved content"),
+                    disabled: config.accountIds.some(
+                      (id) => snapshot.accounts.find((a) => a.id === id)?.platform === "x",
+                    ),
+                  },
+                  {
+                    value: "pool",
+                    label: t("Rotate approved content pool"),
+                    disabled: config.accountIds.some(
+                      (id) => snapshot.accounts.find((a) => a.id === id)?.platform === "x",
+                    ),
+                  },
+                ]}
+                onChange={(nextValue) => set("strategy", nextValue as ProgramConfig["strategy"])}
+                searchLocale="tr"
+              />
             </Label>
             <details>
               <summary>{t("Account-specific media")}</summary>
@@ -602,7 +698,9 @@ export function SocialPrograms({ client, snapshot, projects, initialProject, run
                 <section key={id}>
                   <strong>{snapshot.accounts.find((a) => a.id === id)?.name}</strong>
                   <Label text="Override media">
-                    <input
+                    <TextField
+                      hideLabel
+                      label=""
                       type="file"
                       accept="image/png,image/jpeg,video/mp4,video/webm"
                       onChange={(e) => {
@@ -629,8 +727,7 @@ export function SocialPrograms({ client, snapshot, projects, initialProject, run
                     />
                   </Label>
                   <Label text="Use text only">
-                    <input
-                      type="checkbox"
+                    <Checkbox
                       checked={config.mediaOverrides?.[id]?.length === 0}
                       onChange={(e) =>
                         setConfig((c) => {
@@ -645,7 +742,8 @@ export function SocialPrograms({ client, snapshot, projects, initialProject, run
                   {config.mediaOverrides?.[id]?.length ? (
                     <p>
                       {t("Media override saved")}
-                      <button
+                      <Button
+                        variant="secondary"
                         type="button"
                         onClick={() =>
                           setConfig((c) => {
@@ -656,7 +754,7 @@ export function SocialPrograms({ client, snapshot, projects, initialProject, run
                         }
                       >
                         {t("Use campaign media")}
-                      </button>
+                      </Button>
                     </p>
                   ) : null}
                 </section>
@@ -677,7 +775,9 @@ export function SocialPrograms({ client, snapshot, projects, initialProject, run
             ) ? (
               <div className="social-program-grid">
                 <Label text="Video title">
-                  <input
+                  <TextField
+                    hideLabel
+                    label=""
                     value={config.youtube?.title ?? ""}
                     onChange={(e) =>
                       set("youtube", {
@@ -691,7 +791,7 @@ export function SocialPrograms({ client, snapshot, projects, initialProject, run
                   />
                 </Label>
                 <Label text="Video visibility">
-                  <select
+                  <NativeSelect
                     value={config.youtube?.privacy ?? "private"}
                     onChange={(e) =>
                       set("youtube", {
@@ -706,11 +806,10 @@ export function SocialPrograms({ client, snapshot, projects, initialProject, run
                     {["private", "unlisted", "public"].map((v) => (
                       <option key={v}>{v}</option>
                     ))}
-                  </select>
+                  </NativeSelect>
                 </Label>
                 <Label text="Made for kids">
-                  <input
-                    type="checkbox"
+                  <Checkbox
                     checked={config.youtube?.madeForKids ?? false}
                     onChange={(e) =>
                       set("youtube", {
@@ -724,8 +823,7 @@ export function SocialPrograms({ client, snapshot, projects, initialProject, run
                   />
                 </Label>
                 <Label text="Contains synthetic media">
-                  <input
-                    type="checkbox"
+                  <Checkbox
                     checked={config.youtube?.containsSyntheticMedia ?? false}
                     onChange={(e) =>
                       set("youtube", {
@@ -744,27 +842,32 @@ export function SocialPrograms({ client, snapshot, projects, initialProject, run
           <fieldset disabled={busy}>
             <legend>{t("Publishing schedule")}</legend>
             <div className="social-program-grid">
-              <Label text="Schedule mode">
-                <select
-                  value={config.schedule.mode}
-                  onChange={(e) =>
-                    schedule("mode", e.target.value as ProgramConfig["schedule"]["mode"])
-                  }
-                >
-                  <option value="times">{t("Specific times")}</option>
-                  <option value="interval">{t("Intervals")}</option>
-                  <option value="frequency">{t("Posting frequency")}</option>
-                </select>
-              </Label>
+              <RadioGroup
+                compact
+                label={t("Schedule mode")}
+                options={[
+                  { value: "times", label: t("Specific times") },
+                  { value: "interval", label: t("Intervals") },
+                  { value: "frequency", label: t("Posting frequency") },
+                ]}
+                value={config.schedule.mode}
+                onChange={(e) =>
+                  schedule("mode", e.target.value as ProgramConfig["schedule"]["mode"])
+                }
+              />
               <Label text="Time zone">
-                <input
+                <TextField
+                  hideLabel
+                  label=""
                   required
                   value={config.schedule.timeZone}
                   onChange={(e) => schedule("timeZone", e.target.value)}
                 />
               </Label>
               <Label text="Campaign start (device local time)">
-                <input
+                <TextField
+                  hideLabel
+                  label=""
                   type="datetime-local"
                   required
                   value={localInput(config.schedule.startsAt)}
@@ -772,7 +875,9 @@ export function SocialPrograms({ client, snapshot, projects, initialProject, run
                 />
               </Label>
               <Label text="Campaign end (optional)">
-                <input
+                <TextField
+                  hideLabel
+                  label=""
                   type="datetime-local"
                   value={config.schedule.endsAt ? localInput(config.schedule.endsAt) : ""}
                   onChange={(e) =>
@@ -784,7 +889,9 @@ export function SocialPrograms({ client, snapshot, projects, initialProject, run
                 />
               </Label>
               <Label text="Total logical posts">
-                <input
+                <TextField
+                  hideLabel
+                  label=""
                   type="number"
                   min={1}
                   max={10000}
@@ -794,15 +901,16 @@ export function SocialPrograms({ client, snapshot, projects, initialProject, run
                 />
               </Label>
               <Label text="Continuous campaign">
-                <input
-                  type="checkbox"
+                <Checkbox
                   checked={config.totalPosts === null}
                   onChange={(e) => set("totalPosts", e.target.checked ? null : 10)}
                 />
               </Label>
               {config.schedule.mode === "times" ? (
                 <Label text="Publishing times (HH:mm, comma separated)">
-                  <input
+                  <TextField
+                    hideLabel
+                    label=""
                     required
                     value={config.schedule.times.join(", ")}
                     onChange={(e) =>
@@ -816,14 +924,18 @@ export function SocialPrograms({ client, snapshot, projects, initialProject, run
               ) : (
                 <>
                   <Label text="Window start">
-                    <input
+                    <TextField
+                      hideLabel
+                      label=""
                       type="time"
                       value={config.schedule.startTime}
                       onChange={(e) => schedule("startTime", e.target.value)}
                     />
                   </Label>
                   <Label text="Window end">
-                    <input
+                    <TextField
+                      hideLabel
+                      label=""
                       type="time"
                       value={config.schedule.endTime}
                       onChange={(e) => schedule("endTime", e.target.value)}
@@ -832,7 +944,9 @@ export function SocialPrograms({ client, snapshot, projects, initialProject, run
                   {config.schedule.mode === "interval" ? (
                     <>
                       <Label text="Minimum interval (minutes)">
-                        <input
+                        <TextField
+                          hideLabel
+                          label=""
                           type="number"
                           min={1}
                           value={config.schedule.minIntervalMinutes}
@@ -840,7 +954,9 @@ export function SocialPrograms({ client, snapshot, projects, initialProject, run
                         />
                       </Label>
                       <Label text="Maximum interval (minutes)">
-                        <input
+                        <TextField
+                          hideLabel
+                          label=""
                           type="number"
                           min={1}
                           value={config.schedule.maxIntervalMinutes}
@@ -851,7 +967,9 @@ export function SocialPrograms({ client, snapshot, projects, initialProject, run
                   ) : (
                     <>
                       <Label text="Posts per period">
-                        <input
+                        <TextField
+                          hideLabel
+                          label=""
                           type="number"
                           min={1}
                           max={48}
@@ -860,13 +978,13 @@ export function SocialPrograms({ client, snapshot, projects, initialProject, run
                         />
                       </Label>
                       <Label text="Period">
-                        <select
+                        <NativeSelect
                           value={config.schedule.period}
                           onChange={(e) => schedule("period", e.target.value as "day" | "week")}
                         >
                           <option value="day">{t("Day")}</option>
                           <option value="week">{t("Week")}</option>
-                        </select>
+                        </NativeSelect>
                       </Label>
                     </>
                   )}
@@ -876,8 +994,7 @@ export function SocialPrograms({ client, snapshot, projects, initialProject, run
             <div className="social-program-days">
               {[1, 2, 3, 4, 5, 6, 7].map((day) => (
                 <label key={day}>
-                  <input
-                    type="checkbox"
+                  <Checkbox
                     checked={config.schedule.days.includes(day)}
                     onChange={(e) =>
                       schedule(
@@ -900,7 +1017,8 @@ export function SocialPrograms({ client, snapshot, projects, initialProject, run
                 accounts: config.accountIds.length,
               })}
             </p>
-            <button
+            <Button
+              variant="secondary"
               type="button"
               onClick={() =>
                 void run(async () => {
@@ -913,7 +1031,7 @@ export function SocialPrograms({ client, snapshot, projects, initialProject, run
               }
             >
               {t("Preview publishing times")}
-            </button>
+            </Button>
             {preview.length ? (
               <ol>
                 {preview.map((at) => (
@@ -924,24 +1042,33 @@ export function SocialPrograms({ client, snapshot, projects, initialProject, run
           </fieldset>
           <fieldset disabled={busy}>
             <legend>{t("Approval and limits")}</legend>
-            <Label text="Approval mode">
-              <select
-                value={config.approval.mode}
-                onChange={(e) => {
-                  const mode = e.target.value as ProgramConfig["approval"]["mode"];
-                  set("approval", { mode, steps: programApprovalSteps(mode) });
-                }}
-              >
-                <option value="approved">{t("Approved")}</option>
-                <option value="semi">{t("Semi-approved: first sample and plan")}</option>
-                <option value="automatic">{t("Automatic after explicit activation")}</option>
-              </select>
-            </Label>
+            <RadioGroup
+              label={t("Approval mode")}
+              options={(
+                [
+                  ["approved", "Approved"],
+                  ["semi", "Semi-approved: first sample and plan"],
+                  ["automatic", "Automatic"],
+                ] as const
+              ).map(([mode, label]) => ({
+                value: mode,
+                label: t(label),
+                description: programApprovalSteps(mode).length
+                  ? programApprovalSteps(mode)
+                      .map((step) => t(steps[step]))
+                      .join(" · ")
+                  : t("Automatic after explicit activation"),
+              }))}
+              value={config.approval.mode}
+              onChange={(e) => {
+                const mode = e.target.value as ProgramConfig["approval"]["mode"];
+                set("approval", { mode, steps: programApprovalSteps(mode) });
+              }}
+            />
             <div className="social-program-days">
               {PROGRAM_STEPS.map((step) => (
                 <label key={step}>
-                  <input
-                    type="checkbox"
+                  <Checkbox
                     checked={config.approval.steps.includes(step)}
                     onChange={(e) =>
                       set("approval", {
@@ -981,7 +1108,9 @@ export function SocialPrograms({ client, snapshot, projects, initialProject, run
                     }[key]
                   }
                 >
-                  <input
+                  <TextField
+                    hideLabel
+                    label=""
                     type="number"
                     min={1}
                     max={100000}
@@ -1002,13 +1131,17 @@ export function SocialPrograms({ client, snapshot, projects, initialProject, run
           <details>
             <summary>{t("Describe the campaign to AI")}</summary>
             <Label text="Campaign instructions">
-              <textarea
+              <TextareaField
+                hideLabel
+                label=""
                 rows={3}
                 value={instructions}
                 onChange={(e) => setInstructions(e.target.value)}
               />
             </Label>
-            <button
+            <Button
+              variant="secondary"
+              loading={busy}
               type="button"
               disabled={busy || !instructions.trim()}
               onClick={() =>
@@ -1023,16 +1156,17 @@ export function SocialPrograms({ client, snapshot, projects, initialProject, run
               }
             >
               {t("Fill settings with AI")}
-            </button>
+            </Button>
             {questions.map((q, i) => (
               <p key={i}>{q}</p>
             ))}
           </details>
-          <button type="submit" disabled={busy}>
+          <Button variant="secondary" loading={busy} type="submit" disabled={busy}>
             {t("Save paused campaign")}
-          </button>
+          </Button>
           {edit ? (
-            <button
+            <Button
+              variant="secondary"
               type="button"
               onClick={() => {
                 setEdit(undefined);
@@ -1040,13 +1174,15 @@ export function SocialPrograms({ client, snapshot, projects, initialProject, run
               }}
             >
               {t("New campaign")}
-            </button>
+            </Button>
           ) : null}
         </form>
       </Composer>
       <div className="social-program-list">
         {programs.map((p) => (
-          <button
+          <Button
+            variant="tab"
+            loading={busy}
             type="button"
             key={p.id}
             disabled={busy}
@@ -1063,7 +1199,7 @@ export function SocialPrograms({ client, snapshot, projects, initialProject, run
               {p.enabled ? t("Active") : p.cancelled ? t("Cancelled") : t("Paused")} ·{" "}
               {p.nextSequence}/{p.totalPosts ?? "∞"}
             </span>
-          </button>
+          </Button>
         ))}
       </div>
       {detail ? (
@@ -1076,9 +1212,18 @@ export function SocialPrograms({ client, snapshot, projects, initialProject, run
             {detail.program.imageGenerationCount}/{detail.program.limits.maxImageGenerations}
           </p>
           <Label text="Link for future drafts">
-            <input type="url" value={bulkLink} onChange={(e) => setBulkLink(e.target.value)} />
+            <TextField
+              hideLabel
+              label=""
+              type="url"
+              value={bulkLink}
+              onChange={(e) => setBulkLink(e.target.value)}
+            />
           </Label>
-          <button
+          <Button
+            type="submit"
+            variant="secondary"
+            loading={busy}
             disabled={busy}
             onClick={() =>
               void perform("programs.bulk-edit", {
@@ -1089,15 +1234,21 @@ export function SocialPrograms({ client, snapshot, projects, initialProject, run
             }
           >
             {t("Apply link to editable drafts")}
-          </button>
+          </Button>
           <div className="social-toolbar-actions">
-            <button
+            <Button
+              type="submit"
+              variant="secondary"
+              loading={busy}
               disabled={busy || detail.program.cancelled}
               onClick={() => void perform("programs.generate", { id: detail.program.id })}
             >
               {t("Generate next content")}
-            </button>
-            <button
+            </Button>
+            <Button
+              type="submit"
+              variant="secondary"
+              loading={busy}
               disabled={busy}
               onClick={() => {
                 const {
@@ -1124,31 +1275,36 @@ export function SocialPrograms({ client, snapshot, projects, initialProject, run
               }}
             >
               {t("Edit campaign settings")}
-            </button>
-            <button
+            </Button>
+            <Button
+              type="submit"
+              variant="secondary"
+              loading={busy}
               disabled={busy}
               onClick={() => void perform("programs.pause", { id: detail.program.id })}
             >
               {t("Pause")}
-            </button>
-            <button
+            </Button>
+            <Button
+              type="submit"
+              variant="secondary"
+              loading={busy}
               disabled={busy}
               onClick={() => void perform("programs.cancel", { id: detail.program.id })}
             >
               {t("Cancel future publications")}
-            </button>
+            </Button>
           </div>
           <label className="social-program-confirm">
-            <input
-              type="checkbox"
-              checked={confirmed}
-              onChange={(e) => setConfirmed(e.target.checked)}
-            />
+            <Checkbox checked={confirmed} onChange={(e) => setConfirmed(e.target.checked)} />
             {t(
               "I reviewed this revision, its accounts, schedule, models, budgets and approval steps.",
             )}
           </label>
-          <button
+          <Button
+            type="submit"
+            variant="secondary"
+            loading={busy}
             disabled={busy || !confirmed || detail.program.cancelled || detail.program.enabled}
             onClick={() =>
               void perform("programs.activate", {
@@ -1159,7 +1315,7 @@ export function SocialPrograms({ client, snapshot, projects, initialProject, run
             }
           >
             {t("Activate reviewed campaign")}
-          </button>
+          </Button>
           {!snapshot.sendingEnabled || snapshot.stopped ? (
             <Notice>
               {t(
@@ -1195,7 +1351,9 @@ export function SocialPrograms({ client, snapshot, projects, initialProject, run
                 ) : null}
                 {!o.targets.some((t) => t.jobId) ? (
                   <Label text="Reschedule (device local time)">
-                    <input
+                    <TextField
+                      hideLabel
+                      label=""
                       type="datetime-local"
                       disabled={busy}
                       defaultValue={localInput(o.scheduledAt)}
@@ -1226,7 +1384,9 @@ export function SocialPrograms({ client, snapshot, projects, initialProject, run
             ))}
           </div>
           {detail.nextBefore !== undefined ? (
-            <button
+            <Button
+              type="submit"
+              variant="secondary"
               onClick={() =>
                 void run(async () => {
                   const older = await client.request<ProgramDetail>("programs.status", {
@@ -1240,7 +1400,7 @@ export function SocialPrograms({ client, snapshot, projects, initialProject, run
               }
             >
               {t("Load older posts")}
-            </button>
+            </Button>
           ) : null}
         </>
       ) : null}
@@ -1305,23 +1465,37 @@ function TargetEditor({
         </p>
       ) : null}
       {!variant && !target.jobId && target.status !== "generating" ? (
-        <button disabled={busy} onClick={() => void perform("programs.regenerate", ids)}>
+        <Button
+          type="submit"
+          variant="secondary"
+          loading={busy}
+          disabled={busy}
+          onClick={() => void perform("programs.regenerate", ids)}
+        >
           {t("Regenerate")}
-        </button>
+        </Button>
       ) : null}
       {target.imageProvider === "comfyui" &&
       target.generation.providerJobId &&
       variant &&
       !variant.media.length &&
       target.status === "review" ? (
-        <button disabled={busy} onClick={() => void perform("programs.resume-image", ids)}>
+        <Button
+          type="submit"
+          variant="secondary"
+          loading={busy}
+          disabled={busy}
+          onClick={() => void perform("programs.resume-image", ids)}
+        >
           {t("Resume existing image job")}
-        </button>
+        </Button>
       ) : null}
       {variant ? (
         <>
           <Label text="Platform content">
-            <textarea
+            <TextareaField
+              hideLabel
+              label=""
               rows={3}
               disabled={busy || !!target.jobId || target.status === "generating"}
               value={variant.text}
@@ -1332,7 +1506,9 @@ function TargetEditor({
             />
           </Label>
           <Label text="Public link">
-            <input
+            <TextField
+              hideLabel
+              label=""
               type="url"
               disabled={busy || !!target.jobId}
               value={variant.link ?? ""}
@@ -1345,7 +1521,9 @@ function TargetEditor({
           {variant.youtube ? (
             <>
               <Label text="Video title">
-                <input
+                <TextField
+                  hideLabel
+                  label=""
                   disabled={busy || !!target.jobId}
                   value={variant.youtube.title}
                   onChange={(e) => {
@@ -1358,7 +1536,7 @@ function TargetEditor({
                 />
               </Label>
               <Label text="Video visibility">
-                <select
+                <NativeSelect
                   disabled={busy || !!target.jobId}
                   value={variant.youtube.privacy}
                   onChange={(e) => {
@@ -1375,7 +1553,7 @@ function TargetEditor({
                   {["private", "unlisted", "public"].map((value) => (
                     <option key={value}>{value}</option>
                   ))}
-                </select>
+                </NativeSelect>
               </Label>
             </>
           ) : null}
@@ -1388,12 +1566,20 @@ function TargetEditor({
                   ) : image ? (
                     <img src={image} alt={media.alt ?? ""} />
                   ) : (
-                    <button disabled={busy} onClick={() => void previewImage(media.uploadId!)}>
+                    <Button
+                      type="submit"
+                      variant="secondary"
+                      loading={busy}
+                      disabled={busy}
+                      onClick={() => void previewImage(media.uploadId!)}
+                    >
                       {t("Preview generated image")}
-                    </button>
+                    </Button>
                   )}
                   <Label text="Image alt text">
-                    <input
+                    <TextField
+                      hideLabel
+                      label=""
                       disabled={busy || !!target.jobId}
                       value={media.alt ?? ""}
                       onChange={(e) => {
@@ -1415,7 +1601,10 @@ function TargetEditor({
           ))}
           {!target.jobId ? (
             <div className="social-toolbar-actions">
-              <button
+              <Button
+                type="submit"
+                variant="secondary"
+                loading={busy}
                 disabled={busy || target.status === "generating"}
                 onClick={() =>
                   void perform("programs.edit", {
@@ -1431,19 +1620,21 @@ function TargetEditor({
                 }
               >
                 {t("Save content changes")}
-              </button>
-              <button
+              </Button>
+              <Button
+                type="submit"
+                variant="secondary"
+                loading={busy}
                 disabled={busy || target.status === "generating"}
                 onClick={() => void perform("programs.regenerate", ids)}
               >
                 {t("Regenerate")}
-              </button>
+              </Button>
               <div className="social-program-days">
                 {PROGRAM_STEPS.filter((s) => s !== "image" || program.image.mode !== "none").map(
                   (step) => (
                     <label key={step}>
-                      <input
-                        type="checkbox"
+                      <Checkbox
                         checked={selectedSteps.includes(step)}
                         onChange={(e) =>
                           setSelectedSteps(
@@ -1459,7 +1650,10 @@ function TargetEditor({
                   ),
                 )}
               </div>
-              <button
+              <Button
+                type="submit"
+                variant="secondary"
+                loading={busy}
                 disabled={
                   busy || dirty.current || !selectedSteps.length || target.status === "generating"
                 }
@@ -1473,7 +1667,7 @@ function TargetEditor({
                 }
               >
                 {t("Approve selected steps")}
-              </button>
+              </Button>
             </div>
           ) : null}
         </>

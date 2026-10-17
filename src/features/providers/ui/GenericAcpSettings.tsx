@@ -1,3 +1,6 @@
+import { Alert } from "../../../shared/ui/Alert";
+import { NumberField } from "../../../shared/ui/NumberField";
+import { PasswordField } from "../../../shared/ui/PasswordField";
 import { t, useLocale } from "../../../shared/i18n";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { invoke } from "@tauri-apps/api/core";
@@ -274,10 +277,7 @@ function GenericAcpMachineSettings({ cwd, embedded }: { cwd: string; embedded: b
         }
       >
         {loading || busy || status || (!configs.length && !error) ? (
-          <p
-            role="status"
-            className="border-b border-content/5 px-3 py-2 text-[11px] text-content/60"
-          >
+          <Alert tone="info" role="status">
             {loading
               ? t("Loading ACP agents…")
               : busy
@@ -285,15 +285,12 @@ function GenericAcpMachineSettings({ cwd, embedded }: { cwd: string; embedded: b
                 : status
                   ? t(status)
                   : t("No ACP agents configured. Use Add agent or browse the registry.")}
-          </p>
+          </Alert>
         ) : null}
         {error && (
-          <p
-            role="alert"
-            className="border-b border-content/5 px-3 py-2 text-[11px] text-danger/90"
-          >
+          <Alert tone="danger" role="alert">
             {error}
-          </p>
+          </Alert>
         )}
         {configs.map((config) => (
           <div
@@ -436,12 +433,12 @@ function GenericAcpMachineSettings({ cwd, embedded }: { cwd: string; embedded: b
                       wide
                       label={t("Environment (JSON object; blank preserves stored values)")}
                     >
-                      <TextField
+                      <PasswordField
                         label={t("Environment (JSON object; blank preserves stored values)")}
                         hideLabel
                         fieldClassName="w-full"
                         disabled={loading || !!busy}
-                        type="password"
+
                         autoComplete="off"
                         className="font-mono"
                         value={envText}
@@ -463,12 +460,12 @@ function GenericAcpMachineSettings({ cwd, embedded }: { cwd: string; embedded: b
                       />
                     </Field>
                     <Field label={t("Context window tokens (optional)")}>
-                      <TextField
+                      <NumberField
                         label={t("Context window tokens (optional)")}
                         hideLabel
                         fieldClassName="w-full"
                         disabled={loading || !!busy}
-                        type="number"
+
                         min={1024}
                         value={form.contextWindow ?? ""}
                         onChange={(event) =>
@@ -530,9 +527,9 @@ function GenericAcpMachineSettings({ cwd, embedded }: { cwd: string; embedded: b
               )}
             </p>
             {registryState === "loading" ? (
-              <p role="status" className="px-3 pb-2 text-[11px] text-content/55">
+              <Alert tone="info" role="status">
                 {t("Loading ACP registry…")}
-              </p>
+              </Alert>
             ) : registryState === "error" ? null : registryState === "loaded" &&
               registry.length > 0 ? (
               <div className="divide-y divide-content/5">

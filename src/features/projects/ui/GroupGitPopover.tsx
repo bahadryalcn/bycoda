@@ -1,3 +1,4 @@
+import { Button } from "../../../shared/ui/Button";
 import { t, useLocale } from "../../../shared/i18n";
 import { useEffect, useState } from "react";
 import { gitDiffIndex } from "../../../platform/tauri/fs";
@@ -104,7 +105,7 @@ export function GroupGitPopover({
       onDismiss={onDismiss}
       className="overflow-y-auto p-1"
     >
-      <p className="px-2.5 pb-1 pt-1.5 text-xs text-content/50">
+      <p className="px-2.5 pb-1 pt-1.5 text-xs text-[var(--ui-text-muted)]">
         {summary.known}
         {t(" of ")}
         {summary.local}
@@ -118,23 +119,30 @@ export function GroupGitPopover({
           const detail = details[path];
           return (
             <li key={path}>
-              <button
+              <Button
+                variant="item"
+                motion="none"
                 type="button"
                 title={t("Open this project's Changes tab")}
                 onClick={() => onSelect(path)}
-                className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-[13px] text-content/80 hover:bg-content/8 hover:text-content"
+                className="flex w-full items-center gap-2 text-left"
               >
                 <span className="min-w-0 flex-1 truncate">{basename(path)}</span>
                 {!local ? (
-                  <span className="shrink-0 text-[11px] text-content/45">{t("remote")}</span>
+                  <span className="shrink-0 text-[11px] text-[var(--ui-text-muted)]">
+                    {t("remote")}
+                  </span>
                 ) : !detail || detail.state === "loading" ? (
-                  <span className="shrink-0 text-[11px] text-content/40">…</span>
+                  <span className="shrink-0 text-[11px] text-[var(--ui-text-muted)]">…</span>
                 ) : detail.state === "error" ? (
-                  <span className="shrink-0 text-[11px] text-content/45" title={detail.message}>
+                  <span
+                    className="shrink-0 text-[11px] text-[var(--ui-text-muted)]"
+                    title={detail.message}
+                  >
                     {t("no git info")}
                   </span>
                 ) : (
-                  <span className="flex shrink-0 items-center gap-2 text-[11px] tabular-nums text-content/55">
+                  <span className="flex shrink-0 items-center gap-2 text-[11px] tabular-nums text-[var(--ui-text-muted)]">
                     <span className="max-w-[110px] truncate">{detail.branch ?? t("detached")}</span>
                     <span
                       className={detail.files > 0 ? "text-warning" : undefined}
@@ -149,7 +157,7 @@ export function GroupGitPopover({
                     </span>
                   </span>
                 )}
-              </button>
+              </Button>
             </li>
           );
         })}

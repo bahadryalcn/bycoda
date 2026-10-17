@@ -12,6 +12,34 @@ type HostCall = {
 };
 const fixture = "/tests/browser/tasks.html";
 
+test("compact goal filters retain scope, reset and keyboard menu focus", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 800 });
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.goto(`${fixture}?boardControls&uiFilters`);
+  const filters = page.getByRole("button", { name: "Filters", exact: true });
+  await filters.focus();
+  await page.keyboard.press("Enter");
+  const popover = page.getByRole("dialog", { name: "Filters", exact: true });
+  await choose(page, popover.getByRole("button", { name: /^Show goal:/ }), "Settings goal");
+  await expect(filters).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByRole("article", { name: "Independent task", exact: true })).toHaveCount(0);
+  await popover.getByRole("button", { name: "Reset", exact: true }).click();
+  await expect(filters).toHaveAttribute("aria-pressed", "false");
+  await expect(page.getByRole("article", { name: "Independent task", exact: true })).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(filters).toBeFocused();
+  const more = page
+    .getByRole("article", { name: "Completed task", exact: true })
+    .getByRole("button", { name: "More actions", exact: true });
+  await more.click();
+  await page.keyboard.press("Home");
+  await expect(
+    page.getByRole("menuitem", { name: "Choose delivery target", exact: true }),
+  ).toBeFocused();
+  await page.keyboard.press("Escape");
+  await expect(more).toBeFocused();
+});
+
 for (const width of [390, 768, 1440]) {
   for (const theme of ["light", "dark"]) {
     test(`existing goal settings at ${width}px in ${theme} theme`, async ({ page }, testInfo) => {
@@ -73,8 +101,8 @@ test("execution mode is selectable in task and goal dialogs", async ({ page }, t
     expect(
       await form
         .getByRole("radiogroup", { name: "Execution mode", exact: true })
-        .evaluate((node) => getComputedStyle(node).backgroundColor),
-    ).not.toBe("rgba(0, 0, 0, 0)");
+        .evaluate((node) => getComputedStyle(node).borderTopStyle),
+    ).toBe("solid");
     await expect(form.getByRole("radio", { name: "Shared checkout", exact: true })).toBeChecked();
     await form.getByRole("radio", { name: "Separate worktree", exact: true }).click();
     await expect(form.getByRole("radio", { name: "Separate worktree", exact: true })).toBeChecked();
@@ -135,7 +163,7 @@ test("goal dialog keeps workspace, manual start and concurrency choices together
   await expect(form.getByRole("button", { name: "Plan it", exact: true })).toBeDisabled();
   await form.getByRole("button", { name: "Create a separate worktree", exact: true }).click();
   await expect(form.getByRole("button", { name: /^Worktree:/ })).toContainText("goal/settings");
-  const screenshots = resolve("temp/verification/2026-10-12-task-controls");
+  const screenshots = resolve("temp/verification/2026-10-16-ui-system/W4b-TASKS-captures");
   await mkdir(screenshots, { recursive: true });
   await page.screenshot({
     path: resolve(screenshots, `goal-dialog-${testInfo.project.name}.png`),
@@ -182,8 +210,9 @@ test("board cards support reorder, explicit start and reviewed delivery choices"
   ).toBeVisible();
   await page
     .getByRole("article", { name: "Completed task", exact: true })
-    .getByRole("button", { name: "Choose delivery target", exact: true })
+    .getByRole("button", { name: "More actions", exact: true })
     .click();
+  await page.getByRole("menuitem", { name: "Choose delivery target", exact: true }).click();
   const dialog = page.getByRole("dialog", { name: "Choose delivery target", exact: true });
   await dialog
     .getByRole("textbox", { name: "New integration branch", exact: true })
@@ -405,7 +434,7 @@ test("project discovery errors have an in-form retry", async ({ page }) => {
 });
 
 test("task and goal controls stay inside a narrow viewport", async ({ page }, testInfo) => {
-  const screenshots = resolve("temp/verification/2026-10-12-task-controls");
+  const screenshots = resolve("temp/verification/2026-10-16-ui-system/W4b-TASKS-captures");
   await mkdir(screenshots, { recursive: true });
   for (const width of [320, 480]) {
     await page.setViewportSize({ width, height: 900 });
@@ -483,7 +512,7 @@ test("task and goal controls stay inside a narrow viewport", async ({ page }, te
 test("task details use the narrow panel and retain the desktop board", async ({
   page,
 }, testInfo) => {
-  const screenshots = resolve("temp/verification/2026-10-12-task-controls");
+  const screenshots = resolve("temp/verification/2026-10-16-ui-system/W4b-TASKS-captures");
   await mkdir(screenshots, { recursive: true });
   for (const width of [320, 1000]) {
     await page.setViewportSize({ width, height: 900 });
@@ -566,7 +595,8 @@ for (const method of ["environment.describe", "goals.list"]) {
       exact: true,
     });
     await expect(localCard).toBeVisible();
-    await localCard.getByRole("button", { name: "Delete", exact: true }).click();
+    await localCard.getByRole("button", { name: "More actions", exact: true }).click();
+    await page.getByRole("menuitem", { name: "Delete", exact: true }).click();
     await expect(localCard).toHaveCount(0);
     await page.getByRole("button", { name: "New task", exact: true }).click();
     await expect(form.getByRole("button", { name: "Add to To do", exact: true })).toBeDisabled();
@@ -603,7 +633,7 @@ for (const method of ["environment.describe", "goals.list"]) {
 test("task worker, running reviewer and retained attempts navigate to their own host project", async ({
   page,
 }, testInfo) => {
-  const screenshots = resolve("temp/verification/2026-10-12-task-controls");
+  const screenshots = resolve("temp/verification/2026-10-16-ui-system/W4b-TASKS-captures");
   await mkdir(screenshots, { recursive: true });
   for (const host of ["local", "remote"]) {
     await page.setViewportSize({

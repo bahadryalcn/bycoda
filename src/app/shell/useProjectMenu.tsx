@@ -1,3 +1,4 @@
+import { Alert } from "../../shared/ui/Alert";
 import { t } from "../../shared/i18n";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
@@ -696,9 +697,9 @@ export function useProjectMenu({
         ]}
         footer={
           menuError ? (
-            <p role="alert" className="px-2 py-1 text-xs text-danger">
+            <Alert tone="danger" role="alert">
               {menuError}
-            </p>
+            </Alert>
           ) : null
         }
         onExtraPick={onPick}
@@ -962,9 +963,9 @@ export function useProjectMenu({
         ariaLabel="Project group actions"
         footer={
           menuError ? (
-            <p role="alert" className="px-3 py-2 text-xs text-danger">
+            <Alert tone="danger" role="alert">
               {menuError}
-            </p>
+            </Alert>
           ) : undefined
         }
         compactAppearance

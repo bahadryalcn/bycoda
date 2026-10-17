@@ -1,3 +1,4 @@
+import { Button } from "../../../shared/ui/Button";
 import { useCallback, useEffect, useState, type ComponentProps } from "react";
 import { lazySurface } from "../../../shared/ui/lazySurface";
 import { t, useLocale } from "../../../shared/i18n/technical";
@@ -35,7 +36,9 @@ export function DelimitedFileView(props: ComponentProps<typeof FileEditorType>) 
         aria-label={t("Table view")}
       >
         {(["preview", "source"] as const).map((value) => (
-          <button
+          <Button
+            variant="ghost"
+            motion="none"
             key={value}
             type="button"
             aria-pressed={mode === value}
@@ -43,14 +46,14 @@ export function DelimitedFileView(props: ComponentProps<typeof FileEditorType>) 
               if (value === "source") setSourceMounted(true);
               setMode(value);
             }}
-            className={`rounded px-2 py-1 text-xs [@media(hover:hover)_and_(pointer:fine)]:hover:bg-content/10 active:bg-content/15 focus-visible:outline-2 focus-visible:outline-accent ${mode === value ? "bg-selection-strong text-content" : "text-content/60"}`}
+            className={" "}
           >
             {t(value === "preview" ? "Preview" : "Source")}
-          </button>
+          </Button>
         ))}
       </div>
       {mode === "preview" && dirty ? (
-        <p role="status" className="px-3 py-1 text-xs text-content/60">
+        <p role="status" className="px-3 py-1 text-xs text-[var(--ui-text-secondary)]">
           {t("Preview shows the saved file. Your source edits are kept in the Source view.")}
         </p>
       ) : null}

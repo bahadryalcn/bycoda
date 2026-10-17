@@ -1,3 +1,6 @@
+import { RadioGroup } from "../../../shared/ui/RadioGroup";
+import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
+import { Checkbox } from "../../../shared/ui/Checkbox";
 import { lazy, Suspense, useState, useSyncExternalStore } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import { Check, CodeBlock } from "../../../shared/ui/icons";
@@ -64,8 +67,7 @@ export function OnboardingWorkspace() {
               <strong>{t(label)}</strong>
               <small>{t(description)}</small>
             </div>
-            <input
-              type="checkbox"
+            <Checkbox
               checked={features[id]}
               onChange={(event) => workspaceFeatureSettings[id].save(event.target.checked)}
             />
@@ -73,8 +75,7 @@ export function OnboardingWorkspace() {
         ))}
       </div>
       <label className="onboarding-check-row">
-        <input
-          type="checkbox"
+        <Checkbox
           checked={keepAwake}
           onChange={(event) => saveKeepAwakeEnabled(event.target.checked)}
         />
@@ -105,92 +106,65 @@ export function OnboardingAppearance() {
         <h3>{t("Make yourself at home")}</h3>
         <p>{t("Choose your appearance and the crew that keeps you company.")}</p>
       </div>
-      <fieldset className="onboarding-fieldset">
-        <legend>{t("Appearance")}</legend>
-        <div className="onboarding-theme-options">
-          {(
-            [
-              { id: "light", label: "Light" },
-              { id: "dark", label: "Dark" },
-              { id: "system", label: "System" },
-            ] as const
-          ).map(({ id, label }) => (
-            <label key={id} className="onboarding-theme-option">
-              <input
-                type="radio"
-                name="onboarding-appearance"
-                value={id}
-                checked={theme === id}
-                onChange={() => changeTheme(id)}
-              />
-              <span aria-hidden="true" className="onboarding-mode-preview" data-mode={id}>
-                <i />
-                <i />
-                <i />
+      <SegmentedControl
+        label={t("Appearance")}
+        optionIdPrefix="onboarding-appearance"
+        className="mbs-3 mbe-3"
+        value={theme}
+        options={[
+          { value: "light", label: t("Light") },
+          { value: "dark", label: t("Dark") },
+          { value: "system", label: t("System") },
+        ]}
+        onValueChange={(value) => changeTheme(value as ThemePreference)}
+      />
+      <div className="grid grid-cols-2 gap-2">
+        <Suspense fallback={<span className="onboarding-crew-preview" />}>
+          <OnboardingCrewPreview theme="classic" />
+        </Suspense>
+        <Suspense fallback={<span className="onboarding-crew-preview" />}>
+          <OnboardingCrewPreview theme="star-wars" />
+        </Suspense>
+      </div>
+      <RadioGroup
+        compact
+        label={t("Agent crew")}
+        name="onboarding-crew"
+        value={crewEnabled ? crewTheme : "none"}
+        onValueChange={(value) => {
+          if (value === "none") saveCrewSceneEnabled(false);
+          else {
+            saveCrewTheme(value as "classic" | "star-wars");
+            saveCrewSceneEnabled(true);
+          }
+        }}
+        options={[
+          {
+            value: "classic",
+            label: (
+              <span title={t("The original tea crew, drawn in monochrome code art.")}>
+                {t("Uncles")} · {t("Code art")}
               </span>
-              <span>{t(label)}</span>
-            </label>
-          ))}
-        </div>
-      </fieldset>
-      <fieldset className="onboarding-fieldset">
-        <legend>{t("Agent crew")}</legend>
-        <div className="onboarding-crew-options">
-          {(
-            [
-              {
-                id: "classic",
-                label: "Uncles",
-                description: "The original tea crew, drawn in monochrome code art.",
-              },
-              {
-                id: "star-wars",
-                label: "Star Wars",
-                description:
+            ),
+          },
+          {
+            value: "star-wars",
+            label: (
+              <span
+                title={t(
                   "Obi-Wan leads, Yoda advises; Darth Vader, Luke, Leia and Chewbacca join as subagents. R2-D2 joins when the crew grows beyond six.",
-              },
-            ] as const
-          ).map(({ id, label, description }) => (
-            <label key={id} className="onboarding-crew-option">
-              <Suspense fallback={<div className="onboarding-crew-preview" />}>
-                <OnboardingCrewPreview theme={id} />
-              </Suspense>
-              <div className="onboarding-crew-label">
-                <div>
-                  <strong>{t(label)}</strong>
-                  <small title={t(description)}>
-                    {id === "classic" ? t("Code art") : t("Galaxy crew")}
-                  </small>
-                </div>
-                <input
-                  type="radio"
-                  name="onboarding-crew"
-                  value={id}
-                  checked={crewEnabled && crewTheme === id}
-                  onChange={() => {
-                    saveCrewTheme(id);
-                    saveCrewSceneEnabled(true);
-                  }}
-                />
-              </div>
-            </label>
-          ))}
-        </div>
-      </fieldset>
+                )}
+              >
+                {t("Star Wars")} · {t("Galaxy crew")}
+              </span>
+            ),
+          },
+          { value: "none", label: t("No crew · keep the workspace quiet") },
+        ]}
+      />
       <div className="onboarding-appearance-toggles">
         <label className="onboarding-check-row">
-          <input
-            type="radio"
-            name="onboarding-crew"
-            value="none"
-            checked={!crewEnabled}
-            onChange={() => saveCrewSceneEnabled(false)}
-          />
-          <span>{t("No crew · keep the workspace quiet")}</span>
-        </label>
-        <label className="onboarding-check-row">
-          <input
-            type="checkbox"
+          <Checkbox
             checked={motion}
             onChange={(event) => saveDecorativeMotionEnabled(event.target.checked)}
           />

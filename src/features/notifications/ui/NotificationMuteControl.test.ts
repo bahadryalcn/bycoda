@@ -80,10 +80,8 @@ describe("NotificationMuteControl", () => {
     expect(document.querySelector('input[type="datetime-local"]')).toBeNull();
     expect(document.querySelector('[role="grid"]')).not.toBeNull();
     expect(
-      [...document.querySelectorAll("button")]
-        .find((button) => button.textContent === "Mute until then")
-        ?.classList.contains("primary-action"),
-    ).toBe(true);
+      document.querySelector('button[type="submit"]')?.getAttribute("data-button-hierarchy"),
+    ).toBe("primary");
     act(() =>
       document.querySelector<HTMLButtonElement>('button[aria-label="2030-01-15"]')!.click(),
     );

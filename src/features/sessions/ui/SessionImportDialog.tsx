@@ -1,3 +1,5 @@
+import { Button } from "../../../shared/ui/Button";
+import { Checkbox } from "../../../shared/ui/Checkbox";
 import { SearchInput } from "../../../shared/ui/SearchInput";
 import { t, useLocale, getLocale } from "../../../shared/i18n";
 import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
@@ -53,10 +55,6 @@ const PROVIDER_LABEL: Record<ImportProvider, string> = {
   claude: "Claude Code",
   codex: "Codex",
 };
-
-const checkbox = "size-3.5 shrink-0 accent-accent";
-const chip =
-  "rounded-md border px-2 py-0.5 text-[11px] transition-colors focus-visible:outline-2 focus-visible:outline-accent";
 
 function plural(count: number, one: string, many = `${one}s`): string {
   return `${count.toLocaleString(getLocale())} ${count === 1 ? one : many}`;
@@ -253,12 +251,12 @@ export function SessionImportDialog({ onClose, onImported, initialContext }: Pro
     >
       <div className="flex min-h-0 flex-col gap-3 p-4 pt-3">
         {load.status === "loading" ? (
-          <p className="py-10 text-center text-[13px] text-content/55">
+          <p className="py-10 text-center text-[13px] text-(--ui-text-secondary)">
             {t("Scanning Claude Code and Codex history…")}
           </p>
         ) : null}
         {load.status === "error" ? (
-          <p className="py-10 text-center text-[13px] text-danger">
+          <p className="py-10 text-center text-[13px] text-(--ui-tone-danger-fg)">
             {t("Could not read the history: ")}
             {load.message}
           </p>
@@ -270,7 +268,8 @@ export function SessionImportDialog({ onClose, onImported, initialContext }: Pro
               {(["claude", "codex"] as const).map((provider) => {
                 const on = providers.has(provider);
                 return (
-                  <button
+                  <Button
+                    variant="ghost"
                     key={provider}
                     type="button"
                     aria-pressed={on}
@@ -282,68 +281,58 @@ export function SessionImportDialog({ onClose, onImported, initialContext }: Pro
                         return next;
                       })
                     }
-                    className={`${chip} flex items-center gap-1.5 ${
-                      on
-                        ? "border-content/25 bg-content/10 text-content"
-                        : "border-content/10 text-content/45 hover:text-content"
-                    }`}
                   >
                     <HarnessIcon harness={provider} className="size-3" />
                     {PROVIDER_LABEL[provider]}
-                  </button>
+                  </Button>
                 );
               })}
               {root ? (
-                <button
+                <Button
+                  variant="ghost"
                   type="button"
                   aria-pressed={onlyRoot}
                   onClick={() => setOnlyRoot((value) => !value)}
-                  className={`${chip} ${
-                    onlyRoot
-                      ? "border-content/25 bg-content/10 text-content"
-                      : "border-content/10 text-content/45 hover:text-content"
-                  }`}
                 >
                   {t("Only under ")}
                   {root.replace("/", "\\")}
-                </button>
+                </Button>
               ) : null}
-              <label className="flex items-center gap-1.5 px-1.5 text-[11px] text-content/65">
-                <input
-                  type="checkbox"
-                  className={checkbox}
+              <label className="flex items-center gap-1.5 px-1.5 text-[11px] text-(--ui-text-secondary)">
+                <Checkbox
                   checked={showAutomation}
                   onChange={(event) => setShowAutomation(event.target.checked)}
                 />
                 {t("Show automation runs")}
               </label>
               <SearchInput
-                standalone
+                appearance="field"
                 type="search"
                 value={text}
                 onChange={(event) => setText(event.target.value)}
                 placeholder={t("Filter by prompt or folder")}
                 aria-label={t("Filter conversations")}
                 containerClassName="ml-auto min-w-40 flex-1 sm:max-w-64"
-                className="rounded-md border border-content/15 bg-content/3 px-2.5 py-1 text-[12px] outline-none focus:border-content/35"
               />
             </div>
 
-            <div className="flex flex-wrap items-center gap-3 text-[11px] text-content/55">
-              <button
+            <div className="flex flex-wrap items-center gap-3 text-[11px] text-(--ui-text-secondary)">
+              <Button
+                variant="ghost"
                 type="button"
-                className="hover:text-content"
+
                 onClick={() => toggleKeys(selectable(visible), true)}
               >
                 {t("Select all shown")}
-              </button>
-              <button
+              </Button>
+              <Button
+                variant="ghost"
                 type="button"
-                className="hover:text-content"
+
                 onClick={() => toggleKeys(visible.map(candidateKey), false)}
               >
                 {t("Clear selection")}
-              </button>
+              </Button>
               <span className="ml-auto">
                 {plural(visible.length, "conversation")}
                 {t(" in")} {plural(folders.length, "folder")}
@@ -353,9 +342,9 @@ export function SessionImportDialog({ onClose, onImported, initialContext }: Pro
               </span>
             </div>
 
-            <div className="max-h-[46vh] min-h-32 overflow-y-auto rounded-xl border border-content/10 bg-content/3">
+            <div className="max-h-[46vh] min-h-32 overflow-y-auto rounded-xl border border-(--ui-tone-neutral-border) bg-(--ui-surface-raised)">
               {folders.length === 0 ? (
-                <p className="px-4 py-8 text-center text-[12px] text-content/45">
+                <p className="px-4 py-8 text-center text-[12px] text-(--ui-text-secondary)">
                   {report.candidates.length === 0
                     ? t("No Claude Code or Codex conversations were found on this computer.")
                     : t("Nothing matches these filters.")}
@@ -383,18 +372,16 @@ export function SessionImportDialog({ onClose, onImported, initialContext }: Pro
               )}
             </div>
 
-            <div className="flex flex-col gap-2 rounded-xl border border-content/10 bg-content/3 px-3 py-2.5">
-              <label className="flex items-center gap-2 text-[12px] text-content/80">
-                <input
-                  type="checkbox"
-                  className={checkbox}
+            <div className="flex flex-col gap-2 rounded-xl border border-(--ui-tone-neutral-border) bg-(--ui-surface-raised) px-3 py-2.5">
+              <label className="flex items-center gap-2 text-[12px] text-(--ui-text-secondary)">
+                <Checkbox
                   checked={groupProjects}
                   onChange={(event) => setGroupProjects(event.target.checked)}
                 />
                 {t("Group new projects in the sidebar by their parent folder")}
               </label>
               {groupProjects ? (
-                <p className="pl-5 text-[11px] leading-relaxed text-content/50">
+                <p className="pl-5 text-[11px] leading-relaxed text-(--ui-text-secondary)">
                   {groupPreview.length === 0
                     ? t("No groups: no folder has two or more projects to group.")
                     : groupPreview.map((group) => `${group.name} (${group.count})`).join(" · ")}
@@ -403,7 +390,7 @@ export function SessionImportDialog({ onClose, onImported, initialContext }: Pro
             </div>
 
             <div className="flex flex-wrap items-center gap-3">
-              <p className="min-w-0 flex-1 text-[12px] leading-snug text-content/65">
+              <p className="min-w-0 flex-1 text-[12px] leading-snug text-(--ui-text-secondary)">
                 {counts.toImport === 0
                   ? t("Nothing selected to import.")
                   : t("{p0} in {p1} will be imported ({p2} on disk).", {
@@ -416,29 +403,30 @@ export function SessionImportDialog({ onClose, onImported, initialContext }: Pro
                       p0: plural(counts.alreadyImported, "conversation"),
                     })
                   : ""}
-                <span className="block text-[11px] text-content/40">
+                <span className="block text-[11px] text-(--ui-text-secondary)">
                   {t("Scanned ")}
                   {report.filesScanned.toLocaleString(getLocale())}
                   {t(" files in")} {report.elapsedMs.toLocaleString(getLocale())}
                   {t(" ms. Conversations hidden by a filter are not imported.")}
                 </span>
               </p>
-              <button
+              <Button
+                variant="ghost"
                 type="button"
-                className="rounded-md px-3 py-1.5 text-[12px] text-content/70 hover:bg-content/8 hover:text-content"
+
                 onClick={onClose}
               >
                 {t("Close")}
-              </button>
-              <button
+              </Button>
+              <Button
+                variant="ghost"
                 type="button"
                 disabled={counts.toImport === 0}
                 onClick={() => void start()}
-                className="rounded-md bg-selection px-3 py-1.5 text-[12px] font-medium hover:bg-selection-hover disabled:opacity-40"
               >
                 {t("Import")}{" "}
                 {counts.toImport > 0 ? counts.toImport.toLocaleString(getLocale()) : ""}
-              </button>
+              </Button>
             </div>
           </>
         ) : null}
@@ -482,42 +470,42 @@ function FolderSection({
   }, [chosen, keys.length]);
 
   return (
-    <section className="border-b border-content/5 last:border-b-0">
+    <section className="border-b border-(--ui-tone-neutral-border) last:border-b-0">
       <div className="flex items-center gap-2 px-3 py-2">
-        <input
+        <Checkbox
           ref={header}
-          type="checkbox"
-          className={checkbox}
+
           aria-label={t("Select every conversation in {p0}", { p0: folder.path })}
           disabled={keys.length === 0}
           checked={keys.length > 0 && chosen === keys.length}
           onChange={(event) => onToggleKeys(keys, event.target.checked)}
         />
-        <button
+        <Button
+          variant="ghost"
           type="button"
           aria-expanded={open}
           onClick={onToggleOpen}
-          className="flex min-w-0 flex-1 items-center gap-2 text-left"
+          className="min-w-0 flex-1 text-left"
         >
           {open ? (
-            <ChevronDown className="size-3.5 shrink-0 text-content/45" />
+            <ChevronDown className="size-3.5 shrink-0 text-(--ui-text-secondary)" />
           ) : (
-            <ChevronRight className="size-3.5 shrink-0 text-content/45" />
+            <ChevronRight className="size-3.5 shrink-0 text-(--ui-text-secondary)" />
           )}
-          <Folder className="size-3.5 shrink-0 text-content/55" />
+          <Folder className="size-3.5 shrink-0 text-(--ui-text-secondary)" />
           <span className="min-w-0 flex-1 truncate text-[13px] font-medium">
             {prettyCwd(folder.path)}
           </span>
           {!folder.exists ? (
-            <span className="shrink-0 rounded bg-warning/15 px-1.5 py-0.5 text-[10px] text-warning">
+            <span className="shrink-0 rounded bg-(--ui-tone-warning-subtle) px-1.5 py-0.5 text-[10px] text-(--ui-tone-warning-fg)">
               {t("missing folder")}
             </span>
           ) : null}
-          <span className="shrink-0 text-[11px] text-content/45">
+          <span className="shrink-0 text-[11px] text-(--ui-text-secondary)">
             {chosen > 0 ? t("{p0} of ", { p0: chosen }) : ""}
             {plural(folder.items.length, "conversation")}
           </span>
-        </button>
+        </Button>
       </div>
       {open ? (
         <ul className="pb-1">
@@ -527,13 +515,11 @@ function FolderSection({
             return (
               <li key={key}>
                 <label
-                  className={`flex items-center gap-2.5 py-1.5 pl-9 pr-3 hover:bg-content/5 ${
+                  className={`flex items-center gap-2.5 py-1.5 pl-9 pr-3 hover:bg-(--ui-surface-raised) ${
                     imported ? "opacity-50" : "cursor-pointer"
                   }`}
                 >
-                  <input
-                    type="checkbox"
-                    className={checkbox}
+                  <Checkbox
                     disabled={imported}
                     checked={imported || selected.has(key)}
                     onChange={(event) => onToggleKeys([key], event.target.checked)}
@@ -546,26 +532,26 @@ function FolderSection({
                   </span>
                   <span className="min-w-0 flex-1 truncate text-[12px]">{item.firstPrompt}</span>
                   {imported ? (
-                    <span className="shrink-0 rounded bg-content/10 px-1.5 py-0.5 text-[10px]">
+                    <span className="shrink-0 rounded bg-(--ui-surface-raised) px-1.5 py-0.5 text-[10px]">
                       {t("imported")}
                     </span>
                   ) : isHistoryOnly(item) ? (
                     <span
-                      className="shrink-0 rounded bg-content/10 px-1.5 py-0.5 text-[10px] text-content/60"
+                      className="shrink-0 rounded bg-(--ui-surface-raised) px-1.5 py-0.5 text-[10px] text-(--ui-text-secondary)"
                       title={t("Imported as history; sending a message starts a new conversation")}
                     >
                       {t("history only")}
                     </span>
                   ) : null}
                   {item.kind !== "interactive" ? (
-                    <span className="shrink-0 rounded bg-content/10 px-1.5 py-0.5 text-[10px] text-content/60">
+                    <span className="shrink-0 rounded bg-(--ui-surface-raised) px-1.5 py-0.5 text-[10px] text-(--ui-text-secondary)">
                       {item.kind === "exec" ? t("automation") : t("subagent")}
                     </span>
                   ) : null}
-                  <span className="w-24 shrink-0 text-right text-[11px] text-content/45">
+                  <span className="w-24 shrink-0 text-right text-[11px] text-(--ui-text-secondary)">
                     {formatDate(item.lastAt)}
                   </span>
-                  <span className="w-14 shrink-0 text-right text-[11px] text-content/45">
+                  <span className="w-14 shrink-0 text-right text-[11px] text-(--ui-text-secondary)">
                     {formatBytes(item.sizeBytes)}
                   </span>
                 </label>
@@ -589,32 +575,28 @@ function RunningView({ progress, onCancel }: { progress: ImportProgress; onCance
         {t(" of")} {progress.total.toLocaleString(getLocale())}…
       </p>
       <div
-        className="h-1.5 overflow-hidden rounded-full bg-content/10"
+        className="h-1.5 overflow-hidden rounded-full bg-(--ui-surface-raised)"
         role="progressbar"
         aria-valuemin={0}
         aria-valuemax={100}
         aria-valuenow={percent}
       >
         <div
-          className="h-full rounded-full bg-accent transition-[width]"
+          className="h-full rounded-full bg-(--ui-tone-accent-subtle) transition-[width]"
           style={{ width: `${percent}%` }}
         />
       </div>
-      <p className="truncate text-[12px] text-content/55">{progress.current ?? " "}</p>
-      <p className="text-[11px] text-content/45">
+      <p className="truncate text-[12px] text-(--ui-text-secondary)">{progress.current ?? " "}</p>
+      <p className="text-[11px] text-(--ui-text-secondary)">
         {progress.imported.toLocaleString(getLocale())}
         {t(" imported")}
         {progress.skipped > 0 ? t(" · {p0} skipped", { p0: progress.skipped }) : ""}
         {progress.failed.length > 0 ? t(" · {p0} failed", { p0: progress.failed.length }) : ""}
       </p>
       <div className="flex justify-end">
-        <button
-          type="button"
-          onClick={onCancel}
-          className="rounded-md px-3 py-1.5 text-[12px] text-content/70 hover:bg-content/8 hover:text-content"
-        >
+        <Button variant="ghost" type="button" onClick={onCancel}>
           {t("Cancel")}
-        </button>
+        </Button>
       </div>
     </div>
   );
@@ -627,7 +609,7 @@ function DoneView({ summary, onClose }: { summary: ImportSummary; onClose: () =>
       <p className="text-[14px] font-medium">
         {summary.cancelled ? t("Import cancelled") : t("Import finished")}
       </p>
-      <ul className="flex flex-col gap-1 text-[12px] text-content/70">
+      <ul className="flex flex-col gap-1 text-[12px] text-(--ui-text-secondary)">
         <li>
           {plural(summary.imported, "conversation")}
           {t(" imported.")}
@@ -666,15 +648,15 @@ function DoneView({ summary, onClose }: { summary: ImportSummary; onClose: () =>
         ) : null}
       </ul>
       {summary.failed.length > 0 ? (
-        <details className="rounded-lg border border-danger/30 bg-danger/5 px-3 py-2 text-[12px]">
-          <summary className="cursor-pointer text-danger">
+        <details className="rounded-lg border border-(--ui-tone-danger-border) bg-(--ui-tone-danger-subtle) px-3 py-2 text-[12px]">
+          <summary className="cursor-pointer text-(--ui-tone-danger-fg)">
             {plural(summary.failed.length, "conversation")}
             {t(" could not be imported")}
           </summary>
           <ul className="mt-2 flex max-h-40 flex-col gap-1 overflow-y-auto">
             {summary.failed.map((failure) => (
-              <li key={candidateKey(failure.candidate)} className="text-content/70">
-                <span className="text-content">{failure.candidate.firstPrompt}</span>
+              <li key={candidateKey(failure.candidate)} className="text-(--ui-text-secondary)">
+                <span className="text-(--ui-tone-neutral-fg)">{failure.candidate.firstPrompt}</span>
                 {" — "}
                 {failure.error}
               </li>
@@ -683,13 +665,9 @@ function DoneView({ summary, onClose }: { summary: ImportSummary; onClose: () =>
         </details>
       ) : null}
       <div className="flex justify-end">
-        <button
-          type="button"
-          onClick={onClose}
-          className="rounded-md bg-selection px-3 py-1.5 text-[12px] font-medium hover:bg-selection-hover"
-        >
+        <Button variant="ghost" type="button" onClick={onClose}>
           {t("Done")}
-        </button>
+        </Button>
       </div>
     </div>
   );

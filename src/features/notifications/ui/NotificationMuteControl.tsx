@@ -1,4 +1,7 @@
 import { t, useLocale } from "../../../shared/i18n";
+import { Button } from "../../../shared/ui/Button";
+import { Alert } from "../../../shared/ui/Alert";
+import { Badge } from "../../../shared/ui/Badge";
 import { useRef, useState } from "react";
 import { useProjectNotificationPreferences } from "../hooks/useProjectNotificationPreferences";
 import {
@@ -51,18 +54,19 @@ export function NotificationMuteControl({ projectIds, onChanged }: Props) {
   return (
     <div className="flex max-w-full flex-wrap items-center justify-end gap-x-3 gap-y-2">
       {status ? (
-        <span role="status" className="text-[11px] text-content/50">
+        <Badge role="status" tone="neutral">
           {status}
-        </span>
+        </Badge>
       ) : null}
       {muted.length ? (
-        <button
+        <Button
           type="button"
-          className="rounded-md px-2 py-1.5 text-xs text-content/70 hover:bg-content/5 hover:text-content focus-visible:outline-2 focus-visible:outline-accent"
+          aria-label={t("Resume notifications")}
+          variant="ghost"
           onClick={() => change(undefined)}
         >
           {t("Resume notifications")}
-        </button>
+        </Button>
       ) : null}
       <SecondaryButton
         ref={trigger}
@@ -79,9 +83,9 @@ export function NotificationMuteControl({ projectIds, onChanged }: Props) {
         <ChevronDown className="size-3 text-content/40" aria-hidden="true" />
       </SecondaryButton>
       {error ? (
-        <p role="alert" className="w-full text-xs text-danger">
+        <Alert tone="danger" className="w-full">
           {error}
-        </p>
+        </Alert>
       ) : null}
       {open === "menu" && trigger.current ? (
         <ExplorerMenu

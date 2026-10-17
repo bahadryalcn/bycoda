@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
-import { AlertCircle } from "../../../shared/ui/icons";
+import { Alert } from "../../../shared/ui/Alert";
+import { EmptyState } from "../../../shared/ui/EmptyState";
 
 /** Centered notice shared by the document viewers: unsupported, failed, empty. */
 export function DocumentMessage({
@@ -13,11 +14,13 @@ export function DocumentMessage({
 }) {
   return (
     <div className="grid h-full place-items-center p-6">
-      <div className="flex max-w-md flex-col items-center text-center text-[12px] leading-5 text-content/50">
-        {error ? <AlertCircle className="mb-3 size-5 text-danger" /> : null}
-        <p className="text-[13px] text-content">{title}</p>
-        {children}
-      </div>
+      {error ? (
+        <Alert tone="danger" title={title}>
+          {children}
+        </Alert>
+      ) : (
+        <EmptyState title={title} description={children ?? ""} />
+      )}
     </div>
   );
 }

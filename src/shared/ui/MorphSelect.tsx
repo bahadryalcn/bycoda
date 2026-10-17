@@ -1,7 +1,7 @@
-import { useEffect, useRef, useState, type RefObject } from "react";
+import { useEffect, useRef, useState, type ComponentPropsWithRef, type RefObject } from "react";
 import {
   MorphSelect as ArcMorphSelect,
-  type MorphSelectOption,
+  type MorphSelectItem,
 } from "./arc/morph-select/morph-select";
 import { useOverlay } from "./overlay";
 import { t, useLocale } from "../i18n";
@@ -24,20 +24,37 @@ export function MorphSelect({
   options,
   onChange,
   disabled = false,
+  searchable = false,
+  onClose,
+  triggerProps,
 }: {
   label: string;
   value: string;
-  options: MorphSelectOption[];
+  options: MorphSelectItem[];
   onChange: (value: string) => void;
   disabled?: boolean;
+  searchable?: boolean | "auto";
+  onClose?: () => void;
+  triggerProps?: Pick<
+    ComponentPropsWithRef<"button">,
+    "ref" | "onMouseDown" | "title" | "aria-label" | "onFocus" | "onBlur"
+  >;
 }) {
   useLocale();
   const root = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState(false);
+  const restore = useRef(false);
+  useEffect(() => {
+    if (!open && restore.current) {
+      restore.current = false;
+      onClose?.();
+    }
+  }, [open, onClose]);
   useEffect(() => {
     if (disabled) setOpen(false);
   }, [disabled]);
   const close = () => {
+    restore.current = true;
     setOpen(false);
     root.current
       ?.querySelector<HTMLButtonElement>('button[role="combobox"]')
@@ -50,11 +67,15 @@ export function MorphSelect({
         hideLabel
         value={value}
         items={options}
-        onValueChange={onChange}
+        onValueChange={(next) => onChange(next)}
         disabled={disabled}
         open={open}
         onOpenChange={setOpen}
-        searchable={false}
+        searchable={searchable}
+        triggerProps={triggerProps}
+        onClose={(restoreFocus) => {
+          restore.current = restoreFocus;
+        }}
         align="end"
         panelWidth={272}
         className="bycoda-arc bycoda-arc-morph"
@@ -66,3 +87,9 @@ export function MorphSelect({
     </div>
   );
 }
+
+export type {
+  MorphSelectOption,
+  MorphSelectGroup,
+  MorphSelectItem,
+} from "./arc/morph-select/morph-select";

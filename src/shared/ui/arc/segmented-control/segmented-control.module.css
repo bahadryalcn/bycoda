@@ -87,6 +87,10 @@
   align-items: center;
   gap: 6px;
 }
+.accessory {
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+}
 @media (max-width: 380px) {
   .button {
     padding: 0 10px;

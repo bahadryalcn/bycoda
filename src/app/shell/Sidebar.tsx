@@ -1,3 +1,7 @@
+import { Badge, type BadgeTone } from "../../shared/ui/Badge";
+import { Alert } from "../../shared/ui/Alert";
+import { TextField } from "../../shared/ui/TextField";
+import { Button } from "../../shared/ui/Button";
 import styles from "./Sidebar.module.css";
 import {
   SourceControl,
@@ -7,7 +11,7 @@ import {
   preloadSidebarSurfaces,
 } from "./sidebarSurfaces";
 import { RelativeSessionTime, useMinuteNow } from "./RelativeSessionTime";
-import { SearchInput } from "../../shared/ui/SearchInput";
+import { SearchInput, SearchInputGroup } from "../../shared/ui/SearchInput";
 import { themePalette } from "../../shared/theme/palette";
 import { motion as layoutMotion } from "motion/react";
 import { sessionStatusOrder } from "../../features/sessions/model/sessionStatusOrder";
@@ -2365,20 +2369,22 @@ function SidebarComponent({
               </ul>
               {onNew ? (
                 <div className="border-t border-stroke p-1">
-                  <button
+                  <Button
+                    variant="ghost"
+                    motion="none"
                     type="button"
                     data-no-drag
                     data-tauri-drag-region="false"
                     title={t("New session")}
                     aria-label={t("New session")}
                     onClick={() => onNewInFolder(entry.folder.id)}
-                    className="relative flex w-full items-center gap-1 rounded-md border border-transparent px-2.5 py-1.5 text-left text-content/45 hover:bg-content/10 hover:text-content"
+                    className="relative flex w-full items-center gap-1"
                   >
                     <Plus className="size-3 shrink-0" strokeWidth={1.75} />
                     <span className="text-[13px] font-semibold leading-snug">
                       {t("New session")}
                     </span>
-                  </button>
+                  </Button>
                 </div>
               ) : null}
             </>
@@ -2409,6 +2415,7 @@ function SidebarComponent({
 
   const sessionSearchInput = (
     <SearchInput
+      focusOwner="group"
       ref={searchInputRef}
       type="text"
       value={searchQuery}
@@ -2427,7 +2434,7 @@ function SidebarComponent({
           setSearchQuery("");
         }
       }}
-      className="h-full w-full min-w-0 rounded-md bg-transparent py-0 pl-7 pr-2 text-[12px] text-content outline-none placeholder:text-content/35"
+      className="w-full min-w-0"
     />
   );
 
@@ -2471,7 +2478,9 @@ function SidebarComponent({
           sortable.onItemPointerDown(itemId, event);
         }}
       >
-        <button
+        <Button
+          variant="tab"
+          motion="none"
           type="button"
           role="tab"
           aria-selected={active}
@@ -2483,9 +2492,8 @@ function SidebarComponent({
             if (sortable.consumeClick()) return;
             onTabPick(itemId);
           }}
-          className={`flex h-6 min-w-0 flex-1 items-center justify-center self-center overflow-hidden rounded-md px-1.5 text-[12px] leading-none ${
-            active ? "bg-selection text-content" : "text-content/50"
-          }`}
+          size="sm"
+          className="flex min-w-0 flex-1 items-center justify-center self-center overflow-hidden leading-none"
         >
           <Icon className="workspace-tab-icon" aria-hidden="true" />
           <span className="workspace-tab-content flex min-w-0 items-center justify-center">
@@ -2496,7 +2504,7 @@ function SidebarComponent({
             )}
           </span>
           {itemId === "sessions" ? workingSessionsBadge : null}
-        </button>
+        </Button>
       </div>
     );
   });
@@ -2535,7 +2543,7 @@ function SidebarComponent({
       }}
       ref={resize.setPaneRef}
       data-side-pane="workspace"
-      className="bycoda-sidebar body-glass sidebar-pane relative flex h-full min-h-0 shrink-0 flex-col border-r border-stroke"
+      className="bycoda-sidebar body-glass sidebar-pane relative flex h-full min-h-0 shrink-0 flex-col border-r border-stroke pe-1.5"
     >
       {railVisible ? (
         <>
@@ -2648,10 +2656,10 @@ function SidebarComponent({
             data-session-list-panel
             className="flex h-9 shrink-0 items-center gap-1 border-b border-stroke px-2"
           >
-            <div className="relative flex h-7 min-w-0 flex-1 items-center">
-              <Search className="pointer-events-none absolute left-2 size-3 shrink-0 opacity-50" />
+            <SearchInputGroup appearance="field" className="min-w-0 flex-1">
+              <Search className="size-3 shrink-0" />
               {sessionSearchInput}
-            </div>
+            </SearchInputGroup>
             <span data-session-selection-keep className="contents">
               <SessionsHeaderButton
                 label={selectionMode ? t("Stop selecting") : t("Select conversations")}
@@ -2692,24 +2700,28 @@ function SidebarComponent({
               {selectedSessionIds.size}
               {t(" selected")}
             </span>
-            <button
+            <Button
+              variant="ghost"
+              motion="none"
               type="button"
               disabled={
                 sessionNavigationIds.length === 0 ||
                 selectedSessionIds.size === sessionNavigationIds.length
               }
               onClick={selectAllListedSessions}
-              className="rounded-md px-1.5 py-0.5 hover:bg-content/10 hover:text-content disabled:pointer-events-none disabled:opacity-40"
+              className="disabled:pointer-events-none"
             >
               {t("Select all")}
-            </button>
-            <button
+            </Button>
+            <Button
+              variant="ghost"
+              motion="none"
               type="button"
               onClick={clearSessionSelection}
-              className="rounded-md px-1.5 py-0.5 hover:bg-content/10 hover:text-content"
+              className=""
             >
               {selectedSessionIds.size > 0 ? t("Clear") : t("Done")}
-            </button>
+            </Button>
             {selectedSessionIds.size > 0 ? (
               <span className="flex shrink-0 items-center gap-px">
                 {onOpenSessionsSideBySide && selectedOrderedIds.length > 1 ? (
@@ -2784,14 +2796,16 @@ function SidebarComponent({
                 : bulkNotice}
             </span>
             {!deleteProgress ? (
-              <button
+              <Button
+                variant="ghost"
+                motion="none"
                 type="button"
                 onClick={dismissBulkNotice}
                 aria-label={t("Dismiss deletion result")}
-                className="shrink-0 text-content/50 hover:text-content"
+                className="shrink-0"
               >
                 {t("Dismiss")}
-              </button>
+              </Button>
             ) : null}
           </div>
         ) : null}
@@ -2848,24 +2862,26 @@ function SidebarComponent({
                     : t("Loading conversations…")}
                 </p>
               ) : remoteProject && remote.failed && projectSessions.length === 0 ? (
-                <div role="alert" className="px-3 py-2 text-[12px] text-content/50">
+                <Alert tone="danger" role="alert">
                   <p>
                     {remote.machine
                       ? t("Couldn’t reach {p0}. Trying again…", { p0: remote.machine.name })
                       : t("Couldn’t load sessions")}
                   </p>
-                  <button
+                  <Button
+                    variant="ghost"
+                    motion="none"
                     type="button"
                     onClick={refreshRemoteProjectSessions}
-                    className="mt-2 rounded-md bg-content/8 px-2 py-1 text-content/80 hover:bg-content/15"
+                    className="mt-2"
                   >
                     {t("Retry")}
-                  </button>
-                </div>
+                  </Button>
+                </Alert>
               ) : status === "error" && projectSessions.length === 0 ? (
-                <p role="alert" className="px-3 py-2 text-[12px] text-content/50">
+                <Alert tone="danger" role="alert">
                   {t("Couldn’t load sessions")}
-                </p>
+                </Alert>
               ) : visibleSessions.length === 0 ? (
                 // A narrowed-down result is a transient answer to what the user
                 // just typed, so it stays a quiet line of text. Only the genuine
@@ -2878,15 +2894,17 @@ function SidebarComponent({
                         : t("No sessions match these filters")}
                     </p>
                     {filtersActive && listedSessions.length > 0 ? (
-                      <button
+                      <Button
+                        variant="ghost"
+                        motion="none"
                         type="button"
-                        className="rounded-md bg-content/8 px-2 py-1 text-[11px] text-content/80 hover:bg-content/15 hover:text-content"
+                        className=""
                         onClick={() => onSessionFiltersChange(DEFAULT_SESSION_SIDEBAR_FILTERS)}
                       >
                         {t("Clear filters (")}
                         {listedSessions.length}{" "}
                         {listedSessions.length === 1 ? t("session") : t("sessions")} {t("hidden)")}
-                      </button>
+                      </Button>
                     ) : null}
                   </div>
                 ) : remoteProject && !remote.machine ? (
@@ -3126,7 +3144,7 @@ function SidebarComponent({
       <div
         {...resize.separatorProps}
         aria-label={t("Resize sidebar")}
-        className={`absolute inset-y-0 -right-px z-10 w-1.5 cursor-col-resize touch-none ${
+        className={`absolute inset-y-0 end-0 z-10 w-1.5 cursor-col-resize touch-none ${
           resize.dragging ? "bg-content/15" : "hover:bg-content/10"
         }`}
         onPointerDown={resize.onPointerDown}
@@ -3670,7 +3688,9 @@ function CompactRailAction({
 }) {
   useLocale();
   return (
-    <button
+    <Button
+      variant="ghost"
+      motion="none"
       ref={ref}
       data-usage-guide={usageGuideTarget}
       type="button"
@@ -3703,11 +3723,7 @@ function CompactRailAction({
             }
           : undefined
       }
-      className={`relative grid size-8 shrink-0 place-items-center rounded-md active:scale-[0.97] ${
-        active
-          ? "bg-selection text-content"
-          : "text-content/50 hover:bg-content/10 hover:text-content"
-      } disabled:cursor-default disabled:opacity-35`}
+      className={`relative grid shrink-0 place-items-center `}
     >
       <Icon className={`size-4 ${dot ? "compact-rail-icon-with-dot" : ""}`} strokeWidth={1.75} />
       {dot ? (
@@ -3718,7 +3734,7 @@ function CompactRailAction({
           {badge}
         </span>
       ) : null}
-    </button>
+    </Button>
   );
 }
 
@@ -3839,18 +3855,21 @@ function BulkBarAction({
 }) {
   useLocale();
   return (
-    <button
+    <Button
+      tone={danger ? "danger" : "neutral"}
+      iconOnly
+      label={t("{p0} selected", { p0: label })}
+      variant="ghost"
+      motion="none"
       type="button"
       title={t("{p0} selected", { p0: label })}
       aria-label={t("{p0} selected", { p0: label })}
       disabled={disabled}
       onClick={onClick}
-      className={`grid size-6 place-items-center rounded-md text-content/60 hover:bg-content/10 disabled:pointer-events-none disabled:opacity-40 ${
-        danger ? "hover:text-danger" : "hover:text-content"
-      }`}
+      className={`grid place-items-center disabled:pointer-events-none `}
     >
       {children}
-    </button>
+    </Button>
   );
 }
 
@@ -3871,7 +3890,12 @@ function SessionsHeaderButton({
 }) {
   useLocale();
   return (
-    <button
+    <Button
+      iconOnly
+      label={label}
+      selected={open || active}
+      variant="ghost"
+      motion="none"
       type="button"
       title={label}
       aria-label={label}
@@ -3879,12 +3903,10 @@ function SessionsHeaderButton({
       aria-haspopup={hasPopup ? "menu" : undefined}
       onPointerDown={(event) => event.stopPropagation()}
       onClick={onClick}
-      className={`relative z-50 grid size-6 place-items-center rounded-md text-content/50 hover:bg-content/10 hover:text-content ${
-        open || active ? "bg-selection text-content" : ""
-      }`}
+      className={`relative z-50 grid place-items-center `}
     >
       {children}
-    </button>
+    </Button>
   );
 }
 
@@ -4039,7 +4061,10 @@ function FolderRow({
   const count = sessions.length;
   const accent = folderAccent(folder.colorIndex, folder.customColor);
   return (
-    <button
+    <Button
+      selected={expanded || dropTarget}
+      variant="ghost"
+      motion="none"
       type="button"
       title={folder.name}
       data-folder-row=""
@@ -4054,15 +4079,7 @@ function FolderRow({
           onRename();
         }
       }}
-      className={`group relative flex w-full touch-none items-center gap-1.5 px-2 h-8 text-left ${
-        expanded ? "rounded-md" : ""
-      } ${
-        dropTarget
-          ? "text-content"
-          : expanded
-            ? "text-content hover:bg-content/10"
-            : "text-content/80 hover:bg-content/10 hover:text-content"
-      }`}
+      className={`group relative flex w-full touch-none items-center gap-1.5  `}
     >
       <div
         data-drop-highlight={dropTarget ? "true" : "false"}
@@ -4111,7 +4128,7 @@ function FolderRow({
         ) : null}
         <span>{count}</span>
       </span>
-    </button>
+    </Button>
   );
 }
 
@@ -4169,7 +4186,10 @@ function FolderRenameRow({
       <span className="relative grid size-4 shrink-0 place-items-center text-content/50">
         <ChevronDown className="size-3.5" strokeWidth={1.75} />
       </span>
-      <input
+      <TextField
+        fieldClassName="min-w-0 flex-1"
+        hideLabel
+        label={t("Name")}
         ref={inputRef}
         value={value}
         onChange={(event) => setValue(event.target.value)}
@@ -4185,7 +4205,7 @@ function FolderRenameRow({
             finish(false);
           }
         }}
-        className="relative min-w-0 flex-1 rounded bg-content/10 px-2 py-0.5 text-[13px] font-semibold leading-snug text-content outline-none ring-1 ring-accent/40"
+        className="relative min-w-0 flex-1 leading-snug"
       />
       <span className="relative shrink-0 text-[11px] tabular-nums text-content/45">
         {memberCount}
@@ -4390,57 +4410,58 @@ const SessionCard = memo(function SessionCard({
   const branchText =
     density === "detailed" || session.worktreeRemoved ? gitLabel : session.branch || gitLabel;
   const issue = session.issue;
-  const statusClass =
+  const statusTone: BadgeTone =
     issue === "failed"
-      ? "text-danger"
-      : issue === "retrying"
-        ? "text-warning"
-        : needsApproval
-          ? "text-warning"
-          : busy
-            ? "text-active"
-            : done
-              ? "text-success"
-              : draft
-                ? "text-content/55"
-                : "text-content/45";
-  const status = (
-    <span className={`flex shrink-0 items-center gap-1 text-[11px] tabular-nums ${statusClass}`}>
-      {issue ? (
-        <>
-          <CircleAlert className="size-3" strokeWidth={1.75} />
-          <span>{t(issue === "retrying" ? "Retrying" : "Failed")}</span>
-        </>
-      ) : needsApproval ? (
-        <>
-          <CircleAlert className="size-3" strokeWidth={1.75} />
-          <span>{orchestration ? t("Needs input") : t("Need approval")}</span>
-        </>
-      ) : busy ? (
-        <>
-          <TerminalSpinner className="inline-block w-3 select-none text-center text-[11px] leading-none text-active" />
-          <span>{t("Working...")}</span>
-        </>
-      ) : opening ? (
-        <>
-          <Loader className="size-3 motion-safe:animate-spin" strokeWidth={1.75} aria-hidden />
-          <span>{t("Opening…")}</span>
-        </>
-      ) : done ? (
-        <>
-          <Check className="size-3" strokeWidth={2.25} />
-          <span>{t("Done")}</span>
-        </>
-      ) : draft ? (
-        <>
-          <CircleDashed className="size-3" strokeWidth={1.75} />
-          <span>{t("Draft")}</span>
-        </>
-      ) : (
+      ? "danger"
+      : issue === "retrying" || needsApproval
+        ? "warning"
+        : busy
+          ? "info"
+          : done
+            ? "success"
+            : "neutral";
+  const status =
+    !issue && !needsApproval && !busy && !opening && !done && !draft ? (
+      <span className="shrink-0 text-[11px] tabular-nums text-(--ui-text-secondary)">
         <RelativeSessionTime at={session.updatedAt} />
-      )}
-    </span>
-  );
+      </span>
+    ) : (
+      <Badge tone={statusTone} className="shrink-0 tabular-nums">
+        {issue ? (
+          <>
+            <CircleAlert className="size-3" strokeWidth={1.75} />
+            <span>{t(issue === "retrying" ? "Retrying" : "Failed")}</span>
+          </>
+        ) : needsApproval ? (
+          <>
+            <CircleAlert className="size-3" strokeWidth={1.75} />
+            <span>{orchestration ? t("Needs input") : t("Need approval")}</span>
+          </>
+        ) : busy ? (
+          <>
+            <TerminalSpinner className="inline-block w-3 select-none text-center text-[11px] leading-none text-active" />
+            <span>{t("Working...")}</span>
+          </>
+        ) : opening ? (
+          <>
+            <Loader className="size-3 motion-safe:animate-spin" strokeWidth={1.75} aria-hidden />
+            <span>{t("Opening…")}</span>
+          </>
+        ) : done ? (
+          <>
+            <Check className="size-3" strokeWidth={2.25} />
+            <span>{t("Done")}</span>
+          </>
+        ) : draft ? (
+          <>
+            <CircleDashed className="size-3" strokeWidth={1.75} />
+            <span>{t("Draft")}</span>
+          </>
+        ) : (
+          <RelativeSessionTime at={session.updatedAt} />
+        )}
+      </Badge>
+    );
 
   const linkedWorkItem = session.linkedWorkItem;
   const linkedUpdateDot = linkedUpdate ? (
@@ -4455,7 +4476,9 @@ const SessionCard = memo(function SessionCard({
     />
   ) : null;
   const workItemBadge = linkedWorkItem ? (
-    <button
+    <Button
+      variant="ghost"
+      motion="none"
       type="button"
       data-no-drag
       data-tauri-drag-region="false"
@@ -4491,7 +4514,7 @@ const SessionCard = memo(function SessionCard({
         event.stopPropagation();
         void openUrl(linkedWorkItem.url).catch(() => undefined);
       }}
-      className="flex shrink-0 cursor-pointer items-center gap-0.5 rounded px-0.5 text-[11px] tabular-nums text-accent hover:underline"
+      className="flex shrink-0 items-center gap-0.5 tabular-nums"
     >
       {linkedWorkItem.kind === "pr" ? (
         <GitPullRequest className="size-3" strokeWidth={1.75} />
@@ -4499,7 +4522,7 @@ const SessionCard = memo(function SessionCard({
         <CircleDot className="size-3" strokeWidth={1.75} />
       )}
       <span>#{linkedWorkItem.number}</span>
-    </button>
+    </Button>
   ) : null;
 
   const onKeyDown = (e: ReactKeyboardEvent<HTMLDivElement>) => {
@@ -4795,7 +4818,11 @@ const SessionCard = memo(function SessionCard({
   const actions = (
     <span data-session-row-actions className="relative flex shrink-0 items-center gap-px">
       {onArchive ? (
-        <button
+        <Button
+          iconOnly
+          label={`${archiveLabel} ${title}`}
+          variant="ghost"
+          motion="none"
           type="button"
           data-no-drag
           data-tauri-drag-region="false"
@@ -4806,13 +4833,17 @@ const SessionCard = memo(function SessionCard({
             event.stopPropagation();
             onArchive(session.id, !session.archived);
           }}
-          className="pointer-events-none grid size-5 place-items-center rounded-md text-content/50 opacity-0 hover:bg-content/10 hover:text-content group-focus-within:pointer-events-auto group-focus-within:opacity-100 group-hover:pointer-events-auto group-hover:opacity-100"
+          className="pointer-events-none grid size-5 place-items-center opacity-0 group-focus-within:pointer-events-auto group-focus-within:opacity-100 group-hover:pointer-events-auto group-hover:opacity-100"
         >
           <Archive className="size-3 shrink-0" strokeWidth={1.75} />
-        </button>
+        </Button>
       ) : null}
       {onDelete ? (
-        <button
+        <Button
+          iconOnly
+          label={`${t("Delete")} ${title}`}
+          variant="ghost"
+          motion="none"
           type="button"
           data-no-drag
           data-tauri-drag-region="false"
@@ -4823,10 +4854,10 @@ const SessionCard = memo(function SessionCard({
             event.stopPropagation();
             onDelete(session.id);
           }}
-          className="pointer-events-none grid size-5 place-items-center rounded-md text-content/50 opacity-0 hover:bg-content/10 hover:text-danger group-focus-within:pointer-events-auto group-focus-within:opacity-100 group-hover:pointer-events-auto group-hover:opacity-100"
+          className="pointer-events-none grid size-5 place-items-center opacity-0 group-focus-within:pointer-events-auto group-focus-within:opacity-100 group-hover:pointer-events-auto group-hover:opacity-100"
         >
           <Trash2 className="size-3 shrink-0" strokeWidth={1.75} />
-        </button>
+        </Button>
       ) : null}
       {workItemBadge}
       {session.automationId ? (
@@ -4847,11 +4878,21 @@ const SessionCard = memo(function SessionCard({
           onMouseEnter={() => setOrchestrationTooltipOpen(true)}
           onMouseLeave={() => setOrchestrationTooltipOpen(false)}
         >
-          <button
+          <Button
+            iconOnly
+            label={t(
+              orchestration.tasks.length === 1
+                ? "Orchestrator, {p0} subagent, {p2} done"
+                : "Orchestrator, {p0} subagents, {p2} done",
+              { p0: orchestration.tasks.length, p2: orchestrationDone },
+            )}
+            variant="ghost"
+            motion="none"
             type="button"
             data-no-drag
             data-tauri-drag-region="false"
             data-orchestration-icon
+            title=""
             aria-label={t(
               orchestration.tasks.length === 1
                 ? "Orchestrator, {p0} subagent, {p2} done"
@@ -4867,10 +4908,10 @@ const SessionCard = memo(function SessionCard({
               setOrchestrationTooltipOpen(false);
               onSelect(session.id, event);
             }}
-            className="grid size-5 shrink-0 place-items-center rounded-md text-orchestration/65 hover:bg-content/10 hover:text-orchestration/90"
+            className="grid shrink-0 place-items-center"
           >
             <Share className="size-3" />
-          </button>
+          </Button>
         </div>
       ) : null}
     </span>
@@ -5168,13 +5209,16 @@ function SessionRenameRow({
         isActive ? "bg-selection text-content" : "text-content/80"
       }`}
     >
-      <input
+      <TextField
+        fieldClassName="min-w-0 flex-1"
+        hideLabel
+        label={t("Name")}
         ref={inputRef}
         value={value}
         onChange={(e) => setValue(e.target.value)}
         onBlur={() => finish(true)}
         onKeyDown={onKeyDown}
-        className="w-full rounded bg-content/10 px-2 py-1 text-[13px] font-semibold leading-snug text-content outline-none ring-1 ring-accent/40"
+        className="w-full leading-snug"
       />
     </div>
   );
@@ -5194,7 +5238,7 @@ function DiffStat({ additions, deletions }: { additions: number; deletions: numb
   return (
     <span
       title={t("{p0} uncommitted", { p0: label })}
-      className="flex h-full w-full min-w-0 items-center [justify-content:safe_center] overflow-x-auto overscroll-contain"
+      className="scrollbar-none flex h-full w-full min-w-0 items-center [justify-content:safe_center] overflow-x-auto overflow-y-hidden overscroll-contain"
     >
       <span className="flex shrink-0 items-center gap-[0.55em] whitespace-nowrap font-sans text-[11px] font-semibold tabular-nums">
         {additions > 0 ? (

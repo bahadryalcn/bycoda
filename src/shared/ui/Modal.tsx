@@ -1,6 +1,7 @@
 import { translateAt, useLocale, type LanguageDomain } from "../i18n";
 import { NativePopupHost } from "./NativePopupHost";
 import { X } from "./icons";
+import { Button } from "./Button";
 import { useContext, useId, useRef, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { useLockOverscroll } from "../hooks/useLockOverscroll";
@@ -101,15 +102,17 @@ export function ModalPanel({
                     </p>
                   ) : null}
                 </div>
-                <button
+                <Button
                   ref={closeRef}
                   type="button"
-                  aria-label={t("Close")}
+                  iconOnly
+                  label={t("Close")}
+                  tooltip={t("Close")}
+                  variant="ghost"
                   onClick={onClose}
-                  className="ui-icon-hit relative grid size-7 shrink-0 place-items-center rounded-md text-content/45 hover:bg-content/8 hover:text-content focus-visible:outline-2 focus-visible:outline-accent"
                 >
                   <X className="size-3.5" strokeWidth={1.75} />
-                </button>
+                </Button>
               </header>
               <div ref={lockOverscroll} className="min-h-0 flex-1 overflow-y-auto overscroll-none">
                 {children}

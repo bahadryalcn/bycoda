@@ -4,13 +4,16 @@ test("resizes tool panels from their shared edge in all four placements", async 
   await page.goto("/tests/browser/host-tools.html");
   await page.getByRole("tab", { name: "Logs", exact: true }).click();
   await page.getByRole("button", { name: "Panel placement", exact: true }).click();
-  await page.getByRole("button", { name: "Separate Logs panel", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Separate Logs panel", exact: true }).click();
   const dock = page.getByRole("complementary", { name: "Tool panels" });
   const separator = page.getByRole("separator", { name: "Tool panels" });
   for (const side of ["right", "left", "bottom", "top"]) {
     await dock.getByRole("button", { name: /^Placement:/ }).click();
     await page
-      .getByRole("button", { name: `Dock ${side[0].toUpperCase()}${side.slice(1)}`, exact: true })
+      .getByRole("menuitemradio", {
+        name: `Dock ${side[0].toUpperCase()}${side.slice(1)}`,
+        exact: true,
+      })
       .click();
     const vertical = side === "top" || side === "bottom";
     await expect(separator).toHaveAttribute(

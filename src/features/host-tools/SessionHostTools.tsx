@@ -1,3 +1,5 @@
+import { Alert } from "../../shared/ui/Alert";
+import { DropdownMenu } from "../../shared/ui/DropdownMenu";
 import { t, useLocale } from "../../shared/i18n/technical";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import {
@@ -76,10 +78,12 @@ export function ConversationToolsButton({ tools }: { tools: ConversationTools })
   };
   return (
     <>
-      <button
+      <Button
+        variant="ghost"
+        size="sm"
         ref={trigger}
         type="button"
-        className={`inline-flex h-6 shrink-0 items-center gap-1.5 whitespace-nowrap rounded px-1.5 hover:bg-content/10 hover:text-content focus-visible:outline-2 focus-visible:outline-accent active:bg-content/15 ${active ? "bg-selection text-content" : "text-content/50"}`}
+
         aria-label={t("Conversation tools")}
         aria-pressed={active}
         aria-expanded={open}
@@ -89,7 +93,7 @@ export function ConversationToolsButton({ tools }: { tools: ConversationTools })
       >
         <Wrench className="size-3.5" strokeWidth={1.75} aria-hidden />
         <span className="@max-[40rem]/usage:hidden">{t("Conversation tools")}</span>
-      </button>
+      </Button>
       {open ? (
         <Popover
           anchor={trigger}
@@ -263,7 +267,7 @@ function ConversationHostTools({
                   ref={placementTrigger}
                   type="button"
                   className="host-tools-placement-trigger"
-                  aria-haspopup="dialog"
+                  aria-haspopup="menu"
                   aria-expanded={placementOpen}
                   onClick={() => setPlacementOpen((value) => !value)}
                 >
@@ -273,51 +277,40 @@ function ConversationHostTools({
             </header>
           ) : null}
           {placementOpen && !hidePresentation ? (
-            <Popover
+            <DropdownMenu
               anchor={placementTrigger}
-              side="bottom"
+              label={t("Panel placement")}
+              returnFocusRef={placementTrigger}
               align="end"
-              gap={6}
               width={250}
-              role="dialog"
-              aria-label={t("Panel placement")}
-              data-dialog-popover
-              className="host-tools-placement-menu font-sans"
-              onDismiss={(reason) => {
-                setPlacementOpen(false);
-                if (reason === "escape") placementTrigger.current?.focus();
+              onClose={() => setPlacementOpen(false)}
+              onPick={(id) => {
+                if (id === "expand") onExpand?.();
+                else if (id === "layout") void present("layout", onlyTab);
+                else if (id === "layout-logs") void present("layout", "logs");
+                else if (id === "window") void present("window", onlyTab);
+                else if (id === "window-logs") void present("window", "logs");
               }}
-            >
-              {onExpand ? (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setPlacementOpen(false);
-                    onExpand();
-                  }}
-                >
-                  {t("Expand / restore")}
-                </button>
-              ) : null}
-              <button type="button" onClick={() => void present("layout", onlyTab)}>
-                {t("Place in layout")}
-              </button>
-              {tab === "logs" && !onlyTab ? (
-                <button type="button" onClick={() => void present("layout", "logs")}>
-                  {t("Separate Logs panel")}
-                </button>
-              ) : null}
-              <button type="button" onClick={() => void present("window", onlyTab)}>
-                {t("Open in new window")}
-              </button>
-              {tab === "logs" && !onlyTab ? (
-                <button type="button" onClick={() => void present("window", "logs")}>
-                  {t("Logs in new window")}
-                </button>
-              ) : null}
-            </Popover>
+              items={[
+                ...(onExpand
+                  ? [{ kind: "item" as const, id: "expand", label: t("Expand / restore") }]
+                  : []),
+                { kind: "item", id: "layout", label: t("Place in layout") },
+                ...(tab === "logs" && !onlyTab
+                  ? [{ kind: "item" as const, id: "layout-logs", label: t("Separate Logs panel") }]
+                  : []),
+                { kind: "item", id: "window", label: t("Open in new window") },
+                ...(tab === "logs" && !onlyTab
+                  ? [{ kind: "item" as const, id: "window-logs", label: t("Logs in new window") }]
+                  : []),
+              ]}
+            />
           ) : null}
-          {presentationError ? <p role="alert">{presentationError}</p> : null}
+          {presentationError ? (
+            <Alert tone="danger" role="alert">
+              {presentationError}
+            </Alert>
+          ) : null}
           {!onlyTab ? (
             <nav
               role="tablist"
@@ -431,9 +424,15 @@ function ConversationHostTools({
                   <RefreshCw size={16} aria-hidden />
                 </Button>
               </div>
-              {machinesError ? <p role="alert">{machinesError}</p> : null}
+              {machinesError ? (
+                <Alert tone="danger" role="alert">
+                  {machinesError}
+                </Alert>
+              ) : null}
               {target.kind === "machine" && !selectedMachine && !machinesLoading ? (
-                <p role="alert">{t("Selected machine unavailable")}</p>
+                <Alert tone="danger" role="alert">
+                  {t("Selected machine unavailable")}
+                </Alert>
               ) : null}
             </div>
           ) : null}

@@ -1,3 +1,6 @@
+import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
+import { Alert } from "../../../shared/ui/Alert";
+import { Button } from "../../../shared/ui/Button";
 import { t, useLocale } from "../../../shared/i18n";
 import { remoteRequest, useRemoteMachines } from "../../connections/model/connections";
 import { HOST_UPDATE_NOTICE } from "../../connections/model/remoteCapabilities";
@@ -13,7 +16,7 @@ import {
 
 import { useEffect, useState } from "react";
 
-import { AdvancedSettings, Group, Row, Select } from "./settingsControls";
+import { AdvancedSettings, Group, Row } from "./settingsControls";
 
 /** Which shell new terminals open in, and `!commands` run in. */
 export function TerminalPage() {
@@ -48,14 +51,15 @@ export function TerminalPage() {
           "New terminals on this computer open in this shell, and local `!commands` run in it. A terminal already open keeps the shell it started with.",
         )}
         action={
-          <button
+          <Button
+            variant="ghost"
+            size="sm"
             type="button"
             disabled={scanning}
             onClick={() => scan(true)}
-            className="h-7 rounded-md px-2.5 text-[12px] text-content/60 hover:bg-content/10 hover:text-content disabled:opacity-50"
           >
             {scanning ? t("Looking…") : t("Look again")}
-          </button>
+          </Button>
         }
       >
         <Row
@@ -69,7 +73,7 @@ export function TerminalPage() {
                 )
           }
         >
-          <Select
+          <SearchableSelect
             label={t("Default terminal profile")}
             disabled={scanning}
             value={chosen && !missing ? chosen : ""}
@@ -83,6 +87,7 @@ export function TerminalPage() {
               ...(listed?.profiles ?? []).map((profile) => ({
                 value: profile.id,
                 label: profile.name,
+                description: profile.path,
               })),
             ]}
             onChange={(next) => saveTerminalProfile(next || undefined)}
@@ -90,9 +95,9 @@ export function TerminalPage() {
         </Row>
       </Group>
       {problem ? (
-        <p role="alert" className="text-[12px] text-danger">
+        <Alert tone="danger" role="alert">
           {t("Could not discover shells. Use Look again to retry.")} {problem}
-        </p>
+        </Alert>
       ) : null}
       <AdvancedSettings
         title={t("Advanced terminal settings")}
@@ -119,13 +124,14 @@ export function TerminalPage() {
                 {profile.id === current ? (
                   <span className="text-[12px] text-content/45">{t("Default")}</span>
                 ) : (
-                  <button
+                  <Button
+                    variant="ghost"
+                    size="sm"
                     type="button"
                     onClick={() => saveTerminalProfile(profile.id)}
-                    className="h-7 rounded-md bg-content/10 px-2.5 text-[12px] text-content hover:bg-content/15"
                   >
                     {t("Set as default")}
-                  </button>
+                  </Button>
                 )}
               </Row>
             ))
@@ -143,7 +149,8 @@ export function TerminalPage() {
 export function RemoteMachineShells() {
   useLocale();
   const { machines } = useRemoteMachines();
-  if (machines.length === 0) return <p>{t("Connect a machine in Connections to configure its default shell here.")}</p>;
+  if (machines.length === 0)
+    return <p>{t("Connect a machine in Connections to configure its default shell here.")}</p>;
   return (
     <>
       {machines.map((machine) => (
@@ -235,7 +242,7 @@ export function RemoteMachineShell({ machine }: { machine: RemoteMachine }) {
         }
       >
         {listed ? (
-          <Select
+          <SearchableSelect
             disabled={saving}
             label={
               local
@@ -253,6 +260,7 @@ export function RemoteMachineShell({ machine }: { machine: RemoteMachine }) {
               ...listed.profiles.map((profile) => ({
                 value: profile.id,
                 label: profile.name,
+                description: profile.path,
               })),
             ]}
             onChange={(next) => {

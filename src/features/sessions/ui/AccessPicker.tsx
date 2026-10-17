@@ -1,3 +1,4 @@
+import { Button } from "../../../shared/ui/Button";
 import { t, useLocale } from "../../../shared/i18n";
 import { ChevronDown, Lock, Pencil, Shield, Sparkles } from "../../../shared/ui/icons";
 import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
@@ -80,7 +81,10 @@ export function AccessPicker({ value, onChange, onClose, busy = false, unavailab
 
   return (
     <div ref={root} className="relative">
-      <button
+      <Button
+        size="sm"
+        className="max-w-52"
+        variant="ghost"
         type="button"
         data-access-picker-trigger
         title={`${RUNTIME_MODE_HINT[value]}${busy ? " Changes apply to the next turn." : ""}`}
@@ -95,20 +99,17 @@ export function AccessPicker({ value, onChange, onClose, busy = false, unavailab
           }
           setOpen(true);
         }}
-        className={`flex h-6.5 max-w-52 items-center gap-1 rounded-md px-1.5 ${
-          open ? "bg-selection text-content" : "bg-selection text-content hover:bg-selection-hover"
-        }`}
       >
         <Icon
-          className={`size-3.5 shrink-0 ${value === "full-access" ? "text-warning/90" : ""}`}
+          className={`size-3.5 shrink-0 ${value === "full-access" ? "text-(--ui-tone-warning-fg)" : ""}`}
           strokeWidth={1.75}
         />
-        <span className="min-w-0 truncate text-[11px]">{RUNTIME_MODE_LABEL[value]}</span>
+        <span className="min-w-0 truncate">{RUNTIME_MODE_LABEL[value]}</span>
         <ChevronDown
-          className={`size-3 shrink-0 text-content/50 ${open ? "rotate-180" : ""}`}
+          className={`size-3 shrink-0 text-(--ui-text-secondary) ${open ? "rotate-180" : ""}`}
           strokeWidth={1.75}
         />
-      </button>
+      </Button>
       {open ? (
         <Popover
           anchor={root}
@@ -129,7 +130,12 @@ export function AccessPicker({ value, onChange, onClose, busy = false, unavailab
             const reason = unavailable?.[mode];
             const highlighted = index === active && !reason;
             return (
-              <button
+              <Button
+                className="w-full text-left"
+                fullWidth
+                layout="stacked"
+                selected={highlighted || selected}
+                variant="item"
                 key={mode}
                 type="button"
                 role="option"
@@ -141,31 +147,24 @@ export function AccessPicker({ value, onChange, onClose, busy = false, unavailab
                   if (!reason) setActive(index);
                 }}
                 onClick={() => pick(mode)}
-                className={`flex w-full items-start gap-2.5 rounded-lg px-2 py-2 text-left ${
-                  reason
-                    ? "cursor-not-allowed text-content/40"
-                    : highlighted || selected
-                      ? "bg-selection text-content"
-                      : "text-content hover:bg-content/5"
-                }`}
               >
                 <ModeIcon
-                  className={`mt-0.5 size-3.5 shrink-0 ${mode === "full-access" ? "text-warning/90" : "text-content/70"}`}
+                  className={`mt-0.5 size-3.5 shrink-0 ${mode === "full-access" ? "text-(--ui-tone-warning-fg)" : "text-(--ui-text-secondary)"}`}
                   strokeWidth={1.75}
                 />
                 <span className="min-w-0">
                   <span className="block text-[13px] font-medium leading-5">
                     {RUNTIME_MODE_LABEL[mode]}
                   </span>
-                  <span className="mt-0.5 block text-[11px] leading-4 text-content/50">
+                  <span className="mt-0.5 block text-[11px] leading-4 text-(--ui-text-secondary)">
                     {reason ? t("Unavailable: {p0}", { p0: reason }) : RUNTIME_MODE_HINT[mode]}
                   </span>
                 </span>
-              </button>
+              </Button>
             );
           })}
           {busy ? (
-            <p className="px-2 py-1.5 text-[11px] leading-4 text-content/50">
+            <p className="px-2 py-1.5 text-[11px] leading-4 text-(--ui-text-secondary)">
               {t("Access changes apply to the next turn. Stop and resend to apply them now.")}
             </p>
           ) : null}

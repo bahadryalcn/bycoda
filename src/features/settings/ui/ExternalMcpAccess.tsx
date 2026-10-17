@@ -1,3 +1,5 @@
+import { Alert } from "../../../shared/ui/Alert";
+import { NumberField } from "../../../shared/ui/NumberField";
 import { invoke } from "@tauri-apps/api/core";
 import { ask } from "@tauri-apps/plugin-dialog";
 import { useEffect, useRef, useState, type FormEvent } from "react";
@@ -234,9 +236,9 @@ function CreateToken({
               </div>
             ))}
           </fieldset>
-          <TextField
+          <NumberField
             label={t("Duration (days)")}
-            type="number"
+
             min={1}
             max={366}
             step={1}
@@ -245,7 +247,11 @@ function CreateToken({
             disabled={busy}
             onChange={(e) => setDays(e.target.value)}
           />
-          {error && <p role="alert">{error}</p>}
+          {error && (
+            <Alert tone="danger" role="alert">
+              {error}
+            </Alert>
+          )}
           <div className={styles.actions}>
             <Button disabled={busy} onClick={onClose}>
               {t("Cancel")}
@@ -385,7 +391,11 @@ export function ExternalMcpAccess({ cwd }: { cwd: string }) {
           </Button>
         </div>
       </div>
-      {error && <p role="alert">{error}</p>}
+      {error && (
+        <Alert tone="danger" role="alert">
+          {error}
+        </Alert>
+      )}
       {loading && <p role="status">{t("Loading tokens…")}</p>}
       {!loading && data && !data.projects.length && (
         <p>{t("Register a project on the local host before creating a token.")}</p>

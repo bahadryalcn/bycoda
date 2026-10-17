@@ -13,7 +13,7 @@
 @media (hover: hover) and (pointer: fine) {
   .bycoda-settings-close:hover {
     opacity: 1;
-    background: color-mix(in oklch, var(--color-content) 6%, transparent);
+    background: var(--ui-surface-hover);
   }
 }
 
@@ -94,18 +94,8 @@
   min-width: 0;
 }
 .bycoda-settings-category-tabs > button {
-  position: relative;
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  height: 30px;
-  padding: 0 10px;
-  border-radius: 6px;
-  white-space: nowrap;
-  font-size: 13px;
-  text-align: start;
-  color: var(--ui-text-secondary);
-  cursor: pointer;
+  inline-size: 100%;
+  justify-content: start;
 }
 .bycoda-settings-category-tabs > button > svg {
   width: 15px;
@@ -118,29 +108,11 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
-@media (hover: hover) and (pointer: fine) {
-  .bycoda-settings-category-tabs > button:hover {
-    color: var(--color-content);
-    background: color-mix(in oklch, var(--color-content) 6%, transparent);
-  }
-}
 
-.bycoda-settings-category-tabs > button[aria-selected="true"] {
-  color: var(--color-content);
-  background: var(--color-selection);
-  font-weight: 550;
-}
 .bycoda-settings-category-tabs > button[aria-selected="true"] > svg {
   opacity: 1;
 }
-.bycoda-settings-category-tabs > button:disabled {
-  cursor: default;
-}
-.bycoda-settings-category-tabs > button:focus-visible,
-.bycoda-settings-close:focus-visible {
-  outline: 1px solid var(--color-content);
-  outline-offset: -2px;
-}
+
 @container (max-width: 760px) {
   .bycoda-settings-body {
     flex-direction: column;
@@ -171,10 +143,7 @@
     display: none;
   }
   .bycoda-settings-category-tabs > button {
-    height: 28px;
     gap: 6px;
-    padding: 0 9px;
-    font-size: 12px;
   }
 }
 .bycoda-settings-panel {
@@ -257,10 +226,7 @@
 .bycoda-settings-workbench .settings-row-control {
   align-self: center;
 }
-.bycoda-settings-workbench .settings-select:disabled {
-  opacity: 0.45;
-  cursor: not-allowed;
-}
+
 .bycoda-settings-workbench
   .bycoda-settings-form
   > [data-settings-layout="full"]
@@ -408,13 +374,7 @@
   color: var(--ui-text-secondary);
   overflow-wrap: anywhere;
 }
-.bycoda-settings-workbench :is(button, input, select, textarea, summary, [tabindex]):focus-visible {
-  outline: 2px solid var(--color-accent);
-  outline-offset: 2px;
-}
-.bycoda-settings-workbench :is(button, summary):active {
-  background-color: var(--color-selection);
-}
+
 @media (prefers-reduced-motion: reduce) {
   .bycoda-settings-workbench
     :is(.settings-toggle, .settings-toggle > span, .settings-select > svg) {

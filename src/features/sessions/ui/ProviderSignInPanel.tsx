@@ -1,3 +1,4 @@
+import { Button } from "../../../shared/ui/Button";
 import { t, useLocale } from "../../../shared/i18n";
 import type { HarnessId } from "../model/session";
 import { HARNESS_TITLE } from "../model/session";
@@ -36,13 +37,13 @@ export function ProviderSignInPanel({
       className="flex min-h-68 flex-col items-center justify-center px-5 py-6"
       aria-live="polite"
     >
-      <span className="grid size-16 place-items-center rounded-2xl bg-content/[0.06] text-content ring-1 ring-inset ring-content/[0.08] shadow-sm">
+      <span className="grid size-16 place-items-center rounded-2xl bg-(--ui-tone-neutral-solid)/[0.06] text-(--ui-tone-neutral-fg) ring-1 ring-inset ring-(--ui-focus-ring-color)/[0.08] shadow-sm">
         <HarnessIcon harness={harness} className="size-9" />
       </span>
-      <h2 className="mt-3.5 text-[15px] font-medium leading-5 text-content">
+      <h2 className="mt-3.5 text-[15px] font-medium leading-5 text-(--ui-tone-neutral-fg)">
         {complete ? t("Signed in to {p0}", { p0: title }) : idleTitle}
       </h2>
-      <p className="mt-1 max-w-56 text-[11px] leading-4 text-content/45">
+      <p className="mt-1 max-w-56 text-[11px] leading-4 text-(--ui-text-secondary)">
         {complete
           ? completeDescription
           : harness === "gemini"
@@ -51,10 +52,11 @@ export function ProviderSignInPanel({
               )
             : t("Sign in to continue using {p0}.", { p0: title })}
       </p>
-      <button
+      <Button
+        variant="ghost"
         type="button"
         autoFocus={autoFocus}
-        className="mt-4 inline-flex h-8 items-center  gap-1.5 rounded-lg bg-content px-3.5 text-[12px] font-medium text-background-base transition-transform duration-150 ease-out hover:bg-content/85 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent active:scale-[0.98] disabled:cursor-default disabled:opacity-55 text-center"
+        className="mt-4"
         disabled={state === "running" || (complete && !onComplete)}
         onClick={complete && onComplete ? onComplete : onSignIn}
       >
@@ -70,9 +72,12 @@ export function ProviderSignInPanel({
             : harness === "gemini"
               ? t("Sign in with Google")
               : t("Sign in to {p0}", { p0: title })}
-      </button>
+      </Button>
       {state === "error" && error ? (
-        <p className="mt-2.5 max-w-60 text-[10px] leading-4 text-danger" role="status">
+        <p
+          className="mt-2.5 max-w-60 text-[10px] leading-4 text-(--ui-tone-danger-fg)"
+          role="status"
+        >
           {error}
         </p>
       ) : null}

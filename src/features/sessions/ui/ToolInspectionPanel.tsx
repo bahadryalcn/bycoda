@@ -1,3 +1,4 @@
+import { Button } from "../../../shared/ui/Button";
 import { useMemo, useState } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import { copyMessage } from "../../../platform/tauri/clipboard";
@@ -89,18 +90,19 @@ export function ToolInspectionPanel({ block }: { block: Block }) {
   return (
     <div
       data-tool-inspection
-      className="min-w-0 overflow-clip rounded-lg border border-stroke bg-content/3"
+      className="min-w-0 overflow-clip rounded-lg border border-(--ui-tone-neutral-border) bg-(--ui-surface-raised)"
     >
-      <div className="flex items-center justify-end gap-2 border-b border-stroke px-2 py-1">
+      <div className="flex items-center justify-end gap-2 border-b border-(--ui-tone-neutral-border) px-2 py-1">
         {copyState === "failed" ? (
-          <span role="status" className="text-xs text-danger">
+          <span role="status" className="text-xs text-(--ui-tone-danger-fg)">
             {t("Copy failed")}
           </span>
         ) : null}
-        <button
+        <Button
+          variant="ghost"
           type="button"
           disabled={!copyText}
-          className="rounded px-2 py-1 text-xs text-content/60 hover:bg-content/8 active:bg-content/12 focus-visible:outline-2 focus-visible:outline-content/60 disabled:opacity-40"
+
           onClick={() => {
             void copyMessage(copyText).then(
               () => setCopyState("copied"),
@@ -109,7 +111,7 @@ export function ToolInspectionPanel({ block }: { block: Block }) {
           }}
         >
           {t(copyState === "copied" ? "Copied" : "Copy")}
-        </button>
+        </Button>
       </div>
       {sections.map((section, index) => {
         const json =
@@ -121,14 +123,19 @@ export function ToolInspectionPanel({ block }: { block: Block }) {
             ? inspectionJson(section.text)
             : null;
         return (
-          <section key={index} className="min-w-0 border-b border-stroke last:border-b-0">
-            <h4 className="px-3 py-1.5 text-xs font-medium text-content/60">{t(section.title)}</h4>
+          <section
+            key={index}
+            className="min-w-0 border-b border-(--ui-tone-neutral-border) last:border-b-0"
+          >
+            <h4 className="px-3 py-1.5 text-xs font-medium text-(--ui-text-secondary)">
+              {t(section.title)}
+            </h4>
             {json ? (
               <JsonViewer data={json.data} label={t(section.title)} maxHeight={320} pageSize={50} />
             ) : (
               <pre
                 tabIndex={0}
-                className={`max-h-80 min-w-0 select-text overflow-auto overscroll-contain px-3 py-2 font-mono text-xs leading-5 ${section.error ? "text-danger/80" : "text-content/80"} focus-visible:outline-2 focus-visible:outline-content/40`}
+                className={`max-h-80 min-w-0 select-text overflow-auto overscroll-contain px-3 py-2 font-mono text-xs leading-5 ${section.error ? "text-(--ui-tone-danger-fg)" : "text-(--ui-text-secondary)"} focus-visible:outline-2 focus-visible:outline-(--ui-focus-ring-color)`}
               >
                 {section.diff
                   ? section.text.split("\n").map((line, lineIndex) => (
@@ -151,7 +158,7 @@ export function ToolInspectionPanel({ block }: { block: Block }) {
               </pre>
             )}
             {section.truncated || section.legacy ? (
-              <p className="px-3 py-2 text-xs text-content/50">
+              <p className="px-3 py-2 text-xs text-(--ui-text-secondary)">
                 {t(
                   section.legacy
                     ? "Only a shortened preview was saved for this older tool call."
@@ -163,7 +170,7 @@ export function ToolInspectionPanel({ block }: { block: Block }) {
         );
       })}
       {!sections.length && block.tool?.outputTruncated ? (
-        <p className="px-3 py-2 text-xs text-content/50">
+        <p className="px-3 py-2 text-xs text-(--ui-text-secondary)">
           {t("Output left out to keep this run small.")}
         </p>
       ) : null}

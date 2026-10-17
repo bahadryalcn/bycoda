@@ -253,9 +253,7 @@ describe("onboarding workflow", () => {
     await click("Appearance");
     for (const mode of ["light", "dark", "system"]) {
       await act(async () =>
-        container
-          .querySelector<HTMLInputElement>(`input[name="onboarding-appearance"][value="${mode}"]`)!
-          .click(),
+        container.querySelector<HTMLButtonElement>(`#onboarding-appearance-${mode}`)!.click(),
       );
       expect(loadThemePreference()).toBe(mode);
       if (mode !== "system")

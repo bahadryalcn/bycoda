@@ -1,3 +1,5 @@
+import { Alert } from "../../../shared/ui/Alert";
+import { Button } from "../../../shared/ui/Button";
 import { t, useLocale } from "../../../shared/i18n";
 import { useMemo, useState } from "react";
 import { ChevronDown, ChevronRight, LoaderCircle } from "../../../shared/ui/icons";
@@ -61,30 +63,39 @@ export function InboxDescriptionSummary({ body, cwd }: { body: string; cwd: stri
   const [expanded, setExpanded] = useState(false);
 
   if (!body.trim()) {
-    return <p className="text-[13px] text-content/45">{t("No description")}</p>;
+    return <p className="text-[13px] text-(--ui-text-secondary)">{t("No description")}</p>;
   }
   if (!excerpt.truncated) {
-    return <SurfaceSelection cwd={cwd} contentVersion={body}><AgentMarkdown text={body} cwd={cwd} allowRemoteMedia /></SurfaceSelection>;
+    return (
+      <SurfaceSelection cwd={cwd} contentVersion={body}>
+        <AgentMarkdown text={body} cwd={cwd} allowRemoteMedia />
+      </SurfaceSelection>
+    );
   }
   return (
     <section
       data-inbox-description
-      className="flex flex-col gap-2 rounded-lg border border-stroke bg-content/[0.02] px-3.5 py-3"
+      className="flex flex-col gap-2 rounded-lg border border-(--ui-tone-neutral-border) bg-(--ui-surface-hover) px-3.5 py-3"
     >
       {expanded ? (
-        <SurfaceSelection cwd={cwd} contentVersion={body}><AgentMarkdown text={body} cwd={cwd} allowRemoteMedia /></SurfaceSelection>
+        <SurfaceSelection cwd={cwd} contentVersion={body}>
+          <AgentMarkdown text={body} cwd={cwd} allowRemoteMedia />
+        </SurfaceSelection>
       ) : excerpt.text ? (
-        <SurfaceSelection cwd={cwd} contentVersion={body}><p className="line-clamp-4 whitespace-pre-line text-[13px] leading-relaxed text-content/75">
-          {excerpt.text}
-        </p></SurfaceSelection>
+        <SurfaceSelection cwd={cwd} contentVersion={body}>
+          <p className="line-clamp-4 whitespace-pre-line text-[13px] leading-relaxed text-(--ui-text-secondary)">
+            {excerpt.text}
+          </p>
+        </SurfaceSelection>
       ) : (
-        <p className="text-[13px] text-content/45">{t("Description is media only")}</p>
+        <p className="text-[13px] text-(--ui-text-secondary)">{t("Description is media only")}</p>
       )}
-      <button
+      <Button
+        variant="ghost"
         type="button"
         aria-expanded={expanded}
         onClick={() => setExpanded((current) => !current)}
-        className="inline-flex items-center gap-1 self-start text-[12px] text-content/50 hover:text-content"
+        className="self-start"
       >
         <ChevronDown
           className={`size-3.5 transition-transform ${expanded ? "rotate-180" : ""}`}
@@ -92,11 +103,11 @@ export function InboxDescriptionSummary({ body, cwd }: { body: string; cwd: stri
         />
         {expanded ? t("Show less") : t("Show full description")}
         {!expanded && excerpt.images > 0 ? (
-          <span className="text-content/35">
+          <span className="text-(--ui-text-secondary)">
             · {excerpt.images} {excerpt.images === 1 ? t("image") : t("images")}
           </span>
         ) : null}
-      </button>
+      </Button>
     </section>
   );
 }
@@ -119,8 +130,8 @@ export function InboxPrChangesGlance({
 
   return (
     <section data-inbox-pr-glance className="flex flex-col gap-2">
-      <div className="flex items-center gap-2 text-[12px] text-content/50">
-        <h2 className="text-content/70">{t("Changed files")}</h2>
+      <div className="flex items-center gap-2 text-[12px] text-(--ui-text-secondary)">
+        <h2 className="text-(--ui-text-secondary)">{t("Changed files")}</h2>
         {diff ? (
           <>
             <span className="tabular-nums">
@@ -133,30 +144,29 @@ export function InboxPrChangesGlance({
           </>
         ) : null}
         {loading ? (
-          <LoaderCircle className="size-3 animate-spin text-content/35" strokeWidth={1.75} />
+          <LoaderCircle
+            className="size-3 animate-spin text-(--ui-text-secondary)"
+            strokeWidth={1.75}
+          />
         ) : null}
         {files.length > 0 ? (
-          <button
-            type="button"
-            onClick={() => onOpenFile()}
-            className="ml-auto inline-flex items-center gap-0.5 hover:text-content"
-          >
+          <Button variant="ghost" type="button" onClick={() => onOpenFile()} className="ml-auto">
             {files.length > shown.length
               ? t("View all {p0}", { p0: files.length })
               : t("View diff")}
             <ChevronRight className="size-3.5" strokeWidth={1.75} />
-          </button>
+          </Button>
         ) : null}
       </div>
       {error ? (
-        <p role="alert" className="text-[12px] text-content/45">
+        <Alert tone="info" role="alert">
           {error}
-        </p>
+        </Alert>
       ) : null}
       {diff && files.length === 0 ? (
-        <p className="text-[12px] text-content/45">{t("No file changes")}</p>
+        <p className="text-[12px] text-(--ui-text-secondary)">{t("No file changes")}</p>
       ) : shown.length > 0 ? (
-        <ul className="flex flex-col overflow-hidden rounded-lg border border-stroke">
+        <ul className="flex flex-col overflow-hidden rounded-lg border border-(--ui-tone-neutral-border)">
           {shown.map((file) => {
             const slash = file.path.lastIndexOf("/");
             const dir = slash >= 0 ? file.path.slice(0, slash + 1) : "";
@@ -165,17 +175,21 @@ export function InboxPrChangesGlance({
             const width = Math.max(8, Math.round((churn / maxChurn) * 48));
             const added = churn > 0 ? (file.additions / churn) * width : 0;
             return (
-              <li key={file.path} className="border-b border-stroke last:border-b-0">
-                <button
+              <li
+                key={file.path}
+                className="border-b border-(--ui-tone-neutral-border) last:border-b-0"
+              >
+                <Button
+                  variant="ghost"
                   type="button"
                   title={file.path}
                   onClick={() => onOpenFile(file.path)}
-                  className="flex w-full min-w-0 items-center gap-2 bg-content/2 px-3 py-1.5 text-left hover:bg-content/5"
+                  className="w-full min-w-0 text-left"
                 >
                   <FileTypeIcon name={name} isDir={false} size={16} />
                   <span className="flex min-w-0 flex-1 font-mono text-[12px]">
-                    <span className="min-w-0 truncate text-content/40">{dir}</span>
-                    <span className="shrink-0 text-content/85">{name}</span>
+                    <span className="min-w-0 truncate text-(--ui-text-secondary)">{dir}</span>
+                    <span className="shrink-0 text-(--ui-text-secondary)">{name}</span>
                   </span>
                   <span
                     aria-hidden
@@ -193,7 +207,7 @@ export function InboxPrChangesGlance({
                       <span className="text-diff-del-fg">-{formatInteger(file.deletions)}</span>
                     ) : null}
                   </span>
-                </button>
+                </Button>
               </li>
             );
           })}

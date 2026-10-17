@@ -1,4 +1,8 @@
-import { SearchInput } from "../../shared/ui/SearchInput";
+import { Alert } from "../../shared/ui/Alert";
+import { SegmentedControl } from "../../shared/ui/SegmentedControl";
+import { Checkbox } from "../../shared/ui/Checkbox";
+import { Button } from "../../shared/ui/Button";
+import { SearchInput, SearchInputGroup } from "../../shared/ui/SearchInput";
 import { projectDisplayName } from "../../features/projects/model/projectNames";
 import { useEffect, useMemo, useState } from "react";
 import { t, useLocale } from "../../shared/i18n";
@@ -24,7 +28,7 @@ import { formatRelative } from "../../features/sessions/model/recentSessions";
 import { useVisibleProjects } from "../../features/group-lock/hooks/useGroupLock";
 import type { WorkspaceSessionStub } from "../../features/workspace/model/workspaceSnapshot";
 import { getSession } from "../../features/sessions/data/sessionStore";
-import { Trash2 } from "../../shared/ui/icons";
+import { Search, Trash2 } from "../../shared/ui/icons";
 import "./session-recovery.css";
 
 const stubPath = (stub: WorkspaceSessionStub) => stub.cwd;
@@ -40,8 +44,6 @@ const labels: Record<RecoveryStatus, string> = {
   failed: "Failed",
   retrying: "Retrying",
 };
-const button =
-  "rounded-md border border-stroke px-3 py-1.5 text-sm enabled:hover:bg-content/8 active:bg-content/12 focus-visible:outline-2 focus-visible:outline-accent disabled:opacity-40";
 
 type Props = {
   recovery: SessionRecovery;
@@ -201,7 +203,7 @@ export function SessionRecoveryPanel({
       fitViewport
     >
       <div className="session-recovery flex min-h-0 flex-col gap-3 p-4" aria-busy={pending}>
-        <p className="text-sm text-content/70">
+        <p className="text-sm text-(--ui-text-secondary)">
           {t("Opening tabs does not restart work. Removing entries keeps conversation history.")}
         </p>
         <p className="text-sm" role="status">
@@ -219,60 +221,63 @@ export function SessionRecoveryPanel({
             ) : null;
           })}
         </p>
-        <div className="flex flex-wrap gap-2" aria-label={t("Session filters")}>
-          <button
-            type="button"
-            className={`${button} ${filter === "attention" ? "bg-accent/12 text-accent" : ""}`}
-            aria-pressed={filter === "attention"}
-            onClick={() => setFilter("attention")}
-          >
-            {t("Needs attention")} ({attentionCount})
-          </button>
-          <button
-            type="button"
-            className={`${button} ${filter === "all" ? "bg-accent/12 text-accent" : ""}`}
-            aria-pressed={filter === "all"}
-            onClick={() => setFilter("all")}
-          >
-            {t("All sessions")} ({rows.length})
-          </button>
-        </div>
-        <SearchInput
-          standalone
-          aria-label={t("Search recovered sessions")}
-          placeholder={t("Search recovered sessions")}
-          value={query}
-          onChange={(event) => setQuery(event.target.value)}
-          containerClassName="w-full"
-          className="rounded-md border border-stroke bg-content/4 px-3 py-2 text-sm focus-visible:outline-2 focus-visible:outline-accent"
+        <SegmentedControl
+          label={t("Session filters")}
+          value={filter}
+          onValueChange={(value) => setFilter(value as "attention" | "all")}
+          options={[
+            { value: "attention", label: t("Needs attention"), accessory: attentionCount },
+            { value: "all", label: t("All sessions"), accessory: rows.length },
+          ]}
         />
+        <SearchInputGroup appearance="field">
+          <Search className="size-3.5 shrink-0" aria-hidden="true" />
+          <SearchInput
+            focusOwner="group"
+            aria-label={t("Search recovered sessions")}
+            placeholder={t("Search recovered sessions")}
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+          />
+        </SearchInputGroup>
         <div className="recovery-actions">
-          <button
-            className={`${button} bg-accent/12 text-accent`}
+          <Button
+            variant="secondary"
+            size="sm"
+            motion="none"
             disabled={pending || !rows.length}
             onClick={() => void open(rows.map((row) => row.stub.id))}
           >
             {t("Open all")} ({rows.length})
-          </button>
+          </Button>
           {selectedIds.length ? (
             <>
-              <button className={button} disabled={pending} onClick={() => void open(selectedIds)}>
+              <Button
+                variant="secondary"
+                size="sm"
+                motion="none"
+                disabled={pending}
+                onClick={() => void open(selectedIds)}
+              >
                 {t("Open selected")} ({selectedIds.length})
-              </button>
-              <button
-                className={button}
+              </Button>
+              <Button
+                variant="secondary"
+                size="sm"
+                motion="none"
+
                 disabled={pending}
                 onClick={() => void remove(selectedIds)}
               >
                 {t("Remove selected")}
-              </button>
+              </Button>
             </>
           ) : null}
         </div>
         {error ? (
-          <p role="alert" className="text-sm text-danger">
+          <Alert tone="danger" role="alert">
             {error}
-          </p>
+          </Alert>
         ) : null}
         <ul
           className="recovery-list min-h-0 overflow-y-auto overscroll-contain divide-y divide-stroke"
@@ -280,8 +285,7 @@ export function SessionRecoveryPanel({
         >
           {shown.map(({ stub, title, status, machine, activityAt }) => (
             <li key={stub.id} className="recovery-row flex items-center gap-2 py-3">
-              <input
-                type="checkbox"
+              <Checkbox
                 checked={selected.has(stub.id)}
                 disabled={pending}
                 aria-label={t("Select {p0}", { p0: title })}
@@ -293,12 +297,12 @@ export function SessionRecoveryPanel({
                   {title}
                 </div>
                 <div
-                  className="truncate text-xs text-content/60"
+                  className="truncate text-xs text-(--ui-text-secondary)"
                   title={`${stub.cwd} · ${HARNESS_TITLE[stub.harness]} ${stub.model}`}
                 >
                   {projectDisplayName(stub.cwd)} · {machine}
                 </div>
-                <div className="text-xs text-content/70">
+                <div className="text-xs text-(--ui-text-secondary)">
                   <span
                     className={
                       status === "failed"
@@ -320,10 +324,21 @@ export function SessionRecoveryPanel({
                     : t("Recovered {p0}", { p0: formatRelative(recovery.capturedAt, Date.now()) })}
                 </div>
               </div>
-              <button className={button} disabled={pending} onClick={() => void open([stub.id])}>
+              <Button
+                variant="secondary"
+                size="sm"
+                motion="none"
+                disabled={pending}
+                onClick={() => void open([stub.id])}
+              >
                 {t("Open")}
-              </button>
-              <button
+              </Button>
+              <Button
+                iconOnly
+                label={t("Remove {p0} from recovery list", { p0: title })}
+                variant="ghost"
+                size="sm"
+                motion="none"
                 className="recovery-remove"
                 disabled={pending}
                 aria-label={t("Remove {p0} from recovery list", { p0: title })}
@@ -331,12 +346,12 @@ export function SessionRecoveryPanel({
                 onClick={() => void remove([stub.id])}
               >
                 <Trash2 className="size-4" aria-hidden="true" />
-              </button>
+              </Button>
             </li>
           ))}
         </ul>
         {!shown.length ? (
-          <p className="text-sm text-content/60">
+          <p className="text-sm text-(--ui-text-secondary)">
             {t(
               filter === "attention" && !query
                 ? "No sessions need recovery."
@@ -345,8 +360,11 @@ export function SessionRecoveryPanel({
           </p>
         ) : null}
         <div className="recovery-actions border-t border-stroke pt-3">
-          <button
-            className={button}
+          <Button
+            variant="secondary"
+            size="sm"
+            motion="none"
+
             disabled={pending || !rows.length}
             onClick={() =>
               void open(
@@ -356,21 +374,27 @@ export function SessionRecoveryPanel({
             }
           >
             {t("Restore previous layout")}
-          </button>
-          <button
-            className={button}
+          </Button>
+          <Button
+            variant="secondary"
+            size="sm"
+            motion="none"
+
             disabled={pending || !completedIds.length}
             onClick={() => void remove(completedIds)}
           >
             {t("Clear completed")}
-          </button>
-          <button
-            className={button}
+          </Button>
+          <Button
+            variant="secondary"
+            tone="danger"
+            size="sm"
+            motion="none"
             disabled={pending || !rows.length}
             onClick={() => void remove(rows.map((row) => row.stub.id))}
           >
             {t("Clear list")}
-          </button>
+          </Button>
         </div>
       </div>
     </Modal>

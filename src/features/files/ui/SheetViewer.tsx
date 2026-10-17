@@ -1,3 +1,4 @@
+import { Button } from "../../../shared/ui/Button";
 import { t, useLocale } from "../../../shared/i18n/technical";
 import { useEffect, useId, useState } from "react";
 import { documentErrorMessage } from "../model/documentViewer";
@@ -69,7 +70,7 @@ export default function SheetViewer({
         <SheetGridView key={active} grid={state.book.sheets[Math.min(active, names.length - 1)]} />
       </div>
       {state.book.omittedSheets > 0 ? (
-        <p role="status" className="px-3 text-xs text-content/70">
+        <p role="status" className="px-3 text-xs text-[var(--ui-text-secondary)]">
           {t("Only the first 100 sheets are previewed.")}
         </p>
       ) : null}
@@ -80,7 +81,11 @@ export default function SheetViewer({
           className="flex h-8 shrink-0 items-center gap-1 overflow-x-auto border-t border-stroke px-2 text-[11px]"
         >
           {names.map((name, index) => (
-            <button
+            <Button
+              size="sm"
+              selected={index === active}
+              variant="tab"
+              motion="none"
               key={name}
               type="button"
               role="tab"
@@ -101,14 +106,10 @@ export default function SheetViewer({
                 document.getElementById(`${id}-tab-${next}`)?.focus();
               }}
               onClick={() => setActive(index)}
-              className={`h-6 shrink-0 rounded px-2 ${
-                index === active
-                  ? "bg-content/15 text-content"
-                  : "text-content/55 hover:bg-content/10 hover:text-content"
-              }`}
+              className={"shrink-0"}
             >
               {name}
-            </button>
+            </Button>
           ))}
         </div>
       ) : null}

@@ -1,3 +1,4 @@
+import { Button } from "../../../shared/ui/Button";
 import { runDiffWorker } from "../model/diffWorker";
 import { t, useLocale } from "../../../shared/i18n/git";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -471,7 +472,7 @@ export function WorkingTreeDiff({ cwd, focusPath, focusKind, focusRequest }: Pro
 
   if (!cwd || cwd === "~") {
     return (
-      <p className="grid h-full place-items-center text-[13px] text-content/45">
+      <p className="grid h-full place-items-center text-[13px] text-[var(--ui-text-muted)]">
         {t("No project folder")}
       </p>
     );
@@ -481,20 +482,22 @@ export function WorkingTreeDiff({ cwd, focusPath, focusKind, focusRequest }: Pro
       <div className="grid h-full place-items-center p-6 text-center">
         <AlertCircle className="mx-auto mb-3 size-5 text-danger" />
         <p className="text-[13px] text-content">{t("Couldn’t load changes")}</p>
-        <p className="mt-1 text-[12px] text-content/50">{error}</p>
-        <button
+        <p className="mt-1 text-[12px] text-[var(--ui-text-secondary)]">{error}</p>
+        <Button
+          variant="ghost"
+          motion="none"
           type="button"
           onClick={() => setRetry((value) => value + 1)}
-          className="mt-3 text-[13px] text-content"
+          className="mt-3"
         >
           {t("Retry")}
-        </button>
+        </Button>
       </div>
     );
   }
   if (files == null) {
     return (
-      <div className="grid h-full place-items-center text-content/40">
+      <div className="grid h-full place-items-center text-[var(--ui-text-muted)]">
         <Loader className="size-4 animate-spin" strokeWidth={1.75} />
       </div>
     );

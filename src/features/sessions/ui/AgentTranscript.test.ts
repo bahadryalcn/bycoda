@@ -190,7 +190,7 @@ describe("AgentTranscript collapsed work", () => {
     );
     expect(markup).toContain('data-bycoda-tool-call="sessions.send"');
     expect(markup).toContain("private-marker");
-    expect(markup).toContain("Allow</button>");
+    expect(markup).toContain("Allow");
 
     const compound = renderToStaticMarkup(
       createElement(AgentTranscript, {
@@ -210,7 +210,7 @@ describe("AgentTranscript collapsed work", () => {
     );
     expect(compound).not.toContain("data-bycoda-tool-call");
     expect(compound).toContain("echo extra");
-    expect(compound).toContain("Allow</button>");
+    expect(compound).toContain("Allow");
   });
 
   it("keeps a failed Bycoda call compact until its error is opened", () => {
@@ -678,7 +678,7 @@ describe("AgentTranscript collapsed work", () => {
     expect(markup).toContain("Reading the diff first.");
     expect(markup).toContain("Show the steps for Reading the diff first.");
     // An open row holds its wash, so the panel reads as hanging off it.
-    expect(markup).toContain("hover:bg-content/8 bg-content/8");
+    expect(markup).toContain('data-button-selected="true"');
     // The panel opens straight onto its phases. A scroll window of its own
     // here would nest one 17.5rem scroller inside the window each phase
     // already keeps, and the inner one could never reach its last row.

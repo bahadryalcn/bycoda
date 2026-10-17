@@ -1,3 +1,6 @@
+import { DropdownMenu } from "../../../shared/ui/DropdownMenu";
+import { EmptyState } from "../../../shared/ui/EmptyState";
+import { Alert } from "../../../shared/ui/Alert";
 import { TextField } from "../../../shared/ui/TextField";
 import { useRetainedState } from "../../../shared/hooks/useRetainedState";
 import { pathKey } from "../../../shared/lib/paths";
@@ -7,15 +10,7 @@ import type { EditorView } from "@codemirror/view";
 import styles from "./SkillsPage.module.css";
 import { t, useLocale } from "../../../shared/i18n";
 import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
-import {
-  useEffect,
-  useId,
-  useMemo,
-  useRef,
-  useState,
-  type KeyboardEvent as ReactKeyboardEvent,
-  type ReactNode,
-} from "react";
+import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import {
   CloudUpload,
@@ -56,41 +51,12 @@ import { knownRemoteMachine, useRemoteMachines } from "../../connections/model/c
 import { remoteProjectMachines } from "../../connections/model/localSync";
 import { classifyRemoteError } from "../../connections/model/remoteFailure";
 import { listMachineSkills } from "../model/machineSkills";
-import { Popover } from "../../../shared/ui/Popover";
 import { canDeleteSkill } from "../model/deleteSkill";
 import { AdvancedSettings, Segmented, Toggle } from "../../settings/ui/settingsControls";
 
 /** A connected machine whose skills are listed: `cwd` is its open project
  * (a `remote://` path), or empty for its personal skills only. */
 type Machine = { environmentId: string; name: string; cwd: string };
-
-function onMenuKeyDown(event: ReactKeyboardEvent<HTMLDivElement>): void {
-  if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
-  const items = Array.from(
-    event.currentTarget.querySelectorAll<HTMLButtonElement>(
-      '[role="menuitem"]:not(:disabled):not([aria-disabled="true"])',
-    ),
-  );
-  if (!items.length) return;
-  event.preventDefault();
-  event.stopPropagation();
-  const current = items.indexOf(document.activeElement as HTMLButtonElement);
-  const next =
-    event.key === "Home"
-      ? 0
-      : event.key === "End"
-        ? items.length - 1
-        : event.key === "ArrowDown"
-          ? (current + 1) % items.length
-          : (current <= 0 ? items.length : current) - 1;
-  items[next]?.focus();
-}
-
-function focusMenu(element: HTMLDivElement | null): void {
-  // Popover first measures a hidden surface, then places it. Focus only lands
-  // on the placed surface; preserve focus inside it during later repositioning.
-  if (element && !element.contains(document.activeElement)) element.focus({ preventScroll: true });
-}
 
 /** Why a machine's skills could not be listed, in words the user can act on. */
 function machineFailure(machine: Machine, error: unknown): string {
@@ -503,21 +469,6 @@ export function SkillsPage({ cwd, header }: { cwd: string; header?: ReactNode })
     }
   };
 
-  const renderDelete = (skill: DiscoveredSkill, machine: Machine | null = null): ReactNode =>
-    canDeleteSkill(skill) ? (
-      <Button
-        variant="item"
-        role="menuitem"
-        aria-label={t("Delete {p0}", { p0: skill.name })}
-        tooltip={t("Delete skill permanently")}
-        disabled={deleting !== null || transferring !== null || saving}
-        onClick={() => void onDelete(skill, machine)}
-      >
-        <Trash2 className="size-3.5" aria-hidden="true" />
-        {t("Delete skill permanently")}
-      </Button>
-    ) : null;
-
   const renderRow = (skill: DiscoveredSkill, machine: Machine | null = null) => {
     const disabled = disabledPaths.includes(skill.path);
     const selected = previewSkill?.path === skill.path;
@@ -622,13 +573,13 @@ export function SkillsPage({ cwd, header }: { cwd: string; header?: ReactNode })
     machine: Machine | null = null,
   ) =>
     failure ? (
-      <p role="alert" className={styles.error}>
+      <Alert tone="danger" role="alert">
         {failure}
-      </p>
+      </Alert>
     ) : all === null ? (
-      <p role="status" className={styles.message}>
+      <Alert tone="info" role="status">
         {t("Loading skills…")}
-      </p>
+      </Alert>
     ) : shown.length === 0 ? (
       <p className={styles.message}>
         {all.length
@@ -644,19 +595,19 @@ export function SkillsPage({ cwd, header }: { cwd: string; header?: ReactNode })
   const actionFeedback = (
     <>
       {actionError ? (
-        <p role="alert" className={styles.error}>
+        <Alert tone="danger" role="alert">
           {actionError}
-        </p>
+        </Alert>
       ) : null}
       {actionResult ? (
-        <p role="status" className={styles.message}>
+        <Alert tone="info" role="status">
           {actionResult}
-        </p>
+        </Alert>
       ) : null}
       {busy || deleting || transferring ? (
-        <p role="status" className={styles.message}>
+        <Alert tone="info" role="status">
           {busy ? t("Creating…") : deleting ? t("Deleting…") : t("Copying…")}
-        </p>
+        </Alert>
       ) : null}
     </>
   );
@@ -855,13 +806,13 @@ export function SkillsPage({ cwd, header }: { cwd: string; header?: ReactNode })
             </header>
             <div key={previewSkill.path} className={styles.document}>
               {previewError ? (
-                <p role="alert" className={styles.error}>
+                <Alert tone="danger" role="alert">
                   {previewError}
-                </p>
+                </Alert>
               ) : draft === null ? (
-                <p role="status" className={styles.message}>
+                <Alert tone="info" role="status">
                   {t("Loading skill…")}
-                </p>
+                </Alert>
               ) : editing && editable ? (
                 <NoteMarkdownEditor
                   value={draft}
@@ -885,82 +836,73 @@ export function SkillsPage({ cwd, header }: { cwd: string; header?: ReactNode })
             </footer>
           </aside>
         ) : (
-          <div className={styles.empty}>
-            <h2>{t("Select a skill")}</h2>
-            <p>{t("Choose a skill to view or edit its instructions.")}</p>
-          </div>
+          <EmptyState
+            title={t("Select a skill")}
+            description={t("Choose a skill to view or edit its instructions.")}
+          />
         )}
       </div>
       {actionsMenu ? (
-        <Popover
+        <DropdownMenu
           anchor={actionsMenu.anchor}
+          label={t("Actions for {p0}", { p0: actionsMenu.skill.name })}
           align="end"
-          width={240}
-          onDismiss={() => setActionsMenu(null)}
-          role="menu"
-          aria-label={t("Actions for {p0}", { p0: actionsMenu.skill.name })}
-          tabIndex={-1}
-          ref={focusMenu}
-          onKeyDown={onMenuKeyDown}
-          className="p-1"
-        >
-          <Button
-            variant="item"
-            role="menuitem"
-            aria-label={t("Copy path of {p0}", { p0: actionsMenu.skill.name })}
-            onClick={() => {
-              onCopyPath(actionsMenu.skill.path);
-              setActionsMenu(null);
-            }}
-          >
-            <Copy className="size-3.5" aria-hidden="true" />
-            {t("Copy path")}
-          </Button>
-          {!actionsMenu.machine ? (
-            <Button
-              variant="item"
-              role="menuitem"
-              aria-label={t("Reveal {p0} in file explorer", { p0: actionsMenu.skill.name })}
-              onClick={() => {
-                onReveal(actionsMenu.skill.path);
-                setActionsMenu(null);
-              }}
-            >
-              <FolderOpen className="size-3.5" aria-hidden="true" />
-              {t("Reveal in file manager")}
-            </Button>
-          ) : null}
-          {renderDelete(actionsMenu.skill, actionsMenu.machine)}
-        </Popover>
+          onClose={() => setActionsMenu(null)}
+          onPick={(id) => {
+            const { skill, machine } = actionsMenu;
+            if (id === "copy") onCopyPath(skill.path);
+            else if (id === "reveal") onReveal(skill.path);
+            else if (id === "delete") void onDelete(skill, machine);
+          }}
+          items={[
+            {
+              kind: "item",
+              id: "copy",
+              label: t("Copy path of {p0}", { p0: actionsMenu.skill.name }),
+              icon: <Copy className="size-3.5" />,
+            },
+            ...(!actionsMenu.machine
+              ? [
+                  {
+                    kind: "item" as const,
+                    id: "reveal",
+                    label: t("Reveal {p0} in file explorer", { p0: actionsMenu.skill.name }),
+                    icon: <FolderOpen className="size-3.5" />,
+                  },
+                ]
+              : []),
+            ...(canDeleteSkill(actionsMenu.skill)
+              ? [
+                  {
+                    kind: "item" as const,
+                    id: "delete",
+                    label: t("Delete {p0}", { p0: actionsMenu.skill.name }),
+                    title: t("Delete skill permanently"),
+                    danger: true,
+                    disabled: deleting !== null || transferring !== null || saving,
+                    icon: <Trash2 className="size-3.5" />,
+                  },
+                ]
+              : []),
+          ]}
+        />
       ) : null}
       {copyMenu ? (
-        <Popover
+        <DropdownMenu
           anchor={copyMenu.anchor}
+          label={t("Copy {p0} to", { p0: copyMenu.skill.name })}
           align="end"
-          width={220}
-          onDismiss={() => setCopyMenu(null)}
-          role="menu"
-          aria-label={t("Copy {p0} to", { p0: copyMenu.skill.name })}
-          tabIndex={-1}
-          ref={focusMenu}
-          onKeyDown={onMenuKeyDown}
-          className="p-1"
-        >
-          {machines.map((machine) => (
-            <Button
-              key={machine.environmentId}
-              variant="item"
-              role="menuitem"
-              onClick={() => {
-                const skill = copyMenu.skill;
-                setCopyMenu(null);
-                void onTransfer(skill, null, machine);
-              }}
-            >
-              {machine.name}
-            </Button>
-          ))}
-        </Popover>
+          onClose={() => setCopyMenu(null)}
+          onPick={(id) => {
+            const machine = machines.find((item) => item.environmentId === id);
+            if (machine) void onTransfer(copyMenu.skill, null, machine);
+          }}
+          items={machines.map((machine) => ({
+            kind: "item",
+            id: machine.environmentId,
+            label: machine.name,
+          }))}
+        />
       ) : null}
     </div>
   );

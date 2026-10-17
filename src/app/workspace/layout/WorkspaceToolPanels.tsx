@@ -132,16 +132,20 @@ export function WorkspaceToolPanels({
         notesEnabled,
         grouped: toolWindow?.grouped ?? true,
         onSelect: async (tool: ToolId) => {
-          if (await revealExistingTool(tool, socialBoardShown && socialPanelCwd ? socialPanelCwd : projectCwd)) return;
+          if (
+            await revealExistingTool(
+              tool,
+              socialBoardShown && socialPanelCwd ? socialPanelCwd : projectCwd,
+            )
+          )
+            return;
           setFilePickerOpen(false);
           setSettingsOpen(false);
           setSearchViewOpen(false);
           setInboxViewOpen(tool === "inbox");
           setPullRequestsOnly(false);
           setNotesViewOpen(tool === "notes" && notesEnabled);
-          setAutomationsViewOpen(
-            tool === "social" || tool === "tasks" || tool === "automations",
-          );
+          setAutomationsViewOpen(tool === "social" || tool === "tasks" || tool === "automations");
           setSocialBoardShown(tool === "social");
           setTaskBoardShown(tool === "tasks");
         },

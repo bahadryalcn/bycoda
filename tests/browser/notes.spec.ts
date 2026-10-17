@@ -1,33 +1,97 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 
-test("quotes selected note text from preview and source through the contextual menu", async ({ page }) => {
+async function choose(page: Page, label: string, option: string | RegExp) {
+  await page.getByRole("button", { name: new RegExp(`^${label}(?::|$)`) }).click();
+  await page.getByRole("option", { name: option }).click();
+}
+
+test("shared tags, searchable filters and action menu preserve note drafts", async ({
+  page,
+}, testInfo) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.goto("/tests/browser/notes.html?theme=light");
+  const tags = page.getByRole("textbox", { name: "Add note tag", exact: true });
+  await tags.fill("#NEWTAG,");
+  await expect(page.locator('.note-detail-tags [data-tag="newtag"]')).toBeVisible();
+  await tags.fill("日本語");
+  await tags.dispatchEvent("keydown", { key: "Enter", isComposing: true });
+  await expect(tags).toHaveValue("日本語");
+  await tags.press("Enter");
+  await expect(page.locator('.note-detail-tags [data-tag="日本語"]')).toBeVisible();
+  await page.getByRole("button", { name: "Filters and options", exact: true }).click();
+  await page.getByRole("button", { name: /^Filter by project:/ }).click();
+  await page.getByRole("combobox").fill("mobile");
+  await expect(page.getByRole("option")).toHaveCount(1);
+  await page.getByRole("option").click();
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("textbox", { name: "Note title", exact: true })).toHaveValue(
+    "Release planning",
+  );
+  await page.getByRole("button", { name: "More options", exact: true }).click();
+  const save = page.getByRole("menuitem", { name: "Save", exact: true });
+  await expect(save).toBeFocused();
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("button", { name: "More options", exact: true })).toBeFocused();
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () => (window as unknown as { notesFixture: { tags: string[] }[] }).notesFixture[0].tags,
+      ),
+    )
+    .toEqual(expect.arrayContaining(["newtag", "日本語"]));
+  await page.setViewportSize({ width: 768, height: 800 });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await page.screenshot({
+    path: `temp/verification/2026-10-16-ui-system/W4b-NOTES-${testInfo.project.name}-light-768.png`,
+  });
+});
+
+test("quotes selected note text from preview and source through the contextual menu", async ({
+  page,
+}) => {
   await page.goto("/tests/browser/notes.html");
   await page.evaluate(() => {
     (window as unknown as { selectedQuotes: unknown[] }).selectedQuotes = [];
     window.addEventListener("bycoda:add-to-chat", (event) => {
-      (window as unknown as { selectedQuotes: unknown[] }).selectedQuotes.push((event as CustomEvent).detail);
+      (window as unknown as { selectedQuotes: unknown[] }).selectedQuotes.push(
+        (event as CustomEvent).detail,
+      );
     });
   });
-  const paragraph = page.locator('[data-note-preview] p').filter({ hasText: "Write the launch summary here." }).first();
+  const paragraph = page
+    .locator("[data-note-preview] p")
+    .filter({ hasText: "Write the launch summary here." })
+    .first();
   await expect(paragraph).toBeVisible();
   await paragraph.evaluate((element) => {
-    const range = document.createRange(); range.selectNodeContents(element);
-    window.getSelection()!.removeAllRanges(); window.getSelection()!.addRange(range);
+    const range = document.createRange();
+    range.selectNodeContents(element);
+    window.getSelection()!.removeAllRanges();
+    window.getSelection()!.addRange(range);
     document.dispatchEvent(new Event("selectionchange"));
   });
   const menu = page.getByRole("toolbar", { name: "Selected text actions" });
   await expect(menu).toBeVisible();
   await expect(menu.getByRole("button", { name: "Add to notes", exact: true })).toHaveCount(0);
   await menu.getByRole("button", { name: "Add to chat", exact: true }).click();
-  await expect.poll(() => page.evaluate(() => (window as unknown as { selectedQuotes: unknown[] }).selectedQuotes)).toEqual([
-    { text: "Write the launch summary here.", mode: "quote" },
-  ]);
+  await expect
+    .poll(() =>
+      page.evaluate(() => (window as unknown as { selectedQuotes: unknown[] }).selectedQuotes),
+    )
+    .toEqual([{ text: "Write the launch summary here.", mode: "quote" }]);
   const source = page.locator(".note-split > div:first-child .cm-content");
-  await source.click(); await page.keyboard.press("ControlOrMeta+Home");
+  await source.click();
+  await page.keyboard.press("ControlOrMeta+Home");
   await page.keyboard.press("Shift+End");
   await expect(menu).toBeVisible();
   await menu.getByRole("button", { name: "Add to chat", exact: true }).click();
-  await expect.poll(() => page.evaluate(() => (window as unknown as { selectedQuotes: { text: string }[] }).selectedQuotes[1]?.text)).toBe("# Release checklist");
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () => (window as unknown as { selectedQuotes: { text: string }[] }).selectedQuotes[1]?.text,
+      ),
+    )
+    .toBe("# Release checklist");
 });
 
 test("keeps note controls compact and confirms deletion in a focused dialog", async ({
@@ -39,7 +103,7 @@ test("keeps note controls compact and confirms deletion in a focused dialog", as
   await filters.click();
   const options = page.getByRole("dialog", { name: "Filters and options" });
   await expect(options).toBeVisible();
-  await page.getByLabel("Filter by tag", { exact: true }).selectOption("ideas");
+  await choose(page, "Filter by tag", "#ideas");
   await expect(filters).toHaveAttribute("data-active", "true");
   await page.keyboard.press("Escape");
   await expect(options).toHaveCount(0);
@@ -119,11 +183,11 @@ test("groups and filters many notes, edits both panes, formats and saves preview
     )
     .toContain("const preserve = true;");
   await page.getByRole("button", { name: "Filters and options", exact: true }).click();
-  await page.getByLabel("Filter by project", { exact: true }).selectOption("g:/projects/mobile");
+  await choose(page, "Filter by project", /mobile/i);
   await expect(page.locator("[data-note-library] li")).toHaveCount(14);
-  await page.getByLabel("Filter by tag", { exact: true }).selectOption("ideas");
+  await choose(page, "Filter by tag", "#ideas");
   await expect(page.locator("[data-note-library] li")).toHaveCount(7);
-  await page.getByLabel("Group notes by", { exact: true }).selectOption("tag");
+  await choose(page, "Group notes by", "Tags");
   await expect(page.locator(".note-group-heading")).toHaveCount(1);
   await page.keyboard.press("Escape");
   await page.locator(".note-group-heading").click();
@@ -171,7 +235,7 @@ test("bounds a thousand large notes while fetching selected details and moving k
     650_000,
   );
   await page.getByRole("button", { name: "Filters and options", exact: true }).click();
-  await page.getByLabel("Group notes by", { exact: true }).selectOption("none");
+  await choose(page, "Group notes by", "No grouping");
   await page.keyboard.press("Escape");
   await expect(cards).toHaveCount(32);
   await cards.last().focus();

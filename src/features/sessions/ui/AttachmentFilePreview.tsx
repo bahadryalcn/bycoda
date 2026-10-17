@@ -78,7 +78,7 @@ export function AttachmentFilePreview({
       onClose={onClose}
       size="lg"
       fitViewport
-      className="h-[min(760px,85dvh)] bg-background-base"
+      className="h-[min(760px,85dvh)] bg-(--ui-surface)"
     >
       <div className="h-full min-h-0">
         {mediaKind(attachment.name) ? (

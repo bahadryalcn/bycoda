@@ -86,10 +86,7 @@ export function WorkspaceAuxSurfaces({
           .map((session) => {
             const visible = inboxViewOpen && inboxAskPortal?.sessionId === session.id;
             return (
-              <SessionSurface
-                key={session.id}
-                host={visible ? inboxAskPortal.host : undefined}
-              >
+              <SessionSurface key={session.id} host={visible ? inboxAskPortal.host : undefined}>
                 <SessionPane
                   {...sessionPaneProps}
                   session={session}

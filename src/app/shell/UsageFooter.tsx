@@ -1,3 +1,4 @@
+import { Button } from "../../shared/ui/Button";
 import {
   useRateLimitQuery,
   loadRateLimitsForQuery as loadRateLimits,
@@ -303,7 +304,7 @@ export function UsageFooter({
   return (
     <footer
       aria-label={ariaLabel}
-      className={`@container/usage flex h-7 min-w-0 items-center gap-1.5 px-1.5 text-[11px] text-content/50 ${embedded ? "flex-1" : "shrink-0 border-t border-stroke"}`}
+      className={`@container/usage flex h-7 min-w-0 items-center gap-1.5 px-1.5 text-[11px] text-(--ui-text-secondary) ${embedded ? "flex-1" : "shrink-0 border-t border-stroke"}`}
     >
       <div
         data-provider-usage
@@ -346,20 +347,24 @@ export function UsageFooter({
             {showOpencodeChip ? (
               <UsageProviderChip limits={opencode} now={now} project={project} />
             ) : null}
-            <button
+            <Button
+              iconOnly
+              label={t("Refresh usage")}
+              variant="ghost"
+              motion="none"
               type="button"
-              className="grid size-4.5 shrink-0 place-items-center rounded text-content/40 hover:bg-content/10 hover:text-content disabled:opacity-50"
+              className="size-7 shrink-0"
               aria-label={t("Refresh usage")}
               title={t("Refresh usage")}
               disabled={refreshing}
               onClick={() => void refresh()}
             >
               <RefreshCw
-                className={`size-2.5 ${refreshing ? "motion-safe:animate-spin" : ""}`}
+                className={`size-3.5 ${refreshing ? "motion-safe:animate-spin" : ""}`}
                 strokeWidth={1.75}
                 aria-hidden
               />
-            </button>
+            </Button>
           </>
         ) : session ? (
           <SessionChip key={session.id ?? session.harness} session={session} />
@@ -375,11 +380,12 @@ export function UsageFooter({
               onToggle={onToggleTerminal}
             />
           ) : showTerminalButton ? (
-            <button
+            <Button
+              variant="ghost"
+              motion="none"
               type="button"
-              className={`inline-flex h-6 shrink-0 items-center gap-1.5 whitespace-nowrap rounded px-1.5 hover:bg-content/10 hover:text-content focus-visible:outline-2 focus-visible:outline-accent active:bg-content/15 ${
-                projectTerminalVisible ? "bg-selection text-content" : "text-content/50"
-              }`}
+              size="sm"
+              className="shrink-0 gap-1.5 whitespace-nowrap"
               aria-label={terminalLabel}
               aria-pressed={projectTerminalVisible}
               title={terminalLabel}
@@ -387,7 +393,7 @@ export function UsageFooter({
             >
               <Terminal className="size-3.5" strokeWidth={1.75} aria-hidden />
               <span className="@max-[40rem]/usage:hidden">{t("Terminal")}</span>
-            </button>
+            </Button>
           ) : null}
         </div>
       ) : null}
@@ -442,7 +448,7 @@ function SessionChip({ session }: { session: UsageFooterSession }) {
         className="inline-flex min-w-0 items-center gap-1.5 whitespace-nowrap"
         title={HARNESS_TITLE[session.harness]}
       >
-        <HarnessIcon harness={session.harness} className="size-3 shrink-0" />
+        <HarnessIcon harness={session.harness} className="size-3.5 shrink-0" />
         <span>{HARNESS_LABEL[session.harness]}</span>
       </span>
     );
@@ -450,22 +456,25 @@ function SessionChip({ session }: { session: UsageFooterSession }) {
 
   return (
     <>
-      <button
+      <Button
+        variant="ghost"
+        motion="none"
         ref={trigger}
         type="button"
-        className="-mx-1 inline-flex h-5 min-w-0 shrink-0 items-center gap-1.5 whitespace-nowrap rounded px-1 text-content/55 motion-safe:transition-[background-color,color,transform] duration-150 ease-out hover:bg-content/10 hover:text-content focus-visible:outline-2 focus-visible:outline-accent active:scale-[0.97]"
+        size="sm"
+        className="min-w-0 shrink-0 gap-1.5 whitespace-nowrap"
         aria-label={t("{p0} sign-in required", { p0: HARNESS_TITLE[session.harness] })}
         aria-expanded={open}
         aria-haspopup="dialog"
         title={t("{p0} sign-in required", { p0: HARNESS_TITLE[session.harness] })}
         onClick={() => setOpen((value) => !value)}
       >
-        <HarnessIcon harness={session.harness} className="size-3 shrink-0" />
+        <HarnessIcon harness={session.harness} className="size-3.5 shrink-0" />
         <span>{HARNESS_LABEL[session.harness]}</span>
         {authRequired ? (
           <span className="text-[10px] text-warning dark:text-warning">{t("sign in")}</span>
         ) : null}
-      </button>
+      </Button>
       {open ? (
         <Popover
           anchor={trigger}
@@ -525,10 +534,13 @@ function RunningTerminalChip({
 
   return (
     <>
-      <button
+      <Button
+        variant="ghost"
+        motion="none"
         ref={root}
         type="button"
-        className={`inline-flex h-6 min-w-0 max-w-[min(16rem,30cqi)] items-center gap-1.5 whitespace-nowrap rounded px-1.5 hover:bg-content/10 hover:text-content focus-visible:outline-2 focus-visible:outline-accent active:bg-content/15 ${panelOpen ? "bg-selection text-content" : "text-content/50"}`}
+        size="sm"
+        className="min-w-0 max-w-[min(16rem,30cqi)] gap-1.5 whitespace-nowrap"
         aria-label={ariaLabel}
         aria-pressed={panelOpen}
         aria-expanded={many && !panelOpen ? menuOpen : undefined}
@@ -547,7 +559,7 @@ function RunningTerminalChip({
         <span className="truncate font-mono text-[10px] tabular-nums @max-[40rem]/usage:hidden">
           {label}
         </span>
-      </button>
+      </Button>
       {menuOpen && many && !panelOpen ? (
         <Popover
           anchor={root}
@@ -560,11 +572,13 @@ function RunningTerminalChip({
           className="min-w-[12rem] p-1"
         >
           {terminals.map((terminal) => (
-            <button
+            <Button
+              variant="item"
+              motion="none"
               key={terminal.id}
               type="button"
               role="menuitem"
-              className="flex h-7 w-full items-center gap-2 rounded-lg px-2 text-left text-[12px] leading-none text-content hover:bg-content/10"
+              className="flex w-full items-center gap-2 leading-none"
               onMouseDown={(event) => event.preventDefault()}
               onClick={() => toggle(terminal.id)}
             >
@@ -572,7 +586,7 @@ function RunningTerminalChip({
               <span className="max-w-[7rem] shrink-0 truncate text-[11px] text-content/40">
                 {terminal.label}
               </span>
-            </button>
+            </Button>
           ))}
         </Popover>
       ) : null}

@@ -1,5 +1,7 @@
 import type { AutomationScheduleKind, AutomationTriggerKind } from "./automations";
 
+// English source strings are catalog keys. Translate at render/draft creation time,
+// so changing the application language also updates the gallery without rewriting data.
 export const AUTOMATION_TEMPLATE_CATEGORIES = [
   { id: "popular", label: "Popular" },
   { id: "review", label: "Code Review" },

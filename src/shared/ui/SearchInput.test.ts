@@ -138,3 +138,36 @@ it("supports clearing a labeled Arc search field", () => {
   expect(input.value).toBe("");
   expect(document.activeElement).toBe(input);
 });
+it("keeps native identity, form data, required validation and clear state after a field reset", async () => {
+  const ref = createRef<HTMLInputElement>();
+  await act(async () =>
+    root.render(
+      createElement(
+        "form",
+        null,
+        createElement(SearchInput, {
+          ref,
+          appearance: "field",
+          name: "q",
+          required: true,
+          defaultValue: "query",
+        }),
+      ),
+    ),
+  );
+  const form = container.querySelector("form")!;
+  const input = container.querySelector("input")!;
+  expect(ref.current).toBe(input);
+  expect(new window.FormData(form).get("q")).toBe("query");
+  await act(async () => container.querySelector<HTMLButtonElement>("button")!.click());
+  expect(input.checkValidity()).toBe(false);
+  expect(container.querySelector("button")).toBeNull();
+  await act(async () => {
+    form.reset();
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  });
+  expect(ref.current).toBe(input);
+  expect(input.checkValidity()).toBe(true);
+  expect(new window.FormData(form).get("q")).toBe("query");
+  expect(container.querySelector("button")).not.toBeNull();
+});

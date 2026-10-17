@@ -1,3 +1,4 @@
+import { Badge } from "../../../shared/ui/Badge";
 import { type ReactNode } from "react";
 import { useRetainedState } from "../../../shared/hooks/useRetainedState";
 import { t, useLocale } from "../../../shared/i18n/git";
@@ -54,20 +55,18 @@ export function CheckoutList({
         <Button
           variant="item"
           motion="none"
-          className={`${styles.row} min-w-0 flex-1`}
+          className={`  ${styles.row}  min-w-0 flex-1 `}
           data-session={isSession || undefined}
+          selected={isSession}
+          aria-current={isSession ? "location" : undefined}
           title={tree.path}
           onClick={() => onSelect(tree.path)}
         >
           <span className={styles.identity}>
             <span className={styles.branch}>{title}</span>
             {detail ? <span className={styles.folder}>{detail}</span> : null}
-            {isSession ? (
-              <span className={styles.tag} data-tone="accent">
-                {t("This session")}
-              </span>
-            ) : null}
-            {tree.isMain ? <span className={styles.tag}>{t("Main folder")}</span> : null}
+            {isSession ? <Badge tone="info">{t("This session")}</Badge> : null}
+            {tree.isMain ? <Badge>{t("Main folder")}</Badge> : null}
           </span>
           <span className={styles.badges}>
             {tree.locked ? (

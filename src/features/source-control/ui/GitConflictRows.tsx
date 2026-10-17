@@ -1,3 +1,4 @@
+import { Button } from "../../../shared/ui/Button";
 import { relativeDirname as dirname } from "../../../shared/lib/paths";
 import { t, useLocale } from "../../../shared/i18n/git";
 import { basename } from "../../../platform/tauri/fs";
@@ -11,8 +12,7 @@ import {
   type ConflictRow,
 } from "../model/conflictSection";
 
-const ACTION =
-  "shrink-0 rounded-md px-1.5 py-0.5 text-[11px] text-content/65 hover:bg-content/10 hover:text-content disabled:opacity-40";
+const ACTION = "shrink-0";
 
 type Props = {
   rows: ConflictRow[];
@@ -56,11 +56,13 @@ export function GitConflictRows({
           <li key={row.relative} data-conflict={row.relative}>
             <div
               className={`pr-2 pl-2 ${
-                selected === row.relative ? "bg-selection" : "hover:bg-content/5"
+                selected === row.relative ? "bg-selection" : "hover:bg-[var(--ui-surface-hover)]"
               }`}
             >
               <div className="flex h-7 w-full items-center gap-1 leading-none">
-                <button
+                <Button
+                  variant="item"
+                  motion="none"
                   type="button"
                   title={
                     hasFile ? t("Open {p0} in the editor", { p0: row.relative }) : row.relative
@@ -68,14 +70,16 @@ export function GitConflictRows({
                   disabled={!hasFile}
                   onClick={() => onOpen(row)}
                   onDoubleClick={() => onOpen(row, true)}
-                  className="flex min-w-0 flex-1 items-center gap-1.5 text-left text-content"
+                  className="flex min-w-0 flex-1 items-center gap-1.5 text-left"
                 >
                   <FileTypeIcon name={name} isDir={false} size={16} />
                   <span className="min-w-0 flex-1 truncate">
                     <span className="text-[13px] font-medium">{name}</span>
-                    {dir ? <span className="ml-1.5 text-[11px] text-content/40">{dir}</span> : null}
+                    {dir ? (
+                      <span className="ml-1.5 text-[11px] text-[var(--ui-text-muted)]">{dir}</span>
+                    ) : null}
                   </span>
-                </button>
+                </Button>
                 <span
                   title={info.title}
                   aria-label={info.label}
@@ -90,7 +94,9 @@ export function GitConflictRows({
                 aria-label={t("Resolve {p0}", { p0: row.relative })}
               >
                 {hasFile ? (
-                  <button
+                  <Button
+                    variant="ghost"
+                    motion="none"
                     type="button"
                     title={t("Open the file in the editor to resolve each block")}
                     disabled={disabled}
@@ -98,10 +104,12 @@ export function GitConflictRows({
                     className={ACTION}
                   >
                     {t("Open")}
-                  </button>
+                  </Button>
                 ) : null}
                 {canCompare && conflictCanCompare(row.kind) ? (
-                  <button
+                  <Button
+                    variant="ghost"
+                    motion="none"
                     type="button"
                     title={t("Compare the current and incoming versions with the base, read-only")}
                     disabled={disabled}
@@ -109,10 +117,12 @@ export function GitConflictRows({
                     className={ACTION}
                   >
                     {t("Compare")}
-                  </button>
+                  </Button>
                 ) : null}
                 {conflictChoices(row.kind).map((choice) => (
-                  <button
+                  <Button
+                    variant="ghost"
+                    motion="none"
                     key={choice.id}
                     type="button"
                     title={choice.title}
@@ -121,10 +131,12 @@ export function GitConflictRows({
                     className={ACTION}
                   >
                     {choice.label}
-                  </button>
+                  </Button>
                 ))}
                 {hasFile ? (
-                  <button
+                  <Button
+                    variant="ghost"
+                    motion="none"
                     type="button"
                     title={t("Stage the file as it is now")}
                     disabled={disabled}
@@ -132,7 +144,7 @@ export function GitConflictRows({
                     className={ACTION}
                   >
                     {working ? t("Working…") : t("Mark Resolved")}
-                  </button>
+                  </Button>
                 ) : null}
               </div>
             </div>

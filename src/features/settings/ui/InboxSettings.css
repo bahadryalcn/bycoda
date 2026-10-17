@@ -58,22 +58,6 @@
   min-inline-size: 0;
 }
 
-.inbox-connection-status {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  color: var(--ui-text-secondary);
-  font-size: var(--ui-font-caption);
-}
-
-.inbox-connection-status[data-state="configured"] {
-  color: var(--color-success);
-}
-
-.inbox-connection-status[data-state="error"] {
-  color: var(--color-danger);
-}
-
 .bycoda-settings-workbench .bycoda-settings-form .inbox-settings .settings-row:has(.inbox-scope) {
   grid-template-columns: minmax(0, 1fr);
 }
@@ -123,7 +107,6 @@
 
 .inbox-scope-option input {
   flex-shrink: 0;
-  accent-color: var(--color-accent);
 }
 
 .inbox-scope-key,

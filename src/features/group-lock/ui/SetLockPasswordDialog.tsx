@@ -6,6 +6,8 @@ import { formatCooldown, WRONG_PASSWORD_DELAY_MS } from "../model/attemptThrottl
 import { changeLockPassword, lockCooldownMs, setLockPassword } from "../model/groupLock";
 import { PASSWORD_MIN_LENGTH, passwordProblem } from "../model/passwordRecord";
 import { PasswordField } from "./PasswordField";
+import { Button } from "../../../shared/ui/Button";
+import { Alert } from "../../../shared/ui/Alert";
 import { pause, useCooldown, verifyFailureMessage } from "./PasswordPromptDialog";
 
 type Props = {
@@ -127,9 +129,9 @@ export function SetLockPasswordDialog({ mode, onClose, onDone }: Props) {
           invalid={message != null && mode === "set"}
         />
         {message ? (
-          <p id="set-lock-password-error" role="alert" className="text-[12px] text-danger">
+          <Alert id="set-lock-password-error" tone="danger">
             {message}
-          </p>
+          </Alert>
         ) : null}
         <ul className="flex list-disc flex-col gap-1 pl-4 text-[11px] leading-snug text-content/50">
           <li>
@@ -146,20 +148,17 @@ export function SetLockPasswordDialog({ mode, onClose, onDone }: Props) {
           </li>
         </ul>
         <div className="flex justify-end gap-2">
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-md px-3 py-1.5 text-[12px] text-content/70 hover:bg-content/8 hover:text-content"
-          >
+          <Button type="button" onClick={onClose} variant="ghost">
             {t("Cancel")}
-          </button>
-          <button
+          </Button>
+          <Button
             type="submit"
             disabled={busy || cooldown.remainingMs > 0}
-            className="rounded-md bg-selection px-3 py-1.5 text-[12px] font-medium text-content hover:bg-selection-hover disabled:opacity-40"
+            variant="primary"
+            loading={busy}
           >
             {mode === "set" ? t("Set password") : t("Change password")}
-          </button>
+          </Button>
         </div>
       </form>
     </Modal>

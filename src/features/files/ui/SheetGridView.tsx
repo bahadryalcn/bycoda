@@ -69,7 +69,7 @@ export function SheetGridView({ grid }: { grid: SparseSheet }) {
   return (
     <div className="relative flex min-h-0 flex-1 flex-col">
       {grid.truncated ? (
-        <div className="shrink-0 border-b border-stroke bg-content/[0.04] px-3 py-1 text-[11px] text-content/60">
+        <div className="shrink-0 border-b border-stroke bg-content/[0.04] px-3 py-1 text-[11px] text-[var(--ui-text-secondary)]">
           {t("Showing the first ")}
           {formatInteger(grid.rowCount)}
           {t(" of")} {formatInteger(grid.totalRows)}
@@ -137,7 +137,7 @@ export function SheetGridView({ grid }: { grid: SparseSheet }) {
           <div
             role="row"
             aria-rowindex={1}
-            className="sticky top-0 z-20 flex border-b border-stroke bg-background-base text-content/55"
+            className="sticky top-0 z-20 flex border-b border-stroke bg-[var(--ui-surface)] text-[var(--ui-text-secondary)]"
             style={{
               height: headerHeight,
               width,
@@ -148,7 +148,7 @@ export function SheetGridView({ grid }: { grid: SparseSheet }) {
               role="columnheader"
               aria-colindex={1}
               aria-label={t("Row")}
-              className="sticky left-0 z-10 shrink-0 border-r border-stroke bg-background-base"
+              className="sticky left-0 z-10 shrink-0 border-r border-stroke bg-[var(--ui-surface)]"
               style={{ width: rowHeaderWidth }}
             />
             {grid.columns.map((label, column) => (
@@ -186,7 +186,7 @@ export function SheetGridView({ grid }: { grid: SparseSheet }) {
                   <div
                     role="rowheader"
                     aria-colindex={1}
-                    className="sticky left-0 z-10 shrink-0 border-r border-stroke bg-background-base text-right text-content/55 tabular-nums"
+                    className="sticky left-0 z-10 shrink-0 border-r border-stroke bg-[var(--ui-surface)] text-right text-[var(--ui-text-secondary)] tabular-nums"
                     style={{
                       width: rowHeaderWidth,
                       lineHeight: `${rowHeight}px`,

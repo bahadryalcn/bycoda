@@ -1,3 +1,4 @@
+import { Button } from "../../../shared/ui/Button";
 import { useContext, useEffect, useState } from "react";
 import type { SocialContact, SocialPage } from "../model/social";
 import type { SocialClient } from "../model/socialClient";
@@ -60,20 +61,24 @@ export function HistoryPageControls({
       <span>
         {page.offset + 1}–{Math.min(page.offset + page.limit, page.total)} / {page.total}
       </span>
-      <button
+      <Button
+        variant="secondary"
+        loading={loading}
         type="button"
         disabled={loading || !page.offset}
         onClick={() => onPage(Math.max(0, page.offset - page.limit))}
       >
         Önceki kayıtlar
-      </button>
-      <button
+      </Button>
+      <Button
+        variant="secondary"
+        loading={loading}
         type="button"
         disabled={loading || page.offset + page.limit >= page.total}
         onClick={() => onPage(page.offset + page.limit)}
       >
         Sonraki kayıtlar
-      </button>
+      </Button>
     </nav>
   );
 }

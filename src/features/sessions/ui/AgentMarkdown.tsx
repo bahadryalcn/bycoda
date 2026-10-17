@@ -1,3 +1,4 @@
+import { Button } from "../../../shared/ui/Button";
 import { useTransientFlag } from "../../../shared/hooks/useTransientFlag";
 import { t, useLocale } from "../../../shared/i18n";
 import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
@@ -321,7 +322,7 @@ function MarkdownLink({
     <>
       <a
         href={href}
-        className={`text-info/90 hover:text-info hover:underline ${className ?? ""}`}
+        className={`text-(--ui-tone-info-fg) hover:text-(--ui-tone-info-fg) hover:underline ${className ?? ""}`}
         {...props}
         dir={dir ?? "auto"}
         onClick={(event) => {
@@ -379,15 +380,35 @@ function MarkdownLink({
 }
 
 function FileRevealButton({ path }: { path: string }) {
+  // A changed reference must start unverified, even when a prior path was valid.
+  return <VerifiedFileRevealButton key={path} path={path} />;
+}
+
+function VerifiedFileRevealButton({ path }: { path: string }) {
   useLocale();
   const { onRevealFile } = useContext(FileOpenContext);
-  if (!onRevealFile) return null;
+  const [exists, setExists] = useState(false);
+  useEffect(() => {
+    if (!onRevealFile) return;
+    let cancelled = false;
+    void existingChatPath(path).then((confirmed) => {
+      if (!cancelled) setExists(confirmed);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [path, onRevealFile]);
+  if (!onRevealFile || !exists) return null;
   return (
-    <button
+    <Button
+      motion="none"
+      iconOnly
+      label={t("Open containing folder")}
+      variant="ghost"
       type="button"
       aria-label={t("Open containing folder")}
       title={t("Open containing folder: {p0}", { p0: path })}
-      className="ml-1 inline-flex size-5 shrink-0 items-center justify-center rounded text-content/55 align-middle hover:bg-content/10 hover:text-content focus-visible:outline focus-visible:outline-accent"
+      className="ml-1 shrink-0"
       onClick={(event) => {
         event.preventDefault();
         event.stopPropagation();
@@ -395,7 +416,7 @@ function FileRevealButton({ path }: { path: string }) {
       }}
     >
       <FolderOpen className="size-3.5" />
-    </button>
+    </Button>
   );
 }
 
@@ -407,11 +428,13 @@ function EmailCopyButton({ text }: { text: string }) {
   const [failed, setFailed] = useState(false);
   const label = failed ? t("Copy failed — try again") : copied ? t("Copied") : t("Copy");
   return (
-    <button
+    <Button
+      motion="none"
+      variant="ghost"
       type="button"
       title={label}
       aria-label={label}
-      className="inline-flex size-6 shrink-0 items-center justify-center rounded text-content/55 [@media(hover:hover)_and_(pointer:fine)]:hover:bg-content/10 [@media(hover:hover)_and_(pointer:fine)]:hover:text-content active:bg-content/15 focus-visible:outline focus-visible:outline-accent"
+      className="shrink-0"
       onClick={(event) => {
         event.preventDefault();
         event.stopPropagation();
@@ -427,7 +450,7 @@ function EmailCopyButton({ text }: { text: string }) {
       <span className="sr-only" role="status" aria-live="polite">
         {failed || copied ? label : ""}
       </span>
-    </button>
+    </Button>
   );
 }
 
@@ -437,14 +460,19 @@ function MarkdownCode({ children, className, node, onContextMenu, ...props }: Ma
   const block = Object.prototype.hasOwnProperty.call(props, "data-block");
   const { cwd, onOpenFile, onFileContextMenu } = useContext(FileOpenContext);
   const text = block ? "" : textContent(children);
+  const slashCommand = /^\/[\p{L}\p{N}_-]+$/u.test(text.trim());
   const fileName = inlineFileName(text);
   const reference = /^[\p{L}\p{N}_-]+$/u.test(text.trim()) ? `./${text.trim()}` : text;
   const candidate =
-    !block && text.length <= 4096 && /[\\/]/.test(reference) && !/[\r\n]/.test(text)
+    !block &&
+    !slashCommand &&
+    text.length <= 4096 &&
+    /[\\/]/.test(reference) &&
+    !/[\r\n]/.test(text)
       ? resolveWorkspaceFileReference(reference, cwd)
       : undefined;
   const [verifiedPath, setVerifiedPath] = useState<string>();
-  const ambiguousPath = !fileName ? candidate?.path : undefined;
+  const ambiguousPath = candidate?.path;
   useEffect(() => {
     if (!ambiguousPath) return;
     let cancelled = false;
@@ -456,11 +484,12 @@ function MarkdownCode({ children, className, node, onContextMenu, ...props }: Ma
     };
   }, [ambiguousPath]);
   if (!block) {
-    const file = fileName
-      ? resolveWorkspaceFileReference(text, cwd)
-      : candidate?.path === verifiedPath
-        ? candidate
-        : undefined;
+    const file =
+      fileName && !text.trim().startsWith("/")
+        ? resolveWorkspaceFileReference(text, cwd)
+        : candidate?.path === verifiedPath
+          ? candidate
+          : undefined;
     const open = file && onOpenFile ? () => onOpenFile(file.path, file.navigation) : undefined;
     return (
       <span className="inline-flex max-w-full items-center align-baseline">
@@ -468,8 +497,8 @@ function MarkdownCode({ children, className, node, onContextMenu, ...props }: Ma
         <code
           {...props}
           dir="ltr"
-          className={`inline-flex items-center gap-1 rounded-md bg-content/8 px-1.5 min-h-6 max-w-full [overflow-wrap:anywhere] align-baseline font-mono text-[0.8em] text-content ${
-            open ? "cursor-pointer hover:text-info hover:underline" : ""
+          className={`inline-flex items-center gap-1 rounded-md bg-(--ui-surface-raised) px-1.5 min-h-6 max-w-full [overflow-wrap:anywhere] align-baseline font-mono text-[0.8em] text-(--ui-tone-neutral-fg) ${
+            open ? "cursor-pointer hover:text-(--ui-tone-info-fg) hover:underline" : ""
           } ${className ?? ""}`}
           role={open ? "link" : undefined}
           tabIndex={open ? 0 : undefined}
@@ -490,14 +519,14 @@ function MarkdownCode({ children, className, node, onContextMenu, ...props }: Ma
               : undefined
           }
         >
-          {fileName ? (
+          {fileName && file ? (
             <span aria-hidden="true">
               <FileTypeIcon name={fileName} isDir={/[\\/]$/.test(text)} size={14} />
             </span>
           ) : null}
           {children}
         </code>
-        {file ? <FileRevealButton path={file.path} /> : null}
+        {file && file.path === verifiedPath ? <FileRevealButton path={file.path} /> : null}
       </span>
     );
   }
@@ -594,11 +623,16 @@ function MarkdownCodeShell({ code, children }: { code: string; children: ReactNo
         });
       }}
     >
-      <button
+      <Button
+        motion="none"
+        iconOnly
+        label={label}
+        variant="ghost"
         type="button"
-        className="markdown-code-copy markdown-code-toggle"
+
         title={label}
         aria-label={label}
+        className="markdown-code-copy markdown-code-toggle"
         aria-expanded={!collapsed}
         aria-controls={contentId}
         onClick={() => setCollapsed((value) => !value)}
@@ -606,13 +640,16 @@ function MarkdownCodeShell({ code, children }: { code: string; children: ReactNo
         <svg viewBox="0 0 20 20" aria-hidden="true">
           <path d={collapsed ? "m6 8 4 4 4-4" : "m6 12 4-4 4 4"} />
         </svg>
-      </button>
+      </Button>
       {collapsed ? (
-        <button
+        <Button
+          motion="none"
+          variant="ghost"
           type="button"
-          className="markdown-code-summary"
+
           title={label}
           aria-label={`${label}: ${summary.preview}`}
+          className="markdown-code-summary"
           aria-expanded={false}
           aria-controls={contentId}
           onClick={() => setCollapsed(false)}
@@ -623,7 +660,7 @@ function MarkdownCodeShell({ code, children }: { code: string; children: ReactNo
           <span className="markdown-code-summary-count">
             {summary.lineCount} {summary.lineCount === 1 ? t("line") : t("lines")}
           </span>
-        </button>
+        </Button>
       ) : null}
       <div id={contentId}>{children}</div>
     </div>
@@ -654,11 +691,14 @@ function CodeCopyButton({
   }, [code]);
 
   return (
-    <button
+    <Button
+      motion="none"
+      variant="ghost"
+      className={className}
       type="button"
       title={failed ? t("Copy failed — try again") : copied ? t("Copied") : label}
       aria-label={failed ? t("Copy failed — try again") : copied ? t("Copied") : label}
-      className={`markdown-code-copy ${copied ? "is-copied" : ""} ${failed ? "is-failed" : ""} ${className}`}
+
       onClick={() => {
         setFailed(false);
         const text = getText ? getText() : code.replace(/\r?\n$/, "");
@@ -680,7 +720,7 @@ function CodeCopyButton({
         </g>
         <path className="markdown-code-copy-check" d="M4.5 10.5 8.2 14 15.5 6.5" />
       </svg>
-    </button>
+    </Button>
   );
 }
 
@@ -1199,7 +1239,7 @@ export const MarkdownSource = memo(function MarkdownSource({ text }: { text: str
       aria-label={t("Markdown source")}
       className="markdown-preview h-full overflow-y-auto overscroll-none [overflow-anchor:none]"
     >
-      <pre className="min-h-full min-w-0 whitespace-pre-wrap wrap-break-word px-4 py-3 font-mono text-[13px] leading-5 text-content/85">
+      <pre className="min-h-full min-w-0 whitespace-pre-wrap wrap-break-word px-4 py-3 font-mono text-[13px] leading-5 text-(--ui-text-secondary)">
         <MarkdownSourceHighlight text={text} />
       </pre>
     </div>
@@ -1274,13 +1314,13 @@ function MermaidBlock({ code, incomplete }: { code: string; incomplete: boolean 
 
   if (!svg) {
     return (
-      <div className="h-32 animate-pulse rounded-[10px] border border-content/10 bg-content/6" />
+      <div className="h-32 animate-pulse rounded-[10px] border border-(--ui-tone-neutral-border) bg-(--ui-surface-raised)" />
     );
   }
 
   return (
     <div
-      className="mermaid-block overflow-x-auto rounded-[10px] border border-content/10 bg-content/6 p-3"
+      className="mermaid-block overflow-x-auto rounded-[10px] border border-(--ui-tone-neutral-border) bg-(--ui-surface-raised) p-3"
       data-streamdown="mermaid-block"
       dir="ltr"
       dangerouslySetInnerHTML={{ __html: svg }}
@@ -1371,16 +1411,19 @@ function MarkdownCodePath({ path, startLine }: { path: string; startLine?: numbe
       className="markdown-code-path"
       style={{ display: "flex", alignItems: "center", pointerEvents: "auto" }}
     >
-      <button
+      <Button
+        motion="none"
+        variant="ghost"
         type="button"
-        className="markdown-code-path-link"
+
         style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis" }}
+        className="markdown-code-path-link"
         title={file.path}
         onClick={() => onOpenFile(file.path, navigation)}
         onContextMenu={(event) => onFileContextMenu?.(event, file.path, navigation)}
       >
         {path}
-      </button>
+      </Button>
       <FileRevealButton path={file.path} />
     </span>
   );
@@ -1403,6 +1446,7 @@ function inlineFileName(value: string): string | undefined {
   const text = value.trim();
   if (!text || text.length > 4096 || /[\r\n]/.test(text)) return undefined;
   if (isEmailAddress(text)) return undefined;
+  if (/^\/[\p{L}\p{N}_-]+$/u.test(text)) return undefined;
 
   const withoutLocation = text.replace(/(?::\d+(?::\d+)?|#L\d+(?:-L\d+)?)$/, "");
   const fileName = withoutLocation.split(/[/\\]/).filter(Boolean).pop();

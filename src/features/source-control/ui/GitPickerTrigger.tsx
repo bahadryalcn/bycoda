@@ -1,3 +1,5 @@
+import { Skeleton } from "../../../shared/ui/Skeleton";
+import { Button } from "../../../shared/ui/Button";
 import { t, useLocale } from "../../../shared/i18n/git";
 import { useContext } from "react";
 import { NativePopupHost } from "../../../shared/ui/NativePopupHost";
@@ -16,7 +18,7 @@ export function GitPickerTrigger({
   label,
   loading = false,
   worktree = false,
-  dimWhenDisabled = true,
+  dimWhenDisabled: _dimWhenDisabled = true,
   ...props
 }: Props) {
   useLocale();
@@ -24,10 +26,13 @@ export function GitPickerTrigger({
   if (host) return null;
   const Icon = worktree ? FolderTree : GitBranch;
   return (
-    <button
+    <Button
+      size="sm"
+      variant="ghost"
+      motion="none"
       type="button"
       {...props}
-      className={`-ml-1.5 flex h-6 min-w-0 max-w-64 items-center gap-1.5 rounded-md px-1.5 text-[12px] text-content/55 hover:bg-content/8 hover:text-content aria-expanded:bg-content/8 aria-expanded:text-content focus-visible:outline-2 focus-visible:outline-accent disabled:hover:bg-transparent disabled:hover:text-content/55 active:scale-[0.97] ${dimWhenDisabled ? "disabled:opacity-40" : ""}`}
+      className={"-ml-1.5 flex min-w-0 max-w-64 items-center gap-1.5"}
     >
       <Icon className="size-3.5 shrink-0" />
       <span className="relative min-w-0 flex-1 truncate">
@@ -35,18 +40,18 @@ export function GitPickerTrigger({
           <>
             {/* Reserve the same line box while the current branch loads. */}
             <span className="invisible">{t("main")}</span>
-            <span className="absolute inset-x-0 top-1/2 h-1.5 -translate-y-1/2 rounded-full bg-current opacity-50" />
+            <Skeleton label={t("Loading…")} lines={1} className="absolute inset-0" />
           </>
         ) : (
           label
         )}
       </span>
       {worktree && (
-        <span className="shrink-0 rounded bg-content/8 px-1 text-[10px] text-content/45">
+        <span className="shrink-0 rounded bg-[var(--ui-surface-muted)] px-1 text-[10px] text-[var(--ui-text-muted)]">
           {t("Worktree")}
         </span>
       )}
-      <ChevronDown className="size-3 shrink-0 text-content/40" />
-    </button>
+      <ChevronDown className="size-3 shrink-0 text-[var(--ui-text-muted)]" />
+    </Button>
   );
 }

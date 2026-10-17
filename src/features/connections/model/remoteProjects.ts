@@ -94,6 +94,32 @@ export async function openRemoteProject(
   return rememberRemoteProject(environmentId, project);
 }
 
+/** Old hosts registered multiple IDs for one folder. Only the owning host can
+ * prove filesystem equivalence (including case, separators and symlinks).
+ * Never infer it from the session cwd, which may be a worktree or another folder.
+ */
+export async function verifyRemoteProjectAlias(
+  request: (method: string, params: unknown) => Promise<unknown>,
+  project: Pick<RemoteProject, "projectId" | "cwd">,
+  actualProjectId: string,
+): Promise<void> {
+  if (actualProjectId === project.projectId) return;
+  const mismatch = () => new Error("This session belongs to a different host project");
+  const projects = (await request("projects.list", {})) as HostProject[];
+  if (!Array.isArray(projects)) throw mismatch();
+  const expected = projects.find((entry) => entry.id === project.projectId);
+  const actual = projects.find((entry) => entry.id === actualProjectId);
+  if (!expected || !actual || expected.cwd !== project.cwd) throw mismatch();
+  const resolved = await Promise.all(
+    [expected, actual].map(async (entry) => {
+      const value = (await request("projects.open", { cwd: entry.cwd })) as HostProject;
+      if (!value || typeof value.id !== "string" || !value.id) throw mismatch();
+      return value.id;
+    }),
+  );
+  if (resolved[0] !== resolved[1]) throw mismatch();
+}
+
 export function remoteProjectsOn(environmentId: string): RemoteProject[] {
   return Object.values(readAll()).filter((project) => project.environmentId === environmentId);
 }

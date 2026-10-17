@@ -55,6 +55,8 @@ import {
   rewindConversationBeforeMessage,
 } from "../src/features/sessions/model/conversationRewind";
 import { conversationRewindStrategy } from "../src/features/sessions/model/conversationRewindStrategy";
+import { canClearConversation, clearConversation } from "../src/features/sessions/model/clearConversation";
+import { isClearSessionCommand } from "../src/features/sessions/model/newSessionCommand";
 import {
   SHELL_COMMAND_LIMIT,
   finishShellBlock,
@@ -1148,6 +1150,41 @@ export class HostEngine {
     // A receipt means durable host acceptance, not provider completion.
     if (effect) this.store.afterCommit(() => effect!(saved));
     return receipt;
+  }
+
+  /** /clear uses the existing send transport but never dispatches a model turn. */
+  async clearConversation(raw: unknown): Promise<CommandReceipt> {
+    if (this.closing) throw new Error("Host is stopping");
+    const command = parseCommand(raw);
+    if (command.type !== "send" || !isClearSessionCommand(command.text) || command.attachments?.length)
+      throw new Error("Invalid clear command");
+    const signature = createHash("sha256").update(JSON.stringify(command)).digest("hex");
+    const previous = this.store.receipt(command.commandId, signature);
+    if (previous) return previous;
+    if (this.rewinding.has(command.sessionId)) throw new Error("A conversation change is in progress");
+    this.rewinding.add(command.sessionId);
+    try {
+      this.flush(command.sessionId);
+      const initial = this.store.session(command.sessionId);
+      if (initial.status === "running" || this.running.has(command.sessionId) || !canClearConversation(initial.session))
+        throw new Error("Stop the current turn and resolve pending messages before clearing the conversation");
+      await this.provider(initial.session.harness).stop(command.sessionId);
+      if (initial.session.pendingSwitch && initial.session.pendingSwitch.from !== initial.session.harness)
+        await this.provider(initial.session.pendingSwitch.from).stop(command.sessionId);
+      return this.store.transaction(() => {
+        const latest = this.store.session(command.sessionId);
+        if (latest.revision !== initial.revision) throw new Error("The conversation changed while clearing");
+        const saved = this.save({ ...latest, session: clearConversation(latest.session), status: "idle" },
+          { type: "conversation.cleared", commandId: command.commandId });
+        const live = this.live.get(command.sessionId);
+        if (live) live.value = saved;
+        const receipt = { commandId: command.commandId, sessionId: command.sessionId, revision: saved.revision };
+        this.store.recordReceipt(signature, receipt);
+        return receipt;
+      });
+    } finally {
+      this.rewinding.delete(command.sessionId);
+    }
   }
 
   /** Stop the provider binding before atomically committing a rewind. */

@@ -38,10 +38,10 @@ export const InterruptedNotice = memo(function InterruptedNotice({
   )
     return null;
   return (
-    <div className="px-2 text-content/55" data-interrupted-turn>
-      <div className="relative z-0 flex h-8 items-center gap-2 rounded-t-[10px] border border-b-0 border-warning/25 bg-warning/10 px-2 text-[12px]">
-        <Pause className="size-3.5 shrink-0 text-warning" />
-        <span className="shrink-0 text-content/85">{t("Interrupted")}</span>
+    <div className="px-2 text-(--ui-text-secondary)" data-interrupted-turn>
+      <div className="relative z-0 flex h-8 items-center gap-2 rounded-t-[10px] border border-b-0 border-(--ui-tone-warning-border) bg-(--ui-tone-warning-subtle) px-2 text-[12px]">
+        <Pause className="size-3.5 shrink-0 text-(--ui-tone-warning-fg)" />
+        <span className="shrink-0 text-(--ui-text-secondary)">{t("Interrupted")}</span>
         <span className="min-w-0 flex-1 truncate">{message}</span>
         <Button
           variant="ghost"

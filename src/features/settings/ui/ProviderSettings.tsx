@@ -1,3 +1,5 @@
+import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
+import { Alert } from "../../../shared/ui/Alert";
 import { projectDisplayName } from "../../projects/model/projectNames";
 import { t, useLocale, getLocale } from "../../../shared/i18n";
 import { ArrowDownCircle, Check, Globe, Loader, RefreshCw } from "../../../shared/ui/icons";
@@ -517,10 +519,10 @@ export function HarnessUpdatesGroup() {
       }
     >
       {error ? (
-        <p role="alert" className="px-4 py-2 text-[12px] text-danger">
+        <Alert tone="danger" role="alert">
           {t("Could not check CLI updates: ")}
           {error}
-        </p>
+        </Alert>
       ) : null}
       {checks === null ? (
         <Row
@@ -775,16 +777,20 @@ export function ProviderRow({
             {current ? (
               <div className="provider-cli-field">
                 <span>{t("Model")}</span>
-                <Select
+                <SearchableSelect
                   label={t("{p0} model", { p0: HARNESS_TITLE[harness] })}
-                  onOpen={() => {
-                    void refreshHarnessCatalogs([harness], { force: true });
+                  triggerProps={{
+                    onClick: (event) => {
+                      if (event.currentTarget.getAttribute("aria-expanded") !== "true")
+                        void refreshHarnessCatalogs([harness], { force: true });
+                    },
                   }}
                   value={current.id}
                   onChange={(next) => onModelChange(harness, next)}
                   options={models.map((item) => ({
                     value: item.id,
                     label: item.name,
+                    description: item.id,
                   }))}
                 />
               </div>

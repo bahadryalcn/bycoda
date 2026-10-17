@@ -1,13 +1,27 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { Button } from "../../src/shared/ui/Button";
+import { ControlSpecimen } from "../../src/shared/ui/ControlSpecimen";
+import { NativeSearchableSelect } from "../../src/shared/ui/NativeSearchableSelect";
+import { Badge } from "../../src/shared/ui/Badge";
+import { Alert } from "../../src/shared/ui/Alert";
+import { EmptyState } from "../../src/shared/ui/EmptyState";
+import { NumberField } from "../../src/shared/ui/NumberField";
+import { PasswordField } from "../../src/shared/ui/PasswordField";
+import { RadioGroup } from "../../src/shared/ui/RadioGroup";
+import { DropdownMenu } from "../../src/shared/ui/DropdownMenu";
+import { Progress } from "../../src/shared/ui/Progress";
+import { Skeleton } from "../../src/shared/ui/Skeleton";
+import { applyAccentColor } from "../../src/features/settings/model/appearance";
+import { themePalette } from "../../src/shared/theme/palette";
 import { TextField } from "../../src/shared/ui/TextField";
 import { TextareaField } from "../../src/shared/ui/TextareaField";
 import checkoutStyles from "../../src/features/source-control/ui/CheckoutHeader.module.css";
 import { SearchableSelect } from "../../src/shared/ui/SearchableSelect";
 import { SearchInput, SearchInputGroup } from "../../src/shared/ui/SearchInput";
 import { Combobox } from "../../src/shared/ui/arc/combobox/combobox";
-import { Search } from "../../src/shared/ui/icons";
+import { Search, Copy, Plus } from "../../src/shared/ui/icons";
+import { ExpandingButtonGroup } from "../../src/shared/ui/ExpandingButtonGroup";
 import { MorphSelect } from "../../src/shared/ui/MorphSelect";
 import { ExpandableCard } from "../../src/shared/ui/ExpandableCard";
 import { Timeline } from "../../src/shared/ui/Timeline";
@@ -19,6 +33,7 @@ import { InlineEdit } from "../../src/shared/ui/InlineEdit";
 import { UsageMeter } from "../../src/shared/ui/UsageMeter";
 import { ConfirmMorph } from "../../src/shared/ui/ConfirmMorph";
 import { ShortcutEditor } from "../../src/features/settings/ui/ShortcutSettings";
+import { SettingsSearch } from "../../src/features/settings/ui/SettingsSearch";
 import { ImageLightbox } from "../../src/shared/ui/ImageLightbox";
 import { setLanguagePreference } from "../../src/shared/i18n";
 import {
@@ -34,35 +49,82 @@ import "../../src/features/host-tools/host-tools.css";
 import "../../src/features/host-tools/runtime-logs.css";
 
 // Local, memory-only controls: no project, account, host or policy writes.
+function AsyncActionGroupFixture() {
+  const [calls, setCalls] = useState(0);
+  const [waiting, setWaiting] = useState(false);
+  const complete = useRef<((value: boolean) => void) | null>(null);
+  return (
+    <section aria-label="Async action group" className="my-4 grid gap-2">
+      <ExpandingButtonGroup
+        label="Sample note actions"
+        confirmDuration={3000}
+        items={[
+          {
+            id: "copy",
+            label: "Copy sample",
+            icon: <Copy />,
+            doneLabel: "Copied",
+            onSelect: () => {
+              setCalls((value) => value + 1);
+              setWaiting(true);
+              return new Promise<boolean>((resolve) => {
+                complete.current = resolve;
+              });
+            },
+          },
+          {
+            id: "add",
+            label: "Add sample",
+            icon: <Plus />,
+            onSelect: () => {
+              setCalls((value) => value + 1);
+            },
+          },
+        ]}
+      />
+      <Button
+        disabled={!waiting}
+        onClick={() => {
+          complete.current?.(true);
+          complete.current = null;
+          setWaiting(false);
+        }}
+      >
+        Complete group operation
+      </Button>
+      <output aria-label="Action invocations">{calls}</output>
+    </section>
+  );
+}
+
 function SearchClearFixture() {
   const [inline, setInline] = useState("");
   const [standalone, setStandalone] = useState("");
   const [logs, setLogs] = useState("");
   return (
     <section aria-label="Search clear controls" className="my-4 grid gap-3">
-      <SearchInputGroup className="relative flex h-7 min-w-0 items-center rounded-md border border-stroke px-2">
+      <SearchInputGroup appearance="field">
         <Search className="size-3 shrink-0" />
         <SearchInput
           aria-label="Inline search"
           focusOwner="group"
           value={inline}
           onChange={(event) => setInline(event.target.value)}
-          className="min-w-0 flex-1 bg-transparent px-2 text-[12px]"
         />
       </SearchInputGroup>
       <label>
         <span className="sr-only">Standalone search</span>
         <SearchInput
+          appearance="field"
           standalone
           type="search"
           aria-label="Standalone search"
           value={standalone}
           onChange={(event) => setStandalone(event.target.value)}
-          className="h-7 rounded-md border border-stroke bg-transparent px-2 text-[12px]"
         />
       </label>
       <div className="host-tools host-tools-content runtime-logs-panel">
-        <SearchInputGroup className="runtime-logs-search">
+        <SearchInputGroup appearance="field" className="runtime-logs-search">
           <Search size={15} />
           <SearchInput
             type="search"
@@ -80,6 +142,199 @@ function SearchClearFixture() {
   );
 }
 
+function NativeSelectionFormFixture() {
+  const native = useRef<HTMLSelectElement>(null);
+  const [controlled, setControlled] = useState("");
+  const [submitted, setSubmitted] = useState("");
+  const [changes, setChanges] = useState(0);
+  const options = [
+    { value: "", label: "Choose project" },
+    { value: "locked", label: "Restricted project", disabled: true },
+    ...Array.from({ length: 24 }, (_, index) => ({
+      value: `project-${index + 1}`,
+      label: `Project ${index + 1} with a long descriptive name`,
+    })),
+  ];
+  return (
+    <section aria-label="Native searchable forms" className="my-4 grid gap-2">
+      <form
+        id="native-searchable-form"
+        onSubmit={(event) => {
+          event.preventDefault();
+          const data = new FormData(event.currentTarget);
+          setSubmitted(`${data.get("project")}/${data.get("controlled")}`);
+        }}
+        onReset={() => setControlled("")}
+      >
+        <label htmlFor="native-project">Project for form</label>
+        <NativeSearchableSelect
+          id="native-project"
+          label="Project for form"
+          ref={native}
+          name="project"
+          defaultValue=""
+          required
+          options={options}
+          triggerProps={{ "aria-label": "Search form projects" }}
+          onChange={() => setChanges((count) => count + 1)}
+        />
+        <NativeSearchableSelect
+          label="Controlled project for form"
+          name="controlled"
+          value={controlled}
+          required
+          options={options}
+          triggerProps={{ "aria-label": "Search controlled form projects" }}
+          onChange={(event) => setControlled(event.currentTarget.value)}
+        />
+        <Button type="submit">Submit selection form</Button>
+        <Button type="reset">Reset selection form</Button>
+      </form>
+      <Button onClick={() => native.current?.focus()}>Focus native selection ref</Button>
+      <Button onClick={() => native.current?.setCustomValidity("Choose an allowed project")}>
+        Set native selection error
+      </Button>
+      <Button onClick={() => native.current?.setCustomValidity("")}>
+        Clear native selection error
+      </Button>
+      <output aria-label="Submitted selection form">{submitted}</output>
+      <output aria-label="Native selection changes">{changes}</output>
+    </section>
+  );
+}
+
+function FeedbackFixture() {
+  const [failed, setFailed] = useState(false);
+  const [retries, setRetries] = useState(0);
+  const [loading, setLoading] = useState(true);
+  return (
+    <section aria-label="Shared feedback" className="my-4 grid gap-2">
+      <div className="flex flex-wrap gap-2">
+        {(["neutral", "info", "success", "warning", "danger"] as const).map((tone) => (
+          <Badge key={tone} tone={tone} data-testid={`feedback-${tone}`}>
+            {tone} status with a long label that can wrap on narrow screens
+          </Badge>
+        ))}
+      </div>
+      <Button onClick={() => setFailed((value) => !value)}>Toggle feedback failure</Button>
+      <Alert
+        tone={failed ? "danger" : "info"}
+        title={failed ? "Operation failed" : "Operation ready"}
+      >
+        {failed ? "Retry the operation to continue." : "The operation can start when requested."}
+      </Alert>
+      <EmptyState
+        title="No matching records"
+        description="Change the collection filters or retry the request. The current draft is retained."
+        action={
+          <Button onClick={() => setRetries((value) => value + 1)}>Retry fixture request</Button>
+        }
+      />
+      <output aria-label="Feedback retry count">{retries}</output>
+      <Progress aria-label="Quota limit used" value={100} tone="danger" compact />
+      <Progress aria-label="Waiting for fixture" />
+      <Button onClick={() => setLoading(false)}>Complete fixture loading</Button>
+      <Skeleton label="Loading fixture records" loading={loading} lines={2}>
+        <Button onClick={() => setRetries((value) => value + 1)}>Retry loaded fixture</Button>
+      </Skeleton>
+    </section>
+  );
+}
+
+function FieldFamiliesFixture() {
+  const [saved, setSaved] = useState("");
+  const [open, setOpen] = useState(false);
+  const [picked, setPicked] = useState("");
+  const menu = useRef<HTMLButtonElement>(null);
+  return (
+    <section aria-label="Shared field families" className="my-4 grid gap-2">
+      <form
+        onSubmit={(event) => {
+          event.preventDefault();
+          const data = new FormData(event.currentTarget);
+          setSaved(`${data.get("amount")}/${data.get("secret")}/${data.get("approval")}`);
+        }}
+      >
+        <NumberField
+          label="Fixture limit"
+          name="amount"
+          defaultValue="10"
+          min={1}
+          max={20}
+          step={1}
+          required
+        />
+        <PasswordField
+          label="Fixture credential"
+          name="secret"
+          defaultValue="fixture-only-value"
+          required
+          messages={{
+            showPassword: "Show fixture credential",
+            hidePassword: "Hide fixture credential",
+          }}
+        />
+        <RadioGroup
+          label="Fixture approval"
+          name="approval"
+          defaultValue="review"
+          required
+          options={[
+            {
+              value: "disabled",
+              label: "Unavailable approval",
+              disabled: true,
+              disabledReason: "Permission required",
+            },
+            {
+              value: "review",
+              label: "Review first",
+              description: "An owner reviews the prepared operation before it can run.",
+            },
+            {
+              value: "manual",
+              label: "Manual approval",
+              description: "The owner starts each operation after reviewing the retained draft.",
+            },
+          ]}
+        />
+        <Button type="submit">Save fixture fields</Button>
+        <Button type="reset">Reset fixture fields</Button>
+      </form>
+      <output aria-label="Saved fixture fields">{saved}</output>
+      <Button
+        ref={menu}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onClick={() => setOpen((value) => !value)}
+      >
+        Open fixture actions
+      </Button>
+      {open ? (
+        <DropdownMenu
+          anchor={menu}
+          returnFocusRef={menu}
+          label="Fixture actions"
+          onClose={() => setOpen(false)}
+          onPick={setPicked}
+          items={[
+            { kind: "item", id: "copy", label: "Copy fixture" },
+            { kind: "item", id: "locked", label: "Locked action", disabled: true },
+            { kind: "sep" },
+            {
+              kind: "item",
+              id: "retry",
+              label: "Retry fixture",
+              description: "Retry using the retained draft",
+            },
+          ]}
+        />
+      ) : null}
+      <output aria-label="Picked fixture action">{picked}</output>
+    </section>
+  );
+}
+
 function Fixture() {
   const [enabled, setEnabled] = useState(false);
   const [opacity, setOpacity] = useState(50);
@@ -87,6 +342,8 @@ function Fixture() {
   const [query, setQuery] = useState("");
   const [light, setLight] = useState(false);
   const [choice, setChoice] = useState("one");
+  const [revealed, setRevealed] = useState("");
+  const [selected, setSelected] = useState<string[]>(["missing"]);
   const options = [
     { value: "one", label: "First" },
     { value: "two", label: "Second" },
@@ -95,6 +352,40 @@ function Fixture() {
     <main className="h-full overflow-auto p-6 text-content">
       <div className="mx-auto max-w-2xl">
         <h1 className="text-xl font-medium">bycoda controls</h1>
+        <div className="my-4 flex flex-wrap gap-2">
+          <Button onClick={() => applyAccentColor(themePalette.hex3b82f6)}>Saturated accent</Button>
+          <Button onClick={() => applyAccentColor(null)}>Reset accent</Button>
+        </div>
+        <ControlSpecimen expanded />
+        <NativeSelectionFormFixture />
+        <FeedbackFixture />
+        <FieldFamiliesFixture />
+        <AsyncActionGroupFixture />
+        <section aria-label="Navigation search" className="my-4 grid gap-2">
+          <SettingsSearch
+            onReveal={(section, setting) => setRevealed(`${section}:${setting ?? ""}`)}
+          />
+          <output aria-label="Revealed setting">{revealed}</output>
+        </section>
+        <section aria-label="Metadata selection" className="my-4 grid gap-2">
+          <SearchableSelect
+            multiple
+            label="Metadata selection"
+            value={selected}
+            onChange={setSelected}
+            showSelectedValues
+            options={[
+              { value: "ready", label: "Ready", description: "Available for selection" },
+              {
+                value: "locked",
+                label: "Locked",
+                description: "Permission required",
+                disabled: true,
+              },
+            ]}
+          />
+          <output aria-label="Selected metadata values">{selected.join(",")}</output>
+        </section>
         <SearchClearFixture />
         <section aria-label="Field focus" className="grid gap-3">
           <TextField label="Focus input" />

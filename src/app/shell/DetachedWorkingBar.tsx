@@ -1,3 +1,5 @@
+import { MenuRow } from "../../shared/ui/MenuRow";
+import { Button } from "../../shared/ui/Button";
 import { t, useLocale } from "../../shared/i18n";
 import { useEffect, useId, useRef, useState, type KeyboardEvent, type PointerEvent } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
@@ -121,7 +123,9 @@ export function DetachedWorkingBar({ agents, onSelectAgent }: Props) {
       className={`flex h-8 min-w-0 shrink-0 select-none items-center gap-2 border-b border-stroke [padding-inline-start:0.75rem] ${dragging ? "cursor-grabbing" : "cursor-grab"}`}
     >
       <span className="text-[11px] text-content/50">{t("Working")}</span>
-      <button
+      <Button
+        variant="ghost"
+        motion="none"
         ref={trigger}
         type="button"
         data-tauri-drag-region="false"
@@ -137,7 +141,7 @@ export function DetachedWorkingBar({ agents, onSelectAgent }: Props) {
             setOpen(true);
           }
         }}
-        className="flex h-6 max-w-56 cursor-pointer items-center gap-2 rounded-md px-2 text-[11px] text-content/70 hover:bg-content/8 hover:text-content focus-visible:outline focus-visible:outline-1 focus-visible:outline-content/30 disabled:cursor-default disabled:text-content/35"
+        className="flex max-w-56 items-center gap-2"
       >
         <span
           className={`size-1.5 shrink-0 rounded-full ${agents.some((agent) => agent.needsApproval) ? "bg-warning" : agents.some((agent) => !agent.done) ? "bg-active" : "bg-content/35"}`}
@@ -146,7 +150,7 @@ export function DetachedWorkingBar({ agents, onSelectAgent }: Props) {
         <span aria-hidden="true" className="text-content/40">
           ⌄
         </span>
-      </button>
+      </Button>
       <div className="min-w-4 flex-1 self-stretch" aria-hidden="true" />
       {!IS_MAC ? <WindowControls /> : null}
       {windowError ? (
@@ -169,7 +173,7 @@ export function DetachedWorkingBar({ agents, onSelectAgent }: Props) {
           data-tauri-drag-region="false"
         >
           {agents.map((agent) => (
-            <button
+            <MenuRow
               key={agent.id}
               type="button"
               role="menuitem"
@@ -178,7 +182,7 @@ export function DetachedWorkingBar({ agents, onSelectAgent }: Props) {
                 dismiss();
                 onSelectAgent(agent.id);
               }}
-              className="flex w-full min-w-0 cursor-pointer items-center gap-2 rounded-lg px-2.5 py-2 text-left hover:bg-content/8 focus:bg-content/8 focus:outline-none"
+              className="flex w-full min-w-0 items-center gap-2"
             >
               <span
                 aria-hidden="true"
@@ -193,7 +197,7 @@ export function DetachedWorkingBar({ agents, onSelectAgent }: Props) {
                   {agent.ownerWindowLabel ? t(" · Other window") : t(" · This window")}
                 </span>
               </span>
-            </button>
+            </MenuRow>
           ))}
         </Popover>
       ) : null}

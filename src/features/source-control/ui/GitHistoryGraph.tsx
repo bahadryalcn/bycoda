@@ -1,3 +1,4 @@
+import { Button } from "../../../shared/ui/Button";
 import { errorText } from "../../../shared/lib/errors";
 import { t, useLocale } from "../../../shared/i18n/git";
 import { pathKey } from "../../../shared/lib/paths";
@@ -69,8 +70,7 @@ type Props = {
 
 const HISTORY_PAGE = 200;
 
-const HEADER_BUTTON =
-  "mr-1 grid size-5 shrink-0 place-items-center rounded-md text-content/50 hover:bg-content/8 hover:text-content aria-pressed:bg-content/10 aria-pressed:text-content";
+const HEADER_BUTTON = "mr-1 shrink-0";
 
 export function GitHistoryGraph({
   cwd,
@@ -223,7 +223,12 @@ export function GitHistoryGraph({
   };
 
   const showAllButton = actions ? (
-    <button
+    <Button
+      size="sm"
+      iconOnly
+      label={t("Show all branches")}
+      variant="ghost"
+      motion="none"
       type="button"
       title={showAll ? t("Showing all branches") : t("Show all branches")}
       aria-label={t("Show all branches")}
@@ -234,7 +239,7 @@ export function GitHistoryGraph({
       className={HEADER_BUTTON}
     >
       <GitBranch className="size-3.5" strokeWidth={1.75} />
-    </button>
+    </Button>
   ) : null;
 
   const discardResolution = async () => {
@@ -264,17 +269,21 @@ export function GitHistoryGraph({
   const list = (variant: "compact" | "workspace") => {
     const empty =
       !cwd || cwd === "~" ? (
-        <p className="px-3 py-2 text-[12px] text-content/45">{t("No project folder")}</p>
+        <p className="px-3 py-2 text-[12px] text-[var(--ui-text-muted)]">
+          {t("No project folder")}
+        </p>
       ) : commits.length === 0 ? (
         loading ? (
           <GitLoading text="Loading commit graph…" />
         ) : error || failure ? (
-          <p className="px-3 py-2 text-[12px] text-content/45">{t("Commit history unavailable")}</p>
+          <p className="px-3 py-2 text-[12px] text-[var(--ui-text-muted)]">
+            {t("Commit history unavailable")}
+          </p>
         ) : (
-          <p className="px-3 py-2 text-[12px] text-content/45">{t("No commits yet")}</p>
+          <p className="px-3 py-2 text-[12px] text-[var(--ui-text-muted)]">{t("No commits yet")}</p>
         )
       ) : items.length === 0 ? (
-        <p className="px-3 py-2 text-[12px] text-content/45">
+        <p className="px-3 py-2 text-[12px] text-[var(--ui-text-muted)]">
           {t("No matching commits in the ")}
           {commits.length}
           {t(" loaded")}
@@ -320,27 +329,38 @@ export function GitHistoryGraph({
   return (
     <div aria-busy={loading} className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden">
       <div className={`flex w-full shrink-0 items-center ${expanded ? "h-7" : "h-full"}`}>
-        <button
+        <Button
+          size="sm"
+          variant="ghost"
+          motion="none"
           type="button"
           onClick={onToggleExpanded}
           aria-expanded={expanded}
           aria-label={expanded ? t("Collapse graph") : t("Expand graph")}
-          className="flex h-full min-w-0 flex-1 items-center gap-1 px-3 text-left leading-none hover:bg-content/5"
+          className="flex h-full min-w-0 flex-1 items-center gap-1 text-left leading-none"
         >
-          <span className="text-[10px] font-semibold tracking-[0.04em] text-content/55 uppercase">
+          <span className="text-[10px] font-semibold tracking-[0.04em] text-[var(--ui-text-secondary)] uppercase">
             {t("Graph")}
           </span>
           {expanded ? (
-            <ChevronDown className="size-3.5 shrink-0 text-content/50" strokeWidth={1.75} />
+            <ChevronDown
+              className="size-3.5 shrink-0 text-[var(--ui-text-secondary)]"
+              strokeWidth={1.75}
+            />
           ) : (
             <ChevronRight
-              className="ml-auto size-3.5 shrink-0 text-content/50"
+              className="ml-auto size-3.5 shrink-0 text-[var(--ui-text-secondary)]"
               strokeWidth={1.75}
             />
           )}
-        </button>
+        </Button>
         {expanded ? (
-          <button
+          <Button
+            size="sm"
+            iconOnly
+            label={t("Refresh commit graph")}
+            variant="ghost"
+            motion="none"
             type="button"
             title={t("Refresh commit graph")}
             aria-label={t("Refresh commit graph")}
@@ -349,11 +369,16 @@ export function GitHistoryGraph({
             className={HEADER_BUTTON}
           >
             <RefreshCw className={`size-3.5 ${loading ? "animate-spin" : ""}`} />
-          </button>
+          </Button>
         ) : null}
         {expanded ? showAllButton : null}
         {expanded ? (
-          <button
+          <Button
+            size="sm"
+            iconOnly
+            label={t("Search commits")}
+            variant="ghost"
+            motion="none"
             type="button"
             title={t("Search commits")}
             aria-label={t("Search commits")}
@@ -365,10 +390,15 @@ export function GitHistoryGraph({
             className={HEADER_BUTTON}
           >
             <Search className="size-3.5" strokeWidth={1.75} />
-          </button>
+          </Button>
         ) : null}
         {expanded && cwd && cwd !== "~" ? (
-          <button
+          <Button
+            size="sm"
+            iconOnly
+            label={t("Open full graph")}
+            variant="ghost"
+            motion="none"
             type="button"
             title={t("Open full graph")}
             aria-label={t("Open full graph")}
@@ -376,7 +406,7 @@ export function GitHistoryGraph({
             className={HEADER_BUTTON}
           >
             <Maximize2 className="size-3.5" strokeWidth={1.75} />
-          </button>
+          </Button>
         ) : null}
       </div>
       {expanded && searchOpen ? (
@@ -400,7 +430,12 @@ export function GitHistoryGraph({
           onClose={() => void closeFull()}
           toolbar={
             <>
-              <button
+              <Button
+                size="sm"
+                iconOnly
+                label={t("Refresh full commit graph")}
+                variant="ghost"
+                motion="none"
                 type="button"
                 title={t("Refresh commit graph")}
                 aria-label={t("Refresh full commit graph")}
@@ -412,7 +447,7 @@ export function GitHistoryGraph({
                 className={HEADER_BUTTON}
               >
                 <RefreshCw className={`size-3.5 ${loading ? "animate-spin" : ""}`} />
-              </button>
+              </Button>
               <div className="max-w-sm min-w-0 flex-1">
                 <GraphSearchInput value={query} onChange={setQuery} />
               </div>
@@ -444,9 +479,11 @@ export function GitHistoryGraph({
           ariaLabel={t("Commit actions")}
           width={264}
           header={
-            <div className="px-2 py-1.5 text-[11px] text-content/55">
+            <div className="px-2 py-1.5 text-[11px] text-[var(--ui-text-secondary)]">
               <code className="mr-2">{menu.commit.shortSha}</code>
-              <span className="block truncate text-content/80">{menu.commit.subject}</span>
+              <span className="block truncate text-[var(--color-content)]">
+                {menu.commit.subject}
+              </span>
             </div>
           }
           items={commitMenuItems(menu.commit, !actions || !!busy)}
@@ -618,7 +655,7 @@ export function GraphResizeSash({
       aria-label={t("Resize graph")}
       aria-valuenow={height}
       className={`z-10 h-1.5 shrink-0 cursor-row-resize touch-none ${
-        dragging ? "bg-content/15" : "hover:bg-content/10"
+        dragging ? "bg-[var(--ui-surface-muted)]" : "hover:bg-[var(--ui-surface-hover)]"
       }`}
       onPointerDown={onPointerDown}
       onDoubleClick={() => commitRef.current(clamp(GRAPH_PANEL_DEFAULT))}

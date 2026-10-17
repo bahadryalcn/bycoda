@@ -1,3 +1,4 @@
+import { Button } from "../../shared/ui/Button";
 import { t, useLocale } from "../../shared/i18n";
 import { useEffect, useRef, useState } from "react";
 import { RefreshCw } from "../../shared/ui/icons";
@@ -91,20 +92,24 @@ function PiProviderUsage({ provider, now }: { provider: PiUsageProvider; now: nu
           label: provider === "anthropic" ? "Pi · Anthropic" : "Pi · OpenAI Codex",
         }}
       />
-      <button
+      <Button
+        iconOnly
+        label={t("Refresh Pi usage")}
+        variant="ghost"
+        motion="none"
         type="button"
         aria-label={t("Refresh Pi usage")}
         title={t("Refresh Pi usage")}
         disabled={fetching}
         onClick={() => refreshRef.current(true)}
-        className="grid size-6 shrink-0 place-items-center rounded text-content/40 hover:bg-content/10 hover:text-content disabled:opacity-50 focus-visible:outline-2 focus-visible:outline-accent"
+        className="grid shrink-0 place-items-center"
       >
         <RefreshCw
           className={`size-2.5 ${fetching ? "motion-safe:animate-spin" : ""}`}
           strokeWidth={1.75}
           aria-hidden
         />
-      </button>
+      </Button>
     </>
   );
 }

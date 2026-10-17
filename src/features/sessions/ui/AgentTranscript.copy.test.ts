@@ -239,7 +239,11 @@ it("saves the user prompt to Notes from the action row outside the bubble", asyn
   const copy = container.querySelector('button[aria-label="Copy message"]');
   expect(copy!.closest(".user-message-bubble")).toBeNull();
   expect(save!.parentElement).toBe(copy!.parentElement);
-  await act(async () => save!.click());
+  await act(async () => {
+    save!.click();
+    save!.click();
+  });
+  expect(onSaveNote).toHaveBeenCalledOnce();
   expect(onSaveNote).toHaveBeenCalledWith("Keep this prompt\nWith its formatting");
   expect(save!.getAttribute("aria-label")).toBe("Saved to Notes");
 });

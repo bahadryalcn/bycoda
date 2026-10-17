@@ -1,3 +1,4 @@
+import { Button } from "../../../shared/ui/Button";
 import { SearchInput } from "../../../shared/ui/SearchInput";
 import { OverlayParent, useOverlay } from "../../../shared/ui/overlay";
 import { t, useLocale } from "../../../shared/i18n/technical";
@@ -289,10 +290,10 @@ export function FilePicker({
           aria-label={paletteMode ? t("Command Palette") : t("Go to File")}
           data-file-picker
           onMouseDown={(e) => e.stopPropagation()}
-          className="absolute left-1/2 top-[12%] flex w-[min(560px,calc(100vw-24px))] -translate-x-1/2 flex-col overflow-hidden rounded-lg border border-content/10 bg-content/5 backdrop-blur-xl"
+          className="absolute left-1/2 top-[12%] flex w-[min(560px,calc(100vw-24px))] -translate-x-1/2 flex-col overflow-hidden rounded-lg border border-[var(--color-stroke)] bg-[var(--ui-surface)] backdrop-blur-xl"
         >
           <div className="pb-1.5">
-            <label className="flex items-center gap-2 border-b border-stroke px-2 py-2.5 text-content/50">
+            <label className="flex items-center gap-2 border-b border-stroke px-2 py-2.5 text-[var(--ui-text-secondary)]">
               <Search className="size-3.5 shrink-0" strokeWidth={1.75} />
               <SearchInput
                 ref={search}
@@ -304,7 +305,7 @@ export function FilePicker({
                 autoComplete="off"
                 autoCorrect="off"
                 autoCapitalize="off"
-                className="min-w-0 flex-1 bg-transparent text-[13px] text-content outline-none placeholder:text-content/40"
+                className="min-w-0 flex-1"
                 onChange={(e) => {
                   setQuery(e.target.value);
                   setActive(0);
@@ -314,7 +315,7 @@ export function FilePicker({
             </label>
           </div>
           {empty ? (
-            <p className="px-3 pb-3 pt-1 text-[12px] text-content/50">{empty}</p>
+            <p className="px-3 pb-3 pt-1 text-[12px] text-[var(--ui-text-secondary)]">{empty}</p>
           ) : paletteMode ? (
             <ActionList
               actions={actionResults}
@@ -400,7 +401,9 @@ function ActionList({
       {actions.map((action, index) => {
         const highlighted = index === active;
         return (
-          <button
+          <Button
+            variant="item"
+            motion="none"
             key={action.id}
             ref={highlighted ? activeRef : undefined}
             type="button"
@@ -409,20 +412,23 @@ function ActionList({
             onMouseDown={(e) => e.preventDefault()}
             onMouseEnter={() => onActive(index)}
             onClick={() => onRun(action)}
-            className={`flex h-8 w-full items-center gap-2 rounded-md px-2 text-left text-sm leading-none ${
-              highlighted ? "bg-selection text-content" : "text-content"
-            }`}
+            className={`  flex h-8 w-full items-center gap-2 text-left leading-none  ${
+              highlighted ? "" : ""
+            }   `}
           >
-            <RefreshCw className="size-4 shrink-0 text-content/50" strokeWidth={1.75} />
+            <RefreshCw
+              className="size-4 shrink-0 text-[var(--ui-text-secondary)]"
+              strokeWidth={1.75}
+            />
             <span className="min-w-0 flex-1 truncate">
               <MatchText text={action.label} positions={action.positions} active={Boolean(query)} />
             </span>
             {action.hint ? (
-              <kbd className="ml-auto shrink-0 rounded border border-content/10 bg-content/5 px-1.5 py-0.5 font-mono text-[10px] text-content/50">
+              <kbd className="ml-auto shrink-0 rounded border border-[var(--color-stroke)] bg-[var(--ui-surface)] px-1.5 py-0.5 font-mono text-[10px] text-[var(--ui-text-secondary)]">
                 {action.hint}
               </kbd>
             ) : null}
-          </button>
+          </Button>
         );
       })}
     </div>
@@ -487,7 +493,9 @@ function FileList({
         const dir = slash === -1 ? "" : file.relative.slice(0, slash);
         const nameOffset = slash === -1 ? 0 : slash + 1;
         return (
-          <button
+          <Button
+            variant="item"
+            motion="none"
             key={file.path}
             ref={highlighted ? activeRef : undefined}
             type="button"
@@ -496,9 +504,9 @@ function FileList({
             onMouseDown={(e) => e.preventDefault()}
             onMouseEnter={() => onRowEnter(index)}
             onClick={() => onPick(file)}
-            className={`flex h-8 w-full items-center gap-2 rounded-md px-2 text-left text-sm leading-none ${
-              highlighted ? "bg-selection text-content" : "text-content"
-            }`}
+            className={`  flex h-8 w-full items-center gap-2 text-left leading-none  ${
+              highlighted ? "" : ""
+            }   `}
           >
             <span className="shrink-0">
               <FileTypeIcon name={file.name} isDir={false} />
@@ -513,7 +521,7 @@ function FileList({
               />
             </span>
             {dir ? (
-              <span className="min-w-0 max-w-[45%] truncate font-mono text-[11px] text-content/40">
+              <span className="min-w-0 max-w-[45%] truncate font-mono text-[11px] text-[var(--ui-text-muted)]">
                 <MatchText
                   text={dir}
                   positions={file.positions.filter((pos) => pos < slash)}
@@ -521,7 +529,7 @@ function FileList({
                 />
               </span>
             ) : null}
-          </button>
+          </Button>
         );
       })}
     </div>

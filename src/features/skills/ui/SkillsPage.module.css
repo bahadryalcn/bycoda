@@ -168,35 +168,6 @@
 .detailFooter {
   justify-content: space-between;
 }
-.message,
-.error {
-  padding: 0.75rem 1rem;
-  font-size: var(--text-xs, 0.75rem);
-  overflow-wrap: anywhere;
-}
-.message {
-  color: var(--ui-text-secondary);
-}
-.error {
-  color: var(--color-danger);
-}
-.empty {
-  display: grid;
-  align-content: center;
-  justify-items: center;
-  gap: 0.5rem;
-  flex: 1;
-  padding: 2rem;
-  text-align: center;
-}
-.empty h2 {
-  font-size: var(--text-lg, 1rem);
-  font-weight: 500;
-}
-.empty p {
-  font-size: var(--text-sm, 0.8125rem);
-  color: var(--ui-text-secondary);
-}
 
 @media (hover: hover) and (pointer: fine) {
   .machine summary:hover {

@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { useEffect, useState } from "react";
 import { t, useLocale } from "../../../shared/i18n";
+import { Alert } from "../../../shared/ui/Alert";
 
 type BundledHostStatus = {
   state: string;
@@ -38,16 +39,13 @@ export function LocalHostUpdateNotice() {
         })
       : null;
   return (
-    <div
-      role="status"
-      className="rounded-lg border border-warning/25 bg-warning/5 px-3 py-2 text-[12px] leading-relaxed text-content/75"
-    >
+    <Alert tone="warning" role="status">
       <span className="font-medium text-content">
         {status.state === "failed"
           ? t("The host on this computer could not be updated.")
           : t("The host on this computer will update soon.")}
       </span>{" "}
       {versions} {status.message ? t(status.message) : null}
-    </div>
+    </Alert>
   );
 }

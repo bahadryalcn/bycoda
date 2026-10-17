@@ -126,7 +126,7 @@ it("verifies a newer external CI result even when its dashboard URL stays the sa
       }),
     ),
   );
-  expect(host.textContent).toContain("CI passed");
+  expect(visibleText(host)).toContain("CI passed");
 });
 
 it("does not use one newer result to verify two different jobs with the same name", async () => {
@@ -186,8 +186,8 @@ it("does not use one newer result to verify two different jobs with the same nam
       }),
     ),
   );
-  expect(host.textContent).not.toContain("CI passed");
-  expect(host.textContent).toContain("Awaiting new CI checks");
+  expect(visibleText(host)).not.toContain("CI passed");
+  expect(visibleText(host)).toContain("Awaiting new CI checks");
 });
 
 it.each([1, 0.8])(
@@ -493,7 +493,7 @@ it("shows live repair progress and opens the linked conversation", async () => {
       },
     ),
   );
-  expect(host.textContent).toContain("Repair in progress");
+  expect(visibleText(host)).toContain("Repair in progress");
   await act(async () =>
     [...host.querySelectorAll("button")]
       .find((button) => button.textContent === "Open conversation")!
@@ -501,9 +501,9 @@ it("shows live repair progress and opens the linked conversation", async () => {
   );
   expect(open).toHaveBeenCalledWith("repair-chat");
   act(() => finish("completed"));
-  expect(host.textContent).not.toContain("Agent finished");
-  expect(host.textContent).toContain("Awaiting new CI checks");
-  expect(host.textContent).not.toContain("Repair in progress");
+  expect(visibleText(host)).not.toContain("Agent finished");
+  expect(visibleText(host)).toContain("Awaiting new CI checks");
+  expect(visibleText(host)).not.toContain("Repair in progress");
 });
 
 it("reports fresh checks for a later PR commit without confirming old or stale results", async () => {
@@ -565,27 +565,27 @@ it("reports fresh checks for a later PR commit without confirming old or stale r
     );
   };
   await render("original");
-  expect(host.textContent).toContain("Awaiting new CI checks");
+  expect(visibleText(host)).toContain("Awaiting new CI checks");
   await render("new-commit", [{ ...passed, url: check.url, startedAt: "2000-01-01T00:00:00Z" }]);
-  expect(host.textContent).toContain("Awaiting new CI checks");
+  expect(visibleText(host)).toContain("Awaiting new CI checks");
   await render("new-commit");
-  expect(host.textContent).toContain("CI passed");
-  expect(host.textContent).not.toContain("new-com");
+  expect(visibleText(host)).toContain("CI passed");
+  expect(visibleText(host)).not.toContain("new-com");
   act(() =>
     host
       .querySelector<HTMLButtonElement>('button[aria-label="Repair details for 1 check"]')!
       .click(),
   );
-  expect(host.textContent).toContain("new-com");
+  expect(visibleText(host)).toContain("new-com");
   await render("new-commit", [passed], { stale: true });
-  expect(host.textContent).not.toContain("CI passed");
-  expect(host.textContent).toContain("CI results are out of date");
+  expect(visibleText(host)).not.toContain("CI passed");
+  expect(visibleText(host)).toContain("CI results are out of date");
   await render("new-commit", [passed], { refreshing: true });
-  expect(host.textContent).not.toContain("CI passed");
+  expect(visibleText(host)).not.toContain("CI passed");
   await render("another-commit", []);
-  expect(host.textContent).toContain("Awaiting new CI checks");
+  expect(visibleText(host)).toContain("Awaiting new CI checks");
   await render("another-commit", [passed, passed]);
-  expect(host.textContent).toContain("Awaiting new CI checks");
+  expect(visibleText(host)).toContain("Awaiting new CI checks");
 });
 afterEach(() => {
   act(() => roots.splice(0).forEach((root) => root.unmount()));
@@ -958,3 +958,9 @@ it("keeps the selected failed job when another check changes", async () => {
   );
   expect(document.querySelector('[role="dialog"][aria-label="Fix checks with AI"]')).not.toBeNull();
 });
+
+function visibleText(node: HTMLElement) {
+  const copy = node.cloneNode(true) as HTMLElement;
+  copy.querySelectorAll('[aria-hidden="true"]').forEach((node) => node.remove());
+  return copy.textContent;
+}

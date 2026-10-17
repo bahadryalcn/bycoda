@@ -62,7 +62,7 @@ export default function DocxViewer({ bytes }: { bytes: Uint8Array }) {
 
   if (state.status === "loading") {
     return (
-      <div className="grid h-full place-items-center text-[12px] text-content/45">
+      <div className="grid h-full place-items-center text-[12px] text-[var(--ui-text-muted)]">
         {t("Converting document…")}
       </div>
     );

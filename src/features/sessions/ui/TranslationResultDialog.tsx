@@ -1,3 +1,4 @@
+import { Alert } from "../../../shared/ui/Alert";
 import { useEffect, useId, useState, useSyncExternalStore } from "react";
 import { useModelSource } from "./modelSource";
 import {
@@ -152,7 +153,7 @@ export function TranslationResultDialog({
                   </div>
                 </div>
               ) : error ? (
-                <p role="alert" className={styles.error}>
+                <Alert tone="info" role="alert">
                   {error === "gemini-account"
                     ? t(
                         "Gemini no longer supports this account or client. Check the Gemini account in Settings > Providers, or choose another provider.",
@@ -164,7 +165,7 @@ export function TranslationResultDialog({
                       : error === "timeout"
                         ? t("The translation request timed out. Try again.")
                         : t("Could not translate. Try again.")}
-                </p>
+                </Alert>
               ) : result ? (
                 <div role="status" tabIndex={0} className={styles.text}>
                   {result}
@@ -180,9 +181,9 @@ export function TranslationResultDialog({
           </section>
         </div>
         {applyError ? (
-          <p role="alert" className={styles.error}>
+          <Alert tone="info" role="alert">
             {t("The text changed. Select it again to translate.")}
-          </p>
+          </Alert>
         ) : null}
         <footer className={styles.footer}>
           <p className={styles.hint}>{t("After applying: ↑ original, ↓ translation.")}</p>

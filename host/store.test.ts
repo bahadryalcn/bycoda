@@ -12,6 +12,39 @@ import { HostEngine } from "./engine";
 
 const cleanups: Array<() => void> = [];
 
+describe("project filesystem identity", () => {
+  it("reuses a project for equivalent folder spellings without emitting changes", () => {
+    const directory = open();
+    const store = new HostStore(join(directory, "host.db"));
+    cleanups.push(() => store.close());
+    const project = store.addProject(directory, "Original");
+    const notify = vi.spyOn(store.changes, "notify");
+    const variant =
+      process.platform === "win32"
+        ? directory.replace(/\\/g, "/").toUpperCase() + "/"
+        : directory + "/./";
+    expect(store.addProject(variant, "Alias")).toEqual(project);
+    expect(store.projects()).toEqual([project]);
+    expect(notify).not.toHaveBeenCalled();
+    expect(store.addProject(join(directory, "another"), "Another").id).not.toBe(project.id);
+  });
+
+  it("preserves legacy project IDs and their sessions when opening an alias", () => {
+    const directory = open();
+    const store = new HostStore(join(directory, "host.db"));
+    cleanups.push(() => store.close());
+    const project = store.addProject(directory, "Original");
+    store.db
+      .prepare("INSERT INTO projects VALUES (?, ?, ?)")
+      .run("legacy", directory + "/", "Original");
+    store.save(session("legacy-session", "legacy"), {});
+    expect(store.addProject(directory + "/./", "Reopened").id).toBe(project.id);
+    expect(store.project("legacy").id).toBe("legacy");
+    expect(store.session("legacy-session").projectId).toBe("legacy");
+    expect(store.projects()).toHaveLength(2);
+  });
+});
+
 describe("sparse journal checkpoints", () => {
   function setup(blocks: Block[]) {
     const path = join(open(), "sparse.db");

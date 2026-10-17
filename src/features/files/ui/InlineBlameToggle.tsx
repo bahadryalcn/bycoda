@@ -1,3 +1,4 @@
+import { Button } from "../../../shared/ui/Button";
 import { t, useLocale } from "../../../shared/i18n/git";
 import { useSyncExternalStore } from "react";
 import { isRemoteProjectPath } from "../../projects/model/recents";
@@ -52,7 +53,10 @@ export function InlineBlameToggle({ reason }: { reason: string | null }) {
   useLocale();
   const on = useInlineBlame() && !reason;
   return (
-    <button
+    <Button
+      size="sm"
+      variant="ghost"
+      motion="none"
       type="button"
       title={reason ?? t("Show git blame for each line")}
       aria-label={t("Git blame")}
@@ -61,11 +65,9 @@ export function InlineBlameToggle({ reason }: { reason: string | null }) {
       // Keep the caret where it is in the editor.
       onMouseDown={(event) => event.preventDefault()}
       onClick={() => saveInlineBlame(!on)}
-      className={`ml-2 h-4 shrink-0 rounded px-1.5 font-sans text-[10.5px] hover:bg-content/10 hover:text-content disabled:opacity-35 disabled:hover:bg-transparent ${
-        on ? "bg-content/10 text-content/80" : "text-content/45"
-      }`}
+      className={"ml-2 shrink-0"}
     >
       {t("Blame")}
-    </button>
+    </Button>
   );
 }

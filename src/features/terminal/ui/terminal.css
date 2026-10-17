@@ -39,28 +39,8 @@
   display: flex;
   align-items: center;
   gap: 5px;
-  inline-size: auto;
-  block-size: 24px;
-  padding: 0 8px;
-  border: 0;
-  border-radius: 6px;
-  color: var(--terminal-muted);
-  font-size: var(--ui-font-caption);
   white-space: nowrap;
   cursor: pointer;
-}
-.project-terminal-dock .terminal-context-tab[aria-pressed="true"] {
-  background: var(--terminal-selected);
-  color: var(--terminal-text);
-}
-.terminal-toolbar button {
-  inline-size: 24px;
-  block-size: 24px;
-  border-radius: 6px;
-  color: var(--terminal-muted);
-}
-.terminal-profile-trigger button {
-  inline-size: 18px;
 }
 .terminal-body {
   position: relative;
@@ -117,19 +97,11 @@
   display: flex;
   align-items: center;
   gap: 6px;
-  inline-size: 100%;
-  block-size: 24px;
-  padding-inline: 9px;
-  color: var(--terminal-muted);
-  font-size: 12px;
   text-align: start;
   cursor: pointer;
 }
 .terminal-list-row:has([aria-selected="true"]) {
   background: var(--terminal-selected);
-}
-.terminal-list-item[aria-selected="true"] {
-  color: var(--terminal-text);
 }
 .terminal-row-actions {
   position: absolute;
@@ -142,53 +114,25 @@
 .terminal-row-actions button {
   display: grid;
   place-items: center;
-  inline-size: 22px;
-  block-size: 22px;
-  border-radius: 6px;
-  color: var(--terminal-muted);
   cursor: pointer;
 }
 .terminal-list-row:focus-within .terminal-row-actions {
   opacity: 1;
   pointer-events: auto;
 }
-.terminal-list-row:focus-within .terminal-list-item {
-  padding-inline-end: 49px;
-}
-.project-terminal-dock button:focus-visible {
-  outline: var(--ui-focus-width) solid var(--color-accent);
-  outline-offset: -2px;
-}
-.project-terminal-dock button:active {
-  background: var(--terminal-selected);
-  color: var(--terminal-text);
-}
 @media (hover: hover) and (pointer: fine) {
   .terminal-list-row:hover {
     background: var(--terminal-selected);
   }
-  .terminal-list-row:hover .terminal-list-item {
-    color: var(--terminal-text);
-    padding-inline-end: 49px;
-  }
   .terminal-list-row:hover .terminal-row-actions {
     opacity: 1;
     pointer-events: auto;
-  }
-  .terminal-toolbar button:hover,
-  .terminal-row-actions button:hover,
-  .terminal-context-tab:hover {
-    background: var(--color-selection-hover);
-    color: var(--terminal-text);
   }
 }
 @media (hover: none), (pointer: coarse) {
   .terminal-row-actions {
     opacity: 1;
     pointer-events: auto;
-  }
-  .terminal-list-item {
-    padding-inline-end: 49px;
   }
 }
 .terminal-canvas {

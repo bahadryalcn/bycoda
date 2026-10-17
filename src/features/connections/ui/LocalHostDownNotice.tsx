@@ -1,7 +1,8 @@
+import { Alert } from "../../../shared/ui/Alert";
 import { useEffect, useState } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
-import { CircleAlert, RefreshCw, X } from "../../../shared/ui/icons";
+import { RefreshCw, X } from "../../../shared/ui/icons";
 import { startLocalHost, useLocalHostState } from "../model/localHostService";
 
 /** Starts this computer's stopped host; reports the reason when it cannot. */
@@ -31,7 +32,7 @@ export function LocalHostStartButton({
   return (
     <Button
       className={className}
-      variant="primary"
+      variant="secondary"
       size="sm"
       loading={starting}
       loadingLabel={t("Starting host…")}
@@ -88,11 +89,7 @@ export function LocalHostDownNotice({
 }) {
   useLocale();
   return (
-    <section
-      role="alert"
-      className="flex gap-2.5 rounded-lg border border-stroke bg-[var(--ui-surface)] p-3.5 text-xs text-content"
-    >
-      <CircleAlert className="mbs-0.5 size-3.5 shrink-0 text-warning" aria-hidden />
+    <Alert role="alert" tone="warning">
       <div className="min-w-0 flex-1">
         <p className="font-medium">{t("The host on this computer is not running.")}</p>
         <p className="ui-secondary-text mbs-0.5 leading-relaxed">
@@ -102,7 +99,7 @@ export function LocalHostDownNotice({
         </p>
         <Button
           className="mbs-2"
-          variant="primary"
+          variant="secondary"
           size="sm"
           loading={notice.starting}
           loadingLabel={t("Starting host…")}
@@ -122,6 +119,6 @@ export function LocalHostDownNotice({
       >
         <X className="size-3.5" aria-hidden />
       </Button>
-    </section>
+    </Alert>
   );
 }

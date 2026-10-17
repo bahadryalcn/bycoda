@@ -17,6 +17,7 @@ import {
   type SessionSync,
 } from "../src/features/connections/model/protocol";
 import { HostEngine, parseCommand } from "./engine";
+import { isClearSessionCommand } from "../src/features/sessions/model/newSessionCommand";
 import { HostAutomations } from "./automations";
 import { SocialService, type SocialPrincipal } from "./social";
 import { socialAgentGenerator } from "./social-agent";
@@ -2028,6 +2029,12 @@ export function createHostServer(
               }
             }
             if (params.type !== "create") adopt(sessionId);
+            if (params.type === "send" && typeof params.text === "string" && isClearSessionCommand(params.text)) {
+              if (desktopWatch(sessionId)?.running || sessionQueues.get(sessionId).messages.length)
+                throw new Error("Stop the current turn and clear queued messages before clearing the conversation.");
+              result = await engine.clearConversation(params);
+              break;
+            }
             if (params.type === "rewind") {
               result = await engine.rewind(params);
               break;

@@ -17,6 +17,37 @@ import { isActivityBlock, isNoticeBlock } from "../src/features/sessions/model/t
 
 const cleanups: Array<() => Promise<void> | void> = [];
 
+it("clears the same host session durably and starts the next turn without the old binding", async () => {
+  const { engine, store, id, provider, turns } = setup();
+  engine.command({ type: "send", commandId: "before-clear", sessionId: id, text: "Old context" });
+  await vi.waitFor(() => expect(turns).toHaveLength(1));
+  turns[0].input.onEvent({ type: "session.providerBound", providerSessionId: "old-native" });
+  turns[0].finish();
+  await vi.waitFor(() => expect(store.session(id).status).toBe("idle"));
+  vi.mocked(provider.stop).mockClear();
+  vi.mocked(provider.bind).mockClear();
+  const command = { type: "send", commandId: "clear", sessionId: id, text: "/clear" };
+  const receipt = await engine.clearConversation(command);
+  expect(await engine.clearConversation(command)).toEqual(receipt);
+  expect(provider.stop).toHaveBeenCalledOnce();
+  expect(store.session(id).session).toMatchObject({ id, blocks: [] });
+  expect(store.session(id).session.providerSessionId).toBeUndefined();
+  expect(store.session(id).session.pendingContextReplay).toBeUndefined();
+  expect(provider.send).toHaveBeenCalledOnce();
+  engine.command({ type: "send", commandId: "after-clear", sessionId: id, text: "New context" });
+  await vi.waitFor(() => expect(turns).toHaveLength(2));
+  expect(turns[1].input.text).toBe("New context");
+  expect(provider.bind).not.toHaveBeenCalled();
+});
+
+it("rejects clearing a running host session", async () => {
+  const { engine, id, provider, turns } = setup();
+  engine.command({ type: "send", commandId: "running", sessionId: id, text: "Keep working" });
+  await vi.waitFor(() => expect(turns).toHaveLength(1));
+  await expect(engine.clearConversation({ type: "send", commandId: "clear-busy", sessionId: id, text: "/clear" })).rejects.toThrow("Stop the current turn");
+  expect(provider.stop).not.toHaveBeenCalled();
+});
+
 it("surfaces provider startup rejection as a failed turn outside folded activity", async () => {
   const { engine, store, id, provider } = setup();
   provider.send = vi.fn(async () => {

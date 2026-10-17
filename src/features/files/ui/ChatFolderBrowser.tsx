@@ -1,3 +1,5 @@
+import { TextField } from "../../../shared/ui/TextField";
+import { Button } from "../../../shared/ui/Button";
 import { t, useLocale } from "../../../shared/i18n/technical";
 import { useEffect, useRef, useState } from "react";
 import {
@@ -174,49 +176,53 @@ export function ChatFolderBrowser({
       fitViewport
     >
       <div className="flex min-w-0 items-center gap-2 border-b border-stroke pb-2">
-        <button
+        <Button
+          iconOnly
+          label={t("Parent folder")}
+          variant="ghost"
+          motion="none"
           type="button"
           aria-label={t("Parent folder")}
           title={t("Parent folder")}
-          className="grid size-7 shrink-0 place-items-center rounded hover:bg-content/10"
+
           disabled={!parent}
           onClick={() => parent && setDirectory(parent)}
         >
           <ArrowUp className="size-4" />
-        </button>
-        <span className="min-w-0 break-all font-mono text-xs text-content/70">{directory}</span>
+        </Button>
+        <span className="min-w-0 break-all font-mono text-xs text-[var(--ui-text-secondary)]">
+          {directory}
+        </span>
       </div>
       <div className="flex flex-wrap gap-2 py-2">
-        <button
+        <Button
+          variant="ghost"
+          motion="none"
           type="button"
           disabled={busy || !listing?.canOpenFiles}
-          className="rounded px-2 py-1 text-sm hover:bg-content/10 active:bg-content/15 focus-visible:outline focus-visible:outline-2 disabled:opacity-50"
           onClick={() => void openLiveFolder()}
         >
           {t("Open live folder (read-only)")}
-        </button>
-        <button
+        </Button>
+        <Button
+          variant="ghost"
+          motion="none"
           type="button"
           disabled={busy}
-          className="rounded px-2 py-1 text-sm hover:bg-content/10 disabled:opacity-50"
           onClick={() => void revealDirectory()}
         >
           {revealLabel}
-        </button>
-        <button
-          type="button"
-          className="rounded px-2 py-1 text-sm text-content/60 hover:bg-content/10"
-          onClick={configureMapping}
-        >
+        </Button>
+        <Button variant="ghost" motion="none" type="button" onClick={configureMapping}>
           {t("Shared folder settings")}
-        </button>
+        </Button>
       </div>
-      <p className="text-xs text-content/60">
+      <p className="text-xs text-[var(--ui-text-secondary)]">
         {t(
           "Live folders show the connected computer’s current files. Remote changes are visible; writing is disabled.",
         )}
       </p>
-      <p className="text-xs text-content/60">
+      <p className="text-xs text-[var(--ui-text-secondary)]">
         {t("Local copies do not sync changes back to the connected machine.")}
       </p>
       {editingMapping ? (
@@ -234,8 +240,10 @@ export function ChatFolderBrowser({
           </p>
           <label className="grid gap-1">
             {t("Folder on connected machine")}
-            <input
-              className="rounded border border-stroke bg-transparent px-2 py-1 font-mono"
+            <TextField
+              hideLabel
+              label=""
+              className="font-mono"
               value={remoteRoot}
               onChange={(event) => setRemoteRoot(event.target.value)}
               required
@@ -243,18 +251,22 @@ export function ChatFolderBrowser({
           </label>
           <label className="grid gap-1">
             {t("Same folder on this computer")}
-            <input
-              className="rounded border border-stroke bg-transparent px-2 py-1 font-mono"
+            <TextField
+              hideLabel
+              label=""
+              className="font-mono"
               placeholder={IS_WIN ? t("\\\\MacBook\\share\\projects") : "/Volumes/share/projects"}
               value={localRoot}
               onChange={(event) => setLocalRoot(event.target.value)}
               required
             />
           </label>
-          <button
+          <Button
+            variant="ghost"
+            motion="none"
             type="button"
             disabled={busy}
-            className="justify-self-start rounded px-2 py-1 text-sm hover:bg-content/10 active:bg-content/15 focus-visible:outline focus-visible:outline-2"
+            className="justify-self-start"
             onClick={() => {
               void pickNativeFolders(t("Same folder on this computer"), false).then(
                 (paths) => {
@@ -265,19 +277,24 @@ export function ChatFolderBrowser({
             }}
           >
             {t("Choose folder…")}
-          </button>
+          </Button>
           <div className="flex gap-2">
-            <button type="submit" disabled={busy} className="rounded px-2 py-1 hover:bg-content/10">
+            <Button variant="primary" motion="none" type="submit" disabled={busy}>
               {t("Save and open")}
-            </button>
-            <button type="button" onClick={() => setEditingMapping(false)}>
+            </Button>
+            <Button
+              variant="ghost"
+              motion="none"
+              type="button"
+              onClick={() => setEditingMapping(false)}
+            >
               {t("Cancel")}
-            </button>
+            </Button>
           </div>
         </form>
       ) : null}
       {copyProgress ? (
-        <p role="status" className="py-2 text-sm text-content/60">
+        <p role="status" className="py-2 text-sm text-[var(--ui-text-secondary)]">
           {t("Downloading…")} {copyProgress}
         </p>
       ) : null}
@@ -292,15 +309,15 @@ export function ChatFolderBrowser({
           {error}
         </p>
       ) : !entries ? (
-        <p role="status" className="py-3 text-sm text-content/60">
+        <p role="status" className="py-3 text-sm text-[var(--ui-text-secondary)]">
           {t("Loading folder…")}
         </p>
       ) : entries.length === 0 ? (
-        <p className="py-3 text-sm text-content/60">{t("This folder is empty.")}</p>
+        <p className="py-3 text-sm text-[var(--ui-text-secondary)]">{t("This folder is empty.")}</p>
       ) : (
         <>
           {!listing?.canOpenFiles ? (
-            <p className="py-2 text-sm text-content/60">
+            <p className="py-2 text-sm text-[var(--ui-text-secondary)]">
               {t(
                 "This folder is outside registered projects. To access its files, open a shared folder in your file manager.",
               )}
@@ -311,10 +328,12 @@ export function ChatFolderBrowser({
               .sort((a, b) => Number(b.isDir) - Number(a.isDir) || a.name.localeCompare(b.name))
               .map((entry) => (
                 <li key={entry.path} className="flex min-w-0 items-center gap-1">
-                  <button
+                  <Button
+                    variant="ghost"
+                    motion="none"
                     type="button"
                     disabled={!entry.isDir && (!listing?.canOpenFiles || !onOpenFile)}
-                    className="flex min-w-0 flex-1 items-center gap-2 rounded px-2 py-1.5 text-start hover:bg-content/10 active:bg-content/15 disabled:cursor-not-allowed disabled:opacity-50"
+                    className="flex min-w-0 flex-1 items-center gap-2 text-start disabled:cursor-not-allowed"
                     onClick={() => {
                       if (entry.isDir) setDirectory(entry.path);
                       else {
@@ -334,18 +353,22 @@ export function ChatFolderBrowser({
                     >
                       {entry.name}
                     </span>
-                  </button>
+                  </Button>
                   {!entry.isDir && listing?.canOpenFiles ? (
-                    <button
+                    <Button
+                      iconOnly
+                      label={`${t("Open local copy")}: ${entry.name}`}
+                      variant="ghost"
+                      motion="none"
                       type="button"
                       disabled={busy}
                       title={t("Open local copy")}
                       aria-label={`${t("Open local copy")}: ${entry.name}`}
-                      className="grid size-8 shrink-0 place-items-center rounded text-content/60 hover:bg-content/10 active:bg-content/15 focus-visible:outline focus-visible:outline-2 disabled:opacity-50"
+
                       onClick={() => void openLocalCopy(entry.path)}
                     >
                       <ExternalLink className="size-4" />
-                    </button>
+                    </Button>
                   ) : null}
                 </li>
               ))}

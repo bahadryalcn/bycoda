@@ -1,3 +1,4 @@
+import { Button } from "../../../shared/ui/Button";
 import { SearchInput } from "../../../shared/ui/SearchInput";
 import { t, useLocale } from "../../../shared/i18n";
 import {
@@ -195,7 +196,7 @@ export function ModelFlyout({
             role="tablist"
             aria-label={t("Providers")}
             aria-orientation="vertical"
-            className="flex w-11 shrink-0 flex-col items-center gap-1 overflow-y-auto overscroll-none border-r border-stroke p-1.5"
+            className="flex w-11 shrink-0 flex-col items-center gap-1 overflow-y-auto overscroll-none border-r border-(--ui-tone-neutral-border) p-1.5"
           >
             <ProviderTabButton
               title={t("Favorites")}
@@ -221,7 +222,7 @@ export function ModelFlyout({
           </nav>
 
           <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-            <label className="flex shrink-0 items-center gap-2 border-b border-stroke px-3 py-2.5 text-content/50">
+            <label className="flex shrink-0 items-center gap-2 border-b border-(--ui-tone-neutral-border) px-3 py-2.5 text-(--ui-text-secondary)">
               <Search className="size-3.5 shrink-0" strokeWidth={1.75} />
               <SearchInput
                 ref={searchRef}
@@ -229,7 +230,7 @@ export function ModelFlyout({
                 value={query}
                 placeholder={t("Search models")}
                 aria-label={t("Search models")}
-                className="min-w-0 flex-1 bg-transparent text-[13px] text-content outline-none placeholder:text-content/40"
+                className="min-w-0 flex-1 bg-transparent text-[13px] text-(--ui-tone-neutral-fg) outline-none placeholder:text-(--ui-text-secondary)"
                 onChange={(event) => onQuery(event.target.value)}
                 onKeyDown={onSearchKey}
               />
@@ -242,7 +243,7 @@ export function ModelFlyout({
               className="min-h-0 flex-1 overflow-y-auto overscroll-none p-1"
             >
               {models.length === 0 ? (
-                <div className="px-2 py-3 text-[12px] text-content/50">
+                <div className="px-2 py-3 text-[12px] text-(--ui-text-secondary)">
                   {tab === "favorites" && !query.trim()
                     ? t("No favorite models")
                     : tab !== "favorites" && !source.available(tab)
@@ -277,14 +278,15 @@ export function ModelFlyout({
                           key={modelChoiceKey(item)}
                           className={`group flex h-8 items-center rounded-lg px-1 ${
                             disabled
-                              ? "text-content/30"
+                              ? "text-(--ui-text-secondary)"
                               : highlighted
-                                ? "bg-selection text-content"
-                                : "text-content hover:bg-content/5"
+                                ? "bg-selection text-(--ui-tone-neutral-fg)"
+                                : "text-(--ui-tone-neutral-fg) hover:bg-(--ui-surface-raised)"
                           }`}
                           onMouseEnter={() => onActive(index)}
                         >
-                          <button
+                          <Button
+                            variant="item"
                             ref={highlighted ? activeRef : undefined}
                             type="button"
                             role="option"
@@ -294,7 +296,7 @@ export function ModelFlyout({
                             title={disabled ? harnessUnavailableHint(item.harness) : undefined}
                             onMouseDown={(event) => event.preventDefault()}
                             onClick={() => onPick(item)}
-                            className="flex min-w-0 flex-1 items-center gap-2 px-1.5 text-left text-[13px] disabled:cursor-not-allowed"
+                            className="min-w-0 flex-1 text-left"
                           >
                             {accountColor ? (
                               <span
@@ -304,13 +306,17 @@ export function ModelFlyout({
                               />
                             ) : null}
                             <span className="min-w-0 flex-1 truncate">{item.name}</span>
-                          </button>
+                          </Button>
                           {tab === "favorites" ? (
                             <span className="max-w-24 shrink-0 truncate ui-caption-text">
                               {provenance}
                             </span>
                           ) : null}
-                          <button
+                          <Button
+                            className={`shrink-0 ${favorited ? "" : "opacity-0 group-hover:opacity-100 focus:opacity-100"}`}
+                            iconOnly
+                            label={favorited ? t("Remove from favorites") : t("Add to favorites")}
+                            variant="ghost"
                             type="button"
                             title={favorited ? t("Remove from favorites") : t("Add to favorites")}
                             aria-label={
@@ -321,24 +327,22 @@ export function ModelFlyout({
                               event.stopPropagation();
                               onToggleFavorite(item.id);
                             }}
-                            className={`grid size-6 shrink-0 place-items-center rounded-md transition-opacity ${
-                              favorited
-                                ? "text-content/60"
-                                : "text-content/35 opacity-0 group-hover:opacity-100 focus:opacity-100"
-                            }`}
                           >
                             <Star
                               className="size-3.5"
                               strokeWidth={1.75}
                               fill={favorited ? "currentColor" : "none"}
                             />
-                          </button>
+                          </Button>
                           {selected ? (
                             <span
                               aria-hidden="true"
                               className="grid size-6 shrink-0 place-items-center"
                             >
-                              <Check className="size-3.5 text-content/55" strokeWidth={2} />
+                              <Check
+                                className="size-3.5 text-(--ui-text-secondary)"
+                                strokeWidth={2}
+                              />
                             </span>
                           ) : null}
                         </div>
@@ -362,22 +366,23 @@ function ExtrasEntry({ extras, onOpen }: { extras: ModelFlyoutExtras; onOpen: ()
   const { available, changed } = useModelExtrasSummary(extras.harness, extras.model, extras.values);
   if (!available) return null;
   return (
-    <button
+    <Button
+      variant="ghost"
       type="button"
       data-model-extras-entry
       onMouseDown={(event) => event.preventDefault()}
       onClick={onOpen}
-      className="flex h-9 shrink-0 items-center gap-2 border-t border-stroke px-3 text-left text-[12px] text-content/70 hover:bg-content/5 hover:text-content"
+      className="shrink-0 text-left"
     >
       <SlidersHorizontal className="size-3.5 shrink-0" strokeWidth={1.75} />
       <span className="min-w-0 flex-1 truncate">{t("Extras")}</span>
       {changed > 0 ? (
-        <span className="rounded bg-selection px-1 text-[10px] tabular-nums text-content">
+        <span className="rounded bg-selection px-1 text-[10px] tabular-nums text-(--ui-tone-neutral-fg)">
           {changed}
         </span>
       ) : null}
-      <ChevronRight className="size-3.5 shrink-0 text-content/45" strokeWidth={1.75} />
-    </button>
+      <ChevronRight className="size-3.5 shrink-0 text-(--ui-text-secondary)" strokeWidth={1.75} />
+    </Button>
   );
 }
 
@@ -403,15 +408,18 @@ function ExtrasView({ extras, onBack }: { extras: ModelFlyoutExtras; onBack: () 
         disabled={extras.disabled}
         title={`${HARNESS_TITLE[extras.harness]} · ${name}`}
         leading={
-          <button
+          <Button
+            iconOnly
+            label={t("Back")}
+            variant="ghost"
             type="button"
             aria-label={t("Back")}
             title={t("Back")}
             onClick={onBack}
-            className="-ml-1 grid size-6 shrink-0 place-items-center rounded-md text-content/60 hover:bg-selection hover:text-content"
+            className="-ml-1 shrink-0"
           >
             <ArrowLeft className="size-3.5" strokeWidth={1.75} />
-          </button>
+          </Button>
         }
       />
     </div>
@@ -431,7 +439,12 @@ function ProviderTabButton({
 }) {
   useLocale();
   return (
-    <button
+    <Button
+      className="shrink-0"
+      selected={selected}
+      iconOnly
+      label={title}
+      variant="tab"
       type="button"
       role="tab"
       title={title}
@@ -448,13 +461,8 @@ function ProviderTabButton({
             }
       }
       onClick={onSelect}
-      className={`grid size-8 shrink-0 place-items-center rounded-md ${
-        selected
-          ? "bg-selection-strong text-content"
-          : "text-content/45 hover:bg-content/8 hover:text-content"
-      }`}
     >
       <span className="shrink-0">{children}</span>
-    </button>
+    </Button>
   );
 }

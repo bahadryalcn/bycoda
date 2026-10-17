@@ -28,17 +28,18 @@ it("Atanan öğelerde de uzak proje seçimi görünür ve yalnız bu filtre vark
     onJiraProjectsChange: vi.fn(),
     onClose: vi.fn(),
     codeHostProjects: [{ id: "12", path: "group/repo", name: "Remote project" }],
-    hiddenCodeHostProjects: ["12"],
+    hiddenCodeHostProjects: ["12", "no-longer-loaded"],
     onCodeHostProjectsChange: change,
   };
   try {
     await act(async () => root.render(createElement(InboxFiltersMenu, props)));
-    const project = [...host.querySelectorAll("button")].find((button) =>
-      button.textContent?.includes("Remote project"),
-    );
-    expect(project).toBeDefined();
-    act(() => project!.click());
-    expect(change).toHaveBeenLastCalledWith([]);
+    const picker = host.querySelector<HTMLButtonElement>('button[aria-label^="Projects:"]')!;
+    expect(picker).toBeTruthy();
+    await act(async () => picker.click());
+    const project = host.querySelector<HTMLButtonElement>('[role="option"][data-value="12"]')!;
+    expect(project).toBeTruthy();
+    await act(async () => project.click());
+    expect(change).toHaveBeenLastCalledWith(["no-longer-loaded"]);
     await act(async () =>
       root.render(createElement(InboxFiltersMenu, { ...props, filters: DEFAULT_INBOX_FILTERS })),
     );

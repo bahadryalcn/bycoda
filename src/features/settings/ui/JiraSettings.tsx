@@ -1,3 +1,5 @@
+import { Alert } from "../../../shared/ui/Alert";
+import { Checkbox } from "../../../shared/ui/Checkbox";
 import { t, useLocale } from "../../../shared/i18n";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
@@ -312,8 +314,7 @@ export function JiraSettings() {
               <div className="inbox-scope-list">
                 {filteredProjects.map((project) => (
                   <label key={project.id} className="inbox-scope-option">
-                    <input
-                      type="checkbox"
+                    <Checkbox
                       checked={!hiddenIds.includes(project.id)}
                       disabled={busy}
                       onChange={() => {
@@ -350,14 +351,13 @@ export function JiraSettings() {
                 {t("Only checked boards from selected projects appear in the inbox.")}
               </p>
               {boardsError ? (
-                <p role="alert" className="text-[12px] text-danger/90">
+                <Alert tone="danger" role="alert">
                   {boardsError}
-                </p>
+                </Alert>
               ) : null}
               {boards.map((board) => (
                 <label key={board.id} className="inbox-scope-option">
-                  <input
-                    type="checkbox"
+                  <Checkbox
                     checked={allowedBoardIds.includes(board.id)}
                     disabled={busy}
                     onChange={() =>
@@ -379,8 +379,7 @@ export function JiraSettings() {
             </section>
             <section>
               <label className="inbox-scope-option">
-                <input
-                  type="checkbox"
+                <Checkbox
                   checked={backgroundSync}
                   disabled={busy}
                   onChange={(event) => saveJiraBackgroundSync(event.target.checked)}

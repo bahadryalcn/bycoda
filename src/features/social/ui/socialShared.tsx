@@ -1,3 +1,7 @@
+import { Button } from "../../../shared/ui/Button";
+import { Alert } from "../../../shared/ui/Alert";
+import { Badge } from "../../../shared/ui/Badge";
+import { EmptyState } from "../../../shared/ui/EmptyState";
 import { useContext, useEffect, useId, useRef, type FormEvent, type ReactNode } from "react";
 import {
   AlertCircle,
@@ -94,13 +98,16 @@ export function Notice({
 }) {
   const Icon = noticeIcons[kind];
   return (
-    <div className="social-notice" data-kind={kind} role={kind === "error" ? "alert" : "status"}>
-      <Icon aria-hidden="true" />
-      <div>
-        {title ? <strong>{title}</strong> : null}
-        {children ? <div>{children}</div> : null}
-      </div>
-    </div>
+    <Alert
+      className="social-notice"
+      data-kind={kind}
+      tone={kind === "error" ? "danger" : kind === "loading" ? "info" : kind}
+      title={title}
+      icon={<Icon aria-hidden="true" />}
+      aria-busy={kind === "loading" ? true : undefined}
+    >
+      {children}
+    </Alert>
   );
 }
 export function StatusBadge({ status, label }: { status: string; label?: string }) {
@@ -125,10 +132,15 @@ export function StatusBadge({ status, label }: { status: string; label?: string 
             : "neutral";
   const Icon = kind === "neutral" ? Pause : kind === "info" ? Clock : noticeIcons[kind];
   return (
-    <span className="social-status-badge" data-kind={kind} data-status={status}>
-      <Icon aria-hidden="true" />
+    <Badge
+      className="social-status-badge"
+      data-kind={kind}
+      data-status={status}
+      tone={kind === "error" ? "danger" : kind === "loading" ? "info" : kind}
+      icon={<Icon aria-hidden="true" />}
+    >
       {label ?? statuses[status] ?? status}
-    </span>
+    </Badge>
   );
 }
 export function Empty({
@@ -141,11 +153,13 @@ export function Empty({
   icon?: typeof Plus;
 }) {
   return (
-    <div className="social-empty" data-placeholder={!!title}>
-      {Icon ? <Icon aria-hidden="true" /> : null}
-      {title ? <strong>{title}</strong> : null}
-      <p>{children}</p>
-    </div>
+    <EmptyState
+      className="social-empty"
+      data-placeholder={!!title}
+      title={title}
+      icon={Icon ? <Icon aria-hidden="true" /> : null}
+      description={children}
+    />
   );
 }
 
@@ -207,14 +221,17 @@ export function Composer({
               <h2 id={titleId}>{title}</h2>
               {description ? <p>{description}</p> : null}
             </div>
-            <button
+            <Button
+              iconOnly
+              label={`${title} formunu kapat`}
+              variant="ghost"
               type="button"
-              className="social-icon-button"
+
               aria-label={`${title} formunu kapat`}
               onClick={close}
             >
               <X aria-hidden="true" />
-            </button>
+            </Button>
           </header>
           {feedback.busy ? (
             <Notice kind="loading" title="İşlem sürüyor…" />

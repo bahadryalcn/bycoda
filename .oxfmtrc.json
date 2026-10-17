@@ -8,5 +8,5 @@
   "sortImports": false,
   "sortPackageJson": false,
   "sortTailwindcss": false,
-  "ignorePatterns": ["vendor/**"]
+  "ignorePatterns": ["vendor/**", "scripts/checks/ui-reviewed-baseline.json"]
 }

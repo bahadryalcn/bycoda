@@ -63,7 +63,11 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 const button = (name: string) =>
-  [...container.querySelectorAll("button")].find((button) => button.textContent?.trim() === name)!;
+  [...container.querySelectorAll("button")].find((button) => {
+    const copy = button.cloneNode(true) as HTMLElement;
+    copy.querySelectorAll('[aria-hidden="true"]').forEach((node) => node.remove());
+    return copy.textContent?.trim() === name;
+  })!;
 async function render() {
   await act(async () => root.render(createElement(ConnectionsSettings)));
 }
@@ -94,6 +98,25 @@ it("keeps the existing-host form open and preserves URL and token when connectio
   disclosure.open = true;
   await fill('input[type="url"]', "https://remote.example.com");
   await fill('input[type="password"]', "device-token");
+  const credential = container.querySelector<HTMLInputElement>('input[type="password"]')!;
+  credential.focus();
+  await act(async () =>
+    container
+      .querySelector<HTMLButtonElement>('button[aria-controls="' + credential.id + '"]')!
+      .click(),
+  );
+  expect(credential.type).toBe("text");
+  expect(credential.value).toBe("device-token");
+  expect(document.activeElement).toBe(credential);
+  expect(vi.mocked(invoke).mock.calls.some(([command]) => command === "remote_connect")).toBe(
+    false,
+  );
+  await act(async () =>
+    container
+      .querySelector<HTMLButtonElement>('button[aria-controls="' + credential.id + '"]')!
+      .click(),
+  );
+  expect(credential.type).toBe("password");
   const previous = vi.mocked(invoke).getMockImplementation()!;
   vi.mocked(invoke).mockImplementation(async (command, args) => {
     if (command === "remote_connect") throw new Error("Host unavailable");

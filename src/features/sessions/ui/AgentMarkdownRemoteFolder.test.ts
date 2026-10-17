@@ -47,7 +47,11 @@ beforeEach(() => {
   actions.statFiles.mockImplementation(async (paths: string[]) =>
     paths.map((path) => ({
       path,
-      mtimeMs: null,
+      mtimeMs:
+        path === "remote://env/repo/assets/özet.md" ||
+        path === "remote://env/C:/Users/kraba/.bycoda-build/packages/bycoda.exe"
+          ? 1
+          : null,
       isDir: path === "remote://env/repo/assets" || path === "remote://env/repo/assets/images",
     })),
   );

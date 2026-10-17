@@ -1,6 +1,9 @@
 import { useState } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import { Modal } from "../../../shared/ui/Modal";
+import { Button } from "../../../shared/ui/Button";
+import { TextField } from "../../../shared/ui/TextField";
+import { Alert } from "../../../shared/ui/Alert";
 import { basename } from "../../../platform/tauri/fs";
 import { folderRenameError } from "../model/projectFolderRename";
 
@@ -40,10 +43,12 @@ export function RenameProjectFolderDialog({
             .finally(() => setBusy(false));
         }}
       >
-        <p className="break-all text-xs text-content/60">{path}</p>
-        <label className="block space-y-1 text-xs text-content/80">
+        <p className="break-all text-xs text-(--ui-text-secondary)">{path}</p>
+        <label className="block space-y-1 text-xs text-(--ui-text-secondary)">
           <span>{t("Folder name")}</span>
-          <input
+          <TextField
+            label=""
+            hideLabel
             autoFocus
             value={name}
             disabled={busy}
@@ -52,30 +57,22 @@ export function RenameProjectFolderDialog({
               setError(null);
             }}
             aria-invalid={!!invalid || !!error}
-            className="w-full rounded-md border border-content/15 bg-content/5 px-2 py-2 text-sm focus-visible:outline focus-visible:outline-accent"
           />
         </label>
-        {invalid || error ? (
-          <p role="alert" className="text-xs text-danger">
-            {invalid ?? error}
-          </p>
-        ) : null}
+        {invalid || error ? <Alert tone="danger">{invalid ?? error}</Alert> : null}
         <div className="flex justify-end gap-2">
-          <button
-            type="button"
-            disabled={busy}
-            onClick={onClose}
-            className="rounded-md px-3 py-2 text-xs hover:bg-content/10 active:bg-content/15"
-          >
+          <Button type="button" disabled={busy} onClick={onClose} variant="secondary">
             {t("Cancel")}
-          </button>
-          <button
+          </Button>
+          <Button
             type="submit"
             disabled={busy || !!invalid || name === basename(path)}
-            className="rounded-md bg-accent/15 px-3 py-2 text-xs hover:bg-accent/25 active:bg-accent/30 disabled:opacity-40"
+            variant="primary"
+            loading={busy}
+            loadingLabel={t("Renaming…")}
           >
             {busy ? t("Renaming…") : t("Rename folder")}
-          </button>
+          </Button>
         </div>
       </form>
     </Modal>

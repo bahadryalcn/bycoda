@@ -1,0 +1,57 @@
+/* Official free Arc registry source, adapted for bycoda. */
+.root {
+  display: flex;
+  inline-size: 100%;
+  min-inline-size: 0;
+  align-items: flex-start;
+  gap: var(--space-4);
+}
+/* A calm, finite pulse: each block dims a beat after the one above it, then rests after about 20 seconds. */
+.avatar,
+.line {
+  display: block;
+  flex: 0 0 auto;
+  border-radius: var(--radius-control);
+  background: var(--ui-surface-selected);
+}
+.avatar {
+  inline-size: var(--ui-control-height);
+  block-size: var(--ui-control-height);
+  border-radius: var(--radius-pill);
+}
+.lines {
+  display: grid;
+  flex: 1;
+  gap: var(--space-3);
+  padding-block-start: var(--space-1);
+}
+.line {
+  inline-size: 100%;
+  block-size: var(--space-3);
+}
+.line:first-child {
+  inline-size: 48%;
+  block-size: var(--space-4);
+}
+.line:last-child {
+  inline-size: 72%;
+}
+.frame {
+  position: relative;
+  display: flow-root;
+}
+@keyframes skeleton-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.52;
+  }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .avatar,
+  .line {
+    animation: skeleton-pulse 1.8s var(--ease-in-out) calc(var(--index, 0) * 90ms) 11 both;
+  }
+}

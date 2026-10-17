@@ -1,3 +1,4 @@
+import { Button } from "../../../shared/ui/Button";
 import { t, useLocale } from "../../../shared/i18n";
 import { useEffect, useMemo, useState } from "react";
 import { HarnessIcon } from "../../sessions/ui/HarnessIcon";
@@ -169,13 +170,14 @@ export function ArchivePage({
               className="flex flex-wrap items-center gap-3 border-b border-content/5 px-4 py-2.5 last:border-b-0"
             >
               <HarnessIcon harness={session.harness} className="size-3.5 shrink-0" />
-              <button
+              <Button
+                variant="ghost"
+                size="sm"
                 type="button"
                 onClick={() => onOpenSession(session.id)}
-                className="min-w-0 flex-1 truncate text-left text-[13px] hover:text-content"
               >
                 {sessionDisplayTitle(session.title, session.harness)}
-              </button>
+              </Button>
               <span className="shrink-0 text-[11px] text-content/35 tabular-nums">
                 {formatDate(session.updatedAt)}
               </span>

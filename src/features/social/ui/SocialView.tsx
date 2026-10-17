@@ -1,3 +1,10 @@
+import { Badge } from "../../../shared/ui/Badge";
+import { NativeSelect } from "../../../shared/ui/Select";
+import { Button } from "../../../shared/ui/Button";
+import { Skeleton } from "../../../shared/ui/Skeleton";
+import { t } from "../../../shared/i18n";
+import { TextField } from "../../../shared/ui/TextField";
+import { Checkbox } from "../../../shared/ui/Checkbox";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useQueryVisible } from "../../../shared/hooks/useQueryVisible";
 import { socialQueryScope } from "../model/socialQuery";
@@ -486,7 +493,7 @@ export function SocialView({
         {besideRail ? null : <OverlayNav onBack={onClose} onToggleSidebar={onToggleSidebar} />}
         <ToolHeader>
           <div className="flex min-w-0 flex-1 items-center gap-2 px-3 text-[13px]">
-            <Globe className="size-3.5 text-content/45" aria-hidden />
+            <Globe className="size-3.5 text-(--ui-text-secondary)" aria-hidden />
             <span>Sosyal Medya</span>
           </div>
         </ToolHeader>
@@ -498,21 +505,20 @@ export function SocialView({
             <h1 id="social-title">{tab}</h1>
           </div>
           <div className="social-header-controls">
-            <label className="social-header-field">
+            <div className="social-header-field">
               <span>Bağlantı</span>
-              <select
-                aria-label="Yetkili host"
+              <SearchableSelect
                 value={machineId}
                 disabled={busy}
-                onChange={(event) => setMachineId(event.target.value)}
-              >
-                {machines.map((machine) => (
-                  <option key={machine.id} value={machine.id}>
-                    {isLocalSyncMachine(machine) ? "Bu bilgisayar" : machine.name}
-                  </option>
-                ))}
-              </select>
-            </label>
+                label={t("Yetkili host")}
+                options={machines.map((machine) => ({
+                  value: machine.id,
+                  label: isLocalSyncMachine(machine) ? "Bu bilgisayar" : machine.name,
+                }))}
+                onChange={(nextValue) => setMachineId(nextValue)}
+                searchLocale="tr"
+              />
+            </div>
             <div className="social-header-field social-project-filter">
               <span>Proje</span>
               <SearchableSelect
@@ -536,27 +542,37 @@ export function SocialView({
               />
             </div>
             {activeProject && !filter ? (
-              <button
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
                 onClick={() => {
                   setFilter(activeProject);
                   setOffsets({});
                 }}
               >
                 Bu proje
-              </button>
+              </Button>
             ) : null}
-            <button
+            <Button
+              variant="secondary"
+              size="sm"
+              loading={busy || loading}
               type="button"
-              disabled={busy || !scoped}
-              aria-label="İşlem geçmişini aç"
               onClick={openHistory}
             >
               İşlem geçmişi
-            </button>
+            </Button>
           </div>
           <div className="social-header-actions">
-            <button
-              className="social-icon-button"
+            <Button
+              type="button"
+              iconOnly
+              size="sm"
+              label="Yenile"
+              variant="ghost"
+              loading={busy || refreshing}
+
               disabled={busy || refreshing || !machineId}
               aria-label="Yenile"
               title={refreshing ? "Yenileniyor…" : "Yenile"}
@@ -566,25 +582,30 @@ export function SocialView({
                 void refresh(machineId, true);
               }}
             >
-              <span className="social-sr-only">{refreshing ? "Yenileniyor…" : "Yenile"}</span>
-              <RefreshCw aria-hidden="true" />
-            </button>
-            <button
-              className="social-icon-button"
+              <RefreshCw className="size-4" aria-hidden="true" />
+            </Button>
+            <Button
+              type="button"
+              iconOnly
+              size="sm"
+              label="Sosyal Medya ekranını kapat"
+              variant="ghost"
+
               aria-label="Sosyal Medya ekranını kapat"
               title="Sosyal Medya ekranını kapat"
               onClick={onClose}
             >
-              <span className="social-sr-only">Geri</span>
-              <X aria-hidden="true" />
-            </button>
+              <X className="size-4" aria-hidden="true" />
+            </Button>
           </div>
         </header>
         <nav aria-label="Sosyal Medya bölümleri" className="social-tabs">
           {tabs.map((item) => {
             const Icon = tabIcons[item];
             return (
-              <button
+              <Button
+                type="button"
+                variant="tab"
                 key={item}
                 title={item}
                 aria-current={tab === item ? "page" : undefined}
@@ -597,25 +618,25 @@ export function SocialView({
               >
                 <Icon className="social-nav-icon" aria-hidden="true" />
                 <span className="social-nav-label">{item}</span>
-                {item !== "Ayarlar" ? (
+                {item !== "Ayarlar" && scoped ? (
                   <span aria-hidden="true" className="social-nav-count">
-                    {scoped
-                      ? {
-                          Hesaplar: scoped.accounts.length,
-                          Kampanyalar: scoped.pages?.campaigns?.total ?? scoped.campaigns.length,
-                          "Gelen Kutusu": scoped.pages?.threads?.total ?? scoped.threads.length,
-                          "Hedef Kitle": scoped.pages?.contacts?.total ?? scoped.contacts.length,
-                          Otomasyonlar:
-                            (scoped.pages?.rules?.total ?? scoped.rules.length) +
-                            (scoped.pages?.publishingPlans?.total ??
-                              scoped.publishingPlans?.length ??
-                              0),
-                          Ayarlar: 0,
-                        }[item]
-                      : "—"}
+                    {
+                      {
+                        Hesaplar: scoped.accounts.length,
+                        Kampanyalar: scoped.pages?.campaigns?.total ?? scoped.campaigns.length,
+                        "Gelen Kutusu": scoped.pages?.threads?.total ?? scoped.threads.length,
+                        "Hedef Kitle": scoped.pages?.contacts?.total ?? scoped.contacts.length,
+                        Otomasyonlar:
+                          (scoped.pages?.rules?.total ?? scoped.rules.length) +
+                          (scoped.pages?.publishingPlans?.total ??
+                            scoped.publishingPlans?.length ??
+                            0),
+                        Ayarlar: 0,
+                      }[item]
+                    }
                   </span>
                 ) : null}
-              </button>
+              </Button>
             );
           })}
         </nav>
@@ -635,8 +656,9 @@ export function SocialView({
                 : "Bağlantı kurulamadı"}
           </span>
           {snapshot ? (
-            <span
-              className="social-mode-badge"
+            <Badge
+              tone="neutral"
+              size="sm"
               data-enabled={snapshot.sendingEnabled && !snapshot.stopped}
             >
               {snapshot.stopped
@@ -644,12 +666,13 @@ export function SocialView({
                 : snapshot.sendingEnabled
                   ? "Onaylı gönderimler açık"
                   : "Taslak modu · gönderim kapalı"}
-            </span>
+            </Badge>
           ) : null}
           {snapshot ? (
-            <button
+            <Button
+              variant="secondary"
               type="button"
-              className="social-status-action"
+              size="sm"
               onClick={() => {
                 setTab("Otomasyonlar");
                 setAutomationMode("sending");
@@ -659,7 +682,7 @@ export function SocialView({
               }}
             >
               Gönderim kontrolleri
-            </button>
+            </Button>
           ) : null}
           <details className="social-status-details">
             <summary>Çalışma bilgisi</summary>
@@ -689,7 +712,10 @@ export function SocialView({
             <Notice kind="error" title={error ? "İşlem tamamlanamadı" : "Bağlantı yenilenemedi"}>
               {error || loadError}
             </Notice>
-            <button
+            <Button
+              type="button"
+              variant="secondary"
+              loading={busy}
               disabled={busy || loading}
               onClick={() => {
                 if (error) setError("");
@@ -698,7 +724,7 @@ export function SocialView({
               }}
             >
               {error ? "Bildirimi kapat" : "Tekrar dene"}
-            </button>
+            </Button>
           </div>
         ) : null}
         <main className="social-main" aria-busy={loading || busy || refreshing}>
@@ -762,8 +788,8 @@ export function SocialView({
             loading || refreshing || !!scoped ? (
               <div className="social-initial-loading">
                 <Notice kind="loading" title="Sosyal medya çalışma alanı yükleniyor" />
-                <div className="social-skeleton" aria-hidden="true" />
-                <div className="social-skeleton" aria-hidden="true" />
+                <Skeleton className="social-skeleton" aria-hidden="true" />
+                <Skeleton className="social-skeleton" aria-hidden="true" />
               </div>
             ) : (
               <Empty title="Host bağlantısı gerekli">
@@ -822,20 +848,22 @@ function WorkspacePagination({
               {collectionLabels[collection]} · {page.total ? page.offset + 1 : 0}–
               {Math.min(page.offset + page.limit, page.total)} / {page.total}
             </span>
-            <button
+            <Button
+              variant="secondary"
               type="button"
               disabled={disabled || page.offset === 0}
               onClick={() => onPage(collection, Math.max(0, page.offset - page.limit))}
             >
               Önceki sayfa
-            </button>
-            <button
+            </Button>
+            <Button
+              variant="secondary"
               type="button"
               disabled={disabled || page.offset + page.limit >= page.total}
               onClick={() => onPage(collection, page.offset + page.limit)}
             >
               Sonraki sayfa
-            </button>
+            </Button>
           </div>
         );
       })}
@@ -924,14 +952,15 @@ function WorkspacePanels({
               ["sending", "Gönderim kontrolleri"],
               ["history", "İşlem geçmişi"],
             ].map(([value, label]) => (
-              <button
+              <Button
+                variant="tab"
                 type="button"
                 key={value}
                 aria-pressed={automationMode === value}
                 onClick={() => onAutomationMode(value)}
               >
                 {label}
-              </button>
+              </Button>
             ))}
           </div>
           {host.snapshots.has("plans") ? (
@@ -1083,7 +1112,7 @@ function Accounts({
         const value = await client.oauthStatus(selected);
         signal.throwIfAborted();
         return value;
-      } catch (error) {
+      } catch {
         signal.throwIfAborted();
         return {
           status: "failed",
@@ -1173,7 +1202,7 @@ function Accounts({
         >
           <label>
             Platform
-            <select
+            <NativeSelect
               value={platform}
               onChange={(event) => setPlatform(event.target.value as SocialAccount["platform"])}
             >
@@ -1182,15 +1211,15 @@ function Accounts({
                   {names[id]}
                 </option>
               ))}
-            </select>
+            </NativeSelect>
           </label>
           <label>
             Hesap adı
-            <input name="name" required maxLength={200} />
+            <TextField hideLabel label="" name="name" required maxLength={200} />
           </label>
           <label>
             Hesap türü
-            <select name="type" key={platform}>
+            <NativeSelect name="type" key={platform}>
               {(platform === "x"
                 ? [["member", "Kullanıcı"]]
                 : platform === "instagram"
@@ -1208,16 +1237,16 @@ function Accounts({
                   {label}
                 </option>
               ))}
-            </select>
+            </NativeSelect>
           </label>
           <Projects
             projects={projects}
             selected={selectedProjects}
             onChange={setSelectedProjects}
           />
-          <button type="submit" className="social-primary">
+          <Button variant="primary" type="submit">
             Hesap ekle
-          </button>
+          </Button>
           {!selectedProjects.length ? (
             <small>
               Bir proje seçerseniz bu proje hesapta okuma ve taslak hazırlama izni alır.
@@ -1235,7 +1264,9 @@ function Accounts({
           ) : null}
           <div className="social-list">
             {snapshot.accounts.map((item) => (
-              <button
+              <Button
+                type="button"
+                variant="tab"
                 className="social-row"
                 aria-pressed={selected === item.id}
                 key={item.id}
@@ -1260,7 +1291,7 @@ function Accounts({
                       )}
                   {item.paused ? " · Durduruldu" : ""}
                 </span>
-              </button>
+              </Button>
             ))}
           </div>
         </section>
@@ -1280,16 +1311,17 @@ function Accounts({
                 </span>
                 {account.connected && onNavigate ? (
                   <div className="social-actions">
-                    <button
+                    <Button
+                      variant="primary"
                       type="button"
-                      className="social-primary"
+
                       onClick={() => onNavigate("Otomasyonlar")}
                     >
                       Paylaşım planla
-                    </button>
-                    <button type="button" onClick={onOpenHistory}>
+                    </Button>
+                    <Button variant="secondary" type="button" onClick={onOpenHistory}>
                       Geçmişi gör
-                    </button>
+                    </Button>
                   </div>
                 ) : null}
               </div>
@@ -1315,8 +1347,7 @@ function Accounts({
                     askıya alabilir.
                   </Notice>
                   <label className="social-inline-check">
-                    <input
-                      type="checkbox"
+                    <Checkbox
                       checked={browserRisk}
                       onChange={(event) => setBrowserRisk(event.target.checked)}
                     />
@@ -1330,8 +1361,10 @@ function Accounts({
                     </p>
                   ) : null}
                   <div className="social-actions">
-                    <button
-                      className="social-primary"
+                    <Button
+                      type="button"
+                      variant="primary"
+
                       disabled={
                         !browserRisk ||
                         !browserAvailability?.available ||
@@ -1349,8 +1382,10 @@ function Accounts({
                       {account.connected && account.connection === "browser"
                         ? "Tarayıcıda yeniden giriş yap"
                         : "Tarayıcıda X'e giriş yap"}
-                    </button>
-                    <button
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="secondary"
                       onClick={() =>
                         void run(async () => {
                           setBrowserAvailability(await client.browserAvailability());
@@ -1359,7 +1394,7 @@ function Accounts({
                       }
                     >
                       Tarayıcı bağlantısını kontrol et
-                    </button>
+                    </Button>
                   </div>
                   {browser && browser.status !== "idle" ? (
                     <p role="status">
@@ -1458,8 +1493,7 @@ function Accounts({
                       .filter((capability) => capability.status !== "unsupported")
                       .map((capability) => (
                         <label key={capability.operation}>
-                          <input
-                            type="checkbox"
+                          <Checkbox
                             checked={oauthOperations.includes(capability.operation)}
                             onChange={(event) =>
                               setOAuthOperations((current) =>
@@ -1480,7 +1514,9 @@ function Accounts({
                   {account.accountType === "organization" ? (
                     <label>
                       LinkedIn organizasyon ID
-                      <input
+                      <TextField
+                        hideLabel
+                        label=""
                         inputMode="numeric"
                         value={resourceId}
                         onChange={(event) => setResourceId(event.target.value)}
@@ -1488,8 +1524,10 @@ function Accounts({
                     </label>
                   ) : null}
                   <div className="social-actions">
-                    <button
-                      className="social-primary"
+                    <Button
+                      type="button"
+                      variant="primary"
+
                       disabled={
                         !oauthOperations.length ||
                         !!availabilityError ||
@@ -1512,14 +1550,16 @@ function Accounts({
                       }
                     >
                       {account.connected ? "Tarayıcıda yeniden bağla" : "Tarayıcıda bağla"}
-                    </button>
-                    <button
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="secondary"
                       onClick={() =>
                         void run(async () => setOAuth(await client.oauthStatus(account.id)))
                       }
                     >
                       Bağlantıyı kontrol et
-                    </button>
+                    </Button>
                   </div>
                   {oauth && availability[account.platform]?.configured ? (
                     <div className="social-connection" role="status">
@@ -1537,7 +1577,9 @@ function Accounts({
                           )[oauth.status]}
                       </p>
                       {(oauth.candidates ?? []).map((candidate) => (
-                        <button
+                        <Button
+                          type="button"
+                          variant="secondary"
                           key={candidate.id}
                           onClick={() =>
                             void run(async () => {
@@ -1547,14 +1589,16 @@ function Accounts({
                           }
                         >
                           {candidate.name} · Bağla
-                        </button>
+                        </Button>
                       ))}
                     </div>
                   ) : null}
                 </Collapsible>
               )}
               <div className="social-actions">
-                <button
+                <Button
+                  type="button"
+                  variant="secondary"
                   onClick={() =>
                     void run(() =>
                       client.request("accounts.pause", {
@@ -1565,10 +1609,15 @@ function Accounts({
                   }
                 >
                   {account.paused ? "Hesabı devam ettir" : "Hesabı durdur"}
-                </button>
-                <button disabled={!account.connected} onClick={() => setDisconnecting(true)}>
+                </Button>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  disabled={!account.connected}
+                  onClick={() => setDisconnecting(true)}
+                >
                   Bağlantıyı kaldır
-                </button>
+                </Button>
               </div>
               {disconnecting ? (
                 <div className="social-confirm" role="group" aria-label="Bağlantıyı kaldırma onayı">
@@ -1577,7 +1626,9 @@ function Accounts({
                     duracak.
                   </p>
                   <div className="social-actions">
-                    <button
+                    <Button
+                      type="button"
+                      variant="secondary"
                       onClick={() =>
                         void (async () => {
                           if (
@@ -1592,8 +1643,14 @@ function Accounts({
                       }
                     >
                       Bağlantıyı kaldırmayı onayla
-                    </button>
-                    <button onClick={() => setDisconnecting(false)}>Vazgeç</button>
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      onClick={() => setDisconnecting(false)}
+                    >
+                      Vazgeç
+                    </Button>
                   </div>
                 </div>
               ) : null}
@@ -1645,19 +1702,19 @@ function Accounts({
                   <h3>Proje izinleri</h3>
                   <label>
                     Proje
-                    <select
+                    <SearchableSelect
                       value={grantProject}
-                      onChange={(event) => {
-                        setGrantProject(event.target.value);
-                        setGrantPermissions(account.grants[event.target.value] ?? []);
+                      label={"Proje"}
+                      options={projects.map((project) => ({
+                        value: project.id,
+                        label: project.name,
+                      }))}
+                      onChange={(nextValue) => {
+                        setGrantProject(nextValue);
+                        setGrantPermissions(account.grants[nextValue] ?? []);
                       }}
-                    >
-                      {projects.map((project) => (
-                        <option key={project.id} value={project.id}>
-                          {project.name}
-                        </option>
-                      ))}
-                    </select>
+                      searchLocale="tr"
+                    />
                   </label>
                   <fieldset className="social-checks">
                     <legend>Okuma ve gönderim ayrı izinlerdir</legend>
@@ -1670,8 +1727,7 @@ function Accounts({
                       ["comment", "Yorum yap"],
                     ].map(([id, label]) => (
                       <label key={id}>
-                        <input
-                          type="checkbox"
+                        <Checkbox
                           checked={grantPermissions.includes(id)}
                           onChange={(event) =>
                             setGrantPermissions(
@@ -1685,7 +1741,9 @@ function Accounts({
                       </label>
                     ))}
                   </fieldset>
-                  <button disabled={!grantProject}>İzinleri kaydet</button>
+                  <Button type="submit" variant="secondary" disabled={!grantProject}>
+                    İzinleri kaydet
+                  </Button>
                   <p className="social-muted">
                     Mevcut izinler:{" "}
                     {Object.entries(account.grants)

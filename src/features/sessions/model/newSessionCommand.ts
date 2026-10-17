@@ -8,7 +8,7 @@ export const CLEAR_SESSION_COMMAND: BuiltinSkill = {
   name: "clear",
   invocation: "clear",
   get description() {
-    return t("Start fresh");
+    return t("Clear conversation");
   },
   scope: "builtin",
   source: "bycoda",

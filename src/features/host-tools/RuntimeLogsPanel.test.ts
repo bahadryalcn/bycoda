@@ -89,7 +89,7 @@ const result = (events = entries, cursor = 4): RuntimeLogSnapshot => ({
 });
 const button = (label: string) =>
   [...container.querySelectorAll<HTMLButtonElement>("button")].find(
-    (node) => node.textContent === label,
+    (node) => node.textContent === label || node.getAttribute("aria-label") === label,
   )!;
 const rows = () => [...container.querySelectorAll<HTMLElement>(".runtime-log-row")];
 // Groups are ordered by their latest occurrence, so find rows by content.
@@ -205,7 +205,7 @@ it("keeps automatic refresh out of the user-action busy indicator", async () => 
   await act(async () => finish(result([], 4)));
 });
 
-it("starts live reads on mount and exposes capture and filters inline without opening a browser", async () => {
+it("starts live reads on mount and exposes capture and compact filters without opening a browser", async () => {
   await mount({}, false);
   expect(hostToolRequest).toHaveBeenCalledWith(
     "/repo",
@@ -218,7 +218,10 @@ it("starts live reads on mount and exposes capture and filters inline without op
   expect(container.querySelector(".runtime-logs-monitor-setup")!.tagName).toBe("SECTION");
   expect(container.querySelector('[role="dialog"]')).toBeNull();
   expect(container.querySelector(".runtime-logs-options")).toBeNull();
-  expect(container.querySelectorAll(".runtime-logs-levels button")).toHaveLength(7);
+  await act(async () => button("Filters").click());
+  expect(document.querySelector('[role="dialog"][aria-label="Log filters"]')).not.toBeNull();
+  expect(document.querySelector('button[aria-label="Log level: All levels"]')).not.toBeNull();
+  await act(async () => button("Filters").click());
   expect(hostFeatureRequest).toHaveBeenCalledWith(
     "/repo",
     "runtime.logs.monitors",
@@ -258,7 +261,7 @@ it("explains an unavailable website while retaining technical details and the en
       .querySelector("form")!
       .dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })),
   );
-  expect(container.querySelector('[role="alert"] > p')?.textContent).toBe(
+  expect(container.querySelector('[role="alert"] p')?.textContent).toBe(
     "Website is not running. Start it in Development servers, then try again.",
   );
   expect(container.querySelector('[role="alert"] pre')?.textContent).toContain(
@@ -294,16 +297,15 @@ it("starts independent URL monitors explicitly and displays their target and sto
   );
   expect(container.textContent).toContain("http://localhost:5173/");
   expect(
-    container
-      .querySelector('.runtime-logs-source-switch button[data-source="all"]')
-      ?.getAttribute("aria-pressed"),
-  ).toBe("true");
+    container.querySelector('button[aria-label="Filters"]')?.getAttribute("data-selected"),
+  ).not.toBe("true");
   expect(rows().some((row) => row.textContent?.includes("Cache miss"))).toBe(true);
   await act(async () =>
     container.querySelector<HTMLButtonElement>(".runtime-logs-monitor-name")!.click(),
   );
+  await act(async () => button("Filters").click());
   expect(
-    container.querySelector('button[aria-label^="Log source:"]')!.getAttribute("aria-label"),
+    document.querySelector('button[aria-label^="Log source:"]')?.getAttribute("aria-label"),
   ).toBe("Log source: Preview");
   vi.mocked(hostFeatureRequest).mockResolvedValueOnce({ stopped: true }).mockResolvedValueOnce([]);
   await act(async () => button("Stop monitor").click());
@@ -319,17 +321,29 @@ it("filters the unified retained timeline without sending view filters to cursor
   await mount();
   expect(rows()).toHaveLength(3);
   expect(container.querySelector(".runtime-log-count")?.textContent).toBe("×2");
+  await act(async () => button("Filters").click());
   await act(async () =>
-    [...container.querySelectorAll<HTMLButtonElement>("[aria-pressed]")]
-      .find((node) => node.dataset.source === "server")!
+    [...document.querySelectorAll<HTMLButtonElement>('[role="radio"]')]
+      .find((node) => node.textContent?.includes("Server"))!
       .click(),
   );
   expect(rows()).toHaveLength(1);
   expect(rows()[0].textContent).toContain("Cache miss");
   await act(async () =>
-    container.querySelector<HTMLButtonElement>('[aria-pressed][data-source="all"]')!.click(),
+    [...document.querySelectorAll<HTMLButtonElement>('[role="radio"]')]
+      .find((node) => node.textContent?.startsWith("All"))!
+      .click(),
   );
-  await act(async () => button("INFO").click());
+  await act(async () =>
+    document
+      .querySelector<HTMLButtonElement>('button[aria-label="Log level: All levels"]')!
+      .click(),
+  );
+  await act(async () =>
+    [...document.querySelectorAll<HTMLButtonElement>('[role="option"]')]
+      .find((node) => node.textContent === "INFO")!
+      .click(),
+  );
   await act(async () => {
     edit("Search logs", "42");
   });
@@ -444,7 +458,7 @@ it("keeps retained logs readable when the host disconnects and recovers with Ref
   vi.mocked(hostToolRequest).mockRejectedValueOnce(new Error("Host is offline"));
   await act(async () => vi.advanceTimersByTimeAsync(1_500));
   expect(container.textContent).toContain("Disconnected");
-  expect(container.querySelector('[role="alert"] > p')?.textContent).toBe(
+  expect(container.querySelector('[role="alert"] p')?.textContent).toBe(
     "Could not read logs. Check the host connection and retry.",
   );
   expect(container.querySelector('[role="alert"] pre')?.textContent).toBe("Host is offline");

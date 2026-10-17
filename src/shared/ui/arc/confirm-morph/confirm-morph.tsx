@@ -29,8 +29,9 @@ import {
   useTransform,
 } from "motion/react";
 import type { AnimationPlaybackControls, MotionValue, Transition, Variants } from "motion/react";
-import { CircleAlert, LoaderCircle } from "lucide-react";
+import { CircleAlert } from "lucide-react";
 import { motionTokens } from "../lib/motion-tokens";
+import { Button } from "../../Button";
 import styles from "./confirm-morph.module.css";
 
 /** Where the control is in its life: resting, asking, working, finished, or failed. */
@@ -145,7 +146,7 @@ const faceVariants: Variants = {
   },
 };
 const partVariants: Variants = {
-  hidden: { opacity: 0,},
+  hidden: { opacity: 0 },
   shown: { opacity: 1, transition: { duration: 0.26, ease: enter } },
 };
 const reducedFace: Variants = {
@@ -274,11 +275,9 @@ function Seconds({ value, reduced }: { value: number; reduced: boolean }) {
         <motion.span
           key={value}
           className={styles.digit}
-          initial={
-            reduced ? { opacity: 0 } : { opacity: 0, y: 6,}
-          }
-          animate={{ opacity: 1, y: 0,}}
-          exit={reduced ? { opacity: 0 } : { opacity: 0, y: -6,}}
+          initial={reduced ? { opacity: 0 } : { opacity: 0, y: 6 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={reduced ? { opacity: 0 } : { opacity: 0, y: -6 }}
           transition={{ duration: 0.22, ease: enter }}
         >
           {value}
@@ -374,6 +373,8 @@ export function ConfirmMorph({
 
   const perform = useCallback(
     async (kind: "confirm" | "undo") => {
+      if (live.current.state === "pending" || (kind === "confirm" && live.current.state === "done"))
+        return;
       const handler = kind === "confirm" ? onConfirm : onUndo;
       const token = ++run.current;
       setWorking(kind);
@@ -625,7 +626,14 @@ export function ConfirmMorph({
   const shownCountdown = countdownLabel ?? `${pendingLabel} in`;
   const confirmButton =
     confirmMode === "hold" ? (
-      <button
+      <Button
+        data-ui-focus="group"
+        motion="none"
+        size="sm"
+        shape="pill"
+        variant={tone === "neutral" ? "primary" : "secondary"}
+        tone={tone === "neutral" ? "accent" : "danger"}
+        selected={tone === "danger"}
         type="button"
         className={styles.confirm}
         data-autofocus
@@ -643,9 +651,16 @@ export function ConfirmMorph({
         <motion.span className={styles.fill} style={{ clipPath: fillClip }} aria-hidden="true">
           <span>{confirmLabel}</span>
         </motion.span>
-      </button>
+      </Button>
     ) : (
-      <button
+      <Button
+        data-ui-focus="group"
+        motion="none"
+        size="sm"
+        shape="pill"
+        variant={tone === "neutral" ? "primary" : "secondary"}
+        tone={tone === "neutral" ? "accent" : "danger"}
+        selected={tone === "danger"}
         type="button"
         className={styles.confirm}
         data-autofocus
@@ -655,7 +670,7 @@ export function ConfirmMorph({
         }}
       >
         {confirmLabel}
-      </button>
+      </Button>
     );
 
   const face = (() => {
@@ -667,9 +682,18 @@ export function ConfirmMorph({
               <span id={promptId}>{shownPrompt}</span>
             </Part>
             <Part reduced={reduced}>
-              <button type="button" className={styles.secondary} onClick={cancel}>
+              <Button
+                data-ui-focus="group"
+                motion="none"
+                size="sm"
+                shape="pill"
+                variant="ghost"
+                type="button"
+                className={styles.secondary}
+                onClick={cancel}
+              >
                 {cancelLabel}
-              </button>
+              </Button>
             </Part>
             <Part reduced={reduced}>{confirmButton}</Part>
             {confirmMode === "hold" && (
@@ -689,20 +713,34 @@ export function ConfirmMorph({
               </span>
             </Part>
             <Part reduced={reduced}>
-              <button type="button" className={styles.secondary} onClick={cancel}>
+              <Button
+                data-ui-focus="group"
+                motion="none"
+                size="sm"
+                shape="pill"
+                variant="ghost"
+                type="button"
+                className={styles.secondary}
+                onClick={cancel}
+              >
                 {cancelLabel}
-              </button>
+              </Button>
             </Part>
           </>
         );
       case "pending":
         return (
           <Part reduced={reduced} className={styles.status}>
-            <LoaderCircle
-              className={styles.spinner}
-              size={16}
-              strokeWidth={1.75}
+            <Button
+              data-ui-focus="group"
+              motion="none"
+              variant="ghost"
+              size="sm"
+              loading
+              iconOnly
+              label={working === "undo" ? undoingLabel : pendingLabel}
               aria-hidden="true"
+              tabIndex={-1}
             />
             <span className={styles.statusText}>
               {working === "undo" ? undoingLabel : pendingLabel}
@@ -718,14 +756,19 @@ export function ConfirmMorph({
             </Part>
             {onUndo && (
               <Part reduced={reduced}>
-                <button
+                <Button
+                  data-ui-focus="group"
+                  motion="none"
+                  size="sm"
+                  shape="pill"
+                  variant="ghost"
                   type="button"
                   className={styles.secondary}
                   data-autofocus
                   onClick={() => void perform("undo")}
                 >
                   {undoLabel}
-                </button>
+                </Button>
               </Part>
             )}
           </>
@@ -743,21 +786,31 @@ export function ConfirmMorph({
               <span className={styles.statusText}>{errorLabel}</span>
             </Part>
             <Part reduced={reduced}>
-              <button
+              <Button
+                data-ui-focus="group"
+                motion="none"
+                size="sm"
+                shape="pill"
+                variant="ghost"
                 type="button"
                 className={styles.secondary}
                 data-autofocus
                 onClick={() => void perform(working)}
               >
                 {retryLabel}
-              </button>
+              </Button>
             </Part>
           </>
         );
       default:
         return (
           <Part reduced={reduced}>
-            <button
+            <Button
+              data-ui-focus="group"
+              motion="none"
+              size="sm"
+              shape="pill"
+              variant="ghost"
               type="button"
               className={styles.trigger}
               data-autofocus
@@ -773,7 +826,7 @@ export function ConfirmMorph({
                 </span>
               )}
               <span>{label}</span>
-            </button>
+            </Button>
           </Part>
         );
     }
@@ -788,6 +841,7 @@ export function ConfirmMorph({
       data-tone={tone}
       data-mode={confirmMode}
       data-disabled={disabled || undefined}
+      data-ui-focus-group=""
       tabIndex={-1}
       onKeyDown={onKeyDown}
       aria-busy={state === "pending" || undefined}

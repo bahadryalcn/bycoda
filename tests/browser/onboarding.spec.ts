@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 const fixture = "/tests/browser/onboarding.html";
-const captures = "temp/verification/2026-10-13-onboarding";
+const captures = "temp/verification/2026-10-16-ui-system/W5a-CONNECTIONS";
 
 test("saves workspace and appearance choices, finishes directly and can reopen", async ({
   page,
@@ -26,15 +26,16 @@ test("saves workspace and appearance choices, finishes directly and can reopen",
         .evaluateAll((items) => items.every((item) => (item as HTMLCanvasElement).width > 100)),
     )
     .toBe(true);
-  await dialog.locator('input[name="onboarding-crew"][value="star-wars"]').check();
-  await dialog.locator('input[name="onboarding-appearance"][value="light"]').check();
+  await dialog.locator('input[name="onboarding-crew"][value="star-wars"]').locator("..").click();
+  await dialog.getByRole("radio", { name: "Light", exact: true }).click();
   await expect(page.locator("html")).toHaveClass(/theme-light/);
   await expect(dialog.locator('input[name="onboarding-crew"][value="none"]')).toBeInViewport();
   await expect(dialog.getByRole("checkbox", { name: "Decorative animations" })).toBeInViewport();
   await page.screenshot({ path: `${captures}/appearance-light.png` });
   await dialog.getByRole("button", { name: /3\s*Agents/ }).click();
   await expect(dialog.getByRole("heading", { name: "Connect your agents" })).toBeVisible();
-  await dialog.locator(".onboarding-provider-select select").selectOption("cursor");
+  await dialog.getByRole("button", { name: /^More providers:/ }).click();
+  await page.getByRole("option").filter({ hasText: "Cursor" }).click();
   await dialog.getByRole("button", { name: "Add provider" }).click();
   await expect(dialog.getByRole("checkbox", { name: "Use Cursor" })).toBeChecked();
   await page.screenshot({ path: `${captures}/providers-light.png` });
@@ -54,7 +55,7 @@ test("saves workspace and appearance choices, finishes directly and can reopen",
   ).not.toBeChecked();
   await dialog.getByRole("button", { name: /2\s*Appearance/ }).click();
   await expect(dialog.locator('input[name="onboarding-crew"][value="star-wars"]')).toBeChecked();
-  await expect(dialog.locator('input[name="onboarding-appearance"][value="light"]')).toBeChecked();
+  await expect(dialog.getByRole("radio", { name: "Light", exact: true })).toBeChecked();
   await dialog.getByRole("button", { name: /3\s*Agents/ }).click();
   await expect(dialog.getByRole("checkbox", { name: "Use Cursor" })).toBeChecked();
   expect(errors).toEqual([]);
@@ -71,12 +72,12 @@ test("keeps navigation and footer accessible at narrow and short viewports", asy
     await expect(
       dialog.getByRole("heading", { name: "Sana uygun bir çalışma alanı" }),
     ).toBeVisible();
-    await expect(dialog.locator(".onboarding-footer button.onboarding-primary")).toBeInViewport();
+    await expect(dialog.getByRole("button", { name: "Devam et", exact: true })).toBeInViewport();
     await expect(dialog.getByRole("button", { name: /5\s*Projeler/ })).toBeInViewport();
     await dialog.getByRole("button", { name: /2\s*Görünüm/ }).click();
-    await expect(dialog.locator(".onboarding-footer button.onboarding-primary")).toBeInViewport();
-    await dialog.locator('input[name="onboarding-crew"][value="none"]').check();
-    await expect(dialog.locator(".onboarding-footer button.onboarding-primary")).toBeInViewport();
+    await expect(dialog.getByRole("button", { name: "Devam et", exact: true })).toBeInViewport();
+    await dialog.locator('input[name="onboarding-crew"][value="none"]').locator("..").click();
+    await expect(dialog.getByRole("button", { name: "Devam et", exact: true })).toBeInViewport();
     await page.screenshot({ path: `${captures}/appearance-tr-${viewport.width}.png` });
     const bounds = await dialog.boundingBox();
     expect(bounds!.x).toBeGreaterThanOrEqual(0);

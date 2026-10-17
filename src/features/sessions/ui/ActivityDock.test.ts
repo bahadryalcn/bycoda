@@ -1,3 +1,4 @@
+import { visibleSessionTestText } from "./sessionUiTestText";
 // @vitest-environment happy-dom
 import { act, createElement, type ComponentProps } from "react";
 import { createRoot, type Root } from "react-dom/client";
@@ -157,7 +158,7 @@ describe("ActivityDock", () => {
       await act(async () => button.click());
       expect(onStopAgent).toHaveBeenCalledWith(expect.objectContaining({ callId: "a1" }));
       expect(stopButtons()[0].disabled).toBe(true);
-      expect(stopButtons()[0].textContent).toBe("Stopping…");
+      expect(visibleSessionTestText(stopButtons()[0])).toBe("Stopping…");
       finish();
     });
 
@@ -189,7 +190,7 @@ describe("ActivityDock", () => {
       expand();
       expect(stopButtons()).toHaveLength(0);
       const all = [...container.querySelectorAll("button")].find(
-        (button) => button.textContent === "Stop all",
+        (button) => visibleSessionTestText(button) === "Stop all",
       );
       expect(all?.title).toContain("Interrupt the whole turn");
       act(() => all?.click());
@@ -204,7 +205,7 @@ describe("ActivityDock", () => {
         onStopAgent: async () => {},
         onStopAll: async () => {},
       });
-      expect(container.textContent).toContain("Stop all background work");
+      expect(visibleSessionTestText(container)).toContain("Stop all background work");
     });
 
     it("shows a stopped agent as stopped by you, with nothing left to stop", () => {
@@ -222,7 +223,7 @@ describe("ActivityDock", () => {
       });
       expand();
       expect(stopButtons()).toHaveLength(0);
-      expect(container.textContent).not.toContain("Stop all");
+      expect(visibleSessionTestText(container)).not.toContain("Stop all");
       expect(container.querySelector("[data-dock-agent='a1']")?.textContent).toContain(
         "stopped by you",
       );

@@ -1,3 +1,5 @@
+import { SearchInput } from "../../../shared/ui/SearchInput";
+import { Button } from "../../../shared/ui/Button";
 import { t, useLocale } from "../../../shared/i18n";
 import { ChevronDown, ChevronRight } from "../../../shared/ui/icons";
 import {
@@ -73,6 +75,7 @@ export function CwdPicker({
 }: Props) {
   useLocale();
   const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
   const [moreOpen, setMoreOpen] = useState(false);
   const [active, setActive] = useState(0);
   const root = useRef<HTMLDivElement>(null);
@@ -87,9 +90,17 @@ export function CwdPicker({
   const label = prettyCwd(cwd);
   // Read the saved rail order on opening, including changes made while Notes is open.
   const projects = mode === "move" ? projectRailItems(recents, activeCwd ?? "") : recents;
-  const otherRecents = projects.filter((item) => !inProject || !sameProjectPath(item.path, cwd));
-  const previewRecents = mode === "move" ? otherRecents : otherRecents.slice(0, PREVIEW);
-  const overflowRecents = mode === "move" ? [] : otherRecents.slice(PREVIEW);
+  const otherRecents = projects.filter(
+    (item) =>
+      (!inProject || !sameProjectPath(item.path, cwd)) &&
+      (!query.trim() ||
+        `${basename(item.path)} ${item.path}`
+          .toLocaleLowerCase()
+          .includes(query.trim().toLocaleLowerCase())),
+  );
+  const previewRecents =
+    mode === "move" || query.trim() ? otherRecents : otherRecents.slice(0, PREVIEW);
+  const overflowRecents = mode === "move" || query.trim() ? [] : otherRecents.slice(PREVIEW);
   const hasMore = overflowRecents.length > 0;
 
   useEffect(() => {
@@ -108,6 +119,7 @@ export function CwdPicker({
 
   const dismiss = (restore = false) => {
     setOpen(false);
+    setQuery("");
     setMoreOpen(false);
     setActive(0);
     if (closeMoreTimer.current != null) {
@@ -143,7 +155,7 @@ export function CwdPicker({
     onCwdChange(row.path);
   };
 
-  const onKeyDown = (e: ReactKeyboardEvent<HTMLButtonElement>) => {
+  const onKeyDown = (e: ReactKeyboardEvent<HTMLElement>) => {
     if (!enabled) return;
     if (!open) {
       if (e.key === "ArrowDown" || e.key === "Enter" || e.key === " ") {
@@ -191,10 +203,13 @@ export function CwdPicker({
 
   return (
     <div ref={root} className={`relative flex h-full min-w-0${className ? ` ${className}` : ""}`}>
-      <button
+      <Button
+        variant="item"
+        motion="none"
         type="button"
         title={cwd}
         aria-label={t("Project {p0}", { p0: label })}
+        selected={open}
         aria-expanded={open}
         aria-haspopup="menu"
         disabled={!enabled}
@@ -210,13 +225,7 @@ export function CwdPicker({
         }}
         onKeyDown={onKeyDown}
         className={
-          buttonClassName
-            ? `${buttonClassName} ${
-                open ? "bg-selection text-content" : "hover:bg-content/5"
-              } disabled:opacity-40`
-            : `flex min-w-0 items-center gap-1.5 ${
-                open ? "text-content" : "text-content/50 hover:text-content"
-              } disabled:opacity-40`
+          buttonClassName ? `  ${buttonClassName}     ` : ` flex min-w-0 items-center gap-1.5    `
         }
       >
         {children ?? (
@@ -227,11 +236,11 @@ export function CwdPicker({
         )}
         {chevron ? (
           <ChevronDown
-            className={`size-3 shrink-0 text-content/50 ${open ? "rotate-180" : ""}`}
+            className={`size-3 shrink-0 text-[var(--ui-text-muted)] ${open ? "rotate-180" : ""}`}
             strokeWidth={1.75}
           />
         ) : null}
-      </button>
+      </Button>
       {open ? (
         <Popover
           anchor={root}
@@ -245,13 +254,26 @@ export function CwdPicker({
           data-cwd-picker
           className="flex flex-col overflow-hidden"
         >
+          <div className="shrink-0 p-2">
+            <SearchInput
+              standalone
+              aria-label={t("Search projects")}
+              value={query}
+              onChange={(event) => {
+                setQuery(event.target.value);
+                setActive(0);
+                setMoreOpen(false);
+              }}
+              onKeyDown={onKeyDown}
+            />
+          </div>
           <div ref={lockOverscroll} className="min-h-0 flex-1 overflow-y-auto overscroll-none py-1">
             {inProject ? (
               <>
-                <p className="px-2.5 pb-1 pt-2 text-[10px] uppercase tracking-widest text-content/50">
+                <p className="px-2.5 pb-1 pt-2 text-[10px] uppercase tracking-widest text-[var(--ui-text-muted)]">
                   {t("Current project")}
                 </p>
-                <div className="px-2.5 py-1.5 text-content/50">
+                <div className="px-2.5 py-1.5 text-[var(--ui-text-muted)]">
                   <p className="truncate text-[13px] text-content">
                     {renderProjectLabel?.(cwd) ?? basename(cwd)}
                   </p>
@@ -261,17 +283,20 @@ export function CwdPicker({
             ) : null}
             {previewRecents.length > 0 || mode === "move" ? (
               <>
-                <p className="px-2.5 pb-1 pt-2 text-[10px] uppercase tracking-widest text-content/50">
+                <p className="px-2.5 pb-1 pt-2 text-[10px] uppercase tracking-widest text-[var(--ui-text-muted)]">
                   {mode === "move" ? t("Move to project") : t("Recent projects")}
                 </p>
                 {mode === "move" && previewRecents.length === 0 ? (
-                  <p className="px-2.5 py-2 text-[13px] text-content/50">
+                  <p className="px-2.5 py-2 text-[13px] text-[var(--ui-text-muted)]">
                     {t("No other projects")}
                   </p>
                 ) : null}
                 {previewRecents.map((item, index) => (
-                  <button
+                  <Button
+                    variant="item"
+                    motion="none"
                     key={item.path}
+                    selected={active === index}
                     ref={active === index ? activeRef : undefined}
                     type="button"
                     role="menuitem"
@@ -282,24 +307,25 @@ export function CwdPicker({
                       setActive(index);
                     }}
                     onClick={() => pick({ kind: "recent", path: item.path })}
-                    className={`flex w-full items-center justify-between gap-3 px-2.5 py-2 text-left ${
-                      active === index
-                        ? "bg-selection text-content"
-                        : "text-content/80 hover:bg-content/5"
-                    }`}
+                    className={` flex w-full items-center justify-between gap-3 text-left  ${
+                      active === index ? "" : ""
+                    }  `}
                   >
                     <span className="min-w-0 truncate text-[13px]">
                       {renderProjectLabel?.(item.path) ?? basename(item.path)}
                     </span>
-                    <span className="max-w-28 shrink-0 truncate font-mono text-[11px] text-content/45">
+                    <span className="max-w-28 shrink-0 truncate font-mono text-[11px] text-[var(--ui-text-muted)]">
                       {prettyParent(item.path)}
                     </span>
-                  </button>
+                  </Button>
                 ))}
               </>
             ) : null}
             {hasMore ? (
-              <button
+              <Button
+                variant="item"
+                motion="none"
+                selected={active === moreIndex || moreOpen}
                 ref={moreRef}
                 type="button"
                 role="menuitem"
@@ -315,20 +341,20 @@ export function CwdPicker({
                   setActive(moreIndex);
                   openMore();
                 }}
-                className={`flex w-full items-center justify-between gap-3 px-2.5 py-2 text-left ${
-                  active === moreIndex || moreOpen
-                    ? "bg-selection text-content"
-                    : "text-content/80 hover:bg-content/5"
-                }`}
+                className={` flex w-full items-center justify-between gap-3 text-left  ${
+                  active === moreIndex || moreOpen ? "" : ""
+                }  `}
               >
                 <span className="text-[13px]">{t("More Projects")}</span>
                 <ChevronRight className="size-3.5 shrink-0" strokeWidth={1.75} />
-              </button>
+              </Button>
             ) : null}
           </div>
           {onNewTerminal ? (
             <div className="shrink-0 border-t border-stroke py-1">
-              <button
+              <Button
+                variant="item"
+                motion="none"
                 type="button"
                 role="menuitem"
                 onMouseDown={(e) => e.stopPropagation()}
@@ -336,16 +362,17 @@ export function CwdPicker({
                   setMoreOpen(false);
                   setActive(newTerminalIndex);
                 }}
+                selected={active === newTerminalIndex}
                 onClick={() => pick({ kind: "new-terminal" })}
-                className={`flex w-full items-center justify-between gap-3 px-2.5 py-2 text-left ${
-                  active === newTerminalIndex
-                    ? "bg-selection text-content"
-                    : "text-content/80 hover:bg-content/5"
-                }`}
+                className={` flex w-full items-center justify-between gap-3 text-left  ${
+                  active === newTerminalIndex ? "" : ""
+                }  `}
               >
                 <span className="text-[13px]">{t("New terminal")}</span>
-                <span className="shrink-0 font-mono text-[11px] text-content/45">{MOD}`</span>
-              </button>
+                <span className="shrink-0 font-mono text-[11px] text-[var(--ui-text-muted)]">
+                  {MOD}`
+                </span>
+              </Button>
             </div>
           ) : null}
         </Popover>
@@ -366,22 +393,24 @@ export function CwdPicker({
           onMouseLeave={scheduleCloseMore}
         >
           {overflowRecents.map((item) => (
-            <button
+            <Button
+              variant="item"
+              motion="none"
               key={item.path}
               type="button"
               role="menuitem"
               title={item.path}
               onMouseDown={(e) => e.stopPropagation()}
               onClick={() => pick({ kind: "recent", path: item.path })}
-              className="flex w-full items-center justify-between gap-3 px-2.5 py-2 text-left text-content/80 hover:bg-content/5 hover:text-content"
+              className="flex w-full items-center justify-between gap-3 text-left"
             >
               <span className="min-w-0 truncate text-[13px]">
                 {renderProjectLabel?.(item.path) ?? basename(item.path)}
               </span>
-              <span className="max-w-28 shrink-0 truncate font-mono text-[11px] text-content/45">
+              <span className="max-w-28 shrink-0 truncate font-mono text-[11px] text-[var(--ui-text-muted)]">
                 {prettyParent(item.path)}
               </span>
-            </button>
+            </Button>
           ))}
         </Popover>
       ) : null}

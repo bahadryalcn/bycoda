@@ -1,5 +1,17 @@
-.button { position: relative; display: inline-flex; min-height: var(--control-height-md); align-items: center; justify-content: center; gap: var(--space-2); border: 1px solid transparent; border-radius: var(--radius-control); padding: 0 var(--space-4); font: inherit; font-size: var(--text-sm); font-weight: 500; line-height: var(--leading-body); white-space: nowrap; cursor: pointer; -webkit-tap-highlight-color: transparent; transition: color var(--duration-fast) var(--ease-standard), background var(--duration-fast) var(--ease-standard), border-color var(--duration-fast) var(--ease-standard), opacity var(--duration-fast) var(--ease-standard), box-shadow var(--duration-fast) var(--ease-standard); }
-.button:disabled { cursor: not-allowed; opacity: .52; }
+/* Pin Tailwind's layer order even when this module loads before the global stylesheet;
+   otherwise `components` would precede `base` and Preflight's button reset would win. */
+@layer theme, base, components, utilities;
+/* Box layout and typography are layered so consumer utilities (Tailwind `@layer utilities`)
+   can size, align, hide, reveal or retype a control. Presentation stays unlayered and owned by Arc. */
+@layer components {
+  .button { font: inherit; font-size: var(--text-sm); font-weight: 500; line-height: var(--leading-body); cursor: pointer; position: relative; display: inline-flex; min-height: var(--control-height-md); align-items: center; justify-content: center; gap: var(--space-2); padding: 0 var(--space-4); white-space: nowrap; }
+  .sm { min-height: var(--control-height-sm); padding-inline: var(--space-3); font-size: var(--text-sm); }
+  .md { min-height: var(--control-height-md); }
+  .lg { min-height: var(--control-height-lg); padding-inline: var(--space-5); font-size: var(--text-sm); }
+}
+.button { border: 1px solid transparent; border-radius: var(--radius-control); -webkit-tap-highlight-color: transparent; transition: color var(--duration-fast) var(--ease-standard), background var(--duration-fast) var(--ease-standard), border-color var(--duration-fast) var(--ease-standard), opacity var(--duration-fast) var(--ease-standard), box-shadow var(--duration-fast) var(--ease-standard); }
+.button:disabled { opacity: .52; }
+@layer components { .button:disabled { cursor: not-allowed; } }
 .button[aria-busy="true"] { cursor: progress; }
 /* Anchors of floating layers never scale: Radix opens on pointerdown and would measure a shrunken trigger. */
 .button:is([aria-haspopup]:not([aria-haspopup="false"]), [data-state], [role="combobox"]) { transform: none !important; }
@@ -28,9 +40,6 @@
 .primary:active:not(:disabled) { opacity: .84; }
 .secondary:active:not(:disabled), .ghost:active:not(:disabled) { color: var(--foreground); background: var(--surface-muted); }
 .danger:active:not(:disabled) { border-color: var(--danger); background: var(--surface-muted); }
-.sm { min-height: var(--control-height-sm); padding-inline: var(--space-3); font-size: var(--text-sm); }
-.md { min-height: var(--control-height-md); }
-.lg { min-height: var(--control-height-lg); padding-inline: var(--space-5); font-size: var(--text-sm); }
 .loader { position: absolute; left: 50%; top: 50%; display: grid; width: var(--space-4); height: var(--space-4); margin: calc(var(--space-4) / -2); }
 .spinner { border: 1.5px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: spin .7s linear infinite; }
 .loadingLabel { opacity: 0; }

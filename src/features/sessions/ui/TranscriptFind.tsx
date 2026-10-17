@@ -1,3 +1,4 @@
+import { Button } from "../../../shared/ui/Button";
 import { SearchInput } from "../../../shared/ui/SearchInput";
 import { t, useLocale } from "../../../shared/i18n";
 import {
@@ -140,9 +141,9 @@ export const TranscriptFind = memo(function TranscriptFind({
       <div
         role="search"
         aria-label={t("Find in conversation")}
-        className="pointer-events-auto flex w-[min(360px,calc(100cqw-24px))] items-center gap-1 rounded-lg border border-content/10 bg-content/5 p-1 shadow-lg backdrop-blur-xl"
+        className="pointer-events-auto flex w-[min(360px,calc(100cqw-24px))] items-center gap-1 rounded-lg border border-(--ui-tone-neutral-border) bg-(--ui-surface-raised) p-1 shadow-lg backdrop-blur-xl"
       >
-        <Search className="ml-1 size-3.5 shrink-0 text-content/50" strokeWidth={1.75} />
+        <Search className="ml-1 size-3.5 shrink-0 text-(--ui-text-secondary)" strokeWidth={1.75} />
         <SearchInput
           ref={input}
           type="text"
@@ -163,11 +164,11 @@ export const TranscriptFind = memo(function TranscriptFind({
               step(event.shiftKey ? -1 : 1);
             }
           }}
-          className="w-44 min-w-0 flex-1 bg-transparent text-[12px] text-content outline-none placeholder:text-content/40"
+          className="w-44 min-w-0 flex-1 bg-transparent text-[12px] text-(--ui-tone-neutral-fg) outline-none placeholder:text-(--ui-text-secondary)"
         />
         <span
           aria-live="polite"
-          className="min-w-[10ch] shrink-0 whitespace-nowrap text-right font-mono text-[11px] tabular-nums text-content/50"
+          className="min-w-[10ch] shrink-0 whitespace-nowrap text-right font-mono text-[11px] tabular-nums text-(--ui-text-secondary)"
         >
           {query.trim()
             ? matches.length
@@ -205,15 +206,15 @@ function FindButton({
 }) {
   useLocale();
   return (
-    <button
+    <Button
+      variant="ghost"
       type="button"
       title={label}
       aria-label={label}
       disabled={disabled}
       onClick={onClick}
-      className="grid size-6 place-items-center rounded text-content/55 hover:bg-content/10 hover:text-content disabled:opacity-30"
     >
       {children}
-    </button>
+    </Button>
   );
 }

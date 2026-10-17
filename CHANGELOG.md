@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.0]
+
+### Desktop controls and workspace
+
+- Unify workspace, settings and tool panels around shared Arc controls.
+- Expand accessible menus, search, selections and form controls with consistent interaction states.
+- Refine session composition, conversation clearing and transcript recovery.
+- Improve host session storage, remote projects and workspace feedback.
+- Expand UI boundary checks and browser coverage for the shared design system.
+
 ## [0.5.95]
 
 ### Workspace and session tools

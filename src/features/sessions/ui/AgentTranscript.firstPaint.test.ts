@@ -35,7 +35,13 @@ beforeEach(() => {
       disconnect() {}
     },
   );
-  vi.stubGlobal("matchMedia", () => ({ matches: false, addEventListener() {}, removeEventListener() {}, addListener() {}, removeListener() {} }));
+  vi.stubGlobal("matchMedia", () => ({
+    matches: false,
+    addEventListener() {},
+    removeEventListener() {},
+    addListener() {},
+    removeListener() {},
+  }));
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);

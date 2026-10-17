@@ -1,5 +1,410 @@
 import { expect, test } from "@playwright/test";
 
+test("field families preserve native editing, radio keys, secret reveal and action menu focus", async ({
+  page,
+}) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.setViewportSize({ width: 390, height: 900 });
+  await page.goto("/tests/browser/arc-controls.html");
+  const region = page.getByRole("region", { name: "Shared field families", exact: true });
+  const number = region.getByLabel("Fixture limit", { exact: true });
+  await number.fill("");
+  await region.getByRole("button", { name: "Save fixture fields", exact: true }).click();
+  await expect(number).toBeFocused();
+  await expect(region.getByLabel("Saved fixture fields")).toHaveText("");
+  await number.fill("12");
+  const secret = region.getByLabel("Fixture credential", { exact: true });
+  await secret.focus();
+  await secret.evaluate((element: HTMLInputElement) => element.setSelectionRange(2, 5));
+  await region.getByRole("button", { name: "Show fixture credential", exact: true }).click();
+  await expect(secret).toHaveAttribute("type", "text");
+  await expect(secret).toBeFocused();
+  expect(
+    await secret.evaluate((element: HTMLInputElement) => [
+      element.selectionStart,
+      element.selectionEnd,
+    ]),
+  ).toEqual([2, 5]);
+  await region.getByRole("button", { name: "Hide fixture credential", exact: true }).click();
+  await expect(secret).toHaveAttribute("type", "password");
+  await region.getByRole("radio", { name: "Review first", exact: true }).focus();
+  await page.keyboard.press("ArrowDown");
+  await expect(region.getByRole("radio", { name: "Manual approval", exact: true })).toBeChecked();
+  await expect(
+    region.getByRole("radio", { name: "Unavailable approval", exact: true }),
+  ).toBeDisabled();
+  await region.getByRole("button", { name: "Save fixture fields", exact: true }).click();
+  await expect(region.getByLabel("Saved fixture fields")).toHaveText(
+    "12/fixture-only-value/manual",
+  );
+  await region.getByRole("button", { name: "Reset fixture fields", exact: true }).click();
+  await expect(number).toHaveValue("10");
+  await expect(region.getByRole("radio", { name: "Review first", exact: true })).toBeChecked();
+  const trigger = region.getByRole("button", { name: "Open fixture actions", exact: true });
+  await trigger.click();
+  await expect(page.getByRole("menuitem", { name: "Copy fixture", exact: true })).toBeFocused();
+  await page.keyboard.press("ArrowDown");
+  await expect(page.getByRole("menuitem", { name: "Retry fixture", exact: true })).toBeFocused();
+  await page.keyboard.press("Enter");
+  await expect(region.getByLabel("Picked fixture action")).toHaveText("retry");
+  await expect(trigger).toBeFocused();
+  await trigger.click();
+  await page.keyboard.press("Escape");
+  await expect(trigger).toBeFocused();
+  expect(await region.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
+});
+
+test("shared feedback preserves semantic states, recovery and narrow theme layouts", async ({
+  page,
+}) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.goto("/tests/browser/arc-controls.html");
+  const region = page.getByRole("region", { name: "Shared feedback", exact: true });
+  await region.getByRole("button", { name: "Toggle feedback failure", exact: true }).click();
+  await expect(region.getByRole("alert")).toContainText("Operation failed");
+  await expect(region.getByRole("alert")).toContainText("Retry the operation");
+  await region.getByRole("button", { name: "Retry fixture request", exact: true }).click();
+  await expect(region.getByLabel("Feedback retry count")).toHaveText("1");
+  await expect(
+    region.getByRole("progressbar", { name: "Quota limit used", exact: true }),
+  ).toHaveAttribute("aria-valuenow", "100");
+  await expect(
+    region.getByRole("progressbar", { name: "Quota limit used", exact: true }),
+  ).toHaveAttribute("data-tone", "danger");
+  await expect(
+    region.getByRole("progressbar", { name: "Waiting for fixture", exact: true }),
+  ).not.toHaveAttribute("aria-valuenow");
+  await expect(
+    region.getByRole("status", { name: "Loading fixture records", exact: true }),
+  ).toBeVisible();
+  await region.getByRole("button", { name: "Complete fixture loading", exact: true }).click();
+  await expect(
+    region.getByRole("status", { name: "Loading fixture records", exact: true }),
+  ).toHaveCount(0);
+  await region.getByRole("button", { name: "Retry loaded fixture", exact: true }).click();
+  await expect(region.getByLabel("Feedback retry count")).toHaveText("2");
+  for (const width of [390, 768, 1024, 1440]) {
+    await page.setViewportSize({ width, height: 900 });
+    for (const light of [false, true]) {
+      await page.evaluate(
+        (enabled) => document.documentElement.classList.toggle("theme-light", enabled),
+        light,
+      );
+      for (const tone of ["neutral", "info", "success", "warning", "danger"]) {
+        const badge = region.getByTestId(`feedback-${tone}`);
+        await expect(badge).toBeVisible();
+        expect(
+          await badge.evaluate((element) => {
+            const bounds = element.getBoundingClientRect();
+            return bounds.width > 0 && bounds.left >= 0 && bounds.right <= innerWidth;
+          }),
+        ).toBe(true);
+      }
+      expect(await region.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(
+        true,
+      );
+    }
+  }
+  await region.screenshot({ path: "temp/verification/2026-10-16-ui-system/W2-feedback-light.png" });
+});
+
+test("searchable native forms preserve required focus, FormData, defaults, reset and refs", async ({
+  page,
+}) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.goto("/tests/browser/arc-controls.html");
+  const region = page.getByRole("region", { name: "Native searchable forms", exact: true });
+  const project = region.getByRole("button", { name: "Search form projects", exact: true });
+  const controlled = region.getByRole("button", {
+    name: "Search controlled form projects",
+    exact: true,
+  });
+  const submit = region.getByRole("button", { name: "Submit selection form", exact: true });
+  await submit.click();
+  await expect(project).toBeFocused();
+  await expect(region.getByLabel("Submitted selection form")).toHaveText("");
+  await project.press("Enter");
+  const search = page.getByRole("combobox", { name: "Search options…", exact: true });
+  await search.fill("Project 24");
+  await expect(page.getByRole("option", { name: /Project 24 with/ })).toBeVisible();
+  await search.press("ArrowDown");
+  await search.press("Enter");
+  await expect(region.locator('select[name="project"]')).toHaveValue("project-24");
+  await expect(region.getByLabel("Native selection changes")).toHaveText("1");
+  await submit.click();
+  await expect(controlled).toBeFocused();
+  await controlled.press("Enter");
+  await search.fill("Project 23");
+  await page.getByRole("option", { name: /Project 23 with/ }).click();
+  await submit.click();
+  await expect(region.getByLabel("Submitted selection form")).toHaveText("project-24/project-23");
+  await region.getByRole("button", { name: "Set native selection error", exact: true }).click();
+  await submit.click();
+  await expect(project).toBeFocused();
+  await region.getByRole("button", { name: "Clear native selection error", exact: true }).click();
+  await region.getByRole("button", { name: "Reset selection form", exact: true }).click();
+  await expect(region.locator('select[name="project"]')).toHaveValue("");
+  await expect(region.locator('select[name="controlled"]')).toHaveValue("");
+  await expect(project).toContainText("Choose project");
+  await region.getByRole("button", { name: "Focus native selection ref", exact: true }).click();
+  await expect(project).toBeFocused();
+  await region.locator('label[for="native-project"]').click();
+  await expect(project).toBeFocused();
+});
+
+test("expanding actions preserve keyboard access and wait for the real async outcome", async ({
+  page,
+}) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.goto("/tests/browser/arc-controls.html");
+  const region = page.getByRole("region", { name: "Async action group", exact: true });
+  const copy = region.getByRole("button", { name: "Copy sample", exact: true });
+  await copy.focus();
+  await page.keyboard.press("ArrowRight");
+  await expect(region.getByRole("button", { name: "Add sample", exact: true })).toBeFocused();
+  await page.keyboard.press("ArrowLeft");
+  await page.keyboard.press("Enter");
+  await expect(copy).toHaveAttribute("aria-busy", "true");
+  await copy.dispatchEvent("click");
+  await region.getByRole("button", { name: "Add sample", exact: true }).dispatchEvent("click");
+  await expect(region.getByLabel("Action invocations")).toHaveText("1");
+  const announcement = region
+    .getByRole("toolbar", { name: "Sample note actions", exact: true })
+    .getByRole("status");
+  await expect(announcement).not.toHaveText("Copied");
+  await region.getByRole("button", { name: "Complete group operation", exact: true }).click();
+  await expect(announcement).toHaveText("Copied");
+});
+
+test("navigation search keeps ranked results, IME guards and deferred reveal", async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.goto("/tests/browser/arc-controls.html");
+  await page.getByRole("button", { name: "Search settings", exact: true }).click();
+  const search = page.getByRole("combobox", { name: "Search settings", exact: true });
+  await search.fill("Saturation");
+  await expect(page.getByRole("option").first()).toContainText("Saturation");
+  await search.dispatchEvent("keydown", { key: "Enter", isComposing: true });
+  await expect(page.getByLabel("Revealed setting")).toHaveText("");
+  await expect(search).toBeVisible();
+  await search.press("Enter");
+  await expect(page.getByLabel("Revealed setting")).toHaveText("appearance:saturation");
+  const trigger = page.getByRole("button", { name: "Search settings", exact: true });
+  await expect(trigger).toBeVisible();
+  await trigger.click();
+  await search.fill("no such setting qwertyz");
+  await expect(
+    page.getByRole("paragraph").filter({ hasText: /^No matching settings$/ }),
+  ).toBeVisible();
+  await search.press("Escape");
+  await expect(trigger).toBeFocused();
+});
+
+test("metadata selection retains unavailable values and skips disabled operations", async ({
+  page,
+}) => {
+  await page.goto("/tests/browser/arc-controls.html");
+  const region = page.getByRole("region", { name: "Metadata selection", exact: true });
+  await expect(region.getByLabel("Selected metadata values")).toHaveText("missing");
+  await region.getByRole("button", { name: /^Metadata selection:/ }).click();
+  const dialog = page.getByRole("dialog", { name: "Metadata selection options", exact: true });
+  await expect(dialog.getByText("Permission required")).toBeVisible();
+  const locked = dialog.getByRole("option", { name: /Locked/ });
+  await expect(locked).toHaveAttribute("aria-disabled", "true");
+  await locked.dispatchEvent("click");
+  await expect(region.getByLabel("Selected metadata values")).toHaveText("missing");
+  await dialog.getByRole("option", { name: /Ready/ }).click();
+  await expect(region.getByLabel("Selected metadata values")).toHaveText("missing,ready");
+  await dialog.getByRole("button", { name: "Clear selection", exact: true }).click();
+  await expect(region.getByLabel("Selected metadata values")).toHaveText("");
+  await page.keyboard.press("Escape");
+  await expect(region.getByRole("button", { name: /^Metadata selection:/ })).toBeFocused();
+});
+
+test("shared density changes geometry while preserving native membership and keyboard choices", async ({
+  page,
+}) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.goto("/tests/browser/arc-controls.html");
+  const specimen = page.getByRole("region", { name: "Control preview", exact: true });
+  for (const width of [390, 1440]) {
+    await page.setViewportSize({ width, height: 900 });
+    for (const light of [false, true]) {
+      await page.evaluate(
+        (light) => document.documentElement.classList.toggle("theme-light", light),
+        light,
+      );
+      for (const density of ["compact", "comfortable", "touch"]) {
+        await page.evaluate((density) => {
+          document.documentElement.dataset.controlDensity = density;
+        }, density);
+        const button = specimen.getByRole("button", { name: "primary / neutral", exact: true });
+        const minimum = density === "touch" ? 44 : density === "comfortable" ? 32 : 28;
+        expect((await button.boundingBox())!.height).toBeGreaterThanOrEqual(minimum);
+        if (density === "touch") {
+          const search = page.getByRole("textbox", { name: "Inline search", exact: true });
+          await search.fill("density query");
+          const clear = search.locator("..").getByRole("button");
+          expect((await clear.boundingBox())!.height).toBeGreaterThanOrEqual(44);
+          await clear.click();
+          await expect(search).toHaveValue("");
+          await expect(search).toBeFocused();
+          const checkbox = specimen.locator("input[type=checkbox]");
+          expect((await checkbox.locator("..").boundingBox())!.height).toBeGreaterThanOrEqual(44);
+          await checkbox.uncheck();
+          await expect(checkbox).not.toBeChecked();
+          await checkbox.check();
+          await expect(checkbox).toBeChecked();
+          const radio = specimen.getByRole("radiogroup", { name: "Layout", exact: true });
+          const choice = radio.getByRole("radio").first();
+          expect((await choice.boundingBox())!.height).toBeGreaterThanOrEqual(44);
+          await choice.focus();
+          await choice.press("ArrowRight");
+          await expect(radio.getByRole("radio").last()).toHaveAttribute("aria-checked", "true");
+        }
+        expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+          true,
+        );
+      }
+    }
+  }
+});
+
+test("shared controls retain contrast at custom tint bounds", async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.goto("/tests/browser/arc-controls.html");
+  const specimen = page.getByRole("region", { name: "Control preview", exact: true });
+  const failures = await specimen.evaluate((region) => {
+    const canvas = document.createElement("canvas");
+    canvas.width = canvas.height = 1;
+    const context = canvas.getContext("2d", { willReadFrequently: true })!;
+    const luminance = (color: string) => {
+      context.clearRect(0, 0, 1, 1);
+      context.fillStyle = color;
+      context.fillRect(0, 0, 1, 1);
+      const c = [...context.getImageData(0, 0, 1, 1).data].slice(0, 3).map((part) => {
+        const v = part / 255;
+        return v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4;
+      });
+      return c[0] * 0.2126 + c[1] * 0.7152 + c[2] * 0.0722;
+    };
+    const failures: {
+      light: boolean;
+      hue: number;
+      saturation: number;
+      brightness: number;
+      control: string;
+      ratio: number;
+    }[] = [];
+    for (const light of [false, true]) {
+      document.documentElement.classList.toggle("theme-light", light);
+      for (const hue of [0, 60, 120, 180, 240, 300])
+        for (const saturation of [0, 100])
+          for (const brightness of [0, 30]) {
+            const root = document.documentElement;
+            root.style.setProperty("--theme-hue", String(hue));
+            root.style.setProperty("--theme-saturation", `${saturation}%`);
+            root.style.setProperty("--theme-dark-lightness", `${brightness}%`);
+            for (const button of region.querySelectorAll('[data-button-variant="primary"]')) {
+              const style = getComputedStyle(button);
+              const fg = luminance(style.color);
+              const probe = document.createElement("span");
+              button.append(probe);
+              for (const state of ["solid", "solid-hover", "solid-pressed"]) {
+                probe.style.backgroundColor = `var(--button-${state})`;
+                const bg = luminance(getComputedStyle(probe).backgroundColor);
+                const ratio = (Math.max(fg, bg) + 0.05) / (Math.min(fg, bg) + 0.05);
+                if (ratio < 4.5)
+                  failures.push({
+                    light,
+                    hue,
+                    saturation,
+                    brightness,
+                    control: `${button.textContent} / ${state}`,
+                    ratio,
+                  });
+              }
+              probe.remove();
+            }
+          }
+    }
+    return failures;
+  });
+  expect(failures).toEqual([]);
+});
+
+test("shared tone specimen preserves contrast, independent info and narrow layouts", async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.goto("/tests/browser/arc-controls.html");
+  const specimen = page.getByRole("region", { name: "Control preview", exact: true });
+  for (const width of [390, 768, 1024, 1440]) {
+    await page.setViewportSize({ width, height: 900 });
+    for (const light of [false, true]) {
+      await page.evaluate(
+        (value) => document.documentElement.classList.toggle("theme-light", value),
+        light,
+      );
+      await page.getByRole("button", { name: "Reset accent", exact: true }).click();
+      const info = specimen.getByRole("button", { name: "primary / info", exact: true });
+      const neutral = specimen.getByRole("button", { name: "primary / neutral", exact: true });
+      const infoFill = await info.evaluate((node) => getComputedStyle(node).backgroundColor);
+      const neutralFill = await neutral.evaluate((node) => getComputedStyle(node).backgroundColor);
+      for (const custom of [false, true]) {
+        if (custom)
+          await page.getByRole("button", { name: "Saturated accent", exact: true }).click();
+        await expect(info).toHaveCSS("background-color", infoFill);
+        await expect(neutral).toHaveCSS("background-color", neutralFill);
+        for (const tone of ["neutral", "accent", "info", "success", "warning", "danger"]) {
+          const button = specimen.getByRole("button", { name: `primary / ${tone}`, exact: true });
+          for (const interaction of ["rest", "hover", "pressed"]) {
+            if (interaction !== "rest") await button.hover();
+            if (interaction === "pressed") await page.mouse.down();
+            const ratio = await button.evaluate((node) => {
+              const style = getComputedStyle(node);
+              const canvas = document.createElement("canvas");
+              canvas.width = canvas.height = 1;
+              const context = canvas.getContext("2d", { willReadFrequently: true })!;
+              const luminance = (color: string) => {
+                context.clearRect(0, 0, 1, 1);
+                context.fillStyle = color;
+                context.fillRect(0, 0, 1, 1);
+                const channels = [...context.getImageData(0, 0, 1, 1).data]
+                  .slice(0, 3)
+                  .map((part) => {
+                    const value = part / 255;
+                    return value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
+                  });
+                return channels[0] * 0.2126 + channels[1] * 0.7152 + channels[2] * 0.0722;
+              };
+              const foreground = luminance(style.color);
+              const background = luminance(style.backgroundColor);
+              return (
+                (Math.max(foreground, background) + 0.05) /
+                (Math.min(foreground, background) + 0.05)
+              );
+            });
+            expect(
+              ratio,
+              `${width}px ${light ? "light" : "dark"} ${custom ? "custom" : "default"} ${tone}`,
+            ).toBeGreaterThanOrEqual(4.5);
+            if (interaction === "pressed") await page.mouse.up();
+          }
+        }
+        expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+          true,
+        );
+      }
+      if (width === 390 || width === 1440) {
+        await specimen.screenshot({
+          path: `temp/verification/2026-10-16-ui-system/tones-${width}-${light ? "light" : "dark"}.png`,
+        });
+      }
+    }
+  }
+});
+
 test("search focus has one owner across shared fields and host tool overrides", async ({
   page,
 }) => {
@@ -352,6 +757,10 @@ test("image comparison accepts a selected image and retains keyboard and dismiss
   await page.goto("/tests/browser/arc-controls.html");
   await page.getByRole("button", { name: "Open image comparison", exact: true }).click();
   const dialog = page.getByRole("dialog", { name: "Image preview: Original fixture" });
+  const close = dialog.getByRole("button", { name: "Close image preview", exact: true });
+  const closeBox = (await close.boundingBox())!;
+  expect(closeBox.y).toBe(16);
+  expect(closeBox.x + closeBox.width).toBe(page.viewportSize()!.width - 16);
   await dialog.getByLabel("Compare with image").setInputFiles({
     name: "after.svg",
     mimeType: "image/svg+xml",
@@ -370,6 +779,10 @@ test("image comparison accepts a selected image and retains keyboard and dismiss
   await expect(divider).toHaveCount(0);
   await expect(dialog.getByRole("img", { name: "Original fixture" })).toBeVisible();
   await page.keyboard.press("Escape");
+  await expect(dialog).toHaveCount(0);
+  await page.getByRole("button", { name: "Open image comparison", exact: true }).click();
+  await close.focus();
+  await close.press("Enter");
   await expect(dialog).toHaveCount(0);
 });
 
@@ -446,10 +859,11 @@ test("preserves settings interaction, compact geometry and both themes", async (
   await page.keyboard.press("Home");
   await expect(slider).toHaveAttribute("aria-valuenow", "0");
 
-  const compact = page.getByRole("radio", { name: "Compact", exact: true });
+  const density = page.getByRole("radiogroup", { name: "Density", exact: true });
+  const compact = density.getByRole("radio", { name: "Compact", exact: true });
   await compact.focus();
   await page.keyboard.press("ArrowRight");
-  const comfortable = page.getByRole("radio", { name: "Comfortable", exact: true });
+  const comfortable = density.getByRole("radio", { name: "Comfortable", exact: true });
   await expect(comfortable).toBeFocused();
   await expect(comfortable).toHaveAttribute("aria-checked", "true");
   await page.getByRole("textbox", { name: "Filter notes", exact: true }).fill("launch");

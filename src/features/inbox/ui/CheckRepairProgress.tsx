@@ -1,3 +1,4 @@
+import { Button } from "../../../shared/ui/Button";
 import { t, useLocale } from "../../../shared/i18n";
 import { useId, useState, useSyncExternalStore } from "react";
 import { getCiRepairs, subscribeCiRepairs, type TrackedCiRepair } from "../model/ciRepairTracking";
@@ -137,10 +138,10 @@ export function useCheckRepairs(
   return [...groups.values()];
 }
 
-const neutral = "text-content/55";
-const positive = "text-success dark:text-success";
-const negative = "text-danger dark:text-danger";
-const active = "text-warning dark:text-warning";
+const neutral = "text-(--ui-text-secondary)";
+const positive = "text-(--ui-tone-success-fg) dark:text-(--ui-tone-success-fg)";
+const negative = "text-(--ui-tone-danger-fg) dark:text-(--ui-tone-danger-fg)";
+const active = "text-(--ui-tone-warning-fg) dark:text-(--ui-tone-warning-fg)";
 const states: Record<
   RepairState,
   { label: string; summary: string; Icon: IconComponent; color: string }
@@ -319,15 +320,16 @@ function RepairCard({
       (check) => check.name === single.check.name && check.workflow === single.check.workflow,
     ).length === 1;
   return (
-    <div className="overflow-hidden rounded-lg border border-stroke bg-content/[0.02]">
+    <div className="overflow-hidden rounded-lg border border-(--ui-tone-neutral-border) bg-(--ui-surface-hover)">
       <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2.5">
-        <button
+        <Button
+          variant="ghost"
           type="button"
           aria-label={t("Repair details for {p0}", { p0: label })}
           aria-expanded={expanded}
           aria-controls={detailsId}
           onClick={() => setExpanded(!expanded)}
-          className="flex min-w-0 flex-1 items-center gap-2.5 rounded text-left focus-visible:outline focus-visible:outline-1 focus-visible:outline-content/50"
+          className="min-w-0 flex-1 text-left"
         >
           <StatusIcon state={lead} />
           <span className="min-w-0 flex-1">
@@ -349,40 +351,42 @@ function RepairCard({
             </span>
             <span
               title={single ? `${single.check.workflow}: ${single.check.name}` : undefined}
-              className="mt-0.5 block truncate text-[11px] text-content/65"
+              className="mt-0.5 block truncate text-[11px] text-(--ui-text-secondary)"
             >
               {single ? single.check.name : t("CI repair for {p0}", { p0: label })}
             </span>
           </span>
           <ChevronRight
             aria-hidden="true"
-            className={`size-3 shrink-0 text-content/40 transition-transform motion-reduce:transition-none ${expanded ? "rotate-90" : ""}`}
+            className={`size-3 shrink-0 text-(--ui-text-secondary) transition-transform motion-reduce:transition-none ${expanded ? "rotate-90" : ""}`}
           />
-        </button>
+        </Button>
         {canShowCheck ? (
-          <button
+          <Button
+            variant="ghost"
             type="button"
             onClick={() => onShowCheck?.(single.check)}
-            className="shrink-0 rounded-md px-2 py-1.5 text-[11px] text-content/70 hover:bg-selection hover:text-content focus-visible:outline focus-visible:outline-1 focus-visible:outline-content/50"
+            className="shrink-0"
           >
             {t("Show check")}
-          </button>
+          </Button>
         ) : null}
         {repair.onOpenSession ? (
-          <button
+          <Button
+            variant="ghost"
             type="button"
             onClick={() => void repair.onOpenSession?.(group.sessionId)}
-            className="inline-flex shrink-0 items-center gap-1.5 rounded-md border border-stroke px-2.5 py-1.5 text-[11px] text-content/70 hover:bg-selection hover:text-content focus-visible:outline focus-visible:outline-1 focus-visible:outline-content/50"
+            className="shrink-0"
           >
             <MessageSquare aria-hidden="true" className="size-3.5" />
             {t("Open conversation")}
-          </button>
+          </Button>
         ) : null}
       </div>
       {expanded ? (
         <div
           id={detailsId}
-          className="space-y-2 border-t border-stroke px-3 py-2.5 text-[11px] text-content/55"
+          className="space-y-2 border-t border-(--ui-tone-neutral-border) px-3 py-2.5 text-[11px] text-(--ui-text-secondary)"
         >
           <p>{t("Included checks")}</p>
           <ul className="flex max-h-36 flex-wrap gap-1.5 overflow-y-auto">
@@ -390,7 +394,7 @@ function RepairCard({
               <li
                 key={JSON.stringify([check.workflow, check.name, check.url])}
                 title={check.workflow}
-                className="max-w-full truncate rounded bg-content/5 px-2 py-1 text-content/75"
+                className="max-w-full truncate rounded bg-(--ui-surface-raised) px-2 py-1 text-(--ui-text-secondary)"
               >
                 {check.name}
               </li>

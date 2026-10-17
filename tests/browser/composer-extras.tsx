@@ -1,4 +1,6 @@
-import { useState } from "react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { useState, useRef } from "react";
+import { ModelControlPills } from "../../src/features/sessions/ui/ModelPicker";
 import { createRoot } from "react-dom/client";
 import { Composer } from "../../src/features/sessions/ui/Composer";
 import { SessionAgentIdentity } from "../../src/features/sessions/ui/SessionAgentIdentity";
@@ -269,4 +271,31 @@ function Fixture() {
     </ModelSourceContext.Provider>
   );
 }
-void languageReady.then(() => createRoot(document.getElementById("root")!).render(<Fixture />));
+function ScalarFixture() {
+  const ref = useRef<HTMLInputElement>(null);
+  const [values, setValues] = useState({ reasoningEffort: "medium", serviceTier: "default" });
+  return (
+    <main className="flex min-w-0 flex-wrap gap-2 p-4">
+      <input aria-label="Scalar draft" ref={ref} defaultValue="Preserve this draft" />
+      <ModelSourceContext.Provider value={source}>
+        <ModelControlPills
+          harness="codex"
+          model="codex:gpt-5.4"
+          values={values}
+          onSettingsChange={(next) => setValues(next as typeof values)}
+          onClose={() => ref.current?.focus()}
+        />
+      </ModelSourceContext.Provider>
+      <output data-testid="scalar-settings">{JSON.stringify(values)}</output>
+    </main>
+  );
+}
+void languageReady.then(() =>
+  createRoot(document.getElementById("root")!).render(
+    <QueryClientProvider
+      client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
+    >
+      {new URLSearchParams(location.search).has("scalar") ? <ScalarFixture /> : <Fixture />}
+    </QueryClientProvider>,
+  ),
+);

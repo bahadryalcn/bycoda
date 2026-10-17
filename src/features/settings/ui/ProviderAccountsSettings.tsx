@@ -1,3 +1,5 @@
+import { Alert } from "../../../shared/ui/Alert";
+import { Badge } from "../../../shared/ui/Badge";
 import { t, useLocale } from "../../../shared/i18n";
 import { ask } from "@tauri-apps/plugin-dialog";
 import { Pencil, Plus, Trash2 } from "../../../shared/ui/icons";
@@ -363,22 +365,21 @@ export function ProviderAccountsSettings({ harness }: { harness?: HarnessId }) {
                               {displayLabel}
                             </span>
                             {account.isDefault && !autoDefaultLabel ? (
-                              <span className="shrink-0 rounded bg-accent/15 px-1 text-[10px] font-medium leading-4 text-accent">
+                              <Badge size="sm" className="shrink-0">
                                 {t("Default account")}
-                              </span>
+                              </Badge>
                             ) : null}
                             {orgTag ? (
-                              <span className="max-w-[8rem] shrink-0 truncate rounded bg-content/[0.07] px-1 text-[9px] leading-4 text-content/50">
+                              <Badge size="sm" className="max-w-[8rem] shrink-0 truncate">
                                 {orgTag}
-                              </span>
+                              </Badge>
                             ) : null}
                           </div>
                           <div className="mt-0.5 flex min-w-0 items-center gap-2.5 text-[10px]">
                             {signedOut ? (
-                              <span className="inline-flex shrink-0 items-center gap-1.5 text-warning dark:text-warning">
-                                <span className="size-1.5 rounded-full bg-warning" aria-hidden />
+                              <Badge size="sm" tone="warning" className="shrink-0">
                                 {t("Signed out")}
-                              </span>
+                              </Badge>
                             ) : (
                               <AccountStatusLabel
                                 status={accountStatus(limits, usage.now)}
@@ -525,12 +526,13 @@ export function ProviderAccountsSettings({ harness }: { harness?: HarnessId }) {
           <AntigravityAccountSettings embedded />
         </div>
         {error ? (
-          <p
-            className="border-t border-content/5 px-4 py-2.5 text-[11px] leading-4 text-danger"
+          <Alert
+            tone="danger"
+
             role="alert"
           >
             {error}
-          </p>
+          </Alert>
         ) : null}
       </section>
     </div>

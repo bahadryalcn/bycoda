@@ -1,3 +1,4 @@
+import { Button } from "../../../shared/ui/Button";
 import { t, useLocale, getLocale } from "../../../shared/i18n";
 import { memo, useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { Modal } from "../../../shared/ui/Modal";
@@ -55,7 +56,9 @@ function TextCard({
   };
   return (
     <>
-      <button
+      <Button
+        motion="none"
+        variant="item"
         ref={trigger}
         type="button"
         aria-label={t("Show full {p0}", { p0: label.toLowerCase() })}
@@ -67,22 +70,24 @@ function TextCard({
         onFocus={enter}
         onBlur={leave}
         onClick={showFull}
-        className="my-1 block w-full min-w-0 rounded-lg border border-content/10 bg-content/5 px-3 py-2 text-left hover:bg-content/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+        className="my-1 block w-full min-w-0 text-left"
       >
         <span className="flex items-center justify-between gap-6 text-xs">
-          <span className="font-medium text-content/80">{label}</span>
-          <span className="text-content/45">
+          <span className="font-medium text-(--ui-text-secondary)">{label}</span>
+          <span className="text-(--ui-text-secondary)">
             {part.text.length.toLocaleString(getLocale())}
             {t(" characters")}
           </span>
         </span>
         <span
-          className={`mt-1 block whitespace-pre-wrap break-words text-xs text-content/60 ${part.kind === "json" ? "font-mono" : "font-sans"}`}
+          className={`mt-1 block whitespace-pre-wrap break-words text-xs text-(--ui-text-secondary) ${part.kind === "json" ? "font-mono" : "font-sans"}`}
         >
           {boundedTextPreview(part.text, 160, 2)}
         </span>
-        <span className="mt-1.5 block text-xs text-content/65">{t("Show full content ↗")}</span>
-      </button>
+        <span className="mt-1.5 block text-xs text-(--ui-text-secondary)">
+          {t("Show full content ↗")}
+        </span>
+      </Button>
       {hovered && !open ? (
         <Popover
           anchor={trigger}
@@ -98,34 +103,30 @@ function TextCard({
           onBlurCapture={leave}
         >
           <div id={previewId} className="p-3">
-            <div className="mb-2 text-xs font-medium text-content/70">
+            <div className="mb-2 text-xs font-medium text-(--ui-text-secondary)">
               {label}
               {t(" preview")}
             </div>
             <pre
-              className={`max-h-56 select-text overflow-auto whitespace-pre-wrap break-words text-xs text-content/80 ${part.kind === "json" ? "font-mono" : "font-sans"}`}
+              className={`max-h-56 select-text overflow-auto whitespace-pre-wrap break-words text-xs text-(--ui-text-secondary) ${part.kind === "json" ? "font-mono" : "font-sans"}`}
             >
               {boundedTextPreview(part.text)}
             </pre>
             <div className="mt-2 flex flex-wrap items-center gap-1">{renderActions(dismiss)}</div>
-            <button
-              type="button"
-              onClick={showFull}
-              className="mt-2 rounded px-2 py-1 text-xs text-content/70 hover:bg-content/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-            >
+            <Button motion="none" variant="ghost" type="button" onClick={showFull} className="mt-2">
               {t("Show full content")}
-            </button>
+            </Button>
           </div>
         </Popover>
       ) : null}
       {open ? (
         <Modal title={label} size="lg" onClose={dismiss}>
-          <div className="sticky top-0 z-[1] flex flex-wrap items-center gap-2 border-b border-content/10 bg-background-base px-4 py-3">
+          <div className="sticky top-0 z-[1] flex flex-wrap items-center gap-2 border-b border-(--ui-tone-neutral-border) bg-(--ui-surface) px-4 py-3">
             {renderActions(dismiss, true)}
           </div>
           <pre
             data-selectable-agent-response={messageId}
-            className={`m-4 max-h-[65dvh] select-text overflow-auto whitespace-pre-wrap break-words rounded-lg bg-content/5 p-4 text-sm text-content ${part.kind === "json" ? "font-mono" : "font-sans"}`}
+            className={`m-4 max-h-[65dvh] select-text overflow-auto whitespace-pre-wrap break-words rounded-lg bg-(--ui-surface-raised) p-4 text-sm text-(--ui-tone-neutral-fg) ${part.kind === "json" ? "font-mono" : "font-sans"}`}
           >
             <AttachmentTokenText text={part.text} attachments={attachments} />
           </pre>

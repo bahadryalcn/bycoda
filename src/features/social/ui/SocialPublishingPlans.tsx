@@ -1,3 +1,7 @@
+import { TextField } from "../../../shared/ui/TextField";
+import { NativeSearchableSelect } from "../../../shared/ui/NativeSearchableSelect";
+import { Button } from "../../../shared/ui/Button";
+import { Checkbox } from "../../../shared/ui/Checkbox";
 import { useState } from "react";
 import { socialRows } from "../model/socialWorkspace";
 import type { SocialPublishingPlan } from "../model/social";
@@ -180,7 +184,9 @@ export function PublishingPlans({ client, snapshot, projects, initialProject, ru
             >
               <label>
                 Plan adı
-                <input
+                <TextField
+                  hideLabel
+                  label=""
                   required
                   maxLength={200}
                   value={name}
@@ -191,7 +197,16 @@ export function PublishingPlans({ client, snapshot, projects, initialProject, ru
               <div className="social-form-grid">
                 <label>
                   Paylaşım hesabı
-                  <select
+                  <NativeSearchableSelect
+                    label="Paylaşım hesabı"
+                    options={
+                      snapshot.accounts.length
+                        ? snapshot.accounts.map((item) => ({
+                            value: item.id,
+                            label: `${item.name} · ${names[item.platform]}`,
+                          }))
+                        : [{ value: "", label: "Önce bir hesap bağlayın" }]
+                    }
                     value={accountId}
                     disabled={completedCampaignIds.length > 0}
                     onChange={(event) => {
@@ -199,20 +214,20 @@ export function PublishingPlans({ client, snapshot, projects, initialProject, ru
                       setCampaignIds([]);
                     }}
                     required
-                  >
-                    {!snapshot.accounts.length ? (
-                      <option value="">Önce bir hesap bağlayın</option>
-                    ) : null}
-                    {snapshot.accounts.map((item) => (
-                      <option value={item.id} key={item.id}>
-                        {item.name} · {names[item.platform]}
-                      </option>
-                    ))}
-                  </select>
+                  />
                 </label>
                 <label>
                   Proje
-                  <select
+                  <NativeSearchableSelect
+                    label="Proje"
+                    options={
+                      projects.length
+                        ? projects.map((project) => ({
+                            value: project.id,
+                            label: project.name || project.cwd,
+                          }))
+                        : [{ value: "", label: "Proje bulunamadı" }]
+                    }
                     value={projectId}
                     disabled={completedCampaignIds.length > 0}
                     onChange={(event) => {
@@ -220,20 +235,14 @@ export function PublishingPlans({ client, snapshot, projects, initialProject, ru
                       setCampaignIds([]);
                     }}
                     required
-                  >
-                    {!projects.length ? <option value="">Proje bulunamadı</option> : null}
-                    {projects.map((project) => (
-                      <option key={project.id} value={project.id}>
-                        {project.name || project.cwd}
-                      </option>
-                    ))}
-                  </select>
+                  />
                 </label>
               </div>
               <fieldset>
                 <legend>Ne zaman paylaşsın?</legend>
                 <div className="social-actions" aria-label="Hazır yayın saatleri">
-                  <button
+                  <Button
+                    variant="secondary"
                     type="button"
                     onClick={() =>
                       updateSchedule({
@@ -245,8 +254,9 @@ export function PublishingPlans({ client, snapshot, projects, initialProject, ru
                     }
                   >
                     09:00–18:00 · 2–5 saat arayla
-                  </button>
-                  <button
+                  </Button>
+                  <Button
+                    variant="secondary"
                     type="button"
                     onClick={() =>
                       updateSchedule({
@@ -258,18 +268,21 @@ export function PublishingPlans({ client, snapshot, projects, initialProject, ru
                     }
                   >
                     09:00–22:00 · 3 saatte bir
-                  </button>
-                  <button
+                  </Button>
+                  <Button
+                    variant="secondary"
                     type="button"
                     onClick={() => updateSchedule({ startTime: "00:00", endTime: "00:00" })}
                   >
                     Günün tamamı
-                  </button>
+                  </Button>
                 </div>
                 <div className="social-form-grid">
                   <label>
                     Başlangıç saati
-                    <input
+                    <TextField
+                      hideLabel
+                      label=""
                       type="time"
                       value={scheduleDraft.startTime}
                       onChange={(event) => updateSchedule({ startTime: event.target.value })}
@@ -278,7 +291,9 @@ export function PublishingPlans({ client, snapshot, projects, initialProject, ru
                   </label>
                   <label>
                     Bitiş saati
-                    <input
+                    <TextField
+                      hideLabel
+                      label=""
                       type="time"
                       value={scheduleDraft.endTime}
                       onChange={(event) => updateSchedule({ endTime: event.target.value })}
@@ -287,7 +302,9 @@ export function PublishingPlans({ client, snapshot, projects, initialProject, ru
                   </label>
                   <label>
                     En kısa aralık · saat
-                    <input
+                    <TextField
+                      hideLabel
+                      label=""
                       type="number"
                       step="any"
                       min="0"
@@ -299,7 +316,9 @@ export function PublishingPlans({ client, snapshot, projects, initialProject, ru
                   </label>
                   <label>
                     En uzun aralık · saat
-                    <input
+                    <TextField
+                      hideLabel
+                      label=""
                       type="number"
                       step="any"
                       min="0"
@@ -312,7 +331,9 @@ export function PublishingPlans({ client, snapshot, projects, initialProject, ru
                 </div>
                 <label>
                   Saat dilimi
-                  <input
+                  <TextField
+                    hideLabel
+                    label=""
                     value={scheduleDraft.timeZone}
                     onChange={(event) => updateSchedule({ timeZone: event.target.value })}
                     placeholder="Europe/Istanbul"
@@ -368,7 +389,8 @@ export function PublishingPlans({ client, snapshot, projects, initialProject, ru
                           "Kampanya bulunamadı"}
                       </span>
                       <div className="social-actions">
-                        <button
+                        <Button
+                          variant="secondary"
                           type="button"
                           disabled={index <= completedCampaignIds.length}
                           aria-label={`${index + 1}. kampanyayı yukarı taşı`}
@@ -381,8 +403,9 @@ export function PublishingPlans({ client, snapshot, projects, initialProject, ru
                           }
                         >
                           Yukarı
-                        </button>
-                        <button
+                        </Button>
+                        <Button
+                          variant="secondary"
                           type="button"
                           disabled={
                             index < completedCampaignIds.length || index === campaignIds.length - 1
@@ -397,7 +420,7 @@ export function PublishingPlans({ client, snapshot, projects, initialProject, ru
                           }
                         >
                           Aşağı
-                        </button>
+                        </Button>
                       </div>
                     </li>
                   ))}
@@ -413,9 +436,9 @@ export function PublishingPlans({ client, snapshot, projects, initialProject, ru
                 Her kampanya bu hesapta bir kez paylaşılır. Sürekli yeni paylaşım için yeni onaylı
                 kampanyalar ekleyin. Plan kendi kendine yeni içerik üretmez.
               </Notice>
-              <button disabled={!canSave}>
+              <Button type="submit" variant="secondary" disabled={!canSave}>
                 {editingId ? "Değişiklikleri durdurulmuş kaydet" : "Planı durdurulmuş kaydet"}
-              </button>
+              </Button>
               {!name.trim() || !account || !projectId || invalidPool ? (
                 <small className="social-muted">
                   Kaydetmek için plan adı, hesap, proje ve en az bir kampanya seçin.
@@ -430,7 +453,9 @@ export function PublishingPlans({ client, snapshot, projects, initialProject, ru
               </h3>
               {plans.length ? (
                 plans.map((plan) => (
-                  <button
+                  <Button
+                    type="submit"
+                    variant="tab"
                     key={plan.id}
                     className="social-row"
                     aria-pressed={plan.id === selectedId}
@@ -451,7 +476,7 @@ export function PublishingPlans({ client, snapshot, projects, initialProject, ru
                         ? ` · ${publishingPlanTime(plan.nextRunAt, plan.schedule.timeZone)}`
                         : ""}
                     </small>
-                  </button>
+                  </Button>
                 ))
               ) : (
                 <Empty title="İlk otomatik yayın planınızı oluşturun">
@@ -590,8 +615,7 @@ export function PublishingPlans({ client, snapshot, projects, initialProject, ru
                   </Notice>
                   {!selected.enabled && remaining > 0 ? (
                     <label className="social-check">
-                      <input
-                        type="checkbox"
+                      <Checkbox
                         checked={reviewConfirmed}
                         onChange={(event) =>
                           setReviewed(
@@ -607,7 +631,9 @@ export function PublishingPlans({ client, snapshot, projects, initialProject, ru
                   ) : null}
                   <div className="social-actions">
                     {selected.enabled ? (
-                      <button
+                      <Button
+                        type="submit"
+                        variant="secondary"
                         onClick={() =>
                           void run(
                             () => client.request("publishing-plans.pause", { id: selected.id }),
@@ -616,9 +642,11 @@ export function PublishingPlans({ client, snapshot, projects, initialProject, ru
                         }
                       >
                         Planı durdur
-                      </button>
+                      </Button>
                     ) : (
-                      <button
+                      <Button
+                        type="submit"
+                        variant="secondary"
                         disabled={!!activationReason}
                         onClick={() =>
                           void run(
@@ -633,9 +661,11 @@ export function PublishingPlans({ client, snapshot, projects, initialProject, ru
                         }
                       >
                         Otomatik yayını etkinleştir
-                      </button>
+                      </Button>
                     )}
-                    <button
+                    <Button
+                      type="submit"
+                      variant="secondary"
                       onClick={() => {
                         setEditingId(selected.id);
                         setName(selected.name);
@@ -648,7 +678,7 @@ export function PublishingPlans({ client, snapshot, projects, initialProject, ru
                       }}
                     >
                       Planı düzenle
-                    </button>
+                    </Button>
                   </div>
                   {!selected.enabled && activationReason ? (
                     <small className="social-muted">{activationReason}</small>

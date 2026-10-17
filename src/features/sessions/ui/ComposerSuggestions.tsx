@@ -27,8 +27,7 @@ export function ComposerSuggestions({
       side={below ? "bottom" : "top"}
       width={width}
       gap={4}
-      bare
-      className="composer-suggestions overflow-y-auto overscroll-contain rounded-lg bg-background-base shadow-xl"
+      className="composer-suggestions overflow-y-auto overscroll-contain"
       style={{ animation: "none" }}
     >
       {children}

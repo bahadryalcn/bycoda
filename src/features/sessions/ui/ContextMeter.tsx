@@ -1,3 +1,4 @@
+import { Button } from "../../../shared/ui/Button";
 import { t, useLocale } from "../../../shared/i18n";
 import { useEffect, useRef, useState } from "react";
 import { contextRatio, contextTooltip, type ContextUsage } from "../model/contextUsage";
@@ -12,8 +13,8 @@ const CIRCUMFERENCE = 2 * Math.PI * RADIUS;
 
 /** Ring turns amber then red as the window fills. */
 function ringClass(ratio: number): string {
-  if (ratio >= 0.9) return "text-danger";
-  if (ratio >= 0.75) return "text-warning";
+  if (ratio >= 0.9) return "text-(--ui-tone-danger-fg)";
+  if (ratio >= 0.75) return "text-(--ui-tone-warning-fg)";
   return "context-meter-neutral";
 }
 
@@ -67,7 +68,10 @@ export function ContextMeter({
   const ratio = contextRatio(usage);
   if (!usage || ratio === null) {
     return empty && !usage && !sessionUsage ? (
-      <span title={t("No context used yet")} className="grid shrink-0">
+      <span
+        title={`0% · ${t("No context used yet")}`}
+        className="grid size-7 shrink-0 place-items-center"
+      >
         <MeterRing ratio={0} label={t("No context used yet")} />
       </span>
     ) : null;
@@ -89,18 +93,24 @@ export function ContextMeter({
       onMouseLeave={leaveHover}
     >
       {onCompact ? (
-        <button
+        <Button
+          iconOnly
+          label={t("{p0}. Open context actions", { p0: label })}
+          variant="ghost"
+          size="sm"
+          className="size-7 shrink-0"
           type="button"
-          title={t("Context usage")}
+          title={label}
           aria-label={t("{p0}. Open context actions", { p0: label })}
           aria-expanded={actionsOpen}
           onClick={() => setOpen((value) => !value)}
-          className="context-meter-trigger"
         >
           <MeterRing ratio={ratio} />
-        </button>
+        </Button>
       ) : (
-        <MeterRing ratio={ratio} label={label} />
+        <span title={label} className="grid size-7 place-items-center">
+          <MeterRing ratio={ratio} label={label} />
+        </span>
       )}
       {hovered || actionsOpen ? (
         <Popover
@@ -123,11 +133,13 @@ export function ContextMeter({
           onMouseLeave={leaveHover}
           className={`context-meter-popover px-2.5 py-1.5 ${actionsOpen ? "" : "pointer-events-none"}`}
         >
-          <div className="text-[12px] leading-4 text-content">{headline}</div>
+          <div className="text-[12px] leading-4 text-(--ui-tone-neutral-fg)">{headline}</div>
           <div className="chat-control-secondary text-xs leading-4">{detail}</div>
           {session ? (
-            <div className="mt-1.5 border-t border-stroke pt-1.5">
-              <div className="text-[12px] leading-4 text-content">{session.headline}</div>
+            <div className="mt-1.5 border-t border-(--ui-tone-neutral-border) pt-1.5">
+              <div className="text-[12px] leading-4 text-(--ui-tone-neutral-fg)">
+                {session.headline}
+              </div>
               {session.details.map((line) => (
                 <div key={line} className="chat-control-secondary text-xs leading-4">
                   {line}
@@ -136,7 +148,9 @@ export function ContextMeter({
             </div>
           ) : null}
           {actionsOpen ? (
-            <button
+            <Button
+              fullWidth
+              variant="item"
               type="button"
               disabled={compactDisabled}
               title={
@@ -148,10 +162,10 @@ export function ContextMeter({
                 closeActions();
                 onCompact?.();
               }}
-              className="context-compact-action w-full rounded-md bg-content/10 px-2 text-xs text-content disabled:cursor-not-allowed disabled:opacity-40"
+              className="w-full"
             >
               {t("Compact now")}
-            </button>
+            </Button>
           ) : null}
         </Popover>
       ) : null}
@@ -178,7 +192,7 @@ function MeterRing({ ratio, label }: { ratio: number; label?: string }) {
         fill="none"
         stroke="currentColor"
         strokeWidth={STROKE}
-        className="opacity-25"
+        className="text-(--ui-border)"
       />
       {/* A round cap would leave a dot on an empty ring. */}
       {ratio > 0 ? (

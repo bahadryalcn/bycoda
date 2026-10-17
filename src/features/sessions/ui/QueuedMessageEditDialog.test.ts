@@ -1,3 +1,4 @@
+import { visibleSessionTestText } from "./sessionUiTestText";
 // @vitest-environment happy-dom
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
@@ -46,7 +47,7 @@ async function open(props: Partial<Parameters<typeof QueuedMessageEditDialog>[0]
   );
   const field = document.body.querySelector("textarea")!;
   const button = (label: string) =>
-    [...document.body.querySelectorAll("button")].find((b) => b.textContent === label)!;
+    [...document.body.querySelectorAll("button")].find((b) => visibleSessionTestText(b) === label)!;
   return { ...handlers, field, button };
 }
 

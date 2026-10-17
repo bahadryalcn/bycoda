@@ -1,3 +1,4 @@
+import { Button } from "../../../shared/ui/Button";
 import { SearchInput } from "../../../shared/ui/SearchInput";
 import { t, useLocale } from "../../../shared/i18n";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -49,10 +50,10 @@ export function SessionFolderPicker({ folders, onPick, onDismiss }: Props) {
       data-session-folder-picker
       role="dialog"
       aria-label={t("Choose a session folder")}
-      className="overflow-hidden rounded-lg border border-content/10 bg-content/5 backdrop-blur-xl"
+      className="overflow-hidden rounded-lg border border-(--ui-tone-neutral-border) bg-(--ui-surface-raised) backdrop-blur-xl"
     >
-      <div className="flex items-center gap-2 border-b border-stroke px-2.5 py-2">
-        <Folder className="size-3.5 shrink-0 text-content/50" />
+      <div className="flex items-center gap-2 border-b border-(--ui-tone-neutral-border) px-2.5 py-2">
+        <Folder className="size-3.5 shrink-0 text-(--ui-text-secondary)" />
         <SearchInput
           ref={inputRef}
           value={query}
@@ -80,17 +81,20 @@ export function SessionFolderPicker({ folders, onPick, onDismiss }: Props) {
               pick(rows[active]);
             }
           }}
-          className="min-w-0 flex-1 bg-transparent text-[13px] text-content outline-none placeholder:text-content/35"
+          className="min-w-0 flex-1 bg-transparent text-[13px] text-(--ui-tone-neutral-fg) outline-none placeholder:text-(--ui-text-secondary)"
         />
-        <button
+        <Button
+          iconOnly
+          label={t("Cancel")}
+          variant="ghost"
           type="button"
           title={t("Cancel")}
           aria-label={t("Cancel")}
           onClick={onDismiss}
-          className="grid size-6 shrink-0 place-items-center rounded-md text-content/45 hover:bg-content/10 hover:text-content"
+          className="shrink-0"
         >
           <X className="size-3.5" />
-        </button>
+        </Button>
       </div>
       <div
         ref={lockOverscroll}
@@ -99,7 +103,7 @@ export function SessionFolderPicker({ folders, onPick, onDismiss }: Props) {
         className="max-h-[min(240px,40vh)] overflow-y-auto overscroll-none p-1"
       >
         {rows.length === 0 ? (
-          <p className="px-2 py-2 text-[12px] text-content/50">
+          <p className="px-2 py-2 text-[12px] text-(--ui-text-secondary)">
             {t("Type a name to create the first folder")}
           </p>
         ) : (
@@ -110,7 +114,11 @@ export function SessionFolderPicker({ folders, onPick, onDismiss }: Props) {
                 : undefined;
             const label = row.kind === "existing" ? (folder?.name ?? "") : row.name;
             return (
-              <button
+              <Button
+                className="w-full text-left"
+                fullWidth
+                selected={index === active}
+                variant="item"
                 key={row.kind === "existing" ? `folder:${row.folderId}` : "new"}
                 type="button"
                 role="option"
@@ -118,14 +126,9 @@ export function SessionFolderPicker({ folders, onPick, onDismiss }: Props) {
                 onMouseDown={(event) => event.preventDefault()}
                 onMouseEnter={() => setActive(index)}
                 onClick={() => pick(row)}
-                className={`flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-[13px] ${
-                  index === active
-                    ? "bg-skill/15 text-content"
-                    : "text-content/75 hover:bg-content/5 hover:text-content"
-                }`}
               >
                 {folder ? (
-                  <Folder className="size-3.5 shrink-0 text-content/50" />
+                  <Folder className="size-3.5 shrink-0 text-(--ui-text-secondary)" />
                 ) : (
                   <Plus className="size-3.5 shrink-0 text-skill" />
                 )}
@@ -133,11 +136,11 @@ export function SessionFolderPicker({ folders, onPick, onDismiss }: Props) {
                   {folder ? label : t("Create “{p0}”", { p0: label })}
                 </span>
                 {folder ? (
-                  <span className="shrink-0 text-[11px] tabular-nums text-content/40">
+                  <span className="shrink-0 text-[11px] tabular-nums text-(--ui-text-secondary)">
                     {folder.sessionIds.length}
                   </span>
                 ) : null}
-              </button>
+              </Button>
             );
           })
         )}

@@ -1,3 +1,4 @@
+import { Button } from "../../../shared/ui/Button";
 import { t, useLocale } from "../../../shared/i18n";
 import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
@@ -148,7 +149,9 @@ export function QuickWorkspaceControls({
   const label = value.mode === "worktree" ? "New worktree" : "Current checkout";
   return (
     <div className="flex min-w-0 items-center gap-2 pl-1.5">
-      <button
+      <Button
+        variant="ghost"
+        motion="none"
         type="button"
         disabled={disabled}
         aria-label={t("Workspace {p0}", { p0: label })}
@@ -159,11 +162,11 @@ export function QuickWorkspaceControls({
           beginClick("workspace");
         }}
         onClick={(event) => void show("workspace", event.currentTarget)}
-        className="-ml-1.5 flex h-6 min-w-0 max-w-48 items-center gap-1.5 rounded-md px-1.5 text-[12px] text-content/55 hover:bg-content/8 hover:text-content aria-expanded:bg-content/8 aria-expanded:text-content disabled:opacity-40"
+        className="-ml-1.5 flex min-w-0 max-w-48 items-center gap-1.5"
       >
         <Icon className="size-3.5 shrink-0" />
         <span className="truncate">{label}</span>
-      </button>
+      </Button>
       <GitPickerTrigger
         label={
           value.mode === "worktree"

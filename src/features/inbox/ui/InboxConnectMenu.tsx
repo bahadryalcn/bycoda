@@ -1,10 +1,8 @@
 import { t, useLocale } from "../../../shared/i18n";
 import { INBOX_SOURCE_LABELS, type ConnectableInboxSource } from "../model/inboxFilters";
 import { InboxProviderMark } from "./InboxProviderMark";
-import { Popover, type PopoverAnchor } from "../../../shared/ui/Popover";
-
-const WIDTH = 188;
-
+import type { PopoverAnchor } from "../../../shared/ui/Popover";
+import { DropdownMenu } from "../../../shared/ui/DropdownMenu";
 export function InboxConnectMenu({
   anchor,
   sources,
@@ -18,38 +16,21 @@ export function InboxConnectMenu({
 }) {
   useLocale();
   return (
-    <Popover
+    <DropdownMenu
       anchor={anchor}
-      gap={4}
-      width={WIDTH}
-      onDismiss={onClose}
-      role="menu"
-      aria-label={t("Connect an inbox source")}
-      onContextMenu={(event) => event.preventDefault()}
-      className="p-1"
-    >
-      <div className="px-2 pb-1 pt-1 text-[10px] font-semibold uppercase tracking-[0.08em] text-content/40">
-        {t("Not connected")}
-      </div>
-      {sources.map((source) => (
-        <button
-          key={source}
-          type="button"
-          role="menuitem"
-          onMouseDown={(event) => event.preventDefault()}
-          onClick={() => {
-            onClose();
-            onConnect(source);
-          }}
-          className="flex h-7 w-full items-center gap-2 rounded-lg px-2 text-left text-[13px] leading-none text-content hover:bg-content/5"
-        >
-          <InboxProviderMark provider={source} className="block size-3.5 shrink-0" />
-          <span className="min-w-0 flex-1 truncate">
-            {t("Connect ")}
-            {INBOX_SOURCE_LABELS[source]}
-          </span>
-        </button>
-      ))}
-    </Popover>
+      label={t("Connect an inbox source")}
+      width={220}
+      items={sources.map((source) => ({
+        kind: "item",
+        id: source,
+        label: t("Connect ") + INBOX_SOURCE_LABELS[source],
+        icon: <InboxProviderMark provider={source} className="block size-3.5 shrink-0" />,
+      }))}
+      onClose={onClose}
+      onPick={(id) => {
+        const source = sources.find((source) => source === id);
+        if (source) onConnect(source);
+      }}
+    />
   );
 }

@@ -1,3 +1,5 @@
+import { Alert } from "../../../shared/ui/Alert";
+import { Button } from "../../../shared/ui/Button";
 import { lazy, Suspense, useEffect, useState } from "react";
 import {
   finishOnboarding,
@@ -60,10 +62,12 @@ export function OnboardingHost({
 
   return accessError ? (
     <Modal title={t("File access")} onClose={() => setAccessError("")}>
-      <p role="alert">{accessError}</p>
-      <button disabled={accessBusy} onClick={setupAccess}>
+      <Alert role="alert" tone="danger">
+        {accessError}
+      </Alert>
+      <Button disabled={accessBusy} onClick={setupAccess} variant="secondary" type="button">
         {t("Retry")}
-      </button>
+      </Button>
     </Modal>
   ) : guide === "tour" ? (
     <Suspense fallback={null}>

@@ -1,3 +1,5 @@
+import { Button } from "../../../shared/ui/Button";
+import { TextField } from "../../../shared/ui/TextField";
 import { SearchInput } from "../../../shared/ui/SearchInput";
 import { errorText } from "../../../shared/lib/errors";
 import { t, useLocale } from "../../../shared/i18n/git";
@@ -25,16 +27,15 @@ type Props = {
   onClose: () => void;
 };
 
-/** What git calls the branch: `name` locally, `remote/name` for a remote one. */
+/** What git calls the branch:
+ame` locally, `remote/name` for a remote one. */
 function branchRef(branch: GitBranchInfo): string {
   return branch.remote ? `${branch.remote}/${branch.name}` : branch.name;
 }
 
-const ACTION =
-  "shrink-0 rounded-md px-1.5 py-0.5 text-[11px] text-content/65 hover:bg-content/10 hover:text-content disabled:opacity-40";
+const ACTION = "shrink-0";
 
-const INPUT =
-  "h-6 min-w-0 flex-1 rounded-md border border-content/10 bg-content/5 px-2 font-sans text-[12px] text-content outline-none placeholder:text-content/30 focus:border-content/25";
+const INPUT = "min-w-0 flex-1";
 
 /** The branch being created, or renamed from `from`. */
 type Editing = { kind: "create" } | { kind: "rename"; from: string };
@@ -116,7 +117,9 @@ export function BranchManagerDialog({ cwd, onClose }: Props) {
       className="flex h-8 items-center gap-1.5 px-1"
       onSubmit={(event) => void submitEditing(event)}
     >
-      <input
+      <TextField
+        hideLabel
+        label=""
         type="text"
         value={draft}
         autoFocus
@@ -131,14 +134,30 @@ export function BranchManagerDialog({ cwd, onClose }: Props) {
           event.stopPropagation();
           setEditing(null);
         }}
+        fieldClassName="min-w-0 flex-1"
         className={INPUT}
       />
-      <button type="submit" disabled={busy || !draft.trim()} className={ACTION}>
+      <Button
+        size="sm"
+        variant="primary"
+        motion="none"
+        type="submit"
+        disabled={busy || !draft.trim()}
+        className={ACTION}
+      >
         {submitLabel}
-      </button>
-      <button type="button" disabled={busy} onClick={() => setEditing(null)} className={ACTION}>
+      </Button>
+      <Button
+        size="sm"
+        variant="ghost"
+        motion="none"
+        type="button"
+        disabled={busy}
+        onClick={() => setEditing(null)}
+        className={ACTION}
+      >
         {t("Cancel")}
-      </button>
+      </Button>
     </form>
   );
 
@@ -153,7 +172,10 @@ export function BranchManagerDialog({ cwd, onClose }: Props) {
         {isCurrent ? (
           <Check className="size-3.5 shrink-0" strokeWidth={1.75} />
         ) : (
-          <GitBranch className="size-3.5 shrink-0 text-content/50" strokeWidth={1.75} />
+          <GitBranch
+            className="size-3.5 shrink-0 text-[var(--ui-text-secondary)]"
+            strokeWidth={1.75}
+          />
         )}
         <span
           title={reference}
@@ -164,7 +186,10 @@ export function BranchManagerDialog({ cwd, onClose }: Props) {
           {reference}
         </span>
         {isCurrent ? null : (
-          <button
+          <Button
+            size="sm"
+            variant="ghost"
+            motion="none"
             type="button"
             disabled={busy}
             title={
@@ -176,11 +201,14 @@ export function BranchManagerDialog({ cwd, onClose }: Props) {
             className={ACTION}
           >
             {t("Checkout")}
-          </button>
+          </Button>
         )}
         {current && !isCurrent ? (
           <>
-            <button
+            <Button
+              size="sm"
+              variant="ghost"
+              motion="none"
               type="button"
               disabled={busy}
               title={t("Merge {p0} into {p1}", { p0: reference, p1: current })}
@@ -188,8 +216,11 @@ export function BranchManagerDialog({ cwd, onClose }: Props) {
               className={ACTION}
             >
               {t("Merge")}
-            </button>
-            <button
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              motion="none"
               type="button"
               disabled={busy}
               title={t("Rebase {p0} onto {p1}", { p0: current, p1: reference })}
@@ -197,11 +228,14 @@ export function BranchManagerDialog({ cwd, onClose }: Props) {
               className={ACTION}
             >
               {t("Rebase")}
-            </button>
+            </Button>
           </>
         ) : null}
         {branch.remote ? (
-          <button
+          <Button
+            size="sm"
+            variant="ghost"
+            motion="none"
             type="button"
             disabled={busy}
             title={t("Delete {p0} from {p1}", { p0: branch.name, p1: branch.remote })}
@@ -209,18 +243,24 @@ export function BranchManagerDialog({ cwd, onClose }: Props) {
             className={ACTION}
           >
             {t("Delete")}
-          </button>
+          </Button>
         ) : (
           <>
-            <button
+            <Button
+              size="sm"
+              variant="ghost"
+              motion="none"
               type="button"
               disabled={busy}
               onClick={() => startEditing({ kind: "rename", from: branch.name })}
               className={ACTION}
             >
               {t("Rename")}
-            </button>
-            <button
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              motion="none"
               type="button"
               disabled={busy || isCurrent}
               title={isCurrent ? t("Cannot delete the current branch") : undefined}
@@ -228,7 +268,7 @@ export function BranchManagerDialog({ cwd, onClose }: Props) {
               className={ACTION}
             >
               {t("Delete")}
-            </button>
+            </Button>
           </>
         )}
       </li>
@@ -238,7 +278,7 @@ export function BranchManagerDialog({ cwd, onClose }: Props) {
   const section = (title: string, rows: GitBranchInfo[]) =>
     rows.length === 0 ? null : (
       <li key={title}>
-        <h3 className="px-1 pt-2 pb-1 text-[10px] font-semibold tracking-[0.04em] text-content/55 uppercase">
+        <h3 className="px-1 pt-2 pb-1 text-[10px] font-semibold tracking-[0.04em] text-[var(--ui-text-secondary)] uppercase">
           {title}
         </h3>
         <ul>{rows.map(renderRow)}</ul>
@@ -263,6 +303,7 @@ export function BranchManagerDialog({ cwd, onClose }: Props) {
       <div className="flex min-h-0 flex-col gap-2 p-3">
         <div className="flex items-center gap-2">
           <SearchInput
+            appearance="field"
             standalone
             type="text"
             value={query}
@@ -272,29 +313,31 @@ export function BranchManagerDialog({ cwd, onClose }: Props) {
             autoComplete="off"
             onChange={(event) => setQuery(event.target.value)}
             containerClassName="min-w-0 flex-1"
-            className="h-7 rounded-md border border-content/10 bg-content/5 px-2 font-sans text-[12px] text-content outline-none placeholder:text-content/30 focus:border-content/25"
           />
-          <button
+          <Button
+            size="sm"
+            variant="ghost"
+            motion="none"
             type="button"
             disabled={busy}
             onClick={() => startEditing({ kind: "create" })}
-            className="inline-flex h-7 shrink-0 items-center gap-1 rounded-md bg-content/10 px-2 text-[12px] text-content hover:bg-content/15 disabled:opacity-40"
+            className="inline-flex shrink-0 items-center gap-1"
           >
             <Plus className="size-3.5" strokeWidth={1.75} />
             {t("New Branch…")}
-          </button>
+          </Button>
         </div>
         {editing?.kind === "create" ? renderForm("New branch name", "Create") : null}
         {error ? (
           <p
             role="alert"
-            className="max-h-24 overflow-y-auto whitespace-pre-wrap text-[11px] leading-4 text-danger/90"
+            className="max-h-24 overflow-y-auto whitespace-pre-wrap text-[11px] leading-4 text-danger"
           >
             {error}
           </p>
         ) : null}
         {listed.length === 0 ? (
-          <p className="px-1 py-2 text-[12px] text-content/45">
+          <p className="px-1 py-2 text-[12px] text-[var(--ui-text-muted)]">
             {needle ? t("No branches match") : t("No branches")}
           </p>
         ) : (

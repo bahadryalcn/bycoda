@@ -9,6 +9,7 @@ import { HostStore } from "./store";
 import { createHostServer } from "./server";
 import { DesktopSessions, desktopDatabasePaths, normalizeProjectPath } from "./desktopSessions";
 import { DesktopLive } from "./desktopLive";
+import { verifyRemoteProjectAlias } from "../src/features/connections/model/remoteProjects";
 
 const cleanups: Array<() => Promise<void>> = [];
 afterEach(async () => {
@@ -103,6 +104,42 @@ async function setup() {
 }
 
 describe("desktop sessions on the host", () => {
+  it("verifies legacy project aliases when listing and reading a running desktop session", async () => {
+    const s = await setup();
+    const cwd = s.project.cwd.replace(/\\/g, "/") + "/";
+    s.store.db
+      .prepare("INSERT INTO projects VALUES (?, ?, ?)")
+      .run("legacy-alias", cwd, s.project.name);
+    s.seed({ id: "running-alias", cwd: s.project.cwd });
+    s.desktopDb
+      .prepare("INSERT INTO in_flight_sessions VALUES (?, ?, 0)")
+      .run("running-alias", s.project.cwd);
+    const list = (await s.call("sessions.list", { projectId: "legacy-alias" })).result;
+    expect(list).toEqual(
+      expect.arrayContaining([expect.objectContaining({ id: "running-alias", status: "running" })]),
+    );
+    const sync = (await s.call("sessions.sync", { sessionId: "running-alias" })).result;
+    expect(sync.value.projectId).toBe(s.project.id);
+    expect(sync.value.status).toBe("running");
+    await verifyRemoteProjectAlias(
+      async (method, params) => {
+        const response = await s.call(method, params);
+        if (response.error) throw new Error(response.error);
+        return response.result;
+      },
+      {
+        key: "remote://test/project",
+        environmentId: s.store.environmentId,
+        projectId: "legacy-alias",
+        cwd,
+      },
+      sync.value.projectId,
+    );
+    expect((await s.call("projects.open", { cwd })).result.id).toBe(s.project.id);
+    expect(s.store.projects()).toHaveLength(2);
+    expect((await s.call("sessions.list", { projectId: "legacy-alias" })).result).toHaveLength(1);
+  });
+
   it("lists only matching, started, supported desktop sessions", async () => {
     const s = await setup();
     s.seed({ id: "ok", cwd: s.project.cwd, updated: 200 });
@@ -410,7 +447,13 @@ describe("desktop sessions on the host", () => {
       .prepare(
         "INSERT INTO sessions (id, cwd, harness, model, model_settings, runtime_mode, title, provider_session_id, blocks_json, created_at, updated_at) VALUES ('a', ?, 'codex', 'codex:test', '{}', 'supervised', 'Title a', 'prov-a', ?, 50, 900)",
       )
-      .run(s.project.cwd, JSON.stringify([{ id: "b1", role: "user", text: "hi" }, { id: "t1", role: "tool", text: "Agent" }]));
+      .run(
+        s.project.cwd,
+        JSON.stringify([
+          { id: "b1", role: "user", text: "hi" },
+          { id: "t1", role: "tool", text: "Agent" },
+        ]),
+      );
     const desktop = new DesktopSessions(
       () => [s.dbPath, mirrorPath],
       process.platform,

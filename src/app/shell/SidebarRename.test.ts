@@ -1057,7 +1057,7 @@ describe("sidebar orchestration card", () => {
     expect(orchestrationIcon?.tagName).toBe("BUTTON");
     expect(orchestrationIcon?.classList.contains("opacity-0")).toBe(false);
     expect(orchestrationIcon?.querySelector("svg")?.classList.contains("size-3")).toBe(true);
-    expect(orchestrationIcon?.hasAttribute("title")).toBe(false);
+    expect(orchestrationIcon?.getAttribute("title")).toBe("");
     expect(card().querySelector("[data-session-select] [data-orchestration-icon]")).toBeNull();
     expect(card().textContent).toContain("3 agents");
     expect(card().textContent).toContain("1/3 done");
@@ -1575,7 +1575,7 @@ describe("collapsed rail Inbox actions", () => {
     const projectPicker = rail.querySelector<HTMLButtonElement>(
       'button[aria-label^="Switch project"]',
     )!;
-    expect(projectPicker.className).toContain("size-8");
+    expect(projectPicker.dataset.buttonSize).toBe("sm");
     const socialShortcut = rail.querySelector<HTMLButtonElement>(
       'button[aria-label="Social Media"]',
     )!;
@@ -1585,7 +1585,7 @@ describe("collapsed rail Inbox actions", () => {
     expect(
       Array.from(rail.querySelectorAll("button"))
         .filter((button) => button !== socialShortcut)
-        .every((button) => button.className.includes("size-8")),
+        .every((button) => button.classList.contains("bycoda-arc")),
     ).toBe(true);
     expect(
       Array.from(rail.querySelectorAll("button")).every(

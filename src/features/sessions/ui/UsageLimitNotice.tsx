@@ -1,3 +1,4 @@
+import { Button } from "../../../shared/ui/Button";
 import { t, useLocale } from "../../../shared/i18n";
 import { useEffect, useState } from "react";
 import { Clock, Gauge, Play, Replace, X } from "../../../shared/ui/icons";
@@ -5,9 +6,6 @@ import type { ProviderAccountProvider } from "../../providers/model/providerAcco
 import type { UsageLimit } from "../model/session";
 import { formatUsageLimitReset } from "../model/usageLimit";
 import { ProviderAccountMenu } from "./ProviderAccountMenu";
-
-const BUTTON =
-  "flex h-6 shrink-0 items-center gap-1.5 rounded-md px-1.5 hover:bg-content/10 hover:text-content";
 
 export function UsageLimitNotice({
   limit,
@@ -41,10 +39,10 @@ export function UsageLimitNotice({
   }, [waiting]);
 
   return (
-    <div className="px-2 text-content/55" data-usage-limit>
-      <div className="relative z-0 flex h-8 items-center gap-2 rounded-t-[10px] border border-b-0 border-warning/25 bg-warning/10 px-2 text-[12px]">
-        <Gauge className="size-3.5 shrink-0 text-warning" />
-        <span className="shrink-0 text-content/85">{t("Usage limit reached")}</span>
+    <div className="px-2 text-(--ui-text-secondary)" data-usage-limit>
+      <div className="relative z-0 flex h-8 items-center gap-2 rounded-t-[10px] border border-b-0 border-(--ui-tone-warning-border) bg-(--ui-tone-warning-subtle) px-2 text-[12px]">
+        <Gauge className="size-3.5 shrink-0 text-(--ui-tone-warning-fg)" />
+        <span className="shrink-0 text-(--ui-text-secondary)">{t("Usage limit reached")}</span>
         <span className="min-w-0 flex-1 truncate">
           {limit.resetsAt == null
             ? ""
@@ -61,51 +59,54 @@ export function UsageLimitNotice({
           />
         ) : null}
         {onSwitchModel ? (
-          <button
+          <Button
+            variant="ghost"
             type="button"
             title={t("Continue this conversation with another model")}
             onClick={onSwitchModel}
-            className={BUTTON}
           >
             <Replace className="size-3.5" />
             {t("Switch model")}
-          </button>
+          </Button>
         ) : null}
         {!waiting ? (
-          <button type="button" onClick={onResume} className={BUTTON}>
+          <Button variant="ghost" type="button" onClick={onResume}>
             <Play className="size-3.5" />
             {t("Resume")}
-          </button>
+          </Button>
         ) : limit.resumeAtReset ? (
-          <button
+          <Button
+            variant="ghost"
             type="button"
             title={t("Cancel the automatic resume")}
             onClick={() => onResumeAtReset?.(false)}
-            className={`${BUTTON} text-warning`}
           >
             <Clock className="size-3.5" />
             {t("Resuming at reset")}
-          </button>
+          </Button>
         ) : (
-          <button
+          <Button
+            variant="ghost"
             type="button"
             title={t("Continue this session once the limit resets")}
             onClick={() => onResumeAtReset?.(true)}
-            className={BUTTON}
           >
             <Clock className="size-3.5" />
             {t("Resume at reset")}
-          </button>
+          </Button>
         )}
-        <button
+        <Button
+          iconOnly
+          label={t("Dismiss usage limit notice")}
+          variant="ghost"
           type="button"
           title={t("Dismiss")}
           aria-label={t("Dismiss usage limit notice")}
           onClick={onDismiss}
-          className="grid size-6 shrink-0 place-items-center rounded-md hover:bg-content/10 hover:text-content"
+          className="shrink-0"
         >
           <X className="size-3.5" />
-        </button>
+        </Button>
       </div>
     </div>
   );

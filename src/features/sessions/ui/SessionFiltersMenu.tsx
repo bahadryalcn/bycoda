@@ -1,3 +1,4 @@
+import { Button } from "../../../shared/ui/Button";
 import { t, useLocale } from "../../../shared/i18n";
 import { Check } from "../../../shared/ui/icons";
 import { type ReactNode } from "react";
@@ -183,16 +184,18 @@ export function SessionFiltersMenu({ x, y, harnesses, filters, onChange, onClose
 
       {hasActiveSessionFilters(filters) ? (
         <>
-          <div role="separator" className="my-1 h-px bg-content/10" />
-          <button
+          <div role="separator" className="my-1 h-px bg-(--ui-surface-raised)" />
+          <Button
+            fullWidth
+            variant="item"
             type="button"
             role="menuitem"
             onMouseDown={(event) => event.preventDefault()}
             onClick={() => onChange(DEFAULT_SESSION_SIDEBAR_FILTERS)}
-            className="flex h-7 w-full items-center rounded-lg px-2 text-left text-[13px] leading-none text-content/70 hover:bg-content/5 hover:text-content"
+            className="w-full text-left"
           >
             {t("Clear filters")}
-          </button>
+          </Button>
         </>
       ) : null}
     </Popover>
@@ -202,7 +205,7 @@ export function SessionFiltersMenu({ x, y, harnesses, filters, onChange, onClose
 function SectionLabel({ children }: { children: string }) {
   useLocale();
   return (
-    <div className="px-2 pb-0.5 pt-2 text-[10px] font-semibold uppercase tracking-[0.08em] text-content/40">
+    <div className="px-2 pb-0.5 pt-2 text-[10px] font-semibold uppercase tracking-[0.08em] text-(--ui-text-secondary)">
       {children}
     </div>
   );
@@ -223,17 +226,19 @@ function FilterItem({
 }) {
   useLocale();
   return (
-    <button
+    <Button
+      fullWidth
+      variant="item"
       type="button"
       role={role}
       aria-checked={checked}
       onMouseDown={(event) => event.preventDefault()}
       onClick={onClick}
-      className="flex h-7 w-full items-center gap-2 rounded-lg px-2 text-left text-[13px] leading-none text-content hover:bg-content/5"
+      className="w-full text-left"
     >
       {icon}
       <span className="min-w-0 flex-1 truncate">{label}</span>
       {checked ? <Check className="size-3.5 shrink-0" strokeWidth={2.25} /> : null}
-    </button>
+    </Button>
   );
 }

@@ -1,3 +1,6 @@
+import { Alert } from "../../../shared/ui/Alert";
+import { TextareaField } from "../../../shared/ui/TextareaField";
+import { Button } from "../../../shared/ui/Button";
 import { t, useLocale } from "../../../shared/i18n";
 import {
   useCallback,
@@ -47,9 +50,6 @@ type Props = {
   onRemove: () => void;
   onCancel: () => void;
 };
-
-const BUTTON_GHOST =
-  "rounded-md px-3 py-1.5 text-[12px] text-content/70 hover:bg-content/8 hover:text-content disabled:opacity-40";
 
 /** Edits a queued message's text and attachments in a dialog instead of the queue row. */
 export function QueuedMessageEditDialog({ message, canAttach, onSave, onRemove, onCancel }: Props) {
@@ -241,7 +241,7 @@ export function QueuedMessageEditDialog({ message, canAttach, onSave, onRemove, 
           void collect(() => attachmentsFromFiles(files));
         }}
       >
-        <div className="rounded-lg border border-content/10 bg-content/5 focus-within:border-content/25">
+        <div className="rounded-lg border border-(--ui-tone-neutral-border) bg-(--ui-surface-raised) focus-within:border-(--ui-tone-neutral-border)">
           {draft.attachments.length > 0 ? (
             <div className="flex flex-wrap gap-1.5 px-3 pt-2.5">
               {draft.attachments.map((file, index) => (
@@ -254,7 +254,9 @@ export function QueuedMessageEditDialog({ message, canAttach, onSave, onRemove, 
               ))}
             </div>
           ) : null}
-          <textarea
+          <TextareaField
+            hideLabel
+            label=""
             ref={field}
             aria-label={t("Queued message text")}
             value={draft.text}
@@ -266,19 +268,22 @@ export function QueuedMessageEditDialog({ message, canAttach, onSave, onRemove, 
             }
             onKeyDown={onKeyDown}
             onPaste={onPaste}
-            className="scrollbar-none block max-h-[45vh] min-h-28 w-full resize-none bg-transparent px-3 py-2.5 font-sans text-sm leading-5.5 text-content outline-none placeholder:text-content/30"
+            fieldClassName="block w-full"
+            className="resize-none"
           />
           {canAttach ? (
             <div className="flex px-2 pb-2">
-              <button
+              <Button
+                iconOnly
+                label={t("Add files or images")}
+                variant="ghost"
                 type="button"
                 title={t("Add files or images")}
                 aria-label={t("Add files or images")}
                 onClick={() => void collect(pickAttachments)}
-                className="grid size-6.5 place-items-center rounded-md bg-selection text-content/50 hover:bg-selection-hover hover:text-content"
               >
                 <FilePlus className="size-3.5" strokeWidth={1.5} />
-              </button>
+              </Button>
             </div>
           ) : null}
         </div>
@@ -286,60 +291,45 @@ export function QueuedMessageEditDialog({ message, canAttach, onSave, onRemove, 
         {loadingAttachments > 0 ? <p role="status">{t("Loading…")}</p> : null}
 
         {draft.attachments.some((file) => file.missing) ? (
-          <p className="text-[11px] leading-4 text-warning">
+          <p className="text-[11px] leading-4 text-(--ui-tone-warning-fg)">
             {t("Missing files are dropped from the message when you save.")}
           </p>
         ) : null}
         {error ? (
-          <p role="alert" className="text-[11px] leading-4 text-danger/90">
+          <Alert tone="danger" role="alert">
             {error}
-          </p>
+          </Alert>
         ) : null}
 
         {confirmingDiscard ? (
-          <div
-            role="alert"
-            className="flex items-center justify-end gap-2 text-[12px] text-content/70"
-          >
+          <Alert tone="info" role="alert">
             <span className="mr-auto">{t("Discard your changes?")}</span>
-            <button
-              type="button"
-              onClick={() => setConfirmingDiscard(false)}
-              className={BUTTON_GHOST}
-            >
+            <Button variant="ghost" type="button" onClick={() => setConfirmingDiscard(false)}>
               {t("Keep editing")}
-            </button>
-            <button
-              type="button"
-              onClick={onCancel}
-              className="rounded-md bg-danger/90 px-3 py-1.5 text-[12px] font-medium text-on-solid hover:bg-danger"
-            >
+            </Button>
+            <Button variant="ghost" type="button" onClick={onCancel}>
               {t("Discard")}
-            </button>
-          </div>
+            </Button>
+          </Alert>
         ) : (
           <div className="flex items-center justify-end gap-2">
             {empty ? (
-              <button
-                type="button"
-                onClick={onRemove}
-                className="mr-auto rounded-md px-3 py-1.5 text-[12px] text-danger hover:bg-danger/10"
-              >
+              <Button variant="ghost" type="button" onClick={onRemove} className="mr-auto">
                 {t("Remove from queue")}
-              </button>
+              </Button>
             ) : null}
-            <button type="button" onClick={requestClose} className={BUTTON_GHOST}>
+            <Button variant="ghost" type="button" onClick={requestClose}>
               {t("Cancel")}
-            </button>
-            <button
+            </Button>
+            <Button
+              variant="ghost"
               type="button"
               disabled={empty || loadingAttachments > 0}
               onClick={save}
               title={t("Save (Ctrl/Cmd+Enter)")}
-              className="inline-flex items-center gap-1.5 rounded-md bg-content px-3 py-1.5 text-[12px] font-medium text-background-base hover:bg-content/80 disabled:opacity-40"
             >
               {t("Save")}
-            </button>
+            </Button>
           </div>
         )}
       </div>
