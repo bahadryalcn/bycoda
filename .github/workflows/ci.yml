@@ -4,12 +4,55 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
+  changes:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      web: ${{ steps.filter.outputs.web }}
+      host: ${{ steps.filter.outputs.host }}
+      native: ${{ steps.filter.outputs.native }}
+      rpm: ${{ steps.filter.outputs.rpm }}
+    steps:
+      - uses: actions/checkout@v4
+      # Keep workflow-level checks present, including documentation-only PRs.
+      # Main/manual runs exercise every platform, even after a cancelled push.
+      - uses: dorny/paths-filter@v4
+        id: filter
+        if: github.event_name == 'pull_request'
+        with:
+          filters: |
+            web:
+              - &shared '{package.json,pnpm-lock.yaml,pnpm-workspace.yaml,.npmrc,tsconfig*.json,vite.config.*,vitest.config.*,index.html}'
+              - &tooling '{.github,scripts,vendor,.cargo}/**'
+              - &typescript '{src,host,tests,public}/**'
+            host:
+              - *shared
+              - *tooling
+              - *typescript
+            native:
+              - *shared
+              - *tooling
+              - &rust '{src-tauri/**,Cargo.toml,Cargo.lock,rust-toolchain*,rustfmt.toml,.rustfmt.toml,clippy.toml,.clippy.toml}'
+              # Rust embeds the SSH ACL script and the host parity fixture.
+              - &embedded 'host/{windows-acl.ps1,fixtures/**}'
+            rpm:
+              - *shared
+              - *tooling
+              - *rust
+              - *embedded
+
   repository-hygiene:
     runs-on: ubuntu-latest
     steps:
@@ -20,6 +63,8 @@ jobs:
       - run: node scripts/checks/check-repository-hygiene.mjs
 
   host:
+    needs: changes
+    if: github.event_name != 'pull_request' || needs.changes.outputs.host == 'true'
     strategy:
       fail-fast: false
       matrix:
@@ -36,9 +81,30 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm run test:host
-      - run: pnpm run host:package
+      # test:host's pretest hook already typechecks and builds the host.
+      - run: node host/package.mjs
+
+  web:
+    needs: changes
+    if: github.event_name != 'pull_request' || needs.changes.outputs.web == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 12.8.2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm test
+      # Also validate the production frontend bundle without a native installer.
+      - run: pnpm run build
 
   check:
+    needs: changes
+    if: github.event_name != 'pull_request' || needs.changes.outputs.native == 'true'
     strategy:
       fail-fast: false
       matrix:
@@ -51,27 +117,21 @@ jobs:
         if: runner.os == 'Linux'
         run: bash scripts/setup/install-linux-deps-debian.sh --sources /etc/apt/sources.list.d/ubuntu.sources
 
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 12.8.2
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: pnpm
-
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: native-check
+          save-if: ${{ github.ref == 'refs/heads/main' }}
 
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm test
-      - run: pnpm exec tsc --noEmit
       - run: cargo fmt --check
       - run: cargo clippy --workspace --all-targets -- -D warnings
-      - run: cargo check
       - run: cargo test
 
   rpm:
+    needs: changes
+    if: github.event_name != 'pull_request' || needs.changes.outputs.rpm == 'true'
     name: RPM build (${{ matrix.image }})
     runs-on: ubuntu-latest
     container: ${{ matrix.image }}
@@ -104,6 +164,10 @@ jobs:
           version: 12.8.2
 
       - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: rpm-${{ matrix.image }}
+          save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - run: pnpm install --frozen-lockfile
       - run: pnpm run build:fedora

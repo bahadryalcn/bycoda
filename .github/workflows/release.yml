@@ -71,6 +71,9 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin' || '' }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: release-${{ matrix.platform }}
       - run: pnpm install --frozen-lockfile
       # The installer ships this platform's host package; the app installs and
       # upgrades its own host from it (src-tauri/src/bundled_host.rs).
