@@ -52,3 +52,9 @@ it("preserves array order and distinguishes an absent value from null", () => {
   expect(sameQueueValue(undefined, null)).toBe(false);
   expect(sameQueueValue(undefined, undefined)).toBe(true);
 });
+
+it("does not ignore a real change to a prototype-named JSON setting", () => {
+  const first = JSON.parse('{"modelSettings":{"__proto__":"first"}}');
+  const second = JSON.parse('{"modelSettings":{"__proto__":"second"}}');
+  expect(sameQueueValue(first, second)).toBe(false);
+});

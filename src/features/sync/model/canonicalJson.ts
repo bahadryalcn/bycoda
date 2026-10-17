@@ -2,7 +2,8 @@ function sortKeys(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(sortKeys);
   if (!value || typeof value !== "object") return value;
   const source = value as Record<string, unknown>;
-  const out: Record<string, unknown> = {};
+  // JSON keys such as "__proto__" must remain data properties.
+  const out: Record<string, unknown> = Object.create(null);
   for (const key of Object.keys(source).sort()) {
     if (source[key] !== undefined) out[key] = sortKeys(source[key]);
   }
