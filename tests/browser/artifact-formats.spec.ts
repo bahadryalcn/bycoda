@@ -115,6 +115,7 @@ test("XLSX attachment is parsed by the real worker and switches workbook sheets"
   const dialog = page.getByRole("dialog");
   await expect(dialog.getByText("Workbook marker", { exact: true })).toBeVisible();
   await expect(dialog.getByText("Verified", { exact: true })).toBeVisible();
+  await expect(dialog).toBeInViewport({ ratio: 1 });
   await dialog.getByRole("tab", { name: "Metrics", exact: true }).click();
   await expect(dialog.getByText("Answer", { exact: true })).toBeVisible();
   await expect(dialog.getByText("42", { exact: true })).toBeVisible();

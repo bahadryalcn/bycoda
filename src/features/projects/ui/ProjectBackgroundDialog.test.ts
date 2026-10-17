@@ -107,8 +107,6 @@ describe("project background dialog", () => {
     );
     const dialog = document.querySelector<HTMLElement>('[role="dialog"][aria-modal="true"]')!;
     expect(dialog.className).toContain("max-h-[calc(100dvh-32px)]");
-    expect(dialog.parentElement?.className).toContain("top-1/2");
-    expect(dialog.parentElement?.className).toContain("-translate-y-1/2");
 
     const heading = Array.from(dialog.querySelectorAll("span")).find(
       (node) => node.textContent === "Background effect",
