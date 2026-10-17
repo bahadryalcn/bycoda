@@ -92,6 +92,7 @@ import {
 import { openReplacePanel } from "../../files/editor/editorSearch";
 import { NoteMarkdownEditor, NoteMarkdownToolbar } from "./NoteMarkdownEditor";
 import { NoteEditablePreview } from "./NoteEditablePreview";
+import { NoteEditorPane } from "./NoteEditorPane";
 import {
   filterNoteLibrary,
   groupNoteLibrary,
@@ -1484,7 +1485,7 @@ function NoteEditor({
       tabIndex={-1}
       onKeyDown={onEditorShortcut}
       onPaste={onPreviewPaste}
-      className="note-detail min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-none"
+      className="note-detail min-h-0 min-w-0 flex-1"
     >
       <SurfaceSelection
         className="note-detail-content"
@@ -1705,12 +1706,12 @@ function NoteEditor({
               {imageBusy ? t("Adding images…") : t("Drop images here")}
             </div>
           ) : null}
-          <div className={mode === "split" ? "note-split" : ""}>
+          <div className={mode === "split" ? "note-layout note-split" : "note-layout"}>
             {/* Stays mounted in preview so undo history survives the switch. */}
-            <div className={mode !== "preview" ? "min-w-0" : "hidden"}>
-              {mode === "split" ? <div className="note-pane-label">{t("Source")}</div> : null}
+            <NoteEditorPane label={t("Source")} hidden={mode === "preview"}>
               <NoteMarkdownEditor
                 viewRef={editorViewRef}
+                minHeight={0}
                 autoFocus={blank}
                 value={body}
                 onChange={(next) => {
@@ -1721,12 +1722,9 @@ function NoteEditor({
                 onPasteImages={pasteImages}
                 onFocus={() => setToolbarTarget("source")}
               />
-            </div>
+            </NoteEditorPane>
             {mode === "source" ? null : (
-              <div className="note-preview-pane min-w-0">
-                {mode === "split" ? (
-                  <div className="note-pane-label">{t("Edit preview")}</div>
-                ) : null}
+              <NoteEditorPane label={t("Edit preview")}>
                 <NoteEditablePreview
                   value={body}
                   cwd={sourceCwd}
@@ -1741,7 +1739,7 @@ function NoteEditor({
                   onSave={() => void saveNow()}
                   onPasteImages={pasteImages}
                 />
-              </div>
+              </NoteEditorPane>
             )}
           </div>
         </div>

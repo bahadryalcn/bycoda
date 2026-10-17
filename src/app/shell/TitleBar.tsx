@@ -353,7 +353,7 @@ function TitleTabItem({
         sortable.setItemRef(tab.id, el);
         itemRef?.(el);
       }}
-      className={`reorder-item tab-motion group @container relative flex h-full cursor-default touch-none items-center self-stretch min-w-0 w-full ${closable ? "pr-[var(--ui-control-height-compact)]" : ""}`}
+      className="reorder-item tab-motion group @container relative flex h-full cursor-default touch-none items-center self-stretch min-w-0 w-full"
       data-tauri-drag-region="false"
       data-tab-draggable={canDrag || undefined}
       onDragStart={(event) => event.preventDefault()}
@@ -394,7 +394,7 @@ function TitleTabItem({
         onDoubleClick={() => {
           if (tab.previewFileId) onPinFile?.(tab.previewFileId);
         }}
-        className="relative min-w-0 flex-1 self-center"
+        className={`relative min-w-0 flex-1 self-center ${closable ? "pe-[var(--ui-control-height-compact)]" : ""}`}
       >
         {tab.harnesses.length > 0 ? (
           <TabHarnesses
@@ -473,7 +473,7 @@ function TitleTabItem({
             e.stopPropagation();
             onClose(tab.id);
           }}
-          className="absolute right-0 top-1/2 -translate-y-1/2 opacity-0 transition-opacity group-hover:opacity-100 group-has-[button:focus-visible]:opacity-100"
+          className="absolute end-0 inset-bs-1/2 -translate-y-1/2 opacity-0 transition-opacity group-hover:opacity-100 group-has-[button:focus-visible]:opacity-100"
         >
           <X className="size-3" strokeWidth={1.75} />
         </Button>

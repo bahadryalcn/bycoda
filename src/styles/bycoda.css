@@ -133,6 +133,7 @@
 .bycoda-project-rail {
   background: var(--bycoda-panel);
   box-shadow: none;
+  overflow: clip;
 }
 .bycoda-rail-brand {
   display: flex;
@@ -247,7 +248,8 @@ html.theme-light [data-composer-box] {
 }
 html .user-message-bubble {
   border-radius: 12px;
-  border-inline-start: 1px solid var(--color-stroke);
+  border: 1px solid var(--color-stroke);
+  background: var(--ui-surface);
 }
 .bycoda-title-settle {
   animation: bycoda-title-settle 220ms ease-out both;
@@ -378,6 +380,17 @@ html.theme-light .project-sigil {
   padding: 6px 7px;
   border-bottom: 1px solid var(--color-stroke);
 }
+.bycoda-rail-tools--compact {
+  display: none;
+}
+@container rail (width <= 200px) {
+  .bycoda-rail-tools--expanding {
+    display: none;
+  }
+  .bycoda-rail-tools--compact {
+    display: flex;
+  }
+}
 /* Recovery and live-agent rows share the navigation rhythm and collapse
    entirely when neither has anything to show. */
 .bycoda-rail-status {
@@ -391,6 +404,7 @@ html.theme-light .project-sigil {
 }
 .bycoda-project-ledger {
   padding-top: 8px;
+  scrollbar-gutter: stable;
 }
 .bycoda-sidebar {
   background: var(--color-background-base);
@@ -483,5 +497,9 @@ html.theme-light .bycoda-workspace-tabs {
   font-size: 12px;
 }
 
-html.theme-light { --glass-blur: 8px; }
-html[data-performance-no-blur] { --glass-blur: 0px; }
+html.theme-light {
+  --glass-blur: 8px;
+}
+html[data-performance-no-blur] {
+  --glass-blur: 0px;
+}

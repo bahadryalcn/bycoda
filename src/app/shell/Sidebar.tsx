@@ -2919,6 +2919,13 @@ function SidebarComponent({
                   {sessionListEntries.map((entry, index) => {
                     if (entry.kind === "pinned" || entry.kind === "reminders") {
                       const isReminders = entry.kind === "reminders";
+                      const groupSessions =
+                        entry.kind === "pinned"
+                          ? [
+                              ...entry.folders.flatMap((folder) => folder.allSessions),
+                              ...entry.sessions,
+                            ]
+                          : entry.sessions;
                       const expanded = searchNarrowed || !entry.collapsed;
                       const beforeUngrouped = sessionListEntries[index + 1]?.kind === "session";
                       return (
@@ -2938,23 +2945,16 @@ function SidebarComponent({
                                     }
                                   : { name: "Pinned" }
                               }
-                              sessions={
-                                entry.kind === "pinned"
-                                  ? [
-                                      ...entry.folders.flatMap((folder) => folder.allSessions),
-                                      ...entry.sessions,
-                                    ]
-                                  : entry.sessions
-                              }
+                              sessions={groupSessions}
                               expanded={expanded}
                               dropTarget={!isReminders && sessionDrop?.kind === "pinned"}
-                              busy={entry.sessions.some((session) =>
+                              busy={groupSessions.some((session) =>
                                 listedBusySessionIds.has(session.id),
                               )}
-                              done={entry.sessions.some((session) =>
+                              done={groupSessions.some((session) =>
                                 unseenFinishedIds.has(session.id),
                               )}
-                              needsApproval={entry.sessions.some((session) =>
+                              needsApproval={groupSessions.some((session) =>
                                 listedApprovalSessionIds.has(session.id),
                               )}
                               groupIcon={
@@ -4063,7 +4063,7 @@ function FolderRow({
   return (
     <Button
       selected={expanded || dropTarget}
-      variant="ghost"
+      variant="item"
       motion="none"
       type="button"
       title={folder.name}
@@ -4079,7 +4079,7 @@ function FolderRow({
           onRename();
         }
       }}
-      className={`group relative flex w-full touch-none items-center gap-1.5  `}
+      className="group relative flex w-full min-w-0 touch-none items-center gap-1.5 text-start"
     >
       <div
         data-drop-highlight={dropTarget ? "true" : "false"}
@@ -4119,11 +4119,16 @@ function FolderRow({
         {folder.name}
       </span>
       <span className="relative flex shrink-0 items-center gap-1 text-[11px] tabular-nums text-content/45">
-        {!expanded && needsApproval ? (
-          <CircleAlert className="size-3 text-warning" strokeWidth={1.75} />
-        ) : !expanded && busy ? (
-          <TerminalSpinner className="inline-block w-3 select-none text-center text-[11px] leading-none text-active" />
-        ) : !expanded && done ? (
+        {busy ? (
+          <span role="img" aria-label={t("Working")} title={t("Working")}>
+            <TerminalSpinner className="inline-block w-3 select-none text-center text-[11px] leading-none text-active" />
+          </span>
+        ) : null}
+        {needsApproval ? (
+          <span role="img" aria-label={t("Needs input")} title={t("Needs input")}>
+            <CircleAlert className="size-3 text-warning" strokeWidth={1.75} />
+          </span>
+        ) : !expanded && !busy && done ? (
           <Check className="size-3 text-success" strokeWidth={2.25} />
         ) : null}
         <span>{count}</span>
@@ -4426,7 +4431,7 @@ const SessionCard = memo(function SessionCard({
         <RelativeSessionTime at={session.updatedAt} />
       </span>
     ) : (
-      <Badge tone={statusTone} className="shrink-0 tabular-nums">
+      <Badge size="sm" tone={statusTone} className="shrink-0 whitespace-nowrap tabular-nums">
         {issue ? (
           <>
             <CircleAlert className="size-3" strokeWidth={1.75} />
@@ -4916,9 +4921,9 @@ const SessionCard = memo(function SessionCard({
       ) : null}
     </span>
   );
-  // Fixed-height lines: the hover-only actions never change the row height.
+  // Reserve space for actions, but let larger text/status content grow in flow.
   const metaLine = (children: ReactNode) => (
-    <span className="relative flex h-5 min-w-0 items-center gap-1.5">{children}</span>
+    <span className="relative flex min-h-5 min-w-0 items-center gap-1.5">{children}</span>
   );
 
   return (

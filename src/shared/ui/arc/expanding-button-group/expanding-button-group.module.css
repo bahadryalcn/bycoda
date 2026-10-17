@@ -25,6 +25,9 @@
   flex: none;
   justify-content: flex-start;
 }
+.group[data-fit] .item {
+  flex-shrink: 1;
+}
 .icon {
   position: relative;
   display: grid;

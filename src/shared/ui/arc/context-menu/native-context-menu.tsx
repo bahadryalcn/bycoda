@@ -251,7 +251,7 @@ export function NativeContextMenu({
             onPick(item.id);
           }
         }}
-        className={`   ${rowClassName ?? ""}  flex  ${item.description ? "" : "h-7"}  w-full items-center gap-3 text-left leading-none  ${
+        className={`   ${rowClassName ?? ""}  flex  ${item.description ? "" : "h-7"}  w-full items-center gap-3 text-left  ${
           item.disabled ? "" : item.danger ? (highlighted ? "" : "") : highlighted ? "" : ""
         }   `}
       >
@@ -259,7 +259,7 @@ export function NativeContextMenu({
           <span className="flex size-4 shrink-0 items-center justify-center">{item.icon}</span>
         ) : null}
         <span className="min-w-0 flex-1">
-          <span className="block truncate">{item.label}</span>
+          <span className="block truncate leading-[var(--leading-body)]">{item.label}</span>
           {item.description ? (
             <span className="mt-1 block text-[11px] leading-snug text-[var(--ui-text-secondary)]">
               {item.description}

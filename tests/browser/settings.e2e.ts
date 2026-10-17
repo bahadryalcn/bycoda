@@ -188,13 +188,19 @@ const captures = "temp/verification/settings-integrated/screens";
 
 test("shared appearance controls preserve palette persistence and provide color recovery", async ({
   page,
-}) => {
+}, testInfo) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
   for (const width of [390, 1440])
     for (const theme of ["light", "dark"]) {
       await page.setViewportSize({ width, height: 900 });
       await page.goto(`/tests/browser/settings.html?section=appearance&theme=${theme}&lang=en`);
       const studio = page.getByRole("region", { name: "Theme and colors", exact: true });
+      const previewToggle = studio.locator("summary").filter({ hasText: "Live control preview" });
+      await expect(
+        studio.getByRole("group", { name: "Theme palettes", exact: true }),
+      ).toBeVisible();
+      await expect(studio.getByRole("textbox", { name: "Name", exact: true }).first()).toBeHidden();
+      await previewToggle.click();
       const preview = studio.getByRole("region", { name: "Live control preview", exact: true });
       const specimen = preview
         .getByRole("region", { name: "Control preview", exact: true })
@@ -238,8 +244,9 @@ test("shared appearance controls preserve palette persistence and provide color 
           window.scrollTo(0, 0);
         });
       await page.screenshot({
-        path: `temp/verification/2026-10-16-ui-system/appearance-${width}-${theme}.png`,
+        path: testInfo.outputPath(`appearance-${width}-${theme}.png`),
       });
+      await previewToggle.click();
       await preview.getByText("All control states", { exact: true }).click();
       await expect(
         preview.getByRole("button", { name: "primary / info", exact: true }),

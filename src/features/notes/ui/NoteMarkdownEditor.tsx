@@ -53,7 +53,7 @@ export function runMarkdownCommand(view: EditorView, command: MarkdownCommand) {
   return true;
 }
 
-// The note page scrolls as a whole, so the editor grows with its text.
+// The owning pane scrolls, so the editor grows with its text.
 const noteEditorTheme = (minHeight: number) =>
   EditorView.theme({
     "&.cm-editor": {

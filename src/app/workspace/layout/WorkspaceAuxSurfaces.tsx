@@ -13,6 +13,9 @@ type SearchProps = ComponentProps<typeof LiveSearchView>;
 export interface WorkspaceAuxSurfacesProps {
   // Live search
   searchViewOpen: boolean;
+  searchDialogOpen?: boolean;
+  onExpandSearch?: () => void;
+  onCompactSearch?: () => void;
   gitCwd: string;
   visibleRecents: SearchProps["recents"];
   projectHistory: SearchProps["history"];
@@ -38,6 +41,9 @@ export interface WorkspaceAuxSurfacesProps {
 
 export function WorkspaceAuxSurfaces({
   searchViewOpen,
+  searchDialogOpen = false,
+  onExpandSearch,
+  onCompactSearch,
   gitCwd,
   visibleRecents,
   projectHistory,
@@ -60,9 +66,12 @@ export function WorkspaceAuxSurfaces({
 }: WorkspaceAuxSurfacesProps) {
   return (
     <>
-      {searchViewOpen ? (
+      {searchViewOpen || searchDialogOpen ? (
         <LiveSearchView
           open
+          presentation={searchDialogOpen ? "dialog" : "page"}
+          onExpand={onExpandSearch}
+          onCompact={onCompactSearch}
           cwd={gitCwd}
           recents={visibleRecents}
           history={projectHistory}

@@ -174,6 +174,9 @@ not a new product build or UI test suite.
   Structural item/tab records may opt into `layout="stacked"` for direct multiline
   children. This keeps row geometry in the shared control when layered utility
   display classes would otherwise be overridden by Arc's base inline layout.
+  Prose references use `variant="link" layout="text"` to retain the surrounding
+  text's baseline, wrapping and line height. This inline mode is for references
+  inside sentences; toolbars and standalone actions retain normal control sizing.
 - `SecondaryButton` keeps its existing public API and delegates to `Button`.
 - `TextField` adds the scoped theme to Arc Input and forwards the input ref.
   Use `hideLabel` only when an existing visible label or surrounding context

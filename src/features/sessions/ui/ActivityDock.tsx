@@ -181,18 +181,7 @@ function DockBody({
       }`}
     >
       <div className="relative" data-activity-status-row>
-        {dock.state === "working" || dock.state === "waiting" ? (
-          <div data-pacing-track="full-width" className="pointer-events-none absolute inset-0">
-            <PacingUncle visible={visible} />
-          </div>
-        ) : null}
-        <div
-          className="relative flex min-h-8 items-center gap-2 px-3"
-          style={{
-            textShadow:
-              "0 0 4px var(--color-background-base), 0 1px 2px var(--color-background-base)",
-          }}
-        >
+        <div className="relative flex min-h-8 min-w-0 items-center gap-2 px-3">
           <div className="activity-dock-summary">
             <DockMark state={dock.state} />
             <span
@@ -214,7 +203,14 @@ function DockBody({
             </span>
             {clock ? <DockClock startedAt={dock.startedAt} /> : null}
           </div>
-          <span className="flex-1" />
+          {dock.state === "working" || dock.state === "waiting" ? (
+            <div
+              data-pacing-track="reserved"
+              className="pointer-events-none relative h-8 w-20 shrink-0 overflow-clip"
+            >
+              <PacingUncle visible={visible} />
+            </div>
+          ) : null}
           {stopAll ? (
             <Button
               className="shrink-0"

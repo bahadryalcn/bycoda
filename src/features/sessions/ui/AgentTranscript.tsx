@@ -1073,7 +1073,7 @@ function AgentTranscriptComponent({
         ) : null}
         <div
           data-transcript-content
-          className="mx-auto flex w-full min-w-0 max-w-4xl flex-col gap-1 pb-8"
+          className="transcript-content mx-auto flex w-full min-w-0 max-w-4xl flex-col gap-1 pb-8"
         >
           {historyLoading ? (
             <div role="status" className="px-4 py-3 font-sans text-xs text-(--ui-text-secondary)">
@@ -2583,7 +2583,9 @@ function UserMessageBlock({
             </span>
           ) : null}
           {block.attachments?.length ? (
-            <div className={`flex flex-wrap gap-1.5 ${text || card || note ? "mb-2" : ""}`}>
+            <div
+              className={`user-message-attachments flex flex-wrap gap-2 ${text || card || note ? "mbe-3" : ""}`}
+            >
               {block.attachments.map((file, index) => (
                 <AttachmentChip key={file.id} attachment={file} token={referencedTokens[index]} />
               ))}
@@ -3041,6 +3043,9 @@ function ActivityPhaseGroup({
   useLocale();
   const [override, setOverride] = useRetainedDisclosure<boolean | null>(`phase:${phase.id}`, null);
   const waiting = phase.steps.some(needsApproval);
+  const needsAttention =
+    waiting ||
+    phase.steps.some((step) => step.role === "tool" && toolCallState(step) === "rejected");
   const open = waiting || (override ?? active);
   const [liveScroller, setLiveScroller] = useState<HTMLDivElement | null>(null);
   useFollowBottom(liveScroller, active && open, phase.steps, NEAR_BOTTOM_PX, true);
@@ -3084,7 +3089,7 @@ function ActivityPhaseGroup({
   }
 
   const label = active ? (
-    <Shimmer className="min-w-0 truncate font-sans text-sm" duration={1.6}>
+    <Shimmer className="min-w-0 flex-1 truncate font-sans text-sm" duration={1.6}>
       {title}
     </Shimmer>
   ) : (
@@ -3106,7 +3111,7 @@ function ActivityPhaseGroup({
   }
 
   return (
-    <div className="flex min-w-0 flex-col">
+    <div className="transcript-activity-group flex min-w-0 flex-col">
       <Button
         motion="none"
         fullWidth
@@ -3114,6 +3119,7 @@ function ActivityPhaseGroup({
         type="button"
         selected={open}
         aria-expanded={open}
+        title={title}
         aria-label={
           open
             ? t("Hide the steps for {p0}", { p0: title })
@@ -3128,22 +3134,27 @@ function ActivityPhaseGroup({
          */}
         <span className="relative flex size-3.5 shrink-0 items-center justify-center">
           {bycodaPhase ? (
-            <BycodaMark className="size-3.5 group-hover:opacity-0" />
+            <BycodaMark className="size-3.5" />
           ) : (
-            <ActivityPhaseIcon kind={phase.kind} className="group-hover:opacity-0" />
+            <ActivityPhaseIcon kind={phase.kind} />
           )}
-          <ChevronRight
-            className={`absolute size-3.5 text-(--ui-text-secondary) opacity-0 transition-transform duration-200 group-hover:opacity-100 ${
-              open ? "rotate-90" : ""
-            }`}
-            strokeWidth={1.75}
-          />
         </span>
         {label}
+        <ChevronRight
+          className={`size-3.5 shrink-0 text-(--ui-text-secondary) ${open ? "rotate-90" : ""}`}
+          strokeWidth={1.75}
+        />
       </Button>
       <div className="zen-phase-body" data-open={open}>
         {open ? (
-          <div ref={setLiveScroller} className={active || !open ? "zen-phase-live" : undefined}>
+          <div
+            ref={setLiveScroller}
+            className={
+              active && override !== true && !needsAttention
+                ? "zen-phase-live zen-phase-summary"
+                : undefined
+            }
+          >
             <div className="flex min-w-0 flex-col">
               {headline ? (
                 <div className="zen-phase-step py-1">
@@ -3178,6 +3189,11 @@ function ActivityPhaseGroup({
           </div>
         ) : null}
       </div>
+      {open && active && override !== true && !needsAttention && phase.steps.length > 3 ? (
+        <Button variant="link" motion="none" onClick={() => setOverride(true)}>
+          {t("Show more")}
+        </Button>
+      ) : null}
     </div>
   );
 }

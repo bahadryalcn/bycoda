@@ -150,7 +150,9 @@ it("reopens known Inbox actions without a disabled loading frame", async () => {
   );
   expect(button("Mute all projects").disabled).toBe(false);
   await act(async () => {});
-  expect(document.querySelector('[role="status"]')?.textContent).toContain("2 projects");
+  expect(document.querySelector('[role="menu"] [role="status"]')?.textContent).toContain(
+    "2 projects",
+  );
 });
 
 it("keeps unread items and the menu open when marking read fails, then allows retry", async () => {

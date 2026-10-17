@@ -115,16 +115,6 @@ export function AppearanceStudio({ appearance: a }: { appearance: AppearanceSett
         <span role="status">{t("Active mode: {p0}", { p0: light ? t("Light") : t("Dark") })}</span>
       </div>
       <div className="appearance-studio-body">
-        <div
-          className="appearance-control-preview"
-          role="region"
-          aria-label={t("Live control preview")}
-        >
-          <ControlSpecimen />
-          <AdvancedSettings title={t("All control states")}>
-            <ControlSpecimen expanded />
-          </AdvancedSettings>
-        </div>
         <div className="appearance-material-library">
           <div className="appearance-library-heading">
             <h3>{t("Theme palettes")}</h3>
@@ -181,12 +171,22 @@ export function AppearanceStudio({ appearance: a }: { appearance: AppearanceSett
           </p>
         </div>
       </div>
-      <AdvancedSettings title={t("About this preview")}>
-        <p className="appearance-preview-help">
-          {t(
-            "This is an example workspace. Your choices apply throughout the app and are saved automatically.",
-          )}
-        </p>
+      <AdvancedSettings title={t("Live control preview")}>
+        <div
+          className="appearance-control-preview"
+          role="region"
+          aria-label={t("Live control preview")}
+        >
+          <p className="appearance-preview-help">
+            {t(
+              "This is an example workspace. Your choices apply throughout the app and are saved automatically.",
+            )}
+          </p>
+          <ControlSpecimen />
+          <AdvancedSettings title={t("All control states")}>
+            <ControlSpecimen expanded />
+          </AdvancedSettings>
+        </div>
       </AdvancedSettings>
     </section>
   );

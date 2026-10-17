@@ -39,12 +39,15 @@
 
 .note-detail {
   container-type: inline-size;
+  display: flex;
+  overflow: hidden;
 }
 
 .note-detail-content {
   display: flex;
   flex-direction: column;
-  block-size: 100%;
+  flex: 1;
+  min-block-size: 0;
   gap: 10px;
   padding-inline: clamp(16px, 2.5cqi, 40px);
   padding-block: 14px;
@@ -133,11 +136,10 @@
 }
 
 .note-editor-body {
+  display: flex;
   flex: 1;
-  min-block-size: 0;
-  overflow: auto;
-  overscroll-behavior: contain;
-  scrollbar-gutter: stable;
+  min-block-size: 120px;
+  overflow: hidden;
 }
 
 .note-editor-toolbar {
@@ -148,37 +150,84 @@
   background: var(--ui-surface);
 }
 
-.note-split {
+.note-layout {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 24rem), 1fr));
+  flex: 1;
+  min-inline-size: 0;
+  grid-template-columns: minmax(0, 1fr);
   grid-auto-rows: minmax(0, 1fr);
-  block-size: 100%;
   min-block-size: 0;
   gap: 12px;
   align-items: stretch;
 }
 
-.note-split > * {
+.note-split {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+@container (max-width: 780px) {
+  .note-split {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.note-editor-pane {
   display: flex;
   flex-direction: column;
   min-block-size: 0;
   min-inline-size: 0;
-  overflow: auto;
-  overscroll-behavior: contain;
-  scrollbar-gutter: stable;
+  overflow: hidden;
   border: 1px solid var(--ui-tone-neutral-border);
   border-radius: 8px;
-  padding: 14px;
+  background: var(--ui-surface);
 }
 
 .note-pane-label {
   flex: none;
-  margin-block-end: 12px;
-  padding-block-end: 10px;
+  padding: 10px 14px;
   border-block-end: 1px solid var(--ui-tone-neutral-border);
   color: var(--ui-text-secondary);
   font-size: 11px;
   font-weight: 500;
+}
+
+.note-pane-scroll {
+  flex: 1;
+  min-block-size: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+
+.note-pane-content {
+  display: flex;
+  flex-direction: column;
+  min-block-size: 100%;
+  padding: 12px;
+  overflow-wrap: anywhere;
+}
+
+.note-pane-content > [data-note-editor] {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+}
+
+.note-pane-content > [data-note-editor] > .cm-editor {
+  flex: 1;
+}
+
+.note-pane-footer {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: end;
+  min-block-size: 32px;
+  padding-inline: 12px;
+  border-block-start: 1px solid var(--ui-tone-neutral-border);
+  color: var(--ui-text-secondary);
+  font-size: 11px;
 }
 
 .note-preview-block {

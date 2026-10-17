@@ -2,8 +2,10 @@ import { Button } from "../../../shared/ui/Button";
 import { Checkbox } from "../../../shared/ui/Checkbox";
 import { NativeSelect } from "../../../shared/ui/Select";
 import { t, useLocale } from "../../../shared/i18n";
-import { useEffect, useRef, type MouseEvent as ReactMouseEvent } from "react";
-import { Folder, MessageSquare } from "../../../shared/ui/icons";
+import { useEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
+import { Folder, MessageSquare, SlidersHorizontal } from "../../../shared/ui/icons";
+import { Popover } from "../../../shared/ui/Popover";
+import { DEFAULT_CHAT_FILTERS } from "../model/chatSearch";
 import { HarnessIcon } from "../../sessions/ui/HarnessIcon";
 import { HARNESSES, HARNESS_TITLE, type HarnessId } from "../../sessions/model/session";
 import {
@@ -40,59 +42,87 @@ export function ChatFilterBar({
   onChange: (filters: ChatFilters) => void;
 }) {
   useLocale();
+  const [filterOpen, setFilterOpen] = useState(false);
+  const trigger = useRef<HTMLButtonElement>(null);
+  const active = Object.keys(DEFAULT_CHAT_FILTERS).some(
+    (key) => filters[key as keyof ChatFilters] !== DEFAULT_CHAT_FILTERS[key as keyof ChatFilters],
+  );
   return (
-    <div
-      className="flex min-h-9 shrink-0 flex-wrap items-center gap-2 border-b border-stroke px-3 py-1"
-      role="group"
-      aria-label={t("Chat search filters")}
-    >
-      <NativeSelect
-        aria-label={t("Search in")}
-        value={filters.scope}
-        onChange={(event) => onChange({ ...filters, scope: event.target.value as ChatScope })}
+    <div className="flex shrink-0 justify-end px-3 py-1">
+      <Button
+        ref={trigger}
+        variant="ghost"
+        iconOnly
+        label={t("Chat search filters")}
+        tooltip={t("Chat search filters")}
+        selected={active}
+        aria-expanded={filterOpen}
+        onClick={() => setFilterOpen((value) => !value)}
       >
-        {(Object.keys(SCOPE_LABEL) as ChatScope[]).map((scope) => (
-          <option key={scope} value={scope} disabled={scope === "group" && !inGroup}>
-            {SCOPE_LABEL[scope]}
-          </option>
-        ))}
-      </NativeSelect>
-      <NativeSelect
-        aria-label={t("Provider")}
-        value={filters.harness}
-        onChange={(event) =>
-          onChange({
-            ...filters,
-            harness: event.target.value as HarnessId | "any",
-          })
-        }
-      >
-        <option value="any">{t("Any provider")}</option>
-        {HARNESSES.map((harness) => (
-          <option key={harness} value={harness}>
-            {HARNESS_TITLE[harness]}
-          </option>
-        ))}
-      </NativeSelect>
-      <NativeSelect
-        aria-label={t("Date")}
-        value={filters.range}
-        onChange={(event) => onChange({ ...filters, range: event.target.value as ChatDateRange })}
-      >
-        {(Object.keys(RANGE_LABEL) as ChatDateRange[]).map((range) => (
-          <option key={range} value={range}>
-            {RANGE_LABEL[range]}
-          </option>
-        ))}
-      </NativeSelect>
-      <label className="flex items-center gap-1.5 text-[12px] text-content/60">
-        <Checkbox
-          checked={filters.archived}
-          onChange={(event) => onChange({ ...filters, archived: event.target.checked })}
-          className="size-3"
-        />
-        {t("Archived")}
-      </label>
+        <SlidersHorizontal className="size-3.5" />
+      </Button>
+      {filterOpen ? (
+        <Popover anchor={trigger} align="end" onDismiss={() => setFilterOpen(false)}>
+          <div
+            className="flex flex-col items-stretch gap-3 p-3"
+            role="group"
+            aria-label={t("Chat search filters")}
+          >
+            <NativeSelect
+              aria-label={t("Search in")}
+              value={filters.scope}
+              onChange={(event) => onChange({ ...filters, scope: event.target.value as ChatScope })}
+            >
+              {(Object.keys(SCOPE_LABEL) as ChatScope[]).map((scope) => (
+                <option key={scope} value={scope} disabled={scope === "group" && !inGroup}>
+                  {SCOPE_LABEL[scope]}
+                </option>
+              ))}
+            </NativeSelect>
+            <NativeSelect
+              aria-label={t("Provider")}
+              value={filters.harness}
+              onChange={(event) =>
+                onChange({
+                  ...filters,
+                  harness: event.target.value as HarnessId | "any",
+                })
+              }
+            >
+              <option value="any">{t("Any provider")}</option>
+              {HARNESSES.map((harness) => (
+                <option key={harness} value={harness}>
+                  {HARNESS_TITLE[harness]}
+                </option>
+              ))}
+            </NativeSelect>
+            <NativeSelect
+              aria-label={t("Date")}
+              value={filters.range}
+              onChange={(event) =>
+                onChange({ ...filters, range: event.target.value as ChatDateRange })
+              }
+            >
+              {(Object.keys(RANGE_LABEL) as ChatDateRange[]).map((range) => (
+                <option key={range} value={range}>
+                  {RANGE_LABEL[range]}
+                </option>
+              ))}
+            </NativeSelect>
+            <label className="flex items-center gap-1.5 text-[12px] text-content/60">
+              <Checkbox
+                checked={filters.archived}
+                onChange={(event) => onChange({ ...filters, archived: event.target.checked })}
+                className="size-3"
+              />
+              {t("Archived")}
+            </label>
+            <Button variant="ghost" size="sm" onClick={() => onChange({ ...DEFAULT_CHAT_FILTERS })}>
+              {t("Reset")}
+            </Button>
+          </div>
+        </Popover>
+      ) : null}
     </div>
   );
 }
@@ -197,8 +227,11 @@ export function ChatSearchResults({
             return (
               <div key={session.id}>
                 <Button
-                  variant="ghost"
-                  size="sm"
+                  variant="item"
+                  motion="none"
+                  fullWidth
+                  selected={row.highlighted}
+                  className="app-search-result"
                   type="button"
                   {...row.buttonProps}
                   onClick={() => row.entry && onOpen(row.entry)}
@@ -227,8 +260,11 @@ export function ChatSearchResults({
                   const hitRow = rowProps(hit.id);
                   return (
                     <Button
-                      variant="ghost"
-                      size="sm"
+                      variant="item"
+                      motion="none"
+                      fullWidth
+                      selected={hitRow.highlighted}
+                      className="app-search-result"
                       key={hit.id}
                       type="button"
                       {...hitRow.buttonProps}
@@ -238,7 +274,7 @@ export function ChatSearchResults({
                         className="size-3 shrink-0 text-content/40"
                         strokeWidth={1.75}
                       />
-                      <span className="min-w-0 flex-1 truncate">
+                      <span className="app-search-result-copy app-search-result-preview">
                         <Marked text={hit.snippet} ranges={hit.ranges} />
                       </span>
                       <span className="shrink-0 text-[10px] text-content/35">

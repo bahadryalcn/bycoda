@@ -29,7 +29,7 @@ type CommonButtonProps = ComponentPropsWithRef<"button"> & {
   /** Disable label/press motion for controls that require a stable, direct DOM layout. */
   motion?: "auto" | "none";
   /** Structural item/tab content may form a record row instead of an inline action. */
-  layout?: "inline" | "stacked";
+  layout?: "inline" | "stacked" | "text";
 };
 
 export type ButtonProps = CommonButtonProps &
@@ -144,7 +144,7 @@ export function Button({
     "data-button-selected": active || undefined,
     "data-button-loading": loading || undefined,
     "data-button-structural": structural || undefined,
-    "data-button-layout": structural ? layout : undefined,
+    "data-button-layout": structural || variant === "link" ? layout : undefined,
     "data-button-size": size,
     onClick: guard(onClick),
     onClickCapture: guard(onClickCapture),

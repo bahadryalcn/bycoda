@@ -57,7 +57,8 @@ function TokenPill({ token, label, attachment }: PillProps) {
     <>
       <Button
         motion="none"
-        variant="ghost"
+        variant="link"
+        layout="text"
         type="button"
         title={t("Open {p0} full screen", { p0: attachment.name })}
         aria-label={t("Open {p0} ({p1}) full screen", { p0: token, p1: attachment.name })}

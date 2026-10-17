@@ -184,7 +184,7 @@ export function LastSessionsSection({
           onOpenSession={onOpenSession}
           onOpenProject={onOpenProject}
           onTogglePin={togglePin}
-          className={`max-h-[min(20rem,35vh)] ${drag?.folded ? "hidden" : "flex"}`}
+          className={drag?.folded ? "hidden" : "flex"}
           {...appearance}
         />
       )}

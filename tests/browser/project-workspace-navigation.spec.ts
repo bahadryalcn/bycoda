@@ -1,11 +1,138 @@
 import { expect, test, type Locator } from "@playwright/test";
 
+test("working sessions and usage meters stay contained in narrow and short workspaces", async ({
+  page,
+}, testInfo) => {
+  await page.goto("/tests/browser/project-workspace-navigation.html?layout=1");
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  const rail = page.locator('[data-side-pane="rail"]');
+  for (const theme of ["dark", "light"]) {
+    await page.evaluate(
+      (light) => document.documentElement.classList.toggle("theme-light", light),
+      theme === "light",
+    );
+    for (const width of [390, 768, 1024, 1440]) {
+      await page.setViewportSize({ width, height: width === 768 ? 560 : 800 });
+      await rail.evaluate((element) => {
+        element.style.width = "260px";
+      });
+      const firstCard = rail.locator("[data-live-agent-card]").first();
+      await expect(firstCard).toBeVisible();
+      expect(await firstCard.evaluate((node) => node.scrollWidth <= node.clientWidth)).toBe(true);
+      const lines = await firstCard.locator(":scope > span").evaluateAll((nodes) =>
+        nodes.map((node) => {
+          const rect = node.getBoundingClientRect();
+          return { x: rect.x, y: rect.y, width: rect.width, bottom: rect.bottom };
+        }),
+      );
+      expect(lines).toHaveLength(2);
+      expect(lines[1].y).toBeGreaterThanOrEqual(lines[0].bottom);
+      expect(Math.abs(lines[0].x - lines[1].x)).toBeLessThan(1);
+      await expect(rail.getByRole("button", { name: "Notes", exact: true })).toBeInViewport();
+      await expect(rail.getByRole("button", { name: /^Settings/ }).first()).toBeInViewport();
+      const usage = page.locator("[data-provider-usage]");
+      const chips = usage.getByRole("button", { name: /usage details/ });
+      await expect(chips).toHaveCount(2);
+      for (const chip of await chips.all()) {
+        const meter = chip.locator("[data-compact]");
+        expect((await meter.boundingBox())!.width).toBeCloseTo(32, 0);
+        const contained = await chip.evaluate((node) => {
+          const outer = node.getBoundingClientRect();
+          return [...node.querySelectorAll("span")].every((child) => {
+            const rect = child.getBoundingClientRect();
+            return rect.left >= outer.left - 1 && rect.right <= outer.right + 1;
+          });
+        });
+        expect(contained).toBe(true);
+      }
+      const boxes = await chips.evaluateAll((nodes) =>
+        nodes.map((node) => {
+          const rect = node.getBoundingClientRect();
+          return { left: rect.left, right: rect.right };
+        }),
+      );
+      expect(boxes[1].left).toBeGreaterThanOrEqual(boxes[0].right);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+        true,
+      );
+      if (width === 390 || width === 1440)
+        await page.screenshot({ path: testInfo.outputPath(`shell-${width}-${theme}.png`) });
+    }
+  }
+  const firstCard = rail.locator("[data-live-agent-card]").first();
+  const more = rail.getByRole("button", { name: "6 more", exact: true });
+  await more.click();
+  await expect(rail.locator("[data-live-agent-card]")).toHaveCount(8);
+  const less = rail.getByRole("button", { name: "Show less", exact: true });
+  await expect(less).toBeInViewport();
+  await less.click();
+  await expect(rail.locator("[data-live-agent-card]")).toHaveCount(2);
+  await firstCard.focus();
+  await firstCard.press("Enter");
+  await expect(page.getByLabel("Selected live session")).toHaveText("live-0");
+  const workingToggle = rail.getByRole("button", { name: "Working 8", exact: true });
+  await workingToggle.click();
+  await expect(firstCard).toBeHidden();
+  await workingToggle.click();
+  await expect(firstCard).toBeVisible();
+  const details = page.getByRole("button", { name: "Codex usage details", exact: true });
+  await details.focus();
+  await details.press("Enter");
+  await expect(page.getByRole("dialog")).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(details).toBeFocused();
+});
+
+test("Inbox keeps long issue titles readable and list actions available", async ({
+  page,
+}, testInfo) => {
+  await page.goto("/tests/browser/project-workspace-navigation.html?inbox-layout=1");
+  const card = page.getByRole("button", { name: /DESIGN-1:/ }).first();
+  await expect(card).toBeVisible();
+  const divider = page.getByRole("separator", { name: "Resize inbox list", exact: true });
+  for (const theme of ["dark", "light"]) {
+    await page.evaluate(
+      (light) => document.documentElement.classList.toggle("theme-light", light),
+      theme === "light",
+    );
+    for (const width of [390, 768, 1440]) {
+      await page.setViewportSize({ width, height: 800 });
+      expect(await card.evaluate((node) => node.scrollWidth <= node.clientWidth)).toBe(true);
+      const title = card.getByText(/^Preserve readable shared interface/);
+      expect(await title.evaluate((node) => node.getBoundingClientRect().height)).toBeGreaterThan(
+        25,
+      );
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+        true,
+      );
+      if (width === 1440)
+        await page.screenshot({ path: testInfo.outputPath(`inbox-${theme}.png`) });
+    }
+  }
+  await expect(divider).toHaveAttribute("aria-valuenow", "320");
+  await divider.focus();
+  await divider.press("ArrowRight");
+  await expect(divider).toHaveAttribute("aria-valuenow", "330");
+  await page.setViewportSize({ width: 390, height: 800 });
+  await expect(divider).toHaveAttribute("aria-valuenow", "195");
+  await page.setViewportSize({ width: 1440, height: 800 });
+  await expect(divider).toHaveAttribute("aria-valuenow", "330");
+  const search = page.getByRole("textbox", { name: "Filter inbox", exact: true });
+  await search.fill("layouts 12");
+  await expect(page.getByRole("button", { name: /DESIGN-12:/ })).toBeVisible();
+  await expect(card).toBeHidden();
+  await search.fill("");
+  await card.focus();
+  await card.press("Enter");
+  await expect(card).toHaveAttribute("aria-current", "true");
+});
+
 test("compact rail centers group and social icons without wrapping labels", async ({
   page,
 }, testInfo) => {
   const rail = page.locator('[data-side-pane="rail"]');
   const social = rail.getByRole("button", { name: "Social Media", exact: true });
-  const label = social.getByText("Social Media", { exact: true });
+  const label = social.getByText("Social Media", { exact: true }).first();
   const groupHeader = page.locator('[data-project-group="team"] > .project-reorder-item');
   for (const theme of ["dark", "light"]) {
     await page.evaluate(
@@ -16,6 +143,7 @@ test("compact rail centers group and social icons without wrapping labels", asyn
       await rail.evaluate((element, size) => {
         element.style.width = `${size}px`;
       }, width);
+      if (width > 200) await social.focus();
       if (width < 140) await expect(label).toBeHidden();
       else await expect(label).toBeVisible();
       if (width < 140) {
@@ -153,6 +281,41 @@ test.beforeEach(async ({ page }) => {
         transformCallback: () => 1,
         invoke: async (command: string, args: Record<string, unknown> = {}) => {
           const cwd = String(args.cwd ?? "G:/wallet/api");
+          if (new URL(location.href).searchParams.has("inbox-layout")) {
+            if (command.endsWith("_status"))
+              return { connected: command === "jira_status", login: "fixture" };
+            if (command === "jira_list_issues")
+              return Array.from({ length: 12 }, (_, index) => ({
+                provider: "jira",
+                kind: "jira",
+                id: `fixture-${index}`,
+                identifier: `DESIGN-${index + 1}`,
+                number: index + 1,
+                title: `Preserve readable shared interface controls and long issue titles across narrow layouts ${index + 1}`,
+                url: `https://example.test/browse/DESIGN-${index + 1}`,
+                state: "Open",
+                stateType: "new",
+                updatedAt: new Date().toISOString(),
+                labels: [],
+                assignees: [],
+                draft: false,
+                repo: "Design workspace",
+                teamId: "design",
+                teamName: "Design workspace",
+                projectPath: "G:/wallet/api",
+              }));
+            if (command === "jira_issue_details")
+              return { body: "Fixture issue description", author: "Fixture" };
+            if (command === "jira_issue_thread")
+              return {
+                comments: [],
+                truncated: false,
+                reviewDecision: "",
+                baseRefName: "",
+                headRefName: "",
+              };
+            if (command === "jira_list_projects") return [];
+          }
           const mobile = cwd.endsWith("mobile");
           const worktreesDemo = new URL(window.location.href).searchParams.has("worktrees");
           const branch = worktreesDemo

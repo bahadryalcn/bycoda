@@ -150,7 +150,7 @@ const MIN_WIDTH = 240;
 
 const MAX_WIDTH = 420;
 
-const DEFAULT_WIDTH = 280;
+const DEFAULT_WIDTH = 320;
 
 const LINKED_PANEL_MIN_WIDTH = 360;
 
@@ -952,8 +952,7 @@ export function InboxView({
         )}
       </div>
       <div
-        role="separator"
-        aria-orientation="vertical"
+        {...resize.separatorProps}
         aria-label={t("Resize inbox list")}
         className={`absolute inset-y-0 -right-px z-10 w-1.5 cursor-col-resize touch-none ${
           resize.dragging ? "bg-(--ui-surface-raised)" : "hover:bg-(--ui-surface-raised)"
@@ -1256,9 +1255,8 @@ export function LinkedWorkItemPanel({
       }`}
     >
       <div
-        role="separator"
+        {...resize.separatorProps}
         aria-label={t("Resize linked {p0} panel", { p0: kindLabel.toLowerCase() })}
-        aria-orientation="vertical"
         onPointerDown={resize.onPointerDown}
         onDoubleClick={resize.onDoubleClick}
         className={`absolute inset-y-0 -left-1 z-20 w-2 cursor-col-resize touch-none ${
@@ -1419,7 +1417,7 @@ const InboxCard = memo(function InboxCard({
           <InboxProviderMark provider={item.provider} className="size-3.5 shrink-0" />
           <status.Icon className={`size-3 shrink-0 ${status.className}`} strokeWidth={1.75} />
           <span className="min-w-0 truncate text-[11px] text-(--ui-text-secondary)">
-            {kindLabel} · {inboxItemRef(item)}
+            {inboxItemRef(item)}
             {attentionLabel ? ` · ${attentionLabel}` : ""}
           </span>
         </span>
@@ -1450,7 +1448,7 @@ const InboxCard = memo(function InboxCard({
           </span>
         ) : null}
       </span>
-      <span className="mt-1 min-w-0 truncate text-[13px] font-medium leading-snug text-(--ui-tone-neutral-fg)">
+      <span className="mbs-1 min-w-0 line-clamp-2 wrap-anywhere text-(length:--ui-font-secondary) font-medium leading-snug text-(--ui-tone-neutral-fg)">
         {item.title}
       </span>
       <span className="mt-1 flex min-w-0 items-center gap-2">

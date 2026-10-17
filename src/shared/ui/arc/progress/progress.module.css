@@ -1,6 +1,13 @@
 /* Official free Arc registry source, adapted for bycoda. */
+@layer theme, base, components, utilities;
+/* Consumers can size an inline meter without fighting an unlayered 100% width. */
+@layer components {
+  .progress {
+    inline-size: 100%;
+    min-inline-size: 0;
+  }
+}
 .progress {
-  inline-size: 100%;
   color: var(--text-secondary);
   font-size: var(--text-sm);
 }

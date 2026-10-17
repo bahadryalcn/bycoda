@@ -9,7 +9,8 @@ import "../../src/styles/index.css";
 const parameters = new URLSearchParams(location.search);
 document.documentElement.classList.toggle("theme-light", parameters.get("theme") === "light");
 const count = parameters.get("count") === "1000" ? 1000 : 42;
-const padding = count === 1000 ? "\n\n" + "Long note paragraph. ".repeat(1100) : "";
+const padding =
+  count === 1000 || parameters.has("long") ? "\n\n" + "Long note paragraph. ".repeat(1100) : "";
 const notes: Note[] = Array.from({ length: count }, (_, index) => ({
   id: `note-${index}`,
   slug: `note-${index}`,

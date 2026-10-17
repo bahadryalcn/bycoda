@@ -27,6 +27,10 @@ export interface ExpandingButtonGroupItem {
   tone?: ExpandingButtonGroupTone;
   /** Dimmed and inert. Stays focusable and still reveals its label, so people can learn what it would do. */
   disabled?: boolean;
+  /** Persistent selection, independent of the temporary label expansion. */
+  active?: boolean;
+  ariaLabel?: string;
+  onOpenContextMenu?: (x: number, y: number) => void;
 }
 
 export interface ExpandingButtonGroupProps {
@@ -34,6 +38,8 @@ export interface ExpandingButtonGroupProps {
   /** Accessible name of the toolbar, such as "Message actions". */
   label: string;
   size?: ExpandingButtonGroupSize;
+  /** Shrink the revealed label to fit its container, preserving the icon minimum. */
+  fit?: boolean;
   /** Id of the action whose label shows at rest, usually the primary one. Defaults to the first enabled action: one action is always
    *  expanded. Pointing at or focusing another moves the expansion there, and it returns here when the pointer and focus leave. */
   defaultExpanded?: string | null;
@@ -218,7 +224,7 @@ function Item({
       motion="none"
       shape="pill"
       size={size}
-      selected={expanded}
+      selected={item.active ?? expanded}
       tone={showDone ? "success" : (item.tone ?? "neutral")}
       type="button"
       className={styles.item}
@@ -229,8 +235,29 @@ function Item({
       data-state={showDone ? "done" : "idle"}
       data-expanded={expanded || undefined}
       data-unmeasured={measured ? undefined : ""}
-      aria-label={item.label}
-      title={item.label}
+      aria-label={item.ariaLabel ?? item.label}
+      title={item.ariaLabel ?? item.label}
+      aria-current={item.active ? "page" : undefined}
+      onContextMenu={
+        item.onOpenContextMenu
+          ? (event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              item.onOpenContextMenu?.(event.clientX, event.clientY);
+            }
+          : undefined
+      }
+      onKeyDown={
+        item.onOpenContextMenu
+          ? (event) => {
+              if (event.key !== "ContextMenu" && !(event.shiftKey && event.key === "F10")) return;
+              event.preventDefault();
+              event.stopPropagation();
+              const rect = event.currentTarget.getBoundingClientRect();
+              item.onOpenContextMenu?.(rect.left, rect.bottom);
+            }
+          : undefined
+      }
       aria-disabled={item.disabled || busy || undefined}
       aria-busy={busy || undefined}
       tabIndex={tabStop ? 0 : -1}
@@ -290,6 +317,7 @@ function Item({
  * On touch, the first tap reveals the label and a second tap runs the action.
  */
 export function ExpandingButtonGroup({
+  fit = false,
   items,
   label,
   size = "md",
@@ -504,6 +532,7 @@ export function ExpandingButtonGroup({
     <div
       ref={root}
       role="toolbar"
+      data-fit={fit || undefined}
       aria-label={label}
       aria-orientation="horizontal"
       className={[styles.group, styles[size], className].filter(Boolean).join(" ")}

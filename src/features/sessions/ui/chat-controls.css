@@ -3,9 +3,25 @@
   container: chat-composer / inline-size;
 }
 
-html [data-composer] div[data-composer-box],
-html [data-activity-dock] {
+html [data-composer] div[data-composer-box] {
   background: var(--color-background-base);
+}
+html [data-activity-dock] {
+  background: var(--ui-surface);
+}
+
+.transcript-activity-group {
+  margin-block: 4px;
+  border: 1px solid var(--color-stroke);
+  border-radius: var(--radius-control);
+  background: var(--ui-surface);
+  overflow: clip;
+}
+.zen-phase-body[data-open="true"] > .zen-phase-summary {
+  max-block-size: 7rem;
+}
+.zen-phase-body[data-open="true"] > .zen-phase-summary:has([data-tool-inspection]) {
+  max-block-size: none;
 }
 
 .composer-session-meta {
@@ -104,12 +120,17 @@ html [data-activity-dock] {
 .activity-dock-summary {
   display: flex;
   min-inline-size: 0;
+  flex: 1;
   align-self: stretch;
   align-items: center;
   gap: 0.5rem;
   padding-inline: 0.25rem;
   margin-inline-start: -0.25rem;
-  background: var(--color-background-base);
+  background: var(--ui-surface);
+}
+.activity-dock-clock {
+  flex: none;
+  font-variant-numeric: tabular-nums;
 }
 
 [data-activity-status-row] .activity-dock-label,

@@ -39,6 +39,20 @@
   .control.link {
     padding-inline: var(--space-1);
   }
+  /* References inside prose follow the text baseline instead of forming toolbar rows. */
+  .control.link[data-button-layout="text"] {
+    display: inline;
+    min-block-size: 0;
+    padding: 0;
+    font: inherit;
+    vertical-align: baseline;
+    white-space: inherit;
+    text-decoration: underline;
+    text-underline-offset: 0.15em;
+  }
+  .control.link[data-button-layout="text"] > .nativeContent {
+    display: inline;
+  }
   .control.item,
   .control.tab {
     white-space: normal;

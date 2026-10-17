@@ -2,6 +2,13 @@ import { useState } from "react";
 import { createRoot } from "react-dom/client";
 import { ProjectRail } from "../../src/app/shell/ProjectRail";
 import { SourceControl } from "../../src/features/source-control/ui/SourceControl";
+import { UsageFooter } from "../../src/app/shell/UsageFooter";
+import { SessionRecoveryControl } from "../../src/app/shell/SessionRecoveryControl";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import type { ProviderRateLimits } from "../../src/features/providers/model/rateLimits";
+import { setCachedRateLimits } from "../../src/features/providers/model/rateLimitsCache";
+import { InboxView } from "../../src/features/inbox/ui/InboxView";
+import { saveInboxConnections, saveInboxSource } from "../../src/features/inbox/model/inboxFilters";
 import {
   saveProjectGroups,
   saveProjectGroupAssignments,
@@ -27,6 +34,95 @@ saveProjectGroupAssignments({
   "g:/team/service": "team",
 });
 savePinnedProjects(["G:/wallet"]);
+const layoutClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+const layoutNow = Date.now();
+for (const provider of ["claude", "codex"] as const) {
+  const limits: ProviderRateLimits = {
+    provider,
+    session: { usedPercent: 24, windowMinutes: 300, resetsAt: layoutNow + 3_600_000 },
+    weekly: { usedPercent: 39, windowMinutes: 10080, resetsAt: layoutNow + 86_400_000 },
+    monthly: null,
+    updatedAt: layoutNow,
+    error: null,
+    status: "ok",
+  };
+  layoutClient.setQueryData(["rate-limits", provider, "default"], limits);
+  setCachedRateLimits(provider, "default", limits);
+}
+
+function ShellLayoutFixture() {
+  const [selected, setSelected] = useState("");
+  return (
+    <QueryClientProvider client={layoutClient}>
+      <div className="flex h-dvh min-w-0 flex-col bg-background-base text-content">
+        <div className="flex min-h-0 flex-1">
+          <ProjectRail
+            visible
+            cwd="G:/wallet/api"
+            recents={Array.from({ length: 18 }, (_, index) => ({
+              path: `G:/project-${index}`,
+              openedAt: 1,
+            }))}
+            onSelectProject={setSelected}
+            onOpenProject={() => {}}
+            onSelectAgent={setSelected}
+            notesEnabled
+            recentSessions={{
+              history: [],
+              live: Array.from({ length: 8 }, (_, index) => ({
+                id: `recent-${index}`,
+                cwd: "G:/wallet/api",
+                title: `Recent workspace discussion ${index + 1}`,
+                harness: "codex",
+                model: "gpt-6.1",
+                status: "done",
+                activityAt: layoutNow - index * 60_000,
+              })),
+              onPin: async () => {},
+            }}
+            recoveryControl={
+              <SessionRecoveryControl count={16} onOpen={() => setSelected("recovery")} />
+            }
+            liveAgents={Array.from({ length: 8 }, (_, index) => ({
+              id: `live-${index}`,
+              cwd: "G:/wallet/api",
+              title: `Improve the shared interface and preserve long session titles ${index + 1}`,
+              harness: index % 2 === 0 ? "codex" : "claude",
+              activity: index === 1 ? "Need approval" : "Working",
+              needsApproval: index === 1,
+              done: false,
+            }))}
+          />
+          <main className="min-w-0 flex-1 p-4">
+            <output aria-label="Selected live session">{selected}</output>
+          </main>
+        </div>
+        <UsageFooter
+          providers={["claude", "codex"]}
+          onNewTerminal={() => setSelected("terminal")}
+        />
+      </div>
+    </QueryClientProvider>
+  );
+}
+
+function InboxLayoutFixture() {
+  return (
+    <QueryClientProvider client={layoutClient}>
+      <div className="flex h-dvh min-w-0 bg-background-base text-content">
+        <InboxView
+          cwd="G:/wallet/api"
+          recents={[{ path: "G:/wallet/api", openedAt: 1 }]}
+          onAsk={async () => ""}
+          onAskRestart={async () => ""}
+          onAskMount={() => {}}
+          onOpenIntegrations={() => {}}
+        />
+      </div>
+    </QueryClientProvider>
+  );
+}
+
 function Fixture() {
   const worktreesDemo = new URL(window.location.href).searchParams.has("worktrees");
   const [cwd, setCwd] = useState("G:/wallet/api");
@@ -78,4 +174,22 @@ function Fixture() {
   );
 }
 await languageReady;
-createRoot(document.getElementById("root")!).render(<Fixture />);
+if (new URL(location.href).searchParams.has("inbox-layout")) {
+  saveInboxConnections({
+    github: false,
+    linear: false,
+    jira: true,
+    gitlab: false,
+    azuredevops: false,
+  });
+  saveInboxSource("jira");
+}
+createRoot(document.getElementById("root")!).render(
+  new URL(location.href).searchParams.has("inbox-layout") ? (
+    <InboxLayoutFixture />
+  ) : new URL(location.href).searchParams.has("layout") ? (
+    <ShellLayoutFixture />
+  ) : (
+    <Fixture />
+  ),
+);

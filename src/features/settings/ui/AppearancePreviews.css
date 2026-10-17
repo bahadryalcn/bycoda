@@ -28,7 +28,7 @@
 }
 .appearance-studio-body {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(12rem, 16rem);
+  grid-template-columns: minmax(0, 1fr);
   align-items: start;
   gap: 24px;
 }
@@ -40,7 +40,8 @@
 }
 .appearance-material-library > [role="group"] {
   display: grid;
-  gap: 4px;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 10rem), 1fr));
+  gap: 8px;
 }
 .appearance-palette {
   white-space: normal;
@@ -52,6 +53,10 @@
 }
 .appearance-material-name strong {
   font-weight: 500;
+}
+.appearance-control-preview {
+  max-inline-size: 40rem;
+  padding-block-start: 12px;
 }
 /* These are selectable content colors, not an alternate control palette. */
 .appearance-material-sample {

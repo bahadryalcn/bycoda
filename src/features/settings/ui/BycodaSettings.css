@@ -23,8 +23,8 @@
   justify-content: space-between;
   flex-wrap: wrap;
   align-items: center;
-  gap: 24px;
-  padding: 22px 28px 18px;
+  gap: 12px;
+  padding: 12px 20px;
   border-block-end: 1px solid var(--color-stroke);
 }
 .bycoda-settings-toolbar-title {
@@ -81,11 +81,8 @@
   display: block;
   padding: 0 10px 6px;
   color: var(--ui-text-secondary);
-  font-size: 10.5px;
-  font-weight: 600;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  opacity: 0.75;
+  font-size: var(--ui-font-caption);
+  font-weight: 500;
 }
 .bycoda-settings-category-tabs {
   display: flex;
@@ -159,7 +156,8 @@
 }
 .bycoda-settings-workbench .bycoda-settings-form {
   max-width: 1160px;
-  padding: 26px 28px 72px;
+  margin-inline: 0;
+  padding: 20px 24px 64px;
 }
 .bycoda-settings-workbench .bycoda-settings-form > header {
   margin-block-end: 12px;
@@ -168,7 +166,7 @@
 .bycoda-settings-workbench .bycoda-settings-form > header h1 {
   font-size: 24px;
   letter-spacing: -0.025em;
-  font-weight: 550;
+  font-weight: 500;
 }
 .bycoda-settings-workbench .bycoda-settings-form .settings-group {
   display: grid;

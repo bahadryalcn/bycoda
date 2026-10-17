@@ -46,7 +46,7 @@ export function AttachmentChip({ attachment, onRemove, token, onInsertToken }: P
     attachment.kind === "image" && !attachment.missing && attachmentPreviewSrc(attachment);
   const label = token ? tokenLabel(token) : null;
   const labelClass = image
-    ? "absolute inset-x-0 bottom-0 truncate rounded-b-lg bg-scrim/60 px-0.5 text-center text-[9px] leading-3.5 text-on-solid"
+    ? "block max-w-14 truncate text-center text-(length:--ui-font-caption) leading-5 text-(--ui-text-secondary)"
     : "shrink-0 rounded bg-(--ui-surface-raised) px-1 text-[10px] leading-4 text-(--ui-text-secondary)";
   const labelNode =
     label && onInsertToken ? (
@@ -72,13 +72,14 @@ export function AttachmentChip({ attachment, onRemove, token, onInsertToken }: P
   const chip = (
     <>
       <div
+        data-attachment-chip={image ? "image" : "file"}
         className={`group relative flex min-w-0 items-center gap-1.5 rounded-md ${
           image ? "" : "bg-(--ui-surface-raised) py-0.5 pl-1 pr-1"
         }`}
         title={attachment.path ?? attachment.name}
       >
         {image ? (
-          <span className="relative shrink-0">
+          <span className="flex shrink-0 flex-col items-center gap-1">
             <Button
               motion="none"
               iconOnly
@@ -91,14 +92,9 @@ export function AttachmentChip({ attachment, onRemove, token, onInsertToken }: P
                 event.stopPropagation();
                 void show();
               }}
-              className="shrink-0"
+              className="size-14 shrink-0 overflow-clip"
             >
-              <img
-                src={preview}
-                alt=""
-                draggable={false}
-                className="size-9 rounded-lg object-cover"
-              />
+              <img src={preview} alt="" draggable={false} className="size-full object-cover" />
             </Button>
             {labelNode}
           </span>

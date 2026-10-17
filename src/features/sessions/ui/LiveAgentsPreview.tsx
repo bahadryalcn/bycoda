@@ -73,9 +73,10 @@ export function LiveAgentsPreview({
 
   if (!visibleOnRail) return null;
 
-  const extra = agents.length - LIVE_AGENT_CAP;
-  const visible = expanded || extra <= 0 ? agents : agents.slice(0, LIVE_AGENT_CAP);
-  const Header = collapsible ? "button" : "div";
+  const cap = collapsible ? 2 : LIVE_AGENT_CAP;
+  const extra = agents.length - cap;
+  const visible = expanded || extra <= 0 ? agents : agents.slice(0, cap);
+  const Header = collapsible ? Button : "div";
 
   return (
     <section
@@ -112,17 +113,16 @@ export function LiveAgentsPreview({
         }
       >
         <Header
+          {...(collapsible ? { variant: "item" as const } : {})}
           type={collapsible ? "button" : undefined}
           aria-expanded={collapsible ? !collapsed : undefined}
           onClick={collapsible ? () => setCollapsed((value) => !value) : undefined}
-          className={`flex w-full items-center text-left ${collapsible ? "h-7 gap-2 rounded-[5px] px-2 hover:bg-(--ui-surface-hover) focus-visible:outline-2 focus-visible:outline-(--ui-focus-ring-color) focus-visible:-outline-offset-2" : "gap-2 px-2.5 py-2"}`}
+          className={`flex w-full min-w-0 items-center text-start ${collapsible ? "" : "gap-2 px-2.5 py-2"}`}
         >
           <span
             aria-hidden
             className={`size-1.5 shrink-0 rounded-full ${collapsible ? "mx-1" : ""} ${
-              hasWorkingAgents
-                ? "bg-(--ui-tone-accent-subtle) shadow-[0_0_8px_var(--color-accent)] motion-safe:animate-pulse"
-                : "bg-(--ui-surface-raised)"
+              hasWorkingAgents ? "bg-(--color-active)" : "bg-(--ui-text-muted)"
             }`}
           />
           <span
@@ -147,7 +147,7 @@ export function LiveAgentsPreview({
             ref={lockList}
             className={`flex flex-col gap-px px-1 ${
               extra > 0 ? "" : "pb-1"
-            } ${collapsible ? "max-h-[min(16rem,25vh)] overflow-y-auto overscroll-none" : expanded ? "max-h-[45vh] overflow-y-auto overscroll-none" : ""}`}
+            } ${collapsible ? "max-h-[min(16rem,20vh)] overflow-y-auto overscroll-none" : expanded ? "max-h-[45vh] overflow-y-auto overscroll-none" : ""}`}
           >
             {visible.map((agent) => (
               <LiveAgentCard
@@ -232,10 +232,11 @@ function LiveAgentCard({
 
   return (
     <Button
-      className="w-full flex-col text-left"
+      className="min-w-0 text-start"
       fullWidth
       selected={selected}
       variant="item"
+      layout="stacked"
       type="button"
       title={title}
       aria-label={[agent.title, project, activity, elapsed].filter(Boolean).join(", ")}
@@ -251,39 +252,16 @@ function LiveAgentCard({
           className="size-2 shrink-0"
           active={live}
         />
-        {live ? (
-          <p className="min-w-0 flex-1 truncate text-[13px] font-semibold leading-snug">
-            {agent.title}
-          </p>
-        ) : (
-          <span className="min-w-0 flex-1 truncate text-[13px] font-semibold leading-snug">
-            {agent.title}
+        <span className="min-w-0 flex-1 truncate text-(length:--ui-font-secondary) font-medium leading-snug">
+          {agent.title}
+        </span>
+        {elapsed ? (
+          <span className="shrink-0 text-(length:--ui-font-caption) tabular-nums text-(--ui-text-secondary)">
+            {elapsed}
           </span>
-        )}
+        ) : null}
       </span>
-      <span
-        className={`mt-1 flex min-w-0 items-center gap-1.5 pl-4 text-[11px] leading-tight ${
-          agent.issue === "failed"
-            ? "text-(--ui-tone-danger-fg)"
-            : agent.issue === "retrying"
-              ? "text-(--ui-tone-warning-fg)"
-              : agent.needsApproval
-                ? "text-(--ui-tone-warning-fg)"
-                : agent.done
-                  ? "text-(--ui-tone-success-fg)"
-                  : "text-(--ui-text-secondary)"
-        }`}
-      >
-        {agent.issue || agent.needsApproval ? (
-          <CircleAlert className="size-3 shrink-0" strokeWidth={1.75} />
-        ) : agent.done ? (
-          <Check className="size-3 shrink-0" strokeWidth={2.25} />
-        ) : (
-          <TerminalSpinner className="inline-block w-3 select-none text-center text-[11px] leading-none" />
-        )}
-        <span className="min-w-0 truncate">{activity}</span>
-      </span>
-      <span className="mt-1 flex min-w-0 items-center gap-1.5 pl-4 text-[11px] leading-tight text-(--ui-text-secondary)">
+      <span className="mbs-1 flex min-w-0 items-center gap-1.5 ps-4 text-(length:--ui-font-caption) leading-tight text-(--ui-text-secondary)">
         <HarnessIcon harness={agent.harness} className="size-3 shrink-0" />
         {remote ? (
           <Internet
@@ -293,7 +271,29 @@ function LiveAgentCard({
           />
         ) : null}
         <span className="min-w-0 flex-1 truncate">{project}</span>
-        {elapsed ? <span className="shrink-0 tabular-nums">{elapsed}</span> : null}
+        <span
+          title={activity}
+          className={`flex min-w-0 items-center gap-1 ${agent.issue || agent.needsApproval || agent.done ? "max-w-full shrink-0" : "max-w-[50%]"} ${
+            agent.issue === "failed"
+              ? "text-(--ui-tone-danger-fg)"
+              : agent.issue === "retrying"
+                ? "text-(--ui-tone-warning-fg)"
+                : agent.needsApproval
+                  ? "text-(--ui-tone-warning-fg)"
+                  : agent.done
+                    ? "text-(--ui-tone-success-fg)"
+                    : "text-(--ui-text-secondary)"
+          }`}
+        >
+          {agent.issue || agent.needsApproval ? (
+            <CircleAlert className="size-3 shrink-0" strokeWidth={1.75} />
+          ) : agent.done ? (
+            <Check className="size-3 shrink-0" strokeWidth={2.25} />
+          ) : (
+            <TerminalSpinner className="inline-block w-3 select-none text-center text-[11px] leading-none" />
+          )}
+          <span className="min-w-0 truncate">{activity}</span>
+        </span>
       </span>
     </Button>
   );

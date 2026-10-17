@@ -2,6 +2,8 @@ import { DropdownMenu } from "../../shared/ui/DropdownMenu";
 import { Checkbox } from "../../shared/ui/Checkbox";
 import { Button } from "../../shared/ui/Button";
 import { WorkspaceFeatureGate } from "../../features/settings/ui/WorkspaceFeatureGate";
+import { useWorkspaceFeatures } from "../../features/settings/model/workspaceFeatures";
+import { ExpandingButtonGroup } from "../../shared/ui/ExpandingButtonGroup";
 import { t, useLocale } from "../../shared/i18n";
 import { SOCIAL_PANEL_EVENT } from "../../features/social/ui/SocialShortcut";
 import {
@@ -269,6 +271,7 @@ export function ProjectRail({
   onDismissUpdate,
 }: Props) {
   useLocale();
+  const workspaceFeatures = useWorkspaceFeatures();
   const resize = useDragResize({
     min: railMin,
     max: () => sidePaneMaxWidth("rail", PROJECT_RAIL_WIDTH_MAX, 0.35, railMin),
@@ -797,7 +800,7 @@ export function ProjectRail({
           </Button>
         ) : (
           <>
-            {/* One column of equal rows: session status first, then navigation. */}
+            {/* Session status first, then compact tool navigation. */}
             <div className="bycoda-rail-status shrink-0">
               {recoveryControl}
               <div className="shrink-0 @max-[140px]/rail:hidden">
@@ -822,7 +825,117 @@ export function ProjectRail({
                 groupMascots={groupMascots}
               />
             </div>
-            <nav aria-label={t("Workspace tools")} className="bycoda-rail-tools shrink-0">
+            <nav
+              aria-label={t("Workspace tools")}
+              className="bycoda-rail-tools bycoda-rail-tools--expanding shrink-0"
+            >
+              <ExpandingButtonGroup
+                label={t("Workspace tools")}
+                size="sm"
+                fit
+                defaultExpanded={
+                  inboxActive
+                    ? "inbox"
+                    : notesActive
+                      ? "notes"
+                      : automationsActive
+                        ? "automations"
+                        : socialActive
+                          ? "social"
+                          : tasksActive
+                            ? "tasks"
+                            : null
+                }
+                items={[
+                  ...(workspaceFeatures.inbox || inboxActive
+                    ? [
+                        {
+                          id: "inbox",
+                          label: t("Inbox"),
+                          active: inboxActive,
+                          ariaLabel: inboxUnseen ? `${t("Inbox")}, ${t("New items")}` : t("Inbox"),
+                          icon: (
+                            <span className="relative">
+                              <Inbox />
+                              {inboxUnseen ? (
+                                <span
+                                  aria-hidden
+                                  className="absolute size-1.5 rounded-full bg-accent [inset-inline-end:-3px] [inset-block-start:-2px]"
+                                />
+                              ) : null}
+                            </span>
+                          ),
+                          onSelect: onOpenInbox,
+                          disabled: !onOpenInbox,
+                          onOpenContextMenu: (x: number, y: number) => {
+                            menuTrigger.current =
+                              document.activeElement instanceof HTMLElement
+                                ? document.activeElement
+                                : null;
+                            projectMenu.close();
+                            setInboxMenu({ x, y });
+                          },
+                        },
+                      ]
+                    : []),
+                  ...(notesEnabled
+                    ? [
+                        {
+                          id: "notes",
+                          label: t("Notes"),
+                          icon: <File />,
+                          active: notesActive,
+                          onSelect: onOpenNotes,
+                          disabled: !onOpenNotes,
+                        },
+                      ]
+                    : []),
+                  ...(workspaceFeatures.automations || automationsActive
+                    ? [
+                        {
+                          id: "automations",
+                          label: t("Automations"),
+                          icon: <Zap />,
+                          active: automationsActive,
+                          onSelect: onOpenAutomations,
+                          disabled: !onOpenAutomations,
+                        },
+                      ]
+                    : []),
+                  ...(workspaceFeatures.social || socialActive
+                    ? [
+                        {
+                          id: "social",
+                          label: t("Social Media"),
+                          icon: <Globe />,
+                          active: socialActive,
+                          onSelect: () => {
+                            window.dispatchEvent(
+                              new CustomEvent(SOCIAL_PANEL_EVENT, { detail: { cwd } }),
+                            );
+                          },
+                        },
+                      ]
+                    : []),
+                  ...(workspaceFeatures.tasks || tasksActive
+                    ? [
+                        {
+                          id: "tasks",
+                          label: t("Tasks"),
+                          icon: <DashboardSquare />,
+                          active: tasksActive,
+                          onSelect: onOpenTasks,
+                          disabled: !onOpenTasks,
+                        },
+                      ]
+                    : []),
+                ]}
+              />
+            </nav>
+            <nav
+              aria-label={t("Workspace tools")}
+              className="bycoda-rail-tools bycoda-rail-tools--compact shrink-0"
+            >
               <WorkspaceFeatureGate id="inbox" active={inboxActive}>
                 <RailAction
                   label={t("Inbox")}

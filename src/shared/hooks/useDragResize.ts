@@ -41,6 +41,8 @@ export function useDragResize({
   onCommitRef.current = onCommit;
   const defaultRef = useRef(defaultWidth);
   defaultRef.current = defaultWidth;
+  // A temporary viewport constraint must not overwrite the owner's pane size.
+  const preferredWidthRef = useRef(initial);
 
   const clamp = useCallback((value: number) => {
     return clampTo(value, minRef.current, maxRef.current());
@@ -68,6 +70,7 @@ export function useDragResize({
 
   const commit = (next: number) => {
     const value = clamp(next);
+    preferredWidthRef.current = value;
     apply(value);
     setWidth(value);
     onCommitRef.current?.(value);
@@ -137,8 +140,11 @@ export function useDragResize({
 
   useEffect(() => {
     const resize = () => {
-      const next = clamp(widthRef.current);
-      if (next !== widthRef.current) commit(next);
+      const next = clamp(stopDrag.current ? widthRef.current : preferredWidthRef.current);
+      if (next !== widthRef.current) {
+        apply(next);
+        setWidth(next);
+      }
       const upper = Math.max(0, maxRef.current());
       setBounds((previous) =>
         previous.min === Math.min(minRef.current, upper) && previous.max === upper

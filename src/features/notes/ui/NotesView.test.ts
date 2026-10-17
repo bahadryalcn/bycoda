@@ -471,9 +471,9 @@ it("opens in split and edits a preview block with formatting, preserving other M
       .click(),
   );
   expect(view.state.doc.toString()).toBe("**Keep** this text.");
-  expect(container.querySelector<HTMLElement>("[data-note-editor]")!.parentElement!.className).toBe(
-    "hidden",
-  );
+  expect(
+    container.querySelector<HTMLElement>("[data-note-editor]")!.closest("[hidden]"),
+  ).not.toBeNull();
   await act(async () =>
     [...container.querySelectorAll<HTMLButtonElement>("button")]
       .find((button) => button.textContent === "Done")!

@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.1]
+
+### Search, notes and workspace controls
+
+- Improve global search navigation, result previews and keyboard shortcuts.
+- Keep note editor toolbars visible and improve split-view scrolling.
+- Refine workspace tool navigation, sidebar renaming and activity controls.
+- Improve attachment links, image previews and shared control behavior.
+- Polish appearance settings, translations and browser regression coverage.
+
 ## [0.6.0]
 
 ### Desktop controls and workspace

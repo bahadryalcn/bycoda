@@ -66,7 +66,7 @@ describe("subagent scrolling", () => {
               kind: "tool",
               text: "Run check",
               toolKind: "shell",
-              status: "failed",
+              status: "in_progress",
               preview: {
                 kind: "read",
                 output: "Last line of output",

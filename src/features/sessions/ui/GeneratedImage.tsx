@@ -69,20 +69,19 @@ export function GeneratedImage({ image }: { image: GeneratedImageMeta }) {
     <div className="min-w-0 px-4 pb-3 pt-3">
       <Button
         fullWidth
-        iconOnly
         label={t("Open {p0} full screen", { p0: image.name })}
         variant="item"
         type="button"
         aria-label={t("Open {p0} full screen", { p0: image.name })}
         title={t("Open {p0} full screen", { p0: image.name })}
         onClick={() => setOpen(true)}
-        className="block max-w-full"
+        className="block max-w-full p-0"
       >
         <img
           src={state.url}
           alt={alt}
           draggable={false}
-          className="max-h-[min(70vh,640px)] max-w-full object-contain"
+          className="mx-auto block h-auto w-auto max-h-[min(50dvh,480px)] max-w-full object-contain"
         />
       </Button>
       <div className="mt-1 flex min-w-0 items-center gap-2 text-[11px] text-(--ui-text-secondary)">

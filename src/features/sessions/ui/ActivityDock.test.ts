@@ -70,12 +70,14 @@ describe("ActivityDock", () => {
     render({ busy: true });
     expect(dock()?.getAttribute("data-activity-dock")).toBe("working");
     expect(dock()?.querySelector("[data-pacing-uncle]")).not.toBeNull();
-    expect(dock()?.querySelector('[data-pacing-track="full-width"]')?.parentElement).toBe(
-      dock()?.querySelector("[data-activity-status-row]"),
-    );
     expect(
-      dock()?.querySelector('[data-pacing-track="full-width"]')?.classList.contains("absolute"),
-    ).toBe(true);
+      dock()
+        ?.querySelector('[data-pacing-track="reserved"]')
+        ?.closest("[data-activity-status-row]"),
+    ).toBe(dock()?.querySelector("[data-activity-status-row]"));
+    expect(
+      dock()?.querySelector('[data-pacing-track="reserved"]')?.classList.contains("absolute"),
+    ).toBe(false);
     expect(dock()?.querySelector("[data-pacing-uncle]")?.classList.contains("h-8")).toBe(true);
 
     render({ busy: false });

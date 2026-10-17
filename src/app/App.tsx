@@ -2091,7 +2091,7 @@ function Workspace({
     setSearchFocusToken,
     dirtyFilesRef,
   });
-  const { onCloseCurrentTab, onOpenSearch, onLeaveSearch } = useSearchActions({
+  const { onCloseCurrentTab, onOpenSearch, onLeaveSearch, searchDialogOpen, onExpandSearch } = useSearchActions({
     activeTabId,
     onCloseTab,
     setFilePickerOpen,
@@ -2902,6 +2902,9 @@ function Workspace({
               </div>
               <WorkspaceAuxSurfaces
                 searchViewOpen={searchViewOpen}
+                searchDialogOpen={searchDialogOpen}
+                onExpandSearch={onExpandSearch}
+                onCompactSearch={onOpenSearch}
                 gitCwd={gitCwd}
                 visibleRecents={visibleRecents}
                 projectHistory={projectHistory}

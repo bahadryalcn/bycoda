@@ -86,7 +86,7 @@ export function ImageLightbox({ src, alt, onClose }: Props) {
           autoFocus
           role="group"
           aria-label={t("Image preview: {p0}", { p0: alt })}
-          className="grid h-full w-full place-items-center overflow-clip"
+          className="grid h-full w-full min-h-0 min-w-0 grid-cols-[minmax(0,1fr)] grid-rows-[minmax(0,1fr)] place-items-center overflow-clip"
           {...imageZoom.bindings}
           onClick={(event) => {
             if (event.target === event.currentTarget && !imageZoom.consumeClick()) onClose();

@@ -27,6 +27,45 @@ afterEach(async () => {
 });
 const icon = createElement("svg");
 const button = (id: string) => container.querySelector<HTMLButtonElement>(`[data-id="${id}"]`)!;
+it("keeps the current destination while another label expands and supports context menus", async () => {
+  const openMenu = vi.fn();
+  const openInbox = vi.fn();
+  await act(async () =>
+    root.render(
+      createElement(ExpandingButtonGroup, {
+        label: "Workspace tools",
+        defaultExpanded: "notes",
+        items: [
+          {
+            id: "inbox",
+            label: "Inbox",
+            ariaLabel: "Inbox, new items",
+            icon,
+            active: false,
+            onSelect: openInbox,
+            onOpenContextMenu: openMenu,
+          },
+          { id: "notes", label: "Notes", icon, active: true },
+        ],
+      }),
+    ),
+  );
+  await act(async () => button("inbox").focus());
+  expect(button("notes").getAttribute("aria-current")).toBe("page");
+  expect(button("inbox").hasAttribute("aria-current")).toBe(false);
+  expect(button("inbox").getAttribute("aria-label")).toBe("Inbox, new items");
+  await act(async () => {
+    button("inbox").dispatchEvent(
+      new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: 12, clientY: 24 }),
+    );
+    button("inbox").dispatchEvent(
+      new KeyboardEvent("keydown", { bubbles: true, cancelable: true, key: "F10", shiftKey: true }),
+    );
+  });
+  expect(openMenu).toHaveBeenNthCalledWith(1, 12, 24);
+  expect(openMenu).toHaveBeenCalledTimes(2);
+  expect(openInbox).not.toHaveBeenCalled();
+});
 async function tap(id: string) {
   await act(async () => {
     const event = new Event("pointerdown", { bubbles: true, cancelable: true });

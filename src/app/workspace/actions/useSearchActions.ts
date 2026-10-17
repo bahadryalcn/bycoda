@@ -1,4 +1,4 @@
-import { useCallback, startTransition, type Dispatch, type SetStateAction } from "react";
+import { useCallback, useState, startTransition, type Dispatch, type SetStateAction } from "react";
 
 export interface SearchActionDeps {
   activeTabId: string | null | undefined;
@@ -17,7 +17,10 @@ export function useSearchActions(deps: SearchActionDeps): {
   onCloseCurrentTab: () => unknown;
   onOpenSearch: () => void;
   onLeaveSearch: () => void;
+  searchDialogOpen: boolean;
+  onExpandSearch: () => void;
 } {
+  const [searchDialogOpen, setSearchDialogOpen] = useState(false);
   const {
     activeTabId,
     onCloseTab,
@@ -38,6 +41,15 @@ export function useSearchActions(deps: SearchActionDeps): {
   const onOpenSearch = useCallback(() => {
     startTransition(() => {
       setFilePickerOpen(false);
+      setSearchViewOpen(false);
+      setSearchDialogOpen(true);
+      setSearchViewFocusToken((token) => token + 1);
+    });
+  }, []);
+
+  const onExpandSearch = useCallback(() => {
+    startTransition(() => {
+      setSearchDialogOpen(false);
       setSettingsOpen(false);
       setInboxViewOpen(false);
       setNotesViewOpen(false);
@@ -48,8 +60,9 @@ export function useSearchActions(deps: SearchActionDeps): {
   }, []);
 
   const onLeaveSearch = useCallback(() => {
+    setSearchDialogOpen(false);
     setSearchViewOpen(false);
   }, []);
 
-  return { onCloseCurrentTab, onOpenSearch, onLeaveSearch };
+  return { onCloseCurrentTab, onOpenSearch, onLeaveSearch, searchDialogOpen, onExpandSearch };
 }

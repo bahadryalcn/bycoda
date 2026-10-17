@@ -269,6 +269,7 @@ html.theme-light {
 :root {
   --ui-font-secondary: 0.8125rem;
   --ui-font-caption: 0.75rem;
+  --ui-transcript-surface: color-mix(in oklab, var(--color-background-base) 94%, transparent);
   --ui-text-on-active: var(--palette-oklch_0_29_0_066_243);
   --ui-text-secondary: color-mix(
     in srgb,
@@ -950,9 +951,13 @@ html.has-chat-background.chat-background-effect-ready.chat-background-gradient-b
   display: block;
 }
 
+.transcript-content {
+  background: var(--ui-transcript-surface);
+}
+
 html.has-user-accent .user-message-bubble {
-  background: color-mix(in srgb, var(--user-accent-color) 24%, transparent);
-  border-color: color-mix(in srgb, var(--user-accent-color) 30%, transparent);
+  background: color-mix(in oklab, var(--ui-surface) 94%, var(--user-accent-color));
+  border-color: var(--color-stroke);
 }
 
 /*

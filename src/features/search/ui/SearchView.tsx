@@ -2,10 +2,19 @@ import { EmptyState } from "../../../shared/ui/EmptyState";
 import { Alert } from "../../../shared/ui/Alert";
 import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
 import { Button } from "../../../shared/ui/Button";
+import { Modal } from "../../../shared/ui/Modal";
+import "./search.css";
 import { SearchInput, SearchInputGroup } from "../../../shared/ui/SearchInput";
 import { projectDisplayName } from "../../projects/model/projectNames";
 import { t, useLocale } from "../../../shared/i18n";
-import { Folder, LoaderCircle, MessageSquare, Search } from "../../../shared/ui/icons";
+import {
+  Folder,
+  LoaderCircle,
+  MessageSquare,
+  Search,
+  Maximize2,
+  Minimize2,
+} from "../../../shared/ui/icons";
 import {
   useDeferredValue,
   useEffect,
@@ -97,6 +106,9 @@ const SCOPES: { id: SearchScope; label: string }[] = [
 
 type Props = {
   open: boolean;
+  presentation?: "dialog" | "page";
+  onExpand?: () => void;
+  onCompact?: () => void;
   cwd: string;
   recents: RecentProject[];
   history: SessionSummary[];
@@ -113,6 +125,9 @@ type Props = {
 
 export function SearchView({
   open,
+  presentation = "page",
+  onExpand,
+  onCompact,
   cwd,
   recents,
   history,
@@ -373,27 +388,34 @@ export function SearchView({
       </p>
     ) : null;
 
-  return (
+  const content = (
     <div
       role="search"
       aria-label={t("Search")}
       data-app-search
-      className="flex min-h-0 min-w-0 flex-1 flex-col text-content"
+      className={`app-search flex min-h-0 min-w-0 flex-1 flex-col text-content ${presentation === "dialog" ? "app-search-dialog" : ""}`}
     >
       <div className="grid shrink-0 grid-cols-[auto_minmax(0,1fr)_auto]">
         <div
           className="col-span-3 grid h-10 grid-cols-subgrid select-none items-center border-b border-stroke"
-          data-tauri-drag-region="deep"
+          data-tauri-drag-region={presentation === "page" ? "deep" : undefined}
         >
           <div className="flex items-center">
-            {IS_MAC && compactRail ? <div className="w-4 shrink-0" /> : null}
-            {IS_MAC && !besideRail ? <div className="w-[78px] shrink-0" /> : null}
-            {besideRail ? null : <OverlayNav onBack={onClose} onToggleSidebar={onToggleSidebar} />}
+            {presentation === "page" ? (
+              <>
+                {IS_MAC && compactRail ? <div className="w-4 shrink-0" /> : null}
+                {IS_MAC && !besideRail ? <div className="w-[78px] shrink-0" /> : null}
+                {besideRail ? null : (
+                  <OverlayNav onBack={onClose} onToggleSidebar={onToggleSidebar} />
+                )}
+              </>
+            ) : null}
           </div>
           <div className="min-w-0 flex-1 px-3">
             <SearchInputGroup appearance="field" className="w-full">
               <Search className="size-3.5 shrink-0" strokeWidth={1.75} aria-hidden="true" />
               <SearchInput
+                type="search"
                 focusOwner="group"
                 ref={inputRef}
                 value={query}
@@ -416,7 +438,34 @@ export function SearchView({
               ) : null}
             </SearchInputGroup>
           </div>
-          <div>{!IS_MAC ? <WindowControls /> : null}</div>
+          <div className="flex items-center pe-3">
+            {presentation === "dialog" ? (
+              <Button
+                variant="ghost"
+                iconOnly
+                label={t("Full screen")}
+                tooltip={t("Full screen")}
+                onClick={onExpand}
+              >
+                <Maximize2 className="size-3.5" />
+              </Button>
+            ) : (
+              <>
+                {onCompact ? (
+                  <Button
+                    variant="ghost"
+                    iconOnly
+                    label={t("Restore")}
+                    tooltip={t("Restore")}
+                    onClick={onCompact}
+                  >
+                    <Minimize2 className="size-3.5" />
+                  </Button>
+                ) : null}
+                {!IS_MAC ? <WindowControls /> : null}
+              </>
+            )}
+          </div>
         </div>
 
         <div className="col-span-3 grid min-h-9 grid-cols-subgrid items-center border-b border-stroke">
@@ -428,16 +477,15 @@ export function SearchView({
               options={SCOPES.map((item) => ({ value: item.id, label: item.label }))}
             />
           </div>
+          {chatMode ? (
+            <ChatFilterBar
+              filters={chatFilters}
+              inGroup={Boolean(chatGroupFor(cwd, grouping))}
+              onChange={setChatFilters}
+            />
+          ) : null}
         </div>
       </div>
-
-      {chatMode ? (
-        <ChatFilterBar
-          filters={chatFilters}
-          inGroup={Boolean(chatGroupFor(cwd, grouping))}
-          onChange={setChatFilters}
-        />
-      ) : null}
 
       {!empty && (error || conversation.error) ? (
         <Alert tone="danger" role="alert">
@@ -467,6 +515,7 @@ export function SearchView({
 
       <div
         ref={lockOverscroll}
+        aria-busy={loading}
         className={
           empty
             ? "flex min-h-0 flex-1 items-center justify-center overflow-y-auto overscroll-none"
@@ -510,7 +559,25 @@ export function SearchView({
           </>
         )}
       </div>
+      <footer className="app-search-footer">
+        <span>
+          <kbd>↑</kbd> <kbd>↓</kbd> {t("Search results")}
+        </span>
+        <span>
+          <kbd>Enter</kbd> {t("Open")}
+        </span>
+        <span>
+          <kbd>Esc</kbd> {t("Close")}
+        </span>
+      </footer>
     </div>
+  );
+  return presentation === "dialog" ? (
+    <Modal title={t("Search")} size="lg" onClose={onClose} className="app-search-modal">
+      {content}
+    </Modal>
+  ) : (
+    content
   );
 }
 
@@ -568,6 +635,8 @@ function ResultList({
             variant="item"
             motion="none"
             fullWidth
+            selected={highlighted}
+            className="app-search-result"
             key={hit.id}
             ref={highlighted ? activeRef : undefined}
             type="button"
@@ -578,12 +647,24 @@ function ResultList({
             onClick={() => onOpen(hit)}
           >
             <span className="grid size-4 shrink-0 place-items-center">{row.icon}</span>
-            <span className="min-w-0 flex-1 truncate">{row.title}</span>
-            {row.meta ? (
-              <span className="min-w-0 max-w-[45%] truncate font-mono text-[11px] text-content/40">
-                {row.meta}
-              </span>
-            ) : null}
+            <span className="app-search-result-copy">
+              <span className="app-search-result-title">{row.title}</span>
+              {row.preview ? (
+                <span className="app-search-result-preview">{row.preview}</span>
+              ) : null}
+              <span className="app-search-result-meta">{row.meta}</span>
+            </span>
+            <span className="app-search-result-kind">
+              {t(
+                hit.kind === "conversation"
+                  ? "Conversation"
+                  : hit.kind === "message"
+                    ? "Message"
+                    : hit.kind === "project"
+                      ? "Project"
+                      : "File",
+              )}
+            </span>
           </Button>
         );
       })}
@@ -594,7 +675,7 @@ function ResultList({
 function rowCopy(
   hit: AppSearchHit,
   query: string,
-): { icon: ReactNode; title: ReactNode; meta: string } {
+): { icon: ReactNode; title: ReactNode; meta: string; preview?: ReactNode } {
   if (hit.kind === "conversation") {
     return {
       icon: <HarnessIcon harness={hit.harness} className="size-3.5" />,
@@ -605,8 +686,9 @@ function rowCopy(
   if (hit.kind === "message") {
     return {
       icon: <MessageSquare className="size-3.5 text-content/55" strokeWidth={1.75} />,
-      title: <Highlight text={hit.preview || hit.title} query={query} />,
-      meta: hit.title,
+      title: hit.title,
+      preview: <Highlight text={hit.preview || hit.title} query={query} />,
+      meta: projectDisplayName(hit.cwd),
     };
   }
   if (hit.kind === "file") {
@@ -619,7 +701,8 @@ function rowCopy(
   if (hit.kind === "content") {
     return {
       icon: <FileTypeIcon name={hit.name} isDir={false} size={16} />,
-      title: <Highlight text={hit.preview} query={query} />,
+      title: hit.name,
+      preview: <Highlight text={hit.preview} query={query} />,
       meta: `${hit.relative}:${hit.line}`,
     };
   }

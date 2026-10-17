@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { AgentTranscript } from "../../src/features/sessions/ui/AgentTranscript";
+import { ActivityDock } from "../../src/features/sessions/ui/ActivityDock";
 import type { Block } from "../../src/features/sessions/model/session";
 import {
   saveTranscriptAnchor,
@@ -35,7 +36,8 @@ const root = document.getElementById("root")!;
 if (
   new URLSearchParams(window.location.search).has("artifacts") ||
   new URLSearchParams(window.location.search).has("rewind") ||
-  new URLSearchParams(location.search).has("streaming")
+  new URLSearchParams(location.search).has("streaming") ||
+  new URLSearchParams(location.search).has("chat-layout")
 ) {
   root.style.width = "100%";
   root.style.height = "100dvh";
@@ -171,4 +173,64 @@ function Fixture() {
   );
 }
 
-createRoot(host).render(<Fixture />);
+function ChatLayoutFixture() {
+  const startedAt = Date.now() - 269_000;
+  const layoutBlocks: Block[] = [
+    {
+      id: "layout-user",
+      role: "user",
+      startedAt,
+      text: "[image1] Sohbet ekranındaki mesajları daha okunabilir yap. [image2] [image3] [image4] [image5] [image6] [image7] Ekler ve çalışan işlemler de anlaşılır olmalı.",
+      attachments: Array.from({ length: 7 }, (_, index) => ({
+        id: `layout-image-${index}`,
+        name: `screenshot-${index + 1}.png`,
+        kind: "image",
+        mimeType: "image/png",
+        size: 42,
+        previewUrl: "/brand/bycoda/mark-light.svg",
+      })),
+    },
+    {
+      id: "layout-intro",
+      role: "assistant",
+      text: "Mesajları, ekleri ve çalışma durumunu ayrı bir hiyerarşide düzenliyorum. Komut ayrıntıları gerektiğinde açılabilir kalacak.",
+    },
+    ...Array.from({ length: 10 }, (_, index): Block => ({
+      id: `layout-command-${index}`,
+      role: "tool",
+      text: `Run pnpm exec check src/features/sessions/ui/very-long-command-path-${index}.tsx`,
+      tool: {
+        kind: "shell",
+        status: index === 9 ? "in_progress" : "completed",
+        detail: `Command result ${index}: readable-output-marker`,
+      },
+    })),
+  ];
+  return (
+    <div
+      className="flex h-dvh min-w-0 flex-col bg-background-base text-content"
+      style={{
+        backgroundImage:
+          "repeating-linear-gradient(0deg, transparent, transparent 7px, var(--color-stroke) 8px)",
+      }}
+    >
+      <div className="min-h-0 min-w-0 flex-1">
+        <AgentTranscript blocks={layoutBlocks} busy harness="codex" model="gpt-6.1" />
+      </div>
+      <div data-composer className="mx-auto w-full max-w-4xl px-4 py-2">
+        <ActivityDock
+          sessionId="layout-session"
+          blocks={layoutBlocks}
+          busy
+          pendingQuestion={false}
+          atEnd
+          onOpenAgent={() => {}}
+        />
+      </div>
+    </div>
+  );
+}
+
+createRoot(host).render(
+  new URLSearchParams(location.search).has("chat-layout") ? <ChatLayoutFixture /> : <Fixture />,
+);

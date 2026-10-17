@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { AttachmentChip } from "../../src/features/sessions/ui/AttachmentChip";
+import { GeneratedImage } from "../../src/features/sessions/ui/GeneratedImage";
 import type { Attachment } from "../../src/features/sessions/model/session";
 import "../../src/styles/index.css";
 
@@ -200,4 +201,48 @@ function Fixture() {
   );
 }
 
-createRoot(document.getElementById("root")!).render(<Fixture />);
+function GeneratedImagesFixture() {
+  const [data] = useState(() => {
+    const canvas = document.createElement("canvas");
+    const shape = new URLSearchParams(location.search).get("shape");
+    canvas.width = shape === "tall" ? 900 : shape === "small" ? 160 : 1440;
+    canvas.height = shape === "tall" ? 2400 : shape === "small" ? 100 : 900;
+    const context = canvas.getContext("2d")!;
+    context.fillStyle = "white";
+    context.fillRect(0, 0, canvas.width, canvas.height);
+    context.fillStyle = "black";
+    context.font = "48px sans-serif";
+    context.fillText("Left edge", 20, 80);
+    context.fillText("Right edge", canvas.width - 280, 80);
+    return canvas.toDataURL("image/png").split(",")[1];
+  });
+  return (
+    <main
+      style={{
+        inlineSize: "100%",
+        maxInlineSize: 600,
+        minInlineSize: 0,
+        marginInline: "auto",
+        background: "var(--ui-surface)",
+      }}
+    >
+      <GeneratedImage
+        image={{
+          data,
+          name: "wide.png",
+          path: "/fixture/wide.png",
+          mimeType: "image/png",
+          size: 0,
+        }}
+      />
+    </main>
+  );
+}
+
+createRoot(document.getElementById("root")!).render(
+  new URLSearchParams(location.search).has("generated-images") ? (
+    <GeneratedImagesFixture />
+  ) : (
+    <Fixture />
+  ),
+);

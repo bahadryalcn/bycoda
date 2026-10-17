@@ -965,6 +965,40 @@ describe("sidebar new session rows", () => {
 });
 
 describe("sidebar pinned sessions", () => {
+  it("shows nested folder activity on open and collapsed group headers", () => {
+    localStorage.setItem(
+      "bycoda.sessionFolders",
+      JSON.stringify({
+        "/workspace/project": [
+          { id: "parent", name: "Parent", sessionIds: [], pinned: true, collapsed: false },
+          {
+            id: "child",
+            parentId: "parent",
+            name: "Child",
+            sessionIds: ["session-1"],
+            collapsed: false,
+          },
+        ],
+      }),
+    );
+    act(() => render());
+    const header = (name: string) =>
+      container.querySelector<HTMLButtonElement>(`[data-folder-row][title="${name}"]`)!;
+    const working = (name: string) =>
+      header(name).querySelector('[role="img"][aria-label="Working"]');
+    for (const name of ["Pinned", "Parent", "Child"]) {
+      expect(working(name)).not.toBeNull();
+    }
+    act(() => header("Parent").click());
+    expect(working("Parent")).not.toBeNull();
+    expect(working("Pinned")).not.toBeNull();
+    act(() => header("Pinned").click());
+    expect(working("Pinned")).not.toBeNull();
+    props.busySessionIds = new Set();
+    act(() => render());
+    expect(working("Pinned")).toBeNull();
+  });
+
   it("renders them as a collapsible folder-style group without a divider", () => {
     props.sessions = [
       { ...props.sessions[0], pinned: true },

@@ -1,5 +1,59 @@
 import { expect, test, type Page } from "@playwright/test";
 
+test("fills the note workspace and exposes each pane's remaining content", async ({
+  page,
+}, testInfo) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.goto("/tests/browser/notes.html?long");
+  const panes = page.locator(".note-editor-pane");
+  await expect(panes).toHaveCount(2);
+  await expect(page.getByRole("button", { name: "More below", exact: true })).toHaveCount(2);
+  for (const width of [1440, 1024, 768, 390]) {
+    await page.setViewportSize({ width, height: 950 });
+    const bounds = await page.locator(".note-layout").boundingBox();
+    expect(bounds!.y + bounds!.height).toBeGreaterThan(920);
+    expect(bounds!.y + bounds!.height).toBeLessThanOrEqual(950);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+      true,
+    );
+    const detail = page.locator(".note-detail");
+    expect(
+      await detail.evaluate((node) => node.scrollHeight - node.clientHeight),
+    ).toBeLessThanOrEqual(1);
+  }
+  await page.setViewportSize({ width: 1440, height: 950 });
+  const preview = panes.nth(1);
+  await preview.getByRole("button", { name: "More below", exact: true }).click();
+  expect(
+    await preview.locator(".note-pane-scroll").evaluate((node) => node.scrollTop),
+  ).toBeGreaterThan(0);
+  expect(
+    await panes
+      .first()
+      .locator(".note-pane-scroll")
+      .evaluate((node) => node.scrollTop),
+  ).toBe(0);
+  await preview.locator(".note-pane-scroll").evaluate((node) => {
+    node.scrollTop = node.scrollHeight;
+  });
+  await expect(preview.locator(".note-pane-footer")).toHaveText("End of note");
+  await expect(preview.getByRole("button", { name: "Add text", exact: true })).toBeInViewport();
+  await page.getByRole("tab", { name: "Source", exact: true }).click();
+  await expect(panes).toHaveCount(1);
+  await page.getByRole("tab", { name: "Edit preview", exact: true }).click();
+  await expect(panes).toHaveCount(1);
+  await expect(preview).toHaveCount(0);
+  await page.getByRole("tab", { name: "Split", exact: true }).click();
+  await expect(panes).toHaveCount(2);
+  await page.screenshot({
+    path: `temp/verification/2026-10-17-notes-height/${testInfo.project.name}-dark.png`,
+  });
+  await page.evaluate(() => document.documentElement.classList.add("theme-light"));
+  await page.screenshot({
+    path: `temp/verification/2026-10-17-notes-height/${testInfo.project.name}-light.png`,
+  });
+});
+
 async function choose(page: Page, label: string, option: string | RegExp) {
   await page.getByRole("button", { name: new RegExp(`^${label}(?::|$)`) }).click();
   await page.getByRole("option", { name: option }).click();

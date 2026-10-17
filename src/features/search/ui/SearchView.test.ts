@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { act, createElement } from "react";
+import { act, createElement, type ComponentProps } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { SearchView } from "./SearchView";
@@ -43,7 +43,11 @@ afterEach(() => {
   host.remove();
   vi.unstubAllGlobals();
 });
-const render = (cwd = "/repo", open = true) =>
+const render = (
+  cwd = "/repo",
+  open = true,
+  overrides: Partial<ComponentProps<typeof SearchView>> = {},
+) =>
   act(async () =>
     root.render(
       createElement(SearchView, {
@@ -56,6 +60,7 @@ const render = (cwd = "/repo", open = true) =>
         onOpenFile: vi.fn(),
         onOpenSession: vi.fn(),
         onOpenProject: vi.fn(),
+        ...overrides,
       }),
     ),
   );
@@ -88,4 +93,67 @@ it("retains workspace search text and category across close/reopen and remount w
   expect(host.querySelector("input")!.value).toBe("");
   await render();
   expect(host.querySelector("input")!.value).toBe("needle");
+});
+
+it("opens a modal over the workspace, focuses search and closes through Escape", async () => {
+  const onClose = vi.fn();
+  await render("/repo", true, { presentation: "dialog", onClose });
+  const dialog = document.body.querySelector('[role="dialog"]')!;
+  expect(dialog.getAttribute("aria-modal")).toBe("true");
+  expect(dialog.querySelector("[data-app-search]")).not.toBeNull();
+  await act(async () => {
+    await new Promise((resolve) => requestAnimationFrame(resolve));
+  });
+  expect(document.activeElement).toBe(dialog.querySelector("input"));
+  act(() => window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })));
+  expect(onClose).toHaveBeenCalledTimes(1);
+});
+
+it("keeps the query and category when expanding into the page", async () => {
+  const onExpand = vi.fn();
+  await render("/repo", true, { presentation: "dialog", onExpand });
+  await act(async () => {
+    const input = document.body.querySelector("input")!;
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
+      input,
+      "project",
+    );
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    [...document.body.querySelectorAll("button")]
+      .find((button) => button.textContent === "Projects")!
+      .click();
+  });
+  act(() => document.body.querySelector<HTMLButtonElement>('[aria-label="Full screen"]')!.click());
+  expect(onExpand).toHaveBeenCalledTimes(1);
+  await render("/repo", true, { presentation: "page", focusToken: 1 });
+  expect(document.body.querySelector('[role="dialog"]')).toBeNull();
+  expect(host.querySelector("input")!.value).toBe("project");
+  expect(
+    [...host.querySelectorAll("button")]
+      .find((button) => button.textContent === "Projects")!
+      .getAttribute("aria-checked"),
+  ).toBe("true");
+});
+
+it("dismisses the filters before the search dialog with Escape", async () => {
+  const onClose = vi.fn();
+  await render("/repo", true, { presentation: "dialog", onClose });
+  act(() =>
+    [...document.body.querySelectorAll("button")]
+      .find((button) => button.textContent === "Conversations")!
+      .click(),
+  );
+  act(() =>
+    document.body.querySelector<HTMLButtonElement>('[aria-label="Chat search filters"]')!.click(),
+  );
+  expect(
+    document.body.querySelector('[role="group"][aria-label="Chat search filters"]'),
+  ).not.toBeNull();
+  act(() => window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })));
+  expect(
+    document.body.querySelector('[role="group"][aria-label="Chat search filters"]'),
+  ).toBeNull();
+  expect(onClose).not.toHaveBeenCalled();
+  act(() => window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })));
+  expect(onClose).toHaveBeenCalledTimes(1);
 });

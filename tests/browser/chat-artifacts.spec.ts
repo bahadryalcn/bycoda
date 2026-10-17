@@ -1,5 +1,55 @@
 import { expect, test } from "@playwright/test";
 
+test("chat messages, attachment references and running work keep a readable hierarchy", async ({
+  page,
+}, info) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.goto("/tests/browser/transcript.html?chat-layout");
+  const bubble = page.locator(".user-message-bubble");
+  const group = page.locator(".transcript-activity-group").last();
+  const dock = page.getByRole("region", { name: "Turn activity", exact: true });
+  await expect(bubble).toBeVisible();
+  await expect(bubble.locator('[data-attachment-chip="image"]')).toHaveCount(7);
+  for (const theme of ["dark", "light"]) {
+    await page.evaluate(
+      (light) => document.documentElement.classList.toggle("theme-light", light),
+      theme === "light",
+    );
+    for (const width of [390, 768, 1440]) {
+      await page.setViewportSize({ width, height: 900 });
+      await bubble.scrollIntoViewIfNeeded();
+      expect(await bubble.evaluate((node) => node.scrollWidth <= node.clientWidth)).toBe(true);
+      const image = bubble.locator('[data-attachment-chip="image"] button').first();
+      expect((await image.boundingBox())!.width).toBeGreaterThanOrEqual(56);
+      const token = bubble.getByRole("button", {
+        name: "Open [image1] (screenshot-1.png) full screen",
+        exact: true,
+      });
+      expect((await token.boundingBox())!.height).toBeLessThan(26);
+      const track = dock.locator('[data-pacing-track="reserved"]');
+      const summary = dock.locator(".activity-dock-summary");
+      const trackBox = (await track.boundingBox())!;
+      const summaryBox = (await summary.boundingBox())!;
+      expect(trackBox.x).toBeGreaterThanOrEqual(summaryBox.x + summaryBox.width);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+        true,
+      );
+      if (width === 1440) await page.screenshot({ path: info.outputPath(`chat-${theme}.png`) });
+    }
+  }
+  const preview = group.locator(".zen-phase-summary");
+  expect((await preview.boundingBox())!.height).toBeLessThanOrEqual(120);
+  await group.getByRole("button", { name: "Show more", exact: true }).click();
+  await expect(group.locator(".zen-phase-summary")).toHaveCount(0);
+  await expect(group.getByText(/very-long-command-path-0/).first()).toBeVisible();
+  await bubble
+    .getByRole("button", { name: "Open screenshot-1.png full screen", exact: true })
+    .click();
+  await expect(page.getByRole("dialog")).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+});
+
 test("chat code and command results remain compact until explicitly opened", async ({
   page,
 }, info) => {
@@ -62,7 +112,9 @@ test("chat code and command results remain compact until explicitly opened", asy
     .click();
   await page.getByRole("button", { name: /^Hide output for/ }).click();
   await expect(page.locator("[data-tool-inspection]")).toHaveCount(0);
-  await expect(page.locator(".zen-phase-live")).toHaveCSS("max-height", "280px");
+  await expect
+    .poll(() => page.locator(".zen-phase-live").evaluate((node) => node.clientHeight))
+    .toBeLessThanOrEqual(120);
 });
 
 test("a chat CSV opens an actual worker-backed table and returns focus after Escape", async ({
