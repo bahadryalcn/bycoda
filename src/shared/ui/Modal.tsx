@@ -67,7 +67,9 @@ export function ModalPanel({
           className={
             popupHost
               ? "relative z-[1] w-full"
-              : `absolute z-[1] left-1/2 ${fitViewport ? "top-1/2 -translate-y-1/2" : TOP[size]} ${WIDTH[size]} -translate-x-1/2`
+              : fitViewport
+                ? `relative z-[1] ${WIDTH[size]}`
+                : `absolute z-[1] left-1/2 ${TOP[size]} ${WIDTH[size]} -translate-x-1/2`
           }
         >
           <div
@@ -131,7 +133,7 @@ export function Modal(props: Props) {
   if (host) return createPortal(<ModalPanel {...props} />, host);
   return createPortal(
     <div
-      className="fixed inset-0"
+      className={`fixed inset-0 ${props.fitViewport !== false ? "grid place-items-center" : ""}`}
       style={{ zIndex: LAYER.dialog }}
       onMouseDown={(event) => {
         if (event.target !== event.currentTarget) return;

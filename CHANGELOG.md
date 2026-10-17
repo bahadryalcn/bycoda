@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Keep note editor toolbars visible and improve split-view scrolling.
 - Refine workspace tool navigation, sidebar renaming and activity controls.
 - Improve attachment links, image previews and shared control behavior.
+- Keep preview dialogs centered within the viewport across browser engines.
 - Polish appearance settings, translations and browser regression coverage.
 
 ## [0.6.0]
