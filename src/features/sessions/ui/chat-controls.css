@@ -171,6 +171,10 @@ html [data-activity-dock] {
   transform-origin: center;
 }
 
+.context-speed-outline {
+  color: var(--ui-text-disabled);
+}
+
 @media (prefers-reduced-motion: no-preference) {
   .context-signal[data-working="true"] .context-speed-bolt {
     animation: context-speed-charge calc(var(--motion-feedback-duration) * 12)

@@ -205,10 +205,41 @@ it("keeps the signal icon uncluttered and exposes completed TPS, context and com
   expect(trigger.textContent).toBe("");
   expect(trigger.getAttribute("aria-label")).toContain("23%");
   expect(trigger.getAttribute("aria-label")).toContain("50.0 TPS");
+  expect(trigger.querySelector("svg")!.getAttribute("data-speed-fill")).toBe("0.75");
   await act(async () => trigger.click());
   expect(dialog()!.textContent).toContain("50.0 TPS");
   expect(dialog()!.textContent).toContain("200 output tokens in 4.0s");
   expect(dialog()!.textContent).toContain("including tools and waiting");
   await act(async () => dialog()!.querySelector("button")!.click());
   expect(onCompact).toHaveBeenCalledTimes(1);
+});
+
+it("changes bolt fill with the completed speed while keeping context independent", async () => {
+  for (const [tps, fill] of [
+    [5, 0.25],
+    [20, 0.5],
+    [40, 0.75],
+    [80, 1],
+    [0, 0],
+  ]) {
+    await act(async () =>
+      root.render(
+        createElement(ContextMeter, {
+          usage,
+          contextBlocks: [
+            {
+              id: "turn",
+              role: "user",
+              text: "hello",
+              durationMs: 1000,
+              turnMetrics: { outputTokens: tps },
+            },
+          ],
+        }),
+      ),
+    );
+    const trigger = container.querySelector("button")!;
+    expect(trigger.getAttribute("aria-label")).toContain("23%");
+    expect(trigger.querySelector("svg")!.getAttribute("data-speed-fill")).toBe(String(fill));
+  }
 });

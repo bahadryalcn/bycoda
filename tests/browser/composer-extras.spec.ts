@@ -7,6 +7,7 @@ test("custom context signal exposes completed TPS and compact and respects reduc
   await page.goto("/tests/browser/composer-extras.html?chat-layout&response-speed");
   const trigger = page.getByRole("button", { name: /^Context usage: 50%.*50.0 TPS/ });
   await expect(trigger).toHaveText("");
+  await expect(trigger.locator("svg")).toHaveAttribute("data-speed-fill", "0.75");
   for (const light of [false, true]) {
     await page.evaluate(
       (value) => document.documentElement.classList.toggle("theme-light", value),
@@ -20,6 +21,8 @@ test("custom context signal exposes completed TPS and compact and respects reduc
       await expect(panel.getByRole("meter")).toHaveAttribute("aria-valuenow", "50");
       await expect(panel).toContainText("50.0 TPS");
       await expect(panel).toContainText("200 output tokens in 4.0s");
+      await panel.getByText("Speed scale", { exact: true }).click();
+      await expect(panel).toContainText("≥60 TPS 100%");
       await expect(panel.getByRole("button", { name: "Compact now", exact: true })).toBeEnabled();
       await expect(trigger.locator("svg")).toBeVisible();
       await trigger.screenshot({
@@ -28,6 +31,7 @@ test("custom context signal exposes completed TPS and compact and respects reduc
       await page.screenshot({
         path: testInfo.outputPath(`context-tps-${light ? "light" : "dark"}-${width}.png`),
       });
+      await page.keyboard.press("Escape");
       await page.mouse.move(0, 0);
       await expect(panel).toBeHidden();
     }

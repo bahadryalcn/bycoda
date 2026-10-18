@@ -1,11 +1,11 @@
 import { Button } from "../../../shared/ui/Button";
 import { t, useLocale } from "../../../shared/i18n";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { contextRatio, formatTokens, type ContextUsage } from "../model/contextUsage";
 import { formatApiTime, formatCost, type SessionUsage } from "../model/sessionUsage";
 import { Popover } from "../../../shared/ui/Popover";
 import type { Block } from "../model/session";
-import { completedResponseSpeed } from "../model/responseSpeed";
+import { completedResponseSpeed, responseSpeedFill } from "../model/responseSpeed";
 import { isHiddenTool, isSubagentBlock, subagentName } from "../model/transcriptActivity";
 import "./chat-controls.css";
 
@@ -127,7 +127,7 @@ export function ContextMeter({
         selected={open}
         onClick={() => (open ? closeActions() : setOpen(true))}
       >
-        <ContextSignal ratio={ratio ?? 0} working={working} />
+        <ContextSignal ratio={ratio ?? 0} working={working} tps={speed?.tps} />
       </Button>
       {panelOpen ? (
         <Popover
@@ -193,6 +193,13 @@ export function ContextMeter({
                 )}
               </p>
             ) : null}
+            <details>
+              <summary>{t("Speed scale")}</summary>
+              <p className="context-meter-hint">
+                {t("Bolt fill: <10 TPS 25%; 10–<30 TPS 50%; 30–<60 TPS 75%; ≥60 TPS 100%.")}
+              </p>
+              <p className="context-meter-hint">{t("Zero or unavailable speed: outline only.")}</p>
+            </details>
           </section>
           {agents.size > 0 ? (
             <section className="context-meter-agents" aria-label={t("Subagents")}>
@@ -270,11 +277,15 @@ function ContextSignal({
   ratio,
   label,
   working = false,
+  tps,
 }: {
   ratio: number;
   label?: string;
   working?: boolean;
+  tps?: number;
 }) {
+  const clipId = useId();
+  const fill = responseSpeedFill(tps);
   return (
     <svg
       width={24}
@@ -282,6 +293,7 @@ function ContextSignal({
       viewBox="0 0 24 24"
       className={`context-signal ${ringClass(ratio)}`}
       data-working={working ? "true" : undefined}
+      data-speed-fill={fill}
       fill="none"
       strokeWidth={1.8}
       strokeLinecap="round"
@@ -310,11 +322,27 @@ function ContextSignal({
           transform="rotate(-90 12 12)"
         />
       ) : null}
-      <path
-        d="M13.5 6.8 8.5 12.5h3.3l-1.3 4.7 5-6.3h-3.2z"
-        fill="currentColor"
-        className="context-speed-bolt"
-      />
+      <defs>
+        <clipPath id={clipId}>
+          <rect x="8" y={17.2 - 10.4 * fill} width="8" height={10.4 * fill} />
+        </clipPath>
+      </defs>
+      <g className="context-speed-bolt">
+        <path
+          d="M13.5 6.8 8.5 12.5h3.3l-1.3 4.7 5-6.3h-3.2z"
+          stroke="currentColor"
+          strokeWidth="0.7"
+          strokeLinejoin="round"
+          className="context-speed-outline"
+        />
+        {fill > 0 ? (
+          <path
+            d="M13.5 6.8 8.5 12.5h3.3l-1.3 4.7 5-6.3h-3.2z"
+            fill="currentColor"
+            clipPath={`url(#${clipId})`}
+          />
+        ) : null}
+      </g>
     </svg>
   );
 }

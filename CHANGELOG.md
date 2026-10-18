@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.21]
+
+### Response speed indicator
+
+- Fill the speed bolt in four bands based on the last completed response's average TPS, independently of context usage.
+- Keep the bolt outlined when speed is zero or unavailable, and explain the speed scale in the context details.
+- Preserve compact actions, keyboard access, both themes and reduced-motion behavior, with expanded regression coverage.
+
 ## [0.6.20]
 
 ### Reliability and data preservation

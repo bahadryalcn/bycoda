@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Block } from "./session";
-import { completedResponseSpeed, formatResponseSpeed } from "./responseSpeed";
+import { completedResponseSpeed, formatResponseSpeed, responseSpeedFill } from "./responseSpeed";
 
 const completed: Block = {
   id: "turn",
@@ -46,5 +46,26 @@ describe("completedResponseSpeed", () => {
     );
     expect(formatResponseSpeed(42.55)).toBe("42.5");
     expect(formatResponseSpeed(1300)).toBe("1.3k");
+  });
+});
+
+describe("responseSpeedFill", () => {
+  it.each([
+    [undefined, 0],
+    [null, 0],
+    [0, 0],
+    [-1, 0],
+    [Number.NaN, 0],
+    [Infinity, 0],
+    [0.1, 0.25],
+    [9.99, 0.25],
+    [10, 0.5],
+    [29.99, 0.5],
+    [30, 0.75],
+    [59.99, 0.75],
+    [60, 1],
+    [200, 1],
+  ])("maps %s TPS to a fill of %s", (tps, fill) => {
+    expect(responseSpeedFill(tps)).toBe(fill);
   });
 });

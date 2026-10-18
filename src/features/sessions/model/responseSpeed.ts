@@ -30,3 +30,12 @@ export function formatResponseSpeed(tps: number): string {
   if (tps >= 1000) return `${(tps / 1000).toFixed(1)}k`;
   return tps >= 100 ? Math.round(tps).toString() : tps.toFixed(1);
 }
+
+/** Visual bands for the completed turn's average TPS; no reading means no fill. */
+export function responseSpeedFill(tps: number | null | undefined): number {
+  if (tps == null || !Number.isFinite(tps) || tps <= 0) return 0;
+  if (tps < 10) return 0.25;
+  if (tps < 30) return 0.5;
+  if (tps < 60) return 0.75;
+  return 1;
+}
