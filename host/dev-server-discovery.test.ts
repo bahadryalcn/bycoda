@@ -351,6 +351,63 @@ describe("Linux /proc fallback", () => {
       await new DevServerDiscovery({ platform: "linux", files: fileSystem }).identity(1234),
     ).toBeUndefined();
   });
+  it.each([false, true])(
+    "does not signal an already exited Linux target (force: %s)",
+    async (force) => {
+      const fileSystem = files();
+      const originalText = fileSystem.text;
+      fileSystem.text = async (path) =>
+        path.endsWith("/stat") ? stat.replace(") S ", ") Z ") : originalText(path);
+      const command = vi.fn<DiscoveryCommand>();
+      const discovery = new DevServerDiscovery({ platform: "linux", files: fileSystem, command });
+      await expect(
+        discovery.signal({ pid: 1234, startedAt: "boot-id:456" }, force),
+      ).resolves.toBeUndefined();
+      expect(command).not.toHaveBeenCalled();
+    },
+  );
+  it("still refuses an existing reused Linux PID before running any signal helper", async () => {
+    const command = vi.fn<DiscoveryCommand>();
+    const discovery = new DevServerDiscovery({ platform: "linux", files: files(), command });
+    await expect(discovery.signal({ pid: 1234, startedAt: "stale-birth" }, true)).rejects.toThrow(
+      "identity changed",
+    );
+    expect(command).not.toHaveBeenCalled();
+  });
+  it("accepts an owned Linux child disappearing after fresh validation without signalling another PID", async () => {
+    const fileSystem = files();
+    const originalText = fileSystem.text;
+    let exited = false;
+    fileSystem.text = async (path) => {
+      if (exited && path.endsWith("/stat"))
+        throw Object.assign(new Error("Gone"), { code: "ENOENT" });
+      return originalText(path);
+    };
+    const command = vi.fn<DiscoveryCommand>();
+    const discovery = new DevServerDiscovery({ platform: "linux", files: fileSystem, command });
+    const validated = await discovery.identity(1234);
+    expect(validated?.startedAt).toBeTruthy();
+    exited = true;
+    await expect(discovery.signal(validated!, true)).resolves.toBeUndefined();
+    expect(command).not.toHaveBeenCalled();
+  });
+  it.each(["EACCES", "EPERM"])(
+    "refuses an unreadable Linux identity instead of assuming exit: %s",
+    async (code) => {
+      const fileSystem = files();
+      const originalText = fileSystem.text;
+      fileSystem.text = async (path) => {
+        if (path.endsWith("/stat")) throw Object.assign(new Error("Denied"), { code });
+        return originalText(path);
+      };
+      const command = vi.fn<DiscoveryCommand>();
+      const discovery = new DevServerDiscovery({ platform: "linux", files: fileSystem, command });
+      await expect(discovery.signal({ pid: 1234, startedAt: "boot-id:456" }, true)).rejects.toThrow(
+        "identity changed",
+      );
+      expect(command).not.toHaveBeenCalled();
+    },
+  );
   it("does not treat a failed ss scan or unreadable /proc scan as no servers", async () => {
     const command = vi
       .fn<DiscoveryCommand>()
