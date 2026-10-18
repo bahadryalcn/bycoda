@@ -19,6 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Workspace and shared controls
 
+- Open workspace tools in the current window and keep a single set of window controls in detached workspaces.
 - Improve keyboard navigation, focus handling, responsive recovery actions and large message queues.
 - Respect date picker bounds and preserve literal Markdown code during attachment edits.
 - Include accumulated host, provider, workspace, settings and shared UI fixes with expanded regression coverage.

@@ -10,7 +10,6 @@ import {
   TasksView,
   ServersView,
 } from "../surfaces/lazySurfaces";
-import { revealExistingTool } from "../helpers/appHelpers";
 
 type InboxProps = ComponentProps<typeof InboxView>;
 type NotesProps = ComponentProps<typeof NotesView>;
@@ -143,15 +142,7 @@ export function WorkspaceToolPanels({
         notesEnabled,
         includeServers: !toolWindow,
         grouped: toolWindow?.grouped ?? true,
-        onSelect: async (tool: WorkspaceToolId) => {
-          if (
-            tool !== "servers" &&
-            (await revealExistingTool(
-              tool,
-              socialBoardShown && socialPanelCwd ? socialPanelCwd : projectCwd,
-            ))
-          )
-            return;
+        onSelect: (tool: WorkspaceToolId) => {
           setFilePickerOpen(false);
           setSettingsOpen(false);
           setSearchViewOpen(false);

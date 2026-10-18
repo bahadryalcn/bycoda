@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { act, createElement } from "react";
+import { act, createElement, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { beforeEach, expect, it, vi } from "vitest";
 
@@ -41,7 +41,7 @@ const native = vi.hoisted(() => {
 });
 vi.mock("@tauri-apps/api/window", () => ({ getCurrentWindow: () => native.window }));
 vi.mock("../../shared/i18n", () => ({ t: (text: string) => text, useLocale: () => {} }));
-import { WindowControls } from "./WindowControls";
+import { WindowControls, WindowControlsVisible } from "./WindowControls";
 import { FullscreenButton } from "./FullscreenButton";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -60,6 +60,73 @@ async function mounted(test: (host: HTMLDivElement) => Promise<void>, component 
     await act(async () => root.unmount());
   }
 }
+
+it("keeps one set of controls when the shell owns them above a tool header", async () => {
+  function DetachedWorkspace() {
+    return createElement(
+      "div",
+      null,
+      createElement(WindowControls),
+      createElement(
+        WindowControlsVisible.Provider,
+        { value: false },
+        createElement(WindowControls),
+      ),
+    );
+  }
+  await mounted(async (host) => {
+    expect(host.querySelectorAll('[aria-label="Close window"]')).toHaveLength(1);
+    expect(host.querySelectorAll('[aria-label="Minimize window"]')).toHaveLength(1);
+    expect(native.window.onResized).toHaveBeenCalledTimes(1);
+  }, DetachedWorkspace);
+});
+
+it("unsubscribes hidden native controls and refreshes their state when ownership returns", async () => {
+  let setVisible!: (visible: boolean) => void;
+  function OwnedControls() {
+    const [visible, update] = useState(true);
+    setVisible = update;
+    return createElement(
+      WindowControlsVisible.Provider,
+      { value: visible },
+      createElement(WindowControls),
+    );
+  }
+  await mounted(async (host) => {
+    expect(host.querySelectorAll("button")).toHaveLength(3);
+    await act(async () => setVisible(false));
+    expect(host.querySelectorAll("button")).toHaveLength(0);
+    native.window.isMaximized.mockClear();
+    native.window.isFullscreen.mockClear();
+    await act(async () => native.resize(true, true));
+    expect(native.window.isMaximized).not.toHaveBeenCalled();
+    expect(native.window.isFullscreen).not.toHaveBeenCalled();
+    await act(async () => setVisible(true));
+    expect(native.window.onResized).toHaveBeenCalledTimes(2);
+    expect(native.window.onFocusChanged).toHaveBeenCalledTimes(2);
+    expect(host.querySelector('[aria-label="Restore window"]')).not.toBeNull();
+    expect(host.querySelectorAll("button")).toHaveLength(3);
+    expect(native.window.toggleMaximize).not.toHaveBeenCalled();
+    expect(native.window.setFullscreen).not.toHaveBeenCalled();
+  }, OwnedControls);
+});
+
+it("does not access native window state when its subtree never owns controls", async () => {
+  function HiddenControls() {
+    return createElement(
+      WindowControlsVisible.Provider,
+      { value: false },
+      createElement(WindowControls),
+    );
+  }
+  await mounted(async (host) => {
+    expect(host.childElementCount).toBe(0);
+    expect(native.window.isMaximized).not.toHaveBeenCalled();
+    expect(native.window.isFullscreen).not.toHaveBeenCalled();
+    expect(native.window.onResized).not.toHaveBeenCalled();
+    expect(native.window.onFocusChanged).not.toHaveBeenCalled();
+  }, HiddenControls);
+});
 
 it("restores a maximized window and reflects native resize state", async () => {
   await mounted(async (host) => {

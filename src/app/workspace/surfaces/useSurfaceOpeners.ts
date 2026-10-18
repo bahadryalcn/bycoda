@@ -1,7 +1,6 @@
 import { startTransition, useCallback, useEffect, type Dispatch, type SetStateAction } from "react";
 import { loadNotesEnabled } from "../../../features/settings/model/settings";
 import { OPEN_USAGE_GUIDE_EVENT } from "../../../features/onboarding/model/usageGuide";
-import { revealExistingTool } from "../helpers/appHelpers";
 
 export interface SurfaceOpenersDeps {
   projectCwd: string;
@@ -18,10 +17,8 @@ export interface SurfaceOpenersDeps {
 }
 
 // Opens and leaves the workspace tool surfaces (inbox, notes, automations,
-// tasks). Each opener first tries to reveal an existing tool window for the
-// project unless the call was routed from another window.
+// tasks) in the current window. Cross-window routing belongs to explicit pop-outs.
 export function useSurfaceOpeners({
-  projectCwd,
   setFilePickerOpen,
   setSettingsOpen,
   setSearchViewOpen,
@@ -45,83 +42,67 @@ export function useSurfaceOpeners({
     });
   }, [setServersViewOpen]);
   const onLeaveServers = useCallback(() => setServersViewOpen?.(false), [setServersViewOpen]);
-  const onOpenInbox = useCallback(
-    async (routed = false) => {
-      if (routed !== true && (await revealExistingTool("inbox", projectCwd))) return;
-      setPullRequestsOnly(false);
-      startTransition(() => {
-        setFilePickerOpen(false);
-        setSettingsOpen(false);
-        setSearchViewOpen(false);
-        setNotesViewOpen(false);
-        setAutomationsViewOpen(false);
-        setServersViewOpen?.(false);
-        setInboxViewOpen(true);
-      });
-    },
-    [projectCwd],
-  );
+  const onOpenInbox = useCallback(async (_routed = false) => {
+    setPullRequestsOnly(false);
+    startTransition(() => {
+      setFilePickerOpen(false);
+      setSettingsOpen(false);
+      setSearchViewOpen(false);
+      setNotesViewOpen(false);
+      setAutomationsViewOpen(false);
+      setServersViewOpen?.(false);
+      setInboxViewOpen(true);
+    });
+  }, []);
 
   const onLeaveInbox = useCallback(() => {
     setInboxViewOpen(false);
   }, []);
 
-  const onOpenNotes = useCallback(
-    async (routed = false) => {
-      if (!loadNotesEnabled()) return;
-      if (routed !== true && (await revealExistingTool("notes", projectCwd))) return;
-      startTransition(() => {
-        setFilePickerOpen(false);
-        setSettingsOpen(false);
-        setSearchViewOpen(false);
-        setInboxViewOpen(false);
-        setAutomationsViewOpen(false);
-        setServersViewOpen?.(false);
-        setNotesViewOpen(true);
-      });
-    },
-    [projectCwd],
-  );
+  const onOpenNotes = useCallback(async (_routed = false) => {
+    if (!loadNotesEnabled()) return;
+    startTransition(() => {
+      setFilePickerOpen(false);
+      setSettingsOpen(false);
+      setSearchViewOpen(false);
+      setInboxViewOpen(false);
+      setAutomationsViewOpen(false);
+      setServersViewOpen?.(false);
+      setNotesViewOpen(true);
+    });
+  }, []);
 
   const onLeaveNotes = useCallback(() => {
     setNotesViewOpen(false);
   }, []);
 
-  const onOpenAutomations = useCallback(
-    async (routed = false) => {
-      if (routed !== true && (await revealExistingTool("automations", projectCwd))) return;
-      startTransition(() => {
-        setFilePickerOpen(false);
-        setSettingsOpen(false);
-        setSearchViewOpen(false);
-        setInboxViewOpen(false);
-        setNotesViewOpen(false);
-        setTaskBoardShown(false);
-        setSocialBoardShown(false);
-        setAutomationsViewOpen(true);
-        setServersViewOpen?.(false);
-      });
-    },
-    [projectCwd],
-  );
+  const onOpenAutomations = useCallback(async (_routed = false) => {
+    startTransition(() => {
+      setFilePickerOpen(false);
+      setSettingsOpen(false);
+      setSearchViewOpen(false);
+      setInboxViewOpen(false);
+      setNotesViewOpen(false);
+      setTaskBoardShown(false);
+      setSocialBoardShown(false);
+      setAutomationsViewOpen(true);
+      setServersViewOpen?.(false);
+    });
+  }, []);
 
-  const onOpenTasks = useCallback(
-    async (routed = false) => {
-      if (routed !== true && (await revealExistingTool("tasks", projectCwd))) return;
-      startTransition(() => {
-        setFilePickerOpen(false);
-        setSettingsOpen(false);
-        setSearchViewOpen(false);
-        setInboxViewOpen(false);
-        setNotesViewOpen(false);
-        setSocialBoardShown(false);
-        setTaskBoardShown(true);
-        setAutomationsViewOpen(true);
-        setServersViewOpen?.(false);
-      });
-    },
-    [projectCwd],
-  );
+  const onOpenTasks = useCallback(async (_routed = false) => {
+    startTransition(() => {
+      setFilePickerOpen(false);
+      setSettingsOpen(false);
+      setSearchViewOpen(false);
+      setInboxViewOpen(false);
+      setNotesViewOpen(false);
+      setSocialBoardShown(false);
+      setTaskBoardShown(true);
+      setAutomationsViewOpen(true);
+      setServersViewOpen?.(false);
+    });
+  }, []);
 
   const onLeaveAutomations = useCallback(() => {
     setAutomationsViewOpen(false);

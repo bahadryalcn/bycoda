@@ -1,7 +1,7 @@
 import { t, useLocale } from "../../shared/i18n";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { Copy, Minus, Square, X } from "../../shared/ui/icons";
-import { useEffect, useRef, useState } from "react";
+import { createContext, useContext, useEffect, useRef, useState } from "react";
 import { TransientNotice } from "../../shared/ui/TransientNotice";
 import { setNativeFullscreen } from "../../platform/tauri/fullscreen";
 
@@ -11,7 +11,15 @@ export async function toggleWindowMaximize(): Promise<void> {
   else await win.toggleMaximize();
 }
 
+// Detached workspaces own their controls in the persistent Working bar.
+export const WindowControlsVisible = createContext(true);
+
 export function WindowControls() {
+  const visible = useContext(WindowControlsVisible);
+  return visible ? <NativeWindowControls /> : null;
+}
+
+function NativeWindowControls() {
   useLocale();
   const [isMaximized, setIsMaximized] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
