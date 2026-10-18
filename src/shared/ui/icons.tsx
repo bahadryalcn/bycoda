@@ -33,6 +33,7 @@ import {
   CircleDashed as LucideCircleDashed,
   CircleDot as LucideCircleDot,
   CircleHelp as LucideCircleHelp,
+  Info as LucideInfo,
   CircleX as LucideCircleX,
   CloudUpload as LucideCloudUpload,
   Clock as LucideClock,
@@ -186,6 +187,7 @@ export const CircleAlert = wrap(LucideCircleAlert, "CircleAlert");
 export const CircleDashed = wrap(LucideCircleDashed, "CircleDashed");
 export const CircleDot = wrap(LucideCircleDot, "CircleDot");
 export const CircleHelp = wrap(LucideCircleHelp, "CircleHelp");
+export const Info = wrap(LucideInfo, "Info");
 export const CircleX = wrap(LucideCircleX, "CircleX");
 export const CloudUpload = wrap(LucideCloudUpload, "CloudUpload");
 export const Clock = wrap(LucideClock, "Clock");

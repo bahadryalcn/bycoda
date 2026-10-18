@@ -47,7 +47,7 @@ it("places recovery beside Search and Working below Inbox, preserving navigation
         }),
       ),
     );
-    const search = container.querySelector('button[aria-label^="Search ("]')!;
+    const search = container.querySelector('button[aria-label="Search"]')!;
     const preview = container.querySelector('[data-live-agents-preview="full"]')!;
     const inbox = container.querySelector('button[aria-label="Inbox"]')!;
     const recovery = container.querySelector('button[aria-label="Recovered sessions (28)"]')!;

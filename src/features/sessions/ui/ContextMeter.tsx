@@ -4,6 +4,7 @@ import { useEffect, useId, useRef, useState } from "react";
 import { contextRatio, formatTokens, type ContextUsage } from "../model/contextUsage";
 import { formatApiTime, formatCost, type SessionUsage } from "../model/sessionUsage";
 import { Popover } from "../../../shared/ui/Popover";
+import { Info } from "../../../shared/ui/icons";
 import type { Block } from "../model/session";
 import { completedResponseSpeed, responseSpeedFill } from "../model/responseSpeed";
 import { isHiddenTool, isSubagentBlock, subagentName } from "../model/transcriptActivity";
@@ -44,6 +45,8 @@ export function ContextMeter({
   useLocale();
   const [hovered, setHovered] = useState(false);
   const [open, setOpen] = useState(false);
+  const [speedInfoOpen, setSpeedInfoOpen] = useState(false);
+  const speedInfoId = useId();
   const root = useRef<HTMLDivElement>(null);
   const hoverCloseTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   function cancelHoverClose() {
@@ -65,6 +68,7 @@ export function ContextMeter({
     cancelHoverClose();
     setHovered(false);
     setOpen(false);
+    setSpeedInfoOpen(false);
   }
   useEffect(() => () => cancelHoverClose(), []);
   const ratio = contextRatio(usage);
@@ -175,31 +179,30 @@ export function ContextMeter({
           </div>
           <section className="context-meter-speed-details" aria-label={t("Response speed")}>
             <div className="context-meter-heading">
-              <span>{t("Response speed")}</span>
+              <span className="inline-flex items-center gap-1">
+                {t("Response speed")}
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  motion="none"
+                  iconOnly
+                  label={t("Response speed")}
+                  aria-expanded={speedInfoOpen}
+                  aria-controls={speedInfoId}
+                  onClick={() => setSpeedInfoOpen((value) => !value)}
+                >
+                  <Info className="size-3.5" />
+                </Button>
+              </span>
               <strong>{speed ? `${speed.tps.toFixed(1)} TPS` : t("Unavailable")}</strong>
             </div>
-            <p className="context-meter-hint">
-              {speed
-                ? t("Last completed response: {p0} output tokens in {p1}s.", {
-                    p0: speed.outputTokens.toLocaleString(),
-                    p1: (speed.durationMs / 1000).toFixed(1),
-                  })
-                : t("Shown after a response finishes, when the provider reports output tokens.")}
-            </p>
-            {speed ? (
-              <p className="context-meter-hint">
+            {speedInfoOpen ? (
+              <p id={speedInfoId} className="context-meter-hint">
                 {t(
                   "Average over the full turn, including tools and waiting; not live generation speed.",
                 )}
               </p>
             ) : null}
-            <details>
-              <summary>{t("Speed scale")}</summary>
-              <p className="context-meter-hint">
-                {t("Bolt fill: <10 TPS 25%; 10–<30 TPS 50%; 30–<60 TPS 75%; ≥60 TPS 100%.")}
-              </p>
-              <p className="context-meter-hint">{t("Zero or unavailable speed: outline only.")}</p>
-            </details>
           </section>
           {agents.size > 0 ? (
             <section className="context-meter-agents" aria-label={t("Subagents")}>

@@ -118,7 +118,7 @@ it("shows usage without a compact capability and supports click, Escape and focu
   expect(trigger.getAttribute("aria-expanded")).toBe("true");
   expect(dialog()?.textContent).toContain("231K / 1M");
   expect(dialog()?.querySelector('[role="meter"]')?.getAttribute("aria-valuenow")).toBe("23");
-  expect(dialog()?.querySelector("button")).toBeNull();
+  expect(dialog()?.querySelector(".context-meter-actions button")).toBeNull();
   await act(async () =>
     document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })),
   );
@@ -140,7 +140,9 @@ it("keeps the hover panel reachable across the portal gap and compacts once", as
     vi.advanceTimersByTime(250);
   });
   expect(dialog()).not.toBeNull();
-  await act(async () => dialog()!.querySelector("button")!.click());
+  await act(async () =>
+    dialog()!.querySelector<HTMLButtonElement>(".context-meter-actions button")!.click(),
+  );
   expect(onCompact).toHaveBeenCalledTimes(1);
   expect(dialog()).toBeNull();
 });
@@ -166,7 +168,7 @@ it("explains why compact is unavailable and preserves cost and API duration", as
   expect(dialog()?.textContent).toContain("$1.80");
   expect(dialog()?.textContent).toContain("4m 50s");
   expect(dialog()?.textContent).toContain("Wait for the current operation to finish");
-  const compact = dialog()!.querySelector("button")!;
+  const compact = dialog()!.querySelector<HTMLButtonElement>(".context-meter-actions button")!;
   expect(compact.disabled).toBe(true);
   await act(async () => compact.click());
   expect(onCompact).not.toHaveBeenCalled();
@@ -208,9 +210,22 @@ it("keeps the signal icon uncluttered and exposes completed TPS, context and com
   expect(trigger.querySelector("svg")!.getAttribute("data-speed-fill")).toBe("0.75");
   await act(async () => trigger.click());
   expect(dialog()!.textContent).toContain("50.0 TPS");
-  expect(dialog()!.textContent).toContain("200 output tokens in 4.0s");
+  expect(dialog()!.textContent).not.toContain("output tokens");
+  expect(dialog()!.textContent).not.toContain("Speed scale");
+  expect(dialog()!.textContent).not.toContain("Zero or unavailable");
+  expect(dialog()!.textContent).not.toContain("including tools and waiting");
+  const info = dialog()!.querySelector<HTMLButtonElement>("button[aria-controls]")!;
+  expect(info.getAttribute("aria-expanded")).toBe("false");
+  await act(async () => info.click());
+  expect(info.getAttribute("aria-expanded")).toBe("true");
   expect(dialog()!.textContent).toContain("including tools and waiting");
-  await act(async () => dialog()!.querySelector("button")!.click());
+  await act(async () => info.click());
+  expect(dialog()!.textContent).not.toContain("including tools and waiting");
+  await act(async () =>
+    [...dialog()!.querySelectorAll("button")]
+      .find((button) => button.textContent === "Compact now")!
+      .click(),
+  );
   expect(onCompact).toHaveBeenCalledTimes(1);
 });
 

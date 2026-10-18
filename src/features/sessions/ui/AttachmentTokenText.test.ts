@@ -52,7 +52,9 @@ describe("AttachmentTokenText", () => {
     expect(
       container.querySelector('[aria-label="Open [image1] (shot.png) full screen"]'),
     ).not.toBeNull();
-    expect(container.querySelector('[title="/repo/notes.md"]')?.textContent).toBe("[file1]");
+    expect(
+      container.querySelector('[aria-label="Open [file1] (notes.md) full screen"]')?.textContent,
+    ).toBe("[file1]");
   });
 
   it("leaves unknown tokens and legacy messages as plain text", () => {

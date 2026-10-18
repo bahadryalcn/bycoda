@@ -787,7 +787,7 @@ async function openModels(triggerLabel: string) {
 // then pick the option from its submenu.
 async function chooseEffort(label: string) {
   const trigger = document.body.querySelector<HTMLButtonElement>(
-    'button[aria-haspopup="menu"][aria-keyshortcuts]',
+    'button[aria-haspopup="menu"][aria-label^="Codex GPT Test"]',
   )!;
   await act(async () => trigger.click());
   const row = [...document.body.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find(

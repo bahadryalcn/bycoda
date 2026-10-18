@@ -67,7 +67,7 @@ function chipCount() {
 
 function chipLabels() {
   return [...container.querySelectorAll<HTMLButtonElement>('[aria-label^="Insert "]')].map(
-    (button) => button.textContent,
+    (button) => button.getAttribute("aria-label")?.match(/\[([^\]]+)\]/)?.[1],
   );
 }
 
