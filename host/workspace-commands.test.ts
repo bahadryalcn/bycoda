@@ -48,16 +48,22 @@ it("isolates concurrent atomic text saves and removes only owned temporary files
   const { projects, commands } = await setup();
   const path = join(projects[104].cwd, "same.txt");
   await writeFile(path, "base");
+  const otherConnection = new WorkspaceCommands(
+    { projects: () => projects, attachmentDir: join(projects[104].cwd, "attachments") } as never,
+    (async (_id: string, action: () => Promise<unknown>) => action()) as never,
+  );
+  const contents = Array.from({ length: 24 }, (_, index) => `complete-save-${index}`);
   const now = vi.spyOn(Date, "now").mockReturnValue(42);
   try {
-    await Promise.all([
-      commands.run("write_text_file", { path, content: "first" }),
-      commands.run("write_text_file", { path, content: "second" }),
-    ]);
+    await Promise.all(
+      contents.map((content, index) =>
+        (index % 2 ? commands : otherConnection).run("write_text_file", { path, content }),
+      ),
+    );
   } finally {
     now.mockRestore();
   }
-  expect(["first", "second"]).toContain(await readFile(path, "utf8"));
+  expect(contents).toContain(await readFile(path, "utf8"));
   expect(await readdir(projects[104].cwd)).toEqual(["same.txt"]);
 });
 

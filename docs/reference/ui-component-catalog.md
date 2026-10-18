@@ -6,8 +6,8 @@ bycoda adapters, never directly from the Arc registry. The official free catalog
 is the selection source; consult each item's current `whenToUse`, `whenNotToUse`,
 accessibility, responsive and performance metadata before implementation.
 
-This coverage map accounts for all 112 free components and 22 free blocks in the
-catalog inspected on 2026-10-16. Counts can change upstream. Licensed items are
+This coverage map covers desktop-relevant free components and blocks from the
+catalog inspected on 2026-10-16. The upstream catalog can change. Licensed items are
 excluded. A planned adapter is not installed or available merely because it has
 a name here. Installation and screen migration are separate steps.
 
@@ -116,7 +116,6 @@ fallbacks. A different animation or icon size does not justify another button AP
 | `date-range-picker` | Integrated: DateRangePicker                             | Inclusive local-day calendar. DateTimeRangePicker composes this owner with start/end time fields for validated, end-exclusive timestamp ranges.                                                                                                                                                        |
 | `color-picker`      | Reuse: ColorPickerPopover / ColorSwatchRow              | Appearance/accent and allowed content color; centralize input and contrast semantics.                                                                                                                                                                                                                  |
 | `morph-select`      | Integrated: MorphSelect; extend selectively             | Known scalar properties may benefit from groups/icons/meta and local search. Groups, disabled options, native trigger refs/events and opt-in search are implemented; independent settings retain independent values. Free-entry, remote-large and multiple-value lists keep suitable selection owners. |
-| `phone-input`       | Conditional: real phone data entry                      | Add only for a concrete phone field and preserve validation rules.                                                                                                                                                                                                                                     |
 | `money-input`       | Conditional: real currency entry                        | Currency and locale parsing must be domain-defined; usage counters are not editable money inputs.                                                                                                                                                                                                      |
 | `shortcut-recorder` | Integrated: ShortcutRecorder; extend shared display     | Recorder preserves physical-key/IME validation. Also evaluate ShortcutKbd/ShortcutKeys/ShortcutList exports for reusable hints and help without duplicate per-feature key styling/listeners.                                                                                                           |
 | `mention-input`     | Reuse: existing composer mention owner                  | ComposerTextarea/FileMentionPicker retain token model, native caret, IME and provider/file insertion; shared Button/fields own ordinary presentation. Not a generic form mention-input adapter.                                                                                                        |

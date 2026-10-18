@@ -12,7 +12,6 @@ import {
   rename,
   rm,
   stat,
-  writeFile,
 } from "node:fs/promises";
 import { basename, dirname, extname, isAbsolute, relative, resolve } from "node:path";
 import type { FileMtime, FsEntry, GitPr, ProjectFile } from "../src/platform/tauri/fs";
@@ -120,6 +119,9 @@ const MAX_TRANSFER_FILE = 1024 * 1024 * 1024;
 const MAX_TRANSFER_CHUNK = 1024 * 1024;
 const MAX_STAT_FILES = 64;
 const ROOTS_TTL_MS = 5_000;
+// Connections may own different command instances. Windows cannot replace the
+// same destination concurrently, so serialize canonical destinations host-wide.
+const textFileSaves = new Map<string, Promise<void>>();
 
 const slashed = (path: string) => path.replace(/\\/g, "/");
 const joined = (parent: string, name: string) =>
@@ -566,25 +568,35 @@ export class WorkspaceCommands {
       throw new Error(`File is too large to save (maximum ${MAX_TEXT_FILE / 1024 / 1024} MB).`);
     const { root, relative: rel } = await this.locate(input);
     const path = workspacePath(root, rel);
-    const previous = await stat(path).catch((error: NodeJS.ErrnoException) => {
-      if (error.code !== "ENOENT") throw error;
-      return undefined;
-    });
-    if (previous?.isDirectory()) throw new Error("Cannot save text to a directory.");
-    // Replace atomically, as the local command does.
-    const temporary = `${path}.bycoda-${randomUUID()}`;
-    const handle = await open(temporary, "wx", previous?.mode);
+    const key = process.platform === "win32" ? path.toLowerCase() : path;
+    const save = async () => {
+      const previous = await stat(path).catch((error: NodeJS.ErrnoException) => {
+        if (error.code !== "ENOENT") throw error;
+        return undefined;
+      });
+      if (previous?.isDirectory()) throw new Error("Cannot save text to a directory.");
+      // Replace atomically, as the local command does.
+      const temporary = `${path}.bycoda-${randomUUID()}`;
+      const handle = await open(temporary, "wx", previous?.mode);
+      try {
+        await handle.writeFile(content, "utf8");
+        if (previous) await handle.chmod(previous.mode);
+        await handle.close();
+        await rename(temporary, path);
+      } catch (reason) {
+        await handle.close().catch(() => {});
+        await rm(temporary, { force: true });
+        throw reason;
+      }
+      invalidateHostFilePaths(root);
+    };
+    const pending = (textFileSaves.get(key) ?? Promise.resolve()).then(save, save);
+    textFileSaves.set(key, pending);
     try {
-      await handle.writeFile(content, "utf8");
-      if (previous) await handle.chmod(previous.mode);
-      await handle.close();
-      await rename(temporary, path);
-    } catch (reason) {
-      await handle.close().catch(() => {});
-      await rm(temporary, { force: true });
-      throw reason;
+      await pending;
+    } finally {
+      if (textFileSaves.get(key) === pending) textFileSaves.delete(key);
     }
-    invalidateHostFilePaths(root);
   }
 
   private async statFiles(input: unknown): Promise<FileMtime[]> {
