@@ -9,7 +9,7 @@ The global Social Media screen opens from the project rail or session composer. 
 Every platform account has an owner-assisted **Browser workspace** on its selected
 executor host. It opens a dedicated Chrome/Edge profile for login, registration,
 inbox navigation, supported publishing pages or a validated public post URL for
-comments. WhatsApp and Telegram registration remains in their mobile apps;
+comments. WhatsApp and Telegram registration is completed through their own native clients;
 YouTube has no general private-message inbox. Facebook and Instagram open their
 home surface for publishing; the owner chooses the composer there. These routes
 are navigation workflows, not new automated publishing or inbox adapters.
