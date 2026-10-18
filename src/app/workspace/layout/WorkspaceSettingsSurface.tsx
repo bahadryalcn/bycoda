@@ -83,14 +83,16 @@ export function WorkspaceSettingsSurface({
           size="lg"
           onClose={() => setWorktreeManagementRequest(null)}
         >
-          <WorktreesPage
-            cwd={worktreeManagementRequest.cwd}
-            recents={visibleRecents}
-            liveSessions={sessions}
-            onRemove={onRemoveWorktree}
-            onCheckRemove={onCheckWorktreeRemoval}
-            onDeleteSessions={onDeleteWorktreeSessions}
-          />
+          <div className="p-4">
+            <WorktreesPage
+              cwd={worktreeManagementRequest.cwd}
+              recents={visibleRecents}
+              liveSessions={sessions}
+              onRemove={onRemoveWorktree}
+              onCheckRemove={onCheckWorktreeRemoval}
+              onDeleteSessions={onDeleteWorktreeSessions}
+            />
+          </div>
         </Modal>
       ) : null}
       {settingsOpen ? (

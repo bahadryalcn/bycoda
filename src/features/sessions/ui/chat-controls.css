@@ -1,4 +1,31 @@
 /* Chat controls reuse the application's surfaces, typography and contrast tokens. */
+.tool-command-label {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.user-message-attachments {
+  padding-block-end: 0.25rem;
+}
+
+.attachment-token-overlay {
+  position: absolute;
+  inset-inline: 0;
+  inset-block-end: 0;
+  overflow: clip;
+  padding-inline: 0.125rem;
+  border-end-start-radius: var(--radius-control);
+  border-end-end-radius: var(--radius-control);
+  background: var(--ui-surface);
+  color: var(--ui-text-secondary);
+  font-size: var(--ui-font-caption);
+  line-height: 1.25;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
 [data-composer] {
   container: chat-composer / inline-size;
 }
@@ -52,6 +79,10 @@ html [data-activity-dock] {
 .session-agent-identity {
   font-size: var(--ui-font-caption);
   line-height: 1.5;
+}
+
+[data-composer] .composer-field {
+  min-block-size: calc(2lh + 1.5rem);
 }
 
 [data-composer] .composer-field::placeholder {
@@ -109,8 +140,162 @@ html [data-activity-dock] {
 }
 
 .context-meter-popover {
-  max-inline-size: min(22rem, calc(100vw - 1rem));
+  padding: 1rem;
+  color: var(--ui-tone-neutral-fg);
+  font-size: var(--ui-font-caption);
+  line-height: 1.5;
+  font-variant-numeric: tabular-nums;
+}
+
+.context-meter-summary {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.context-meter-summary svg {
+  flex: none;
+}
+
+.context-signal-track {
+  color: var(--color-stroke);
+}
+
+.context-speed-bolt {
+  color: var(--ui-tone-neutral-fg);
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .context-signal[data-working="true"] .context-speed-bolt {
+    animation: context-speed-charge calc(var(--motion-feedback-duration) * 12)
+      var(--motion-ease-out) infinite;
+  }
+}
+
+@keyframes context-speed-charge {
+  50% {
+    transform: scale(1.1);
+  }
+}
+
+.context-meter-speed-details {
+  display: grid;
+  gap: 0.375rem;
+  margin-block: 0.75rem;
+}
+
+.context-meter-empty {
+  min-block-size: 1.75rem;
+  padding-inline: 0.5rem;
+  color: var(--ui-text-secondary);
+  font-size: var(--ui-font-caption);
+}
+
+.context-meter-heading,
+.context-meter-tokens,
+.context-meter-stats > div {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 0.75rem;
+}
+
+.context-meter-heading {
+  font-weight: 500;
+}
+
+.context-meter-heading strong {
+  font-size: var(--ui-font-secondary);
+  font-weight: 500;
+}
+
+.context-meter-warning {
+  color: var(--ui-tone-warning-fg);
+}
+
+.context-meter-danger {
+  color: var(--ui-tone-danger-fg);
+}
+
+.context-meter-track {
+  block-size: 0.375rem;
+  margin-block: 0.75rem 0.5rem;
+  overflow: clip;
+  border-radius: var(--radius-control);
+  background: var(--color-stroke);
+}
+
+.context-meter-track > div {
+  block-size: 100%;
+  border-radius: inherit;
+  background: currentColor;
+}
+
+.context-meter-tokens,
+.context-meter-stats dt,
+.context-meter-hint {
+  color: var(--ui-text-secondary);
+}
+
+.context-meter-tokens > span:first-child,
+.context-meter-stats dd {
+  white-space: nowrap;
+}
+
+.context-meter-stats,
+.context-meter-agents,
+.context-meter-actions {
+  margin-block-start: 0.75rem;
+  padding-block-start: 0.75rem;
+  border-block-start: 1px solid var(--color-stroke);
+}
+
+.context-meter-stats {
+  display: grid;
+  gap: 0.5rem;
+  margin-block-end: 0;
+}
+
+.context-meter-stats dd {
+  margin: 0;
+}
+
+.context-meter-agent-list {
+  display: grid;
+  gap: 0.5rem;
+  max-block-size: 12rem;
+  overflow-y: auto;
+  margin-block: 0.5rem 0;
+  padding: 0;
+  list-style: none;
+}
+
+.context-meter-agent {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: 0.75rem;
+}
+
+.context-meter-agent-name {
   overflow-wrap: anywhere;
+}
+
+.context-meter-agent-value {
+  display: grid;
+  text-align: end;
+  color: var(--ui-text-secondary);
+  white-space: nowrap;
+}
+
+.context-meter-hint {
+  margin-block: 0.5rem 0;
 }
 
 [data-activity-status-row] {

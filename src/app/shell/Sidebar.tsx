@@ -795,7 +795,7 @@ function SidebarComponent({
   const [filterMenu, setFilterMenu] = useState<{ x: number; y: number } | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [sessionListLimit, setSessionListLimit] = useState(LIST_PAGE_SIZE);
-  const loadMoreRef = useRef<HTMLLIElement>(null);
+  const [loadMoreElement, setLoadMoreElement] = useState<HTMLLIElement | null>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const pendingFolderSessionIds = useRef(new Set<string>());
   const busyIdsRef = useRef(busySessionIds);
@@ -1042,7 +1042,7 @@ function SidebarComponent({
   const drawerAnimation = useRef<Animation | null>(null);
   const panelOpen = open || drawerVisible;
   const gitStatuses = useGitFileStatuses(gitRoot, panelOpen && tab === "files");
-  const changeStats = useProjectDiffStats(gitRoot, panelOpen);
+  const changeStats = useProjectDiffStats(gitRoot, panelOpen && sidebarAvailable);
 
   useEffect(() => {
     if (!drawerMode || !sidebarAvailable) setDrawerOpen(false);
@@ -1126,19 +1126,21 @@ function SidebarComponent({
 
   useEffect(() => {
     if (tab !== "sessions" || !hasMoreSessions) return;
-    const sentinel = loadMoreRef.current;
+    // The sidebar unmounts when hidden. Follow the mounted sentinel rather than
+    // retaining an observer on the old list when its row count stays the same.
+    const sentinel = loadMoreElement;
     const root = sessionsScrollRef.current;
     if (!sentinel || !root) return;
     const observer = new IntersectionObserver(
       ([entry]) => {
         if (!entry?.isIntersecting) return;
-        setSessionListLimit((current) => current + LIST_PAGE_SIZE);
+        setSessionListLimit((current) => Math.max(current, shownUngroupedCount) + LIST_PAGE_SIZE);
       },
       { root, rootMargin: "240px" },
     );
     observer.observe(sentinel);
     return () => observer.disconnect();
-  }, [tab, hasMoreSessions, shownUngroupedCount]);
+  }, [tab, hasMoreSessions, shownUngroupedCount, loadMoreElement]);
 
   useEffect(() => {
     setSessionFolders(loadSessionFolders(cwd));
@@ -3025,7 +3027,7 @@ function SidebarComponent({
                     );
                   })}
                   {hasMoreSessions ? (
-                    <li ref={loadMoreRef} aria-hidden className="h-px list-none" />
+                    <li ref={setLoadMoreElement} aria-hidden className="h-px list-none" />
                   ) : null}
                 </ul>
               )}
@@ -4441,6 +4443,15 @@ const SessionCard = memo(function SessionCard({
       <span className="shrink-0 text-[11px] tabular-nums text-(--ui-text-secondary)">
         <RelativeSessionTime at={session.updatedAt} />
       </span>
+    ) : !issue && !needsApproval && busy ? (
+      <span
+        role="img"
+        aria-label={t("Working")}
+        title={t("Working")}
+        className="inline-flex size-4 shrink-0 items-center justify-center text-active"
+      >
+        <Loader className="size-3 motion-safe:animate-spin" strokeWidth={1.75} aria-hidden />
+      </span>
     ) : (
       <Badge size="sm" tone={statusTone} className="shrink-0 whitespace-nowrap tabular-nums">
         {issue ? (
@@ -4452,11 +4463,6 @@ const SessionCard = memo(function SessionCard({
           <>
             <CircleAlert className="size-3" strokeWidth={1.75} />
             <span>{orchestration ? t("Needs input") : t("Need approval")}</span>
-          </>
-        ) : busy ? (
-          <>
-            <TerminalSpinner className="inline-block w-3 select-none text-center text-[11px] leading-none text-active" />
-            <span>{t("Working...")}</span>
           </>
         ) : opening ? (
           <>

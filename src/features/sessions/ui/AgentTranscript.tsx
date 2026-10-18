@@ -24,6 +24,8 @@ import {
   Copy,
   ExternalLink,
   FilePlusCorner,
+  MessageMultiple,
+  Replace,
   Minus,
   Pencil,
   PenLine,
@@ -78,6 +80,11 @@ import { NoteMiniCard } from "../../notes/ui/NoteMiniCard";
 import { TerminalSpinner } from "./TerminalSpinner";
 import { Popover } from "../../../shared/ui/Popover";
 import { Button } from "../../../shared/ui/Button";
+import {
+  ExpandingButtonGroup,
+  type ExpandingButtonGroupItem,
+  type ExpandingButtonGroupTriggerProps,
+} from "../../../shared/ui/ExpandingButtonGroup";
 import { ProjectMascot } from "../../projects/ui/ProjectMascot";
 import type { ApprovalDecision } from "../../../integrations/harness";
 import {
@@ -210,6 +217,8 @@ type Props = {
   modelSettings?: Record<string, string>;
   providerAccountId?: string;
   pendingQuestion?: boolean;
+  /** The companion composer dock owns the live clock; keep work disclosure here. */
+  liveStatusInDock?: boolean;
   /** Work the agent left running when it yielded; the turn waits on it. */
   backgroundTasks?: string[];
   backgroundAgents?: number;
@@ -284,6 +293,7 @@ function AgentTranscriptComponent({
   modelSettings,
   providerAccountId,
   pendingQuestion = false,
+  liveStatusInDock = false,
   backgroundTasks,
   backgroundAgents,
   onApproval,
@@ -1129,6 +1139,7 @@ function AgentTranscriptComponent({
                 currentModelName={live ? currentModelName : undefined}
                 waitingForApproval={live && waitingForApproval}
                 pendingQuestion={live && pendingQuestion}
+                liveStatusInDock={live && liveStatusInDock}
                 backgroundTasks={live ? backgroundTasks : undefined}
                 backgroundAgents={live ? backgroundAgents : undefined}
                 anchorPrompt={promptAnchor && anchorTurn && isLastTurn}
@@ -1264,6 +1275,7 @@ type TurnProps = {
   currentModelName?: string;
   waitingForApproval: boolean;
   pendingQuestion: boolean;
+  liveStatusInDock: boolean;
   backgroundTasks?: string[];
   backgroundAgents?: number;
   anchorPrompt: boolean;
@@ -1316,6 +1328,7 @@ const Turn = memo(function Turn({
   currentModelName,
   waitingForApproval,
   pendingQuestion,
+  liveStatusInDock,
   backgroundTasks,
   backgroundAgents,
   anchorPrompt,
@@ -1381,27 +1394,31 @@ const Turn = memo(function Turn({
   // The fold line speaks for the main agent only. A delegated run has
   // its own row, which says who is working and how it went, so saying
   // it again here would be two lines telling the same story.
-  const foldTitle: ReactNode = live ? (
-    <LiveFoldTitle
-      startedAt={clockStart}
-      paused={waitingForApproval}
-      waitingLabel={
-        managed && waitingForApproval
-          ? "Waiting for orchestrator"
-          : pendingQuestion
-            ? "Waiting for answers"
-            : undefined
-      }
-      background={backgroundTasks}
-      backgroundAgents={backgroundAgents}
-      modelName={turnModelName}
-    />
-  ) : durationMs != null ? (
-    formatWorkingDuration(durationMs, turnModelName, true)
-  ) : (
-    workSummaryLine(folded)
-  );
-  const showFoldLine = live || durationMs != null || !!fold;
+  const foldTitle: ReactNode =
+    live && liveStatusInDock && !waitingForApproval ? (
+      (turnModelName ?? workSummaryLine(folded))
+    ) : live ? (
+      <LiveFoldTitle
+        startedAt={clockStart}
+        paused={waitingForApproval}
+        waitingLabel={
+          managed && waitingForApproval
+            ? "Waiting for orchestrator"
+            : pendingQuestion
+              ? "Waiting for answers"
+              : undefined
+        }
+        background={backgroundTasks}
+        backgroundAgents={backgroundAgents}
+        modelName={turnModelName}
+      />
+    ) : durationMs != null ? (
+      formatWorkingDuration(durationMs, turnModelName, true)
+    ) : (
+      workSummaryLine(folded)
+    );
+  const showFoldLine =
+    (live && (!liveStatusInDock || waitingForApproval)) || durationMs != null || !!fold;
   // It sits where the work starts, from before there is any: the row
   // is there from the first token, so nothing shoves the answer down
   // when the turn folds.
@@ -1749,29 +1766,73 @@ function TurnDuration({
   return (
     <div
       aria-label={label}
-      className="flex w-full min-w-0 max-w-full items-center gap-2.5 overflow-hidden px-4 pt-1 pb-3 font-sans text-sm text-(--ui-text-secondary)"
+      className="flex w-full min-w-0 max-w-full flex-wrap items-center gap-2.5 px-4 pt-1 pb-3 font-sans text-sm text-(--ui-text-secondary)"
     >
-      <span className="flex shrink-0 items-center gap-1">
-        {hasOutput ? (
-          <>
-            <TurnOutputActions getText={getText} onSave={onSaveNote} />
-          </>
-        ) : turn.some((block) => block.role === "user" && block.turnOutcome === "stopped") ? (
+      <span className="flex min-w-0 max-w-full flex-wrap items-center gap-1">
+        {hasOutput ? null : turn.some(
+            (block) => block.role === "user" && block.turnOutcome === "stopped",
+          ) ? (
           <X className="size-3.5" strokeWidth={1.75} />
         ) : (
           <Check className="size-3.5" strokeWidth={1.75} />
         )}
-        {fromHarness && onHandoff ? <HandoffButton from={fromHarness} onPick={onHandoff} /> : null}
-        {fromHarness && onSecondOpinion ? (
-          <SecondOpinionButton
-            from={fromHarness}
-            fromModel={fromModel}
-            onPick={onSecondOpinion}
-            includeCurrent
-            excludeFromModel
-          />
-        ) : null}
-        <TurnMetricsBadge metrics={metrics} elapsedMs={elapsedMs} />
+        <TurnOutputActions
+          getText={hasOutput ? getText : undefined}
+          onSave={onSaveNote}
+          extraItems={[
+            ...(fromHarness && onHandoff
+              ? [
+                  {
+                    id: "handoff",
+                    label: t("Handoff"),
+                    icon: <Replace />,
+                    render: (renderTrigger) => (
+                      <HandoffButton
+                        from={fromHarness}
+                        onPick={onHandoff}
+                        renderTrigger={renderTrigger}
+                      />
+                    ),
+                  } satisfies ExpandingButtonGroupItem,
+                ]
+              : []),
+            ...(fromHarness && onSecondOpinion
+              ? [
+                  {
+                    id: "second-opinion",
+                    label: t("Second opinion"),
+                    icon: <MessageMultiple />,
+                    render: (renderTrigger) => (
+                      <SecondOpinionButton
+                        from={fromHarness}
+                        fromModel={fromModel}
+                        onPick={onSecondOpinion}
+                        includeCurrent
+                        excludeFromModel
+                        renderTrigger={renderTrigger}
+                      />
+                    ),
+                  } satisfies ExpandingButtonGroupItem,
+                ]
+              : []),
+            ...(metrics && hasTurnMetrics(metrics)
+              ? [
+                  {
+                    id: "metrics",
+                    label: t("Turn metrics"),
+                    icon: <ChartBreakoutSquare />,
+                    render: (renderTrigger) => (
+                      <TurnMetricsBadge
+                        metrics={metrics}
+                        elapsedMs={elapsedMs}
+                        renderTrigger={renderTrigger}
+                      />
+                    ),
+                  } satisfies ExpandingButtonGroupItem,
+                ]
+              : []),
+          ]}
+        />
       </span>
       {labelHidden ? null : (
         <span className="flex min-w-0 items-center gap-2.5">
@@ -1799,13 +1860,17 @@ function TurnDuration({
 function TurnMetricsBadge({
   metrics,
   elapsedMs,
+  renderTrigger,
 }: {
   metrics?: TurnMetrics;
   elapsedMs: number | null;
+  renderTrigger?: (props: ExpandingButtonGroupTriggerProps) => ReactNode;
 }) {
   useLocale();
   const root = useRef<HTMLDivElement>(null);
+  const [button, setButton] = useState<HTMLButtonElement | null>(null);
   const [hovered, setHovered] = useState(false);
+  const [open, setOpen] = useState(false);
   if (!metrics || !hasTurnMetrics(metrics)) return null;
 
   const outputRate =
@@ -1832,25 +1897,49 @@ function TurnMetricsBadge({
     <div
       ref={root}
       className="relative shrink-0"
-      onMouseEnter={() => setHovered(true)}
+      onMouseEnter={() => {
+        if (!renderTrigger) setHovered(true);
+      }}
       onMouseLeave={() => setHovered(false)}
-      onFocus={() => setHovered(true)}
+      onFocus={() => {
+        if (!renderTrigger) setHovered(true);
+      }}
       onBlur={() => setHovered(false)}
     >
-      <Button
-        variant="ghost"
-        iconOnly
-        label={t("Turn metrics: {p0}", { p0: label })}
-        title={t("Turn metrics")}
-      >
-        <ChartBreakoutSquare className="size-3.5" strokeWidth={1.75} />
-      </Button>
-      {hovered ? (
+      {renderTrigger ? (
+        renderTrigger({
+          ref: setButton,
+          ariaLabel: t("Turn metrics: {p0}", { p0: label }),
+          "aria-haspopup": "dialog",
+          "aria-expanded": open,
+          onSelect: () => setOpen((value) => !value),
+        })
+      ) : (
+        <Button
+          variant="ghost"
+          iconOnly
+          label={t("Turn metrics: {p0}", { p0: label })}
+          title={t("Turn metrics")}
+        >
+          <ChartBreakoutSquare className="size-3.5" strokeWidth={1.75} />
+        </Button>
+      )}
+      {(renderTrigger ? open : hovered) ? (
         <Popover
-          anchor={root}
+          anchor={renderTrigger ? button : root}
           side="top"
           align="start"
-          className="pointer-events-none w-max px-2.5 py-1.5"
+          role={renderTrigger ? "dialog" : undefined}
+          aria-label={t("Turn metrics")}
+          onDismiss={
+            renderTrigger
+              ? (reason) => {
+                  setOpen(false);
+                  if (reason === "escape") button?.focus();
+                }
+              : undefined
+          }
+          className="w-max px-2.5 py-1.5"
         >
           <div className="text-[12px] leading-4 text-(--ui-tone-neutral-fg)">{headline}</div>
           {detail ? (
@@ -1887,19 +1976,78 @@ function formatClockTime(epochMs: number): string {
   }).format(new Date(epochMs));
 }
 
-/** Small completed-output commands; streaming text and nested model menus keep their owners. */
+/** One action group; model menus and metric details retain their own state and overlays. */
 function TurnOutputActions({
   getText,
   onSave,
+  extraItems = [],
 }: {
-  getText: () => string;
+  getText?: () => string;
   onSave?: (text: string) => void | Promise<void>;
+  extraItems?: ExpandingButtonGroupItem[];
 }) {
   useLocale();
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => setError(null), [getText]);
+
+  const run = async (action: "copy" | "save") => {
+    if (!getText) return false;
+    setError(null);
+    try {
+      if (action === "copy") {
+        await copyMessage(getText());
+      } else {
+        await onSave?.(getText());
+      }
+      playCue("copy");
+      return true;
+    } catch (cause) {
+      setError(
+        (action === "copy" ? t("Copy failed. ") : t("Could not save note. ")) +
+          (cause instanceof Error ? cause.message : String(cause)),
+      );
+      return false;
+    }
+  };
+  if (!getText && extraItems.length === 0) return null;
   return (
-    <div role="group" aria-label={t("Message actions")} className="flex items-center gap-1">
-      <CopyTurnButton getText={getText} />
-      {onSave ? <SaveNoteButton getText={getText} onSave={onSave} /> : null}
+    <div className="flex min-w-0 max-w-full flex-wrap items-center gap-1">
+      <ExpandingButtonGroup
+        label={t("Message actions")}
+        size="sm"
+        fit
+        confirmDuration={2000}
+        items={[
+          ...(getText
+            ? [
+                {
+                  id: "copy",
+                  label: t("Copy response"),
+                  icon: <Copy />,
+                  doneLabel: t("Copied"),
+                  onSelect: () => run("copy"),
+                },
+              ]
+            : []),
+          ...(getText && onSave
+            ? [
+                {
+                  id: "save",
+                  label: t("Save as note"),
+                  icon: <FilePlusCorner />,
+                  doneLabel: t("Saved to Notes"),
+                  onSelect: () => run("save"),
+                },
+              ]
+            : []),
+          ...extraItems,
+        ]}
+      />
+      {error ? (
+        <span role="alert" className="max-w-xs text-xs text-(--ui-text-secondary)">
+          {error}
+        </span>
+      ) : null}
     </div>
   );
 }
@@ -2488,6 +2636,9 @@ function UserMessageBlock({
           showLabel={showLabels}
         />
       ) : null}
+      {text && onSaveNote ? (
+        <SaveNoteButton text={text} onSave={onSaveNote} showLabel={showLabels} />
+      ) : null}
       {onEdit ? (
         <EditLastTurnButton
           onEdit={() => {
@@ -2527,9 +2678,6 @@ function UserMessageBlock({
           </Button>
         </>
       ) : null}
-      {text && onSaveNote ? (
-        <SaveNoteButton text={text} onSave={onSaveNote} showLabel={showLabels} />
-      ) : null}
       {block.startedAt != null ? (
         <time
           dateTime={new Date(block.startedAt).toISOString()}
@@ -2560,10 +2708,10 @@ function UserMessageBlock({
           data-draft={block.draft ? "true" : undefined}
           data-follow-up-delivery={delivery}
           data-bycoda={bycoda ? "true" : undefined}
-          className={`user-message-bubble relative min-w-0 px-3 py-2 font-sans text-(--ui-tone-neutral-fg) transition-[background-color] duration-200 ${
+          className={`user-message-bubble relative min-w-0 border border-(--color-stroke) px-3 py-2 font-sans text-(--ui-tone-neutral-fg) transition-[background-color] duration-200 ${
             block.draft
               ? "border border-dashed border-(--ui-tone-neutral-border) bg-(--ui-surface-raised)"
-              : "bg-(--ui-surface-raised)"
+              : "bg-(--ui-surface)"
           } ${editing ? "edit-last-turn-bubble" : ""} w-fit ${chat ? "max-w-[min(100%,36rem)]" : "max-w-full"} ${singleLine ? "rounded-full" : "rounded-xl"}`}
           style={{ zIndex: stickyIndex }}
         >
@@ -2574,10 +2722,17 @@ function UserMessageBlock({
           ) : null}
           {block.attachments?.length ? (
             <div
-              className={`user-message-attachments flex flex-wrap gap-2 ${text || card || note ? "mbe-3" : ""}`}
+              role="group"
+              aria-label={t("Attachments")}
+              className={`user-message-attachments flex min-w-0 max-w-full gap-2 overflow-x-auto ${text || card || note ? "mbe-2" : ""}`}
             >
               {block.attachments.map((file, index) => (
-                <AttachmentChip key={file.id} attachment={file} token={referencedTokens[index]} />
+                <AttachmentChip
+                  key={file.id}
+                  attachment={file}
+                  token={referencedTokens[index]}
+                  tokenLabelPlacement="overlay"
+                />
               ))}
             </div>
           ) : null}
@@ -3940,6 +4095,7 @@ function ActivityToolRow({
   const summary = (
     <ToolCallSummary
       label={label}
+      wrap={block.tool?.kind === "shell"}
       preview={block.tool?.preview}
       cwd={cwd}
       chip={bare}
@@ -4199,6 +4355,7 @@ function ToolCall({
             <ToolCallIcon state={state} />
             <ToolCallSummary
               label={label}
+              wrap={block.tool?.kind === "shell"}
               preview={preview}
               cwd={cwd}
               failed={state === "rejected"}
@@ -4232,6 +4389,7 @@ function ToolCall({
           <ToolCallIcon state={state} />
           <ToolCallSummary
             label={label}
+            wrap={block.tool?.kind === "shell"}
             preview={preview}
             cwd={cwd}
             failed={state === "rejected"}
@@ -4250,6 +4408,7 @@ function ToolCall({
           <ToolCallIcon state={state} />
           <ToolCallSummary
             label={label}
+            wrap={block.tool?.kind === "shell"}
             preview={preview}
             cwd={cwd}
             failed={state === "rejected"}
@@ -4269,6 +4428,7 @@ function ToolCall({
 
 function ToolCallSummary({
   label,
+  wrap = false,
   preview,
   cwd,
   onOpenFile,
@@ -4279,6 +4439,7 @@ function ToolCallSummary({
   status = "accepted",
 }: {
   label: string;
+  wrap?: boolean;
   preview?: ToolPreview;
   cwd?: string;
   onOpenFile?: (path: string) => void;
@@ -4298,7 +4459,7 @@ function ToolCallSummary({
   if (!action || !target) {
     return (
       <span
-        className={`min-w-0 flex-1 truncate font-mono text-[13px] ${
+        className={`min-w-0 flex-1 ${wrap ? "tool-command-label" : "truncate"} font-mono text-[13px] ${
           failed
             ? "text-(--ui-tone-danger-fg)"
             : chip

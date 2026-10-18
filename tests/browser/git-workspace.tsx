@@ -12,11 +12,13 @@ void GitGraphWorkspace;
 // This fixture exercises the actual UI against a deterministic desktop bridge.
 // No user repository or remote is changed by these scenarios.
 const sha = (n: number) => n.toString(16).padStart(40, "0");
-const commits = Array.from({ length: 40 }, (_, n) => ({
-  sha: sha(40 - n),
-  shortSha: sha(40 - n).slice(-7),
-  parents: n === 39 ? [] : [sha(39 - n)],
-  subject: n === 0 ? "Improve workspace navigation" : `Workspace change ${40 - n}`,
+const large = new URLSearchParams(location.search).has("large");
+const commitCount = large ? 5000 : 40;
+const commits = Array.from({ length: commitCount }, (_, n) => ({
+  sha: sha(commitCount - n),
+  shortSha: sha(commitCount - n).slice(-7),
+  parents: n === commitCount - 1 ? [] : [sha(commitCount - n - 1)],
+  subject: n === 0 ? "Improve workspace navigation" : `Workspace change ${commitCount - n}`,
   author: n % 2 ? "Deniz Yılmaz" : "Bahar Kaya",
   timestamp: 1791567000 - n * 3600,
   head: n === 0,
@@ -47,6 +49,8 @@ const file = (relative: string, staged = false) => ({
   unstaged: !staged,
 });
 let files = [file("src/workspace.tsx"), file("src/theme.css"), file("README.md", true)];
+if (large)
+  files.push(...Array.from({ length: 597 }, (_, n) => file(`src/features/feature-${n}/index.ts`)));
 const submodules = new URLSearchParams(location.search).has("submodules");
 const repositoryFiles = new Map<string, typeof files>();
 const filesFor = (cwd: string) => {
@@ -101,7 +105,8 @@ Object.assign(window, {
         );
         return;
       }
-      if (command === "git_history") return { head: commits[0].sha, commits };
+      if (command === "git_history")
+        return { head: commits[0].sha, commits: commits.slice(0, Number(args.limit ?? 200)) };
       if (command === "git_branches")
         return {
           current: branches.find((b) => b.current)?.name,

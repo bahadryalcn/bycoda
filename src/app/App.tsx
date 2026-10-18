@@ -574,6 +574,8 @@ function Workspace({
   const setActiveTabId = useActiveTabSetter({
     cancel: workspaceNavigation.cancel,
     setActiveTabIdState,
+    setProjectTerminalFocused,
+    setComposerFocusToken,
   });
   const {
     searchViewOpenRef,

@@ -5,6 +5,28 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { handleEditorFindKey } from "../editor/editorSearch";
 import { FilePreviewSearch, findPreviewTextMatches } from "./FilePreviewSearch";
 import { saveKeybindingOverride } from "../../settings/model/settings";
+import { evaluatePreviewSearch } from "./previewSearchEvaluation";
+import { Worker as NodeWorker } from "node:worker_threads";
+
+// Execute the same evaluator in a real isolated thread under happy-dom.
+class SearchWorker {
+  onmessage?: (event: { data: unknown }) => void;
+  onerror?: () => void;
+  private worker = new NodeWorker(
+    `const { parentPort } = require('node:worker_threads'); const evaluate = ${evaluatePreviewSearch.toString()}; parentPort.on('message', data => parentPort.postMessage(evaluate(...data)));`,
+    { eval: true },
+  );
+  constructor() {
+    this.worker.on("message", (data) => this.onmessage?.({ data }));
+    this.worker.on("error", () => this.onerror?.());
+  }
+  postMessage(data: unknown) {
+    this.worker.postMessage(data);
+  }
+  terminate() {
+    void this.worker.terminate();
+  }
+}
 
 const options = {
   caseSensitive: false,
@@ -13,36 +35,57 @@ const options = {
 };
 
 describe("findPreviewTextMatches", () => {
-  it("finds literal text case-insensitively", () => {
-    expect(findPreviewTextMatches("Alpha beta ALPHA", "alpha", options).matches).toEqual([
+  beforeEach(() => vi.stubGlobal("Worker", SearchWorker));
+  afterEach(() => vi.unstubAllGlobals());
+  it("finds literal text case-insensitively", async () => {
+    expect((await findPreviewTextMatches("Alpha beta ALPHA", "alpha", options)).matches).toEqual([
       { from: 0, to: 5 },
       { from: 11, to: 16 },
     ]);
   });
 
-  it("supports whole-word and regular-expression searches", () => {
+  it("supports whole-word and regular-expression searches", async () => {
     expect(
-      findPreviewTextMatches("cat scatter cat", "cat", {
-        ...options,
-        wholeWord: true,
-      }).matches,
+      (
+        await findPreviewTextMatches("cat scatter cat", "cat", {
+          ...options,
+          wholeWord: true,
+        })
+      ).matches,
     ).toEqual([
       { from: 0, to: 3 },
       { from: 12, to: 15 },
     ]);
     expect(
-      findPreviewTextMatches("item-12 item-aa", "item-\\d+", {
-        ...options,
-        regexp: true,
-      }).matches,
+      (
+        await findPreviewTextMatches("item-12 item-aa", "item-\\d+", {
+          ...options,
+          regexp: true,
+        })
+      ).matches,
     ).toEqual([{ from: 0, to: 7 }]);
   });
 
-  it("reports an invalid regular expression", () => {
-    expect(findPreviewTextMatches("text", "[", { ...options, regexp: true })).toMatchObject({
+  it("reports an invalid regular expression", async () => {
+    expect(await findPreviewTextMatches("text", "[", { ...options, regexp: true })).toMatchObject({
       matches: [],
       invalid: true,
     });
+  });
+  it("terminates a pathological regex while the UI thread stays responsive", async () => {
+    let responsive = false;
+    const task = findPreviewTextMatches("a".repeat(30) + "!", "(a+)+$", {
+      ...options,
+      regexp: true,
+    });
+    await new Promise<void>((resolve) =>
+      setTimeout(() => {
+        responsive = true;
+        resolve();
+      }, 10),
+    );
+    expect(responsive).toBe(true);
+    expect(await task).toMatchObject({ matches: [], timedOut: true });
   });
 });
 

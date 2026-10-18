@@ -121,6 +121,30 @@ it("keeps another device's control and does not navigate after a failed claim", 
   ]);
 });
 
+it("recovers from another client's lease through an explicit control claim", async () => {
+  vi.mocked(hostFeatureRequest).mockImplementation(async (_cwd, _capability, method, params) => {
+    if (method === "browser.claim" && params?.takeover !== true)
+      throw new Error("Another device controls this browser");
+    return {
+      open: true,
+      url: "http://localhost:3000",
+      controlling: method === "browser.claim",
+      leaseId: method === "browser.claim" ? "owner-lease" : undefined,
+    };
+  });
+  await act(async () => root.render(createElement(BrowserPanel, { cwd: "/project" })));
+  await act(async () => button("Open website").click());
+  expect(container.querySelector('[role="alert"]')).not.toBeNull();
+  await act(async () => button("Claim control").click());
+  expect(container.querySelector('[role="alert"]')).toBeNull();
+  expect(hostFeatureRequest).toHaveBeenLastCalledWith(
+    "/project",
+    "browser.shared",
+    "browser.claim",
+    { takeover: true, leaseId: undefined },
+  );
+});
+
 it("shows missing runtime setup before opening and never downloads or claims on entry", async () => {
   vi.mocked(hostFeatureRequest).mockResolvedValue({
     open: false,

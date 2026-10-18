@@ -46,6 +46,7 @@ import {
 } from "../../../integrations/harness";
 import { looksLikeProject, type RecentProject } from "../../projects/model/recents";
 import {
+  HARNESS_TITLE,
   sessionDisplayTitle,
   sessionDraftBlock,
   sessionWorkCwd,
@@ -61,6 +62,7 @@ import {
   type ComposerTurnOptions,
 } from "../model/session";
 import { sessionHasBtwThreads, supportsBtwHarness } from "../model/btw";
+import { sessionRetryNotice } from "../model/sessionIssue";
 import {
   sameSessionIgnoringStreamingText,
   sameBlocksIgnoringStreamingText,
@@ -457,6 +459,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
       sameCheckout(orchestrationCheckoutCwd(run), sessionWorkCwd(session)),
   );
   const title = sessionDisplayTitle(session.title, session.harness);
+  const retryNotice = sessionRetryNotice(session.retryMessage);
   const isEmpty = session.blocks.length === 0;
   const remote = remoteSession;
   const activeSessionIdRef = useRef(session.id);
@@ -1067,6 +1070,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
       hideBranchPicker={!!session.inboxAsk || managed}
       hideTopBar={!!session.inboxAsk}
       context={session.context}
+      contextBlocks={session.blocks}
       contextEmpty={
         isEmpty &&
         !session.providerSessionId &&
@@ -1363,9 +1367,15 @@ const LocalSessionPane = memo(function LocalSessionPane({
               role="status"
               className="shrink-0 border-b border-(--ui-tone-warning-border) bg-(--ui-tone-warning-subtle) px-3 py-2 text-xs text-(--ui-tone-warning-fg)"
             >
-              <strong>{t("Retrying")}</strong>
-              {" · "}
-              {session.retryMessage}
+              <strong>
+                {t(
+                  retryNotice.reconnecting
+                    ? "Reconnecting to {provider}"
+                    : "{provider} is retrying",
+                  { provider: HARNESS_TITLE[session.harness] },
+                )}
+              </strong>
+              {retryNotice.detail ? <> · {retryNotice.detail}</> : null}
             </div>
           ) : null}
           {session.rewindHistory?.length ? (
@@ -1428,6 +1438,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
                   modelSettings={session.modelSettings}
                   providerAccountId={session.providerAccountId}
                   pendingQuestion={!!session.pendingQuestion}
+                  liveStatusInDock
                   backgroundTasks={session.backgroundTasks}
                   backgroundAgents={session.backgroundAgents}
                   onApproval={session.worktreeRemoved ? undefined : approve}

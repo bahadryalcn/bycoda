@@ -1,0 +1,33 @@
+.connections-settings,
+.connections-view {
+  min-inline-size: 0;
+}
+
+.connections-view {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.connections-view[hidden] {
+  display: none;
+}
+
+.connections-settings .external-tunnels-panel {
+  background: var(--ui-surface);
+}
+
+.connection-details {
+  margin-block-start: 0.5rem;
+  font-size: 12px;
+  color: var(--ui-text-muted);
+  overflow-wrap: anywhere;
+}
+
+.connection-details > h3 {
+  cursor: pointer;
+}
+
+.connection-details[open] > h3 {
+  margin-block-end: 0.5rem;
+}

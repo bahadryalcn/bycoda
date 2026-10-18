@@ -1681,7 +1681,7 @@ function ProjectGroupSection({
                 } else setOverviewOpen((value) => !value);
               }}
               size="sm"
-              className="h-6 min-w-6 shrink-0 px-1 tabular-nums"
+              className="min-w-6 shrink-0 tabular-nums"
             >
               <GitBranch className="size-3" strokeWidth={1.75} />
               {gitSummary.dirty > 0 ? (
@@ -1856,7 +1856,7 @@ function ProjectCard({
   const logoPath = resolveTabGroupLogo(key, groupLogos);
   const color = resolveTabGroupColor(key, groupColors, groupCustomColors, seed);
   const diffEnabled = statsEnabled && Boolean(item.path) && item.path !== "~";
-  const stats = useProjectDiffStats(item.path, diffEnabled);
+  const stats = useProjectDiffStats(item.path, diffEnabled, selected);
   const files = stats?.files ?? 0;
   const additions = stats?.additions ?? 0;
   const deletions = stats?.deletions ?? 0;

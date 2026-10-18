@@ -1,15 +1,7 @@
 import { themePalette } from "../../../shared/theme/palette";
 import { t, useLocale } from "../../../shared/i18n";
 import type { CSSProperties } from "react";
-import {
-  AdvancedSettings,
-  Group,
-  Row,
-  Select,
-  Slider,
-  Toggle,
-  Segmented,
-} from "./settingsControls";
+import { Group, Row, Select, Slider } from "./settingsControls";
 import type { AppearanceSettings } from "./useAppearanceSettings";
 import { APPEARANCE_DEFAULTS, CODE_FONTS, INTERFACE_FONTS } from "../model/appearancePreferences";
 import {
@@ -22,7 +14,6 @@ import {
 } from "../model/appearance";
 import { UI_SCALE_DEFAULT, UI_SCALE_PERCENTS } from "../model/uiScale";
 import { useColorScheme } from "../../../shared/hooks/useColorScheme";
-import { ControlSpecimen } from "../../../shared/ui/ControlSpecimen";
 import { Button } from "../../../shared/ui/Button";
 import "./AppearancePreviews.css";
 
@@ -77,6 +68,40 @@ const presets = [
   },
 ];
 
+/** A small workspace, rather than a color strip, shows the relationship between surfaces. */
+function WorkspacePreview({ scheme }: { scheme?: "system" | "light" | "dark" }) {
+  return (
+    <span className="appearance-workspace-preview" data-preview-scheme={scheme} aria-hidden="true">
+      <span className="appearance-preview-rail">
+        <i />
+        <i />
+        <i />
+      </span>
+      <span className="appearance-preview-sidebar">
+        <i />
+        <i />
+        <i />
+        <i />
+      </span>
+      <span className="appearance-preview-conversation">
+        <span className="appearance-preview-message">
+          <i />
+          <i />
+        </span>
+        <span className="appearance-preview-reply">
+          <i />
+          <i />
+          <i />
+        </span>
+        <span className="appearance-preview-composer">
+          <i />
+          <b />
+        </span>
+      </span>
+    </span>
+  );
+}
+
 export function AppearanceStudio({ appearance: a }: { appearance: AppearanceSettings }) {
   useLocale();
   const light = useColorScheme() === "light";
@@ -96,22 +121,33 @@ export function AppearanceStudio({ appearance: a }: { appearance: AppearanceSett
   return (
     <section className="appearance-studio" aria-label={t("Theme and colors")}>
       <div className="appearance-studio-heading">
-        <h2>{t("Theme and colors")}</h2>
+        <h2>{t("Color scheme")}</h2>
         <Button variant="ghost" onClick={resetColors}>
           {t("Reset colors")}
         </Button>
       </div>
       <div id="setting-theme" data-setting-id="theme" className="appearance-scheme-control">
-        <Segmented
-          label={t("Color scheme")}
-          value={a.themePreference}
-          options={[
-            { value: "system", label: t("System") },
-            { value: "light", label: t("Light") },
-            { value: "dark", label: t("Dark") },
-          ]}
-          onChange={a.onThemePreference}
-        />
+        <div className="appearance-scheme-options" role="group" aria-label={t("Color scheme")}>
+          {(["system", "light", "dark"] as const).map((scheme) => (
+            <Button
+              key={scheme}
+              variant="item"
+              layout="stacked"
+              className="appearance-scheme-option"
+              selected={a.themePreference === scheme}
+              aria-pressed={a.themePreference === scheme}
+              onClick={() => a.onThemePreference(scheme)}
+            >
+              <WorkspacePreview scheme={scheme} />
+              <span className="appearance-choice-label">
+                <span>
+                  {t(scheme === "system" ? "System" : scheme === "light" ? "Light" : "Dark")}
+                </span>
+                <span aria-hidden="true">{a.themePreference === scheme ? "✓" : ""}</span>
+              </span>
+            </Button>
+          ))}
+        </div>
         <span role="status">{t("Active mode: {p0}", { p0: light ? t("Light") : t("Dark") })}</span>
       </div>
       <div className="appearance-studio-body">
@@ -128,6 +164,7 @@ export function AppearanceStudio({ appearance: a }: { appearance: AppearanceSett
             {presets.map((p) => (
               <Button
                 variant="item"
+                layout="stacked"
                 selected={selected?.name === p.name}
                 key={p.name}
                 className="appearance-palette"
@@ -141,8 +178,7 @@ export function AppearanceStudio({ appearance: a }: { appearance: AppearanceSett
               >
                 {/* Swatches display the selectable palette data; control colors remain semantic. */}
                 <span
-                  className="appearance-material-sample"
-                  aria-hidden="true"
+                  className="appearance-palette-preview"
                   style={
                     {
                       "--material-base": `hsl(${p.hue} ${p.saturation}% ${light ? 94 : p.lightness + 5}%)`,
@@ -151,14 +187,15 @@ export function AppearanceStudio({ appearance: a }: { appearance: AppearanceSett
                     } as CSSProperties
                   }
                 >
-                  <i />
-                  <i />
-                  <i />
+                  <WorkspacePreview />
                 </span>
-                <span className="appearance-material-name">
-                  <strong>{p.name}</strong>
+                <span className="appearance-choice-label">
+                  <span className="appearance-material-name">
+                    <strong>{p.name}</strong>
+                  </span>
+                  <span aria-hidden="true">{selected?.name === p.name ? "✓" : ""}</span>
                 </span>
-                <span aria-hidden="true">{selected?.name === p.name ? "✓" : ""}</span>
+                <span className="appearance-palette-note">{t(p.note)}</span>
               </Button>
             ))}
           </div>
@@ -167,27 +204,10 @@ export function AppearanceStudio({ appearance: a }: { appearance: AppearanceSett
               ? t("{p0} is selected. One palette, in daylight or after hours.", {
                   p0: selected.name,
                 })
-              : t("Your custom colors are active. Adjust them in Advanced.")}
+              : t("Your custom colors are active. Adjust them in Custom surface colors.")}
           </p>
         </div>
       </div>
-      <AdvancedSettings title={t("Live control preview")}>
-        <div
-          className="appearance-control-preview"
-          role="region"
-          aria-label={t("Live control preview")}
-        >
-          <p className="appearance-preview-help">
-            {t(
-              "This is an example workspace. Your choices apply throughout the app and are saved automatically.",
-            )}
-          </p>
-          <ControlSpecimen />
-          <AdvancedSettings title={t("All control states")}>
-            <ControlSpecimen expanded />
-          </AdvancedSettings>
-        </div>
-      </AdvancedSettings>
     </section>
   );
 }
@@ -198,7 +218,6 @@ export function AppearanceInterface({ appearance: a }: { appearance: AppearanceS
   return (
     <Group
       title={t("Scale and accessibility")}
-      persistence={{ mode: "automatic" }}
       layout="full"
       action={
         <Button
@@ -208,7 +227,6 @@ export function AppearanceInterface({ appearance: a }: { appearance: AppearanceS
               ...p,
               contrast: APPEARANCE_DEFAULTS.contrast,
               controlDensity: APPEARANCE_DEFAULTS.controlDensity,
-              chatWidth: APPEARANCE_DEFAULTS.chatWidth,
             });
             a.onDiffPalette(DIFF_PALETTE_DEFAULT);
             a.onUiScale(Math.round(UI_SCALE_DEFAULT * 100));
@@ -299,44 +317,6 @@ export function AppearanceInterface({ appearance: a }: { appearance: AppearanceS
           }
         />
       </Row>
-      <Row
-        id="chat-width"
-        label={t("Chat width")}
-        description={t(
-          "Limit message width on large screens. Full width uses all available space.",
-        )}
-      >
-        <Select
-          label={t("Chat width")}
-          value={p.chatWidth}
-          options={[
-            {
-              value: "comfortable",
-              get label() {
-                return t("Comfortable");
-              },
-            },
-            {
-              value: "wide",
-              get label() {
-                return t("Wide");
-              },
-            },
-            {
-              value: "full",
-              get label() {
-                return t("Full width");
-              },
-            },
-          ]}
-          onChange={(value) =>
-            a.onPreferences({
-              ...p,
-              chatWidth: value === "wide" || value === "full" ? value : "comfortable",
-            })
-          }
-        />
-      </Row>
     </Group>
   );
 }
@@ -352,7 +332,6 @@ export function AppearanceTypography({ appearance: a }: { appearance: Appearance
   return (
     <Group
       title={t("Fonts and code")}
-      persistence={{ mode: "automatic" }}
       layout="full"
       action={
         <Button
@@ -363,7 +342,6 @@ export function AppearanceTypography({ appearance: a }: { appearance: Appearance
               interfaceFont: APPEARANCE_DEFAULTS.interfaceFont,
               codeFont: APPEARANCE_DEFAULTS.codeFont,
               codeSize: APPEARANCE_DEFAULTS.codeSize,
-              wordWrap: APPEARANCE_DEFAULTS.wordWrap,
             })
           }
         >
@@ -383,6 +361,17 @@ export function AppearanceTypography({ appearance: a }: { appearance: Appearance
           onChange={(interfaceFont) => a.onPreferences({ ...p, interfaceFont })}
         />
       </Row>
+      <div className="appearance-type-sample" aria-label={t("Interface font")}>
+        <span className="appearance-type-alphabet">Aa</span>
+        <div>
+          <p>
+            {t(
+              "This is an example workspace. Your choices apply throughout the app and are saved automatically.",
+            )}
+          </p>
+          <span>ABCDEFGHIJKLMNOPQRSTUVWXYZ · 0123456789</span>
+        </div>
+      </div>
       <Row
         id="monospace-font"
         label={t("Monospace font")}
@@ -394,35 +383,32 @@ export function AppearanceTypography({ appearance: a }: { appearance: Appearance
           options={fontOptions(CODE_FONTS)}
           onChange={(codeFont) => a.onPreferences({ ...p, codeFont })}
         />
-        <div id="setting-code-font-size" data-setting-id="code-font-size" tabIndex={-1}>
-          <Select
-            label={t("Code font size")}
-            value={String(p.codeSize)}
-            options={[11, 12, 13, 14, 15, 16, 17, 18].map((value) => ({
-              value: String(value),
-              get label() {
-                return t("{p0} px", { p0: value });
-              },
-            }))}
-            onChange={(value) => a.onPreferences({ ...p, codeSize: Number(value) })}
-          />
-        </div>
       </Row>
-      <Row
-        id="code-word-wrap"
-        label={t("Word wrap")}
-        description={t(
-          "Wrap long lines in chat code blocks. File editors keep their own wrap control.",
-        )}
-      >
-        <Toggle
-          label={t("Word wrap")}
-          on={p.wordWrap}
-          onChange={(wordWrap) => a.onPreferences({ ...p, wordWrap })}
+      <Row id="code-font-size" label={t("Code font size")}>
+        <Select
+          label={t("Code font size")}
+          value={String(p.codeSize)}
+          options={[11, 12, 13, 14, 15, 16, 17, 18].map((value) => ({
+            value: String(value),
+            get label() {
+              return t("{p0} px", { p0: value });
+            },
+          }))}
+          onChange={(value) => a.onPreferences({ ...p, codeSize: Number(value) })}
         />
       </Row>
+
       <pre className="appearance-code-sample" aria-label={t("Code font preview")}>
-        <code>{'const message = "Hello, bycoda";\nconsole.log(message);'}</code>
+        <code>
+          <span className="appearance-code-comment">// bycoda · TypeScript</span>
+          {"\n"}
+          <span className="appearance-code-keyword">const</span>
+          {" message = "}
+          <span className="appearance-code-string">{'"Hello, bycoda"'}</span>
+          {";\n\n"}
+          <span className="appearance-code-keyword">export function</span>
+          {" greet(name: string) {\n  return `${message}, ${name}`;\n}"}
+        </code>
       </pre>
     </Group>
   );

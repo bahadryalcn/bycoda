@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { newSession, type Session } from "../../sessions/model/session";
 import {
   EMPTY_REMOTE_QUEUE,
+  REMOTE_QUEUE_MAX_BYTES,
   editRemoteMessage,
   enqueueRemoteMessage,
   nextRemoteQueuedMessage,
@@ -21,6 +22,30 @@ const queueOf = (...ids: string[]): RemoteQueue =>
   ids.reduce((queue, id) => enqueueRemoteMessage(queue, draft(id)), EMPTY_REMOTE_QUEUE);
 
 describe("queue transitions", () => {
+  it("rejects over-budget edits atomically, including the other rows and attachment data", () => {
+    const original = setRemoteEditing(queueOf("a", "b"), "a");
+    const oversized = "x".repeat(Math.floor(REMOTE_QUEUE_MAX_BYTES / 3) + 1);
+    expect(() => enqueueRemoteMessage(EMPTY_REMOTE_QUEUE, draft("large", oversized))).toThrow(
+      "Remote queue is full",
+    );
+    expect(() => editRemoteMessage(original, "a", oversized, [])).toThrow("Remote queue is full");
+    expect(original.messages[0].text).toBe("a");
+    expect(original.editingId).toBe("a");
+    const nearLimit = "x".repeat(Math.floor(REMOTE_QUEUE_MAX_BYTES / 3));
+    expect(() => editRemoteMessage(original, "a", nearLimit, [])).toThrow("Remote queue is full");
+    const attachment = {
+      id: "f",
+      name: "large.txt",
+      kind: "file" as const,
+      mimeType: "text/plain",
+      size: 1,
+      data: "x".repeat(REMOTE_QUEUE_MAX_BYTES / 2),
+    };
+    expect(() => editRemoteMessage(original, "a", "a", [attachment])).toThrow(
+      "Remote queue is full",
+    );
+    expect(editRemoteMessage(original, "a", "recovered", []).messages[0].text).toBe("recovered");
+  });
   it("queues in order and becomes active", () => {
     const queue = queueOf("a", "b");
     expect(queue.messages.map((message) => message.id)).toEqual(["a", "b"]);
@@ -122,6 +147,16 @@ describe("nextRemoteQueuedMessage", () => {
 
   it("hands out the head once the turn is over and the machine is reachable", () => {
     expect(nextRemoteQueuedMessage({ session: session(), ...ready })?.id).toBe("a");
+  });
+
+  it("adding work preserves the restored hold until explicit release", () => {
+    const restored: RemoteQueue = { ...queueOf("a"), status: "restored" };
+    const added = enqueueRemoteMessage(restored, draft("b"));
+    expect(added.status).toBe("restored");
+    expect(nextRemoteQueuedMessage({ session: session({}, added), ...ready })).toBeUndefined();
+    expect(
+      nextRemoteQueuedMessage({ session: session({}, releaseRemoteQueue(added)), ...ready })?.id,
+    ).toBe("a");
   });
 
   it("waits while the turn runs", () => {

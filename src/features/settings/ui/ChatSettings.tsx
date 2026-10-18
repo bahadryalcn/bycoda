@@ -19,18 +19,15 @@ import {
 } from "../model/settings";
 import { AdvancedSettings, Group, Row, Segmented, Toggle } from "./settingsControls";
 import { saveComposerSpelling, useComposerSpelling } from "../model/composerSpelling";
-import { GitGenerationModelControl } from "../../source-control/ui/GitGenerationSettings";
-import {
-  saveDefaultGitGenerationChoice,
-  useDefaultGitGenerationChoice,
-} from "../../source-control/model/gitGenerationPreferences";
-import { Button } from "../../../shared/ui/Button";
 import { TranslationSettings } from "./TranslationSettings";
+import { TemplatesSettings } from "./TemplatesSettings";
+import { ConversationDisplaySettings } from "./ConversationDisplaySettings";
+import type { AppearanceSettings } from "./useAppearanceSettings";
+import "./ChatSettings.css";
 
-export function ChatPage() {
+export function ChatPage({ appearance }: { appearance: AppearanceSettings }) {
   useLocale();
   const spelling = useComposerSpelling();
-  const gitGenerationChoice = useDefaultGitGenerationChoice();
   const [transcriptLayout, setTranscriptLayout] = useState<TranscriptLayout>(loadTranscriptLayout);
   const [transcriptAnchor, setTranscriptAnchor] = useState(loadTranscriptAnchor);
   const [resumeAtReset, setResumeAtReset] = useState(loadResumeAtReset);
@@ -57,42 +54,17 @@ export function ChatPage() {
     setModelControls(next);
   };
   return (
-    <>
-      <TranslationSettings />
-      <Group title={t("Commit and pull request generation")} persistence={{ mode: "automatic" }}>
-        <Row
-          id="git-generation-default"
-          label={t("Default generation model")}
-          description={t("Used across projects unless a project has its own generation selection.")}
-        >
-          <div className="flex min-w-0 flex-wrap items-center gap-2">
-            {!gitGenerationChoice && (
-              <span className="text-[var(--ui-text-secondary)]">{t("Automatic")}</span>
-            )}
-            <GitGenerationModelControl
-              choice={gitGenerationChoice}
-              onChange={saveDefaultGitGenerationChoice}
-            />
-            {gitGenerationChoice && (
-              <Button variant="link" onClick={() => saveDefaultGitGenerationChoice(undefined)}>
-                {t("Use automatic selection")}
-              </Button>
-            )}
-          </div>
-        </Row>
+    <div className="chat-settings">
+      <p className="chat-save-note">{t("Changes save automatically")}</p>
+      <Group title={t("Translation")} layout="full">
+        <TranslationSettings embedded />
       </Group>
-      <Group
-        title={t("Conversation view")}
-        description={t("How a conversation reads as it grows.")}
-        scope={t("Applies to conversation display across projects.")}
-        persistence={{ mode: "automatic" }}
-      >
+      <Group title={t("Conversation view")} layout="full">
+        <ConversationDisplaySettings appearance={appearance} />
         <Row
           id="transcript-layout"
           label={t("Transcript layout")}
-          description={t(
-            "User messages stay right aligned and fit their content. Full width gives longer messages more room; Chat limits their width.",
-          )}
+          description={t("Choose a wider transcript or compact chat bubbles.")}
         >
           <Segmented
             label={t("Transcript layout")}
@@ -117,9 +89,7 @@ export function ChatPage() {
         <Row
           id="anchor-prompts"
           label={t("Anchor prompts to top")}
-          description={t(
-            "When you send, the new prompt sits at the top of the transcript and the reply grows into the space below. Turn this off to keep the classic layout, with the latest message resting on the composer.",
-          )}
+          description={t("Keep your latest prompt at the top while the reply appears below.")}
         >
           <Toggle
             label={t("Anchor prompts to top")}
@@ -129,12 +99,7 @@ export function ChatPage() {
         </Row>
       </Group>
 
-      <Group
-        title={t("Composer")}
-        description={t("What the composer does with what you type.")}
-        scope={t("Applies to the composer across projects.")}
-        persistence={{ mode: "automatic" }}
-      >
+      <Group title={t("Composer")} layout="full">
         <Row
           id="composer-spelling"
           label={t("Spelling and autocorrect")}
@@ -148,23 +113,23 @@ export function ChatPage() {
             onChange={saveComposerSpelling}
           />
         </Row>
-        <Row
+        <AdvancedSettings
           id="follow-up"
-          label={t("Sending while working")}
-          description={t(
-            "Send steers the active turn. Use the queue button to send after it finishes. If steering is unavailable, the message waits in the queue.",
-          )}
-        />
+          settingIds={["follow-up"]}
+          title={t("Sending while working")}
+        >
+          <p className="chat-detail">
+            {t(
+              "Send steers the active turn. Use the queue button to send after it finishes. If steering is unavailable, the message waits in the queue.",
+            )}
+          </p>
+        </AdvancedSettings>
       </Group>
       <AdvancedSettings
         title={t("Advanced conversation settings")}
         settingIds={["resume-at-reset", "auto-continue-interrupted", "model-controls"]}
       >
-        <Group
-          title={t("Continuation and model options")}
-          description={t("Control automatic continuation and how model options appear.")}
-          persistence={{ mode: "automatic" }}
-        >
+        <Group title={t("Continuation and model options")} layout="full">
           <Row
             id="resume-at-reset"
             dependency={t(
@@ -220,6 +185,7 @@ export function ChatPage() {
           </Row>
         </Group>
       </AdvancedSettings>
-    </>
+      <TemplatesSettings />
+    </div>
   );
 }

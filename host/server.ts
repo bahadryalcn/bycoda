@@ -3,6 +3,7 @@ import { execFileAsync as exec } from "../src/shared/lib/processExecution.node";
 import { sessionConversationPage } from "../src/features/agent-app/model/sessionConversation";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { McpHttp } from "./mcp-http";
+import { readHarnessSkill, searchHarnessSkills } from "./harness-skills";
 import { hostname, homedir } from "node:os";
 import { RuntimeTerminalLogs } from "./runtime-terminal-logs";
 import { HostTerminals } from "./terminals";
@@ -77,7 +78,7 @@ import {
 import { branchCache } from "./git-actions";
 import { withOverlay } from "./desktopLive";
 import { writeAttachmentChunk, readAttachmentChunk, attachmentUploadStatus } from "./attachments";
-import type { LinkedWorkItem } from "../src/features/sessions/model/session";
+import { sessionWorkCwd, type LinkedWorkItem } from "../src/features/sessions/model/session";
 import { parseGithubWorkItemUrl } from "../src/features/sessions/model/sessionWorkItem";
 import { SyncTransfers, serializedResponse } from "./sync-transfer";
 import { RevisionWaits } from "./revisionWait";
@@ -848,7 +849,23 @@ export function createHostServer(
                 args,
               );
             }
-          } else if (isWorkspaceConversationTool(action))
+          } else if (action === "skills.search")
+            result = searchHarnessSkills(
+              sessionWorkCwd(featureSession(conversationPrincipal.sessionId).session),
+              args,
+            );
+          else if (action === "skills.read")
+            result = await readHarnessSkill(
+              sessionWorkCwd(featureSession(conversationPrincipal.sessionId).session),
+              {
+                name: String(args.name),
+                source: typeof args.source === "string" ? args.source : undefined,
+                scope: typeof args.scope === "string" ? args.scope : undefined,
+                offset: args.offset as number | undefined,
+                maxChars: args.maxChars as number | undefined,
+              },
+            );
+          else if (isWorkspaceConversationTool(action))
             result = await conversationWorkspace.call(
               action,
               args,
@@ -1264,7 +1281,11 @@ export function createHostServer(
                 throw new Error("Browser belongs to another project");
             }
             result = {
-              ...(await sharedBrowser.dispatch(input.method, params, token)),
+              // Only paired owner RPCs may explicitly take control. Conversation
+              // tools use dispatchForSession and cannot enable this option.
+              ...(await sharedBrowser.dispatch(input.method, params, token, {
+                takeover: input.method === "browser.claim" && params.takeover === true,
+              })),
               runtime: await browserRuntime.status(),
             };
             break;
@@ -2029,9 +2050,15 @@ export function createHostServer(
               }
             }
             if (params.type !== "create") adopt(sessionId);
-            if (params.type === "send" && typeof params.text === "string" && isClearSessionCommand(params.text)) {
+            if (
+              params.type === "send" &&
+              typeof params.text === "string" &&
+              isClearSessionCommand(params.text)
+            ) {
               if (desktopWatch(sessionId)?.running || sessionQueues.get(sessionId).messages.length)
-                throw new Error("Stop the current turn and clear queued messages before clearing the conversation.");
+                throw new Error(
+                  "Stop the current turn and clear queued messages before clearing the conversation.",
+                );
               result = await engine.clearConversation(params);
               break;
             }

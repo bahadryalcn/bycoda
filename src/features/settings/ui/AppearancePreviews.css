@@ -1,13 +1,12 @@
-/* Layout for real shared control samples. Control appearance belongs to adapters. */
+/* Layout of preview content; shared Button owns selection, focus and interaction. */
 .appearance-studio {
   display: grid;
   gap: 16px;
   min-inline-size: 0;
 }
 .appearance-studio-heading,
-.appearance-scheme-control {
+.appearance-choice-label {
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
@@ -19,20 +18,22 @@
   font-weight: 500;
   color: var(--color-content);
 }
+.appearance-scheme-control {
+  display: grid;
+  gap: 8px;
+}
+.appearance-scheme-options {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
 .appearance-scheme-control > span,
 .appearance-library-note,
-.appearance-preview-help {
+.appearance-palette-note {
   color: var(--ui-text-secondary);
   font-size: var(--ui-font-caption);
   line-height: 1.5;
 }
-.appearance-studio-body {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  align-items: start;
-  gap: 24px;
-}
-.appearance-control-preview,
 .appearance-material-library {
   display: grid;
   min-inline-size: 0;
@@ -40,62 +41,162 @@
 }
 .appearance-material-library > [role="group"] {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 10rem), 1fr));
-  gap: 8px;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 15rem), 1fr));
+  gap: 10px;
 }
+.appearance-scheme-option,
 .appearance-palette {
+  min-inline-size: 0;
   white-space: normal;
 }
-.appearance-material-name {
-  min-inline-size: 0;
-  flex: 1;
+.appearance-palette-preview {
+  display: block;
+  inline-size: 100%;
+}
+.appearance-choice-label {
+  padding-block: 10px 2px;
+  min-block-size: 28px;
+  font-weight: 500;
+}
+.appearance-palette-note {
+  text-align: start;
   overflow-wrap: anywhere;
 }
 .appearance-material-name strong {
   font-weight: 500;
 }
-.appearance-control-preview {
-  max-inline-size: 40rem;
-  padding-block-start: 12px;
+.appearance-library-note {
+  margin: 0;
 }
-/* These are selectable content colors, not an alternate control palette. */
-.appearance-material-sample {
-  display: flex;
-  flex: none;
-  inline-size: 40px;
-  block-size: 24px;
+.appearance-workspace-preview {
+  display: grid;
+  grid-template-columns: 8% 23% minmax(0, 1fr);
+  inline-size: 100%;
+  block-size: clamp(112px, 13cqw, 136px);
+  border: 1px solid var(--sample-line);
+  border-radius: 6px;
   overflow: clip;
+  background: var(--sample-surface);
+}
+.appearance-preview-rail,
+.appearance-preview-sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 5px;
+  background: var(--sample-raised);
+  border-inline-end: 1px solid var(--sample-line);
+}
+.appearance-preview-rail i {
+  aspect-ratio: 1;
+  max-block-size: 10px;
+  border-radius: 3px;
+  background: var(--sample-muted);
+}
+.appearance-preview-rail i:first-child {
+  background: var(--sample-accent);
+}
+.appearance-preview-sidebar i,
+.appearance-preview-conversation i {
+  display: block;
+  block-size: 4px;
+  inline-size: 85%;
   border-radius: 2px;
+  background: var(--sample-muted);
 }
-.appearance-material-sample i {
-  inline-size: 60%;
-  background: var(--material-base);
+.appearance-preview-sidebar i:nth-child(2) {
+  inline-size: 65%;
 }
-.appearance-material-sample i + i {
-  inline-size: 20%;
-  background: var(--material-ink);
+.appearance-preview-conversation {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 10px;
+  padding: 12px;
+  min-inline-size: 0;
+  background: var(--sample-surface);
 }
-.appearance-material-sample i + i + i {
-  background: var(--material-accent);
+.appearance-preview-message,
+.appearance-preview-reply {
+  display: grid;
+  gap: 5px;
+  inline-size: 85%;
+}
+.appearance-preview-message {
+  align-self: end;
+  inline-size: 55%;
+}
+.appearance-preview-message i {
+  background: var(--sample-accent);
+}
+.appearance-preview-reply i:last-child {
+  inline-size: 55%;
+}
+.appearance-preview-composer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-block-start: auto;
+  padding: 5px;
+  border: 1px solid var(--sample-line);
+  border-radius: 4px;
+  background: var(--sample-raised);
+}
+.appearance-preview-composer i {
+  inline-size: 45%;
+}
+.appearance-preview-composer b {
+  inline-size: 8px;
+  block-size: 8px;
+  border-radius: 50%;
+  background: var(--sample-accent);
+}
+.appearance-type-sample {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  padding: 20px 16px;
+  border-block-end: 1px solid var(--color-stroke);
+  color: var(--color-content);
+  overflow-wrap: anywhere;
+}
+.appearance-type-alphabet {
+  font-size: 42px;
+  line-height: 1;
+  letter-spacing: -0.06em;
+}
+.appearance-type-sample p {
+  margin-block: 0 8px;
+  line-height: 1.6;
+}
+.appearance-type-sample div > span {
+  color: var(--ui-text-secondary);
+  font-size: var(--ui-font-caption);
 }
 .appearance-code-sample {
+  margin: 0;
   max-inline-size: 100%;
   overflow: auto;
-  padding: 12px;
+  padding: 20px 16px;
+  border-block-start: 1px solid var(--color-stroke);
   font-family: var(--font-mono);
   font-size: var(--appearance-code-size);
+  line-height: 1.8;
   color: var(--color-content);
   background: var(--ui-surface);
+  border-end-start-radius: inherit;
+  border-end-end-radius: inherit;
+}
+.appearance-code-comment {
+  color: var(--ui-text-secondary);
+}
+.appearance-code-keyword {
+  color: var(--color-accent);
+}
+.appearance-code-string {
+  color: var(--color-success);
 }
 html.appearance-word-wrap .appearance-code-sample {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
-}
-@container appearance (width < 760px) {
-  .appearance-studio-body {
-    grid-template-columns: minmax(0, 1fr);
-  }
-  .appearance-material-library > [role="group"] {
-    grid-template-columns: repeat(auto-fit, minmax(min(100%, 10rem), 1fr));
-  }
 }

@@ -609,7 +609,9 @@ export function stopStreaming(session: Session, endedAt = Date.now()): Session {
     blocks: stampTurnDuration(
       settled.blocks
         .filter((block) => !isBareProseStream(block))
-        .map((block) => stopBlockProgress(block.streaming ? endOpenAgentRun(block, endedAt) : block)),
+        .map((block) =>
+          stopBlockProgress(block.streaming ? endOpenAgentRun(block, endedAt) : block),
+        ),
       endedAt,
     ),
   };
@@ -875,12 +877,9 @@ function patchStreaming(
   // even when no tool or status row landed between them; joining the two can
   // turn separate Markdown blocks into text such as `commitConnect`.
   if (last?.role === role && last.streaming) {
-    // Fold against the existing text in order: providers can mix tokens and
-    // full snapshots, so concatenating the incoming chunks would duplicate text.
-    const nextText =
-      typeof input === "string"
-        ? joinStreamText(last.text, input)
-        : input.reduce(joinStreamText, last.text);
+    // Harness delta events are exact increments. Providers normalize full
+    // snapshots at their protocol boundary before emitting these events.
+    const nextText = last.text + (typeof input === "string" ? input : input.join(""));
     if (nextText === last.text && last.streaming === streaming) return session;
     const blocks = session.blocks.slice();
     blocks[index] = {
@@ -895,7 +894,7 @@ function patchStreaming(
   return appendBlock(session, {
     id: crypto.randomUUID(),
     role,
-    text: typeof input === "string" ? input : input.reduce(joinStreamText, ""),
+    text: typeof input === "string" ? input : input.join(""),
     streaming,
   });
 }
@@ -1105,11 +1104,14 @@ function recordAgentContext(
   const index = session.blocks.findIndex((block) => block.tool?.callId === event.callId);
   if (index < 0) return session;
   const prev = session.blocks[index];
-  if (!prev.tool || prev.tool.agentContext?.used === event.used) return session;
+  if (!prev.tool) return session;
+  const window = event.window ?? prev.tool.agentContext?.window;
+  if (prev.tool.agentContext?.used === event.used && prev.tool.agentContext?.window === window)
+    return session;
   const blocks = session.blocks.slice();
   blocks[index] = {
     ...prev,
-    tool: { ...prev.tool, agentContext: { used: event.used } },
+    tool: { ...prev.tool, agentContext: { used: event.used, ...(window ? { window } : {}) } },
   };
   registerBlockChanges(session.blocks, blocks, [blocks[index]]);
   return { ...session, blocks };

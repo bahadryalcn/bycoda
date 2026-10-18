@@ -123,7 +123,7 @@ export function ProjectNotificationSettings({
           <h2 className="text-[13px] font-medium text-content">{t("Project notifications")}</h2>
           <p className="mt-1 text-[12px] leading-relaxed text-content/45">
             {t(
-              "These choices apply only to each project. Sounds and desktop banners also follow the application preferences above. Mute pauses project alerts without changing categories; unread items stay marked in Inbox.",
+              "Choose categories per project. Sounds and desktop alerts follow the application settings above.",
             )}
           </p>
         </div>
@@ -312,16 +312,12 @@ export function ProjectNotificationSettings({
                       hidden={!isExpanded}
                       className="project-notification-categories"
                     >
-                      <div
-                        className={
-                          selecting ? "@[400px]/notifications:pl-14" : "@[400px]/notifications:pl-7"
-                        }
-                      >
+                      <div className="project-notification-category-grid">
                         {muted ? (
                           <p
                             id={muteHintId}
                             role="status"
-                            className="pt-3.5 text-[12px] leading-relaxed text-content/45"
+                            className="project-notification-mute-hint"
                           >
                             {t(
                               "Your category choices apply when notifications resume. You can edit them while muted.",
@@ -329,10 +325,7 @@ export function ProjectNotificationSettings({
                           </p>
                         ) : null}
                         {categories.map((category) => (
-                          <label
-                            key={category.id}
-                            className="flex min-h-11 cursor-pointer items-center justify-between gap-6 py-3 text-[13px] text-content"
-                          >
+                          <label key={category.id} className="project-notification-category">
                             <span>{t(category.label)}</span>
                             <Switch
                               aria-label={t("{p0} for {p1}", {
@@ -356,6 +349,9 @@ export function ProjectNotificationSettings({
           </>
         ) : null}
       </div>
+      <p className="project-notification-footnote">
+        {t("Mute pauses alerts without changing categories. Unread items stay in Inbox.")}
+      </p>
     </section>
   );
 }

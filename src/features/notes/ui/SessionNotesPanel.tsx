@@ -91,6 +91,8 @@ function initialSessionNote(sessionId: string, project: string): Promise<Note> {
 // Saves of one note run in order and outlive the editor that started them, so a
 // reload never reads the list before a pending edit has been written.
 const pendingSaves = new Map<string, Promise<void>>();
+type NoteDraft = { title: string; body: string; base: Note };
+const editorDrafts = new Map<string, NoteDraft>();
 
 function enqueueSave(id: string, run: () => Promise<void>) {
   const previous = pendingSaves.get(id) ?? Promise.resolve();
@@ -520,15 +522,44 @@ const PanelNoteEditor = memo(function PanelNoteEditor({
   onLink: (id: string) => Promise<boolean>;
 }) {
   useLocale();
-  const [title, setTitle] = useState(note.title);
-  const [body, setBody] = useState(note.body);
+  const draftKey = `${sessionId}:${note.id}`;
+  const restored = editorDrafts.get(draftKey);
+  const [title, setTitle] = useState(restored?.title ?? note.title);
+  const [body, setBody] = useState(restored?.body ?? note.body);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [linking, setLinking] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const field = useRef<HTMLTextAreaElement>(null);
   const titleRef = useRef(title);
   const bodyRef = useRef(body);
-  const savedRef = useRef(note);
+  const savedRef = useRef(restored?.base ?? note);
+  const [conflict, setConflict] = useState(false);
+  const conflictRef = useRef(false);
+  const retainDraft = useCallback(
+    () =>
+      editorDrafts.set(draftKey, {
+        title: titleRef.current,
+        body: bodyRef.current,
+        base: savedRef.current,
+      }),
+    [draftKey],
+  );
+  useEffect(() => {
+    const previous = savedRef.current;
+    if (note.title === previous.title && note.body === previous.body) return;
+    const dirty = bodyRef.current !== previous.body || titleRef.current !== previous.title;
+    if (dirty) {
+      conflictRef.current = true;
+      setConflict(true);
+      retainDraft();
+      return;
+    }
+    savedRef.current = note;
+    titleRef.current = note.title;
+    bodyRef.current = note.body;
+    setTitle(note.title);
+    setBody(note.body);
+  }, [note, retainDraft]);
   const titleTouched = useRef(false);
   const finalizeRequested = useRef(false);
   const skipSave = useRef(false);
@@ -543,7 +574,7 @@ const PanelNoteEditor = memo(function PanelNoteEditor({
   }, [autoFocus, onFocused]);
 
   const save = useCallback(async () => {
-    if (skipSave.current) return;
+    if (skipSave.current || conflictRef.current) return;
     const current = savedRef.current;
     const nextBody = bodyRef.current;
     const typed = titleRef.current.trim();
@@ -562,6 +593,15 @@ const PanelNoteEditor = memo(function PanelNoteEditor({
         ...(finalizeSlug ? { finalizeSlug: true } : {}),
       });
       savedRef.current = saved;
+      const retained = editorDrafts.get(draftKey);
+      if (retained?.body === nextBody && retained.title.trim() === typed)
+        editorDrafts.delete(draftKey);
+      else if (
+        retained &&
+        retained.base.body === current.body &&
+        retained.base.title === current.title
+      )
+        editorDrafts.set(draftKey, { ...retained, base: saved });
       if (finalizeSlug) finalizeRequested.current = false;
       setSaveError(null);
       onSavedRef.current(saved);
@@ -572,7 +612,7 @@ const PanelNoteEditor = memo(function PanelNoteEditor({
     } catch (err: unknown) {
       setSaveError(errorText(err));
     }
-  }, []);
+  }, [draftKey]);
 
   const saveNow = useCallback(
     (finalize = false) => {
@@ -643,6 +683,7 @@ const PanelNoteEditor = memo(function PanelNoteEditor({
           titleTouched.current = true;
           titleRef.current = next;
           setTitle(next);
+          retainDraft();
           await saveNow(true);
           if (savedRef.current.title !== (next.trim() || noteTitle(bodyRef.current))) {
             titleRef.current = previous;
@@ -659,6 +700,7 @@ const PanelNoteEditor = memo(function PanelNoteEditor({
         onChange={(event) => {
           bodyRef.current = event.target.value;
           setBody(event.target.value);
+          retainDraft();
           scheduleSave();
         }}
         onBlur={() => void saveNow()}
@@ -667,6 +709,38 @@ const PanelNoteEditor = memo(function PanelNoteEditor({
         spellCheck={false}
         className="min-h-0 w-full flex-1 resize-none border-0 bg-transparent px-3 py-2 font-mono text-[13px] leading-5 text-content placeholder:text-content/35"
       />
+      {conflict ? (
+        <Alert tone="warning">
+          <span>{t("This note changed elsewhere. Your draft is preserved.")}</span>
+          <Button
+            variant="ghost"
+            onClick={() => {
+              savedRef.current = note;
+              conflictRef.current = false;
+              setConflict(false);
+              retainDraft();
+              void saveNow();
+            }}
+          >
+            {t("Keep my draft")}
+          </Button>
+          <Button
+            variant="ghost"
+            onClick={() => {
+              savedRef.current = note;
+              titleRef.current = note.title;
+              bodyRef.current = note.body;
+              setTitle(note.title);
+              setBody(note.body);
+              editorDrafts.delete(draftKey);
+              conflictRef.current = false;
+              setConflict(false);
+            }}
+          >
+            {t("Use saved version")}
+          </Button>
+        </Alert>
+      ) : null}
       {saveError ? (
         <Alert tone="danger">
           <span className="min-w-0 flex-1">
@@ -740,6 +814,7 @@ const PanelNoteEditor = memo(function PanelNoteEditor({
             if (saveTimer.current != null) window.clearTimeout(saveTimer.current);
             void enqueueSave(note.id, async () => {
               const deleted = await onDelete(note.id);
+              if (deleted) editorDrafts.delete(draftKey);
               if (!deleted) {
                 skipSave.current = false;
                 setDeleting(false);

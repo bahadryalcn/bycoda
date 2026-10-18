@@ -307,6 +307,17 @@ payloads inside their surface. Overflow must not hide recovery actions. Collecti
 filters live in named icon-triggered popovers, with an active indicator and reset
 inside. Frequent actions remain visible; secondary actions use the shared menu.
 
+Settings pages fill the available panel width through `BycodaSettings.css`;
+do not add a page-local form width cap. Independent topic cards use intrinsic
+columns and shared heading/content tracks so siblings in one row align at both
+edges. Keep long editors and tables across the available columns. Card bodies
+need a consistent inset, including helper text and empty states.
+The policies screen uses document navigation beside an inline reader, with privacy
+selected initially. The reader owns its scroll region; the settings shell stays
+fixed. At narrow widths the navigation moves above the reader.
+Limits and budgets are available directly in settings navigation and through the
+Usage limits view; both reuse the same quota and budget owners.
+
 ## Overlays, focus and motion
 
 `Modal`, `Popover`, `overlay.ts` and native popup routing own layering, Escape,
@@ -390,7 +401,9 @@ scoped resets. Existing storage/default/sync owners remain. The following contra
 continues to apply as remaining consumer and acceptance work is reconciled:
 
 1. Group theme/color, typography, density/accessibility and background/layout
-   settings into compact sections with advanced disclosure and per-section reset.
+   settings into compact, always-visible sections with per-section reset. Settings
+   preferences, including advanced fields, must not require expanding a disclosure.
+   Use shared rows, aligned controls and content previews to keep open sections scannable.
 2. Render a live specimen from the **actual** Button, fields, selection, status and
    overlay adapters. Remove separately painted preview controls and local color
    recipes. Distinguish a preview from an operation on user data.

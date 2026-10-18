@@ -68,33 +68,25 @@ export function NotificationAlerts() {
       <Group
         title={t("Application alerts")}
         layout="full"
-        scope={t(
-          "Applies across projects on this computer. Project categories and mute settings below further control project alerts.",
-        )}
         persistence={{ mode: "automatic" }}
-        description={t("How {p0} reaches you while you are looking somewhere else.", {
-          p0: PRODUCT_IDENTITY.displayName,
-        })}
+        description={t("Delivery preferences for all projects on this computer.")}
       >
         <Row
           id="sounds"
           label={t("Sounds")}
-          description={t(
-            "Short cues for project activity, finished turns and available updates. Choose categories under Project notifications below.",
-          )}
+          description={t("Play short sounds for project activity and updates.")}
         >
           <Toggle label={t("Sounds")} on={soundsEnabled} onChange={onSoundsEnabled} />
         </Row>
         <Row
           id="notifications"
-          label={t("Notifications")}
-          description={t(
-            "Notify when a reminder is due, or when an agent finishes or needs input in another session or while {p0} is in the background. Click the notification to open that session.",
-            { p0: PRODUCT_IDENTITY.displayName },
-          )}
+          label={t("Desktop notifications")}
+          description={t("Show alerts from other sessions or while {p0} is in the background.", {
+            p0: PRODUCT_IDENTITY.displayName,
+          })}
         >
           <Toggle
-            label={t("Notifications")}
+            label={t("Desktop notifications")}
             on={notificationsEnabled}
             onChange={onNotificationsEnabled}
           />
@@ -108,10 +100,24 @@ export function NotificationAlerts() {
                 "System permission has not been granted yet. Enabling notifications requests permission.",
               )
             : null}
-          {!notificationsEnabled ? (
-            <p>{t("Enable Notifications to deliver these alerts. Your choices are preserved.")}</p>
-          ) : null}
         </div>
+      </Group>
+      <Group
+        title={t("Desktop alert events")}
+        layout="full"
+        description={t(
+          "Choose which agent events reach your desktop. Click an alert to open its session.",
+        )}
+        dependency={
+          !notificationsEnabled
+            ? t("Enable Notifications to deliver these alerts. Your choices are preserved.")
+            : notificationPermission === "denied" || notificationPermission === "unsupported"
+              ? t(
+                  "You can choose events now, but desktop delivery requires system notification access.",
+                )
+              : undefined
+        }
+      >
         {NOTIFICATION_EVENT_SETTINGS.map((event) => (
           <Row
             key={event.id}
@@ -123,14 +129,7 @@ export function NotificationAlerts() {
                 ? t(
                     "Taskbar badges and flashing are available only on Windows. Your choice is preserved.",
                   )
-                : notificationsEnabled &&
-                    event.id !== "taskbar" &&
-                    (notificationPermission === "denied" ||
-                      notificationPermission === "unsupported")
-                  ? t(
-                      "You can choose events now, but desktop delivery requires system notification access.",
-                    )
-                  : undefined
+                : undefined
             }
           >
             <Toggle
@@ -145,7 +144,7 @@ export function NotificationAlerts() {
           </Row>
         ))}
       </Group>
-      <Group title={t("Daily summary")} layout="full" persistence={{ mode: "automatic" }}>
+      <Group title={t("Daily summary")} layout="full">
         <Row
           dependency={
             !notificationsEnabled
@@ -158,9 +157,7 @@ export function NotificationAlerts() {
           }
           id="daily-summary"
           label={t("Daily summary")}
-          description={t(
-            "One daily notification summarizes background tasks and goals across machines. The time uses this computer’s local clock; if the app opens later, the summary is delivered then. Click it to open the summary.",
-          )}
+          description={t("A daily overview of background tasks and goals across machines.")}
         >
           {
             <Select
@@ -187,6 +184,14 @@ export function NotificationAlerts() {
             }}
           />
         </Row>
+        <section className="notification-summary-help">
+          <h3>{t("Schedule details")}</h3>
+          <p>
+            {t(
+              "One daily notification summarizes background tasks and goals across machines. The time uses this computer’s local clock; if the app opens later, the summary is delivered then. Click it to open the summary.",
+            )}
+          </p>
+        </section>
       </Group>
     </div>
   );
@@ -207,7 +212,7 @@ function NotificationsBlocked() {
     }
   };
   return (
-    <span className="flex flex-wrap items-center gap-2 text-[12px] text-content/60">
+    <span className="notification-permission-message">
       {t("Notifications are blocked by system permission.")}
       {IS_MAC || IS_WIN ? (
         <SecondaryButton onClick={() => void openSettings()} disabled={opening}>

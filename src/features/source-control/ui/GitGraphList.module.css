@@ -1,0 +1,54 @@
+.workspace {
+  container-type: inline-size;
+}
+
+.workspaceHeader,
+.workspaceRow {
+  display: grid;
+  grid-template-columns: var(--git-graph-width) minmax(180px, 1fr) 64px 68px;
+  column-gap: 8px;
+  padding-inline: 12px;
+}
+
+.workspaceHeader {
+  text-transform: none;
+  font-weight: 400;
+  font-size: var(--ui-font-caption);
+}
+
+.workspaceRow {
+  font-weight: 400;
+}
+
+.author {
+  display: none;
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--ui-text-secondary);
+}
+
+.subject {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-inline-size: 0;
+}
+
+.date {
+  color: var(--ui-text-secondary);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--ui-font-caption);
+}
+
+@container (min-width: 850px) {
+  .workspaceHeader,
+  .workspaceRow {
+    grid-template-columns: var(--git-graph-width) minmax(180px, 1fr) 120px 64px 68px;
+  }
+
+  .author {
+    display: block;
+  }
+}

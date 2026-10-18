@@ -368,7 +368,7 @@ export interface ShortcutRecorderProps {
   label: string;
   recording?: boolean;
   onRecordingChange?: (recording: boolean) => void;
-  displayText?: string;
+  displayText?: ReactNode;
   hideActions?: boolean;
   hideLabel?: boolean;
   value?: string | null;
@@ -409,7 +409,7 @@ const RESERVED: ShortcutBinding[] = [
 type Pending = { shortcut: string; conflict: ShortcutBinding; reserved: boolean };
 
 const chip: Variants = {
-  enter: { opacity: 0, scale: 0.72, y: 4,},
+  enter: { opacity: 0, scale: 0.72, y: 4 },
   rest: (index: number) => ({
     opacity: 1,
     scale: 1,
@@ -731,12 +731,8 @@ export function ShortcutRecorder({
                   key={recording ? "prompt" : "placeholder"}
                   className={styles.placeholder}
                   data-recording={recording || undefined}
-                  initial={
-                    reduced
-                      ? { opacity: 0 }
-                      : { opacity: 0, y: 4,}
-                  }
-                  animate={{ opacity: 1, y: 0,}}
+                  initial={reduced ? { opacity: 0 } : { opacity: 0, y: 4 }}
+                  animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, transition: { duration: 0.08 } }}
                   transition={
                     reduced
@@ -825,12 +821,8 @@ export function ShortcutRecorder({
                   id={messageId}
                   className={styles.message}
                   data-tone={message.tone}
-                  initial={
-                    reduced
-                      ? { opacity: 0 }
-                      : { opacity: 0, y: "0.35em",}
-                  }
-                  animate={{ opacity: 1, y: 0,}}
+                  initial={reduced ? { opacity: 0 } : { opacity: 0, y: "0.35em" }}
+                  animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, transition: { duration: 0.08 } }}
                   transition={{
                     duration: reduced ? 0.1 : motionTokens.duration.standard,

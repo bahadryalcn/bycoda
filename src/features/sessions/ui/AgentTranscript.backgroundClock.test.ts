@@ -41,13 +41,15 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-function render(visible: boolean) {
+function render(visible: boolean, liveStatusInDock = false, pendingQuestion = false) {
   act(() =>
     root.render(
       createElement(AgentTranscript, {
         blocks,
         busy: true,
         visible,
+        liveStatusInDock,
+        pendingQuestion,
         backgroundTasks: ["npm run dev"],
       }),
     ),
@@ -66,5 +68,13 @@ describe("AgentTranscript background clock", () => {
     render(false);
     render(true);
     expect(container.textContent).toContain("Working for 1m 35s");
+  });
+
+  it("leaves the live clock to the companion dock without hiding waiting questions", () => {
+    render(true, true);
+    expect(container.textContent).not.toContain("Working for");
+    expect(container.textContent).toContain("It is running.");
+    render(true, true, true);
+    expect(container.textContent).toContain("Waiting for answers");
   });
 });

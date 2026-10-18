@@ -69,13 +69,14 @@ export function GeneratedImage({ image }: { image: GeneratedImageMeta }) {
     <div className="min-w-0 px-4 pb-3 pt-3">
       <Button
         fullWidth
+        layout="media"
         label={t("Open {p0} full screen", { p0: image.name })}
         variant="item"
         type="button"
         aria-label={t("Open {p0} full screen", { p0: image.name })}
         title={t("Open {p0} full screen", { p0: image.name })}
         onClick={() => setOpen(true)}
-        className="block max-w-full p-0"
+        className="max-w-full"
       >
         <img
           src={state.url}

@@ -1,56 +1,168 @@
 .notification-sheet {
   inset-block: 40px 32px;
-  inline-size: min(440px, 100vw);
+  inline-size: min(420px, 100%);
 }
-
+.notification-sheet-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 12px 16px 8px;
+}
+.notification-sheet-tabs {
+  display: flex;
+  gap: 4px;
+  padding: 0 16px 8px;
+  border-block-end: 1px solid var(--ui-tone-neutral-border);
+}
+.notification-sheet-list {
+  min-block-size: 0;
+  flex: 1;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  padding: 8px 12px 16px;
+}
+.notification-sheet-items {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
 .notification-sheet .approval-toast {
+  animation: none;
   border-style: solid;
+  background: var(--ui-surface);
   box-shadow: none;
+  backdrop-filter: none;
 }
-
-.notification-project-name,
-.notification-history-details summary {
-  overflow-wrap: anywhere;
+.notification-request-body {
+  align-items: stretch;
+  gap: 8px;
 }
-
-.notification-project-path {
+.notification-request-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
   min-inline-size: 0;
-  overflow: clip;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  margin-block-start: 4px;
 }
-
-.notification-history-details summary:focus-visible {
-  outline: 2px solid currentColor;
-  outline-offset: 2px;
-}
-
-.notification-history-details summary:active {
-  background: var(--ui-surface-pressed);
-}
-
-.notification-history-preview {
+.notification-request-preview {
   display: -webkit-box;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 3;
   overflow: clip;
   overflow-wrap: anywhere;
+  white-space: pre-wrap;
 }
-
+.notification-request-title {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: clip;
+  overflow-wrap: anywhere;
+}
+.notification-project {
+  display: inline-flex;
+  min-inline-size: 0;
+  text-align: start;
+  color: var(--ui-text-secondary);
+  font-size: var(--ui-font-caption);
+}
+.notification-project-name {
+  overflow: clip;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.notification-request-meta,
+.notification-history-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  min-inline-size: 0;
+  color: var(--ui-text-secondary);
+  font-size: var(--ui-font-caption);
+}
+.notification-request-meta .notification-project,
+.notification-history-meta .notification-project {
+  flex: 1;
+}
+.notification-popup-dismiss {
+  position: absolute;
+  inset-block-start: 4px;
+  inset-inline-end: 4px;
+}
+.notification-history-item {
+  padding: 12px 4px;
+  border-block-end: 1px solid var(--ui-tone-neutral-border);
+}
+.notification-history-item:last-child {
+  border-block-end: 0;
+}
+.notification-history-details summary {
+  cursor: pointer;
+  border-radius: 4px;
+  color: var(--ui-tone-neutral-fg);
+  font-size: var(--ui-font-secondary);
+  line-height: 1.5;
+}
+.notification-history-details summary::marker {
+  color: var(--ui-text-secondary);
+  font-size: var(--ui-font-caption);
+}
+.notification-history-title {
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+.notification-history-preview {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: clip;
+  overflow-wrap: anywhere;
+  margin-block-start: 4px;
+  color: var(--ui-text-secondary);
+  font-size: var(--ui-font-caption);
+  white-space: pre-wrap;
+}
+.notification-history-meta {
+  margin-block-start: 8px;
+}
+.notification-history-meta time {
+  font-variant-numeric: tabular-nums;
+}
 .notification-history-details[open] .notification-history-preview {
   display: none;
 }
-
-.notification-history-label {
+.notification-history-label,
+.notification-history-path {
+  margin-block-start: 8px;
   overflow-wrap: anywhere;
+  white-space: pre-wrap;
+  font-size: var(--ui-font-caption);
+  line-height: 1.6;
+  color: var(--ui-text-secondary);
 }
-
+.notification-options {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+}
 @media (hover: hover) and (pointer: fine) {
   .notification-history-details summary:hover {
     background: var(--ui-surface-hover);
   }
 }
-
+.notification-history-details summary:active {
+  background: var(--ui-surface-pressed);
+}
+@media (prefers-reduced-motion: reduce) {
+  .approval-toast {
+    animation: none;
+  }
+}
 @media (prefers-reduced-motion: no-preference) {
   .notification-sheet {
     animation: notification-sheet-enter 180ms ease-out;

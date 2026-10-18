@@ -1,6 +1,7 @@
 import { open } from "node:fs/promises";
 import { homedir } from "node:os";
 import { listHostSkills } from "./skills";
+import { SKILL_INVOCATION_GUIDANCE } from "../src/integrations/harness/core/skillGuidance";
 
 /** Resolve on the host at send time; never send client paths or cache skill bodies. */
 export async function prepareHostSkillPrompt(
@@ -37,13 +38,5 @@ export async function prepareHostSkillPrompt(
       }
     }),
   );
-  return [
-    "The user invoked skill(s) with /name or $name. Follow every instruction in each skill body. Resolve relative skill resources against the directory containing its SKILL.md file.",
-    "",
-    blocks.join("\n\n"),
-    "",
-    "---",
-    "",
-    text,
-  ].join("\n");
+  return [SKILL_INVOCATION_GUIDANCE, "", blocks.join("\n\n"), "", "---", "", text].join("\n");
 }

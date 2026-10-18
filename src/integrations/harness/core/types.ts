@@ -37,6 +37,7 @@ export type HarnessEvent =
    */
   | { type: "background.updated"; tasks: string[]; agents?: number }
   | ({ type: "interjection"; text: string } & InterjectionMeta)
+  /** Exact text increments; providers must normalize snapshots before emission. */
   | { type: "message.delta"; text: string }
   | { type: "message.completed" }
   | {
@@ -55,6 +56,7 @@ export type HarnessEvent =
       size: number;
       alt?: string;
     }
+  /** Exact text increments, including repeated tokens and whitespace. */
   | { type: "reasoning.delta"; text: string }
   | { type: "reasoning.completed" }
   | {
@@ -112,6 +114,7 @@ export type HarnessEvent =
       /** Tool call id of the parent Agent/Task call. */
       callId: string;
       used: number;
+      window?: number;
     }
   | {
       type: "approval.requested";

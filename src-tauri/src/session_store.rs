@@ -11,6 +11,7 @@ use tauri::{AppHandle, Emitter, Manager, State};
 
 mod content_search;
 pub(crate) mod incremental;
+pub mod usage;
 pub use content_search::{ContentSearchOptions, ContentSearchResult};
 
 const MIGRATION_V1: &str = r#"

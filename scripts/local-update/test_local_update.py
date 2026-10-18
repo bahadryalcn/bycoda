@@ -4,19 +4,73 @@ import os
 from contextlib import closing
 import json
 import pathlib
+import plistlib
+import shutil
 import sqlite3
+import subprocess
 import tarfile
 import tempfile
 import time
 import unittest
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from local_update import UPDATER_FEED, archive_package, dependency_action, dependency_key, fingerprint, sync_source, queue_install, validate_versions, validate_product_identity, finish_build, host_key, install_job_active, snapshot
 from local_update_lib import backup, count, safe_child, write_json, read_json, alive, digest, windows_binary_digest, PRODUCT_IDENTITY, package_identity
 from local_install import wait_idle, stop_windows_host, host_install
-from local_install import app_install, windows_app_process_filter, desktop_db
+from local_install import app_install, windows_app_process_filter, desktop_db, mac_app_update_paths
 
 class LocalUpdateTests(unittest.TestCase):
+    def test_mac_update_keeps_one_visible_app_and_restores_failed_install(self):
+        for fail_verification in (False, True):
+            with self.subTest(fail_verification=fail_verification), tempfile.TemporaryDirectory() as folder:
+                root = pathlib.Path(folder)
+                applications = root / 'Applications'
+                app = applications / 'bycoda.app'
+                app.mkdir(parents=True)
+                (app / 'previous.txt').write_text('recoverable old app')
+                release = root / 'release'
+                payload = release / 'bycoda.app'
+                binary = payload / 'Contents/MacOS/bycoda'
+                binary.parent.mkdir(parents=True)
+                binary.write_text('new binary')
+                with (payload / 'Contents/Info.plist').open('wb') as handle:
+                    plistlib.dump({'CFBundleShortVersionString': '0.6.13'}, handle)
+                db = root / 'desktop.db'
+                db.touch()
+                manifest = {'id': '0123456789abcdef-local', 'version': '0.6.13',
+                            'appHashes': {}, 'binaryHash': digest(binary)}
+                def command(args, **kwargs):
+                    if args[0] == 'ditto':
+                        shutil.copytree(args[1], args[2])
+                    elif args[0] == 'pgrep':
+                        raise subprocess.CalledProcessError(1, args)
+                    elif args[0] == 'codesign' and args[-1] == str(app) and fail_verification:
+                        raise RuntimeError('simulated signature failure')
+                    return ''
+                with patch('local_install.os', SimpleNamespace(name='posix')), \
+                     patch('local_install.MAC_APPLICATIONS', applications), \
+                     patch('local_install.desktop_db', return_value=db), \
+                     patch('local_install.verify_tree'), patch('local_install.time.sleep'), \
+                     patch('local_install.wait_idle'), patch('local_install.backup'), \
+                     patch('local_install.count', return_value=0), \
+                     patch('local_install.run', side_effect=command):
+                    if fail_verification:
+                        with self.assertRaisesRegex(RuntimeError, 'signature failure'):
+                            app_install(release, manifest, lambda *a, **k: None)
+                    else:
+                        app_install(release, manifest, lambda *a, **k: None)
+                saved, staged = mac_app_update_paths(app, manifest['id'])
+                self.assertEqual(list(applications.glob('*.app')), [app])
+                self.assertFalse(list(saved.parent.rglob('*.app')))
+                self.assertTrue((saved.parent.parent / '.metadata_never_index').exists())
+                if fail_verification:
+                    self.assertEqual((app / 'previous.txt').read_text(), 'recoverable old app')
+                    self.assertTrue((staged / 'Contents/MacOS/bycoda').exists())
+                else:
+                    self.assertEqual((saved / 'previous.txt').read_text(), 'recoverable old app')
+                    self.assertTrue((app / 'Contents/MacOS/bycoda').exists())
+
     @unittest.skipUnless(os.name == 'nt', 'Windows service recovery')
     def test_split_host_payload_survives_install_and_rollback(self):
         # Exercise real recursive copies and pointer restoration, never services.

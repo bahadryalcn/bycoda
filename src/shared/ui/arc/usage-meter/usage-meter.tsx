@@ -43,6 +43,8 @@ export interface UsageMeterProps {
   /** What is measured, such as "Workspace storage". */
   label: string;
   compact?: boolean;
+  /** Omit the interactive legend when a compact quota row already labels the value. */
+  showLegend?: boolean;
   showRemaining?: boolean;
   /** Used amounts in display order. Up to four read clearly. */
   segments: UsageMeterSegment[];
@@ -407,6 +409,7 @@ function Segment({
 export function UsageMeter({
   label,
   compact = false,
+  showLegend = true,
   showRemaining = false,
   segments,
   limit,
@@ -687,79 +690,81 @@ export function UsageMeter({
           aria-hidden="true"
         />
       </div>
-      <div
-        ref={legend}
-        className={styles.legend}
-        role="group"
-        aria-label={label}
-        onKeyDown={onLegendKey}
-      >
-        {items.map((item, index) => {
-          const warning = item.id === "free" && status === "over";
-          return (
-            <button
-              key={item.id}
-              type="button"
-              className={styles.item}
-              data-highlight={active ? (active === item.id ? "on" : "off") : undefined}
-              aria-pressed={pinned === item.id}
-              aria-label={`${item.label}, ${format(item.value)}`}
-              tabIndex={index === roving ? 0 : -1}
-              onClick={() => {
-                setRoving(index);
-                setPinned((current) => (current === item.id ? null : item.id));
-              }}
-              onFocus={() => {
-                setRoving(index);
-                setFocused(item.id);
-              }}
-              onBlur={() => setFocused(null)}
-              onPointerEnter={(event) => {
-                if (event.pointerType === "mouse") setHovered(item.id);
-              }}
-              onPointerLeave={(event) => {
-                if (event.pointerType === "mouse") setHovered(null);
-              }}
-            >
-              <span className={styles.itemHead}>
-                <span className={styles.key} aria-hidden="true">
-                  <AnimatePresence mode="popLayout" initial={false}>
-                    {warning ? (
-                      <motion.span
-                        key="alert"
-                        className={styles.keyIcon}
-                        variants={reduced ? fade : pop}
-                        initial="hidden"
-                        animate="shown"
-                        exit="gone"
-                      >
-                        <TriangleAlert size={12} strokeWidth={2} />
-                      </motion.span>
-                    ) : (
-                      <motion.span
-                        key="swatch"
-                        className={styles.swatch}
-                        data-index={item.id === "free" ? "free" : index}
-                        variants={reduced ? fade : pop}
-                        initial="hidden"
-                        animate="shown"
-                        exit="gone"
-                      />
-                    )}
-                  </AnimatePresence>
+      {showLegend && (
+        <div
+          ref={legend}
+          className={styles.legend}
+          role="group"
+          aria-label={label}
+          onKeyDown={onLegendKey}
+        >
+          {items.map((item, index) => {
+            const warning = item.id === "free" && status === "over";
+            return (
+              <button
+                key={item.id}
+                type="button"
+                className={styles.item}
+                data-highlight={active ? (active === item.id ? "on" : "off") : undefined}
+                aria-pressed={pinned === item.id}
+                aria-label={`${item.label}, ${format(item.value)}`}
+                tabIndex={index === roving ? 0 : -1}
+                onClick={() => {
+                  setRoving(index);
+                  setPinned((current) => (current === item.id ? null : item.id));
+                }}
+                onFocus={() => {
+                  setRoving(index);
+                  setFocused(item.id);
+                }}
+                onBlur={() => setFocused(null)}
+                onPointerEnter={(event) => {
+                  if (event.pointerType === "mouse") setHovered(item.id);
+                }}
+                onPointerLeave={(event) => {
+                  if (event.pointerType === "mouse") setHovered(null);
+                }}
+              >
+                <span className={styles.itemHead}>
+                  <span className={styles.key} aria-hidden="true">
+                    <AnimatePresence mode="popLayout" initial={false}>
+                      {warning ? (
+                        <motion.span
+                          key="alert"
+                          className={styles.keyIcon}
+                          variants={reduced ? fade : pop}
+                          initial="hidden"
+                          animate="shown"
+                          exit="gone"
+                        >
+                          <TriangleAlert size={12} strokeWidth={2} />
+                        </motion.span>
+                      ) : (
+                        <motion.span
+                          key="swatch"
+                          className={styles.swatch}
+                          data-index={item.id === "free" ? "free" : index}
+                          variants={reduced ? fade : pop}
+                          initial="hidden"
+                          animate="shown"
+                          exit="gone"
+                        />
+                      )}
+                    </AnimatePresence>
+                  </span>
+                  <span className={styles.itemLabel}>
+                    <Swap text={item.label} reduced={reduced} />
+                  </span>
                 </span>
-                <span className={styles.itemLabel}>
-                  <Swap text={item.label} reduced={reduced} />
+                <span className={styles.itemValue}>
+                  <Ticker value={item.value} decimals={decimals} reduced={reduced} />
+                  {unit && <span className={styles.itemUnit}>{unit}</span>}
                 </span>
-              </span>
-              <span className={styles.itemValue}>
-                <Ticker value={item.value} decimals={decimals} reduced={reduced} />
-                {unit && <span className={styles.itemUnit}>{unit}</span>}
-              </span>
-            </button>
-          );
-        })}
-      </div>
+              </button>
+            );
+          })}
+        </div>
+      )}
       <p className={styles.srOnly} aria-live="polite" aria-atomic="true">
         {announced.message}
       </p>

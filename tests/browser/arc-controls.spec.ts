@@ -1,5 +1,52 @@
 import { expect, test } from "@playwright/test";
 
+test("password reveal stays inside the input independently of its label and helper text", async ({
+  page,
+}) => {
+  await page.goto("/tests/browser/arc-controls.html");
+  const region = page.getByRole("region", { name: "Shared field families", exact: true });
+  const input = region.getByLabel("Fixture credential", { exact: true });
+  const reveal = region.getByRole("button", { name: "Show fixture credential", exact: true });
+  for (const reducedMotion of ["reduce", "no-preference"] as const) {
+    await page.emulateMedia({ reducedMotion });
+    for (const width of [320, 390, 768, 1440]) {
+      await page.setViewportSize({ width, height: 900 });
+      for (const light of [false, true]) {
+        await page.evaluate(
+          (enabled) => document.documentElement.classList.toggle("theme-light", enabled),
+          light,
+        );
+        await input.scrollIntoViewIfNeeded();
+        const field = (await input.boundingBox())!;
+        const action = (await reveal.boundingBox())!;
+        expect(action.x).toBeGreaterThan(field.x);
+        expect(action.x + action.width).toBeLessThan(field.x + field.width);
+        expect(action.y).toBeGreaterThanOrEqual(field.y);
+        expect(action.y + action.height).toBeLessThanOrEqual(field.y + field.height);
+        expect(Math.abs(action.y + action.height / 2 - field.y - field.height / 2)).toBeLessThan(1);
+        const reserved = await input.evaluate((element) =>
+          parseFloat(getComputedStyle(element).paddingInlineEnd),
+        );
+        expect(reserved).toBeGreaterThan(action.width);
+        expect(await region.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(
+          true,
+        );
+      }
+    }
+  }
+  await input.focus();
+  await page.keyboard.press("Tab");
+  await expect(reveal).toBeFocused();
+  await page.keyboard.press("Space");
+  await expect(input).toHaveAttribute("type", "text");
+  await expect(input).toBeFocused();
+  await expect(region.getByLabel("Saved fixture fields")).toHaveText("");
+  await page.keyboard.press("Tab");
+  await page.keyboard.press("Enter");
+  await expect(input).toHaveAttribute("type", "password");
+  await expect(input).toBeFocused();
+});
+
 test("field families preserve native editing, radio keys, secret reveal and action menu focus", async ({
   page,
 }) => {
@@ -150,6 +197,45 @@ test("searchable native forms preserve required focus, FormData, defaults, reset
   await expect(project).toBeFocused();
   await region.locator('label[for="native-project"]').click();
   await expect(project).toBeFocused();
+});
+
+test("expanding actions wait for pointer intent and keep the revealed target stable", async ({
+  page,
+}) => {
+  for (const reducedMotion of ["reduce", "no-preference"] as const) {
+    await page.emulateMedia({ reducedMotion });
+    for (const width of [390, 1280]) {
+      await page.setViewportSize({ width, height: 800 });
+      await page.goto("/tests/browser/arc-controls.html");
+      await page.evaluate(
+        (light) => document.documentElement.classList.toggle("theme-light", light),
+        width === 390,
+      );
+      const group = page.getByRole("toolbar", { name: "Sample note actions" });
+      const copy = group.getByRole("button", { name: "Copy sample", exact: true });
+      const add = group.getByRole("button", { name: "Add sample", exact: true });
+      await add.scrollIntoViewIfNeeded();
+      await page.mouse.move(0, 0);
+      await expect(copy).toHaveAttribute("data-expanded", "true");
+      const box = (await add.boundingBox())!;
+      await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+      await expect(copy).toHaveAttribute("data-expanded", "true");
+      await expect(add).toHaveAttribute("data-expanded", "true");
+      // Wait through the width animation without moving the pointer.
+      await page.waitForTimeout(400);
+      await expect(add).toHaveAttribute("data-expanded", "true");
+      await page.mouse.move(0, 0);
+      await expect(add).toHaveAttribute("data-expanded", "true");
+      await expect(copy).toHaveAttribute("data-expanded", "true");
+      await copy.focus();
+      await page.keyboard.press("ArrowRight");
+      await expect(add).toBeFocused();
+      await expect(add).toHaveAttribute("data-expanded", "true");
+      await page.keyboard.press("ArrowLeft");
+      await expect(copy).toBeFocused();
+      await expect(copy).toHaveAttribute("data-expanded", "true");
+    }
+  }
 });
 
 test("expanding actions preserve keyboard access and wait for the real async outcome", async ({

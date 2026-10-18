@@ -1,5 +1,5 @@
 import { Badge } from "../../../shared/ui/Badge";
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { IS_MAC } from "../../../platform/tauri/platform";
 import { t, useLocale } from "../../../shared/i18n";
 import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
@@ -16,9 +16,10 @@ import {
   type FileTabMode,
 } from "../model/settings";
 import { Group, Row, Segmented, Toggle } from "./settingsControls";
-import { WorkspaceFeatureSettings } from "./WorkspaceFeatureSettings";
+import { WorkspaceFeatureSettings, WorkspaceToolsHelp } from "./WorkspaceFeatureSettings";
+import "./WorkspaceSettings.css";
 
-export function WorkspacePage() {
+export function WorkspacePage({ children }: { children?: ReactNode }) {
   useLocale();
   const [liveAgentsEnabled, setLiveAgentsEnabled] = useState(loadLiveAgentsEnabled);
   const [fileTabMode, setFileTabMode] = useState<FileTabMode>(loadFileTabMode);
@@ -45,19 +46,15 @@ export function WorkspacePage() {
   };
 
   return (
-    <>
-      <Group
-        title={t("Files and navigation")}
-        description={t("How project navigation and workspace tabs behave.")}
-        scope={t("Applies to this app's workspace across projects.")}
-        persistence={{ mode: "automatic" }}
-      >
+    <div className="workspace-settings">
+      <p className="workspace-save-note">
+        {t("Applies across projects. Changes save automatically.")}
+      </p>
+      <Group title={t("Files and navigation")} layout="full">
         <Row
           id="file-tabs"
           label={t("File tabs")}
-          description={t(
-            "Open files beside the active chat, or give each file a normal tab in the top bar. Top-bar files can still be combined into split panes.",
-          )}
+          description={t("Choose where files open. Both layouts support split panes.")}
         >
           <Segmented
             label={t("File tabs")}
@@ -80,21 +77,10 @@ export function WorkspacePage() {
           />
         </Row>
       </Group>
-      <Group
-        title={t("Workspace tools")}
-        description={t(
-          "Choose which tools are visible in the workspace. Return here to show a hidden tool again.",
-        )}
-        scope={t("Applies to this app's workspace across projects.")}
-        persistence={{ mode: "automatic" }}
-      >
+      <Group title={t("Workspace tools")} layout="full" action={<WorkspaceToolsHelp />}>
         <WorkspaceFeatureSettings />
       </Group>
-      <Group
-        title={t("Session access")}
-        description={t("Open prompts quickly and follow work across projects.")}
-        persistence={{ mode: "automatic" }}
-      >
+      <Group title={t("Session access")} layout="full">
         {IS_MAC && (
           <Row
             id="quick-composer"
@@ -122,9 +108,7 @@ export function WorkspacePage() {
         <Row
           id="working-agents"
           label={t("Working agents")}
-          description={t(
-            "A card on the project rail lists working or just-finished chats you are not looking at, so you can jump across projects. Finished turns stay until you open that session.",
-          )}
+          description={t("Show running and recently finished chats in the project rail.")}
         >
           <Toggle
             label={t("Working agents")}
@@ -133,6 +117,7 @@ export function WorkspacePage() {
           />
         </Row>
       </Group>
-    </>
+      {children}
+    </div>
   );
 }

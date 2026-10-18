@@ -62,6 +62,17 @@ function keyDown(target: Element, key: string) {
 }
 
 describe("QuestionForm keyboard navigation", () => {
+  it("shows a provider's repeated question only once and names free-entry answers", () => {
+    const typed = prompt();
+    typed.questions[0].header = typed.questions[0].prompt;
+    typed.questions[0].options = [];
+    typed.questions[0].allowCustom = true;
+    act(() => root.render(createElement(QuestionForm, { prompt: typed, onReply: vi.fn() })));
+    expect(container.textContent?.match(/Pick a colour/g)).toHaveLength(1);
+    expect(container.querySelector("legend")?.textContent).toBe("Pick a colour");
+    expect(container.querySelector("input")?.getAttribute("aria-label")).toBe("Type your answer");
+  });
+
   it("revisits an answer and sends its edited selection while preserving later answers", () => {
     const onReply = vi.fn();
     const questions = prompt();

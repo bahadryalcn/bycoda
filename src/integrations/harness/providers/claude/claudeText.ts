@@ -372,7 +372,7 @@ function handleStreamEvent(session: LiveText, rec: Record<string, unknown>): voi
   const delta = streamDeltaFromEvent(rec);
   if (delta) {
     if (delta.kind === "assistant") {
-      session.output = mergeStream(session.output, delta.text);
+      session.output += delta.text;
       session.onEvent?.({ type: "message.delta", text: delta.text });
     } else {
       session.onEvent?.({ type: "reasoning.delta", text: delta.text });

@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import type { CSSProperties, FocusEvent, KeyboardEvent, PointerEvent, ReactNode } from "react";
+import type { CSSProperties, FocusEvent, KeyboardEvent, PointerEvent, ReactNode, Ref } from "react";
 import { AnimatePresence, animate, motion, useMotionValue, useReducedMotion } from "motion/react";
 import type { TargetAndTransition, Transition, Variants } from "motion/react";
 import { motionTokens } from "../lib/motion-tokens";
@@ -11,6 +11,16 @@ import styles from "./expanding-button-group.module.css";
 export type ExpandingButtonGroupSize = "sm" | "md";
 export type ExpandingButtonGroupTone = ButtonTone;
 const MotionButton = motion.create(Button);
+
+/** A composite can own its menu while the group owns its action presentation. */
+export interface ExpandingButtonGroupTriggerProps {
+  ref?: Ref<HTMLButtonElement>;
+  onSelect?: () => void | boolean | Promise<void | boolean>;
+  disabled?: boolean;
+  ariaLabel?: string;
+  "aria-haspopup"?: "menu" | "dialog";
+  "aria-expanded"?: boolean;
+}
 
 export interface ExpandingButtonGroupItem {
   /** Stable key for the action. Also the value passed to onAction. */
@@ -31,6 +41,7 @@ export interface ExpandingButtonGroupItem {
   active?: boolean;
   ariaLabel?: string;
   onOpenContextMenu?: (x: number, y: number) => void;
+  render?: (renderTrigger: (props: ExpandingButtonGroupTriggerProps) => ReactNode) => ReactNode;
 }
 
 export interface ExpandingButtonGroupProps {
@@ -61,6 +72,9 @@ const metrics = {
 
 /** Pixels the pointer must travel into a neighbouring action before the expansion moves to it. */
 const hysteresis = 4;
+// Let people aim before moving the targets, and tolerate brief trips outside the row.
+const hoverDelay = 180;
+const leaveDelay = 280;
 
 const enter = [...motionTokens.ease.enter] as [number, number, number, number];
 const standard = [...motionTokens.ease.standard] as [number, number, number, number];
@@ -166,7 +180,20 @@ interface ItemProps {
   onFocus: (item: ExpandingButtonGroupItem, event: FocusEvent<HTMLButtonElement>) => void;
 }
 
-function Item({
+function Item(props: ItemProps) {
+  if (props.item.render) {
+    return props.item.render((trigger) => (
+      <ItemButton
+        {...props}
+        item={{ ...props.item, ...trigger, disabled: props.item.disabled || trigger.disabled }}
+        trigger={trigger}
+      />
+    ));
+  }
+  return <ItemButton {...props} />;
+}
+
+function ItemButton({
   item,
   size,
   expanded,
@@ -177,7 +204,8 @@ function Item({
   onPointerDown,
   onClick,
   onFocus,
-}: ItemProps) {
+  trigger,
+}: ItemProps & { trigger?: ExpandingButtonGroupTriggerProps }) {
   const m = metrics[size];
   const labelRef = useRef<HTMLSpanElement>(null);
   const doneRef = useRef<HTMLSpanElement>(null);
@@ -216,12 +244,16 @@ function Item({
       if (measured) settled.current = true;
       return;
     }
-    animate(width, target, motionTokens.spring.morph);
+    const animation = animate(width, target, motionTokens.spring.smooth);
+    return () => animation.stop();
   }, [target, measured, reduced, width]);
 
   const word = showDone ? item.doneLabel! : item.label;
   return (
     <MotionButton
+      ref={trigger?.ref}
+      aria-haspopup={trigger?.["aria-haspopup"]}
+      aria-expanded={trigger?.["aria-expanded"]}
       variant="ghost"
       motion="none"
       shape="pill"
@@ -341,6 +373,13 @@ export function ExpandingButtonGroup({
   // Refs mirror what the pointer and keyboard are doing right now, so leave and blur handlers can fall back correctly.
   const pointerOver = useRef<string | null>(null);
   const pointerAt = useRef<{ x: number; y: number } | null>(null);
+  const hoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const hoverTarget = useRef<string | null>(null);
+  const cancelHover = () => {
+    if (hoverTimer.current) clearTimeout(hoverTimer.current);
+    hoverTimer.current = null;
+    hoverTarget.current = null;
+  };
   const keyFocus = useRef<string | null>(null);
   const touchOpen = useRef<string | null>(null);
   const press = useRef<{ id: string; kind: string; wasExpanded: boolean } | null>(null);
@@ -356,6 +395,7 @@ export function ExpandingButtonGroup({
     return () => {
       mounted.current = false;
       if (timer.current) clearTimeout(timer.current);
+      if (hoverTimer.current) clearTimeout(hoverTimer.current);
     };
   }, []);
 
@@ -430,6 +470,7 @@ export function ExpandingButtonGroup({
     item: ExpandingButtonGroupItem,
     event: PointerEvent<HTMLButtonElement>,
   ) => {
+    cancelHover();
     press.current = { id: item.id, kind: event.pointerType, wasExpanded: expandedId === item.id };
   };
 
@@ -456,6 +497,7 @@ export function ExpandingButtonGroup({
       /* older engines expand on any focus */
     }
     if (!visible) return;
+    cancelHover();
     keyFocus.current = item.id;
     setIntent(item.id);
   };
@@ -470,13 +512,21 @@ export function ExpandingButtonGroup({
   // Hover follows real pointer movement only. Expanding moves the buttons, and a button that slides under a resting pointer
   // must not take over, or two neighbours could trade places back and forth.
   const onPointerMove = (event: PointerEvent<HTMLDivElement>) => {
-    if (event.pointerType !== "mouse") return;
+    if (event.pointerType !== "mouse" || event.buttons !== 0) return;
     const at = pointerAt.current;
     if (at && Math.abs(at.x - event.clientX) < 1 && Math.abs(at.y - event.clientY) < 1) return;
     pointerAt.current = { x: event.clientX, y: event.clientY };
     const button = (event.target as HTMLElement).closest<HTMLElement>("[data-ebg-item]");
     const id = button?.dataset.id;
-    if (!button || !id || id === pointerOver.current) return;
+    if (!button || !id) {
+      cancelHover();
+      return;
+    }
+    if (id === expandedId) {
+      cancelHover();
+      pointerOver.current = id;
+      return;
+    }
     // Hysteresis: moving from one action to the next needs the pointer a few pixels inside the new one, so resting on a
     // boundary never flips between them.
     if (pointerOver.current) {
@@ -484,14 +534,27 @@ export function ExpandingButtonGroup({
       if (event.clientX < box.left + hysteresis || event.clientX > box.right - hysteresis) return;
     }
     pointerOver.current = id;
-    setIntent(id);
+    if (hoverTarget.current === id) return;
+    cancelHover();
+    hoverTarget.current = id;
+    hoverTimer.current = setTimeout(() => {
+      cancelHover();
+      const at = pointerAt.current;
+      // A previous width animation may have moved this target away. Never chase it.
+      const underPointer = at && document.elementFromPoint(at.x, at.y)?.closest("[data-ebg-item]");
+      if (underPointer === button) setIntent(id);
+    }, hoverDelay);
   };
 
   const onPointerLeave = (event: PointerEvent<HTMLDivElement>) => {
     if (event.pointerType !== "mouse") return;
     pointerAt.current = null;
     pointerOver.current = null;
-    setIntent(doneRef.current ?? keyFocus.current);
+    cancelHover();
+    hoverTimer.current = setTimeout(() => {
+      cancelHover();
+      setIntent(doneRef.current ?? keyFocus.current);
+    }, leaveDelay);
   };
 
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {

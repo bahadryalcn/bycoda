@@ -172,6 +172,13 @@ export function ShortcutEditor({
           platform={IS_MAC ? "mac" : "other"}
           disabled={busy}
           recording={recording}
+          displayKeys={
+            !recording && !busy && display && display !== t("Unassigned")
+              ? (display.match(/[⌘⌃⌥⇧]|(?:Ctrl|Control|Alt|Shift|Win)\+|.+/g) ?? [display]).map(
+                  (key) => (key.length > 1 ? key.replace(/\+$/, "") : key),
+                )
+              : undefined
+          }
           onRecordingChange={(next) => {
             if (next) beginRecording();
             else setRecording(false);
@@ -323,11 +330,12 @@ export function KeybindingsPage() {
   };
 
   return (
-    <Group
-      title={t("Shortcuts")}
-      layout="full"
-      description={t("Click a shortcut to record new keys. Changes save automatically.")}
-      action={
+    <div className={styles.page}>
+      <Group
+        title={t("Shortcuts")}
+        layout="full"
+        description={t("Click a shortcut to record new keys. Changes save automatically.")}
+      >
         <div className={styles.toolbar}>
           <TextField
             type="search"
@@ -425,82 +433,81 @@ export function KeybindingsPage() {
             </Popover>
           ) : null}
         </div>
-      }
-    >
-      <div className={styles.list}>
-        {rows.length === 0 ? (
-          <div className={styles.empty}>
-            <p>{t("No matching bindings")}</p>
-            <Button
-              variant="ghost"
-              onClick={() => {
-                setQuery("");
-                resetFilters();
-              }}
-            >
-              {t("Reset filters")}
-            </Button>
-          </div>
-        ) : (
-          categories.map((group) => {
-            const entries = rows.filter((row) => row.command.startsWith(`${group}:`));
-            if (!entries.length) return null;
-            return (
-              <section key={group} aria-label={t(group)}>
-                <h3 className={styles.category}>
-                  {t(group)} <span>{entries.length}</span>
-                </h3>
-                {entries.map((row) => {
-                  const override = overrides[row.command];
-                  const disabled = override?.disabled === true;
-                  return (
-                    <Row
-                      key={row.command}
-                      id={keybindingSettingId(row.command)}
-                      label={
-                        <span
-                          title={t(row.command)}
-                          className={disabled ? styles.disabled : undefined}
-                        >
-                          {t(row.command).replace(/^[^:]+:\s*/, "")}
-                          {isModified(row.command) ? (
-                            <span className={styles.modified}>{t("Modified")}</span>
-                          ) : null}
-                        </span>
-                      }
-                      scope={
-                        row.when === "Always" ? undefined : t("When: {p0}", { p0: t(row.when) })
-                      }
-                      description={
-                        isModified(row.command)
-                          ? t("Default: {p0}", {
-                              p0:
-                                KEYBINDINGS.find((entry) => entry.command === row.command)?.keys ||
-                                t("Unassigned"),
-                            })
-                          : undefined
-                      }
-                    >
-                      {row.command === "App: Quick Composer" ? (
-                        <QuickComposerShortcutEditor
-                          onSaved={() => setOverrides({ ...loadKeybindingOverrides() })}
-                        />
-                      ) : (
-                        <KeybindingShortcutEditor
-                          command={row.command}
-                          display={disabled ? null : row.keys || t("Unassigned")}
-                          modified={Boolean(override)}
-                          onSave={save}
-                        />
-                      )}
-                    </Row>
-                  );
-                })}
-              </section>
-            );
-          })
-        )}
-      </div>
-    </Group>
+        <div className={styles.list}>
+          {rows.length === 0 ? (
+            <div className={styles.empty}>
+              <p>{t("No matching bindings")}</p>
+              <Button
+                variant="ghost"
+                onClick={() => {
+                  setQuery("");
+                  resetFilters();
+                }}
+              >
+                {t("Reset filters")}
+              </Button>
+            </div>
+          ) : (
+            categories.map((group) => {
+              const entries = rows.filter((row) => row.command.startsWith(`${group}:`));
+              if (!entries.length) return null;
+              return (
+                <section key={group} aria-label={t(group)}>
+                  <h3 className={styles.category}>
+                    {t(group)} <span>{entries.length}</span>
+                  </h3>
+                  {entries.map((row) => {
+                    const override = overrides[row.command];
+                    const disabled = override?.disabled === true;
+                    return (
+                      <Row
+                        key={row.command}
+                        id={keybindingSettingId(row.command)}
+                        label={
+                          <span
+                            title={t(row.command)}
+                            className={disabled ? styles.disabled : undefined}
+                          >
+                            {t(row.command).replace(/^[^:]+:\s*/, "")}
+                            {isModified(row.command) ? (
+                              <span className={styles.modified}>{t("Modified")}</span>
+                            ) : null}
+                          </span>
+                        }
+                        scope={
+                          row.when === "Always" ? undefined : t("When: {p0}", { p0: t(row.when) })
+                        }
+                        description={
+                          isModified(row.command)
+                            ? t("Default: {p0}", {
+                                p0:
+                                  KEYBINDINGS.find((entry) => entry.command === row.command)
+                                    ?.keys || t("Unassigned"),
+                              })
+                            : undefined
+                        }
+                      >
+                        {row.command === "App: Quick Composer" ? (
+                          <QuickComposerShortcutEditor
+                            onSaved={() => setOverrides({ ...loadKeybindingOverrides() })}
+                          />
+                        ) : (
+                          <KeybindingShortcutEditor
+                            command={row.command}
+                            display={disabled ? null : row.keys || t("Unassigned")}
+                            modified={Boolean(override)}
+                            onSave={save}
+                          />
+                        )}
+                      </Row>
+                    );
+                  })}
+                </section>
+              );
+            })
+          )}
+        </div>
+      </Group>
+    </div>
   );
 }

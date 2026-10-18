@@ -89,7 +89,13 @@ const CIRCLE_STROKE_WIDTH = 2;
 export const GRAPH_ROW_PX = SWIMLANE_HEIGHT;
 
 /** Lane colors, cycled as new branches appear. */
-export const COLOR_REGISTRY = [themePalette.hexFFB000, themePalette.hexDC267F, themePalette.hex994F00, themePalette.hex40B0A6, themePalette.hexB66DFF] as const;
+export const COLOR_REGISTRY = [
+  themePalette.hexFFB000,
+  themePalette.hexDC267F,
+  themePalette.hex994F00,
+  themePalette.hex40B0A6,
+  themePalette.hexB66DFF,
+] as const;
 
 /** Current branch. */
 export const HISTORY_ITEM_REF_COLOR = themePalette.hex75BEFF;
@@ -186,6 +192,7 @@ function currentRefIds(commits: GraphCommit[]): {
 /** Assign swimlanes for `git log --topo-order` (newest first). */
 export function layoutGitGraph(commits: GraphCommit[]): HistoryItemViewModel[] {
   const colorMap = buildColorMap(commits);
+  const commitsBySha = new Map(commits.map((commit) => [commit.sha, commit]));
   const current = currentRefIds(commits);
   let colorIndex = -1;
   const viewModels: HistoryItemViewModel[] = [];
@@ -220,7 +227,7 @@ export function layoutGitGraph(commits: GraphCommit[]): HistoryItemViewModel[] {
       if (i === 0) {
         color = getLabelColorIdentifier(commit.refs, colorMap);
       } else {
-        const parent = commits.find((item) => item.sha === parentIds[i]);
+        const parent = commitsBySha.get(parentIds[i]!);
         color = parent ? getLabelColorIdentifier(parent.refs, colorMap) : undefined;
       }
       if (!color) {
@@ -276,7 +283,19 @@ export function historyItemIndex(viewModel: HistoryItemViewModel): number {
 }
 
 /** One row of graph paths and circles. */
+// Layout rows are immutable snapshots. Weak keys release geometry when a history
+// snapshot is replaced, while scrolling back reuses paths for surviving rows.
+const geometryCache = new WeakMap<HistoryItemViewModel, HistoryItemGraph>();
+
 export function historyItemGraph(viewModel: HistoryItemViewModel): HistoryItemGraph {
+  const cached = geometryCache.get(viewModel);
+  if (cached) return cached;
+  const graph = buildHistoryItemGraph(viewModel);
+  geometryCache.set(viewModel, graph);
+  return graph;
+}
+
+function buildHistoryItemGraph(viewModel: HistoryItemViewModel): HistoryItemGraph {
   const { parentIds, inputSwimlanes, outputSwimlanes, kind } = viewModel;
   const inputIndex = inputSwimlanes.findIndex((node) => node.id === viewModel.sha);
   const circleIndex = inputIndex !== -1 ? inputIndex : inputSwimlanes.length;

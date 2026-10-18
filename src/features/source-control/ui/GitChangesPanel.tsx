@@ -1,4 +1,7 @@
 import { SplitButton } from "../../../shared/ui/SplitButton";
+import { SearchInput } from "../../../shared/ui/SearchInput";
+import { Popover } from "../../../shared/ui/Popover";
+import { useRetainedState } from "../../../shared/hooks/useRetainedState";
 import { collator } from "../../../shared/lib/intl";
 import { useVirtualizer, defaultRangeExtractor } from "@tanstack/react-virtual";
 import { useStableCallback } from "../../../shared/hooks/useStableCallback";
@@ -14,6 +17,7 @@ import {
   CloudUpload,
   ExternalLink,
   FileDiff,
+  ListFilter,
   FolderTree,
   GitPullRequest,
   ListBullet,
@@ -34,6 +38,7 @@ import {
   Suspense,
   lazy,
   useCallback,
+  useDeferredValue,
   useEffect,
   useLayoutEffect,
   useMemo,
@@ -135,6 +140,7 @@ import { useLegacyConflictStatus } from "../hooks/useLegacyConflictStatus";
 import { confirmNative, confirmDiscardFile } from "../model/gitConfirmation";
 import {
   fetchGitIndex,
+  peekFullGitIndex,
   invalidateGitIndex,
   notifyGitChangedWith,
   type GitChangeHint,
@@ -142,6 +148,11 @@ import {
 
 import { GitFeedback } from "./GitFeedback";
 import { useGitResource } from "../hooks/useGitResource";
+import {
+  ACTIVE_PROJECT_REFRESH_MS,
+  GIT_PANEL_ENTRY_FRESH_MS,
+  GITHUB_PR_FRESH_MS,
+} from "../model/gitRefreshPolicy";
 import { GitGenerationSettings, useGitGenerationChoice } from "./GitGenerationSettings";
 import { Button } from "../../../shared/ui/Button";
 import type { Worktree } from "../model/worktrees";
@@ -149,7 +160,7 @@ import { requestWorktreeManagement } from "../model/worktreeManagement";
 import styles from "./CheckoutHeader.module.css";
 import { TextareaField } from "../../../shared/ui/TextareaField";
 
-export const GIT_POLL_MS = 15_000;
+export const GIT_POLL_MS = ACTIVE_PROJECT_REFRESH_MS;
 
 let stagedOpen = true;
 let changesOpen = true;
@@ -759,6 +770,9 @@ function ChangedFiles({
   // Git refuses to commit with unmerged paths; say which, instead of its error.
   const blockedMessage = commitBlockedMessage(conflicts);
   const [view, setView] = useState<ChangesView>(changesView);
+  const [fileQuery, setFileQuery] = useRetainedState(`git-file-filter:${cwd}`, "");
+  const [filterAnchor, setFilterAnchor] = useState<HTMLElement | null>(null);
+  const deferredFileQuery = useDeferredValue(fileQuery).trim().toLowerCase();
   const {
     pr,
     reload: reloadPr,
@@ -767,6 +781,30 @@ function ChangedFiles({
   } = usePrStatus(cwd, index?.branch, active && !!index?.remote);
   const staged = useMemo(() => files.filter((file) => file.staged), [files]);
   const unstaged = useMemo(() => files.filter((file) => file.unstaged), [files]);
+  const visibleStaged = useMemo(
+    () => staged.filter((file) => file.relative.toLowerCase().includes(deferredFileQuery)),
+    [staged, deferredFileQuery],
+  );
+  const visibleUnstaged = useMemo(
+    () => unstaged.filter((file) => file.relative.toLowerCase().includes(deferredFileQuery)),
+    [unstaged, deferredFileQuery],
+  );
+  const fileFilter = (
+    <Button
+      size="sm"
+      variant="ghost"
+      motion="none"
+      iconOnly
+      label={t("Filter changed files")}
+      title={t("Filter changed files")}
+      aria-haspopup="dialog"
+      aria-expanded={!!filterAnchor}
+      aria-pressed={!!fileQuery.trim()}
+      onClick={(event) => setFilterAnchor(filterAnchor ? null : event.currentTarget)}
+    >
+      <ListFilter className="size-3.5" />
+    </Button>
+  );
   const hasRemote = Boolean(index?.remote);
   const hasOpenPr = pr?.state === "open";
   const diverged = (index?.ahead ?? 0) > 0 && (index?.behind ?? 0) > 0;
@@ -1421,6 +1459,43 @@ function ChangedFiles({
       {failure ? (
         <RemoteLoadError cwd={cwd} failure={failure} stale={!!index} onRetry={() => onMutated()} />
       ) : null}
+      {filterAnchor ? (
+        <Popover
+          anchor={filterAnchor}
+          side="bottom"
+          align="end"
+          width={280}
+          role="dialog"
+          aria-label={t("Filter changed files")}
+          onDismiss={(reason) => {
+            if (reason === "escape") filterAnchor.focus({ preventScroll: true });
+            setFilterAnchor(null);
+          }}
+          className="p-3"
+        >
+          <SearchInput
+            type="search"
+            appearance="field"
+            standalone
+            autoFocus
+            value={fileQuery}
+            aria-label={t("File or folder name")}
+            placeholder={t("File or folder name")}
+            onChange={(event) => setFileQuery(event.target.value)}
+            containerClassName="w-full"
+          />
+          <Button
+            size="sm"
+            variant="ghost"
+            motion="none"
+            disabled={!fileQuery}
+            onClick={() => setFileQuery("")}
+            className="mt-2"
+          >
+            {t("Reset filters")}
+          </Button>
+        </Popover>
+      ) : null}
       <div
         // Grouped repositories scroll in the workspace list. A nested scroll
         // container would contain wheel gestures even when its files fit.
@@ -1492,6 +1567,7 @@ function ChangedFiles({
               <FileSection
                 title={t("Staged Changes")}
                 count={staged.length}
+                headerExtra={fileFilter}
                 open={stagedExpanded}
                 onToggle={() => {
                   stagedOpen = !stagedExpanded;
@@ -1517,7 +1593,7 @@ function ChangedFiles({
                 ]}
               >
                 <ChangeList
-                  files={staged}
+                  files={visibleStaged}
                   onOpenInEditor={onOpenInEditor}
                   view={view}
                   kind="staged"
@@ -1536,6 +1612,7 @@ function ChangedFiles({
               <FileSection
                 title={t("Changes")}
                 count={unstaged.length}
+                headerExtra={staged.length === 0 ? fileFilter : undefined}
                 open={changesExpanded}
                 onToggle={() => {
                   changesOpen = !changesExpanded;
@@ -1568,7 +1645,7 @@ function ChangedFiles({
                 ]}
               >
                 <ChangeList
-                  files={unstaged}
+                  files={visibleUnstaged}
                   onOpenInEditor={onOpenInEditor}
                   view={view}
                   kind="unstaged"
@@ -1582,6 +1659,12 @@ function ChangedFiles({
                   onFolderAction={runFolder}
                 />
               </FileSection>
+            ) : null}
+            {deferredFileQuery ? (
+              <p role="status" className="px-3 py-1 text-xs text-[var(--ui-text-secondary)]">
+                {visibleStaged.length + visibleUnstaged.length} / {staged.length + unstaged.length}{" "}
+                {t("files")}
+              </p>
             ) : null}
           </>
         )}
@@ -1607,7 +1690,7 @@ function usePrStatus(cwd: string, branch: string | null | undefined, enabled: bo
     enabled && !!cwd && cwd !== "~" && !!branch,
     read,
     true,
-    600_000,
+    GITHUB_PR_FRESH_MS,
     true,
   );
   return {
@@ -1775,6 +1858,7 @@ export function FileSection({
   view,
   onToggleView,
   headerActions,
+  headerExtra,
   children,
 }: {
   title: string;
@@ -1791,6 +1875,7 @@ export function FileSection({
     label?: string;
     onClick: () => void;
   }[];
+  headerExtra?: ReactNode;
   children: ReactNode;
 }) {
   useLocale();
@@ -1823,6 +1908,7 @@ export function FileSection({
             {count}
           </span>
         </Button>
+        {headerExtra}
         {view && onToggleView ? (
           <IconAction
             title={view === "tree" ? t("View as List") : t("View as Tree")}
@@ -2512,6 +2598,8 @@ function useDiffIndex(
   const [nonce, setNonce] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const handledRefresh = useRef({ cwd, nonce: 0 });
+  const failedRead = useRef<{ cwd: string; at: number } | null>(null);
   const indexRef = useRef(index);
   useLayoutEffect(() => {
     indexRef.current = index;
@@ -2549,35 +2637,47 @@ function useDiffIndex(
     let inFlight = false;
     let pending = false;
 
-    const load = async (fresh = false) => {
+    const load = async (fresh = false, maxAgeMs = ACTIVE_PROJECT_REFRESH_MS) => {
       if (inFlight) {
-        pending = true;
+        pending ||= fresh;
         return;
       }
-      if (document.hidden && nonce === 0) return;
+      if (document.hidden && !fresh) return;
+      if (
+        !fresh &&
+        failedRead.current?.cwd === cwd &&
+        Date.now() - failedRead.current.at < ACTIVE_PROJECT_REFRESH_MS
+      )
+        return;
       inFlight = true;
       setLoading(!indexRef.current);
       try {
-        // Opening the panel (or a reload that bumped `nonce`) reads git itself.
+        // Reopening may reuse a recent full index; explicit refresh and known
+        // changes always read beyond the shared cache.
         const next = await fetchGitIndex(cwd, {
           full: true,
-          since: fresh ? Date.now() : undefined,
+          since: fresh ? Date.now() : Date.now() - maxAgeMs + 1,
         });
         if (cancelled || holdRef.current) return;
+        failedRead.current = null;
         setError(null);
         if (remote) reportRemoteLoad(cwd, "changes");
         const prev = indexRef.current;
         const announced = announcedRef.current;
         announcedRef.current = false;
+        applyProjectDiffStats(
+          cwd,
+          {
+            files: next.files.length + (next.conflicts?.length ?? 0),
+            additions: next.additions,
+            deletions: next.deletions,
+          },
+          peekFullGitIndex(cwd)?.at,
+        );
         if (sameIndex(prev, next)) return;
         indexByCwd.set(cwd, next);
         indexRef.current = next;
         setIndex(next);
-        applyProjectDiffStats(cwd, {
-          files: next.files.length + (next.conflicts?.length ?? 0),
-          additions: next.additions,
-          deletions: next.deletions,
-        });
         if (prev) {
           const paths = changedFilePaths(prev, next);
           invalidateWatchedFiles(paths);
@@ -2595,6 +2695,7 @@ function useDiffIndex(
         }
       } catch (error) {
         if (cancelled) return;
+        failedRead.current = { cwd, at: Date.now() };
         if (remote) {
           reportRemoteLoad(cwd, "changes", error);
         } else {
@@ -2605,12 +2706,15 @@ function useDiffIndex(
         inFlight = false;
         if (pending && !cancelled) {
           pending = false;
-          void load();
+          void load(true);
         }
       }
     };
 
-    void load(true);
+    const explicitRefresh =
+      handledRefresh.current.cwd === cwd && handledRefresh.current.nonce !== nonce;
+    handledRefresh.current = { cwd, nonce };
+    void load(explicitRefresh, GIT_PANEL_ENTRY_FRESH_MS);
     const onResume = () => {
       if (polling && !document.hidden) void load();
     };
@@ -2628,7 +2732,7 @@ function useDiffIndex(
           // Release this mounted panel's optimistic hold and refresh it too.
           holdRef.current = false;
           announcedRef.current = true;
-          onResume();
+          if (polling && !document.hidden) void load(true);
         }
       },
       { cwd },

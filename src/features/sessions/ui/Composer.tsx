@@ -51,6 +51,7 @@ import {
   useSyncExternalStore,
   type ClipboardEvent,
   type KeyboardEvent,
+  type PointerEvent,
   type ReactNode,
 } from "react";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
@@ -84,6 +85,7 @@ import {
 } from "../../../shared/lib/drag";
 import { dragPointToClient } from "../../../shared/lib/dragPoint";
 import type { ContextUsage } from "../model/contextUsage";
+import type { Block } from "../model/session";
 import type { SessionUsage } from "../model/sessionUsage";
 import {
   loadProjectFiles,
@@ -302,6 +304,7 @@ type Props = {
   /** Send is refused while set (another computer is mid-turn on this session). */
   sendHeldReason?: string;
   context?: ContextUsage;
+  contextBlocks?: readonly Block[];
   /** Confirmed empty session; missing usage alone does not establish this. */
   contextEmpty?: boolean;
   sessionUsage?: SessionUsage;
@@ -684,6 +687,7 @@ export const Composer = memo(function Composer({
   remoteFeatures,
   context,
   contextEmpty = false,
+  contextBlocks,
   sessionUsage,
   compactSupported = false,
   quoteRequest,
@@ -1660,7 +1664,10 @@ export const Composer = memo(function Composer({
     [syncHasValue, remote],
   );
 
+  const lastFocusToken = useRef(focusToken);
   useEffect(() => {
+    const requested = lastFocusToken.current !== focusToken;
+    lastFocusToken.current = focusToken;
     if (!focused || disabled) return;
 
     const composer = ref.current?.closest("[data-composer]");
@@ -1669,7 +1676,8 @@ export const Composer = memo(function Composer({
     // Inactive workspace tabs stay mounted, so focus can still be sitting in
     // their composer when a new session becomes active. Only preserve focus
     // for another composer that is still visible (for example, a split pane).
-    if (activeComposer && activeComposer !== composer && !activeComposerHidden) return;
+    if (!requested && activeComposer && activeComposer !== composer && !activeComposerHidden)
+      return;
 
     if (
       composer?.querySelector(
@@ -2529,6 +2537,21 @@ export const Composer = memo(function Composer({
       .catch((error) => console.warn("Picking attachments failed", error));
   };
 
+  const focusFromComposerSpace = (event: PointerEvent<HTMLDivElement>) => {
+    if (disabled || event.button !== 0 || event.defaultPrevented) return;
+    const target = event.target;
+    if (
+      !(target instanceof Element) ||
+      target.closest(
+        'button, a, input, textarea, select, label, summary, [role="button"], [role="link"], [tabindex], [contenteditable="true"]',
+      )
+    )
+      return;
+    event.preventDefault();
+    onFocus();
+    ref.current?.focus({ preventScroll: true });
+  };
+
   return (
     <div
       data-composer
@@ -2761,6 +2784,7 @@ export const Composer = memo(function Composer({
         <div
           ref={boxRef}
           data-composer-box
+          onPointerDown={focusFromComposerSpace}
           data-composer-editing={resendEdited ? "" : undefined}
           className={`relative z-10 border bg-(--ui-surface-raised) backdrop-blur-sm ${
             resendEdited
@@ -2848,7 +2872,7 @@ export const Composer = memo(function Composer({
               data-composer-empty={navigationEmpty ? "true" : undefined}
               data-composer-plain={plainDraft ? "true" : undefined}
               style={{ textIndent: modeIndent }}
-              rows={1}
+              rows={2}
               spellCheck={spelling}
               autoCorrect={spelling ? "on" : "off"}
               defaultValue={mountDraft}
@@ -3257,10 +3281,12 @@ export const Composer = memo(function Composer({
               {!hideTopBar ? (
                 <ContextMeter
                   usage={context}
+                  contextBlocks={contextBlocks}
                   empty={contextEmpty}
                   sessionUsage={sessionUsage}
                   onCompact={compactSupported && !worktreeRemoved ? onCompactContext : undefined}
                   compactDisabled={busy}
+                  working={busy && enabled}
                 />
               ) : null}
               <ComposerAction
@@ -3320,6 +3346,7 @@ export const Composer = memo(function Composer({
         {!hideTopBar && !hideBranchPicker ? (
           <div
             data-composer-workspace
+            onPointerDown={focusFromComposerSpace}
             role="group"
             aria-label={t("Chat workspace")}
             className="flex min-w-0 items-center justify-between gap-2 rounded-b-xl border border-t-0 border-(--ui-tone-neutral-border) bg-(--ui-surface-raised) px-3 pb-1.5 pt-2"

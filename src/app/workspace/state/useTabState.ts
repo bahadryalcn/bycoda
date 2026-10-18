@@ -56,15 +56,24 @@ export function useTabState({ seed, windowTransfer, resumed }: TabStateDeps) {
 export interface ActiveTabSetterDeps {
   cancel: () => void;
   setActiveTabIdState: Dispatch<SetStateAction<string>>;
+  setProjectTerminalFocused: Dispatch<SetStateAction<boolean>>;
+  setComposerFocusToken: Dispatch<SetStateAction<number>>;
 }
 
 /** Every ordinary tab activation supersedes an unfinished workspace request. */
-export function useActiveTabSetter({ cancel, setActiveTabIdState }: ActiveTabSetterDeps) {
+export function useActiveTabSetter({
+  cancel,
+  setActiveTabIdState,
+  setProjectTerminalFocused,
+  setComposerFocusToken,
+}: ActiveTabSetterDeps) {
   return useCallback(
     (id: string) => {
       cancel();
       setActiveTabIdState(id);
+      setProjectTerminalFocused(false);
+      setComposerFocusToken((token) => token + 1);
     },
-    [cancel],
+    [cancel, setActiveTabIdState, setProjectTerminalFocused, setComposerFocusToken],
   );
 }

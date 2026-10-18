@@ -274,6 +274,10 @@ describe("host automations", () => {
     });
     expect(automations.list()[0].needsInput).toBe(true);
 
+    expect(automations.runNow("nightly").status).toBe("skipped");
+    automations.tick();
+    expect(automations.list()[0].needsInput).toBe(true);
+
     ask(undefined);
     expect(automations.runs("nightly")[0].needsInput).toBeUndefined();
     expect(automations.list()[0].needsInput).toBeUndefined();
@@ -287,4 +291,47 @@ describe("host automations", () => {
     expect(automations.runs("nightly")[0].needsInput).toBeUndefined();
     expect(automations.list()[0].needsInput).toBeUndefined();
   });
+});
+
+it("retains active runs across overlapping history pruning and remains stoppable", async () => {
+  const { automations, input, turns, settled } = setup();
+  automations.save(input());
+  const run = automations.runNow("nightly");
+  await vi.waitFor(() => expect(turns).toHaveLength(1));
+  for (let i = 0; i < 110; i++) expect(automations.runNow("nightly").status).toBe("skipped");
+  expect(automations.runs("nightly").find((entry) => entry.id === run.id)?.status).toBe("running");
+  automations.stopRun("nightly", run.id);
+  await settled(run.sessionId!);
+  automations.tick();
+  expect(automations.runs("nightly").find((entry) => entry.id === run.id)?.status).not.toBe(
+    "running",
+  );
+});
+
+it("retains same-day usage above the history limit and resets allowance the next day", async () => {
+  const { automations, input, store, clock, turns, settled } = setup();
+  automations.save(input({ maxRunsPerDay: 101 }));
+  const run = automations.runNow("nightly");
+  await vi.waitFor(() => expect(turns).toHaveLength(1));
+  const insert = store.db.prepare("INSERT INTO automation_runs VALUES (?, ?, ?, ?)");
+  for (let i = 0; i < 100; i++) {
+    const row = {
+      id: `completed-${i}`,
+      automationId: "nightly",
+      trigger: "manual",
+      status: "succeeded",
+      createdAt: clock.now - 1000 + i,
+      startedAt: clock.now - 1000 + i,
+    };
+    insert.run(row.id, "nightly", row.createdAt, JSON.stringify(row));
+  }
+  turns[0].finish();
+  await settled(run.sessionId!);
+  automations.tick();
+  clock.now = at("2026-10-05T09:00:10");
+  automations.tick();
+  expect(automations.runs("nightly")[0].status).toBe("skipped");
+  clock.now = at("2026-10-06T09:00:10");
+  automations.tick();
+  expect(automations.runs("nightly")[0].status).toBe("running");
 });

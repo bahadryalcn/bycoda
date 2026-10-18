@@ -54,7 +54,13 @@ export function ModalPanel({
   const popupHost = useContext(NativePopupHost);
   const closeRef = useRef<HTMLButtonElement>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
-  const overlayId = useOverlay(dialogRef, true, onClose);
+  const overlayId = useOverlay(
+    dialogRef,
+    true,
+    onClose,
+    true,
+    '[data-button-hierarchy="primary"]:not([aria-disabled="true"]):not([aria-busy="true"])',
+  );
   const lockOverscroll = useLockOverscroll<HTMLDivElement>();
   const uid = useId();
   const titleId = `${uid}-title`;

@@ -656,7 +656,7 @@ function MarkdownCodeShell({ code, children }: { code: string; children: ReactNo
       {collapsed ? (
         <Button
           motion="none"
-          variant="ghost"
+          variant="item"
           type="button"
 
           title={label}
@@ -705,8 +705,10 @@ function CodeCopyButton({
   return (
     <Button
       motion="none"
+      iconOnly
+      label={label}
       variant="ghost"
-      className={className}
+      className={`markdown-code-copy${copied ? " is-copied" : ""}${failed ? " is-failed" : ""} ${className}`}
       type="button"
       title={failed ? t("Copy failed — try again") : copied ? t("Copied") : label}
       aria-label={failed ? t("Copy failed — try again") : copied ? t("Copied") : label}
@@ -792,7 +794,20 @@ function MarkdownImage({ src, alt, node: _node, ...props }: MarkdownImageProps) 
   if (documentPath) {
     const image = cwd ? resolveDocumentImage(url, documentPath, cwd) : undefined;
     const align = (_node as { properties?: { align?: unknown } } | undefined)?.properties?.align;
-    return image && cwd ? <DocumentImage key={image.path} root={cwd} {...image} alt={alt} title={props.title} width={props.width} height={props.height} align={typeof align === "string" ? align : undefined} /> : <ImageAltText alt={alt} title={props.title} />;
+    return image && cwd ? (
+      <DocumentImage
+        key={image.path}
+        root={cwd}
+        {...image}
+        alt={alt}
+        title={props.title}
+        width={props.width}
+        height={props.height}
+        align={typeof align === "string" ? align : undefined}
+      />
+    ) : (
+      <ImageAltText alt={alt} title={props.title} />
+    );
   }
   if (url.startsWith("data:image/")) {
     return <img {...props} src={url} alt={alt ?? ""} />;
@@ -1081,7 +1096,11 @@ export const AgentMarkdown = memo(function AgentMarkdown({
   // again. Streamdown keeps a block's elements while its text is unchanged, so
   // the few spans on a finished reply stay, inert: the fade rule needs
   // `.word-fading`, which comes off with the fade.
-  const rehypePlugins = documentPath ? DOCUMENT_REHYPE_PLUGINS : remoteMedia ? INBOX_MEDIA_REHYPE_PLUGINS : MARKDOWN_REHYPE_PLUGINS;
+  const rehypePlugins = documentPath
+    ? DOCUMENT_REHYPE_PLUGINS
+    : remoteMedia
+      ? INBOX_MEDIA_REHYPE_PLUGINS
+      : MARKDOWN_REHYPE_PLUGINS;
   // Publish the tail index with the context value. A mutable ref would let a
   // memoized former tail retain its fading plugin after a new block arrives.
   const markdownBlocks = useMemo(() => {

@@ -13,8 +13,9 @@ import {
 import { ALT, MOD, SHIFT } from "../../../platform/tauri/platform";
 import { ChevronDown, ChevronUp, X } from "../../../shared/ui/icons";
 import { keybindingPressed } from "../../settings/model/settings";
+import { startPreviewSearch } from "./previewSearchTask";
+import { evaluatePreviewSearch } from "./previewSearchEvaluation";
 
-const MATCH_CAP = 999;
 const MATCH_HIGHLIGHT = "bycoda-file-preview-search-match";
 const CURRENT_HIGHLIGHT = "bycoda-file-preview-search-current";
 const HIGHLIGHT_STYLE_ID = "bycoda-file-preview-search-styles";
@@ -67,6 +68,7 @@ type SearchResult<T> = {
   matches: T[];
   capped: boolean;
   invalid: boolean;
+  timedOut?: boolean;
 };
 
 type TextMatch = { from: number; to: number };
@@ -256,28 +258,51 @@ export function FilePreviewSearch({
     }
 
     const signature = `${query}\0${caseSensitive}\0${wholeWord}\0${regexp}`;
-    const search = findPreviewRanges(root, query, {
-      caseSensitive,
-      wholeWord,
-      regexp,
+    const runs = previewTextRuns(root);
+    const task = startPreviewSearch(
+      runs.map((run) => run.text),
+      query,
+      {
+        caseSensitive,
+        wholeWord,
+        regexp,
+      },
+    );
+    let cancelled = false;
+    matchesRef.current = [];
+    setTotal(0);
+    clearHighlights(ownerRef.current);
+    void task.result.then((found) => {
+      if (cancelled) return;
+      const search = {
+        ...found,
+        matches: found.matches.flatMap((match) => {
+          const range = domRange(runs[match.run]!, match.from, match.to, root.ownerDocument);
+          return range ? [range] : [];
+        }),
+      };
+      const nextCurrent =
+        search.matches.length === 0
+          ? -1
+          : signatureRef.current === signature
+            ? Math.min(Math.max(0, currentRef.current), search.matches.length - 1)
+            : 0;
+      signatureRef.current = signature;
+      matchesRef.current = search.matches;
+      currentRef.current = nextCurrent;
+      setCurrent(nextCurrent);
+      setTotal(search.matches.length);
+      setResult({ capped: search.capped, invalid: search.invalid, timedOut: search.timedOut });
+      paintHighlights(ownerRef.current, search.matches, nextCurrent);
+      if (revealRef.current && nextCurrent >= 0) {
+        revealRange(search.matches[nextCurrent], root);
+      }
+      revealRef.current = false;
     });
-    const nextCurrent =
-      search.matches.length === 0
-        ? -1
-        : signatureRef.current === signature
-          ? Math.min(Math.max(0, currentRef.current), search.matches.length - 1)
-          : 0;
-    signatureRef.current = signature;
-    matchesRef.current = search.matches;
-    currentRef.current = nextCurrent;
-    setCurrent(nextCurrent);
-    setTotal(search.matches.length);
-    setResult({ capped: search.capped, invalid: search.invalid });
-    paintHighlights(ownerRef.current, search.matches, nextCurrent);
-    if (revealRef.current && nextCurrent >= 0) {
-      revealRange(search.matches[nextCurrent], root);
-    }
-    revealRef.current = false;
+    return () => {
+      cancelled = true;
+      task.cancel();
+    };
   }, [active, caseSensitive, contentVersion, mutationVersion, open, query, regexp, wholeWord]);
 
   useEffect(
@@ -322,11 +347,13 @@ export function FilePreviewSearch({
 
   const count = result.invalid
     ? "Invalid regex"
-    : query && total === 0
-      ? "No results"
-      : total > 0
-        ? `${current + 1} of ${total}${result.capped ? "+" : ""}`
-        : "";
+    : result.timedOut
+      ? "Regex search timed out"
+      : query && total === 0
+        ? "No results"
+        : total > 0
+          ? `${current + 1} of ${total}${result.capped ? "+" : ""}`
+          : "";
 
   return (
     <div
@@ -474,76 +501,16 @@ function FindButton({
   );
 }
 
-export function findPreviewTextMatches(
+export async function findPreviewTextMatches(
   text: string,
   query: string,
   options: SearchOptions,
-): SearchResult<TextMatch> {
-  const pattern = searchPattern(query, options);
-  if (!pattern) {
-    return { matches: [], capped: false, invalid: Boolean(query) };
-  }
-  const matches: TextMatch[] = [];
-  for (const match of text.matchAll(pattern)) {
-    const value = match[0];
-    const from = match.index;
-    if (!value || from === undefined) continue;
-    const to = from + value.length;
-    if (options.wholeWord && !isWholeWord(text, from, to)) continue;
-    if (matches.length >= MATCH_CAP) {
-      return { matches, capped: true, invalid: false };
-    }
-    matches.push({ from, to });
-  }
-  return { matches, capped: false, invalid: false };
+): Promise<SearchResult<TextMatch>> {
+  const result = options.regexp
+    ? await startPreviewSearch([text], query, options).result
+    : evaluatePreviewSearch([text], query, options);
+  return { ...result, matches: result.matches.map(({ from, to }) => ({ from, to })) };
 }
-
-function findPreviewRanges(
-  root: HTMLElement,
-  query: string,
-  options: SearchOptions,
-): SearchResult<Range> {
-  const pattern = searchPattern(query, options);
-  if (!pattern) {
-    return { matches: [], capped: false, invalid: Boolean(query) };
-  }
-
-  const ranges: Range[] = [];
-  for (const run of previewTextRuns(root)) {
-    for (const match of run.text.matchAll(pattern)) {
-      const value = match[0];
-      const from = match.index;
-      if (!value || from === undefined) continue;
-      const to = from + value.length;
-      if (options.wholeWord && !isWholeWord(run.text, from, to)) continue;
-      if (ranges.length >= MATCH_CAP) {
-        return { matches: ranges, capped: true, invalid: false };
-      }
-      const range = domRange(run, from, to, root.ownerDocument);
-      if (range) ranges.push(range);
-    }
-  }
-  return { matches: ranges, capped: false, invalid: false };
-}
-
-function searchPattern(query: string, options: SearchOptions): RegExp | null {
-  if (!query) return null;
-  const source = options.regexp ? query : query.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  try {
-    return new RegExp(source, options.caseSensitive ? "gu" : "giu");
-  } catch {
-    return null;
-  }
-}
-
-function isWholeWord(text: string, from: number, to: number): boolean {
-  return !isWordCharacter(text[from - 1]) && !isWordCharacter(text[to]);
-}
-
-function isWordCharacter(character: string | undefined): boolean {
-  return character ? /[\p{L}\p{N}_]/u.test(character) : false;
-}
-
 function previewTextRuns(root: HTMLElement): TextRun[] {
   const showText = root.ownerDocument.defaultView?.NodeFilter.SHOW_TEXT ?? 4;
   const walker = root.ownerDocument.createTreeWalker(root, showText);

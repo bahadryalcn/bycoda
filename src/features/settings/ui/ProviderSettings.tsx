@@ -1,5 +1,6 @@
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import { Alert } from "../../../shared/ui/Alert";
+import { Badge } from "../../../shared/ui/Badge";
 import { projectDisplayName } from "../../projects/model/projectNames";
 import { t, useLocale, getLocale } from "../../../shared/i18n";
 import { ArrowDownCircle, Check, Globe, Loader, RefreshCw } from "../../../shared/ui/icons";
@@ -354,6 +355,7 @@ export function ProvidersPage({ cwd, recents }: { cwd?: string; recents?: Recent
             })}
           </nav>
           <div className="provider-cli-detail">
+            {activeProvider ? <ProviderCliHeader harness={activeProvider} /> : null}
             <ProviderAccountsSettings harness={activeProvider ?? undefined} />
             {orderedHarnesses.map((harness) => {
               const inPicker = project
@@ -382,6 +384,7 @@ export function ProvidersPage({ cwd, recents }: { cwd?: string; recents?: Recent
                   hidden={activeProvider !== harness}
                 >
                   <ProviderRow
+                    hideHeader={activeProvider === harness}
                     harness={harness}
                     selectedModel={selectedModel}
                     isDefault={isDefault}
@@ -425,8 +428,19 @@ export function EnabledModelsGroup({ harness }: { harness: HarnessId }) {
   const enabledCount = models.filter((model) => isModelEnabled(model.id)).length;
 
   return (
-    <AdvancedSettings id="enabled-models" settingIds={["enabled-models"]} title={t("Models")}>
-      <div className="provider-cli-model-list max-h-[220px] overflow-y-auto">
+    <AdvancedSettings
+      id="enabled-models"
+      settingIds={["enabled-models"]}
+      title={
+        <span className="provider-cli-model-heading">
+          {t("Models")}{" "}
+          <Badge size="sm">
+            {enabledCount} / {models.length}
+          </Badge>
+        </span>
+      }
+    >
+      <div className="provider-cli-model-list">
         {models.length > 0 ? (
           models.map((model) => {
             const on = isModelEnabled(model.id);
@@ -537,7 +551,7 @@ export function HarnessUpdatesGroup() {
           description={t("None of the CLIs with a release feed are installed.")}
         />
       ) : (
-        <div className="max-h-[360px] overflow-y-auto">
+        <div className="provider-cli-updates">
           {checks.map((entry) => (
             <HarnessUpdateSettingsRow
               key={entry.harness}
@@ -638,8 +652,67 @@ export function ProjectScopeIcon({ path }: { path: string }) {
   );
 }
 
+function ProviderCliHeader({ harness }: { harness: HarnessId }) {
+  const available = isHarnessAvailable(harness);
+  const models = modelsFor(harness);
+  return (
+    <div className="provider-cli-header">
+      <div className="provider-cli-header-main">
+        <HarnessIcon harness={harness} className="size-4 shrink-0" />
+        <div className="provider-cli-header-copy">
+          <div className="provider-cli-title-line">
+            <h3>
+              {harness === "gemini"
+                ? t("Gemini CLI (enterprise / API key)")
+                : HARNESS_TITLE[harness]}
+            </h3>
+            <span className="provider-cli-status">
+              <span
+                className={`size-1.5 rounded-full ${available ? "bg-success" : "bg-content/30"}`}
+                aria-hidden
+              />
+              {available
+                ? t("CLI detected")
+                : hasProbedHarnessAvailability()
+                  ? t("CLI not found")
+                  : t("Checking CLI…")}
+              {available ? (
+                <span className="text-content/45">
+                  · {models.length} {models.length === 1 ? t("model") : t("models")}
+                </span>
+              ) : null}
+              <span
+                className="provider-cli-machine"
+                title={t(
+                  "This machine · shared across projects. CLI detection does not confirm account sign-in.",
+                )}
+              >
+                · {t("This machine · all projects")}
+              </span>
+            </span>
+          </div>
+        </div>
+      </div>
+      <AdvancedSettings
+        id={`cli-path-${harness}`}
+        settingIds={[`cli-path-${harness}`]}
+        title={t("CLI path and installation")}
+      >
+        <ProviderBinaryControl provider={harness} showLabel />
+        {!available && hasProbedHarnessAvailability() ? (
+          <section className="provider-cli-install">
+            <h3>{t("Installation help")}</h3>
+            <p>{harnessUnavailableHint(harness)}</p>
+          </section>
+        ) : null}
+      </AdvancedSettings>
+    </div>
+  );
+}
+
 export function ProviderRow({
   harness,
+  hideHeader = false,
   isSelected = false,
   claudeHooks = false,
   onClaudeHooksChange,
@@ -655,6 +728,7 @@ export function ProviderRow({
   onSessionDefaultsChange,
 }: {
   harness: HarnessId;
+  hideHeader?: boolean;
   isSelected?: boolean;
   claudeHooks?: boolean;
   onClaudeHooksChange?: (next: boolean) => void;
@@ -714,57 +788,7 @@ export function ProviderRow({
         aria-label={t("{p0} CLI settings", { p0: HARNESS_TITLE[harness] })}
         data-default={isDefault || undefined}
       >
-        <div className="provider-cli-header">
-          <div className="provider-cli-header-main">
-            <HarnessIcon harness={harness} className="size-4 shrink-0" />
-            <div className="provider-cli-header-copy">
-              <div className="provider-cli-title-line">
-                <h3>
-                  {harness === "gemini"
-                    ? t("Gemini CLI (enterprise / API key)")
-                    : HARNESS_TITLE[harness]}
-                </h3>
-                <span className="provider-cli-status">
-                  <span
-                    className={`size-1.5 rounded-full ${available ? "bg-success" : "bg-content/30"}`}
-                    aria-hidden
-                  />
-                  {available
-                    ? t("CLI detected")
-                    : hasProbedHarnessAvailability()
-                      ? t("CLI not found")
-                      : t("Checking CLI…")}
-                  {available ? (
-                    <span className="text-content/45">
-                      · {models.length} {models.length === 1 ? t("model") : t("models")}
-                    </span>
-                  ) : null}
-                  <span
-                    className="provider-cli-machine"
-                    title={t(
-                      "This machine · shared across projects. CLI detection does not confirm account sign-in.",
-                    )}
-                  >
-                    · {t("This machine · all projects")}
-                  </span>
-                </span>
-              </div>
-            </div>
-          </div>
-          <AdvancedSettings
-            id={`cli-path-${harness}`}
-            settingIds={[`cli-path-${harness}`]}
-            title={t("CLI path and installation")}
-          >
-            <ProviderBinaryControl provider={harness} showLabel />
-            {!available && hasProbedHarnessAvailability() ? (
-              <details className="provider-cli-install">
-                <summary>{t("Installation help")}</summary>
-                <p>{harnessUnavailableHint(harness)}</p>
-              </details>
-            ) : null}
-          </AdvancedSettings>
-        </div>
+        {!hideHeader ? <ProviderCliHeader harness={harness} /> : null}
         <section className="provider-cli-defaults" aria-label={t("New conversation defaults")}>
           <div className="provider-cli-defaults-heading">
             <h4
@@ -864,57 +888,57 @@ export function ProviderRow({
                 }
               />
             </div>
+            {onSessionDefaultsChange ? (
+              <>
+                {extras.map((setting) => {
+                  const saved = scopeDefaults.extras?.[setting.id];
+                  const inherited = inheritedDefaults?.extras?.[setting.id];
+                  const inheritedOption = setting.options.find(
+                    (option) => option.value === inherited,
+                  );
+                  const inheritedLabel = inheritedOption?.label ?? inherited;
+                  const savedIsUnavailable =
+                    Boolean(saved) && !setting.options.some((option) => option.value === saved);
+                  return (
+                    <div key={setting.id} className="provider-cli-field">
+                      <span>{t(setting.label)}</span>
+                      <Select
+                        label={t("{p0} default {p1}", {
+                          p0: HARNESS_TITLE[harness],
+                          p1: t(setting.label),
+                        })}
+                        value={saved ?? ""}
+                        options={[
+                          {
+                            value: "",
+                            label: inheritedLabel
+                              ? `${t("Global")} (${t(inheritedLabel)}${inheritedOption ? "" : ` · ${t("Unavailable")}`})`
+                              : t("Automatic"),
+                          },
+                          ...(savedIsUnavailable
+                            ? [{ value: saved!, label: `${saved} (${t("Unavailable")})` }]
+                            : []),
+                          ...setting.options.map((option) => ({
+                            value: option.value,
+                            label: t(option.label),
+                          })),
+                        ]}
+                        onChange={(next) => {
+                          const nextExtras = { ...scopeDefaults.extras };
+                          if (next) nextExtras[setting.id] = next;
+                          else delete nextExtras[setting.id];
+                          onSessionDefaultsChange({
+                            ...scopeDefaults,
+                            extras: nextExtras,
+                          });
+                        }}
+                      />
+                    </div>
+                  );
+                })}
+              </>
+            ) : null}
           </div>
-          {onSessionDefaultsChange ? (
-            <div className="provider-cli-default-grid">
-              {extras.map((setting) => {
-                const saved = scopeDefaults.extras?.[setting.id];
-                const inherited = inheritedDefaults?.extras?.[setting.id];
-                const inheritedOption = setting.options.find(
-                  (option) => option.value === inherited,
-                );
-                const inheritedLabel = inheritedOption?.label ?? inherited;
-                const savedIsUnavailable =
-                  Boolean(saved) && !setting.options.some((option) => option.value === saved);
-                return (
-                  <div key={setting.id} className="provider-cli-field">
-                    <span>{t(setting.label)}</span>
-                    <Select
-                      label={t("{p0} default {p1}", {
-                        p0: HARNESS_TITLE[harness],
-                        p1: t(setting.label),
-                      })}
-                      value={saved ?? ""}
-                      options={[
-                        {
-                          value: "",
-                          label: inheritedLabel
-                            ? `${t("Global")} (${t(inheritedLabel)}${inheritedOption ? "" : ` · ${t("Unavailable")}`})`
-                            : t("Automatic"),
-                        },
-                        ...(savedIsUnavailable
-                          ? [{ value: saved!, label: `${saved} (${t("Unavailable")})` }]
-                          : []),
-                        ...setting.options.map((option) => ({
-                          value: option.value,
-                          label: t(option.label),
-                        })),
-                      ]}
-                      onChange={(next) => {
-                        const nextExtras = { ...scopeDefaults.extras };
-                        if (next) nextExtras[setting.id] = next;
-                        else delete nextExtras[setting.id];
-                        onSessionDefaultsChange({
-                          ...scopeDefaults,
-                          extras: nextExtras,
-                        });
-                      }}
-                    />
-                  </div>
-                );
-              })}
-            </div>
-          ) : null}
         </section>
         <div className="provider-cli-footer">
           <SecondaryButton

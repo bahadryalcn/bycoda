@@ -22,7 +22,7 @@ export function PhoneConnectionPanel({
 
   return (
     <section
-      className="flex flex-col gap-3 rounded-xl border border-stroke bg-(--ui-surface-raised) p-4"
+      className="flex flex-col gap-3 rounded-xl border border-stroke bg-(--ui-surface) p-4"
       aria-label={t("Connect your phone")}
     >
       <div className="flex flex-wrap items-center gap-3">
@@ -40,7 +40,7 @@ export function PhoneConnectionPanel({
           onClick={() => {
             if (machine) void coordinator.open(machine);
           }}
-          variant="secondary"
+          variant="primary"
         >
           {t("Connect your phone")}
         </Button>

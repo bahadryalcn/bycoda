@@ -25,7 +25,7 @@ describe("live background preference", () => {
   });
 
   it("falls back to the default for removed scenes", () => {
-    for (const removed of ["galaxy", "water", "aurora"]) {
+    for (const removed of ["galaxy", "water", "aurora", "shape-waves", "ferrofluid"]) {
       localStorage.setItem(LIVE_BACKGROUND_KEY, removed);
       expect(loadLiveBackground()).toBe(LIVE_BACKGROUND_DEFAULT);
     }
@@ -34,11 +34,19 @@ describe("live background preference", () => {
   it("persists the scene and notifies open panes", () => {
     const listener = vi.fn();
     window.addEventListener(LIVE_BACKGROUND_CHANGE_EVENT, listener);
-    saveLiveBackground("shape-waves");
+    saveLiveBackground("micro-slats");
     window.removeEventListener(LIVE_BACKGROUND_CHANGE_EVENT, listener);
-    expect(loadLiveBackground()).toBe("shape-waves");
+    expect(loadLiveBackground()).toBe("micro-slats");
     expect(listener).toHaveBeenCalledTimes(1);
   });
+
+  it.each(["orb", "world-tree", "letter-glitch"] as const)(
+    "persists %s across reloads",
+    (effect) => {
+      saveLiveBackground(effect);
+      expect(loadLiveBackground()).toBe(effect);
+    },
+  );
 
   it("clamps intensity and falls back on malformed values", () => {
     expect(loadLiveBackgroundIntensity()).toBe(LIVE_BACKGROUND_INTENSITY_DEFAULT);

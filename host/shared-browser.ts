@@ -189,7 +189,12 @@ export class SharedBrowser {
     return value;
   }
 
-  async dispatch(method: string, params: Record<string, unknown>, credential: string) {
+  async dispatch(
+    method: string,
+    params: Record<string, unknown>,
+    credential: string,
+    options: { takeover?: boolean } = {},
+  ) {
     if (this.busy) throw new Error("Shared browser is busy; retry after the current request");
     this.busy = true;
     try {
@@ -202,8 +207,14 @@ export class SharedBrowser {
       const owner = fingerprint(credential);
       if (method === "browser.status") return this.status(owner);
       if (method === "browser.claim") {
-        if (this.lease && this.lease.owner !== owner)
-          throw new Error("Another device controls this browser");
+        if (this.lease && this.lease.owner !== owner) {
+          if (!options.takeover)
+            throw new Error(
+              "Another client controls this browser. Use Claim control to take over.",
+            );
+          this.lease = undefined;
+          this.annotation = undefined;
+        }
         this.lease = { owner, id: this.lease?.id ?? randomUUID(), expiresAt: at + 30_000 };
         return this.status(owner);
       }

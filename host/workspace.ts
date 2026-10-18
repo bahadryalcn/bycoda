@@ -355,7 +355,7 @@ export async function searchHostContent(
 ): Promise<ProjectSearchResult> {
   const options = searchOptions(input);
   if (!options.query) return { matches: [], truncated: false };
-  const args = ["grep", "-z", "-n"];
+  const args = ["grep", "--untracked", "-z", "-n"];
   if (!options.caseSensitive) args.push("-i");
   if (options.wholeWord) args.push("-w");
   args.push(options.regex ? "-E" : "-F", "-e", options.query, "--");
@@ -392,7 +392,7 @@ export async function searchHostContent(
   }
 
   // Ordinary folders use a bounded text scan, like the local fallback.
-  if (options.regex) return { matches: [], truncated: false };
+  if (options.regex) throw new Error("Regex search is unavailable outside Git repositories.");
   const matches: ProjectSearchMatch[] = [];
   const pending = [""];
   let files = 0;
@@ -453,10 +453,12 @@ function matchesFilters(path: string, options: ContentSearchOptions): boolean {
     if (!/[?*]/.test(normalized)) return path === normalized || path.startsWith(`${normalized}/`);
     const pattern = normalized
       .replace(/[.+^${}()|[\]\\]/g, "\\$&")
+      .replace(/\*\*\//g, "\u0001")
       .replace(/\*\*/g, "\u0000")
       .replace(/\*/g, "[^/]*")
       .replace(/\?/g, "[^/]")
-      .replace(/\u0000/g, ".*");
+      .replace(/\u0000/g, ".*")
+      .replace(/\u0001/g, "(?:.*/)?");
     const regex = new RegExp(`^${pattern}$`);
     return regex.test(path) || (!normalized.includes("/") && regex.test(path.split("/").pop()!));
   };
@@ -614,7 +616,10 @@ async function hostChangedEntries(root: string, paths?: string[]): Promise<GitCh
   return (await readChangedEntries(root)).filter((file) => wanted.has(file.relative));
 }
 
-async function readChangedEntries(root: string, paths?: string[]): Promise<GitChangedFile[]> {
+type ChangedEntry = GitChangedFile & { originalPath?: string };
+
+async function readChangedEntries(root: string, paths?: string[]): Promise<ChangedEntry[]> {
+  const prefix = (await git(root, ["rev-parse", "--show-prefix"])).trim();
   const text = await git(root, [
     "status",
     "--porcelain=v1",
@@ -623,17 +628,20 @@ async function readChangedEntries(root: string, paths?: string[]): Promise<GitCh
     ...(paths ? ["--", ...paths] : []),
   ]);
   const parts = text.split("\0");
-  const files: GitChangedFile[] = [];
+  const files: ChangedEntry[] = [];
   for (let index = 0; index < parts.length; index++) {
     const item = parts[index];
     if (!item || item.length < 4) continue;
     const code = item.slice(0, 2);
-    const path = item.slice(3);
-    if (code.includes("R") || code.includes("C")) index++;
+    const repositoryPath = item.slice(3);
+    const originalPath = code.includes("R") || code.includes("C") ? parts[++index] : undefined;
+    if (!repositoryPath.startsWith(prefix)) continue;
+    const path = repositoryPath.slice(prefix.length);
     if (UNMERGED_CODES.has(code)) continue;
     files.push({
       path,
       relative: path,
+      ...(originalPath ? { originalPath } : {}),
       status: statusName(code),
       additions: 0,
       deletions: 0,
@@ -696,8 +704,26 @@ async function readHostGitIndex(root: string): Promise<GitDiffIndex> {
     git(root, ["symbolic-ref", "--quiet", "--short", "HEAD"]).catch(() => ""),
     git(root, ["rev-parse", "--verify", "HEAD"]).catch(() => ""),
     git(root, ["status", "--porcelain=v1", "-z", "--untracked-files=all"]),
-    git(root, ["diff", "--no-ext-diff", "--no-textconv", "--numstat", "HEAD", "--"]).catch(
-      () => "",
+    git(root, [
+      "diff",
+      "--relative",
+      "--no-ext-diff",
+      "--no-textconv",
+      "--numstat",
+      "-z",
+      "HEAD",
+      "--",
+    ]).catch(() =>
+      git(root, [
+        "diff",
+        "--cached",
+        "--relative",
+        "--no-ext-diff",
+        "--no-textconv",
+        "--numstat",
+        "-z",
+        "--",
+      ]),
     ),
     git(root, ["remote", "get-url", "origin"]).catch(() => ""),
     git(root, ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}"]).catch(() => ""),
@@ -739,14 +765,22 @@ async function readHostGitIndex(root: string): Promise<GitDiffIndex> {
       ) || 0
     : 0;
   const counts = new Map<string, { additions: number; deletions: number }>();
-  for (const line of numstat.split("\n")) {
-    const match = /^(\d+|-)\t(\d+|-)\t(.+)$/.exec(line);
-    if (match)
-      counts.set(match[3], {
+  const statParts = numstat.split("\0");
+  for (let index = 0; index < statParts.length; index++) {
+    const match = /^(\d+|-)\t(\d+|-)\t([\s\S]*)$/.exec(statParts[index]);
+    if (match) {
+      let path = match[3];
+      if (!path) {
+        index++;
+        path = statParts[++index];
+      }
+      counts.set(path, {
         additions: Number(match[1]) || 0,
         deletions: Number(match[2]) || 0,
       });
+    }
   }
+  const prefix = (await git(root, ["rev-parse", "--show-prefix"])).trim();
   const parts = statusText.split("\0");
   const files: GitChangedFile[] = [];
   const untracked: GitChangedFile[] = [];
@@ -754,8 +788,10 @@ async function readHostGitIndex(root: string): Promise<GitDiffIndex> {
     const item = parts[index];
     if (!item || item.length < 4) continue;
     const code = item.slice(0, 2);
-    const path = item.slice(3);
+    const repositoryPath = item.slice(3);
     if (code.includes("R") || code.includes("C")) index++;
+    if (!repositoryPath.startsWith(prefix)) continue;
+    const path = repositoryPath.slice(prefix.length);
     // Unmerged paths are listed under `conflicts`, not as ordinary changes.
     if (UNMERGED_CODES.has(code)) continue;
     const count = counts.get(path) ?? { additions: 0, deletions: 0 };
@@ -835,9 +871,14 @@ export async function hostFileDiff(
     (entry) => entry.relative === relativePath,
   );
   if (!file) throw new Error("File has no uncommitted changes");
-  const original = await gitBlob(root, `${staged ? "HEAD" : ""}:${relativePath}`);
+  const prefix = (await git(root, ["rev-parse", "--show-prefix"])).trim();
+  const repositoryPath = `${prefix}${relativePath}`;
+  const originalPath = staged
+    ? ((file as ChangedEntry).originalPath ?? repositoryPath)
+    : repositoryPath;
+  const original = await gitBlob(root, `${staged ? "HEAD" : ""}:${originalPath}`);
   const current = staged
-    ? await gitBlob(root, `:${relativePath}`)
+    ? await gitBlob(root, `:${repositoryPath}`)
     : await readHostFile(root, relativePath).then(
         (text) => ({ text, binary: false, tooLarge: false }),
         (error) => {

@@ -15,6 +15,7 @@ import { getHarness } from "../../../integrations/harness/core/registry";
 import type { NativeCommand } from "../../../integrations/harness/core/nativeCommands";
 import { isCliCommandText } from "./cliCommands";
 import { dollarTokenAt } from "./slashCommands";
+import { SKILL_INVOCATION_GUIDANCE } from "../../../integrations/harness/core/skillGuidance";
 import { REMOTE_PATH_PREFIX } from "../../../shared/lib/remotePaths";
 import { CREATE_SKILL_BODY, CREATE_SKILL_DESCRIPTION, CREATE_SKILL_NAME } from "./createSkill";
 
@@ -438,15 +439,7 @@ export function injectSkillPrompt(
     );
   }
   if (blocks.length === 0) return text;
-  return [
-    "The user invoked skill(s) with /name or $name. Follow every instruction in each skill body. Resolve relative skill resources against the directory containing its SKILL.md file.",
-    "",
-    blocks.join("\n\n"),
-    "",
-    "---",
-    "",
-    text,
-  ].join("\n");
+  return [SKILL_INVOCATION_GUIDANCE, "", blocks.join("\n\n"), "", "---", "", text].join("\n");
 }
 
 export async function applySkillsToTurn(

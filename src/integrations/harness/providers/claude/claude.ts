@@ -83,7 +83,7 @@ import {
 import { agentFallbackCallId, resolveStopTargets, settledTaskStatus } from "./claudeStopTask";
 import { isAgentToolName } from "../../core/preview";
 import { reportSessionCommands } from "../../core/reportedCommands";
-import { joinStreamText, snapshotRemainder } from "../../core/streamText";
+import { snapshotRemainder } from "../../core/streamText";
 import {
   questionPromptTitle,
   questionsFromUnknown,
@@ -942,10 +942,10 @@ function handleStreamEvent(live: Live, rec: Record<string, unknown>): void {
     if (subagent) return;
     if (delta.kind === "assistant") {
       closePendingAssistantMessage(live);
-      live.emittedAssistant = joinStreamText(live.emittedAssistant, delta.text);
+      live.emittedAssistant += delta.text;
       live.onEvent({ type: "message.delta", text: delta.text });
     } else {
-      live.emittedReasoning = joinStreamText(live.emittedReasoning, delta.text);
+      live.emittedReasoning += delta.text;
       live.onEvent({ type: "reasoning.delta", text: delta.text });
     }
     return;
@@ -1031,7 +1031,7 @@ function handleAssistant(live: Live, rec: Record<string, unknown>): void {
   if (snapshot) closePendingAssistantMessage(live);
   const extra = snapshotRemainder(live.emittedAssistant, snapshot);
   if (extra) {
-    live.emittedAssistant = joinStreamText(live.emittedAssistant, extra);
+    live.emittedAssistant += extra;
     live.onEvent({ type: "message.delta", text: extra });
   }
 

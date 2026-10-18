@@ -30,6 +30,8 @@ export const DRAFT_WRITE_DELAY_MS = 500;
 const HYDRATE_TIMEOUT_MS = 2_000;
 
 const timers = new Map<string, ReturnType<typeof setTimeout>>();
+const dirty = new Set<string>();
+const inFlight = new Map<string, Promise<void>>();
 /** What was last sent for each session, so an unchanged draft is not written twice. */
 const written = new Map<string, string>();
 /** Marks a row whose content differs from the cache, so the next write always goes out. */
@@ -42,45 +44,59 @@ function payloadFor(sessionId: string): string | null {
 }
 
 async function write(sessionId: string): Promise<void> {
+  const timer = timers.get(sessionId);
+  if (timer) clearTimeout(timer);
   timers.delete(sessionId);
+  const active = inFlight.get(sessionId);
+  if (active) {
+    await active;
+    return write(sessionId);
+  }
   if (!isPersistableId(sessionId)) return;
   const payload = payloadFor(sessionId);
-  if ((written.get(sessionId) ?? null) === payload) return;
+  if ((written.get(sessionId) ?? null) === payload) {
+    dirty.delete(sessionId);
+    return;
+  }
   // Nothing saved and nothing to save: no row to create or clear.
   if (payload === null && !written.has(sessionId)) return;
-  const previous = written.get(sessionId);
-  if (payload === null) written.delete(sessionId);
-  else written.set(sessionId, payload);
-  try {
+  const pending = (async () => {
     await invoke<void>("session_set_draft", {
       sessionId,
       draft: payload === null ? null : JSON.parse(payload),
     });
-  } catch {
-    // Retry on the next change instead of trusting a write that failed.
-    if (previous === undefined) written.delete(sessionId);
-    else written.set(sessionId, previous);
+    if (payload === null) written.delete(sessionId);
+    else written.set(sessionId, payload);
+    if (payloadFor(sessionId) === payload) dirty.delete(sessionId);
+  })();
+  inFlight.set(sessionId, pending);
+  try {
+    await pending;
+  } finally {
+    inFlight.delete(sessionId);
   }
 }
 
 function schedule(sessionId: string) {
   if (!isPersistableId(sessionId)) return;
+  dirty.add(sessionId);
   const pending = timers.get(sessionId);
   if (pending) clearTimeout(pending);
   timers.set(
     sessionId,
-    setTimeout(() => void write(sessionId), DRAFT_WRITE_DELAY_MS),
+    setTimeout(() => void write(sessionId).catch(() => {}), DRAFT_WRITE_DELAY_MS),
   );
 }
 
-/** Write every draft that is waiting for its timer. Used on blur, hide and quit. */
+/** Drain scheduled and active writes. Failed drafts remain dirty for retry. */
 export async function flushComposerDrafts(): Promise<void> {
-  const pending = [...timers.keys()];
-  for (const sessionId of pending) {
-    const timer = timers.get(sessionId);
-    if (timer) clearTimeout(timer);
+  while (dirty.size || inFlight.size) {
+    const pending = [...new Set([...dirty, ...inFlight.keys()])];
+    // Await every write even if one fails, so callers receive a real barrier.
+    const results = await Promise.allSettled(pending.map(write));
+    const failure = results.find((result) => result.status === "rejected");
+    if (failure?.status === "rejected") throw failure.reason;
   }
-  await Promise.all(pending.map(write));
 }
 
 function install() {
@@ -88,7 +104,7 @@ function install() {
   installed = true;
   subscribeComposerDrafts(schedule);
   if (typeof window === "undefined") return;
-  const flush = () => void flushComposerDrafts();
+  const flush = () => void flushComposerDrafts().catch(() => {});
   window.addEventListener("blur", flush);
   // Leaving the composer (or any field) settles what was typed in it.
   document.addEventListener("focusout", flush);

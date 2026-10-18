@@ -2,7 +2,7 @@ import { test, expect } from "@playwright/test";
 import { mkdirSync } from "node:fs";
 
 for (const theme of ["dark", "light"]) {
-  for (const width of [390, 768, 1440]) {
+  for (const width of [390, 768, 1024, 1440]) {
     test(`notification collection stays bounded and searchable: ${theme} ${width}`, async ({
       page,
     }) => {
@@ -23,14 +23,14 @@ for (const theme of ["dark", "light"]) {
         );
       });
       await page.goto(`/tests/browser/settings.html?section=notifications&theme=${theme}&lang=en`);
-      mkdirSync("temp/verification/2026-10-15-notifications", { recursive: true });
+      mkdirSync("temp/verification/2026-10-18-notifications", { recursive: true });
       const sounds = page.locator('[data-setting-id="sounds"]');
       const label = (await sounds.locator(".settings-row-label").boundingBox())!;
       const control = (await sounds.locator(".settings-row-control").boundingBox())!;
       expect(control.x).toBeGreaterThanOrEqual(label.x + label.width);
       expect(control.y).toBeLessThan(label.y + label.height);
       await page.screenshot({
-        path: `temp/verification/2026-10-15-notifications/${theme}-${width}-alerts.png`,
+        path: `temp/verification/2026-10-18-notifications/${theme}-${width}-alerts.png`,
       });
       const list = page.locator(".project-notification-list");
       await expect(list.locator("fieldset")).toHaveCount(41);
@@ -55,6 +55,9 @@ for (const theme of ["dark", "light"]) {
       });
       await trigger.click();
       await expect(trigger).toHaveAttribute("aria-expanded", "true");
+      await page.screenshot({
+        path: `temp/verification/2026-10-18-notifications/${theme}-${width}-categories.png`,
+      });
       const category = list.getByRole("switch", {
         name: "Agent finished for team/project-39",
         exact: true,
@@ -74,9 +77,9 @@ for (const theme of ["dark", "light"]) {
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
         true,
       );
-      mkdirSync("temp/verification/2026-10-15-notifications", { recursive: true });
+      mkdirSync("temp/verification/2026-10-18-notifications", { recursive: true });
       await page.screenshot({
-        path: `temp/verification/2026-10-15-notifications/${theme}-${width}.png`,
+        path: `temp/verification/2026-10-18-notifications/${theme}-${width}.png`,
       });
     });
   }

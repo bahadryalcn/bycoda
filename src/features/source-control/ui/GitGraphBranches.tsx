@@ -2,9 +2,16 @@ import { Button } from "../../../shared/ui/Button";
 import { SearchInput } from "../../../shared/ui/SearchInput";
 import { useRetainedState } from "../../../shared/hooks/useRetainedState";
 import { pathKey } from "../../../shared/lib/paths";
-import { useState } from "react";
+import { useState, useMemo, useDeferredValue } from "react";
 import { t, useLocale } from "../../../shared/i18n/git";
-import { Check, GitBranch, MoreHorizontal, Plus } from "../../../shared/ui/icons";
+import {
+  Check,
+  ChevronDown,
+  ChevronRight,
+  GitBranch,
+  MoreHorizontal,
+  Plus,
+} from "../../../shared/ui/icons";
 import {
   gitBranches,
   gitCheckout,
@@ -53,8 +60,17 @@ export function GitGraphBranches({
     rename?: boolean;
   } | null>(null);
   const [nameError, setNameError] = useState<string | null>(null);
-  const branches = (data?.branches ?? []).filter((branch) =>
-    reference(branch).toLowerCase().includes(query.trim().toLowerCase()),
+  const deferredQuery = useDeferredValue(query).trim().toLowerCase();
+  const [collapsed, setCollapsed] = useRetainedState(`git-branches:${pathKey(cwd)}:collapsed`, {
+    local: false,
+    remote: false,
+  });
+  const branches = useMemo(
+    () =>
+      (data?.branches ?? [])
+        .filter((branch) => reference(branch).toLowerCase().includes(deferredQuery))
+        .sort((a, b) => Number(b.current && !b.remote) - Number(a.current && !a.remote)),
+    [data?.branches, deferredQuery],
   );
   const create = (ref: string) => {
     setNameError(null);
@@ -128,9 +144,7 @@ export function GitGraphBranches({
   return (
     <section aria-label={t("Branches")} className="flex min-h-0 flex-1 flex-col">
       <div className="flex h-9 shrink-0 items-center justify-between px-3">
-        <h3 className="text-[11px] font-semibold uppercase tracking-wide text-[var(--ui-text-secondary)]">
-          {t("Branches")}
-        </h3>
+        <h3 className="text-xs font-medium text-[var(--ui-text-secondary)]">{t("Branches")}</h3>
         <Button
           iconOnly
           label={t("New branch")}
@@ -175,11 +189,35 @@ export function GitGraphBranches({
         ) : null}
         {[false, true].map((remote) => (
           <div key={String(remote)}>
-            <h4 className="px-3 pt-3 pb-1 text-[10px] uppercase tracking-wide text-[var(--ui-text-secondary)]">
+            <Button
+              variant="ghost"
+              motion="none"
+              size="sm"
+              aria-expanded={!!deferredQuery || !collapsed[remote ? "remote" : "local"]}
+              onClick={() =>
+                setCollapsed({
+                  ...collapsed,
+                  [remote ? "remote" : "local"]: !collapsed[remote ? "remote" : "local"],
+                })
+              }
+              className="w-full justify-start gap-2"
+            >
+              {!deferredQuery && collapsed[remote ? "remote" : "local"] ? (
+                <ChevronRight className="size-3" />
+              ) : (
+                <ChevronDown className="size-3" />
+              )}
               {t(remote ? "Remotes" : "Local")}
-            </h4>
+              <span className="ms-auto tabular-nums">
+                {branches.filter((b) => !!b.remote === remote).length}
+              </span>
+            </Button>
             {branches
-              .filter((b) => !!b.remote === remote)
+              .filter(
+                (b) =>
+                  !!b.remote === remote &&
+                  (!!deferredQuery || !collapsed[remote ? "remote" : "local"]),
+              )
               .map((branch) => (
                 <div
                   key={reference(branch)}

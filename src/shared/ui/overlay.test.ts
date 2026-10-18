@@ -3,6 +3,7 @@ import { act, createElement, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { Modal } from "./Modal";
+import { Button } from "./Button";
 import { ImageLightbox } from "./ImageLightbox";
 import { Popover } from "./Popover";
 import { NativePopupHost } from "./NativePopupHost";
@@ -27,7 +28,9 @@ it("keeps image preview focus inside, closes with Escape and restores its trigge
     ),
   );
   const button = document.querySelector<HTMLButtonElement>('[aria-label="Close image preview"]')!;
-  const viewport = document.querySelector<HTMLElement>('[role="group"][aria-label="Image preview: Preview"]')!;
+  const viewport = document.querySelector<HTMLElement>(
+    '[role="group"][aria-label="Image preview: Preview"]',
+  )!;
   expect(trigger.inert).toBe(true);
   expect(document.activeElement).toBe(viewport);
   await key(viewport, "Tab");
@@ -70,6 +73,90 @@ const key = async (target: Element, value: string, shiftKey = false) => {
   });
   return event;
 };
+
+it.each([false, true])(
+  "focuses the primary modal action and keeps keyboard navigation (native=%s)",
+  async (native) => {
+    const trigger = document.createElement("button");
+    const host = document.createElement("div");
+    document.body.append(trigger, host);
+    trigger.focus();
+    const close = vi.fn();
+    await act(async () =>
+      root.render(
+        createElement(
+          NativePopupHost.Provider,
+          { value: native ? host : null },
+          createElement(Modal, {
+            title: "Rewind and edit message?",
+            onClose: close,
+            children: [
+              createElement(Button, { key: "cancel", id: "cancel" }, "Cancel"),
+              createElement(
+                Button,
+                { key: "edit", id: "edit", variant: "primary" },
+                "Rewind and edit",
+              ),
+            ],
+          }),
+        ),
+      ),
+    );
+    const edit = document.getElementById("edit")!;
+    expect(document.activeElement).toBe(edit);
+    await key(edit, "Tab", true);
+    expect(document.activeElement?.id).toBe("cancel");
+    await key(document.activeElement!, "Tab");
+    expect(document.activeElement).toBe(edit);
+    await key(edit, "Tab");
+    expect(document.activeElement?.getAttribute("aria-label")).toBe("Close");
+    trigger.focus();
+    expect(document.querySelector('[role="dialog"]')!.contains(document.activeElement)).toBe(true);
+    await key(edit, "Escape");
+    expect(close).toHaveBeenCalledOnce();
+    await act(async () => root.render(null));
+    expect(document.activeElement).toBe(trigger);
+  },
+);
+
+it("preserves explicit field autofocus ahead of the primary modal action", async () => {
+  await act(async () =>
+    root.render(
+      createElement(Modal, {
+        title: "Edit name",
+        onClose: vi.fn(),
+        children: [
+          createElement("input", { key: "name", id: "name", autoFocus: true }),
+          createElement(Button, { key: "save", variant: "primary" }, "Save"),
+        ],
+      }),
+    ),
+  );
+  expect(document.activeElement?.id).toBe("name");
+});
+
+it.each(["disabled", "loading", "hidden", "aria-disabled"])(
+  "skips a %s primary action when choosing initial focus",
+  async (state) => {
+    await act(async () =>
+      root.render(
+        createElement(Modal, {
+          title: "Save changes",
+          onClose: vi.fn(),
+          children: [
+            createElement(
+              Button,
+              { key: "blocked", variant: "primary", [state]: true },
+              "Unavailable",
+            ),
+            createElement(Button, { key: "save", id: "save", variant: "primary" }, "Save"),
+          ],
+        }),
+      ),
+    );
+    expect(document.activeElement?.id).toBe("save");
+  },
+);
 
 it("traps Tab, blocks the background, and restores the trigger", async () => {
   const trigger = document.createElement("button");
@@ -326,7 +413,11 @@ it("changes resize axis without retaining the previous dimension", async () => {
       initial: 420,
       defaultWidth: vertical ? 300 : 420,
     });
-    return createElement("div", { ref: resize.setPaneRef }, createElement("div", { ...resize.separatorProps }));
+    return createElement(
+      "div",
+      { ref: resize.setPaneRef },
+      createElement("div", { ...resize.separatorProps }),
+    );
   }
   await act(async () => root.render(createElement(Example, { vertical: false })));
   expect((container.firstElementChild as HTMLElement).style.width).toBe("420px");

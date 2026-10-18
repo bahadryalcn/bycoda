@@ -24,7 +24,9 @@ export type TunnelCommand = {
 export async function tunnelExecutable(provider: TunnelProvider): Promise<string | undefined> {
   const name = `${provider === "ngrok" ? "ngrok" : "cloudflared"}${process.platform === "win32" ? ".exe" : ""}`;
   const directories = [
-    ...(process.env.PATH ?? "").split(delimiter),
+    ...(process.env.PATH ?? "")
+      .split(delimiter)
+      .map((directory) => directory.replace(/^"|"$/g, "")),
     join(homedir(), ".local", "bin"),
     ...(process.platform === "win32"
       ? [join(homedir(), "scoop", "shims")]

@@ -654,6 +654,7 @@ pub fn run() {
             rate_limits::fetch_claude_usage,
             rate_limits::fetch_opencode_go_usage,
             provider_usage::provider_usage_report,
+            session_store::usage::session_usage_report,
             provider_usage::provider_model_prices,
             pty::pty_spawn,
             pty::pty_write,

@@ -1,7 +1,6 @@
 import { Button } from "../../../shared/ui/Button";
 import { t, useLocale } from "../../../shared/i18n";
 import { ConnectionsSettings } from "../../connections/ui/ConnectionsSettings";
-import { TemplatesSettings } from "./TemplatesSettings";
 
 import { ArrowLeft, RotateCcw } from "../../../shared/ui/icons";
 import { useCallback, useEffect, useId, useRef, useState } from "react";
@@ -49,6 +48,7 @@ import { ProjectNotificationSettings } from "../../notifications/ui/ProjectNotif
 import { WorkspacePage } from "./WorkspaceSettings";
 import { WorkspaceEditorSettings } from "./WorkspaceEditorSettings";
 import { PrivacyStartupSettings } from "./PrivacyStartupSettings";
+import { SourceControlSettings } from "./SourceControlSettings";
 import { ChatPage } from "./ChatSettings";
 import { InboxPage } from "./InboxSettings";
 import { useAppearanceSettings } from "./useAppearanceSettings";
@@ -58,7 +58,6 @@ import { TerminalPage } from "./TerminalSettings";
 import { ProvidersPage } from "./ProviderSettings";
 import { UsagePage } from "../../usage/ui/UsagePage";
 import { ArchivePage } from "./ArchiveSettings";
-import { RemoteReconnectGroup } from "./ConnectionRecoverySettings";
 
 /**
  * The `data-setting-id` Settings should reveal when it opens: one of the ids in
@@ -271,19 +270,20 @@ export function SettingsView({
 
       <header className="bycoda-settings-toolbar">
         <div className="bycoda-settings-toolbar-title">
-          <span>{section === "usage" ? t("Usage") : t("Workspace configuration")}</span>
-          <p>
-            {section === "usage"
-              ? t("Provider limits and session activity")
-              : t("Application, agents and project preferences")}
-          </p>
+          <span>{section === "usage" ? t("Usage") : t("Settings")}</span>
         </div>
         <div className="bycoda-settings-toolbar-actions">
           <SettingsSearch onReveal={onReveal} />
           {section === "appearance" ? (
-            <Button variant="ghost" size="sm" type="button" onClick={appearance.restoreDefaults}>
+            <Button
+              variant="ghost"
+              size="sm"
+              type="button"
+              iconOnly
+              label={t("Restore defaults")}
+              onClick={appearance.restoreDefaults}
+            >
               <RotateCcw className="size-3.5" strokeWidth={1.75} />
-              {t("Restore defaults")}
             </Button>
           ) : null}
         </div>
@@ -309,6 +309,7 @@ export function SettingsView({
                       variant="item"
                       motion="none"
                       selected={category.id === section}
+                      tooltip={category.label}
                       key={category.id}
                       ref={(node) => {
                         if (node) categoryRefs.current.set(category.id, node);
@@ -396,15 +397,12 @@ export function SettingsView({
                   {section === "connections" ? (
                     <>
                       <ConnectionsSettings />
-                      <RemoteReconnectGroup />
                     </>
                   ) : null}
                   {section === "appearance" ? <AppearancePage appearance={appearance} /> : null}
                   {section === "workspace" ? (
-                    <>
-                      <WorkspacePage />
-                      <WorkspaceEditorSettings />
-                      <Group title={t("Explorer")}>
+                    <WorkspacePage>
+                      <Group title={t("Explorer")} layout="full">
                         <Row
                           id="show-excluded-files"
                           label={t("Show excluded files")}
@@ -419,7 +417,8 @@ export function SettingsView({
                           />
                         </Row>
                       </Group>
-                    </>
+                      <WorkspaceEditorSettings />
+                    </WorkspacePage>
                   ) : null}
                   {section === "notifications" ? (
                     <>
@@ -438,23 +437,28 @@ export function SettingsView({
                       </div>
                     </>
                   ) : null}
-                  {section === "chat" ? <ChatPage /> : null}
+                  {section === "chat" ? <ChatPage appearance={appearance} /> : null}
                   {section === "policies" ? <PoliciesSettings /> : null}
-                  {section === "chat" ? <TemplatesSettings /> : null}
                   {section === "keybindings" ? <KeybindingsPage /> : null}
                   {section === "terminal" ? <TerminalPage /> : null}
                   {section === "mcp" ? <McpSettings cwd={cwd} recents={recents} /> : null}
                   {section === "providers" ? <ProvidersPage cwd={cwd} recents={recents} /> : null}
                   {section === "usage" ? <UsagePage /> : null}
+                  {section === "limits" ? <UsagePage limitsOnly /> : null}
                   {section === "worktrees" ? (
-                    <WorktreesPage
-                      cwd={cwd}
-                      recents={recents}
-                      liveSessions={liveSessions}
-                      onRemove={onRemoveWorktree}
-                      onCheckRemove={onCheckWorktreeRemoval}
-                      onDeleteSessions={onDeleteWorktreeSessions}
-                    />
+                    <>
+                      <SourceControlSettings />
+                      <Group title={t("Worktrees")} layout="full">
+                        <WorktreesPage
+                          cwd={cwd}
+                          recents={recents}
+                          liveSessions={liveSessions}
+                          onRemove={onRemoveWorktree}
+                          onCheckRemove={onCheckWorktreeRemoval}
+                          onDeleteSessions={onDeleteWorktreeSessions}
+                        />
+                      </Group>
+                    </>
                   ) : null}
                   {section === "groupLock" ? (
                     <div className="group-privacy">

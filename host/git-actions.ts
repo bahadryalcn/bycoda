@@ -56,6 +56,9 @@ export type GitActionCommand = (typeof GIT_ACTION_COMMANDS)[number];
 /** Commands that move HEAD or rewrite the working tree under a running agent;
  * like a branch switch, they wait until the project's sessions are idle. */
 export const GIT_ACTIONS_NEEDING_IDLE: ReadonlySet<string> = new Set<GitActionCommand>([
+  "git_stash",
+  "git_stash_action",
+  "git_resolve_conflict",
   "git_checkout_commit",
   "git_create_branch_at",
   "git_create_branch_from",
@@ -210,7 +213,9 @@ async function knownRemote(root: string, input: unknown): Promise<string> {
 
 /** A file path inside the project, relative to its root with `/` separators. */
 async function repoPath(root: string, input: unknown): Promise<string> {
-  return relative(root, await safeGitPath(root, input)).split(sep).join("/");
+  return relative(root, await safeGitPath(root, input))
+    .split(sep)
+    .join("/");
 }
 
 /** A checkout blocked by local changes gets the same advice as locally. */

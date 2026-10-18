@@ -1,5 +1,6 @@
 import { useSyncExternalStore } from "react";
 import { replaceEqualDeep } from "@tanstack/react-query";
+import { recordRateLimitHistory } from "./rateLimitHistory";
 import {
   errorRateLimits,
   fetchingRateLimits,
@@ -25,6 +26,7 @@ function keyFor(provider: RateLimitProvider, accountId: string): string {
 }
 
 function publish(key: string, value: ProviderRateLimits): ProviderRateLimits {
+  recordRateLimitHistory(key, value);
   const previous = snapshots.get(key);
   value = replaceEqualDeep(previous, value);
   if (previous === value) return value;

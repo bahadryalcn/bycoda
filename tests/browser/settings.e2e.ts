@@ -1,6 +1,109 @@
 import { test, expect } from "@playwright/test";
 import { mkdirSync } from "node:fs";
 
+for (const theme of ["light", "dark"])
+  for (const width of [390, 768, 1024, 1440]) {
+    test(`general settings dependencies and language choices: ${theme} ${width}`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ width, height: 900 });
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      await page.goto(`/tests/browser/settings.html?section=general&theme=${theme}&lang=en`);
+      const general = page.locator(".general-settings");
+      const awake = general.getByRole("switch", {
+        name: "Prevent sleep while agents work",
+        exact: true,
+      });
+      const screen = general.getByRole("switch", { name: "Keep the screen on", exact: true });
+      const duration = general
+        .locator('[data-setting-id="keep-awake-duration"]')
+        .getByRole("combobox");
+      await expect(screen).toBeDisabled();
+      await expect(duration).toBeDisabled();
+      await awake.focus();
+      await page.keyboard.press("Space");
+      await expect(screen).toBeEnabled();
+      await screen.click();
+      await duration.click();
+      await page.getByRole("option", { name: "15 minutes", exact: true }).click();
+      await awake.click();
+      await expect(screen).toBeDisabled();
+      await page.reload();
+      await expect(screen).toBeChecked();
+      await expect(screen).toBeDisabled();
+      await awake.click();
+      await expect(duration).toContainText("15 minutes");
+      await expect(screen).toBeChecked();
+      const language = general.locator('[data-setting-id="git-language"]').getByRole("button");
+      await language.focus();
+      await language.press("Enter");
+      await page.getByRole("option", { name: "English", exact: true }).click();
+      await expect(language).toContainText("English");
+      await expect(general.locator('[data-setting-id="technical-language"]')).toContainText(
+        "Follow application language",
+      );
+      await expect(general.getByText("Changes save automatically", { exact: true })).toHaveCount(1);
+      await expect(general.locator(".general-detail")).toBeVisible();
+      const overflows = await general.evaluate((root) =>
+        [
+          ...root.querySelectorAll(
+            ".settings-row, .settings-group-heading, .general-update-actions",
+          ),
+        ]
+          .filter((node) => node.scrollWidth > node.clientWidth + 1)
+          .map((node) => node.className),
+      );
+      expect(overflows).toEqual([]);
+      mkdirSync("temp/verification/2026-10-18-general-settings", { recursive: true });
+      await page.locator("[data-settings-scroller]").evaluate((node) => {
+        node.scrollTop = 0;
+      });
+      await page.screenshot({
+        path: `temp/verification/2026-10-18-general-settings/${theme}-${width}-top.png`,
+      });
+      await general.locator('[data-setting-id="update"]').scrollIntoViewIfNeeded();
+      await page.screenshot({
+        path: `temp/verification/2026-10-18-general-settings/${theme}-${width}-bottom.png`,
+      });
+    });
+  }
+
+test("appearance topics stay visible and support search into nested controls", async ({
+  page,
+}, testInfo) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.goto("/tests/browser/settings.html?section=appearance&theme=dark&lang=en");
+  const topics = page.locator(".appearance-settings > .appearance-section");
+  await expect(topics).toHaveCount(6);
+  await page.screenshot({ path: testInfo.outputPath("appearance-overview-dark.png") });
+  await expect(page.locator(".appearance-save-note")).toHaveText("Changes save automatically");
+  await expect(page.locator('[data-setting-id="code-font-size"]')).toBeVisible();
+  await expect(
+    page.locator(".appearance-settings details, .appearance-settings summary"),
+  ).toHaveCount(0);
+
+  await page.getByRole("button", { name: "Search settings", exact: true }).click();
+  await page
+    .getByRole("combobox", { name: "Search settings", exact: true })
+    .fill("Dark-mode lightness");
+  await page.getByRole("option").filter({ hasText: "Dark-mode lightness" }).click();
+  await expect(page.locator('[data-setting-id="dark-lightness"]')).toBeVisible();
+
+  // Expanded content must stay contained at intermediate and narrow widths too.
+  for (const width of [390, 768, 1024, 1440]) {
+    await page.setViewportSize({ width, height: 900 });
+    expect(
+      await page
+        .locator(".appearance-settings")
+        .evaluate((node) => node.scrollWidth <= node.clientWidth + 1),
+    ).toBe(true);
+  }
+  await page.screenshot({ path: testInfo.outputPath("appearance-expanded.png") });
+  await page.goto("/tests/browser/settings.html?section=appearance&theme=light&lang=tr");
+  await expect(page.locator(".appearance-settings > .appearance-section")).toHaveCount(6);
+  await page.screenshot({ path: testInfo.outputPath("appearance-overview-light-tr.png") });
+});
+
 test("control density persists shared control targets and resets without changing fonts", async ({
   page,
 }) => {
@@ -40,9 +143,7 @@ test("elastic appearance adjustments retain bounds, persistence and light-mode g
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.goto("/tests/browser/settings.html?section=appearance&theme=dark&lang=en");
   await page.getByRole("button", { name: /^Olive/ }).click();
-  await page.locator("details.settings-advanced").evaluateAll((nodes) => {
-    for (const node of nodes) (node as HTMLDetailsElement).open = true;
-  });
+  await expect(page.locator("details.settings-advanced")).toHaveCount(0);
   const opacity = page
     .locator('[data-setting-id="sidebar-opacity"]')
     .getByRole("slider", { name: "Sidebar opacity", exact: true });
@@ -58,9 +159,7 @@ test("elastic appearance adjustments retain bounds, persistence and light-mode g
     path: "temp/verification/2026-10-16-ui-system/W5a-SETTINGS-elastic-custom-dark.png",
   });
   await page.reload();
-  await page.locator("details.settings-advanced").evaluateAll((nodes) => {
-    for (const node of nodes) (node as HTMLDetailsElement).open = true;
-  });
+  await expect(page.locator("details.settings-advanced")).toHaveCount(0);
   await expect(opacity).toHaveAttribute("aria-valuenow", "99");
   const blur = page
     .locator('[data-setting-id="blur"]')
@@ -71,9 +170,7 @@ test("elastic appearance adjustments retain bounds, persistence and light-mode g
     (await blur.getAttribute("aria-valuemin")) ?? "",
   );
   await page.goto("/tests/browser/settings.html?section=appearance&theme=light&lang=en");
-  await page.locator("details.settings-advanced").evaluateAll((nodes) => {
-    for (const node of nodes) (node as HTMLDetailsElement).open = true;
-  });
+  await expect(page.locator("details.settings-advanced")).toHaveCount(0);
   await expect(opacity).toHaveAttribute("aria-disabled", "true");
   await expect(blur).toHaveAttribute("aria-disabled", "true");
   await page.setViewportSize({ width: 390, height: 900 });
@@ -195,20 +292,8 @@ test("shared appearance controls preserve palette persistence and provide color 
       await page.setViewportSize({ width, height: 900 });
       await page.goto(`/tests/browser/settings.html?section=appearance&theme=${theme}&lang=en`);
       const studio = page.getByRole("region", { name: "Theme and colors", exact: true });
-      const previewToggle = studio.locator("summary").filter({ hasText: "Live control preview" });
-      await expect(
-        studio.getByRole("group", { name: "Theme palettes", exact: true }),
-      ).toBeVisible();
-      await expect(studio.getByRole("textbox", { name: "Name", exact: true }).first()).toBeHidden();
-      await previewToggle.click();
-      const preview = studio.getByRole("region", { name: "Live control preview", exact: true });
-      const specimen = preview
-        .getByRole("region", { name: "Control preview", exact: true })
-        .first();
-      await expect(specimen.getByRole("textbox", { name: "Name", exact: true })).toBeVisible();
-      await specimen
-        .getByRole("textbox", { name: "Name", exact: true })
-        .fill("Unsaved preview text");
+      await expect(studio.locator(".appearance-workspace-preview")).toHaveCount(9);
+      await expect(studio.locator("details, summary")).toHaveCount(0);
       const olive = studio.getByRole("button", { name: /^Olive/ });
       const palettes = studio.getByRole("group", { name: "Theme palettes", exact: true });
       await expect(palettes.getByRole("button")).toHaveCount(6);
@@ -219,9 +304,6 @@ test("shared appearance controls preserve palette persistence and provide color 
       }
       await olive.click();
       await expect(olive).toHaveAttribute("aria-pressed", "true");
-      await expect(specimen.getByRole("textbox", { name: "Name", exact: true })).toHaveValue(
-        "Unsaved preview text",
-      );
       await page.reload();
       await expect(olive).toHaveAttribute("aria-pressed", "true");
       await studio.getByRole("button", { name: "Reset colors", exact: true }).click();
@@ -230,27 +312,20 @@ test("shared appearance controls preserve palette persistence and provide color 
         "true",
       );
       await studio
-        .getByRole("radio", { name: theme === "light" ? "Light" : "Dark", exact: true })
+        .getByRole("button", { name: theme === "light" ? "Light" : "Dark", exact: true })
         .click();
       await expect(page.locator("html")).toHaveClass(
         theme === "light" ? /theme-light/ : /^(?!.*theme-light)/,
       );
-      await studio
-        .getByRole("heading", { name: "Theme and colors", exact: true })
-        .evaluate((node) => {
-          const scroller = node.closest<HTMLElement>("[data-settings-scroller]")!;
-          scroller.scrollTop +=
-            node.getBoundingClientRect().top - scroller.getBoundingClientRect().top;
-          window.scrollTo(0, 0);
-        });
+      await studio.getByRole("heading", { name: "Color scheme", exact: true }).evaluate((node) => {
+        const scroller = node.closest<HTMLElement>("[data-settings-scroller]")!;
+        scroller.scrollTop +=
+          node.getBoundingClientRect().top - scroller.getBoundingClientRect().top;
+        window.scrollTo(0, 0);
+      });
       await page.screenshot({
         path: testInfo.outputPath(`appearance-${width}-${theme}.png`),
       });
-      await previewToggle.click();
-      await preview.getByText("All control states", { exact: true }).click();
-      await expect(
-        preview.getByRole("button", { name: "primary / info", exact: true }),
-      ).toBeVisible();
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
         true,
       );
@@ -278,9 +353,7 @@ test("category keyboard navigation retains focus and search opens an advanced co
   const target = page.locator('[data-setting-id="saturation"]');
   await expect(target).toBeVisible();
   await expect(target.getByRole("slider")).toBeFocused();
-  for (const disclosure of await target.locator("xpath=ancestor::details").all()) {
-    await expect(disclosure).toHaveAttribute("open", "");
-  }
+  await expect(target.locator("xpath=ancestor::details")).toHaveCount(0);
   await page.getByRole("button", { name: "Search settings", exact: true }).click();
   const search = page.getByRole("combobox", { name: "Search settings", exact: true });
   await search.fill("Codex · Terminal account profiles");
@@ -319,7 +392,7 @@ test("automatic settings preserve values and dependent controls after reopening 
   await page.getByRole("tab", { name: "Notifications", exact: true }).click();
   const summary = page.getByRole("switch", { name: "Daily summary", exact: true });
   await expect(summary).toBeDisabled();
-  await page.getByRole("switch", { name: "Notifications", exact: true }).click();
+  await page.getByRole("switch", { name: "Desktop notifications", exact: true }).click();
   await expect(summary).toBeEnabled();
 });
 
@@ -366,14 +439,10 @@ for (const lang of languages)
             `/tests/browser/settings.html?lang=${lang}&theme=${theme}&section=${section}`,
           );
           await expect(
-            page
-              .getByRole("tablist", { name: "Settings categories" })
-              .getByRole("tab", { selected: true }),
+            page.locator(".bycoda-settings-categories").getByRole("tab", { selected: true }),
           ).toBeVisible();
           await expect(page.locator(".bycoda-settings-panel")).toBeVisible();
-          await page.locator("details.settings-advanced").evaluateAll((nodes) => {
-            for (const node of nodes) (node as HTMLDetailsElement).open = true;
-          });
+          await expect(page.locator("details.settings-advanced")).toHaveCount(0);
           await page.waitForTimeout(100);
           const overflow = await page.locator(".bycoda-settings-panel").evaluate((panel) => {
             const bounds = panel.getBoundingClientRect();

@@ -102,6 +102,12 @@ closes after its active turn ends. Verify the macOS bundle signature/version,
 Windows installer checksum, and installed binary against the built artifact.
 Keep rollback files. This local pipeline does not notarize macOS bundles.
 
+macOS staging and rollback bundles stay on the Applications volume under
+`/Applications/.bycoda-update.noindex/<package-id>/` as `staged.bundle` and
+`previous.bundle`. Only the active `/Applications/bycoda.app` has an `.app`
+extension in the Applications list. Preserve this hidden recovery directory;
+do not put rollback copies back in Applications as additional `.app` bundles.
+
 A pending helper for another package, or a running legacy installer helper, blocks
 a new update on that machine before building. Let existing work finish; do not kill
 active processes to accelerate installation.

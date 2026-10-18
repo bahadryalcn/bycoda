@@ -158,7 +158,12 @@ fn git_grep_capped(
     max_bytes: usize,
     cancel: &AtomicBool,
 ) -> Option<SearchResult> {
-    let mut args = vec!["grep".to_string(), "-z".to_string(), "-n".to_string()];
+    let mut args = vec![
+        "grep".to_string(),
+        "--untracked".to_string(),
+        "-z".to_string(),
+        "-n".to_string(),
+    ];
     if !options.case_sensitive {
         args.push("-i".to_string());
     }
@@ -694,6 +699,27 @@ mod tests {
 
         assert!(result.matches.is_empty());
         assert!(!result.truncated);
+    }
+
+    #[test]
+    fn git_grep_includes_untracked_but_excludes_ignored_files() {
+        let dir = tmp("git-grep-untracked");
+        if !git(&dir.0, &["init", "--quiet"]) {
+            return;
+        }
+        std::fs::write(dir.0.join("new.txt"), "needle\n").unwrap();
+        std::fs::write(dir.0.join("ignored.txt"), "needle\n").unwrap();
+        std::fs::write(dir.0.join(".gitignore"), "ignored.txt\n").unwrap();
+        let result = git_grep_capped(
+            &dir.0,
+            &options(&dir.0, "needle"),
+            "needle",
+            4096,
+            &AtomicBool::new(false),
+        )
+        .unwrap();
+        assert_eq!(result.matches.len(), 1);
+        assert_eq!(result.matches[0].relative, "new.txt");
     }
 
     #[test]

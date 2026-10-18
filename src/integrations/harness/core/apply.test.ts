@@ -3,10 +3,12 @@ import { newSession, type Session } from "../../../features/sessions/model/sessi
 import { planTurnKey } from "../../../features/sessions/model/plan";
 import { changedBlocks } from "../../../features/sessions/model/blockChanges";
 import { sanitizeSessionForPersist } from "../../../features/sessions/data/sessionStore";
-import { previewFromTool } from "../providers/claude/claudeProtocol";
+import { previewFromTool, streamDeltaFromEvent } from "../providers/claude/claudeProtocol";
+import { snapshotRemainder } from "./streamText";
 import {
   appendUser,
   applyHarnessEvent,
+  applyHarnessEvents,
   appendSteerUser,
   promoteLastAssistantToPlan,
   stopStreaming,
@@ -15,18 +17,68 @@ import type { HarnessEvent } from "./types";
 
 let now = 0;
 
-it.each(["...", " — ", "!!!"])("drops punctuation-only assistant streams (%s) without removing user messages", (text) => {
-  const session = { ...newSession("claude", "/repo"), blocks: [{ id: "u", role: "user" as const, text }, { id: "a", role: "assistant" as const, text, streaming: true }] };
-  expect(stopStreaming(session).blocks.map((block) => block.id)).toEqual(["u"]);
-  const completed = applyHarnessEvent(session, { type: "message.completed" });
-  expect(completed.blocks.map((block) => block.id)).toEqual(["u"]);
-  expect(changedBlocks(session.blocks, completed.blocks)?.get("a")).toBeNull();
-});
+it.each([
+  ["repeated words", ["ha", "ha", "!"], "haha!"],
+  ["indentation", ["  ", "  ", "print('x')"], "    print('x')"],
+  ["prefix shaped chunks", ["a", "abc"], "aabc"],
+] as const)(
+  "preserves actual Claude %s deltas in ordinary and batched delivery",
+  (_, chunks, expected) => {
+    for (const role of ["assistant", "reasoning"] as const) {
+      const events: HarnessEvent[] = chunks.map((text) => {
+        const delta = streamDeltaFromEvent({
+          event: {
+            type: "content_block_delta",
+            delta:
+              role === "assistant"
+                ? { type: "text_delta", text }
+                : { type: "thinking_delta", thinking: text },
+          },
+        });
+        expect(delta).toEqual({ kind: role, text });
+        return {
+          type: role === "assistant" ? "message.delta" : "reasoning.delta",
+          text: delta!.text,
+        };
+      });
+      events.push({ type: role === "assistant" ? "message.completed" : "reasoning.completed" });
+      expect(events.reduce(applyHarnessEvent, newSession("claude", "/tmp")).blocks[0].text).toBe(
+        expected,
+      );
+      expect(applyHarnessEvents(newSession("claude", "/tmp"), events).blocks[0].text).toBe(
+        expected,
+      );
+    }
+  },
+);
 
-it.each(["✅", "はい。", "1", "=", "Done."])("preserves meaningful assistant output (%s)", (text) => {
-  const session = { ...newSession("claude", "/repo"), blocks: [{ id: "a", role: "assistant" as const, text, streaming: true }] };
-  expect(stopStreaming(session).blocks[0].text).toBe(text);
-});
+it.each(["...", " — ", "!!!"])(
+  "drops punctuation-only assistant streams (%s) without removing user messages",
+  (text) => {
+    const session = {
+      ...newSession("claude", "/repo"),
+      blocks: [
+        { id: "u", role: "user" as const, text },
+        { id: "a", role: "assistant" as const, text, streaming: true },
+      ],
+    };
+    expect(stopStreaming(session).blocks.map((block) => block.id)).toEqual(["u"]);
+    const completed = applyHarnessEvent(session, { type: "message.completed" });
+    expect(completed.blocks.map((block) => block.id)).toEqual(["u"]);
+    expect(changedBlocks(session.blocks, completed.blocks)?.get("a")).toBeNull();
+  },
+);
+
+it.each(["✅", "はい。", "1", "=", "Done."])(
+  "preserves meaningful assistant output (%s)",
+  (text) => {
+    const session = {
+      ...newSession("claude", "/repo"),
+      blocks: [{ id: "a", role: "assistant" as const, text, streaming: true }],
+    };
+    expect(stopStreaming(session).blocks[0].text).toBe(text);
+  },
+);
 
 beforeEach(() => {
   now = 0;
@@ -276,7 +328,7 @@ describe("streamed markdown", () => {
     });
     session = applyHarnessEvent(session, {
       type: "message.delta",
-      text: "I'll read the file",
+      text: snapshotRemainder(session.blocks[0].text, "I'll read the file"),
     });
     expect(session.blocks).toHaveLength(1);
     expect(session.blocks[0]?.text).toBe("I'll read the file");
@@ -1375,6 +1427,24 @@ describe("clarifying questions", () => {
 });
 
 describe("subagent context", () => {
+  it("retains a child's window and accepts window-only changes without replacing parent usage", () => {
+    let session = applyHarnessEvent(newSession("codex", "/tmp"), {
+      type: "tool.started",
+      callId: "child",
+      kind: "agent",
+      title: "Review",
+    });
+    session = { ...session, context: { used: 80_000, window: 400_000 } };
+    for (const reading of [
+      { used: 12_000, window: 272_000 },
+      { used: 12_000, window: 400_000 },
+      { used: 6_000 },
+    ]) {
+      session = applyHarnessEvent(session, { type: "agent.context", callId: "child", ...reading });
+    }
+    expect(session.blocks[0].tool?.agentContext).toEqual({ used: 6_000, window: 400_000 });
+    expect(session.context).toEqual({ used: 80_000, window: 400_000 });
+  });
   it("stores the latest reading on the matching agent block and survives updates", () => {
     let session = newSession("claude", "/tmp");
     for (const callId of ["a", "b"]) {

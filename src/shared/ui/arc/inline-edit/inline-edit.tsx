@@ -1,6 +1,7 @@
 "use client";
 
 import { t } from "../../../i18n";
+import { isImeComposition } from "../../../lib/keyboard";
 
 import {
   useEffect,
@@ -95,7 +96,7 @@ const textFade: Variants = {
   rest: { opacity: 1, transition: { duration: motionTokens.duration.fast } },
   exit: { opacity: 0, transition: { duration: motionTokens.duration.instant } },
 };
-const rest: TargetAndTransition = { opacity: 1, scale: 1,};
+const rest: TargetAndTransition = { opacity: 1, scale: 1 };
 const iconIn: TargetAndTransition = {
   opacity: 0,
   scale: 0.6,
@@ -236,6 +237,10 @@ export function InlineEdit({
   const selection = useRef<number | "all" | null>(null);
   const focusDisplay = useRef(false);
   const saveRun = useRef(0);
+  const externalValue = useRef(value);
+  useLayoutEffect(() => {
+    externalValue.current = value;
+  }, [value]);
   const timers = useRef<ReturnType<typeof setTimeout>[]>([]);
   const frame = useRef<HTMLSpanElement>(null);
   const box = useRef<HTMLSpanElement>(null);
@@ -389,8 +394,12 @@ export function InlineEdit({
     if (source !== "blur") focusDisplay.current = true;
     // Trimmed spaces would shift the text in one frame, so a cleaned value arrives with the text motion instead.
     if (next !== draft) setLayer((current) => ({ key: current.key + 1, direction: 1 }));
-    if (next === shown) return;
+    if (next === committed) {
+      setShown(committed);
+      return;
+    }
     const previous = committed;
+    const sourceValue = value;
     const run = ++saveRun.current;
     setShown(next);
     setPhase("saving");
@@ -400,14 +409,16 @@ export function InlineEdit({
       .then(
         () => {
           if (run !== saveRun.current) return;
-          setCommitted(next);
+          const resolved = externalValue.current === sourceValue ? next : externalValue.current;
+          setCommitted(resolved);
+          setShown(resolved);
           setPhase("saved");
           setAnnouncement(t("Saved {p0}", { p0: label }));
           later(() => setPhase((current) => (current === "saved" ? "idle" : current)), 1800);
         },
         () => {
           if (run !== saveRun.current) return;
-          setShown(previous);
+          setShown(externalValue.current === sourceValue ? previous : externalValue.current);
           setLayer((current) => ({ key: current.key + 1, direction: -1 }));
           setPhase("failed");
           setFailed(next);
@@ -421,6 +432,7 @@ export function InlineEdit({
 
   function cancel() {
     setEditing(false);
+    setShown(committed);
     setError(null);
     focusDisplay.current = true;
     if (draft !== shown) setLayer((current) => ({ key: current.key + 1, direction: -1 }));
@@ -438,6 +450,7 @@ export function InlineEdit({
   }
 
   function onKeyDown(event: ReactKeyboardEvent<HTMLInputElement | HTMLTextAreaElement>) {
+    if (isImeComposition(event.nativeEvent)) return;
     if (event.key === "Escape") {
       event.preventDefault();
       event.stopPropagation();

@@ -9,7 +9,7 @@ import {
 import { AdvancedSettings, Group, Row } from "./settingsControls";
 import { Button } from "../../../shared/ui/Button";
 
-export function FileAccessSettings() {
+export function FileAccessSettings({ embedded = false }: { embedded?: boolean }) {
   useLocale();
   const [mode, setMode] = useState<FileAccessMode | null>(null);
   const [busy, setBusy] = useState(false);
@@ -39,18 +39,9 @@ export function FileAccessSettings() {
       setBusy(false);
     }
   };
-  return (
-    <Group
-      title={t("File access")}
-      scope={t("Scope: this computer. Remote hosts manage their own file access.")}
-    >
-      <Row
-        id="file-access"
-        label={t("Files, projects and skills")}
-        description={t(
-          "Allow access once for this computer. Your choice is saved across app restarts. Agent execution permissions are configured separately.",
-        )}
-      >
+  const content = (
+    <>
+      <Row id="file-access" label={t("File access")}>
         <span role="status" aria-live="polite">
           {mode === null
             ? error
@@ -62,7 +53,7 @@ export function FileAccessSettings() {
                 ? t("Selected folders only")
                 : t("Not configured")}
         </span>
-        <Button disabled={busy} onClick={() => void review()}>
+        <Button loading={busy} onClick={() => void review()}>
           {busy ? t("Waiting for approval…") : t("Change file access")}
         </Button>
       </Row>
@@ -74,8 +65,11 @@ export function FileAccessSettings() {
       <AdvancedSettings
         id="file-access-permissions"
         settingIds={["file-access-permissions"]}
-        title={t("Advanced: file access and agent permissions")}
+        title={t("Files, projects and skills")}
       >
+        <p className="privacy-inline-note">
+          {t("Scope: this computer. Remote hosts manage their own file access.")}
+        </p>
         <Row
           label={t("Separate permissions")}
           description={t(
@@ -83,6 +77,7 @@ export function FileAccessSettings() {
           )}
         />
       </AdvancedSettings>
-    </Group>
+    </>
   );
+  return embedded ? content : <Group title={t("File access")}>{content}</Group>;
 }

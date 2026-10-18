@@ -1,6 +1,17 @@
 import type { Block, Session } from "./session";
 import { isProviderFailureText } from "./plan";
 
+/** Normalize only plain retry counters; preserve provider-specific error details. */
+export function sessionRetryNotice(message: string | undefined): {
+  reconnecting: boolean;
+  detail: string | undefined;
+} {
+  const reconnect = message?.trim().match(/^Reconnecting(?:\.{3}|…)?\s*(\d+\/\d+)?\s*$/i);
+  if (reconnect) return { reconnecting: true, detail: reconnect[1] };
+  const retry = message?.trim().match(/^Retrying\s*\((\d+\/\d+)\)(?:\.{3}|…)?$/i);
+  return { reconnecting: false, detail: retry?.[1] ?? message };
+}
+
 /** Older hosts saved writer rejection as untagged system text. Keep those
  * persisted failures visible and retryable without rewriting user history. */
 export function isSessionErrorBlock(block: Block): boolean {

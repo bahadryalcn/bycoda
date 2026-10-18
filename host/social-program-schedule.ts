@@ -103,7 +103,14 @@ export function parseProgramSchedule(raw: unknown): ProgramSchedule {
     s.frequency > 48
   )
     throw new Error("Invalid publishing interval or frequency.");
-  return { ...s, days: [...new Set(s.days)].sort(), times: [...new Set(s.times)].sort() };
+  const days = [...new Set(s.days)].sort();
+  const span = (clock(s.endTime) - clock(s.startTime) + 1440) % 1440 || 1440;
+  const maxPerDay = s.period === "day" ? s.frequency : Math.ceil(s.frequency / days.length);
+  if (s.mode === "frequency" && maxPerDay > span)
+    throw new Error(
+      "Widen the publishing window or reduce the frequency: each post needs a distinct minute.",
+    );
+  return { ...s, days, times: [...new Set(s.times)].sort() };
 }
 export function programWindow(s: ProgramSchedule, at: number) {
   const p = parts(s.timeZone, at),
@@ -126,7 +133,9 @@ export function programDay(s: ProgramSchedule, at: number) {
 function slots(s: ProgramSchedule, from: number): number[] {
   const base = new Date(`${parts(s.timeZone, from).day}T00:00:00Z`).getTime();
   const result: number[] = [];
-  for (let dateIndex = 0; dateIndex < 9; dateIndex++) {
+  // Overnight frequency slots retain the weekday of their window's start.
+  const firstDate = s.mode === "frequency" && clock(s.startTime) > clock(s.endTime) ? -1 : 0;
+  for (let dateIndex = firstDate; dateIndex < 9; dateIndex++) {
     const localDate = new Date(base + dateIndex * 86400000).toISOString().slice(0, 10);
     const weekday = new Date(`${localDate}T12:00:00Z`).getUTCDay() || 7;
     if (!s.days.includes(weekday)) continue;

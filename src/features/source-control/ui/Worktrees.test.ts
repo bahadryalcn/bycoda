@@ -541,9 +541,7 @@ it("uses the shared project picker without leaking late worktree responses", asy
   const refresh = container.querySelector<HTMLButtonElement>('[aria-label="Refresh worktrees"]')!;
   expect(refresh.textContent).toBe("Refresh");
   expect(refresh.getAttribute("data-button-variant")).toBe("ghost");
-  expect(refresh.parentElement?.textContent).toContain(
-    "Deleting one keeps its sessions by default",
-  );
+  expect(create.getAttribute("data-button-variant")).toBe("primary");
   await act(async () => picker.click());
   expect(document.querySelector('input[placeholder="Search projects..."]')).not.toBeNull();
   const secondProject = document.querySelector<HTMLButtonElement>(
@@ -552,9 +550,43 @@ it("uses the shared project picker without leaking late worktree responses", asy
   expect(secondProject.querySelector("svg")).not.toBeNull();
   await act(async () => secondProject.click());
   expect(container.querySelector('[aria-label="Reveal second"]')).not.toBeNull();
+  const help = container.querySelector('section[data-setting-id="worktree-location"]')!;
+  expect(help.getAttribute("aria-labelledby")).toBeTruthy();
+  expect(help.textContent).toContain("New worktrees are created in");
   await act(async () => request.resolve(result("first")));
   expect(container.querySelector('[aria-label="Reveal first"]')).toBeNull();
   expect(container.querySelector('[aria-label="Reveal second"]')).not.toBeNull();
+});
+
+it("searches worktrees by branch and folder, and clears an empty result without mutations", async () => {
+  vi.mocked(listWorktrees).mockResolvedValue({
+    ...result(),
+    worktrees: [
+      { ...tree, path: "/repo", branch: "main", isMain: true },
+      { ...tree, path: "/repo-worktrees/alpha-folder", branch: "feature/alpha" },
+      { ...tree, path: "/repo-worktrees/beta-folder", branch: "fix/beta", missing: true },
+    ],
+  });
+  const onRemove = vi.fn();
+  await act(async () =>
+    root.render(createElement(WorktreesPage, { cwd: "/search-worktrees", onRemove })),
+  );
+  const search = container.querySelector<HTMLInputElement>('[aria-label="Search worktrees"]')!;
+  expect(container.querySelectorAll('[role="listitem"]')).toHaveLength(2);
+  await act(async () => type(search, " FEATURE/ALPHA "));
+  expect(container.querySelectorAll('[role="listitem"]')).toHaveLength(1);
+  expect(container.querySelector('[aria-label="Delete feature/alpha"]')).not.toBeNull();
+  await act(async () => type(search, "beta-folder"));
+  expect(container.querySelectorAll('[role="listitem"]')).toHaveLength(1);
+  expect(
+    container.querySelector<HTMLButtonElement>('[aria-label="Reveal fix/beta"]')!.disabled,
+  ).toBe(true);
+  await act(async () => type(search, "no-matching-worktree"));
+  expect(container.querySelector('[role="status"]')?.textContent).toContain("No results");
+  await act(async () => button("Clear search").click());
+  expect(search.value).toBe("");
+  expect(container.querySelectorAll('[role="listitem"]')).toHaveLength(2);
+  expect(onRemove).not.toHaveBeenCalled();
 });
 
 it("refetches after a Git mutation that arrived during an in-flight read", async () => {

@@ -55,7 +55,7 @@ import {
   gitlabAttentionLabel,
   inboxItemKey,
   inboxItemRef,
-  inboxListIsFresh,
+  inboxListFetchedAt,
   inboxProjectsForRail,
   listInboxItems,
   peekGithubWorkItem,
@@ -554,10 +554,22 @@ export function InboxView({
       }
     },
     initialData: () => peekInboxList(projects, fetchQuery) ?? undefined,
-    initialDataUpdatedAt: inboxListIsFresh(projects, fetchQuery) ? Date.now() : 0,
+    initialDataUpdatedAt: () => inboxListFetchedAt(projects, fetchQuery),
+    // Reopening checks the shared cache's real age, including background reads.
+    // listInboxItems skips provider calls while that cache is still fresh.
+    refetchOnMount: "always",
     enabled: queryVisible,
     staleTime: INBOX_VISIBLE_POLL_MS,
-    refetchInterval: source === "jira" && !jiraAutomaticSync ? false : INBOX_VISIBLE_POLL_MS,
+    refetchInterval: (query) => {
+      if (source === "jira" && !jiraAutomaticSync) return false;
+      // A cached read on entry must not start another full five-minute wait.
+      // Failed reads use the regular interval rather than a tight retry loop.
+      if (Object.keys(query.state.data?.errors ?? {}).length > 0) return INBOX_VISIBLE_POLL_MS;
+      const fetchedAt = inboxListFetchedAt(projects, fetchQuery);
+      return fetchedAt
+        ? Math.max(1000, fetchedAt + INBOX_VISIBLE_POLL_MS - Date.now())
+        : INBOX_VISIBLE_POLL_MS;
+    },
     retry: false,
   });
   useEffect(() => {

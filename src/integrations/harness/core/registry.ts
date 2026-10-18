@@ -5,9 +5,14 @@ import type {
   TurnIntent,
 } from "../../../features/sessions/model/session";
 import { invoke, isTauri } from "@tauri-apps/api/core";
-import { socialBridge, socialCliHint } from "./socialBridge";
-import { runtimeLogsBridge, runtimeLogsCliHint } from "./runtimeLogsBridge";
-import { conversationToolsBridge, conversationToolsCliHint } from "./conversationToolsBridge";
+import {
+  forgetRuntimeHint,
+  harnessRuntimeHints,
+  markRuntimeHintDelivered,
+  pendingRuntimeHint,
+  turnCarriesRuntimeHint,
+  withRuntimeHint,
+} from "./runtimeGuidance";
 import type { GeneratedSessionTitle } from "../../../features/sessions/model/sessionTitle";
 import type { PrContent } from "../../../features/source-control/model/gitText";
 import { hasLiveCatalog } from "../../../features/sessions/model/models";
@@ -324,18 +329,19 @@ export function sendHarnessTurn(input: SendTurnInput & { harness: HarnessId }) {
         });
       activeTurnSessions.add(input.sessionId);
       try {
-        const [social, logs, conversation] = await Promise.all([
-          socialBridge(input.sessionId),
-          runtimeLogsBridge(input.sessionId),
-          conversationToolsBridge(input.sessionId),
-        ]);
-        const hint = [
-          socialCliHint(social),
-          runtimeLogsCliHint(logs),
-          conversationToolsCliHint(conversation),
-        ]
-          .filter(Boolean)
-          .join("\n\n");
+        const thread = { harness: input.harness, providerAccountId: input.providerAccountId };
+        const hint = pendingRuntimeHint(
+          input.sessionId,
+          thread,
+          await harnessRuntimeHints(input.sessionId),
+        );
+        const text =
+          input.harness === "codex" ? input.text : withRuntimeHint(input.harness, input.text, hint);
+        const deliversHint = turnCarriesRuntimeHint(input.harness, input.text, text, hint);
+        const accepted = () => {
+          if (deliversHint) markRuntimeHintDelivered(input.sessionId, thread, hint);
+          ready();
+        };
         if ((cancellationEpoch.get(input.sessionId) ?? 0) !== epoch)
           throw new Error("Turn cancelled before it started");
         const owner = beginAdapterOperation(input.sessionId, adapter);
@@ -347,13 +353,13 @@ export function sendHarnessTurn(input: SendTurnInput & { harness: HarnessId }) {
                   runtimeInstructions:
                     [input.runtimeInstructions, hint].filter(Boolean).join("\n\n") || undefined,
                 }
-              : { text: hint ? `${hint}\n\n${input.text}` : input.text }),
+              : { text }),
             onAccepted: () => {
-              ready();
+              accepted();
               input.onAccepted?.();
             },
             onEvent: (event) => {
-              if (event.type === "turn.started") ready();
+              if (event.type === "turn.started") accepted();
               input.onEvent(event);
             },
           });
@@ -392,6 +398,7 @@ export function compactHarnessContext(
     const owner = beginAdapterOperation(input.sessionId, adapter);
     try {
       await adapter.compactContext(input);
+      forgetRuntimeHint(input.sessionId);
     } finally {
       await finishAdapterOperation(input.sessionId, owner);
       await releaseIdleHarness(input.harness, input.sessionId);
@@ -421,7 +428,10 @@ export function rewindHarnessLastTurn(
     cancelIdlePark(input.sessionId);
     const owner = beginAdapterOperation(input.sessionId, adapter);
     try {
-      return await adapter.rewindLastTurn(input);
+      const result = await adapter.rewindLastTurn(input);
+      // The removed turn may have carried the hint; resend it next turn.
+      forgetRuntimeHint(input.sessionId);
+      return result;
     } finally {
       await finishAdapterOperation(input.sessionId, owner);
       await releaseIdleHarness(input.harness, input.sessionId);
@@ -510,6 +520,7 @@ export async function stopHarnessSession(harness: HarnessId, sessionId: string):
 export async function forgetHarnessSession(harness: HarnessId, sessionId: string): Promise<void> {
   cancelIdlePark(sessionId);
   const adapter = getHarness(harness);
+  forgetRuntimeHint(sessionId);
   if (!adapter) return;
   await adapter.forgetSession(sessionId);
 }

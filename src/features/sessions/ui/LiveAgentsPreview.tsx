@@ -1,6 +1,6 @@
 import { Button } from "../../../shared/ui/Button";
 import { t, useLocale } from "../../../shared/i18n";
-import { useEffect, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import { useLockOverscroll } from "../../../shared/hooks/useLockOverscroll";
 import { formatLiveElapsed, shouldShowLiveAgents, type LiveAgent } from "../model/liveAgents";
 import { projectKey, projectName } from "../../../shared/lib/paths";
@@ -55,6 +55,7 @@ export function LiveAgentsPreview({
   const groupMascots = groupMascotsProp ?? loadedGroupMascots;
   const [expanded, setExpanded] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
+  const listId = useId();
   const [now, setNow] = useState(() => Date.now());
   const lockList = useLockOverscroll<HTMLDivElement>();
   const hasIssues = agents.some((agent) => agent.issue);
@@ -81,7 +82,7 @@ export function LiveAgentsPreview({
   return (
     <section
       aria-label={hasWorkingAgents ? t("Working agents") : t("Finished agents")}
-      className={`shrink-0 ${collapsible ? "" : "px-2"} ${bottomSpacing ? "pb-2" : ""}`}
+      className={`min-w-0 shrink-0 ${collapsible ? "border-b border-stroke pbs-1 pbe-2" : "px-2"} ${bottomSpacing ? "pb-2" : ""}`}
       data-live-agents-preview="full"
     >
       <span className="sr-only" aria-live="polite" aria-atomic="true">
@@ -116,6 +117,7 @@ export function LiveAgentsPreview({
           {...(collapsible ? { variant: "item" as const } : {})}
           type={collapsible ? "button" : undefined}
           aria-expanded={collapsible ? !collapsed : undefined}
+          aria-controls={collapsible ? listId : undefined}
           onClick={collapsible ? () => setCollapsed((value) => !value) : undefined}
           className={`flex w-full min-w-0 items-center text-start ${collapsible ? "" : "gap-2 px-2.5 py-2"}`}
         >
@@ -142,12 +144,12 @@ export function LiveAgentsPreview({
             />
           ) : null}
         </Header>
-        <div hidden={collapsed}>
+        <div id={listId} hidden={collapsed}>
           <div
             ref={lockList}
             className={`flex flex-col gap-px px-1 ${
               extra > 0 ? "" : "pb-1"
-            } ${collapsible ? "max-h-[min(16rem,20vh)] overflow-y-auto overscroll-none" : expanded ? "max-h-[45vh] overflow-y-auto overscroll-none" : ""}`}
+            } ${collapsible ? "max-h-[min(18rem,30vh)] overflow-y-auto overscroll-none [scrollbar-gutter:stable]" : expanded ? "max-h-[45vh] overflow-y-auto overscroll-none" : ""}`}
           >
             {visible.map((agent) => (
               <LiveAgentCard
@@ -244,7 +246,7 @@ function LiveAgentCard({
       data-live-agent-card={agent.id}
       onClick={() => onSelect?.(agent.id)}
     >
-      <span className="flex min-w-0 items-center gap-2">
+      <span className="flex min-w-0 items-center gap-2" data-live-agent-title>
         <ProjectMascot
           project={seed}
           color={color}
@@ -255,13 +257,11 @@ function LiveAgentCard({
         <span className="min-w-0 flex-1 truncate text-(length:--ui-font-secondary) font-medium leading-snug">
           {agent.title}
         </span>
-        {elapsed ? (
-          <span className="shrink-0 text-(length:--ui-font-caption) tabular-nums text-(--ui-text-secondary)">
-            {elapsed}
-          </span>
-        ) : null}
       </span>
-      <span className="mbs-1 flex min-w-0 items-center gap-1.5 ps-4 text-(length:--ui-font-caption) leading-tight text-(--ui-text-secondary)">
+      <span
+        className="mbs-1 flex min-w-0 items-center gap-1.5 ps-4 text-(length:--ui-font-caption) leading-tight text-(--ui-text-muted)"
+        data-live-agent-details
+      >
         <HarnessIcon harness={agent.harness} className="size-3 shrink-0" />
         {remote ? (
           <Internet
@@ -273,7 +273,7 @@ function LiveAgentCard({
         <span className="min-w-0 flex-1 truncate">{project}</span>
         <span
           title={activity}
-          className={`flex min-w-0 items-center gap-1 ${agent.issue || agent.needsApproval || agent.done ? "max-w-full shrink-0" : "max-w-[50%]"} ${
+          className={`flex min-w-0 max-w-[55%] items-center gap-1 ${agent.issue || agent.needsApproval || agent.done ? "shrink-0" : ""} ${
             agent.issue === "failed"
               ? "text-(--ui-tone-danger-fg)"
               : agent.issue === "retrying"
@@ -292,8 +292,11 @@ function LiveAgentCard({
           ) : (
             <TerminalSpinner className="inline-block w-3 select-none text-center text-[11px] leading-none" />
           )}
-          <span className="min-w-0 truncate">{activity}</span>
+          {agent.issue || agent.needsApproval || agent.done ? (
+            <span className="min-w-0 truncate">{activity}</span>
+          ) : null}
         </span>
+        {elapsed ? <span className="shrink-0 tabular-nums">{elapsed}</span> : null}
       </span>
     </Button>
   );

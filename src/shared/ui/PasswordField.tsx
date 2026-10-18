@@ -3,9 +3,8 @@ import { t, useLocale } from "../i18n";
 import { Button } from "./Button";
 import { Eye, EyeOff } from "./icons";
 import { TextField, type TextFieldProps } from "./TextField";
-import styles from "./PasswordField.module.css";
 
-export type PasswordFieldProps = Omit<TextFieldProps, "type" | "clearable"> & {
+export type PasswordFieldProps = Omit<TextFieldProps, "type" | "clearable" | "endAdornment"> & {
   messages?: { showPassword?: string; hidePassword?: string };
 };
 
@@ -37,42 +36,42 @@ export function PasswordField({ ref, id, messages, disabled, ...props }: Passwor
   }, [visible]);
 
   return (
-    <div className={styles.shell}>
-      <TextField
-        {...props}
-        id={controlId}
-        disabled={disabled}
-        ref={input}
-        type={visible ? "text" : "password"}
-        data-reveal={toggled ? (visible ? "shown" : "hidden") : undefined}
-      />
-      <Button
-        type="button"
-        variant="ghost"
-        iconOnly
-        label={
-          visible
-            ? (messages?.hidePassword ?? t("Hide password"))
-            : (messages?.showPassword ?? t("Show password"))
-        }
-        disabled={disabled}
-        aria-controls={controlId}
-        aria-pressed={visible}
-        onMouseDown={(event) => event.preventDefault()}
-        onClick={() => {
-          const node = input.current;
-          if (!node || node.matches(":disabled")) return;
-          selection.current = {
-            start: node.selectionStart,
-            end: node.selectionEnd,
-            direction: node.selectionDirection,
-          };
-          setVisible((current) => !current);
-          setToggled(true);
-        }}
-      >
-        {visible ? <EyeOff /> : <Eye />}
-      </Button>
-    </div>
+    <TextField
+      {...props}
+      id={controlId}
+      disabled={disabled}
+      ref={input}
+      type={visible ? "text" : "password"}
+      data-reveal={toggled ? (visible ? "shown" : "hidden") : undefined}
+      endAdornment={
+        <Button
+          type="button"
+          variant="ghost"
+          iconOnly
+          label={
+            visible
+              ? (messages?.hidePassword ?? t("Hide password"))
+              : (messages?.showPassword ?? t("Show password"))
+          }
+          disabled={disabled}
+          aria-controls={controlId}
+          aria-pressed={visible}
+          onMouseDown={(event) => event.preventDefault()}
+          onClick={() => {
+            const node = input.current;
+            if (!node || node.matches(":disabled")) return;
+            selection.current = {
+              start: node.selectionStart,
+              end: node.selectionEnd,
+              direction: node.selectionDirection,
+            };
+            setVisible((current) => !current);
+            setToggled(true);
+          }}
+        >
+          {visible ? <EyeOff /> : <Eye />}
+        </Button>
+      }
+    />
   );
 }

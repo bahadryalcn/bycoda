@@ -13,6 +13,16 @@ from local_update_lib import (alive, backup, count, digest, lock, ps, ps_quote,
                               read_json, run, safe_child, verify_tree, write_json, windows_binary_digest, PRODUCT_IDENTITY, package_identity)
 
 BASE = pathlib.Path.home() / PRODUCT_IDENTITY['hostDirectory']
+MAC_APPLICATIONS = pathlib.Path('/Applications')
+
+def mac_app_update_paths(app, package_id):
+    # Keep atomic renames on the Applications volume without exposing rollback
+    # or staging bundles as additional apps to LaunchServices/Spotlight.
+    archive = app.parent / '.bycoda-update.noindex'
+    job = safe_child(archive, package_id)
+    job.mkdir(parents=True, exist_ok=True)
+    (archive / '.metadata_never_index').touch(exist_ok=True)
+    return job / 'previous.bundle', job / 'staged.bundle'
 
 def desktop_db():
     return (pathlib.Path(os.environ['APPDATA']) / 'com.bycoda.desktop/bycoda.db'
@@ -188,7 +198,7 @@ def app_install(release, manifest, report):
     windows = os.name == 'nt'
     app = (pathlib.Path(os.environ['LOCALAPPDATA']) / PRODUCT_IDENTITY['productName'] /
            (PRODUCT_IDENTITY['binaryName']+'.exe') if windows else
-           pathlib.Path('/Applications')/(PRODUCT_IDENTITY['productName']+'.app'))
+           MAC_APPLICATIONS/(PRODUCT_IDENTITY['productName']+'.app'))
     first_install = not app.exists()
     has_database = desktop_db().exists()
     if app.exists() and not desktop_db().exists():
@@ -221,9 +231,7 @@ def app_install(release, manifest, report):
             raise RuntimeError('Installed Windows executable version/hash mismatch; rollback EXE retained')
         ps(f'Start-Process -FilePath {app_q}')
     else:
-        app = pathlib.Path('/Applications')/(PRODUCT_IDENTITY['productName']+'.app')
-        saved = pathlib.Path('/Applications') / (PRODUCT_IDENTITY['productName']+'-before-' + manifest['id'] + '.app')
-        staged = pathlib.Path('/Applications') / (PRODUCT_IDENTITY['productName']+'-staged-' + manifest['id'] + '.app')
+        saved, staged = mac_app_update_paths(app, manifest['id'])
         if saved.exists() or staged.exists():
             raise RuntimeError('Rollback/staging app already exists; refusing overwrite')
         run(['codesign', '--verify', '--deep', '--strict', str(release / (PRODUCT_IDENTITY['productName']+'.app'))])

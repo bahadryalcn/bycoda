@@ -1,4 +1,8 @@
 import { useEffect, useState, useSyncExternalStore } from "react";
+import { openUrl } from "@tauri-apps/plugin-opener";
+import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
+import { Button } from "../../../shared/ui/Button";
+import { Alert } from "../../../shared/ui/Alert";
 import {
   installPendingUpdate,
   isUpdaterEnabled,
@@ -8,7 +12,6 @@ import {
 } from "../../../app/model/updater";
 import { IS_MAC, IS_WIN } from "../../../platform/tauri/platform";
 import { t, useLocale } from "../../../shared/i18n";
-import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
 import { MorphSelect } from "../../../shared/ui/MorphSelect";
 import { Progress } from "../../../shared/ui/Progress";
 import { ArrowDownCircle, Loader, RefreshCw } from "../../../shared/ui/icons";
@@ -33,7 +36,8 @@ import {
   subscribeKeepAwakeScreen,
 } from "../model/settings";
 import { LanguageSettings } from "./LanguageSettings";
-import { Group, Row, Toggle } from "./settingsControls";
+import { AdvancedSettings, Group, Row, Toggle } from "./settingsControls";
+import "./GeneralSettings.css";
 
 export function GeneralPage({ onOpenWhatsNew }: { onOpenWhatsNew: (version: string) => void }) {
   useLocale();
@@ -67,19 +71,20 @@ export function GeneralPage({ onOpenWhatsNew }: { onOpenWhatsNew: (version: stri
     saveKeepAwakeScreen(next);
   };
   return (
-    <>
+    <div className="general-settings">
+      <p className="general-save-note">{t("Changes save automatically")}</p>
       <LanguageSettings />
       {IS_WIN && (
         <Group
           title={t("Application behavior")}
+          layout="full"
           scope={t("Applies to this Windows computer.")}
-          persistence={{ mode: "automatic" }}
         >
           <Row
             id="close-to-tray"
             label={t("Close to tray")}
             description={t(
-              "Closing a window hides it to the system tray instead of quitting, so running agents keep going. Reopen from the tray icon, and quit for real from its menu. Turn this off to have close end the window.",
+              "Keep agents running when you close the window. Reopen or quit the app from the tray icon.",
             )}
           >
             <Toggle label={t("Close to tray")} on={closeToTray} onChange={onCloseToTray} />
@@ -88,15 +93,72 @@ export function GeneralPage({ onOpenWhatsNew }: { onOpenWhatsNew: (version: stri
       )}
       <Group
         title={t("Sleep")}
+        layout="full"
         scope={t("Applies to this computer, not remote computers running agents.")}
-        persistence={{ mode: "automatic" }}
-        description={t("Keep this computer awake while an agent is working.")}
       >
         <Row
           id="keep-awake"
           label={t("Prevent sleep while agents work")}
-          description={
-            IS_WIN
+          description={t("Keep this computer awake while an agent is working.")}
+        >
+          <Toggle
+            label={t("Prevent sleep while agents work")}
+            on={keepAwake}
+            onChange={onKeepAwake}
+          />
+        </Row>
+        <div
+          className="general-sleep-options"
+          role="group"
+          aria-label={t("Sleep")}
+          aria-describedby={!keepAwake ? "general-sleep-dependency" : undefined}
+        >
+          {!keepAwake ? (
+            <p className="general-dependency" id="general-sleep-dependency">
+              {t(
+                "Enable Prevent sleep while agents work to use these options. Your choices are preserved.",
+              )}
+            </p>
+          ) : null}
+          <Row
+            id="keep-awake-duration"
+            label={t("After agents finish")}
+            description={t(
+              "Choose when this computer can sleep again after the last agent finishes.",
+            )}
+          >
+            <MorphSelect
+              label={t("Stay awake after an agent ends")}
+              value={keepAwakeHoldAfter}
+              options={[...KEEP_AWAKE_HOLD_AFTER]}
+              onChange={onKeepAwakeHoldAfter}
+              disabled={!keepAwake}
+            />
+          </Row>
+          <Row
+            id="keep-awake-screen"
+            label={t("Keep the screen on")}
+            description={
+              IS_WIN || IS_MAC
+                ? t(
+                    "Keep the display awake while the sleep setting is active. Closing the lid or choosing Sleep still works.",
+                  )
+                : t(
+                    "Keep the display awake while the sleep setting is active. Automatic screen locking may be prevented.",
+                  )
+            }
+          >
+            <Toggle
+              label={t("Keep the screen on")}
+              on={keepAwakeScreen}
+              onChange={onKeepAwakeScreen}
+              disabled={!keepAwake}
+            />
+          </Row>
+        </div>
+        <AdvancedSettings title={t("Sleep behavior")}>
+          <p className="general-detail">
+            {IS_WIN
               ? t(
                   "Prevent idle sleep during agent work, and optionally after the last agent finishes. Closing the lid or choosing Sleep still works. On battery-powered Modern Standby PCs, Windows may stop the request five minutes after the sleep timeout.",
                 )
@@ -106,78 +168,17 @@ export function GeneralPage({ onOpenWhatsNew }: { onOpenWhatsNew: (version: stri
                   )
                 : t(
                     "Prevent idle sleep during agent work, and optionally after the last agent finishes. Automatic screen locking remains available. On GNOME, choosing Sleep may be blocked while this is active.",
-                  )
-          }
-        >
-          <Toggle
-            label={t("Prevent sleep while agents work")}
-            on={keepAwake}
-            onChange={onKeepAwake}
-          />
-        </Row>
-        <Row
-          id="keep-awake-duration"
-          label={t("After agents finish")}
-          dependency={
-            !keepAwake
-              ? t(
-                  "Enable Prevent sleep while agents work to use this option. Your choice is preserved.",
-                )
-              : undefined
-          }
-          description={t(
-            "Choose when this computer can sleep again after the last agent finishes.",
-          )}
-        >
-          <MorphSelect
-            label={t("Stay awake after an agent ends")}
-            value={keepAwakeHoldAfter}
-            options={[...KEEP_AWAKE_HOLD_AFTER]}
-            onChange={onKeepAwakeHoldAfter}
-            disabled={!keepAwake}
-          />
-        </Row>
-        <Row
-          id="keep-awake-screen"
-          dependency={
-            !keepAwake
-              ? t(
-                  "Enable Prevent sleep while agents work to use this option. Your choice is preserved.",
-                )
-              : undefined
-          }
-          label={t("Keep the screen on")}
-          description={
-            IS_WIN || IS_MAC
-              ? t(
-                  "Keep the display awake while the sleep setting is active. Closing the lid or choosing Sleep still works.",
-                )
-              : t(
-                  "Keep the display awake while the sleep setting is active. Automatic screen locking may be prevented.",
-                )
-          }
-        >
-          <Toggle
-            label={t("Keep the screen on")}
-            on={keepAwakeScreen}
-            onChange={onKeepAwakeScreen}
-            disabled={!keepAwake}
-          />
-        </Row>
+                  )}
+          </p>
+        </AdvancedSettings>
       </Group>
 
-      <Group
-        id="import-history"
-        title={t("Import history")}
-        description={t(
-          "Bring conversations you had in the Claude Code and Codex terminals into {p0}.",
-          { p0: PRODUCT_IDENTITY.displayName },
-        )}
-      >
+      <Group title={t("Setup and help")} layout="full">
         <Row
-          label={t("Claude Code and Codex sessions")}
+          id="import-history"
+          label={t("Import history")}
           description={t(
-            "Lists what is on this computer by folder. Nothing is imported until you choose it, and the originals are never changed.",
+            "Choose Claude Code and Codex conversations to import. Originals stay unchanged.",
           )}
         >
           <SecondaryButton
@@ -186,16 +187,10 @@ export function GeneralPage({ onOpenWhatsNew }: { onOpenWhatsNew: (version: stri
             {t("Import…")}
           </SecondaryButton>
         </Row>
-      </Group>
-
-      <Group
-        title={t("Setup")}
-        description={t("Connect computers, set up agents, and choose your projects.")}
-      >
         <Row
           id="getting-started"
           label={t("Getting started")}
-          description={t("Reopen the setup guide at any time.")}
+          description={t("Connect computers, set up agents, and choose your projects.")}
         >
           <SecondaryButton onClick={() => window.dispatchEvent(new Event(OPEN_ONBOARDING_EVENT))}>
             {t("Open setup…")}
@@ -211,9 +206,61 @@ export function GeneralPage({ onOpenWhatsNew }: { onOpenWhatsNew: (version: stri
         </Row>
       </Group>
 
-      <Group title={t("About")}>
+      <Group title={t("About")} layout="full">
         <UpdateRow onOpenWhatsNew={onOpenWhatsNew} />
+        <ProductDetails />
       </Group>
+    </div>
+  );
+}
+function ProductDetails() {
+  const [opening, setOpening] = useState<string | null>(null);
+  const [error, setError] = useState(false);
+  const open = async (url: string) => {
+    if (opening) return;
+    setOpening(url);
+    setError(false);
+    try {
+      await openUrl(url);
+    } catch {
+      setError(true);
+    } finally {
+      setOpening(null);
+    }
+  };
+  const emailUrl = `mailto:${PRODUCT_IDENTITY.contactEmail}`;
+  return (
+    <>
+      <Row label={t("Developed by")}>
+        <span>{PRODUCT_IDENTITY.developerName}</span>
+      </Row>
+      <Row label={t("Website")}>
+        <Button
+          variant="link"
+          loading={opening === PRODUCT_IDENTITY.websiteUrl}
+          disabled={!!opening}
+          onClick={() => open(PRODUCT_IDENTITY.websiteUrl)}
+        >
+          {PRODUCT_IDENTITY.websiteUrl.replace("https://", "")}
+        </Button>
+      </Row>
+      <Row label={t("Contact")}>
+        <Button
+          variant="link"
+          loading={opening === emailUrl}
+          disabled={!!opening}
+          onClick={() => open(emailUrl)}
+        >
+          {PRODUCT_IDENTITY.contactEmail}
+        </Button>
+      </Row>
+      {error && (
+        <div className="general-link-error">
+          <Alert tone="danger" role="alert">
+            {t("Could not open the link. Copy the address and open it manually.")}
+          </Alert>
+        </div>
+      )}
     </>
   );
 }
@@ -284,12 +331,12 @@ export function UpdateRow({ onOpenWhatsNew }: { onOpenWhatsNew: (version: string
       label={
         <span className="flex items-baseline gap-2">
           {t("Version")}
-          <span className="font-mono text-[12px] text-content/45">{snapshot.currentVersion}</span>
+          <span className="general-version">{snapshot.currentVersion}</span>
         </span>
       }
       description={status}
     >
-      <div className="flex items-center gap-2">
+      <div className="general-update-actions">
         <SecondaryButton
           onClick={() => onOpenWhatsNew(snapshot.currentVersion)}
           disabled={snapshot.currentVersion === "…"}

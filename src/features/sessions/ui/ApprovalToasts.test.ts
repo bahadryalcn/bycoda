@@ -82,11 +82,13 @@ function button(label: string) {
 
 it("opens the session when clicking the request body or provider label", () => {
   act(() => render([notice("work", "question")]));
-  act(() => (document.querySelector(".approval-toast .line-clamp-3") as HTMLElement).click());
+  act(() => (document.querySelector(".notification-request-preview") as HTMLElement).click());
   expect(onFocusSession).toHaveBeenCalledWith("work");
   expect(visibleRequests()).toHaveLength(0);
   act(() => button("Notifications").click());
-  act(() => (document.querySelector(".approval-toast .ui-caption-text") as HTMLElement).click());
+  act(() =>
+    (document.querySelector(".notification-request-footer .truncate") as HTMLElement).click(),
+  );
   expect(onFocusSession).toHaveBeenCalledTimes(2);
   expect(onApproval).not.toHaveBeenCalled();
 });
@@ -111,6 +113,7 @@ it("limits a backlog of twenty requests to three popups and lists all in the cen
   expect(button("Notifications").textContent).toBe("20");
   act(() => button("View all pending requests (20)").click());
   expect(visibleRequests()).toHaveLength(20);
+  act(() => button("Notification settings…").click());
   act(() => button("Hide all popups").click());
   act(() => button("Close").click());
   expect(visibleRequests()).toHaveLength(0);
@@ -121,14 +124,16 @@ it("limits a backlog of twenty requests to three popups and lists all in the cen
 it("persists the popup switch while keeping requests accessible", () => {
   act(() => render([notice("work", "question")]));
   act(() => button("Notifications").click());
-  act(() => document.querySelector<HTMLInputElement>('input[type="checkbox"]')!.click());
+  act(() => button("Notification settings…").click());
+  act(() => button("Show request popups").click());
   expect(localStorage.getItem("bycoda.notifications.agentInput.popups.v1")).toBe("false");
   act(() => button("Close").click());
   act(() => render([notice("work", "question", 2)]));
   expect(visibleRequests()).toHaveLength(0);
   act(() => button("Notifications").click());
   expect(visibleRequests()).toHaveLength(1);
-  act(() => document.querySelector<HTMLInputElement>('input[type="checkbox"]')!.click());
+  act(() => button("Notification settings…").click());
+  act(() => button("Show request popups").click());
   act(() => button("Close").click());
   expect(visibleRequests()).toHaveLength(1);
 });
@@ -172,6 +177,7 @@ it("keeps expired requests in history without approval controls and can clear th
   expect(document.querySelector('[role="tabpanel"]')?.textContent).toContain("Request work");
   expect(document.querySelector('[role="tabpanel"] button')).toBeNull();
   expect(JSON.parse(localStorage.getItem(NOTIFICATION_HISTORY_KEY)!)).toHaveLength(1);
+  act(() => button("Notification settings…").click());
   act(() => button("Clear notification history").click());
   expect(document.body.textContent).toContain("No notification history");
   expect(JSON.parse(localStorage.getItem(NOTIFICATION_HISTORY_KEY)!)).toEqual([]);

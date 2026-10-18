@@ -31,7 +31,8 @@ describe("Provider bağımsız sosyal araç köprüsü", () => {
       "opencode",
     ] as const)
       expect(socialSpawnArgs(provider, ["run"], bridge)).toEqual(["run"]);
-    expect(socialCliHint(bridge)).toContain("& 'C:\\Program Files\\nodejs\\node.exe'");
+    expect(socialCliHint(bridge)).toContain("social_policy_get");
+    expect(socialCliHint(bridge)).toContain("Drafts never authorize sending");
     expect(socialCliHint(bridge)).not.toContain("TOKEN");
   });
   it.each([

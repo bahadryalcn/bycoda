@@ -1134,7 +1134,12 @@ function handleSubagentNotification(
     return emitSubagentSteps(live, callId, method, params);
   }
   if (!live.activeTurnId) return;
-  if (method !== "item/started" && method !== "item/completed" && method !== "thread/started")
+  if (
+    method !== "item/started" &&
+    method !== "item/completed" &&
+    method !== "thread/started" &&
+    method !== "thread/tokenUsage/updated"
+  )
     return;
   const backlog = live.pendingSubagent.get(threadId) ?? [];
   if (backlog.length >= MAX_PENDING_SUBAGENT) return;
@@ -1148,7 +1153,18 @@ function emitSubagentSteps(
   method: string,
   params: unknown,
 ): void | Promise<void> {
-  const image = mapCodexNotification(method, params).events.find(
+  const mapped = mapCodexNotification(method, params).events;
+  for (const event of mapped) {
+    if (event.type === "context" && event.used !== undefined) {
+      live.onEvent({
+        type: "agent.context",
+        callId,
+        used: event.used,
+        ...(event.window ? { window: event.window } : {}),
+      });
+    }
+  }
+  const image = mapped.find(
     (event): event is Extract<HarnessEvent, { type: "image.generated" }> =>
       event.type === "image.generated",
   );

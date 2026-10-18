@@ -6,7 +6,6 @@ import {
   unwatchChild,
   watchChild,
 } from "../../core/child";
-import { joinStreamText } from "../../core/streamText";
 import type { TextPromptInput } from "../../core/registry";
 
 /** Fresh text-only helper: no main-session history, social grant or client tools. */
@@ -30,7 +29,7 @@ export async function runGeminiTextPrompt(input: TextPromptInput): Promise<strin
         update.content?.type === "text" &&
         typeof update.content.text === "string"
       ) {
-        output = joinStreamText(output, update.content.text);
+        output += update.content.text;
         if (output.length > 30_000) acp.close(new Error("Gemini text output is too large."));
       }
     },

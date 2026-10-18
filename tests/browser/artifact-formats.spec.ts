@@ -25,10 +25,39 @@ test("chat file changes and long content fit a narrow column", async ({ page }, 
         const count = summary.locator(".markdown-code-summary-count");
         const summaryBox = (await summary.boundingBox())!;
         const countBox = (await count.boundingBox())!;
+        const shell = page.locator(".markdown-code-shell");
+        const shellBox = (await shell.boundingBox())!;
+        const frameBox = (await shell.locator('[data-streamdown="code-block"]').boundingBox())!;
+        for (const control of [
+          summary,
+          shell.locator(".markdown-code-toggle"),
+          shell.locator('[aria-label="Copy code"]'),
+        ]) {
+          const controlBox = (await control.boundingBox())!;
+          expect(controlBox.x).toBeGreaterThanOrEqual(frameBox.x);
+          expect(controlBox.x + controlBox.width).toBeLessThanOrEqual(
+            frameBox.x + frameBox.width + 1,
+          );
+          expect(controlBox.y).toBeGreaterThanOrEqual(frameBox.y);
+          expect(controlBox.y + controlBox.height).toBeLessThanOrEqual(
+            frameBox.y + frameBox.height + 1,
+          );
+        }
+        expect(summaryBox.x).toBeLessThan(shellBox.x + 40);
         expect(countBox.x + countBox.width).toBeLessThanOrEqual(
           summaryBox.x + summaryBox.width + 1,
         );
-        await summary.click();
+        await summary.focus();
+        await page.keyboard.press("Enter");
+        await expect(shell).toHaveAttribute("data-collapsed", "false");
+        const headerBox = (await shell
+          .locator('[data-streamdown="code-block-header"]')
+          .boundingBox())!;
+        const toggleBox = (await shell.locator(".markdown-code-toggle").boundingBox())!;
+        expect(toggleBox.y).toBeGreaterThanOrEqual(headerBox.y);
+        expect(toggleBox.y + toggleBox.height).toBeLessThanOrEqual(
+          headerBox.y + headerBox.height + 1,
+        );
       }
     }
   }

@@ -15,7 +15,7 @@ use crate::fs::{
 };
 pub(crate) mod turn;
 
-const MAX_SNAPSHOT_FILES: usize = 500;
+const MAX_SNAPSHOT_FILES: usize = 2000;
 /// Above this many paths in one capture, a single directory diff is cheaper
 /// than one Git process per file pair.
 const MAX_PAIRWISE_STATS: usize = 8;

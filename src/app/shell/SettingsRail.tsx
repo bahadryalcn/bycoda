@@ -39,6 +39,7 @@ export const SETTINGS_SECTION_ICONS: Record<SettingsSectionId, IconComponent> = 
   chat: MessageSquare,
   providers: Bot,
   usage: UsageIcon as IconComponent,
+  limits: SlidersHorizontal,
   mcp: Globe,
   skills: Sparkles,
   inbox: Inbox,

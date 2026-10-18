@@ -2,12 +2,26 @@ import type { SubmitDeps, SubmitInput, SubmitPreflight } from "./submitTypes";
 
 import { inboxAskPrompt } from "../../../../features/inbox/model/inboxAsk";
 import { isBackgroundOnly } from "../../../../features/sessions/model/activityDock";
-import { displayAttachments, prepareAttachments } from "../../../../features/sessions/model/attachments";
-import { appendQueuedMessage, holdUndeliveredFollowUp, queuedModelTarget, resolveFollowUpRoute, sentQueuedMessage } from "../../../../features/sessions/model/messageQueue";
+import {
+  displayAttachments,
+  prepareAttachments,
+} from "../../../../features/sessions/model/attachments";
+import {
+  appendQueuedMessage,
+  holdUndeliveredFollowUp,
+  queuedModelTarget,
+  resolveFollowUpRoute,
+  sentQueuedMessage,
+} from "../../../../features/sessions/model/messageQueue";
 import { preparePrompt } from "../../../../features/sessions/model/promptPreparation";
 import { type Session } from "../../../../features/sessions/model/session";
 import { sessionsRef, setSessions } from "../../../../features/sessions/model/sessionsStore";
-import { appendSteerUser, canSteerHarness, isLiveHarness, steerHarnessTurn } from "../../../../integrations/harness";
+import {
+  appendSteerUser,
+  canSteerHarness,
+  isLiveHarness,
+  steerHarnessTurn,
+} from "../../../../integrations/harness";
 import { t } from "../../../../shared/i18n";
 import { type SubmissionAcceptance } from "../../../model/submissionAcceptance";
 import { userTurnCards } from "../../helpers/sessionHelpers";
@@ -20,7 +34,19 @@ export function steerBusySubmit(
   const { dismissNoticesForContinuedSession, enqueueHarnessEvent, flushHarnessEvents } = ctx;
   const { turnGen } = ctx.refs;
   const { sessionId, text, attachments, options } = input;
-  const { storedCurrent, current, intent, noteCard, handoffCard, initialWorkCwd, submittedText, operatorCommand, rawCommand, harnessText, pendingSwitch } = pre;
+  const {
+    storedCurrent,
+    current,
+    intent,
+    noteCard,
+    handoffCard,
+    initialWorkCwd,
+    submittedText,
+    operatorCommand,
+    rawCommand,
+    harnessText,
+    pendingSwitch,
+  } = pre;
   if (current.busy && !pendingSwitch) {
     if (
       operatorCommand.matched &&
@@ -49,7 +75,9 @@ export function steerBusySubmit(
       ),
       requested: options?.followUpBehavior,
     });
-    if (followUpRoute === "queue" || !canSteerHarness(current.harness)) {
+    // A native command (/goal, /review) must start its own turn; steering would
+    // deliver it to the running turn as plain text.
+    if (followUpRoute === "queue" || rawCommand || !canSteerHarness(current.harness)) {
       // A queue-row action already owns retained content. Falling back to
       // the queue must leave that row in place rather than append a copy.
       if (options?.queuedMessageId) return false;
@@ -171,4 +199,3 @@ export function steerBusySubmit(
     return true;
   }
 }
-

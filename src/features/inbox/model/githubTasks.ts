@@ -1,6 +1,7 @@
 import { relativeTimeFormat } from "../../../shared/lib/intl";
 import { invoke } from "@tauri-apps/api/core";
 import { githubRead } from "./githubReadGate";
+import { INBOX_VISIBLE_POLL_MS } from "./inboxPolling";
 import { clearKnownInboxItems } from "./inboxSeen";
 import {
   linearConnected,
@@ -177,7 +178,7 @@ export type InboxListResult = {
   errors: InboxProviderErrors;
 };
 
-const INBOX_CACHE_FRESH_MS = 120_000;
+const INBOX_CACHE_FRESH_MS = INBOX_VISIBLE_POLL_MS;
 
 /** Closed history competes for the same slots, so an unfiltered fetch needs the wider page. */
 const INBOX_ALL_LIMIT = 100;
@@ -228,7 +229,7 @@ const threadInflight = new Map<string, Promise<GithubWorkItemThread>>();
 const prDiffByKey = new Map<string, GithubPrDiff>();
 const prDiffInflight = new Map<string, Promise<GithubPrDiff>>();
 
-export const GITHUB_WORK_ITEM_FRESH_MS = INBOX_CACHE_FRESH_MS;
+export const GITHUB_WORK_ITEM_FRESH_MS = 120_000;
 const itemScopes = new Map<string, { scope: string }>();
 function ensureItemScope(cwd: string, repo: string, kind: GithubTaskKind, number: number) {
   const key = detailsCacheKey(repo, kind, number);
@@ -351,10 +352,19 @@ export function inboxListIsFresh(
   projects: readonly { path: string }[],
   query: InboxQuery,
   now = Date.now(),
+  maxAgeMs = INBOX_CACHE_FRESH_MS,
 ): boolean {
   const key = inboxListCacheKey(projects, query);
   const inboxListCache = inboxListCaches.get(key);
-  return inboxListCache != null && now - inboxListCache.fetchedAt < INBOX_CACHE_FRESH_MS;
+  return inboxListCache != null && now - inboxListCache.fetchedAt < maxAgeMs;
+}
+
+/** Preserve the real fetch age when the Inbox query mounts again. */
+export function inboxListFetchedAt(
+  projects: readonly { path: string }[],
+  query: InboxQuery,
+): number {
+  return inboxListCaches.get(inboxListCacheKey(projects, query))?.fetchedAt ?? 0;
 }
 
 export function githubStatus(): Promise<GithubStatus> {
@@ -843,10 +853,10 @@ export function prefetchGithubWorkItem(
 export async function listInboxItems(
   projects: readonly { path: string }[],
   query: InboxQuery,
-  options?: { force?: boolean },
+  options?: { force?: boolean; maxAgeMs?: number },
 ): Promise<InboxListResult> {
   const key = inboxListCacheKey(projects, query);
-  if (!options?.force && inboxListIsFresh(projects, query)) {
+  if (!options?.force && inboxListIsFresh(projects, query, Date.now(), options?.maxAgeMs)) {
     return peekInboxList(projects, query) ?? { items: [], errors: {} };
   }
   const pending = inboxListInflight.get(key);

@@ -2,7 +2,7 @@
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { resetGitIndexStore } from "../model/gitIndexStore";
+import { invalidateGitIndex, resetGitIndexStore } from "../model/gitIndexStore";
 
 vi.mock("@tauri-apps/plugin-opener", () => ({ openUrl: vi.fn(async () => {}) }));
 vi.mock("@tauri-apps/plugin-dialog", () => ({
@@ -310,6 +310,9 @@ describe("operation banner", () => {
     act(() => root.unmount());
     root = createRoot(container);
     vi.mocked(gitDiffIndex).mockResolvedValue(index({ conflicts: [], operation: "rebase" }));
+    // Resolving conflicts is an external Git mutation, so invalidate the shared
+    // fresh index just as the real git-changed subscription does.
+    invalidateGitIndex();
     await renderPanel();
     expect(container.textContent).toContain("Rebase in progress · no conflicts left");
     expect(button("Continue")!.disabled).toBe(false);

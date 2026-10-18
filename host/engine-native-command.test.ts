@@ -13,6 +13,16 @@ vi.mock("../src/integrations/harness/core/socialBridge", async (importOriginal) 
   ...(await importOriginal<typeof import("../src/integrations/harness/core/socialBridge")>()),
   socialBridge: vi.fn(async () => bridge),
 }));
+vi.mock("../src/integrations/harness/core/runtimeLogsBridge", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../src/integrations/harness/core/runtimeLogsBridge")>()),
+  runtimeLogsBridge: vi.fn(async () => bridge),
+}));
+vi.mock("../src/integrations/harness/core/conversationToolsBridge", async (importOriginal) => ({
+  ...(await importOriginal<
+    typeof import("../src/integrations/harness/core/conversationToolsBridge")
+  >()),
+  conversationToolsBridge: vi.fn(async () => bridge),
+}));
 vi.mock("./prompt-skills", () => ({ prepareHostSkillPrompt: prepareSkill }));
 
 import { HostEngine } from "./engine";
@@ -72,11 +82,35 @@ describe("headless native command guidance", () => {
     await vi.waitFor(() => expect(turns).toHaveLength(1), { timeout: 10_000 });
     expect(turns[0].input.text).toBe(text);
     expect(turns[0].input.runtimeInstructions).toContain("social_policy_get");
-    expect(turns[0].input.runtimeInstructions).toContain("Drafts do not authorize sending");
+    expect(turns[0].input.runtimeInstructions).toContain("Drafts never authorize sending");
     expect(prepareSkill).not.toHaveBeenCalled();
     expect(
       store.session(sessionId).session.blocks.find((block) => block.role === "user")?.text,
     ).toBe(text);
+  });
+
+  it("keeps Codex /goal first and carries pending shell output as runtime context", async () => {
+    const { engine, store, turns, sessionId } = setup("codex");
+    engine.command({
+      type: "shell",
+      commandId: "shell-before-goal",
+      sessionId,
+      line: "echo goal-context",
+    });
+    await vi.waitFor(
+      () =>
+        expect(
+          store
+            .session(sessionId)
+            .session.blocks.some((block) => block.shell && !block.shell.running),
+        ).toBe(true),
+      { timeout: 20_000 },
+    );
+    engine.command({ type: "send", commandId: "send-goal", sessionId, text: "/goal Ship it" });
+    await vi.waitFor(() => expect(turns).toHaveLength(1), { timeout: 10_000 });
+    expect(turns[0].input.text).toBe("/goal Ship it");
+    expect(turns[0].input.runtimeInstructions).toContain("<user-shell-commands>");
+    expect(turns[0].input.runtimeInstructions).toContain("goal-context");
   });
 
   it.each(["codex", "claude"] as const)(
@@ -87,6 +121,10 @@ describe("headless native command guidance", () => {
       engine.command({ type: "send", commandId: "send-skill", sessionId, text });
       await vi.waitFor(() => expect(turns).toHaveLength(1), { timeout: 10_000 });
       const sent = turns[0].input;
+      const guidance = harness === "codex" ? sent.runtimeInstructions : sent.text;
+      expect(guidance).toContain("runtime_logs_sources");
+      expect(guidance).toContain("conversation_tools_list");
+      expect(guidance).toContain("skills.search");
       expect(prepareSkill).toHaveBeenCalledOnce();
       expect(sent.text).toContain(`Host skill instructions.\n\n${text}`);
       if (harness === "codex") {

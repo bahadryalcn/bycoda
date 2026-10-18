@@ -6,7 +6,7 @@ import { Button } from "../../../shared/ui/Button";
 import { t, useLocale } from "../../../shared/i18n";
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { Plus, Trash2 } from "../../../shared/ui/icons";
-import { Group } from "./settingsControls";
+import { AdvancedSettings, Group } from "./settingsControls";
 import {
   CURSOR_PLACEHOLDER,
   loadPromptTemplates,
@@ -76,14 +76,6 @@ export function TemplatesSettings() {
       id="prompt-templates"
       title={t("Prompt templates")}
       layout="full"
-      description={t(
-        "Pick a template from the / menu, or type {p0} followed by a space. Use {p1} to set the caret position.",
-        {
-          p0: `${TRIGGER_PREFIX}trigger`,
-          p1: CURSOR_PLACEHOLDER,
-        },
-      )}
-      scope={t("Available in the composer across projects in this app.")}
       persistence={{
         mode: "explicit",
         state: error ? "error" : dirty ? "dirty" : savedMessage ? "saved" : "idle",
@@ -107,15 +99,26 @@ export function TemplatesSettings() {
       }
     >
       <div className="settings-templates">
-        <p className="px-4 py-3 text-[12px] text-content/65">
-          {t(
-            "Name and text are required. The trigger is optional. Up to {p0} templates, with {p1} characters each.",
-            {
-              p0: String(MAX_TEMPLATES),
-              p1: String(MAX_TEMPLATE_BODY),
-            },
-          )}
-        </p>
+        <AdvancedSettings title={t("How to use templates")}>
+          <p className="chat-detail">
+            {t(
+              "Pick a template from the / menu, or type {p0} followed by a space. Use {p1} to set the caret position.",
+              { p0: `${TRIGGER_PREFIX}trigger`, p1: CURSOR_PLACEHOLDER },
+            )}
+          </p>
+          <p className="chat-detail">
+            {t("Available in the composer across projects in this app.")}
+          </p>
+          <p className="chat-detail">
+            {t(
+              "Name and text are required. The trigger is optional. Up to {p0} templates, with {p1} characters each.",
+              {
+                p0: String(MAX_TEMPLATES),
+                p1: String(MAX_TEMPLATE_BODY),
+              },
+            )}
+          </p>
+        </AdvancedSettings>
         <div>
           {rows.length === 0 ? (
             <p className="px-4 py-3 text-[12px] text-content/45">{t("No templates yet")}</p>
@@ -193,25 +196,27 @@ export function TemplatesSettings() {
             ))
           )}
         </div>
-        <div className="flex flex-wrap items-center gap-3 px-4 py-3">
-          <Button
-            variant="primary"
-            size="sm"
-            type="button"
-            disabled={!dirty || changedElsewhere}
-            onClick={save}
-          >
-            {t("Save templates")}
-          </Button>
-          {dirty && !error && !changedElsewhere ? (
-            <span className="text-[12px] text-content/45">{t("Unsaved changes")}</span>
-          ) : null}
-          {error ? (
-            <Badge tone="danger" role="alert">
-              {error}
-            </Badge>
-          ) : null}
-        </div>
+        {rows.length > 0 || dirty || savedMessage ? (
+          <div className="flex flex-wrap items-center gap-3 px-4 py-3">
+            <Button
+              variant="primary"
+              size="sm"
+              type="button"
+              disabled={!dirty || changedElsewhere}
+              onClick={save}
+            >
+              {t("Save templates")}
+            </Button>
+            {dirty && !error && !changedElsewhere ? (
+              <span className="text-[12px] text-content/45">{t("Unsaved changes")}</span>
+            ) : null}
+            {error ? (
+              <Badge tone="danger" role="alert">
+                {error}
+              </Badge>
+            ) : null}
+          </div>
+        ) : null}
         {changedElsewhere && dirty ? (
           <Alert tone="danger" role="alert">
             <span>

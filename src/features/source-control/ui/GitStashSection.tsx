@@ -3,7 +3,13 @@ import { errorText } from "../../../shared/lib/errors";
 import { t, useLocale } from "../../../shared/i18n/git";
 import { useCallback, useState } from "react";
 import { ask } from "@tauri-apps/plugin-dialog";
-import { ChevronDown, ChevronRight, Plus, RefreshCw } from "../../../shared/ui/icons";
+import {
+  ChevronDown,
+  ChevronRight,
+  Plus,
+  RefreshCw,
+  MoreHorizontal,
+} from "../../../shared/ui/icons";
 import {
   gitStash,
   gitStashAction,
@@ -16,6 +22,7 @@ import { GIT_ACTIONS, useRemoteSupports } from "../../connections/model/remoteCa
 import { useGitResource } from "../hooks/useGitResource";
 import { GitFeedback } from "./GitFeedback";
 import { useGitPanelState, withGitOperation, setGitFeedback } from "../model/gitPanelState";
+import { DropdownMenu } from "../../../shared/ui/DropdownMenu";
 import { appName } from "../../../shared/lib/appName";
 
 type Props = {
@@ -41,8 +48,6 @@ export function stashCommit(entry: GitStashEntry): GitHistoryCommit {
   };
 }
 
-const ACTION = "shrink-0";
-
 /** Lists the repository's stashes. On another machine, needs a host with `git.actions`. */
 export function GitStashSection({ cwd, enabled, hasChanges, onOpenCommit }: Props) {
   useLocale();
@@ -53,6 +58,7 @@ export function GitStashSection({ cwd, enabled, hasChanges, onOpenCommit }: Prop
   const read = useCallback(() => gitStashList(cwd), [cwd]);
   const { data, loading, error, refresh } = useGitResource(cwd, `stashes:${cwd}`, active, read);
   const entries = data ?? [];
+  const [menu, setMenu] = useState<{ entry: GitStashEntry; anchor: HTMLElement } | null>(null);
 
   if (!active) return null;
 
@@ -112,7 +118,7 @@ export function GitStashSection({ cwd, enabled, hasChanges, onOpenCommit }: Prop
               strokeWidth={1.75}
             />
           )}
-          <span className="min-w-0 truncate text-[10px] font-semibold tracking-[0.04em] text-[var(--ui-text-secondary)] uppercase">
+          <span className="min-w-0 truncate text-xs font-medium text-[var(--ui-text-secondary)]">
             {t("Stashes")}
           </span>
           <span className="text-[10px] tabular-nums text-[var(--ui-text-muted)]">
@@ -163,51 +169,64 @@ export function GitStashSection({ cwd, enabled, hasChanges, onOpenCommit }: Prop
             {entries.map((entry) => (
               <li key={entry.sha} className="flex items-center gap-0.5 px-3 py-0.5">
                 <Button
-                  variant="ghost"
+                  variant="item"
                   motion="none"
                   type="button"
                   title={entry.message}
                   onClick={() => onOpenCommit(stashCommit(entry))}
-                  className="min-w-0 flex-1 truncate text-left hover:underline"
+                  className="min-w-0 flex-1 text-left"
                 >
-                  {entry.message}
+                  <span className="min-w-0 truncate">{entry.message}</span>
                 </Button>
                 <Button
                   variant="ghost"
                   motion="none"
-                  type="button"
+                  iconOnly
+                  label={t("Actions for {p0}", { p0: entry.message })}
                   disabled={!!busy}
-                  title={t("Apply and keep the stash")}
-                  onClick={() => void run(() => gitStashAction(cwd, "apply", entry.index))}
-                  className={ACTION}
+                  aria-haspopup="menu"
+                  aria-expanded={menu?.entry.sha === entry.sha}
+                  onClick={(event) => setMenu({ entry, anchor: event.currentTarget })}
                 >
-                  {t("Apply")}
-                </Button>
-                <Button
-                  variant="ghost"
-                  motion="none"
-                  type="button"
-                  disabled={!!busy}
-                  title={t("Apply and remove the stash")}
-                  onClick={() => void run(() => gitStashAction(cwd, "pop", entry.index))}
-                  className={ACTION}
-                >
-                  {t("Pop")}
-                </Button>
-                <Button
-                  variant="ghost"
-                  motion="none"
-                  type="button"
-                  disabled={!!busy}
-                  onClick={() => void drop(entry)}
-                  className={ACTION}
-                >
-                  {t("Drop")}
+                  <MoreHorizontal className="size-3.5" />
                 </Button>
               </li>
             ))}
           </ul>
         )
+      ) : null}
+      {menu ? (
+        <DropdownMenu
+          anchor={menu.anchor}
+          label={t("Stashes")}
+          onClose={() => setMenu(null)}
+          items={[
+            {
+              kind: "item",
+              id: "apply",
+              label: t("Apply"),
+              description: t("Apply and keep the stash"),
+              disabled: !!busy,
+            },
+            {
+              kind: "item",
+              id: "pop",
+              label: t("Pop"),
+              description: t("Apply and remove the stash"),
+              disabled: !!busy,
+            },
+            { kind: "sep" },
+            { kind: "item", id: "drop", label: t("Drop"), danger: true, disabled: !!busy },
+          ]}
+          onPick={(id) => {
+            const entry = menu.entry;
+            setMenu(null);
+            if (busy) return;
+            if (id === "drop") void drop(entry);
+            else if (id === "apply" || id === "pop")
+              void run(() => gitStashAction(cwd, id, entry.index));
+          }}
+        />
       ) : null}
     </div>
   );

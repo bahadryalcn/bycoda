@@ -125,7 +125,10 @@ export function devServerProject(cwd: string | undefined, projects: DevServerPro
   return projects
     .filter((project) => {
       const difference = paths.relative(paths.resolve(project.path), normalized);
-      return !difference || (!difference.startsWith("..") && !paths.isAbsolute(difference));
+      return (
+        !difference ||
+        (difference !== ".." && !/^\.\.[\\/]/.test(difference) && !paths.isAbsolute(difference))
+      );
     })
     .sort((a, b) => b.path.length - a.path.length)[0];
 }

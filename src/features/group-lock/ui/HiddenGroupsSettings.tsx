@@ -40,7 +40,6 @@ export function HiddenGroupsSettings({
           {t("Hidden groups")}
         </span>
       }
-      description={t("Keep personal projects out of view. Restore them here at any time.")}
     >
       {!authorized ? (
         <Row
@@ -50,19 +49,13 @@ export function HiddenGroupsSettings({
               {t("Group names are concealed")}
             </span>
           }
-          description={t("Enter your password to view and restore hidden groups.")}
         >
           <SecondaryButton onClick={() => setPrompt(true)}>
             {t("Manage hidden groups…")}
           </SecondaryButton>
         </Row>
       ) : groups.length === 0 ? (
-        <Row
-          label={t("No hidden groups")}
-          description={t(
-            "Right-click a project group and choose Hide group to hide it on this device.",
-          )}
-        />
+        <Row label={t("No hidden groups")} />
       ) : (
         groups.map((group) => (
           <Row
@@ -112,6 +105,12 @@ export function HiddenGroupsSettings({
           {error}
         </p>
       ) : null}
+      <section className="privacy-recovery">
+        <h3>{t("How to hide a group")}</h3>
+        <p className="privacy-inline-note">
+          {t("Right-click a project group and choose Hide group to hide it on this device.")}
+        </p>
+      </section>
       {prompt ? (
         <PasswordPromptDialog
           title={t("Manage hidden groups")}

@@ -61,6 +61,22 @@ async function typeInto(field: HTMLTextAreaElement, text: string) {
 }
 
 describe("QueuedMessageEditDialog", () => {
+  it("keeps a rejected queue edit available for correction and retry", async () => {
+    const onSave = vi.fn().mockImplementationOnce(() => {
+      throw new Error("Remote queue is full");
+    });
+    const { field, button } = await open({ onSave });
+    await typeInto(field, "oversized draft [image1]");
+    await act(async () => button("Save").click());
+    expect(document.body.querySelector('[role="alert"]')?.textContent).toContain(
+      "Remote queue is full",
+    );
+    expect(field.value).toBe("oversized draft [image1]");
+    await typeInto(field, "smaller draft [image1]");
+    await act(async () => button("Save").click());
+    expect(onSave).toHaveBeenLastCalledWith("smaller draft [image1]", message.attachments);
+    expect(document.body.querySelector('[role="alert"]')).toBeNull();
+  });
   it("releases attachments that finish loading after the editor closes", async () => {
     let finish!: (files: Attachment[]) => void;
     vi.spyOn(attachmentApi, "pickAttachments").mockReturnValue(

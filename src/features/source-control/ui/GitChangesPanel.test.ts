@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { act, createElement } from "react";
+import { Activity, act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { resetGitIndexStore } from "../model/gitIndexStore";
@@ -1043,6 +1043,65 @@ describe("GitChangesPanel navigation", () => {
 });
 
 describe("GitChangesPanel loading and publication recovery", () => {
+  it("does not repeat a manual refresh when the retained panel becomes visible again", async () => {
+    vi.mocked(gitDiffIndex).mockResolvedValue(index());
+    const render = (mode: "visible" | "hidden") =>
+      root.render(
+        createElement(
+          Activity,
+          { mode },
+          createElement(GitChangesPanel, {
+            cwd: "/repo-retained-entry",
+            enabled: true,
+            onOpenFile: vi.fn(),
+            onOpenAllChanges: vi.fn(),
+            onOpenCommit: vi.fn(),
+          }),
+        ),
+      );
+    await act(async () => render("visible"));
+    await act(async () =>
+      container
+        .querySelector<HTMLButtonElement>('button[aria-label="Refresh source control"]')!
+        .click(),
+    );
+    const reads = vi.mocked(gitDiffIndex).mock.calls.length;
+    await act(async () => render("hidden"));
+    await act(async () => vi.advanceTimersByTimeAsync(60_000));
+    await act(async () => render("visible"));
+    expect(gitDiffIndex).toHaveBeenCalledTimes(reads);
+  });
+
+  it("reuses a full index on entry for two minutes without resetting its fetch age", async () => {
+    vi.mocked(gitDiffIndex).mockResolvedValue(index());
+    await renderPanel("/repo-entry-freshness");
+    const initialReads = vi.mocked(gitDiffIndex).mock.calls.length;
+    await act(async () => root.render(null));
+    await act(async () => vi.advanceTimersByTimeAsync(119_999));
+    await renderPanel("/repo-entry-freshness");
+    expect(gitDiffIndex).toHaveBeenCalledTimes(initialReads);
+    await act(async () => root.render(null));
+    await act(async () => vi.advanceTimersByTimeAsync(1));
+    await renderPanel("/repo-entry-freshness");
+    expect(gitDiffIndex).toHaveBeenCalledTimes(initialReads + 1);
+  });
+
+  it("waits three minutes between fallback checks and refreshes on return from hidden", async () => {
+    vi.mocked(gitDiffIndex).mockResolvedValue(index());
+    await renderPanel("/repo-fallback-policy");
+    const initialReads = vi.mocked(gitDiffIndex).mock.calls.length;
+    await act(async () => vi.advanceTimersByTimeAsync(179_999));
+    await act(async () => window.dispatchEvent(new Event("focus")));
+    expect(gitDiffIndex).toHaveBeenCalledTimes(initialReads);
+    const hidden = vi.spyOn(document, "hidden", "get").mockReturnValue(true);
+    await act(async () => vi.advanceTimersByTimeAsync(1));
+    expect(gitDiffIndex).toHaveBeenCalledTimes(initialReads);
+    hidden.mockReturnValue(false);
+    await act(async () => document.dispatchEvent(new Event("visibilitychange")));
+    expect(gitDiffIndex).toHaveBeenCalledTimes(initialReads + 1);
+    hidden.mockRestore();
+  });
+
   it("refreshes local changes and PR status explicitly, without polling every two seconds", async () => {
     vi.mocked(gitDiffIndex).mockResolvedValue(index({ remote: "origin" }));
     await renderPanel("/repo-manual-refresh");

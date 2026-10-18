@@ -2,8 +2,9 @@ import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import { Alert } from "../../../shared/ui/Alert";
 import { Button } from "../../../shared/ui/Button";
 import { t, useLocale, getLocale } from "../../../shared/i18n";
-import { RefreshCw } from "../../../shared/ui/icons";
-import { useEffect, useMemo, useState } from "react";
+import { RefreshCw, ListFilter } from "../../../shared/ui/icons";
+import { Popover } from "../../../shared/ui/Popover";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { HarnessIcon } from "../../sessions/ui/HarnessIcon";
 import {
   createUsagePricing,
@@ -65,6 +66,8 @@ export function ProviderUsageSettings({
   const [refreshing, setRefreshing] = useState(true);
   const [accountKey, setAccountKey] = useState(ALL_USAGE_ACCOUNTS);
   const [range, setRange] = useState<UsageRange>("7d");
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const filterAnchor = useRef<HTMLButtonElement>(null);
   const [metric, setMetric] = useState<UsageMetric>("tokens");
   const [breakdown, setBreakdown] = useState<UsageBreakdown>("model");
   // undefined while loading; null when OpenRouter and the cached copy both fail.
@@ -190,31 +193,69 @@ export function ProviderUsageSettings({
       )}
       action={
         <div className="flex flex-wrap items-center justify-end gap-2">
-          <SearchableSelect
-            label={t("Usage account")}
-            value={selected ? accountKey : ALL_USAGE_ACCOUNTS}
-            options={accountOptions}
-            onChange={setAccountKey}
-          />
-          <Segmented
-            label={t("Usage range")}
-            value={range}
-            options={[
-              {
-                value: "7d",
-                get label() {
-                  return t("7 days");
-                },
-              },
-              {
-                value: "30d",
-                get label() {
-                  return t("30 days");
-                },
-              },
-            ]}
-            onChange={setRange}
-          />
+          <span className="text-xs text-[var(--ui-text-secondary)]">
+            {range === "7d" ? t("7 days") : t("30 days")}
+          </span>
+          <Button
+            variant="ghost"
+            iconOnly
+            label={t("Filters")}
+            ref={filterAnchor}
+            selected={accountKey !== ALL_USAGE_ACCOUNTS || range !== "7d"}
+            aria-haspopup="dialog"
+            aria-expanded={filtersOpen}
+            onClick={() => setFiltersOpen((value) => !value)}
+          >
+            <ListFilter className="size-3.5" />
+          </Button>
+          {filtersOpen ? (
+            <Popover
+              anchor={filterAnchor}
+              align="end"
+              width={320}
+              role="dialog"
+              aria-label={t("Filters")}
+              autoFocus
+              onDismiss={() => setFiltersOpen(false)}
+            >
+              <div className="grid gap-3 p-3">
+                <SearchableSelect
+                  label={t("Usage account")}
+                  value={selected ? accountKey : ALL_USAGE_ACCOUNTS}
+                  options={accountOptions}
+                  onChange={setAccountKey}
+                />
+                <Segmented
+                  label={t("Usage range")}
+                  value={range}
+                  options={[
+                    {
+                      value: "7d",
+                      get label() {
+                        return t("7 days");
+                      },
+                    },
+                    {
+                      value: "30d",
+                      get label() {
+                        return t("30 days");
+                      },
+                    },
+                  ]}
+                  onChange={setRange}
+                />
+                <Button
+                  variant="ghost"
+                  onClick={() => {
+                    setAccountKey(ALL_USAGE_ACCOUNTS);
+                    setRange("7d");
+                  }}
+                >
+                  {t("Reset")}
+                </Button>
+              </div>
+            </Popover>
+          ) : null}
           <Button
             variant="ghost"
             size="sm"

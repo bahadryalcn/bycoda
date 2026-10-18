@@ -64,3 +64,11 @@ export function httpMcpArgs(
     ];
   return null;
 }
+
+/** Shell-safe host CLI prefix for providers that were not offered the MCP server. */
+export function mcpCliCommand(bridge: McpBridge): string {
+  const windows = /^[A-Za-z]:[\\/]/.test(bridge.command);
+  const quote = (value: string) =>
+    windows ? `'${value.replace(/'/g, "''")}'` : `'${value.replace(/'/g, "'\\''")}'`;
+  return `${windows ? "& " : ""}${[bridge.command, ...bridge.args].map(quote).join(" ")}`;
+}

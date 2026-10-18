@@ -126,8 +126,14 @@ export function QueuedMessageEditDialog({ message, canAttach, onSave, onRemove, 
   const save = () => {
     if (empty || pendingAttachments.current > 0) return;
     const next = applyQueuedEdit(message, draft);
-    saved.current = true;
-    onSave(next.text, next.attachments);
+    try {
+      onSave(next.text, next.attachments);
+      saved.current = true;
+      setError(null);
+    } catch (reason) {
+      // Validation failures retain the draft and its attachment ownership.
+      setError(reason instanceof Error ? reason.message : String(reason));
+    }
   };
 
   const change = (text: string, caret: number) => {

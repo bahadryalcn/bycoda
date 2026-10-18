@@ -3,6 +3,32 @@ import { EventEmitter } from "node:events";
 import { SharedBrowser, sharedBrowserUrl, type BrowserLoader } from "./shared-browser";
 import { RuntimeLogsService } from "./runtime-logs";
 
+it("lets the owner explicitly take over control with a fresh lease and rejects the old controller", async () => {
+  const browser = new SharedBrowser(undefined, () => 1000);
+  const agent = await browser.dispatchForSession("browser.claim", {}, "agent");
+  const owner = await browser.dispatch("browser.claim", {}, "desktop", { takeover: true });
+  expect(owner.controlling).toBe(true);
+  expect(owner.leaseId).not.toBe(agent.leaseId);
+  await expect(
+    browser.dispatch("browser.release", { leaseId: agent.leaseId }, "agent"),
+  ).rejects.toThrow("Claim");
+  await expect(
+    browser.dispatchForSession("browser.claim", { takeover: true }, "agent"),
+  ).rejects.toThrow("Another");
+  expect(await browser.dispatch("browser.status", {}, "desktop")).toMatchObject({
+    controlling: true,
+    leaseId: owner.leaseId,
+  });
+});
+
+it("does not grant takeover through untrusted browser parameters", async () => {
+  const browser = new SharedBrowser(undefined, () => 1000);
+  await browser.dispatch("browser.claim", {}, "owner");
+  await expect(browser.dispatch("browser.claim", { takeover: true }, "other")).rejects.toThrow(
+    "Another",
+  );
+});
+
 it("loads lazily, enforces device control leases and rejects unsupported URLs/inputs", async () => {
   let now = 1_000;
   const page = {
@@ -22,7 +48,7 @@ it("loads lazily, enforces device control leases and rejects unsupported URLs/in
   await browser.dispatch("browser.status", {}, "a");
   expect(loader).not.toHaveBeenCalled();
   const claim = await browser.dispatch("browser.claim", {}, "a");
-  await expect(browser.dispatch("browser.claim", {}, "b")).rejects.toThrow("Another device");
+  await expect(browser.dispatch("browser.claim", {}, "b")).rejects.toThrow("Another client");
   await expect(
     browser.dispatch("browser.open", { url: "http://localhost:3000", leaseId: claim.leaseId }, "b"),
   ).rejects.toThrow("Claim");

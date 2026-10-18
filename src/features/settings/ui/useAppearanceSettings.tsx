@@ -74,7 +74,6 @@ import {
   syncNativeGlass,
   loadShowExcludedFiles,
   saveShowExcludedFiles,
-  SHOW_EXCLUDED_FILES_DEFAULT,
   SIDEBAR_BLUR_DEFAULT,
   SIDEBAR_OPACITY_DEFAULT,
   MAIN_OPACITY_DEFAULT,
@@ -306,7 +305,11 @@ export function useAppearanceSettings(
   );
 
   const restoreDefaults = useCallback(() => {
-    onPreferences({ ...APPEARANCE_DEFAULTS });
+    onPreferences({
+      ...APPEARANCE_DEFAULTS,
+      chatWidth: preferences.chatWidth,
+      wordWrap: preferences.wordWrap,
+    });
     onThemePreference(THEME_PREFERENCE_DEFAULT);
     onAccentColor(ACCENT_COLOR_DEFAULT);
     onOpacity(Math.round(SIDEBAR_OPACITY_DEFAULT * 100));
@@ -315,7 +318,6 @@ export function useAppearanceSettings(
     onTint(THEME_HUE_DEFAULT, THEME_SATURATION_DEFAULT);
     onDarkLightness(THEME_DARK_LIGHTNESS_DEFAULT);
     onBodyGlass(BODY_GLASS_DEFAULT);
-    onShowExcludedFiles(SHOW_EXCLUDED_FILES_DEFAULT);
     onChatBackgroundEmptyOpacity(Math.round(CHAT_BACKGROUND_EMPTY_OPACITY_DEFAULT * 100));
     onChatBackgroundSessionOpacity(Math.round(CHAT_BACKGROUND_SESSION_OPACITY_DEFAULT * 100));
     onChatBackgroundScope(CHAT_BACKGROUND_SCOPE_DEFAULT);
@@ -328,6 +330,8 @@ export function useAppearanceSettings(
     onUiScale(Math.round(UI_SCALE_DEFAULT * 100));
     onCollapsedProjectRailMode(COLLAPSED_PROJECT_RAIL_MODE_DEFAULT);
   }, [
+    preferences.chatWidth,
+    preferences.wordWrap,
     onPreferences,
     chatBackgroundPath,
     onBlur,
@@ -340,7 +344,6 @@ export function useAppearanceSettings(
     onNewThreadBackgroundEffect,
     onClearChatBackground,
     onAccentColor,
-    onShowExcludedFiles,
     onThemePreference,
     onOpacity,
     onMainOpacity,

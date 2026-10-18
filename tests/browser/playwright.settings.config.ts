@@ -2,10 +2,17 @@ import { defineConfig } from "@playwright/test";
 export default defineConfig({
   testDir: ".",
   testMatch: [
+    "live-backgrounds.e2e.ts",
+    "settings-open.e2e.ts",
+    "settings-organization.e2e.ts",
+    "workspace-settings.e2e.ts",
+    "terminal-settings.e2e.ts",
     "settings.e2e.ts",
+    "policies.e2e.ts",
     "settings-subviews.e2e.ts",
     "settings-skills.e2e.ts",
     "settings-notifications.e2e.ts",
+    "settings-layout.e2e.ts",
   ],
   outputDir: "../../temp/test-results/settings",
   workers: 1,

@@ -89,9 +89,15 @@ function ShellLayoutFixture() {
               cwd: "G:/wallet/api",
               title: `Improve the shared interface and preserve long session titles ${index + 1}`,
               harness: index % 2 === 0 ? "codex" : "claude",
-              activity: index === 1 ? "Need approval" : "Working",
+              activity:
+                index >= 6
+                  ? "Done"
+                  : index === 1
+                    ? "Need approval"
+                    : "pnpm exec playwright test --project chromium --reporter=list",
+              startedAt: layoutNow - 220_000 - index * 15_000,
               needsApproval: index === 1,
-              done: false,
+              done: index >= 6,
             }))}
           />
           <main className="min-w-0 flex-1 p-4">

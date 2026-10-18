@@ -11,7 +11,6 @@ vi.mock("../../../shared/i18n", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../../shared/i18n")>()),
   useLocale: () => language.locale,
 }));
-// Exercise the real bundled policy data without the unrelated session tool graph.
 vi.mock("../../sessions/ui/AgentMarkdown", () => ({
   AgentMarkdown: ({ text }: { text: string }) => createElement("div", null, text),
 }));
@@ -29,55 +28,53 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 
-it("bundles every policy offline and exposes searchable settings anchors", async () => {
+async function openPolicy(id = POLICIES[0].id) {
+  await act(async () => container.querySelector<HTMLButtonElement>(`#setting-${id}`)!.click());
+}
+it("opens privacy by default and replaces the inline reader with each full offline document", async () => {
   await act(async () => root.render(createElement(PoliciesSettings)));
+  expect(document.querySelector("article")?.textContent).toContain(POLICIES[0].en);
   for (const policy of POLICIES) {
-    expect(container.querySelector(`#setting-${policy.id}`)?.textContent).toContain(policy.en);
+    expect(container.querySelector(`#setting-${policy.id}`)?.textContent).toContain(policy.title);
     expect(searchSettings(policy.title).some((result) => result.section === "policies")).toBe(true);
+    await openPolicy(policy.id);
+    expect(document.querySelectorAll("article")).toHaveLength(1);
+    expect(document.querySelector("article")?.textContent).toContain(policy.en);
+    expect(document.querySelector("article")?.lang).toBe("en");
   }
-  expect(container.querySelectorAll("article[lang=en]")).toHaveLength(4);
-  expect(container.textContent).toContain("info@bahadrhllyalcn.com");
 });
 
-it("follows Turkish locale and restores English text when the locale changes", async () => {
+it("follows Turkish locale while retaining the original MIT license", async () => {
   language.locale = "tr";
   await act(async () => root.render(createElement(PoliciesSettings)));
-  expect(container.querySelectorAll("article[lang=tr]")).toHaveLength(3);
-  expect(container.textContent).toContain(
+  await openPolicy();
+  expect(document.querySelector("article")?.lang).toBe("tr");
+  expect(document.querySelector("article")?.textContent).toContain(
     "Geliştirici veri toplamıyor veya kullanıcıları takip etmiyor",
   );
-  expect(container.querySelector("#setting-software-license article")?.getAttribute("lang")).toBe(
-    "en",
-  );
+  await openPolicy("software-license");
+  expect(document.querySelector("article")?.lang).toBe("en");
+  expect(document.querySelector("article")?.textContent).toContain(POLICIES[3].en);
   language.locale = "de";
   await act(async () => root.render(createElement(PoliciesSettings)));
-  expect(container.textContent).toContain("No developer collection or tracking");
+  await openPolicy();
+  expect(document.querySelector("article")?.textContent).toContain(
+    "No developer collection or tracking",
+  );
 });
 
-it("allows an explicit policy language selection without changing the app locale", async () => {
+it("allows a document language override without changing the app locale", async () => {
   await act(async () => root.render(createElement(PoliciesSettings)));
-  const picker = container.querySelector<HTMLButtonElement>(
-    "button[aria-label='Policy language: English']",
-  )!;
-  await act(async () => picker.click());
+  await act(async () =>
+    container
+      .querySelector<HTMLButtonElement>("button[aria-label='Policy language: English']")!
+      .click(),
+  );
   const turkish = [...document.querySelectorAll<HTMLElement>("[role=option]")].find((option) =>
     option.textContent?.includes("Türkçe"),
   )!;
   await act(async () => turkish.click());
-  expect(container.querySelectorAll("article[lang=tr]")).toHaveLength(3);
+  await openPolicy();
+  expect(document.querySelector("article")?.lang).toBe("tr");
   expect(language.locale).toBe("en");
-});
-
-it("opens collapsed full documents from navigation and focuses the requested policy", async () => {
-  await act(async () => root.render(createElement(PoliciesSettings)));
-  const details = container.querySelector("details")!;
-  await act(async () => {
-    details.open = false;
-    details.dispatchEvent(new Event("toggle"));
-  });
-  const target = container.querySelector<HTMLElement>(`#setting-${POLICIES[0].id}`)!;
-  await act(async () => container.querySelector<HTMLAnchorElement>("nav a")!.click());
-  expect(details.open).toBe(true);
-  expect(document.activeElement).toBe(target);
-  expect(target.textContent).toContain(POLICIES[0].en);
 });

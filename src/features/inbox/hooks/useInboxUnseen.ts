@@ -223,7 +223,7 @@ export function useInboxActivity(
         jiraEnabled: jiraBackgroundSyncEnabled(),
       };
       try {
-        const listed = await listInboxItems(projects, query, { force });
+        const listed = await listInboxItems(projects, query, { force, maxAgeMs: POLL_MS });
         if (cancelled) return;
         const visible = applyInboxFilters(listed.items, filters, "");
         rememberNotificationProjects(listed.items.map(inboxNotificationProject));

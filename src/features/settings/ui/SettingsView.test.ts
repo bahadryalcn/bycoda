@@ -15,6 +15,7 @@ import {
   currentKeybindings,
   keybindingSettingId,
   searchSettings,
+  settingsSectionForAnchor,
   type SettingsSectionId,
 } from "../model/settings";
 import {
@@ -126,15 +127,78 @@ afterEach(async () => {
 });
 
 describe("settings pages", () => {
+  it("restores appearance without resetting conversation display or explorer settings", async () => {
+    localStorage.setItem(
+      "bycoda.appearancePreferences.v1",
+      JSON.stringify({ chatWidth: "wide", wordWrap: true, interfaceFont: "Verdana" }),
+    );
+    localStorage.setItem("bycoda.showExcludedFiles", "true");
+    await render("appearance");
+    const reset = Array.from(container.querySelectorAll<HTMLButtonElement>("button")).find(
+      (node) => node.getAttribute("aria-label") === "Restore defaults",
+    )!;
+    await act(async () => reset.click());
+    const preferences = JSON.parse(localStorage.getItem("bycoda.appearancePreferences.v1")!);
+    expect(preferences).toMatchObject({
+      chatWidth: "wide",
+      wordWrap: true,
+      interfaceFont: "System",
+    });
+    expect(localStorage.getItem("bycoda.showExcludedFiles")).toBe("true");
+    await render("chat");
+    expect(container.querySelector('[aria-label="Word wrap"]')?.getAttribute("aria-checked")).toBe(
+      "true",
+    );
+  });
+
+  it("groups settings by the workflow they configure and preserves old anchor routes", async () => {
+    const ownership = {
+      chat: ["chat-width", "code-word-wrap", "streaming-text-mode", "translation-model-default"],
+      worktrees: ["git-generation-default", "diff-view", "project-worktrees"],
+      groupLock: ["mask-emails", "file-access", "start-in-privacy-mode"],
+    } as const;
+    vi.mocked(invoke).mockImplementation(async (command) =>
+      command === "git_worktrees" ? { worktrees: [], defaultRoot: "/worktrees" } : undefined,
+    );
+    for (const section of [
+      "chat",
+      "worktrees",
+      "groupLock",
+      "appearance",
+      "workspace",
+      "usage",
+    ] as const) {
+      await render(section);
+      for (const [owner, ids] of Object.entries(ownership)) {
+        for (const id of ids) {
+          expect(renderedSettingIds().includes(id), `${section}: ${id}`).toBe(owner === section);
+          expect(settingsSectionForAnchor("general", id)).toBe(owner);
+          expect(
+            searchSettings(SETTINGS_INDEX.find((entry) => entry.id === id)!.label, 100).some(
+              (result) => result.settingId === id && result.section === owner,
+            ),
+          ).toBe(true);
+        }
+      }
+    }
+    expect(settingsSectionForAnchor("chat", "unknown-anchor")).toBe("chat");
+    expect(settingsSectionForAnchor(undefined, "chat-width")).toBe("chat");
+    expect(settingsSectionForAnchor("appearance")).toBe("appearance");
+    expect(SETTINGS_SECTIONS.find((entry) => entry.id === "groupLock")?.group).toBe("app");
+  });
+
   it("opens the bundled application policies from the settings navigation", async () => {
     await render("policies");
-    expect(container.querySelectorAll(".policy-document")).toHaveLength(4);
-    expect(container.textContent).toContain("No developer collection or tracking");
-    expect(container.textContent).toContain("info@bahadrhllyalcn.com");
+    expect(container.querySelectorAll(".policy-document")).toHaveLength(1);
+    await act(async () =>
+      container.querySelector<HTMLButtonElement>("#setting-privacy-policy")!.click(),
+    );
+    expect(document.body.textContent).toContain("No developer collection or tracking");
+    expect(document.body.textContent).toContain("info@bahadrhllyalcn.com");
     for (const entry of SETTINGS_INDEX.filter((item) => item.section === "policies")) {
       expect(container.querySelector(`[data-setting-id="${entry.id}"]`)).not.toBeNull();
     }
-    const contact = container.querySelector<HTMLAnchorElement>(
+    const contact = document.querySelector<HTMLAnchorElement>(
       'a[href="mailto:info@bahadrhllyalcn.com"]',
     )!;
     vi.mocked(openUrl).mockResolvedValueOnce(undefined);
@@ -142,7 +206,7 @@ describe("settings pages", () => {
     expect(openUrl).toHaveBeenCalledWith("mailto:info@bahadrhllyalcn.com");
     vi.mocked(openUrl).mockRejectedValueOnce(new Error("No email app"));
     await act(async () => contact.click());
-    expect(container.querySelector('[role="alert"]')?.textContent).toContain(
+    expect(document.querySelector('[role="alert"]')?.textContent).toContain(
       "Copy info@bahadrhllyalcn.com",
     );
   });
@@ -160,7 +224,7 @@ describe("settings pages", () => {
     )!;
     expect(summary.disabled).toBe(true);
     const notifications = container.querySelector<HTMLButtonElement>(
-      '[role="switch"][aria-label="Notifications"]',
+      '[role="switch"][aria-label="Desktop notifications"]',
     )!;
     await act(async () => notifications.click());
     expect(summary.disabled).toBe(false);
@@ -180,7 +244,8 @@ describe("settings pages", () => {
     expect(localStorage.getItem("bycoda.themeHue")).toBe("205");
     expect(localStorage.getItem("bycoda.accentColor")).toBe("#65b4db");
     expect(ocean.getAttribute("aria-pressed")).toBe("true");
-    expect(container.querySelector("details.settings-advanced")?.hasAttribute("open")).toBe(false);
+    expect(container.querySelector(".appearance-settings details")).toBeNull();
+    expect(container.querySelector('[data-setting-id="dark-lightness"]')).not.toBeNull();
   });
 
   it("persists typography and restores the appearance defaults", async () => {
@@ -203,8 +268,8 @@ describe("settings pages", () => {
         .querySelector('[data-setting-id="interface-font"] [aria-haspopup="listbox"]')
         ?.getAttribute("aria-label"),
     ).toBe("Interface font: Verdana");
-    const reset = Array.from(container.querySelectorAll<HTMLButtonElement>("button")).find((node) =>
-      node.textContent?.includes("Restore defaults"),
+    const reset = Array.from(container.querySelectorAll<HTMLButtonElement>("button")).find(
+      (node) => node.getAttribute("aria-label") === "Restore defaults",
     )!;
     await act(async () => reset.click());
     expect(document.documentElement.style.getPropertyValue("--font-sans")).toBe("");
@@ -246,7 +311,7 @@ describe("settings pages", () => {
     await act(async () =>
       tabs[1]!.dispatchEvent(new KeyboardEvent("keydown", { key: "End", bubbles: true })),
     );
-    expect(onSelectSection).toHaveBeenLastCalledWith("skills");
+    expect(onSelectSection).toHaveBeenLastCalledWith("policies");
     expect(document.activeElement).toBe(tabs.at(-1));
     await act(async () =>
       tabs.at(-1)!.dispatchEvent(new KeyboardEvent("keydown", { key: "Home", bubbles: true })),
@@ -271,18 +336,14 @@ describe("settings pages", () => {
       '[aria-label="Prevent sleep while agents work"]',
     )!;
     expect(toggle.getAttribute("aria-checked")).toBe("false");
-    expect(toggle.closest(".settings-row")?.textContent).toContain(
+    expect(toggle.closest("section")?.textContent).toContain(
       "Prevent idle sleep during agent work",
     );
-    expect(toggle.closest(".settings-row")?.textContent).not.toContain(
-      "battery-powered Modern Standby",
-    );
-    expect(toggle.closest(".settings-row")?.textContent).toContain(
+    expect(toggle.closest("section")?.textContent).not.toContain("battery-powered Modern Standby");
+    expect(toggle.closest("section")?.textContent).toContain(
       "Automatic screen locking remains available",
     );
-    expect(toggle.closest(".settings-row")?.textContent).not.toContain(
-      "choosing Sleep still works",
-    );
+    expect(toggle.closest("section")?.textContent).not.toContain("choosing Sleep still works");
 
     const hold = [...container.querySelectorAll<HTMLButtonElement>('button[role="combobox"]')].find(
       (button) => button.closest(".settings-row")?.textContent?.includes("After agents finish"),
@@ -323,9 +384,7 @@ describe("settings pages", () => {
     const toggle = container.querySelector<HTMLButtonElement>(
       '[aria-label="Prevent sleep while agents work"]',
     )!;
-    expect(toggle.closest(".settings-row")?.textContent).toContain(
-      "battery-powered Modern Standby",
-    );
+    expect(toggle.closest("section")?.textContent).toContain("battery-powered Modern Standby");
   });
 
   it("keeps account emails blurred until clicked and hides them when settings reopen", async () => {
@@ -341,7 +400,9 @@ describe("settings pages", () => {
     const emails = container.querySelectorAll<HTMLButtonElement>('[aria-label="Reveal email"]');
     expect(emails).toHaveLength(2);
     expect(
-      [...emails].every((email) => email.querySelector("span[aria-hidden]")?.className.includes("blur-[5px]")),
+      [...emails].every((email) =>
+        email.querySelector("span[aria-hidden]")?.className.includes("blur-[5px]"),
+      ),
     ).toBe(true);
     expect(container.textContent).toContain("Pro");
     await act(async () => emails[0].click());
@@ -387,15 +448,22 @@ describe("settings pages", () => {
         .querySelector('[role="meter"][aria-label="Default account session used"]')
         ?.getAttribute("aria-valuenow"),
     ).toBe("23");
+    await act(async () =>
+      [...container.querySelectorAll<HTMLButtonElement>('[role="radio"]')]
+        .find((button) => button.textContent === "Projects")!
+        .click(),
+    );
     expect(container.querySelectorAll('[data-setting-id="provider-usage"]')).toHaveLength(1);
+    await render("groupLock");
     await act(async () =>
       container.querySelector<HTMLButtonElement>('[aria-label="Mask account emails"]')!.click(),
     );
     await render("providers");
     expect(container.querySelector('[aria-label="Reveal email"]')).toBeNull();
-    for (const id of ["show-remaining-usage", "mask-emails", "provider-usage"]) {
+    for (const id of ["show-remaining-usage", "provider-usage"]) {
       expect(SETTINGS_INDEX.find((entry) => entry.id === id)?.section).toBe("usage");
     }
+    expect(SETTINGS_INDEX.find((entry) => entry.id === "mask-emails")?.section).toBe("groupLock");
   });
 
   it("sets separate orange and pink colors for two Claude accounts", async () => {
@@ -622,7 +690,7 @@ describe("settings pages", () => {
     expect(ask).toHaveBeenCalledTimes(1);
     expect(remove.disabled).toBe(true);
     await act(async () => reject(new Error("Dialog unavailable")));
-    expect(container.querySelector('[role="alert"]')?.textContent).toContain("Dialog unavailable");
+    expect(document.querySelector('[role="alert"]')?.textContent).toContain("Dialog unavailable");
     expect(remove.disabled).toBe(false);
     expect(providerAccounts("claude")).toHaveLength(1);
   });
@@ -845,7 +913,7 @@ describe("settings pages", () => {
 
   it("gives every section a rail group", () => {
     const groups = new Set(SETTINGS_SECTIONS.map((section) => section.group));
-    expect([...groups]).toEqual(["app", "workspace", "agents"]);
+    expect([...groups]).toEqual(["app", "workspace", "agents", "about"]);
   });
 
   it("indexes each setting once", () => {

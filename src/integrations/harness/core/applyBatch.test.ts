@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { newSession, type Session } from "../../../features/sessions/model/session";
 import { applyHarnessEvent, applyHarnessEvents } from "./apply";
 import type { HarnessEvent } from "./types";
+import { snapshotRemainder } from "./streamText";
 
 function content(session: Session) {
   return {
@@ -21,7 +22,7 @@ function conversation(): Session {
 }
 
 describe("batched harness events", () => {
-  it("preserves mixed snapshots, repeated tokens, whitespace and message boundaries", () => {
+  it("preserves repeated tokens, whitespace and message boundaries", () => {
     const events: HarnessEvent[] = [
       { type: "message.delta", text: " " },
       { type: "message.delta", text: "Hello world" },
@@ -78,8 +79,8 @@ describe("batched harness events", () => {
     ).toBe(session);
     expect(
       applyHarnessEvents(session, [
-        { type: "message.delta", text: "Hello" },
-        { type: "message.delta", text: "Hello" },
+        { type: "message.delta", text: snapshotRemainder("Hello", "Hello") },
+        { type: "message.delta", text: snapshotRemainder("Hello", "Hello") },
       ]),
     ).toBe(session);
   });

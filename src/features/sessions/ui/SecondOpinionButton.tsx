@@ -1,4 +1,5 @@
 import { Button } from "../../../shared/ui/Button";
+import type { ExpandingButtonGroupTriggerProps } from "../../../shared/ui/ExpandingButtonGroup";
 import { t, useLocale } from "../../../shared/i18n";
 import {
   Check,
@@ -11,10 +12,10 @@ import {
 import {
   useEffect,
   useMemo,
-  useRef,
   useState,
   useSyncExternalStore,
   type KeyboardEvent as ReactKeyboardEvent,
+  type ReactNode,
 } from "react";
 import {
   getHarnessAvailabilitySnapshot,
@@ -63,6 +64,7 @@ type Props = {
   excludeFromModel?: boolean;
   disabled?: boolean;
   triggerClassName?: string;
+  renderTrigger?: (props: ExpandingButtonGroupTriggerProps) => ReactNode;
 };
 
 const MENU_WIDTH = 240;
@@ -74,12 +76,17 @@ const SUBMENU_OVERLAP = -4;
 /** Neither menu is inside the other, so a click in one is not a click away. */
 const SELF = "[data-provider-target]";
 
-export function HandoffButton({ from, onPick }: Pick<Props, "from" | "onPick">) {
+export function HandoffButton({
+  from,
+  onPick,
+  renderTrigger,
+}: Pick<Props, "from" | "onPick" | "renderTrigger">) {
   useLocale();
   return (
     <SecondOpinionButton
       from={from}
       onPick={onPick}
+      renderTrigger={renderTrigger}
       icon={Replace}
       title={t("Handoff")}
       disabledTitle="Install another provider to hand off"
@@ -135,6 +142,7 @@ export function SecondOpinionButton({
   excludeFromModel = false,
   disabled: disabledByCaller = false,
   triggerClassName,
+  renderTrigger,
 }: Props) {
   useLocale();
   const availabilityVersion = useSyncExternalStore(
@@ -153,7 +161,7 @@ export function SecondOpinionButton({
   const [modelActive, setModelActive] = useState(0);
   const [effortActive, setEffortActive] = useState(0);
   const [menuLevel, setMenuLevel] = useState<"providers" | "models" | "effort">("providers");
-  const button = useRef<HTMLButtonElement>(null);
+  const [button, setButton] = useState<HTMLButtonElement | null>(null);
   const [activeRow, setActiveRow] = useState<HTMLButtonElement | null>(null);
   const [activeModelRow, setActiveModelRow] = useState<HTMLButtonElement | null>(null);
   const lockOverscroll = useLockOverscroll<HTMLDivElement>();
@@ -241,7 +249,7 @@ export function SecondOpinionButton({
 
   const dismiss = (restoreFocus: boolean) => {
     setOpen(false);
-    if (restoreFocus) button.current?.focus();
+    if (restoreFocus) button?.focus();
   };
 
   // With the current model hidden, a target harness only counts as usable
@@ -362,26 +370,39 @@ export function SecondOpinionButton({
 
   return (
     <>
-      <Button
-        className={triggerClassName}
-        iconOnly
-        label={label}
-        variant="ghost"
-        ref={button}
-        type="button"
-        title={label}
-        aria-label={label}
-        aria-haspopup="menu"
-        aria-expanded={open}
-        disabled={disabled}
+      {renderTrigger ? (
+        renderTrigger({
+          ref: setButton,
+          ariaLabel: label,
+          disabled,
+          "aria-haspopup": "menu",
+          "aria-expanded": open,
+          onSelect: () => {
+            if (!disabled) setOpen((value) => !value);
+          },
+        })
+      ) : (
+        <Button
+          className={triggerClassName}
+          iconOnly
+          label={label}
+          variant="ghost"
+          ref={setButton}
+          type="button"
+          title={label}
+          aria-label={label}
+          aria-haspopup="menu"
+          aria-expanded={open}
+          disabled={disabled}
 
-        onClick={() => {
-          if (disabled) return;
-          setOpen((value) => !value);
-        }}
-      >
-        <Icon className="size-3.5" strokeWidth={1.75} />
-      </Button>
+          onClick={() => {
+            if (disabled) return;
+            setOpen((value) => !value);
+          }}
+        >
+          <Icon className="size-3.5" strokeWidth={1.75} />
+        </Button>
+      )}
       {open ? (
         <>
           <Popover

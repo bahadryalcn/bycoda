@@ -1,7 +1,9 @@
 import { Alert } from "../../../shared/ui/Alert";
 import { UsageMeter } from "../../../shared/ui/UsageMeter";
 import { t, useLocale } from "../../../shared/i18n";
-import { useEffect, useState } from "react";
+import { useContext, useEffect, useState } from "react";
+import { RevealedSetting } from "../../settings/ui/settingsControls";
+import "./UsagePage.css";
 import { RefreshCw } from "../../../shared/ui/icons";
 import { WORKSPACE_REFRESH_EVENT } from "../../../app/shell/WorkspaceControls";
 import {
@@ -19,7 +21,6 @@ import {
 import { HarnessIcon } from "../../sessions/ui/HarnessIcon";
 import { UsageOverview } from "./UsageOverview";
 import { UsageDisplaySettings } from "./UsageDisplaySettings";
-import { ProviderUsageSettings } from "../../settings/ui/ProviderUsageSettings";
 import { AccountColorPicker } from "../../providers/ui/AccountColorPicker";
 import { useShowRemainingUsage } from "../../settings/model/displayPrefs";
 import {
@@ -31,8 +32,9 @@ import { ProviderAccountSubtitle } from "../../providers/ui/ProviderAccountSubti
 import { SecondaryButton } from "../../../shared/ui/SecondaryButton";
 import { UsageBudgets } from "./UsageBudgets";
 
-export function UsagePage() {
+export function UsagePage({ limitsOnly = false }: { limitsOnly?: boolean }) {
   useLocale();
+  const revealed = useContext(RevealedSetting);
   const [version, setVersion] = useState(0);
   const [refresh, setRefresh] = useState(0);
   const accounts = (["codex", "claude"] as const).flatMap(providerAccounts);
@@ -48,52 +50,58 @@ export function UsagePage() {
       id="setting-account-limits"
       data-setting-id="account-limits"
       data-accounts-version={version}
+      className="usage-page"
     >
-      <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
-        <p className="text-xs text-content/50">
-          {t(
-            "This machine · provider account limits. Local session estimates are shown separately below.",
-          )}
-        </p>
-        <SecondaryButton
-          aria-label={t("Refresh usage")}
-          title={t("Refresh usage")}
-          onClick={() => setRefresh((v) => v + 1)}
-        >
-          <RefreshCw className="size-3.5" />
-          {t("Refresh usage")}
-        </SecondaryButton>
-      </div>
-      {(["codex", "claude"] as const).map((provider) => (
-        <section key={provider} className="mb-7">
-          <h2 className="mb-3 flex items-center gap-2 text-sm font-semibold">
-            <HarnessIcon harness={provider} className="size-4" />
-            {provider === "codex" ? t("Codex") : t("Claude")}
-          </h2>
-          <div className="space-y-3">
-            {accounts
-              .filter((account) => account.provider === provider)
-              .map((account) => (
-                <AccountLimits
-                  key={account.id}
-                  provider={provider}
-                  account={account}
-                  refresh={refresh}
-                  identity={identities[identityKey(account)]}
-                />
-              ))}
-            {!accounts.some((account) => account.provider === provider) ? (
-              <p className="text-xs text-content/60">
-                {t("No accounts on this machine. Add an account in Providers settings.")}
-              </p>
-            ) : null}
+      <UsageOverview
+        limitsOnly={limitsOnly}
+        refresh={refresh}
+        limits={(filters) => (
+          <div className="usage-limits-content">
+            <div className="usage-toolbar">
+              <h2>{t("Provider account limit")}</h2>
+              <SecondaryButton
+                aria-label={t("Refresh usage")}
+                title={t("Refresh usage")}
+                onClick={() => setRefresh((v) => v + 1)}
+              >
+                <RefreshCw className="size-3.5" />
+                {t("Refresh usage")}
+              </SecondaryButton>
+            </div>
+            <div className="usage-accounts">
+              {accounts
+                .filter(
+                  (account) =>
+                    (!filters.provider.length || filters.provider.includes(account.provider)) &&
+                    (!filters.account.length ||
+                      filters.account.includes(`${account.provider}:${account.id}`)),
+                )
+                .map((account) => (
+                  <AccountLimits
+                    key={identityKey(account)}
+                    provider={account.provider as RateLimitProvider}
+                    account={account}
+                    refresh={refresh}
+                    identity={identities[identityKey(account)]}
+                  />
+                ))}
+              {!accounts.length ? (
+                <p className="text-xs text-content/60">
+                  {t("No accounts on this machine. Add an account in Providers settings.")}
+                </p>
+              ) : null}
+            </div>
+            <UsageBudgets refresh={refresh} />
+            <details
+              className="usage-display-preferences"
+              open={revealed === "show-remaining-usage" || undefined}
+            >
+              <summary>{t("Display preferences")}</summary>
+              <UsageDisplaySettings />
+            </details>
           </div>
-        </section>
-      ))}
-      <UsageBudgets refresh={refresh} />
-      <UsageOverview refresh={refresh} />
-      <ProviderUsageSettings refresh={refresh} showSummary={false} />
-      <UsageDisplaySettings />
+        )}
+      />
     </div>
   );
 }
@@ -126,13 +134,21 @@ function AccountLimits({
     limits[kind] ? [{ kind, window: limits[kind]! }] : [],
   );
   return (
-    <div className="space-y-3" aria-busy={limits.status === "fetching" || limits.status === "idle"}>
-      <div className="flex flex-wrap items-center justify-between gap-2">
+    <section
+      className="usage-account"
+      aria-label={`${provider === "codex" ? t("Codex") : t("Claude")} · ${label}`}
+      aria-busy={limits.status === "fetching" || limits.status === "idle"}
+    >
+      <div className="usage-account-heading">
         <div className="min-w-0">
-          <h3 className="break-words text-xs font-medium">
+          <div className="usage-account-provider">
+            <HarnessIcon harness={provider} className="size-3.5" />
+            {provider === "codex" ? t("Codex") : t("Claude")}
+          </div>
+          <h3>
             {label}
-            {account.isDefault ? (
-              <span className="ms-2 text-content/60">{t("Default account")}</span>
+            {account.isDefault && label !== t("Default account") ? (
+              <span className="usage-account-default">{t("Default account")}</span>
             ) : null}
           </h3>
           <ProviderAccountSubtitle
@@ -147,59 +163,54 @@ function AccountLimits({
         </div>
         <AccountColorPicker account={account} />
       </div>
-      {windows.map(({ kind, window }) => {
-        const used = clampUsedPercent(window.usedPercent);
-        const shown = showRemaining ? 100 - used : used;
-        const direction = showRemaining ? "remaining" : "used";
-        return (
-          <div
-            key={kind}
-            className="grid gap-4 rounded-xl border border-stroke p-4 sm:grid-cols-[180px_1fr]"
-          >
-            <div>
-              <h4 className="text-xs font-medium">
-                {t(
-                  kind === "session" && window.windowMinutes === 300
-                    ? "5 hours"
-                    : kind === "session"
-                      ? "Session"
-                      : kind === "weekly"
-                        ? "Weekly"
-                        : "Monthly",
-                )}
-              </h4>
-              <p className="mt-2">
-                <strong className="text-3xl font-semibold tabular-nums">
-                  {Math.round(shown)}%
-                </strong>
-                <span className="ml-2 text-xs text-content/50">
-                  {showRemaining ? t("left") : t("used")}
-                </span>
-              </p>
-            </div>
-            <div className="flex flex-col justify-center gap-2">
-              <UsageMeter
-                label={`${label} ${kind} ${direction}`}
-                segments={[{ id: "used", label: t("used"), value: used }]}
-                limit={100}
-                unit="%"
-                decimals={0}
-                compact
-                showRemaining={showRemaining}
-                color={color}
-              />
-              <div className="flex flex-wrap justify-between gap-2 text-xs text-content/60">
-                <span>{t("Provider account limit")}</span>
-                <span>
-                  {window.resetsAt == null
-                    ? t("Reset time unavailable")
-                    : formatResetCountdown(window.resetsAt - now)}
-                </span>
+      <div className="usage-quota-list">
+        {windows.map(({ kind, window }) => {
+          const used = clampUsedPercent(window.usedPercent);
+          const shown = showRemaining ? 100 - used : used;
+          const direction = showRemaining ? "remaining" : "used";
+          return (
+            <div key={kind} className="usage-quota">
+              <div className="usage-quota-heading">
+                <h4 className="text-xs font-medium">
+                  {t(
+                    kind === "session" && window.windowMinutes === 300
+                      ? "5 hours"
+                      : kind === "session"
+                        ? "Session"
+                        : kind === "weekly"
+                          ? "Weekly"
+                          : "Monthly",
+                  )}
+                </h4>
+                <p>
+                  <strong>{Math.round(shown)}%</strong>
+                  <span>{showRemaining ? t("left") : t("used")}</span>
+                </p>
+              </div>
+              <div>
+                <UsageMeter
+                  label={`${label} ${kind} ${direction}`}
+                  segments={[{ id: "used", label: t("used"), value: used }]}
+                  limit={100}
+                  unit="%"
+                  decimals={0}
+                  compact
+                  showLegend={false}
+                  showRemaining={showRemaining}
+                  color={color}
+                />
+                <div className="usage-quota-reset">
+                  <span>
+                    {window.resetsAt == null
+                      ? t("Reset time unavailable")
+                      : formatResetCountdown(window.resetsAt - now)}
+                  </span>
+                </div>
               </div>
             </div>
-          </div>
-        );
-      })}
+          );
+        })}
+      </div>
       {limits.error ? (
         <Alert tone="danger" role="alert">
           {label}: {limits.error}
@@ -218,6 +229,6 @@ function AccountLimits({
             : t("Account limits unavailable.")}
         </p>
       ) : null}
-    </div>
+    </section>
   );
 }

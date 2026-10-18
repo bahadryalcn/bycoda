@@ -49,6 +49,7 @@ export type SettingsSectionId =
   | "chat"
   | "providers"
   | "usage"
+  | "limits"
   | "mcp"
   | "skills"
   | "inbox"
@@ -57,7 +58,7 @@ export type SettingsSectionId =
   | "archive";
 
 /** Rail buckets. Sections list in order under their group label. */
-export type SettingsGroupId = "app" | "agents" | "workspace";
+export type SettingsGroupId = "app" | "agents" | "workspace" | "about";
 
 export const SETTINGS_GROUPS: { id: SettingsGroupId; label: string }[] = [
   {
@@ -66,6 +67,7 @@ export const SETTINGS_GROUPS: { id: SettingsGroupId; label: string }[] = [
       return t("App");
     },
   },
+
   {
     id: "workspace",
     get label() {
@@ -76,6 +78,12 @@ export const SETTINGS_GROUPS: { id: SettingsGroupId; label: string }[] = [
     id: "agents",
     get label() {
       return t("Agents");
+    },
+  },
+  {
+    id: "about",
+    get label() {
+      return t("About");
     },
   },
 ];
@@ -135,16 +143,18 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
     keywords: "shortcut hotkey keyboard binding",
   },
   {
-    id: "policies",
+    id: "groupLock",
     group: "app",
     get label() {
-      return t("Policies");
+      return t("Privacy and security");
     },
     get description() {
-      return t("Privacy, terms of use, third-party services and software license.");
+      return t(
+        "File access, startup privacy and project group protection. Hidden projects stay on disk.",
+      );
     },
     keywords:
-      "privacy policy terms legal license data deletion tracking gizlilik politika koşullar lisans veri silme takip",
+      "email file access password privacy hide hidden restore private protect secure passcode gizli gizle geri getir görünür",
   },
   {
     id: "workspace",
@@ -153,9 +163,9 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
       return t("Workspace");
     },
     get description() {
-      return t("Workspace tools, file tabs, editing and code review.");
+      return t("Workspace tools, file tabs and editing.");
     },
-    keywords: "notes agents rail editor files format save diff review explorer",
+    keywords: "notes agents rail editor files format save explorer",
   },
   {
     id: "terminal",
@@ -183,12 +193,13 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
     id: "worktrees",
     group: "workspace",
     get label() {
-      return t("Worktrees");
+      return t("Source control");
     },
     get description() {
-      return t("Manage additional worktrees for each project.");
+      return t("Commit and pull request generation, code review and project worktrees.");
     },
-    keywords: "git branch worktree working copy project create delete",
+    keywords:
+      "git branch worktree working copy project create delete commit pull request generation diff review kaynak kontrolü",
   },
   {
     id: "inbox",
@@ -201,20 +212,7 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
     },
     keywords: "github gitlab linear jira atlassian azure devops connect token integration",
   },
-  {
-    id: "groupLock",
-    group: "workspace",
-    get label() {
-      return t("Group privacy");
-    },
-    get description() {
-      return t(
-        "File access, startup privacy and project group protection. Hidden projects stay on disk.",
-      );
-    },
-    keywords:
-      "password privacy hide hidden restore private protect secure passcode gizli gizle geri getir görünür",
-  },
+
   {
     id: "archive",
     group: "workspace",
@@ -233,7 +231,7 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
       return t("Chat");
     },
     get description() {
-      return t("Conversation layout, follow-ups and prompt templates.");
+      return t("Conversation layout, text display, translation, follow-ups and prompt templates.");
     },
     keywords: "transcript composer prompt message layout template snippet trigger queue",
   },
@@ -263,6 +261,19 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
     keywords: "quota limits weekly session tokens cost",
   },
   {
+    id: "limits",
+    group: "agents",
+    get label() {
+      return t("Limits & budgets");
+    },
+    get description() {
+      return t(
+        "Manage account limits and add usage budgets for projects, sessions and workspaces.",
+      );
+    },
+    keywords: "quota limit budget spending cost token threshold allocation",
+  },
+  {
     id: "mcp",
     group: "agents",
     get label() {
@@ -283,6 +294,18 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
       return t("Discover and manage skills on this computer and connected machines.");
     },
     keywords: "skill instructions prompt",
+  },
+  {
+    id: "policies",
+    group: "about",
+    get label() {
+      return t("Policies");
+    },
+    get description() {
+      return t("Privacy, terms of use, third-party services and software license.");
+    },
+    keywords:
+      "privacy policy terms legal license data deletion tracking gizlilik politika koşullar lisans veri silme takip",
   },
 ];
 
@@ -596,7 +619,7 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
   },
   {
     id: "streaming-text-mode",
-    section: "appearance",
+    section: "chat",
     get label() {
       return t("Streaming text animation");
     },
@@ -649,7 +672,7 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
   },
   {
     id: "chat-width",
-    section: "appearance",
+    section: "chat",
     get label() {
       return t("Chat width");
     },
@@ -673,7 +696,7 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
   },
   {
     id: "code-word-wrap",
-    section: "appearance",
+    section: "chat",
     get label() {
       return t("Word wrap");
     },
@@ -815,7 +838,7 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
       return t("Live background");
     },
     keywords:
-      "animated wallpaper matrix code rain ascii face speech ai shape waves slats web threads scanner ferrofluid lightfall prism side rays light pixel blast dot grid hyperspeed letter glitch motion backdrop",
+      "animated wallpaper matrix code rain ascii face speech ai slats web threads scanner lightfall prism side rays light pixel blast dot grid hyperspeed letter glitch motion backdrop",
   },
   {
     id: "translation-model-default",
@@ -827,9 +850,9 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
   },
   {
     id: "git-generation-default",
-    section: "chat",
+    section: "worktrees",
     get label() {
-      return t("Default generation model");
+      return t("Commit and pull request generation");
     },
     keywords: "git commit pull request generation model provider default varsayılan mesaj",
   },
@@ -900,7 +923,7 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
   },
   {
     id: "diff-view",
-    section: "workspace",
+    section: "worktrees",
     get label() {
       return t("Diff view");
     },
@@ -987,7 +1010,7 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
   },
   {
     id: "mask-emails",
-    section: "usage",
+    section: "groupLock",
     get label() {
       return t("Mask account emails");
     },
@@ -1251,11 +1274,20 @@ export type SettingsSearchResult = {
   label: string;
 };
 
+/** A stable setting anchor follows its current category, including older callers. */
+export function settingsSectionForAnchor(
+  section: SettingsSectionId | undefined,
+  anchor?: string | null,
+): SettingsSectionId | undefined {
+  return (anchor && SETTINGS_INDEX.find((entry) => entry.id === anchor)?.section) || section;
+}
+
 /** Shared with shortcut rows so search uses the same stable anchor. */
 export const keybindingSettingId = (command: string) => `keybinding-${encodeURIComponent(command)}`;
 
 /** Labels of controls inside a group target, searched in both UI and source language. */
 const SETTINGS_CONTROL_LABELS: Record<string, readonly string[]> = {
+  "git-generation-default": ["Default generation model"],
   theme: ["Theme and colors", "System", "Light", "Dark"],
   "theme-palettes": ["Blue", "Violet", "Pink", "Red", "Orange", "Green"],
   "file-access": ["File access", "Change file access"],
@@ -1289,11 +1321,9 @@ const SETTINGS_CONTROL_LABELS: Record<string, readonly string[]> = {
   "live-background": [
     "Gradient ASCII",
     "Code rain",
-    "Shape waves",
     "Micro slats",
     "Web threads",
     "Scanner",
-    "Ferrofluid",
     "Lightfall",
     "Prism",
     "Side rays",

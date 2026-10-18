@@ -14,6 +14,54 @@ import {
 } from "./social-program-config";
 const at = (s: string) => Date.parse(s);
 describe("program schedule V2", () => {
+  it("keeps the remaining slots of the previous weekday's overnight window", () => {
+    const s = parseProgramSchedule({
+      ...defaultProgram().schedule,
+      mode: "frequency",
+      period: "day",
+      frequency: 4,
+      timeZone: "UTC",
+      days: [1],
+      startTime: "22:00",
+      endTime: "02:00",
+      startsAt: at("2026-10-12T22:00:00Z"),
+      endsAt: at("2026-10-13T03:00:00Z"),
+    });
+    expect(nextProgramSlot(s, at("2026-10-13T00:01:00Z"))).toBe(at("2026-10-13T01:00:00Z"));
+    expect(followingProgramSlot(s, at("2026-10-13T00:00:00Z"), "campaign", 3)).toBe(
+      at("2026-10-13T01:00:00Z"),
+    );
+    expect(previewProgramSchedule(s)).toEqual(
+      [
+        "2026-10-12T22:00:00Z",
+        "2026-10-12T23:00:00Z",
+        "2026-10-13T00:00:00Z",
+        "2026-10-13T01:00:00Z",
+      ].map(at),
+    );
+  });
+
+  it("rejects frequencies that cannot fit distinct minutes in each allocated day", () => {
+    const schedule = {
+      ...defaultProgram().schedule,
+      mode: "frequency",
+      period: "day",
+      frequency: 2,
+      timeZone: "UTC",
+      days: [1],
+      startTime: "09:00",
+      endTime: "09:01",
+      startsAt: at("2026-10-12T00:00:00Z"),
+      endsAt: at("2026-10-12T23:59:00Z"),
+    };
+    expect(() => parseProgramSchedule(schedule)).toThrow("distinct minute");
+    expect(() =>
+      parseProgramSchedule({ ...schedule, period: "week", days: [1, 2], frequency: 3 }),
+    ).toThrow("distinct minute");
+    expect(
+      previewProgramSchedule(parseProgramSchedule({ ...schedule, endTime: "09:02" })),
+    ).toHaveLength(2);
+  });
   it("holds unsupported numeric promises and links for review", () => {
     expect(() =>
       validateGeneratedClaims("Save 50% for 30 days", "Owner supplied workflow"),

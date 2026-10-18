@@ -94,7 +94,9 @@ export function QuestionForm({ prompt, onReply, onInteraction }: Props) {
 
   if (!question) return null;
 
-  const title = question.header?.trim() || prompt.title?.trim() || "Question";
+  const heading = question.header?.trim() || prompt.title?.trim();
+  // Providers may repeat the entire question as their header.
+  const title = heading && heading !== question.prompt.trim() ? heading : t("Question");
 
   return (
     <div
@@ -107,32 +109,35 @@ export function QuestionForm({ prompt, onReply, onInteraction }: Props) {
       onChangeCapture={interact}
     >
       <form
-        className="rounded-lg border border-(--ui-tone-neutral-border) bg-(--ui-surface-raised) px-3 py-2.5"
+        className="min-w-0 rounded-lg border border-(--ui-tone-neutral-border) bg-(--ui-surface)"
         onSubmit={(event) => {
           event.preventDefault();
           continueCurrent();
         }}
       >
-        <div className="flex items-center gap-1.5">
+        <div className="flex items-center gap-2 border-b border-(--ui-tone-neutral-border) px-3 py-2">
           <MessageSquare
             className="size-3.5 shrink-0 text-(--ui-text-secondary)"
             strokeWidth={1.75}
           />
-          <span className="min-w-0 flex-1 truncate text-[11px] text-(--ui-text-secondary)">
+          <span
+            className="min-w-0 flex-1 truncate text-xs text-(--ui-text-secondary)"
+            title={title}
+          >
             {title}
           </span>
           {total > 1 ? (
-            <span className="shrink-0 text-[11px] text-(--ui-text-secondary)">
+            <span
+              className="shrink-0 text-xs text-(--ui-text-secondary) tabular-nums"
+              aria-live="polite"
+            >
               {index + 1}
-              {t(" of ")}
+              {" / "}
               {total}
             </span>
           ) : null}
-          <Button variant="ghost" type="button" className="shrink-0" onClick={skipCurrent}>
-            {t("Skip")}
-          </Button>
         </div>
-        <div className="mt-2">
+        <div className="px-3 py-3">
           <QuestionFields
             key={question.id}
             question={question}
@@ -163,10 +168,10 @@ export function QuestionForm({ prompt, onReply, onInteraction }: Props) {
             }}
           />
         </div>
-        <div className="mt-2.5 flex items-center justify-end gap-2">
+        <div className="flex flex-wrap items-center justify-end gap-2 border-t border-(--ui-tone-neutral-border) px-3 py-2">
           {prompt.autoResolveAt != null ? (
             <span
-              className="mr-auto text-[11px] text-(--ui-text-secondary)"
+              className="min-w-0 flex-1 text-xs text-(--ui-text-secondary) tabular-nums"
               title={t("Interact to keep this question open.")}
             >
               {prompt.autoResolveAt - now > 60_000
@@ -176,6 +181,9 @@ export function QuestionForm({ prompt, onReply, onInteraction }: Props) {
                   })}
             </span>
           ) : null}
+          <Button variant="ghost" type="button" onClick={skipCurrent}>
+            {t("Skip")}
+          </Button>
           {index > 0 ? (
             <Button
               variant="ghost"
@@ -186,7 +194,7 @@ export function QuestionForm({ prompt, onReply, onInteraction }: Props) {
               {t("Back")}
             </Button>
           ) : null}
-          <Button variant="ghost" type="submit" disabled={!ready}>
+          <Button variant="primary" type="submit" disabled={!ready}>
             {t("Continue")}
           </Button>
         </div>
@@ -257,69 +265,74 @@ function QuestionFields({
   };
 
   return (
-    <fieldset className="min-w-0" aria-label={question.header || question.prompt}>
-      <p className="text-[13px] font-medium leading-snug text-(--ui-tone-neutral-fg)">
+    <fieldset className="min-w-0">
+      <legend className="w-full text-sm font-medium leading-snug wrap-anywhere text-(--ui-tone-neutral-fg)">
         {question.prompt}
-      </p>
+      </legend>
       {question.multiSelect ? (
-        <p className="mt-0.5 text-[11px] text-(--ui-text-secondary)">
+        <p className="[margin-block-start:0.5rem] text-xs text-(--ui-text-secondary)">
           {t("Select all that apply")}
         </p>
       ) : null}
       {options.length === 0 && question.allowCustom ? (
         <TextField
           hideLabel
-          label=""
+          label={t("Type your answer")}
           value={custom}
           onChange={(event) => onCustom(event.target.value)}
           placeholder={t("Type your answer")}
-          fieldClassName="mt-1.5 w-full"
+          fieldClassName="[margin-block-start:0.75rem] w-full"
         />
       ) : (
-        <div className="mt-1.5 flex max-h-52 flex-col gap-1 overflow-y-auto" role="group">
+        <div
+          className="[margin-block-start:0.75rem] flex max-h-52 flex-col gap-1 overflow-y-auto overscroll-contain"
+          role="group"
+          aria-label={question.prompt}
+        >
           {options.map((option, optionIndex) => {
             const active = selected.includes(option.id);
             return (
-              <div key={option.id}>
-                <Button
-                  className="w-full text-left"
-                  fullWidth
-                  layout="stacked"
-                  selected={active}
-                  variant="item"
-                  ref={(button) => {
-                    optionButtons.current[optionIndex] = button;
-                  }}
-                  type="button"
-                  aria-pressed={active}
-                  aria-keyshortcuts={optionIndex < 9 ? String(optionIndex + 1) : undefined}
-                  data-highlighted={highlighted === optionIndex ? "true" : undefined}
-                  tabIndex={highlighted === optionIndex ? 0 : -1}
-                  onFocus={() => setHighlighted(optionIndex)}
-                  onKeyDown={(event) => onOptionKeyDown(event, optionIndex)}
-                  onClick={() => {
-                    setHighlighted(optionIndex);
-                    onSelect(option.id);
-                  }}
-                >
+              <Button
+                key={option.id}
+                className="w-full text-start"
+                fullWidth
+                layout="stacked"
+                selected={active}
+                variant="item"
+                ref={(button) => {
+                  optionButtons.current[optionIndex] = button;
+                }}
+                type="button"
+                aria-pressed={active}
+                aria-keyshortcuts={optionIndex < 9 ? String(optionIndex + 1) : undefined}
+                data-highlighted={highlighted === optionIndex ? "true" : undefined}
+                tabIndex={highlighted === optionIndex ? 0 : -1}
+                onFocus={() => setHighlighted(optionIndex)}
+                onKeyDown={(event) => onOptionKeyDown(event, optionIndex)}
+                onClick={() => {
+                  setHighlighted(optionIndex);
+                  onSelect(option.id);
+                }}
+              >
+                <span className="flex min-w-0 items-start gap-2.5">
                   <span
                     aria-hidden
-                    className="mt-0.5 inline-flex size-3.5 shrink-0 items-center justify-center"
+                    className={`[margin-block-start:0.125rem] inline-flex size-4 shrink-0 items-center justify-center border border-(--ui-tone-neutral-border) ${question.multiSelect ? "rounded-sm" : "rounded-full"}`}
                   >
                     {active ? <Check className="size-3.5" /> : null}
                   </span>
                   <span className="min-w-0 flex-1">
-                    <span className="block text-[12px] leading-snug text-(--ui-tone-neutral-fg)">
+                    <span className="block text-sm leading-snug wrap-anywhere text-(--ui-tone-neutral-fg)">
                       {option.label}
                     </span>
                     {option.description ? (
-                      <span className="mt-0.5 block text-[11px] leading-snug text-(--ui-text-secondary)">
+                      <span className="[margin-block-start:0.25rem] block text-xs leading-snug wrap-anywhere text-(--ui-text-secondary)">
                         {option.description}
                       </span>
                     ) : null}
                   </span>
-                </Button>
-              </div>
+                </span>
+              </Button>
             );
           })}
         </div>
@@ -327,13 +340,13 @@ function QuestionFields({
       {options.length > 0 && customSelected ? (
         <TextField
           hideLabel
-          label=""
+          label={t("Type your answer")}
           ref={customInput}
           value={custom}
           onChange={(event) => onCustom(event.target.value)}
           aria-label={t("Type your answer")}
           placeholder={t("Type your answer")}
-          fieldClassName="w-full"
+          fieldClassName="[margin-block-start:0.75rem] w-full"
         />
       ) : null}
     </fieldset>

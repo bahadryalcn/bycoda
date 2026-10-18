@@ -13,7 +13,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { homedir } from "node:os";
-import { basename, dirname, isAbsolute, join, resolve } from "node:path";
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import type { DiscoveredSkill } from "../src/platform/tauri/fs";
 
 /**
@@ -23,6 +23,7 @@ import type { DiscoveredSkill } from "../src/platform/tauri/fs";
  * earlier wins.
  */
 const MAX_SKILLS = 300;
+const MAX_CANDIDATES = 1000;
 const MAX_FRONTMATTER_BYTES = 16 * 1024;
 
 const HARNESS_DIRS: [string, string][] = [
@@ -54,9 +55,44 @@ const isFile = (path: string) => {
 
 export function listHostSkills(project: string | null, home = homedir()): DiscoveredSkill[] {
   const byName = new Map<string, DiscoveredSkill>();
+  for (const skill of listSkillRootsInOrder(project, home)) {
+    if (byName.size >= MAX_SKILLS) break;
+    if (!byName.has(skill.name)) byName.set(skill.name, skill);
+  }
+  return [...byName.values()].sort((a, b) => a.name.localeCompare(b.name));
+}
+
+export type HostSkillCandidate = DiscoveredSkill & { active: boolean };
+
+/**
+ * Every installed copy, including same-name skills that `listHostSkills`
+ * shadows, so an agent can compare alternatives instead of the first match.
+ * `active` marks the copy that `/name` resolves to.
+ */
+export function listHostSkillCandidates(
+  project: string | null,
+  home = homedir(),
+): { skills: HostSkillCandidate[]; truncated: boolean } {
+  const names = new Set<string>();
+  const skills: HostSkillCandidate[] = [];
+  let truncated = false;
+  for (const skill of listSkillRootsInOrder(project, home)) {
+    if (skills.length >= MAX_CANDIDATES) {
+      truncated = true;
+      break;
+    }
+    // Same rule as listHostSkills: first copy of a name wins within its cap.
+    const active = !names.has(skill.name) && names.size < MAX_SKILLS;
+    if (active) names.add(skill.name);
+    skills.push({ ...skill, active });
+  }
+  return { skills, truncated };
+}
+
+/** Highest priority first; the same real root is scanned once. */
+function* listSkillRootsInOrder(project: string | null, home: string) {
   const seen = new Set<string>();
-  const add = (root: string, scope: string, source: string, namespace?: string) => {
-    if (byName.size >= MAX_SKILLS) return;
+  function* add(root: string, scope: string, source: string, namespace?: string) {
     let key = root;
     try {
       key = realpathSync(root);
@@ -65,28 +101,24 @@ export function listHostSkills(project: string | null, home = homedir()): Discov
     }
     if (seen.has(key)) return;
     seen.add(key);
-    for (const skill of scanRoot(root, scope, source)) {
-      if (byName.size >= MAX_SKILLS) break;
-      const name = namespace ? `${namespace}:${skill.name}` : skill.name;
-      if (!byName.has(name)) byName.set(name, { ...skill, name });
-    }
-  };
+    for (const skill of scanRoot(root, scope, source))
+      yield namespace ? { ...skill, name: `${namespace}:${skill.name}` } : skill;
+  }
 
-  if (project) add(join(project, ".agents/skills"), "project", "agents");
-  add(join(home, ".agents/skills"), "user", "agents");
+  if (project) yield* add(join(project, ".agents/skills"), "project", "agents");
+  yield* add(join(home, ".agents/skills"), "user", "agents");
   for (const [dir, source] of HARNESS_DIRS) {
-    if (project) add(join(project, dir), "project", source);
-    add(join(home, dir), "user", source);
+    if (project) yield* add(join(project, dir), "project", source);
+    yield* add(join(home, dir), "user", source);
   }
-  add(join(home, ".pi/agent/skills"), "user", "pi");
-  add(join(home, ".omp/agent/skills"), "user", "omp");
-  add(join(home, ".codex/skills/.system"), "user", "codex");
+  yield* add(join(home, ".pi/agent/skills"), "user", "pi");
+  yield* add(join(home, ".omp/agent/skills"), "user", "omp");
+  yield* add(join(home, ".codex/skills/.system"), "user", "codex");
   const antigravity = join(home, ".gemini/antigravity/skills");
-  if (isDir(antigravity)) add(antigravity, "user", "antigravity");
+  if (isDir(antigravity)) yield* add(antigravity, "user", "antigravity");
   for (const plugin of claudePluginRoots(home, project)) {
-    add(plugin.root, plugin.scope, "claude", plugin.namespace);
+    yield* add(plugin.root, plugin.scope, "claude", plugin.namespace);
   }
-  return [...byName.values()].sort((a, b) => a.name.localeCompare(b.name));
 }
 
 function scanRoot(root: string, scope: string, source: string): DiscoveredSkill[] {
@@ -255,8 +287,8 @@ export function claudePluginRoots(
         if (!project || typeof entry.projectPath !== "string") continue;
         const owner = resolve(resolveHome(entry.projectPath));
         const inside = resolve(project);
-        if (inside !== owner && !inside.startsWith(owner + (owner.endsWith("/") ? "" : "/")))
-          continue;
+        const child = relative(owner, inside);
+        if (child === ".." || child.startsWith(`..${sep}`) || isAbsolute(child)) continue;
         scope = "project";
       } else if (scopeValue !== undefined && scopeValue !== "user") continue;
       roots.push({ root: join(resolveHome(entry.installPath), "skills"), scope, namespace });

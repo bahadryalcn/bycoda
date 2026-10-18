@@ -157,7 +157,7 @@ const slot: Variants = {
 };
 /* Reduced motion keeps a short fade and no travel. Its resting state matches `slot`, so either branch hydrates the same markup. */
 const still: Variants = {
-  enter: { width: "auto", scale: 1, opacity: 0, y: 0,},
+  enter: { width: "auto", scale: 1, opacity: 0, y: 0 },
   center: {
     width: "auto",
     scale: 1,
@@ -236,7 +236,7 @@ function RollingNumber({ value, text }: { value: number; text: string }) {
   );
 }
 
-const bubbleIn = { opacity: 0, scale: 0.6, y: 6,};
+const bubbleIn = { opacity: 0, scale: 0.6, y: 6 };
 const bubbleRest = {
   opacity: 1,
   scale: 1,
@@ -414,6 +414,16 @@ export function Slider<T extends SliderValue = number>({
   const [lastActive, setLastActive] = useState(isRange ? 1 : 0);
   const [quiet, setQuiet] = useState<number | null>(null);
 
+  useLayoutEffect(() => {
+    if (!disabled) return;
+    const pointer = drag.current?.pointer;
+    drag.current = null;
+    setDragging(null);
+    setLinger(null);
+    if (pointer !== undefined && trackRef.current?.hasPointerCapture?.(pointer))
+      trackRef.current.releasePointerCapture(pointer);
+  }, [disabled]);
+
   // Each thumb is a committed position plus a catch-up offset: a pressed track springs the offset to zero while the pointer moves the
   // position 1:1, so the thumb glides to the finger and never lags behind it.
   const pos0 = useMotionValue(pct(values[0]!)),
@@ -548,6 +558,7 @@ export function Slider<T extends SliderValue = number>({
     state.samples = [{ t: event.timeStamp, p: thumbs[state.index ?? 0]!.pos.get() }];
   }
   function onPointerMove(event: PointerEvent<HTMLDivElement>) {
+    if (disabled) return;
     const state = drag.current;
     if (!state || state.pointer !== event.pointerId) return;
     const rect = trackRef.current?.getBoundingClientRect();
@@ -561,6 +572,7 @@ export function Slider<T extends SliderValue = number>({
     follow(state, at, event.timeStamp);
   }
   function onPointerEnd(event: PointerEvent<HTMLDivElement>) {
+    if (disabled) return;
     const state = drag.current;
     if (!state || state.pointer !== event.pointerId) return;
     drag.current = null;

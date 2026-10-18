@@ -1,5 +1,71 @@
 import { expect, test } from "@playwright/test";
 
+test("background commands wrap without losing their start and remain separate", async ({
+  page,
+}, info) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.goto("/tests/browser/transcript.html?chat-layout&background-work");
+  const dock = page.getByRole("region", { name: "Turn activity", exact: true });
+  await dock.locator("button[aria-expanded]").click();
+  const rows = dock.locator("[data-dock-agent]");
+  await expect(rows).toHaveCount(10);
+  await expect(rows.first()).toHaveAttribute("data-dock-agent", "layout-command-9");
+  for (const theme of ["dark", "light"]) {
+    await page.evaluate(
+      (light) => document.documentElement.classList.toggle("theme-light", light),
+      theme === "light",
+    );
+    for (const width of [390, 768, 1024, 1440]) {
+      await page.setViewportSize({ width, height: 900 });
+      const geometry = await dock.evaluate((node) => {
+        const list = node.querySelector(".activity-dock-list")!;
+        const rows = [...node.querySelectorAll<HTMLElement>("[data-dock-agent]")];
+        return {
+          fits: list.scrollWidth <= list.clientWidth,
+          startsVisible: rows.every((row) => {
+            const text = row.querySelector(".whitespace-pre-wrap")!;
+            const range = document.createRange();
+            range.selectNodeContents(text);
+            return [...range.getClientRects()].every(
+              (rect) =>
+                rect.left >= list.getBoundingClientRect().left &&
+                rect.right <= list.getBoundingClientRect().right,
+            );
+          }),
+          wraps: rows.every(
+            (row) => row.querySelector(".whitespace-pre-wrap")!.getBoundingClientRect().height > 30,
+          ),
+          separated: rows
+            .slice(1)
+            .every(
+              (row, i) => row.getBoundingClientRect().top >= rows[i].getBoundingClientRect().bottom,
+            ),
+          divider: getComputedStyle(rows[1].parentElement!).borderTopWidth,
+        };
+      });
+      expect(geometry).toEqual({
+        fits: true,
+        startsVisible: true,
+        wraps: true,
+        separated: true,
+        divider: "1px",
+      });
+      await expect(
+        dock.getByRole("button", { name: "Stop all background work", exact: true }),
+      ).toBeVisible();
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+        true,
+      );
+    }
+    await page.setViewportSize({ width: 768, height: 900 });
+    await dock.screenshot({ path: info.outputPath(`background-work-${theme}.png`) });
+  }
+  await rows.first().focus();
+  await expect(rows.first()).toBeFocused();
+  await page.keyboard.press("Tab");
+  await expect(dock.getByRole("button", { name: /^Stop cd / })).toBeFocused();
+});
+
 for (const layout of ["chat", "full"] as const) {
   test(`${layout} layout keeps short user messages compact and right aligned`, async ({
     page,
@@ -9,6 +75,7 @@ for (const layout of ["chat", "full"] as const) {
     );
     const short = page.locator('[data-prompt-anchor="short-user"] .user-message-bubble');
     const long = page.locator('[data-prompt-anchor="long-user"] .user-message-bubble');
+    const draft = page.locator('[data-prompt-anchor="draft-user"] .user-message-bubble');
     await expect(short).toBeVisible();
     for (const width of [390, 1440]) {
       await page.setViewportSize({ width, height: 900 });
@@ -25,6 +92,11 @@ for (const layout of ["chat", "full"] as const) {
         expect(longBox.x + longBox.width).toBeCloseTo(shortBox.x + shortBox.width, 0);
         expect(longBox.width).toBeGreaterThan(shortBox.width);
         expect(longBox.width).toBeLessThanOrEqual(row.width - 70);
+        expect(
+          await short.evaluate((node) => parseFloat(getComputedStyle(node).borderRadius)),
+        ).toBeGreaterThan(shortBox.height / 2);
+        await expect(long).toHaveCSS("border-radius", "12px");
+        await expect(draft).toHaveCSS("border-style", "dashed");
         expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
           width,
         );
@@ -44,6 +116,7 @@ test("chat messages, attachment references and running work keep a readable hier
   const dock = page.getByRole("region", { name: "Turn activity", exact: true });
   await expect(bubble).toBeVisible();
   await expect(bubble.locator('[data-attachment-chip="image"]')).toHaveCount(7);
+  await expect(page.locator(".agent-transcript")).not.toContainText(/working for/i);
   for (const theme of ["dark", "light"]) {
     await page.evaluate(
       (light) => document.documentElement.classList.toggle("theme-light", light),
@@ -55,6 +128,12 @@ test("chat messages, attachment references and running work keep a readable hier
       expect(await bubble.evaluate((node) => node.scrollWidth <= node.clientWidth)).toBe(true);
       const image = bubble.locator('[data-attachment-chip="image"] button').first();
       expect((await image.boundingBox())!.width).toBeGreaterThanOrEqual(56);
+      const rail = bubble.getByRole("group", { name: "Attachments", exact: true });
+      const thumbnailTops = await rail
+        .locator('[data-attachment-chip="image"]')
+        .evaluateAll((nodes) => nodes.map((node) => node.getBoundingClientRect().top));
+      expect(new Set(thumbnailTops).size).toBe(1);
+      expect((await rail.boundingBox())!.height).toBeLessThan(85);
       const token = bubble.getByRole("button", {
         name: "Open [image1] (screenshot-1.png) full screen",
         exact: true,
@@ -76,6 +155,29 @@ test("chat messages, attachment references and running work keep a readable hier
   await group.getByRole("button", { name: "Show more", exact: true }).click();
   await expect(group.locator(".zen-phase-summary")).toHaveCount(0);
   await expect(group.getByText(/very-long-command-path-0/).first()).toBeVisible();
+  await page.setViewportSize({ width: 390, height: 900 });
+  const command = group.locator(".tool-command-label").first();
+  await expect(command).toContainText("very-long-command-path-0.tsx");
+  expect(
+    await command.evaluate((node) => {
+      const box = node.getBoundingClientRect();
+      const range = document.createRange();
+      range.selectNodeContents(node);
+      return [...range.getClientRects()].every(
+        (rect) => rect.left >= box.left - 1 && rect.right <= box.right + 1,
+      );
+    }),
+  ).toBe(true);
+  const lastImage = bubble.getByRole("button", {
+    name: "Open screenshot-7.png full screen",
+    exact: true,
+  });
+  await lastImage.focus();
+  await expect(lastImage).toBeInViewport({ ratio: 1 });
+  await page.keyboard.press("Enter");
+  await expect(page.getByRole("dialog")).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(lastImage).toBeFocused();
   await bubble
     .getByRole("button", { name: "Open screenshot-1.png full screen", exact: true })
     .click();

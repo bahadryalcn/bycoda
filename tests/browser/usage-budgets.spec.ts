@@ -1,5 +1,77 @@
 import { expect, test, type Page } from "@playwright/test";
 
+for (const [theme, width] of [
+  ["dark", 1280],
+  ["light", 390],
+] as const) {
+  test(`usage page keeps quota, analysis choices and privacy usable ${theme}`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 900 });
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    const errors: string[] = [];
+    page.on("pageerror", (error) => errors.push(error.message));
+    await page.goto(`/tests/browser/usage-budgets.html?page=1&theme=${theme}`);
+    const accounts = page.locator(".usage-account");
+    await expect(accounts).toHaveCount(3);
+    await page.getByRole("radio", { name: "Limits", exact: true }).click();
+    await expect(accounts.first().getByRole("meter").first()).toHaveAttribute(
+      "aria-valuenow",
+      "68",
+    );
+    await expect(accounts.nth(1).getByText("18%", { exact: true })).toBeVisible();
+    await expect(accounts.nth(2).getByRole("alert")).toContainText("sign-in expired");
+    const cards = await accounts.evaluateAll((nodes) =>
+      nodes.map((node) => {
+        const b = node.getBoundingClientRect();
+        return { top: b.top, height: b.height };
+      }),
+    );
+    for (const card of cards)
+      for (const peer of cards)
+        if (Math.abs(card.top - peer.top) < 2)
+          expect(Math.abs(card.height - peer.height)).toBeLessThan(2);
+    expect(await accounts.first().evaluate((el) => el.getBoundingClientRect().height)).toBeLessThan(
+      290,
+    );
+
+    await page.screenshot({
+      path: `temp/verification/2026-10-18-usage/usage-overview-${theme}-${width}.png`,
+      animations: "disabled",
+    });
+    const cost = page.getByRole("radio", { name: "Overview", exact: true });
+    await cost.focus();
+    await page.keyboard.press("ArrowRight");
+    await expect(page.getByRole("heading", { name: "Recorded sessions" })).toBeVisible();
+    await page.getByRole("button", { name: "Filters", exact: true }).click();
+    await expect(page.getByRole("dialog", { name: "Filters" })).toBeVisible();
+    await page.keyboard.press("Escape");
+    await cost.click();
+    await page.getByRole("radio", { name: "Time analysis", exact: true }).click();
+    await page.getByRole("button", { name: "Filters", exact: true }).click();
+    await expect(page.getByRole("dialog", { name: "Filters" })).toBeVisible();
+    await page.keyboard.press("Escape");
+
+    await page.getByRole("radio", { name: "Limits", exact: true }).click();
+    await page.locator(".usage-display-preferences > summary").click();
+    await page.getByRole("switch", { name: "Show remaining usage", exact: true }).click();
+    await page.getByRole("radio", { name: "Limits", exact: true }).click();
+    await expect(accounts.first().getByRole("meter").first()).toHaveAttribute(
+      "aria-valuenow",
+      "32",
+    );
+    await expect(accounts.first().getByText("used", { exact: true })).toHaveCount(2);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+      true,
+    );
+    await page.locator(".usage-toolbar").scrollIntoViewIfNeeded();
+    await page.screenshot({
+      path: `temp/verification/2026-10-18-usage/usage-${theme}-${width}.png`,
+      fullPage: true,
+      animations: "disabled",
+    });
+    expect(errors).toEqual([]);
+  });
+}
+
 async function select(page: Page, label: string, option: string) {
   await page.getByRole("button", { name: new RegExp(`^${label}:`) }).click();
   await page.getByRole("option", { name: option, exact: true }).click();
@@ -88,8 +160,8 @@ for (const [theme, width, motion] of [
     await page.emulateMedia({ reducedMotion: motion === "reduce" ? "reduce" : "no-preference" });
     await page.goto(`/tests/browser/usage-budgets.html?overview=1&theme=${theme}&motion=${motion}`);
 
-    const values = page.locator(".tabular-nums > .bycoda-arc");
-    await expect(values).toHaveCount(4);
+    const values = page.locator(".usage-metrics strong > .bycoda-arc");
+    await expect(values).toHaveCount(6);
     await expect(values.nth(1)).toHaveText(motion === "auto" ? /1.0K/ : "1.0K");
     if (motion !== "auto") await expect(values.locator('[aria-hidden="true"]')).toHaveCount(0);
     await page.evaluate(() => {
@@ -110,9 +182,7 @@ for (const [theme, width, motion] of [
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
       true,
     );
-    await page.getByRole("radio", { name: "Tokens", exact: true }).focus();
-    await page.keyboard.press("ArrowLeft");
-    await expect(page.getByRole("radio", { name: "Cost", exact: true })).toBeChecked();
+    await expect(page.locator('[data-usage-chart="trend"] .bycoda-arc-chart svg')).toBeVisible();
     await page.screenshot({
       path: `temp/verification/2026-10-16-ui-system/W5b-AUX-kpi-${theme}-${motion}.png`,
       animations: "disabled",

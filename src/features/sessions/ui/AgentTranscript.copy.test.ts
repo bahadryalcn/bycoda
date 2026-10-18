@@ -5,6 +5,17 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { AgentTranscript } from "./AgentTranscript";
 import { messageFilesFromClipboard } from "../../../platform/tauri/clipboard";
 
+vi.mock("../../../integrations/harness/core/availability", () => ({
+  getHarnessAvailabilitySnapshot: () => 0,
+  hasProbedHarnessAvailability: () => true,
+  isHarnessAvailable: () => true,
+  probeHarnessAvailability: () => Promise.resolve(),
+  subscribeHarnessAvailability: () => () => undefined,
+}));
+vi.mock("../../../integrations/harness/core/registry", () => ({
+  refreshHarnessCatalogs: () => Promise.resolve(),
+}));
+
 let container: HTMLDivElement;
 let root: Root;
 
@@ -49,6 +60,113 @@ afterEach(() => {
   container.remove();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
+});
+
+it("awaits note saving in the response toolbar and prevents duplicate actions", async () => {
+  let finish!: () => void;
+  const onSaveNote = vi.fn(
+    () =>
+      new Promise<void>((resolve) => {
+        finish = resolve;
+      }),
+  );
+  await act(async () =>
+    root.render(
+      createElement(AgentTranscript, {
+        blocks: [
+          { id: "prompt", role: "user", text: "Question", durationMs: 1200 },
+          { id: "answer", role: "assistant", text: "Keep this answer" },
+        ],
+        onSaveNote,
+      }),
+    ),
+  );
+  const toolbar = container.querySelector('[role="toolbar"][aria-label="Message actions"]')!;
+  expect(toolbar).not.toBeNull();
+  const save = toolbar.querySelector<HTMLButtonElement>('[data-id="save"]')!;
+  await act(async () => {
+    save.click();
+    save.click();
+  });
+  expect(onSaveNote).toHaveBeenCalledExactlyOnceWith("Keep this answer");
+  expect(save.getAttribute("aria-busy")).toBe("true");
+  await act(async () => finish());
+  expect(save.dataset.state).toBe("done");
+});
+
+it("groups all five response actions and keeps their menus anchored and keyboard accessible", async () => {
+  const onSecondOpinion = vi.fn();
+  const onHandoff = vi.fn();
+  await act(async () =>
+    root.render(
+      createElement(AgentTranscript, {
+        blocks: [
+          {
+            id: "prompt",
+            role: "user",
+            text: "Question",
+            durationMs: 1200,
+            turnMetrics: { inputTokens: 100, outputTokens: 20 },
+          },
+          { id: "answer", role: "assistant", text: "Answer" },
+        ],
+        harness: "claude",
+        onSaveNote: vi.fn(),
+        onSecondOpinion,
+        onHandoff,
+      }),
+    ),
+  );
+  const toolbar = container.querySelector('[role="toolbar"][aria-label="Message actions"]')!;
+  expect(
+    [...toolbar.querySelectorAll("[data-ebg-item]")].map((item) => item.getAttribute("data-id")),
+  ).toEqual(["copy", "save", "handoff", "second-opinion", "metrics"]);
+  for (const id of ["handoff", "second-opinion"]) {
+    const trigger = toolbar.querySelector<HTMLButtonElement>(`[data-id="${id}"]`)!;
+    await act(async () => trigger.click());
+    expect(trigger.getAttribute("aria-expanded")).toBe("true");
+    expect(document.querySelector('[role="menu"][data-provider-target]')).not.toBeNull();
+    await act(async () =>
+      document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })),
+    );
+    expect(trigger.getAttribute("aria-expanded")).toBe("false");
+    expect(document.activeElement).toBe(trigger);
+  }
+  expect(onSecondOpinion).not.toHaveBeenCalled();
+  expect(onHandoff).not.toHaveBeenCalled();
+  const metrics = toolbar.querySelector<HTMLButtonElement>('[data-id="metrics"]')!;
+  await act(async () => metrics.click());
+  expect(
+    document.querySelector('[role="dialog"][aria-label="Turn metrics"]')?.textContent,
+  ).toContain("100 input");
+  await act(async () =>
+    document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })),
+  );
+  expect(document.activeElement).toBe(metrics);
+  await act(async () =>
+    metrics.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowLeft", bubbles: true })),
+  );
+  expect(document.activeElement?.getAttribute("data-id")).toBe("second-opinion");
+});
+
+it("shows response note failures without confirming success", async () => {
+  await act(async () =>
+    root.render(
+      createElement(AgentTranscript, {
+        blocks: [
+          { id: "prompt", role: "user", text: "Question", durationMs: 1200 },
+          { id: "answer", role: "assistant", text: "Keep this answer" },
+        ],
+        onSaveNote: async () => {
+          throw new Error("Storage unavailable");
+        },
+      }),
+    ),
+  );
+  const save = container.querySelector<HTMLButtonElement>('[role="toolbar"] [data-id="save"]')!;
+  await act(async () => save.click());
+  expect(container.querySelector('[role="alert"]')?.textContent).toContain("Storage unavailable");
+  expect(save.dataset.state).not.toBe("done");
 });
 
 it("copies the full user prompt and confirms success", async () => {

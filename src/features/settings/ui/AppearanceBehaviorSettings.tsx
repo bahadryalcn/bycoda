@@ -10,19 +10,11 @@ import {
   loadCrewTheme,
   saveCrewTheme,
   subscribeCrewTheme,
-  loadStreamingTextMode,
-  subscribeStreamingTextMode,
-  saveStreamingTextMode,
 } from "../model/settings";
 import { Group, Row, Select, Toggle } from "./settingsControls";
 
 export function TabMotionSettings() {
   useLocale();
-  const streamingTextMode = useSyncExternalStore(
-    subscribeStreamingTextMode,
-    loadStreamingTextMode,
-    loadStreamingTextMode,
-  );
   const [tabAnimationsEnabled, setTabAnimationsEnabled] = useState(loadTabAnimationsEnabled);
   const onTabAnimationsEnabled = (next: boolean) => {
     saveTabAnimationsEnabled(next);
@@ -30,23 +22,6 @@ export function TabMotionSettings() {
   };
   return (
     <>
-      <Row
-        id="streaming-text-mode"
-        label={t("Streaming text animation")}
-        description={t(
-          "Paced reveals words steadily. Adaptive shows text as it arrives and adjusts the fade to the stream rhythm.",
-        )}
-      >
-        <Select
-          label={t("Streaming text animation")}
-          value={streamingTextMode}
-          options={[
-            { value: "paced", label: t("Paced (default)") },
-            { value: "adaptive", label: t("Immediate with adaptive fade") },
-          ]}
-          onChange={(value) => saveStreamingTextMode(value === "adaptive" ? "adaptive" : "paced")}
-        />
-      </Row>
       <Row
         id="tab-animations"
         label={t("Tab animations")}
@@ -82,7 +57,6 @@ export function CrewSettings() {
     <>
       <Group
         title={t("Agent crew")}
-        persistence={{ mode: "automatic" }}
         description={t("Your agent crew in new tasks and behind conversations.")}
       >
         <Row

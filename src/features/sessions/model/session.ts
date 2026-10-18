@@ -381,7 +381,7 @@ export type Block = {
      * The subagent's own context-window fill, on Agent/Task tool blocks. A
      * level, not a running total: each reading replaces the previous one.
      */
-    agentContext?: { used: number };
+    agentContext?: ContextUsage;
   };
   approval?: {
     requestId: number;

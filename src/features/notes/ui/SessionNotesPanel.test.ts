@@ -307,3 +307,106 @@ it("shows a load error without creating an empty document on failed reads", asyn
   await click("Retry");
   expect(body().value).toBe("");
 });
+it("preserves an unsaved body across close and reopen after persistent write failure", async () => {
+  await render();
+  const original = invoke.getMockImplementation()!;
+  invoke.mockImplementation((command, args) =>
+    command === "notes_upsert" ? Promise.reject(new Error("Disk full")) : original(command, args),
+  );
+  await input(body(), "Irreplaceable draft");
+  await act(async () => {
+    body().focus();
+    body().blur();
+  });
+  expect(container.textContent).toContain("Disk full");
+  await act(async () => root.render(null));
+  invoke.mockImplementation(original);
+  await render();
+  expect(body().value).toBe("Irreplaceable draft");
+  await act(async () => {
+    body().focus();
+    body().blur();
+  });
+  expect(stored.find((note) => note.sourceSessionId === sessionId)?.body).toBe(
+    "Irreplaceable draft",
+  );
+});
+it("refreshes a clean editor when the same note changes externally", async () => {
+  await render();
+  const own = stored.find((note) => note.sourceSessionId === sessionId)!;
+  stored = stored.map((note) =>
+    note.id === own.id
+      ? { ...note, title: "Updated title", body: "Updated in another window", updatedAt: 900 }
+      : note,
+  );
+  invalidateNotes();
+  await act(async () => {
+    window.dispatchEvent(new Event("bycoda:notes-changed"));
+  });
+  expect(body().value).toBe("Updated in another window");
+  expect(container.querySelector('button[aria-label="Note title: Updated title"]')).not.toBeNull();
+});
+
+it("preserves a dirty draft and requires explicit resolution of external updates", async () => {
+  await render();
+  await input(body(), "Local unsaved draft");
+  const own = stored.find((note) => note.sourceSessionId === sessionId)!;
+  stored = stored.map((note) =>
+    note.id === own.id
+      ? { ...note, title: "External title", body: "External body", updatedAt: 901 }
+      : note,
+  );
+  invalidateNotes();
+  await act(async () => {
+    window.dispatchEvent(new Event("bycoda:notes-changed"));
+  });
+  expect(body().value).toBe("Local unsaved draft");
+  expect(container.textContent).toContain("Your draft is preserved");
+  await act(async () => {
+    body().focus();
+    body().blur();
+  });
+  expect(stored.find((note) => note.id === own.id)?.body).toBe("External body");
+  await act(async () => root.render(null));
+  await render();
+  expect(body().value).toBe("Local unsaved draft");
+  await click("Use saved version");
+  expect(body().value).toBe("External body");
+  expect(container.querySelector('button[aria-label="Note title: External title"]')).not.toBeNull();
+});
+
+it("isolates failed drafts across conversations", async () => {
+  await render();
+  const original = invoke.getMockImplementation()!;
+  invoke.mockImplementation((command, args) =>
+    command === "notes_upsert" &&
+    args?.note?.id === stored.find((note) => note.sourceSessionId === sessionId)?.id
+      ? Promise.reject(new Error("Disk full"))
+      : original(command, args),
+  );
+  await input(body(), "Only the first session");
+  await render(`${sessionId}-second`);
+  expect(body().value).toBe("");
+  await render();
+  expect(body().value).toBe("Only the first session");
+});
+
+it("saves a preserved draft only after choosing Keep my draft", async () => {
+  await render();
+  await input(body(), "Keep this local body");
+  const own = stored.find((note) => note.sourceSessionId === sessionId)!;
+  stored = stored.map((note) =>
+    note.id === own.id ? { ...note, body: "External body", updatedAt: 902 } : note,
+  );
+  invalidateNotes();
+  await act(async () => {
+    window.dispatchEvent(new Event("bycoda:notes-changed"));
+  });
+  expect(stored.find((note) => note.id === own.id)?.body).toBe("External body");
+  await click("Keep my draft");
+  expect(stored.find((note) => note.id === own.id)?.body).toBe("Keep this local body");
+  await act(async () => root.render(null));
+  await render();
+  expect(body().value).toBe("Keep this local body");
+  expect(container.textContent).not.toContain("Your draft is preserved");
+});

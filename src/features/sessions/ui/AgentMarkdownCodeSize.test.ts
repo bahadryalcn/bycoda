@@ -7,6 +7,34 @@ import { AgentMarkdown } from "./AgentMarkdown";
 const copy = vi.hoisted(() => vi.fn(async () => {}));
 vi.mock("../../../platform/tauri/clipboard", () => ({ copyText: copy }));
 
+it.each(["sh", "bash", "python", ""])("keeps a copy action on %s fences", async (language) => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  const code =
+    '/opt/keycloak/bin/kcadm.sh get realms/master \\\n  --config "$KCADM_CONFIG" \\\n  --fields realm,adminTheme,loginTheme';
+  try {
+    await act(async () =>
+      root.render(createElement(AgentMarkdown, { text: `\`\`\`${language}\n${code}\n\`\`\`` })),
+    );
+    const shell = container.querySelector<HTMLElement>(".markdown-code-shell")!;
+    const button = shell.querySelector<HTMLButtonElement>('[aria-label="Copy code"]')!;
+    // The shell positions and reveals this action using its shared copy class.
+    expect(button.classList.contains("markdown-code-copy")).toBe(true);
+    expect(button.getAttribute("title")).toBe("Copy code");
+    await act(async () => button.click());
+    expect(copy).toHaveBeenLastCalledWith(code);
+    expect(button.getAttribute("aria-label")).toBe("Copied");
+    expect(button.classList.contains("is-copied")).toBe(true);
+    expect(shell.dataset.collapsed).toBe("false");
+  } finally {
+    act(() => root.unmount());
+    container.remove();
+    vi.unstubAllGlobals();
+  }
+});
+
 it("collapses each fence independently, keeps its code mounted and copies the full text", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   const container = document.createElement("div");

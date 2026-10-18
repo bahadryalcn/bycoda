@@ -187,6 +187,17 @@ export function ElasticSlider({
   const lag = useMotionValue(0);
   const over = useMotionValue(0);
   const press = useMotionValue(0);
+  useLayoutEffect(() => {
+    if (!disabled) return;
+    const pointer = drag.current?.pointer;
+    drag.current = null;
+    setDragging(false);
+    setLinger(false);
+    over.jump(0);
+    press.jump(0);
+    if (pointer !== undefined && trackRef.current?.hasPointerCapture?.(pointer))
+      trackRef.current.releasePointerCapture(pointer);
+  }, [disabled, over, press]);
   const shown = useTransform(() => pos.get() + lag.get());
   const thumbX = useTransform(shown, (at) => `${at - 100}%`);
   const clipPath = useTransform(
@@ -319,6 +330,7 @@ export function ElasticSlider({
     follow(state, grabbed ? from + state.grab : at, event.timeStamp, true);
   }
   function onPointerMove(event: PointerEvent<HTMLDivElement>) {
+    if (disabled) return;
     const state = drag.current;
     if (!state || state.pointer !== event.pointerId) return;
     const rect = trackRef.current?.getBoundingClientRect();
@@ -326,6 +338,7 @@ export function ElasticSlider({
     follow(state, ((event.clientX - rect.left) / (rect.width || 1)) * 100, event.timeStamp);
   }
   function onPointerEnd(event: PointerEvent<HTMLDivElement>) {
+    if (disabled) return;
     const state = drag.current;
     if (!state || state.pointer !== event.pointerId) return;
     drag.current = null;

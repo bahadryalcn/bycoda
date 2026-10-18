@@ -5,14 +5,144 @@ test.afterEach(async ({ page }, testInfo) => {
     await page.screenshot({ path: testInfo.outputPath("workspace.png") });
 });
 
+test("column filters combine and remain resettable with no matches", async ({ page }) => {
+  await page.setViewportSize({ width: 1920, height: 1080 });
+  await open(page);
+  const graph = page.getByRole("region", { name: "Commit Graph", exact: true });
+  await graph.getByRole("button", { name: "Filter Author", exact: true }).click();
+  const author = page.getByRole("dialog", { name: "Filter Author", exact: true });
+  await author.getByRole("textbox", { name: "Author", exact: true }).fill("Deniz");
+  await author.getByRole("textbox").press("Escape");
+  await expect(graph.locator(".git-history-item")).toHaveCount(20);
+  await graph.getByRole("button", { name: "Filter Commit Message", exact: true }).click();
+  const message = page.getByRole("dialog", { name: "Filter Commit Message", exact: true });
+  await message.getByRole("textbox").fill("no such commit");
+  await expect(graph).toContainText("No matching commits");
+  await message.getByRole("button", { name: "Reset all filters", exact: true }).click();
+  await message.getByRole("textbox").press("Escape");
+  await expect(graph.locator(".git-history-item")).toHaveCount(40);
+});
+
+test("stash actions fit a narrow rail and commit files remain navigable", async ({
+  page,
+}, testInfo) => {
+  await open(page);
+  const dialog = page.getByRole("dialog", { name: "Commit Graph", exact: true });
+  const sash = dialog.getByRole("separator", { name: "Resize branches", exact: true });
+  await sash.focus();
+  await sash.press("Home");
+  await dialog.getByRole("button", { name: /^Stashes/ }).click();
+  const stash = dialog.getByRole("button", { name: "WIP: keyboard navigation", exact: true });
+  await expect(stash).toBeVisible();
+  expect(
+    await stash.evaluate((element) => {
+      const rail = element.closest("aside")!;
+      return rail.scrollWidth <= rail.clientWidth;
+    }),
+  ).toBe(true);
+  await page.screenshot({ path: testInfo.outputPath("stash-narrow.png") });
+  await dialog
+    .getByRole("button", { name: "Actions for WIP: keyboard navigation", exact: true })
+    .click();
+  await expect(page.getByRole("menuitem", { name: /^Apply\b/ })).toBeVisible();
+  await page.getByRole("menuitem", { name: /^Apply\b/ }).press("Escape");
+  await dialog.getByRole("button").filter({ hasText: "Workspace change 39" }).click();
+  const search = dialog.getByRole("searchbox", { name: "Filter commit files", exact: true });
+  await search.fill("theme");
+  await expect(
+    dialog.getByRole("region", { name: "Changed files", exact: true }).getByRole("button"),
+  ).toHaveCount(1);
+  await search.fill("");
+  await dialog.getByRole("button", { name: "Next file", exact: true }).click();
+  await expect(dialog.getByRole("button", { name: "Previous file", exact: true })).toBeEnabled();
+  await page.screenshot({ path: testInfo.outputPath("commit-inspector.png") });
+  await dialog.getByRole("button", { name: "Changed files", exact: true }).click();
+  await expect(search).toBeHidden();
+  await expect(dialog.getByRole("button", { name: "Next file", exact: true })).toBeVisible();
+  await dialog.getByRole("button", { name: "Close commit details", exact: true }).click();
+  await expect(
+    dialog.getByRole("button", { name: "Working tree actions", exact: true }),
+  ).toBeVisible();
+});
+
+test("graph scope, file filtering and keyboard resizing preserve Git context", async ({ page }) => {
+  await open(page);
+  const dialog = page.getByRole("dialog", { name: "Commit Graph", exact: true });
+  await dialog.getByRole("radio", { name: "Current branch", exact: true }).click();
+  await expect(dialog.getByRole("radio", { name: "Current branch", exact: true })).toBeChecked();
+  await expect
+    .poll(async () =>
+      page.evaluate(
+        () =>
+          (
+            window as unknown as {
+              gitFixtureCalls: { command: string; args: Record<string, unknown> }[];
+            }
+          ).gitFixtureCalls
+            .filter((call) => call.command === "git_history")
+            .slice(-1)[0]?.args.all,
+      ),
+    )
+    .toBe(false);
+
+  await dialog.getByRole("button", { name: "Filter changed files", exact: true }).click();
+  const filter = page.getByRole("dialog", { name: "Filter changed files", exact: true });
+  await filter.getByRole("searchbox", { name: "File or folder name" }).fill("theme");
+  await expect(
+    dialog.getByRole("listbox", { name: "Changes", exact: true }).locator("[data-git-file]"),
+  ).toHaveCount(1);
+  await expect(dialog.getByRole("listbox", { name: "Changes", exact: true })).toContainText(
+    "theme.css",
+  );
+  await filter.getByRole("searchbox").press("Escape");
+  await expect(filter).toHaveCount(0);
+  await expect(
+    dialog.getByRole("button", { name: "Filter changed files", exact: true }),
+  ).toBeFocused();
+  const branchSash = dialog.getByRole("separator", { name: "Resize branches", exact: true });
+  await branchSash.focus();
+  const before = Number(await branchSash.getAttribute("aria-valuenow"));
+  await branchSash.press("ArrowRight");
+  expect(Number(await branchSash.getAttribute("aria-valuenow"))).toBeGreaterThan(before);
+});
+
+for (const appearance of ["dark", "light"] as const) {
+  test(`graph layout in ${appearance} theme and reduced motion`, async ({ page }, testInfo) => {
+    await page.setViewportSize({ width: 1920, height: 1080 });
+    await page.emulateMedia({ reducedMotion: "reduce", colorScheme: appearance });
+    await open(page);
+    await page.evaluate((theme) => {
+      document.documentElement.classList.toggle("theme-light", theme === "light");
+    }, appearance);
+    const dialog = page.getByRole("dialog", { name: "Commit Graph", exact: true });
+    await expect(dialog).toBeInViewport({ ratio: 1 });
+    const graph = dialog.getByRole("region", { name: "Commit Graph", exact: true });
+    await expect(graph.getByText("Author", { exact: true })).toBeVisible();
+    await expect(graph.getByText("Date", { exact: true })).toBeVisible();
+    await page.screenshot({ path: testInfo.outputPath(`graph-${appearance}-wide.png`) });
+    await page.setViewportSize({ width: 1100, height: 800 });
+    await expect(dialog).toBeInViewport({ ratio: 1 });
+    await expect(
+      dialog.getByRole("button", { name: "Working tree actions", exact: true }),
+    ).toBeVisible();
+    await expect(graph.getByText("Date", { exact: true })).toBeVisible();
+    await expect(graph.getByText("Author", { exact: true })).toBeHidden();
+  });
+}
+
 test("fetch, pull, push, stage, unstage ve stash doğru depoda çalışır", async ({ page }) => {
   await open(page);
   const dialog = page.getByRole("dialog", {
     name: "Commit Graph",
     exact: true,
   });
-  for (const name of ["Fetch", "Pull", "Push", "Stage", "Unstage", "Stash"]) {
-    await dialog.getByRole("button", { name, exact: true }).click();
+  for (const name of ["Fetch", "Pull", "Push"]) {
+    await dialog.getByRole("button", { name: new RegExp(`^${name}(?:\\s*\\d+)?$`) }).click();
+    await expect(dialog.getByRole("button", { name: "Fetch", exact: true })).toBeEnabled();
+  }
+  for (const name of ["Stage All Changes", "Unstage All Changes", "Stash"]) {
+    await dialog.getByRole("button", { name: "Working tree actions", exact: true }).click();
+    await page.getByRole("menuitem", { name, exact: true }).click();
     await expect(dialog.getByRole("button", { name: "Fetch", exact: true })).toBeEnabled();
   }
   const calls = await page.evaluate(
@@ -233,16 +363,54 @@ test("commit sağ tık menüsünün Git aksiyonları seçilen SHA ile çalışı
     calls.filter((call) => call.command === "git_reset").map((call) => call.args.mode),
   ).toEqual(["soft", "mixed", "hard"]);
 });
-async function open(page: import("@playwright/test").Page, conflict = false) {
-  await page.goto(`/tests/browser/git-workspace.html${conflict ? "?conflict" : ""}`, {
-    waitUntil: "domcontentloaded",
-  });
+async function open(page: import("@playwright/test").Page, conflict = false, large = false) {
+  await page.goto(
+    `/tests/browser/git-workspace.html${conflict ? "?conflict" : large ? "?large" : ""}`,
+    {
+      waitUntil: "domcontentloaded",
+    },
+  );
   await page.getByRole("button", { name: "Open full graph", exact: true }).click();
   await expect(page.getByRole("dialog", { name: "Commit Graph", exact: true })).toBeVisible();
   await expect(
     page.getByRole("button", { name: "Switch to feature/graph", exact: true }),
   ).toBeVisible({ timeout: 30000 });
 }
+
+test("large histories and file lists stay windowed; searching does not query Git", async ({
+  page,
+}, testInfo) => {
+  await open(page, false, true);
+  const dialog = page.getByRole("dialog", { name: "Commit Graph", exact: true });
+  const graph = dialog.getByRole("region", { name: "Commit Graph", exact: true });
+  await expect(graph.locator("li button.git-history-item").first()).toBeVisible();
+  expect(await graph.locator("li button.git-history-item").count()).toBeLessThan(70);
+  const changes = dialog.getByRole("listbox", { name: "Changes", exact: true });
+  await expect(changes.locator("[data-git-file]").first()).toBeVisible();
+  expect(await changes.locator("[data-git-file]").count()).toBeLessThan(40);
+  const historyCalls = () =>
+    page.evaluate(
+      () =>
+        (
+          window as unknown as {
+            gitFixtureCalls: { command: string; args: Record<string, unknown> }[];
+          }
+        ).gitFixtureCalls.filter((call) => call.command === "git_history").length,
+    );
+  const before = await historyCalls();
+  await dialog
+    .getByRole("textbox", { name: "Search commits", exact: true })
+    .fill("Workspace change 4999");
+  await expect(graph.locator("li button.git-history-item")).toHaveCount(1);
+  expect(await historyCalls()).toBe(before);
+  await dialog.getByRole("textbox", { name: "Search commits", exact: true }).fill("");
+  await dialog.getByRole("button", { name: "Filter changed files", exact: true }).click();
+  const filter = page.getByRole("dialog", { name: "Filter changed files", exact: true });
+  await filter.getByRole("searchbox").fill("feature-596");
+  await expect(changes.locator("[data-git-file]")).toHaveCount(1);
+  await expect(changes).toContainText("feature-596");
+  await page.screenshot({ path: testInfo.outputPath("large-filtered.png") });
+});
 
 test("branch, commit ve dosya karşılaştırması panel içinde kalır", async ({ page }) => {
   await open(page);

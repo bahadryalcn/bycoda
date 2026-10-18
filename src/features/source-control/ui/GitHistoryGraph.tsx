@@ -1,10 +1,12 @@
 import { Button } from "../../../shared/ui/Button";
+import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
 import { errorText } from "../../../shared/lib/errors";
 import { t, useLocale } from "../../../shared/i18n/git";
 import { pathKey } from "../../../shared/lib/paths";
 import { useRetainedState } from "../../../shared/hooks/useRetainedState";
 import {
   useCallback,
+  useDeferredValue,
   useEffect,
   useMemo,
   useRef,
@@ -68,6 +70,8 @@ type Props = {
   onOpenCommit: (commit: GitHistoryCommit, pin?: boolean) => void;
 };
 
+import { EMPTY_HISTORY_FILTERS, matchesHistoryFilters } from "../model/gitHistoryFilters";
+
 const HISTORY_PAGE = 200;
 
 const HEADER_BUTTON = "mr-1 shrink-0";
@@ -85,10 +89,17 @@ export function GitHistoryGraph({
   const actions = useRemoteSupports(cwd, GIT_ACTIONS) === true;
   const stateKey = `git-history:${pathKey(cwd)}`;
   const [showAll, setShowAll] = useRetainedState(`${stateKey}:all`, false);
+  const [fullShowAll, setFullShowAll] = useRetainedState(`${stateKey}:full-all`, true);
   const [limit, setLimit] = useRetainedState(`${stateKey}:limit:${showAll}`, HISTORY_PAGE);
   const [searchOpen, setSearchOpen] = useRetainedState(`${stateKey}:search`, false);
   const [query, setQuery] = useRetainedState(`${stateKey}:query`, "");
+  const deferredQuery = useDeferredValue(query);
+  const [columnFilters, setColumnFilters] = useRetainedState(
+    `${stateKey}:columns`,
+    EMPTY_HISTORY_FILTERS,
+  );
   const [fullOpen, setFullOpen] = useState(false);
+  const columnsActive = fullOpen && Object.values(columnFilters).some((value) => value.trim());
   const [fullCommit, setFullCommit] = useState<GitHistoryCommit | null>(null);
   const [commitMode, setCommitMode] = useState<"changes" | "blame">("changes");
   const [resolutionDirty, setResolutionDirty] = useState(false);
@@ -96,7 +107,7 @@ export function GitHistoryGraph({
   const { commits, failure, loading, error, refresh } = useGitHistory(
     cwd,
     enabled && (expanded || fullOpen),
-    actions && (showAll || fullOpen),
+    actions && (fullOpen ? fullShowAll : showAll),
     limit,
   );
   const [busy] = useGitPanelState(cwd, "busy");
@@ -106,14 +117,16 @@ export function GitHistoryGraph({
     [commits, rows],
   );
   // The full-graph dialog has its own search field bound to the same query.
-  const searching = (searchOpen || fullOpen) && query.trim() !== "";
+  const searching = (searchOpen || fullOpen) && deferredQuery.trim() !== "";
   const items = useMemo(() => {
-    const visible = searching ? filterHistory(commits, query) : commits;
-    return visible.flatMap((commit): GraphListItem[] => {
-      const row = rowBySha.get(commit.sha);
-      return row ? [{ commit, row }] : [];
-    });
-  }, [commits, query, searching, rowBySha]);
+    const visible = searching ? filterHistory(commits, deferredQuery) : commits;
+    return visible
+      .filter((commit) => !columnsActive || matchesHistoryFilters(commit, columnFilters))
+      .flatMap((commit): GraphListItem[] => {
+        const row = rowBySha.get(commit.sha);
+        return row ? [{ commit, row }] : [];
+      });
+  }, [commits, deferredQuery, searching, rowBySha, columnsActive, columnFilters]);
   const hasMore = commits.length >= limit;
 
   const [menu, setMenu] = useState<{
@@ -293,7 +306,9 @@ export function GitHistoryGraph({
       <GitGraphList
         variant={variant}
         items={items}
-        plain={searching}
+        plain={searching || columnsActive}
+        filters={variant === "workspace" ? columnFilters : undefined}
+        onFilters={setColumnFilters}
         selectedSha={variant === "workspace" ? fullCommit?.sha : selectedSha}
         hasMore={hasMore && !loading && !error && !failure}
         empty={empty}
@@ -328,7 +343,9 @@ export function GitHistoryGraph({
 
   return (
     <div aria-busy={loading} className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden">
-      <div className={`flex w-full shrink-0 items-center ${expanded ? "h-7" : "h-full"}`}>
+      <div
+        className={`flex w-full shrink-0 items-center gap-1 px-1.5 ${expanded ? "h-7" : "h-full"}`}
+      >
         <Button
           size="sm"
           variant="ghost"
@@ -339,9 +356,6 @@ export function GitHistoryGraph({
           aria-label={expanded ? t("Collapse graph") : t("Expand graph")}
           className="flex h-full min-w-0 flex-1 items-center gap-1 text-left leading-none"
         >
-          <span className="text-[10px] font-semibold tracking-[0.04em] text-[var(--ui-text-secondary)] uppercase">
-            {t("Graph")}
-          </span>
           {expanded ? (
             <ChevronDown
               className="size-3.5 shrink-0 text-[var(--ui-text-secondary)]"
@@ -349,10 +363,13 @@ export function GitHistoryGraph({
             />
           ) : (
             <ChevronRight
-              className="ml-auto size-3.5 shrink-0 text-[var(--ui-text-secondary)]"
+              className="size-3.5 shrink-0 text-[var(--ui-text-secondary)]"
               strokeWidth={1.75}
             />
           )}
+          <span className="min-w-0 truncate text-[10px] font-semibold tracking-[0.04em] text-[var(--ui-text-secondary)] uppercase">
+            {t("Graph")}
+          </span>
         </Button>
         {expanded ? (
           <Button
@@ -451,6 +468,17 @@ export function GitHistoryGraph({
               <div className="max-w-sm min-w-0 flex-1">
                 <GraphSearchInput value={query} onChange={setQuery} />
               </div>
+              {actions ? (
+                <SegmentedControl
+                  label={t("History scope")}
+                  value={fullShowAll ? "all" : "current"}
+                  options={[
+                    { value: "current", label: t("Current branch") },
+                    { value: "all", label: t("All branches") },
+                  ]}
+                  onValueChange={(value) => setFullShowAll(value === "all")}
+                />
+              ) : null}
             </>
           }
         >

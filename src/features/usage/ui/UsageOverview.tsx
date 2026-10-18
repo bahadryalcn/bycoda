@@ -1,11 +1,25 @@
+import {
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+  type CSSProperties,
+} from "react";
+import { invoke } from "@tauri-apps/api/core";
+import { t, useLocale } from "../../../shared/i18n";
 import { Alert } from "../../../shared/ui/Alert";
 import { Button } from "../../../shared/ui/Button";
-import { SlotText } from "../../../shared/ui/SlotText";
+import { Popover } from "../../../shared/ui/Popover";
 import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
+import { Select } from "../../../shared/ui/Select";
+import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
+import { SearchInput } from "../../../shared/ui/SearchInput";
+import { SlotText } from "../../../shared/ui/SlotText";
 import { useDecorativeMotionPreference } from "../../settings/model/decorativeMotion";
-import { t, useLocale, getLocale } from "../../../shared/i18n";
-import { RefreshCw } from "../../../shared/ui/icons";
-import { useEffect, useMemo, useState } from "react";
+import { DateTimeRangePicker } from "../../../shared/ui/DateTimeRangePicker";
+import { ArrowDownCircle, ListFilter, RefreshCw, X } from "../../../shared/ui/icons";
 import {
   PROVIDER_ACCOUNT_PROVIDERS,
   providerAccounts,
@@ -15,592 +29,841 @@ import {
   createUsagePricing,
   fetchModelPrices,
   fetchProviderUsage,
-  formatUsageCost,
-  formatUsageTokens,
   type AccountUsage,
   type ModelPrices,
 } from "../../providers/model/providerUsage";
-import { DateRangePicker, type DateRange } from "../../../shared/ui/DateRangePicker";
-import { SortableDataTable } from "../../../shared/ui/SortableDataTable";
-import { railGroupLookup } from "../model/railGroups";
 import { useLockSnapshot } from "../../group-lock/hooks/useGroupLock";
 import { isProjectLockedIn } from "../../group-lock/model/lockState";
+import { RevealedSetting } from "../../settings/ui/settingsControls";
+import { railGroupLookup } from "../model/railGroups";
 import {
-  USAGE_RANGES,
-  summarizeUsageOverview,
-  usageRangeSince,
-  usageSeriesColor,
-  type UsageDayBucket,
-  type UsageOverviewData,
-  type UsageRangeId,
-  type UsageStackBy,
-} from "../model/usageOverview";
+  durationSamples,
+  effectiveResolution,
+  emptyUsageFilters,
+  filterUsage,
+  previousUsageWindow,
+  sessionUsage,
+  usageBreakdown,
+  usageBuckets,
+  usageCsv,
+  usageSamples,
+  usageTotals,
+  type UsageDimension,
+  type UsageFilters,
+  type UsageMetric,
+  type UsageResolution,
+  type UsageTurnReport,
+  type UsageWindow,
+} from "../model/usageAnalytics";
+import { formatMetric, metricNames, PagedUsageTable } from "./UsageCharts";
+import { Contribution, TimeDistribution, UsageShare, UsageTrend } from "./UsageVisualizations";
+import { usageColorMap } from "../model/usageColors";
+import { QuotaHistory } from "./UsageQuotaHistory";
+import "./UsageAnalytics.css";
 
-type Metric = "cost" | "tokens";
-
-type Load = { status: "loading" } | { status: "ready"; usage: AccountUsage[]; failed: number };
-
-function formatDay(date: Date): string {
-  return date.toLocaleDateString(getLocale(), { month: "short", day: "numeric" });
+type Preset = "today" | "yesterday" | "7d" | "30d" | "90d" | "all" | "custom";
+const presetLabels: Record<Preset, string> = {
+  today: "Today",
+  yesterday: "Yesterday",
+  "7d": "7 days",
+  "30d": "30 days",
+  "90d": "90 days",
+  all: "All time",
+  custom: "Custom date and time",
+};
+type Load = {
+  queryKey: string;
+  usage: AccountUsage[];
+  turns: UsageTurnReport | null;
+  failed: number;
+  refreshedAt: number;
+  error: string | null;
+};
+const initialLoad: Load = {
+  queryKey: "",
+  usage: [],
+  turns: null,
+  failed: 0,
+  refreshedAt: 0,
+  error: null,
+};
+function presetWindow(preset: Preset, now: number): UsageWindow {
+  const start = new Date(now);
+  start.setHours(0, 0, 0, 0);
+  if (preset === "yesterday") {
+    const end = start.getTime();
+    start.setDate(start.getDate() - 1);
+    return { start: start.getTime(), end };
+  }
+  if (["7d", "30d", "90d"].includes(preset))
+    start.setDate(start.getDate() - Number(preset.slice(0, -1)) + 1);
+  return { start: preset === "all" ? 0 : start.getTime(), end: Math.ceil(now / 900_000) * 900_000 };
 }
 
-/**
- * Estimated API-equivalent cost by day and by project. Reads the same local
- * session logs as the Usage card above it; the backend caches parsed
- * transcripts, so switching range or reopening Settings stays quick.
- */
-export function UsageOverview({ refresh = 0 }: { refresh?: number }) {
-  useLocale();
-  const [version, setVersion] = useState(0);
+export function UsageOverview({
+  refresh = 0,
+  limits,
+  limitsOnly = false,
+}: {
+  refresh?: number;
+  limits?: (filters: UsageFilters) => ReactNode;
+  limitsOnly?: boolean;
+}) {
+  const locale = useLocale();
+  const decorativeMotion = useDecorativeMotionPreference();
+  const revealed = useContext(RevealedSetting);
+  const [selection, setSelection] = useState({ view: "overview", revealed });
+  const view = limitsOnly ? "limits" : selection.view;
+  const setView = (next: string) => {
+    setSelection({ view: next, revealed });
+    if (next === "projects") setDimension("project");
+  };
+  if (selection.revealed !== revealed) {
+    setSelection({
+      revealed,
+      view:
+        revealed === "account-limits" ||
+        revealed === "usage-budgets" ||
+        revealed === "show-remaining-usage"
+          ? "limits"
+          : revealed === "provider-usage"
+            ? "projects"
+            : revealed === "cost-overview"
+              ? "overview"
+              : view,
+    });
+  }
+  const [preset, setPreset] = useState<Preset>("30d");
+  const [interval, setInterval] = useState<UsageWindow>(() => presetWindow("30d", Date.now()));
+  const [filters, setFilters] = useState<UsageFilters>(emptyUsageFilters);
+  const [metric, setMetric] = useState<UsageMetric>("cost");
+  const [dimension, setDimension] = useState<UsageDimension>("provider");
+  const [resolution, setResolution] = useState<UsageResolution>("day");
+  const [openFilters, setOpenFilters] = useState(false);
   const [reload, setReload] = useState(0);
-  const [range, setRange] = useState<UsageRangeId>("30d");
-  const [customRange, setCustomRange] = useState<DateRange | null>(null);
-  const [stackBy, setStackBy] = useState<UsageStackBy>("provider");
-  const [metric, setMetric] = useState<Metric>("cost");
-  const [load, setLoad] = useState<Load>({ status: "loading" });
-  const [refreshing, setRefreshing] = useState(true);
+  const [version, setVersion] = useState(0);
+  const [load, setLoad] = useState<Load>(initialLoad);
   const [prices, setPrices] = useState<ModelPrices | null | undefined>();
-
-  useEffect(() => subscribeProviderAccounts(() => setVersion((value) => value + 1)), []);
-
-  useEffect(() => {
-    let cancelled = false;
-    void fetchModelPrices().then((next) => {
-      if (!cancelled) setPrices(next);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [reload, refresh]);
-
-  const pricing = useMemo(() => createUsagePricing(prices?.models), [prices]);
+  const [search, setSearch] = useState("");
+  const [selectedSession, setSelectedSession] = useState<string | null>(null);
+  const filterAnchor = useRef<HTMLButtonElement>(null);
+  useEffect(() => subscribeProviderAccounts(() => setVersion((v) => v + 1)), []);
   const accounts = useMemo(() => PROVIDER_ACCOUNT_PROVIDERS.flatMap(providerAccounts), [version]);
-
+  const pricing = useMemo(() => createUsagePricing(prices?.models), [prices]);
+  const since = preset === "all" ? 0 : Math.max(0, previousUsageWindow(interval).start);
+  const queryKey = `${since}:${interval.end}:${reload}:${refresh}:${version}`;
+  const refreshing = !limitsOnly && load.queryKey !== queryKey;
   useEffect(() => {
+    if (limitsOnly) return;
     let cancelled = false;
-    setRefreshing(true);
-    const since = customRange?.start.getTime() ?? usageRangeSince(range, new Date());
-    void Promise.all(
-      accounts.map(async (account) => {
-        try {
-          const report = await fetchProviderUsage(account.provider, account.id, since);
-          return { account, rows: report.rows, ok: true };
-        } catch {
-          return { account, rows: [], ok: false };
-        }
-      }),
-    ).then((results) => {
+    void Promise.all([
+      Promise.all(
+        accounts.map(async (account) => {
+          try {
+            const report = await fetchProviderUsage(
+              account.provider,
+              account.id,
+              Math.floor(since / 900_000) * 900_000,
+            );
+            return { account, rows: report.rows, failed: false };
+          } catch {
+            return { account, rows: [], failed: true };
+          }
+        }),
+      ),
+      invoke<UsageTurnReport>("session_usage_report", {
+        sinceMs: since,
+        untilMs: interval.end,
+      }).catch(() => null),
+      fetchModelPrices().catch(() => null),
+    ]).then(([reports, turns, nextPrices]) => {
       if (cancelled) return;
-      setRefreshing(false);
-      setLoad({
-        status: "ready",
-        usage: results.map(({ account, rows }) => ({ account, rows })),
-        failed: results.filter(({ ok }) => !ok).length,
-      });
+      const failed = reports.filter((r) => r.failed).length;
+      setLoad((previousLoad) => ({
+        queryKey,
+        usage: reports.map(({ account, rows, failed: unavailable }) => ({
+          account,
+          rows: unavailable
+            ? (previousLoad.usage.find(
+                (r) => r.account.id === account.id && r.account.provider === account.provider,
+              )?.rows ?? [])
+            : rows,
+        })),
+        turns,
+        failed,
+        refreshedAt: Date.now(),
+        error:
+          accounts.length > 0 && failed === accounts.length
+            ? "Usage could not be read for the selected accounts. Reload usage to try again."
+            : null,
+      }));
+      setPrices(nextPrices);
     });
     return () => {
       cancelled = true;
     };
-  }, [accounts, range, customRange, reload, refresh]);
-
-  // "Today" and the rail groups are read whenever the logs, range or prices
-  // change, which is also when the window should move on.
-  // Usage of projects in a locked group is left out, names and costs both.
+  }, [accounts, since, interval.end, queryKey, limitsOnly]);
   const lock = useLockSnapshot();
-  const data = useMemo(
+  const groupFor = useMemo(() => railGroupLookup(), [load, lock]);
+  const samples = useMemo(
     () =>
-      load.status === "ready"
-        ? summarizeUsageOverview(
-            load.usage.map(({ account, rows }) => ({
-              account,
-              rows: rows.filter((row) => !row.project || !isProjectLockedIn(lock, row.project)),
-            })),
-            range,
-            new Date(),
-            stackBy,
-            railGroupLookup(),
-            pricing,
-            customRange,
-          )
-        : null,
-    [load, lock, range, customRange, stackBy, pricing],
+      usageSamples(
+        load.usage.map(({ account, rows }) => ({
+          account,
+          rows: rows.filter((row) => !row.project || !isProjectLockedIn(lock, row.project)),
+        })),
+        pricing,
+        groupFor,
+      ),
+    [load.usage, lock, pricing, groupFor],
   );
-
-  const rangeLabel = customRange
-    ? `${formatDay(customRange.start)} – ${formatDay(customRange.end)}`
-    : (USAGE_RANGES.find((entry) => entry.id === range)?.label ?? "");
-
+  const turns = useMemo(
+    () =>
+      load.turns?.turns.filter((turn) => !turn.project || !isProjectLockedIn(lock, turn.project)) ??
+      [],
+    [load.turns, lock],
+  );
+  const window = useMemo(
+    () =>
+      preset === "all"
+        ? {
+            start: samples.reduce(
+              (n, s) => Math.min(n, s.at),
+              turns.reduce((n, turn) => Math.min(n, turn.startedAt), interval.end - 86_400_000),
+            ),
+            end: interval.end,
+          }
+        : interval,
+    [interval, preset, samples, turns],
+  );
+  const filtered = useMemo(() => filterUsage(samples, filters, window), [samples, filters, window]);
+  const previous = useMemo(
+    () => filterUsage(samples, filters, previousUsageWindow(window)),
+    [samples, filters, window],
+  );
+  const runtime = useMemo(
+    () => durationSamples(turns, window, filters, groupFor),
+    [turns, window, filters, groupFor],
+  );
+  const sessions = useMemo(
+    () => sessionUsage(turns, window, filters, pricing, groupFor),
+    [turns, window, filters, pricing, groupFor],
+  );
+  const chartSamples = useMemo(() => [...filtered, ...runtime], [filtered, runtime]);
+  const actualResolution = effectiveResolution(window, resolution);
+  const chart = useMemo(
+    () => usageBuckets(chartSamples, window, actualResolution, dimension, metric),
+    [chartSamples, window, actualResolution, dimension, metric],
+  );
+  const totals = useMemo(
+    () => ({ ...usageTotals(filtered), duration: usageTotals(runtime).duration }),
+    [filtered, runtime],
+  );
+  const previousTotals = useMemo(() => usageTotals(previous), [previous]);
+  const breakdown = useMemo(
+    () => usageBreakdown(chartSamples, dimension, metric),
+    [chartSamples, dimension, metric],
+  );
+  const providers = useMemo(
+    () => usageBreakdown(chartSamples, "provider", metric),
+    [chartSamples, metric],
+  );
+  const projects = useMemo(
+    () => usageBreakdown(chartSamples, "project", metric),
+    [chartSamples, metric],
+  );
+  const models = useMemo(
+    () => usageBreakdown(chartSamples, "model", metric),
+    [chartSamples, metric],
+  );
+  const colors = useMemo(
+    () => usageColorMap(accounts, chartSamples, dimension),
+    [accounts, chartSamples, dimension],
+  );
+  const providerColors = useMemo(
+    () => usageColorMap(accounts, chartSamples, "provider"),
+    [accounts, chartSamples],
+  );
+  const projectColors = useMemo(
+    () => usageColorMap(accounts, chartSamples, "project"),
+    [accounts, chartSamples],
+  );
+  const modelColors = useMemo(
+    () => usageColorMap(accounts, chartSamples, "model"),
+    [accounts, chartSamples],
+  );
+  const options = useMemo(() => {
+    const result = Object.fromEntries(
+      (Object.keys(filters) as (keyof UsageFilters)[]).map((key) => [
+        key,
+        new Map<string, string>(),
+      ]),
+    ) as Record<keyof UsageFilters, Map<string, string>>;
+    for (const s of [...samples, ...runtime]) {
+      result.provider.set(s.provider, s.provider);
+      result.account.set(s.account, `${s.provider} · ${s.accountLabel}`);
+      result.model.set(s.model, s.model);
+      result.project.set(s.project, s.projectLabel);
+      result.group.set(s.group, s.groupLabel);
+    }
+    return result;
+  }, [samples, runtime]);
+  const activeFilters = Object.entries(filters).flatMap(([key, values]) =>
+    values.map((value: string) => ({ key: key as keyof UsageFilters, value })),
+  );
+  const names: Record<keyof UsageFilters, string> = {
+    provider: "Provider",
+    account: "Account",
+    project: "Project",
+    model: "Model",
+    group: "Workspace",
+  };
+  const chooseFilter = (key: keyof UsageFilters, value: string) => {
+    setFilters((f) => ({ ...f, [key]: [value] }));
+    setSelectedSession(null);
+  };
+  const chooseInterval = (next: UsageWindow) => {
+    setPreset("custom");
+    setInterval({ start: Math.max(next.start, window.start), end: Math.min(next.end, window.end) });
+    setSelectedSession(null);
+  };
+  const unpriced = [...new Set(filtered.filter((s) => !s.priced).map((s) => s.model))];
+  const pricedTokens = filtered.filter((s) => s.priced).reduce((n, s) => n + s.tokens, 0);
+  const activeDays = new Set(
+    filtered.filter((s) => s.tokens > 0).map((s) => new Date(s.at).toDateString()),
+  ).size;
+  const inputTotal = totals.input + totals.cacheRead + totals.cacheWrite;
+  const cacheSavings = filtered.reduce((sum, sample) => {
+    const rate = pricing(sample.model);
+    return sum + (rate ? (sample.cacheRead * (rate.input - rate.cacheRead)) / 1_000_000 : 0);
+  }, 0);
+  const matchedRows = breakdown.filter((row) =>
+    row.label.toLocaleLowerCase(locale).includes(search.toLocaleLowerCase(locale)),
+  );
+  const sessionRows = sessions.filter(
+    (row) =>
+      `${row.title} ${row.project}`
+        .toLocaleLowerCase(locale)
+        .includes(search.toLocaleLowerCase(locale)) &&
+      (!selectedSession || row.key === selectedSession),
+  );
+  const turnRows = useMemo(
+    () =>
+      selectedSession
+        ? turns
+            .filter((turn) => turn.sessionId === selectedSession)
+            .flatMap((turn, index) => {
+              const row = sessionUsage([turn], window, filters, pricing, groupFor)[0];
+              return row
+                ? [
+                    {
+                      ...row,
+                      key: `${row.key}:${turn.startedAt}:${index}`,
+                      label: new Date(turn.startedAt).toLocaleString(locale),
+                      duration: row.timedTurns ? row.duration : null,
+                      cost: row.meteredTurns > row.unpricedTurns ? row.cost : null,
+                      tokens: row.meteredTurns ? row.tokens : null,
+                      input: row.meteredTurns ? row.input : null,
+                      output: row.meteredTurns ? row.output : null,
+                      cacheRead: row.meteredTurns ? row.cacheRead : null,
+                      cacheWrite: row.meteredTurns ? row.cacheWrite : null,
+                    },
+                  ]
+                : [];
+            })
+        : [],
+    [selectedSession, turns, window, filters, pricing, groupFor, locale],
+  );
+  const refreshData = () => {
+    if (preset !== "custom") setInterval(presetWindow(preset, Date.now()));
+    setReload((v) => v + 1);
+  };
+  const exportCsv = () => {
+    const url = URL.createObjectURL(
+      new Blob(["\uFEFF", usageCsv(matchedRows)], { type: "text/csv;charset=utf-8" }),
+    );
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "bycoda-usage.csv";
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  };
   return (
     <section
       id="setting-cost-overview"
       data-setting-id="cost-overview"
-      tabIndex={-1}
-      className="pt-8"
+      className="usage-analytics bycoda-chart-colors"
+      style={
+        {
+          "--ui-chart-color": providerColors.get(providers[0]?.key ?? "") ?? "var(--color-accent)",
+        } as CSSProperties
+      }
+      aria-busy={refreshing}
     >
-      <div className="flex flex-wrap items-end gap-4 pb-2.5">
-        <div className="min-w-0 flex-1">
-          <h2 className="text-[13px] font-semibold text-content">{t("Cost by project and day")}</h2>
-          <p className="mt-1 text-[11px] text-content/60">{t("This machine · All accounts")}</p>
-          <p className="mt-1 text-[12px] leading-relaxed text-content/45">
-            {t(
-              "API-equivalent estimates from local session logs, not what a subscription plan bills.",
-            )}
+      <div className="usage-analytics-header">
+        <div>
+          <p>
+            {t(limitsOnly ? "This machine" : "This machine · Local session logs")} ·{" "}
+            {Intl.DateTimeFormat().resolvedOptions().timeZone}
+            {load.refreshedAt > 0 &&
+              ` · ${t("Updated")} ${new Date(load.refreshedAt).toLocaleTimeString(locale, { hour: "2-digit", minute: "2-digit", hour12: false })}`}
           </p>
         </div>
-        <div className="flex min-w-0 flex-wrap items-center gap-2 pb-0.5">
-          <Choice
-            label={t("Cost range")}
-            value={customRange ? "custom" : range}
-            options={[
-              ...USAGE_RANGES.map(({ id, label }) => ({
-                value: id,
-                label,
-              })),
-              ...(customRange ? [{ value: "custom", label: t("Custom date range") }] : []),
-            ]}
-            onChange={(next) => {
-              if (next !== "custom") {
-                setRange(next as UsageRangeId);
-                setCustomRange(null);
-              }
+        <div className="usage-analytics-actions">
+          <Select
+            label={t("Date range")}
+            value={preset}
+            options={Object.entries(presetLabels)
+              .filter(([key]) => key !== "custom" || preset === "custom")
+              .map(([value, label]) => ({ value, label: t(label) }))}
+            onValueChange={(v) => {
+              setPreset(v as Preset);
+              setInterval(presetWindow(v as Preset, Date.now()));
             }}
           />
-          <DateRangePicker value={customRange} onChange={setCustomRange} maxDate={new Date()} />
+
+          <DateTimeRangePicker
+            minDate={new Date(0)}
+            maxDate={new Date(new Date().setHours(24, 0, 0, 0))}
+            value={{ start: new Date(window.start), end: new Date(window.end) }}
+            onChange={(range) => {
+              setPreset("custom");
+              setInterval({ start: range.start.getTime(), end: range.end.getTime() });
+              setSelectedSession(null);
+            }}
+          />
           <Button
+            ref={filterAnchor}
             variant="ghost"
-            size="sm"
-            type="button"
             iconOnly
-            label={t("Reload cost by project and day")}
-            title={t("Reload")}
-            disabled={refreshing}
-            onClick={() => setReload((value) => value + 1)}
+            label={t("Filters")}
+            selected={!!activeFilters.length}
+            aria-haspopup="dialog"
+            aria-expanded={openFilters}
+            onClick={() => setOpenFilters(!openFilters)}
           >
-            <RefreshCw
-              className={`size-3.5${refreshing ? " motion-safe:animate-spin" : ""}`}
-              strokeWidth={1.75}
-              aria-hidden
-            />
+            <ListFilter className="size-3.5" />
+          </Button>
+          {!limitsOnly && (
+            <Button
+              variant="ghost"
+              iconOnly
+              label={t("Refresh usage")}
+              loading={refreshing}
+              onClick={refreshData}
+            >
+              <RefreshCw className="size-3.5" />
+            </Button>
+          )}
+        </div>
+      </div>
+      {openFilters && (
+        <Popover
+          anchor={filterAnchor}
+          align="end"
+          width={350}
+          role="dialog"
+          aria-label={t("Filters")}
+          onDismiss={() => setOpenFilters(false)}
+          autoFocus
+        >
+          <div className="usage-filter-panel">
+            <h3>{t("Filters")}</h3>
+            {(Object.keys(filters) as (keyof UsageFilters)[]).map((key) => (
+              <SearchableSelect
+                key={key}
+                multiple
+                label={t(names[key])}
+                placeholder={t("All")}
+                value={filters[key]}
+                options={[...options[key]].map(([value, label]) => ({ value, label: t(label) }))}
+                onChange={(values) => {
+                  setFilters((f) => ({ ...f, [key]: values }));
+                  setSelectedSession(null);
+                }}
+              />
+            ))}
+            <Button
+              variant="ghost"
+              onClick={() => {
+                setFilters(emptyUsageFilters());
+                setSelectedSession(null);
+              }}
+            >
+              {t("Reset filters")}
+            </Button>
+          </div>
+        </Popover>
+      )}
+
+      {!!activeFilters.length && (
+        <div className="usage-filter-chips">
+          {activeFilters.map(({ key, value }) => (
+            <Button
+              key={`${key}:${value}`}
+              variant="secondary"
+              tooltip={t("Remove filter")}
+              onClick={() =>
+                setFilters((f) => ({ ...f, [key]: f[key].filter((v) => v !== value) }))
+              }
+            >
+              {t(names[key])}: {t(options[key].get(value) ?? value)}
+              <X className="size-3" />
+            </Button>
+          ))}
+          <Button variant="ghost" onClick={() => setFilters(emptyUsageFilters())}>
+            {t("Clear all")}
           </Button>
         </div>
-      </div>
-      <div
-        className="overflow-hidden rounded-xl border border-content/10 bg-content/3"
-        aria-busy={refreshing}
-      >
-        {refreshing && data ? (
-          <Alert tone="info" role="status">
-            {t("Refreshing usage… Previous results remain visible.")}
-          </Alert>
-        ) : null}
-        {!data ? (
-          <div role="status" className="px-4 py-6 text-[12px] text-content/45">
-            {t("Reading session logs…")}
-          </div>
-        ) : load.status === "ready" && load.failed > 0 && load.failed === accounts.length ? (
-          <Alert tone="danger" role="alert">
-            {t("Usage could not be read for the selected accounts. Reload usage to try again.")}
-          </Alert>
-        ) : data.totals.tokens === 0 ? (
-          <div className="px-4 py-6 text-[12px] leading-relaxed text-content/45">
-            {t("No usage in the selected range (")}
-            {rangeLabel.toLowerCase()}).
-          </div>
-        ) : (
-          <>
-            <Totals data={data} />
-            <DailyChart
-              data={data}
-              metric={metric}
-              stackBy={stackBy}
-              onMetric={setMetric}
-              onStackBy={setStackBy}
+      )}
+      {!limitsOnly && (
+        <SegmentedControl
+          label={t("Usage views")}
+          value={view}
+          onValueChange={setView}
+          options={[
+            { value: "overview", label: t("Overview") },
+            { value: "projects", label: t("Projects") },
+            { value: "time", label: t("Time analysis") },
+            ...(limits ? [{ value: "limits", label: t("Limits") }] : []),
+          ]}
+        />
+      )}
+      {load.error && (
+        <Alert tone="danger" role="alert">
+          {t(load.error)}
+        </Alert>
+      )}
+      {load.failed > 0 && !load.error && (
+        <Alert tone="warning">
+          {t("Some account logs could not be read. Totals are partial.")} ({load.failed})
+        </Alert>
+      )}
+      {view !== "limits" && (
+        <>
+          {refreshing && load.refreshedAt > 0 && (
+            <p role="status" className="usage-muted">
+              {t("Refreshing usage… Previous results remain visible.")}
+            </p>
+          )}
+          {view === "overview" && (
+            <>
+              <div className="usage-metrics">
+                {(
+                  [
+                    "cost",
+                    "input",
+                    "output",
+                    "cacheRead",
+                    "cacheWrite",
+                    "duration",
+                  ] as UsageMetric[]
+                ).map((key) => {
+                  const previousValue = previousTotals[key];
+                  const change =
+                    key !== "duration" &&
+                    preset !== "all" &&
+                    previousValue > 0 &&
+                    !load.failed &&
+                    (key !== "cost" || (!unpriced.length && previous.every((s) => s.priced)))
+                      ? ((totals[key] - previousValue) / previousValue) * 100
+                      : null;
+                  return (
+                    <div key={key}>
+                      <Button
+                        variant="link"
+                        selected={metric === key}
+                        onClick={() => setMetric(key)}
+                      >
+                        {t(metricNames[key])}
+                      </Button>
+                      <strong>
+                        <SlotText
+                          motion={decorativeMotion ? "auto" : "none"}
+                          value={
+                            !load.refreshedAt ||
+                            (key !== "duration" && !!load.error && !filtered.length) ||
+                            (key === "duration" && load.turns === null) ||
+                            (key === "cost" && unpriced.length > 0 && pricedTokens === 0)
+                              ? "—"
+                              : `${key === "cost" && unpriced.length ? "≥ " : ""}${formatMetric(totals[key], key)}`
+                          }
+                        />
+                      </strong>
+                      <small>
+                        {change == null
+                          ? t(
+                              key === "cost"
+                                ? "API-equivalent, not billed"
+                                : key === "duration"
+                                  ? "Recorded turn elapsed time"
+                                  : "tokens",
+                            )
+                          : `${change >= 0 ? "+" : ""}${change.toFixed(1)}% ${t("vs previous period")}`}
+                      </small>
+                    </div>
+                  );
+                })}
+              </div>
+              <div className="usage-facts">
+                <span>
+                  {t("Total tokens")} <b>{formatMetric(totals.tokens, "tokens")}</b>
+                </span>
+                <span>
+                  {t("Cache hit rate")}{" "}
+                  <b>
+                    {inputTotal ? `${((totals.cacheRead / inputTotal) * 100).toFixed(1)}%` : "—"}
+                  </b>
+                </span>
+                <span>
+                  {t("Cache savings")}{" "}
+                  <b>
+                    {unpriced.length ? "≥ " : ""}
+                    {formatMetric(cacheSavings, "cost")}
+                  </b>
+                </span>
+                <span>
+                  {t("Active days")} <b>{activeDays}</b>
+                </span>
+                <span>
+                  {t("Cost per active day")}{" "}
+                  <b>
+                    {activeDays
+                      ? `${unpriced.length ? "≥ " : ""}${formatMetric(totals.cost / activeDays, "cost")}`
+                      : "—"}
+                  </b>
+                </span>
+              </div>
+            </>
+          )}
+          <div className="usage-controls">
+            <Select
+              label={t("Chart metric")}
+              value={metric}
+              onValueChange={(v) => setMetric(v as UsageMetric)}
+              options={Object.entries(metricNames).map(([value, label]) => ({
+                value,
+                label: t(label),
+              }))}
             />
-            <ProjectTable data={data} />
-          </>
-        )}
-        <Notes data={data} failed={load.status === "ready" ? load.failed : 0} prices={prices} />
+            {view !== "time" && (
+              <Select
+                label={t("Group by")}
+                value={dimension}
+                onValueChange={(v) => setDimension(v as UsageDimension)}
+                options={(["provider", "account", "model", "project"] as const).map((value) => ({
+                  value,
+                  label: t(names[value]),
+                }))}
+              />
+            )}
+            {view === "overview" && (
+              <>
+                <Select
+                  label={t("Resolution")}
+                  value={resolution}
+                  onValueChange={(v) => setResolution(v as UsageResolution)}
+                  options={[
+                    { value: "15m", label: t("15 minutes") },
+                    { value: "hour", label: t("Hourly") },
+                    { value: "day", label: t("Daily") },
+                    { value: "week", label: t("Weekly") },
+                  ]}
+                />
+              </>
+            )}
+          </div>
+          {view === "overview" && actualResolution !== resolution && (
+            <p className="usage-muted">
+              {t(
+                "The chart uses a coarser resolution to show the entire interval. Select a shorter range for more detail.",
+              )}
+            </p>
+          )}
+          {!refreshing && !filtered.length && (
+            <Alert tone="info">{t("No usage matches these filters.")}</Alert>
+          )}
+          {view === "overview" && (
+            <>
+              <div className="usage-overview-main">
+                <UsageTrend
+                  {...chart}
+                  metric={metric}
+                  resolution={actualResolution}
+                  percent={false}
+                  onSelect={chooseInterval}
+                  colors={colors}
+                />
+                <UsageShare
+                  rows={providers}
+                  metric={metric}
+                  colors={providerColors}
+                  onSelect={(value) => chooseFilter("provider", value)}
+                />
+              </div>
+              <div className="usage-analysis-grid">
+                <Contribution
+                  title={t("Leading projects")}
+                  rows={projects}
+                  metric={metric}
+                  colors={projectColors}
+                  onSelect={(value) => {
+                    chooseFilter("project", value);
+                    setView("projects");
+                  }}
+                />
+                <Contribution
+                  title={t("By model")}
+                  rows={models}
+                  metric={metric}
+                  colors={modelColors}
+                  onSelect={(value) => chooseFilter("model", value)}
+                />
+              </div>
+            </>
+          )}
+          {view === "time" && (
+            <TimeDistribution
+              samples={chartSamples}
+              metric={metric}
+              window={window}
+              onSelect={chooseInterval}
+            />
+          )}
+          {view === "projects" && (
+            <>
+              <div
+                className="usage-section-heading"
+                id="setting-provider-usage"
+                data-setting-id="provider-usage"
+              >
+                <h3>{t("Usage breakdown")}</h3>
+                <SearchInput
+                  aria-label={t("Search usage")}
+                  placeholder={t("Search usage")}
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                />
+                <Button variant="secondary" onClick={exportCsv}>
+                  <ArrowDownCircle className="size-3.5" />
+                  {t("Export CSV")}
+                </Button>
+              </div>
+              <PagedUsageTable
+                key={dimension}
+                caption={t("Usage breakdown")}
+                rows={matchedRows}
+                metric={metric}
+                onSelect={(value) => chooseFilter(dimension, value)}
+              />
+              {load.turns !== null ? (
+                <section className="usage-panel">
+                  <div className="usage-section-heading">
+                    <h3>{t("Recorded sessions")}</h3>
+                    {selectedSession && (
+                      <Button variant="ghost" onClick={() => setSelectedSession(null)}>
+                        {t("All sessions")}
+                      </Button>
+                    )}
+                  </div>
+                  <p className="usage-muted">
+                    {t(
+                      "Session tokens come from recorded turn metrics. Only whole turns inside the interval are included; these values are not added to provider-log totals.",
+                    )}
+                  </p>
+                  <PagedUsageTable
+                    key={`sessions:${selectedSession ?? "all"}`}
+                    caption={t("Recorded sessions")}
+                    metric="duration"
+                    rows={sessionRows.map((row) => ({
+                      ...row,
+                      label: row.title || row.key,
+                      duration: row.timedTurns ? row.duration : null,
+                      cost: row.meteredTurns > row.unpricedTurns ? row.cost : null,
+                      tokens: row.meteredTurns ? row.tokens : null,
+                      input: row.meteredTurns ? row.input : null,
+                      output: row.meteredTurns ? row.output : null,
+                      cacheRead: row.meteredTurns ? row.cacheRead : null,
+                      cacheWrite: row.meteredTurns ? row.cacheWrite : null,
+                    }))}
+                    onSelect={setSelectedSession}
+                  />
+                  {selectedSession &&
+                    sessionRows.map((row) => (
+                      <p className="usage-muted" key={row.key}>
+                        {row.title} · {row.provider} · {row.timedTurns}/{row.turns}{" "}
+                        {t("turns with duration")} · {row.meteredTurns}/{row.turns}{" "}
+                        {t("turns with tokens")} · {row.unpricedTurns} {t("unpriced turns")}
+                      </p>
+                    ))}
+                  {selectedSession && (
+                    <PagedUsageTable
+                      caption={t("Recorded turns")}
+                      rows={turnRows}
+                      metric="duration"
+                    />
+                  )}
+                </section>
+              ) : (
+                <Alert tone="info">
+                  {t(
+                    "Session duration data is unavailable on this app version or could not be read.",
+                  )}
+                </Alert>
+              )}
+            </>
+          )}
+          <details className="usage-data-notes">
+            <summary>
+              {t("Data sources and coverage")}
+              {unpriced.length ? ` · ${unpriced.length} ${t("Models without prices")}` : ""}
+            </summary>
+            <p>
+              {t(
+                "API-equivalent estimates from local session logs, not what a subscription plan bills.",
+              )}{" "}
+              {t("Priced token coverage")}:{" "}
+              {totals.tokens ? ((pricedTokens / totals.tokens) * 100).toFixed(1) : "—"}%.
+            </p>
+            {unpriced.length > 0 && (
+              <p>
+                {t("Models without prices")}: {unpriced.join(", ")}.{" "}
+                {t("Their tokens are included; their cost is unavailable.")}
+              </p>
+            )}
+            {prices === null && (
+              <p>{t("OpenRouter prices could not be loaded, so built-in prices are used.")}</p>
+            )}
+            {load.turns === null ? (
+              <p>
+                {t(
+                  "Session duration data is unavailable on this app version or could not be read.",
+                )}
+              </p>
+            ) : (
+              <p>
+                {t(
+                  "Agent time sums recorded completed turn intervals and may include waiting. Parallel sessions can exceed wall-clock time.",
+                )}{" "}
+                {sessions.reduce((n, s) => n + s.timedTurns, 0)}/
+                {sessions.reduce((n, s) => n + s.turns, 0)} {t("turns with duration")}.
+              </p>
+            )}
+            {load.turns?.truncated && (
+              <p>
+                {t(
+                  "Session data is limited to the latest 50,000 turns. Select a shorter interval.",
+                )}
+              </p>
+            )}
+            <p>{t("Token timestamps have 15-minute precision. End time is exclusive.")}</p>
+          </details>
+        </>
+      )}
+      <div hidden={view !== "limits"}>
+        {limits?.(filters)}
+        {limits && <QuotaHistory window={window} filters={filters} accounts={accounts} />}
       </div>
     </section>
-  );
-}
-
-function Totals({ data }: { data: UsageOverviewData }) {
-  useLocale();
-  const { totals } = data;
-  return (
-    <div className="grid grid-cols-1 divide-y divide-content/5 border-b border-content/5 @min-[560px]/settings:grid-cols-4 @min-[560px]/settings:divide-x @min-[560px]/settings:divide-y-0">
-      <Stat
-        label={t("Estimated cost")}
-        value={formatUsageCost(totals.cost)}
-        detail="API-equivalent, not billed"
-      />
-      <Stat label={t("Input")} value={formatUsageTokens(totals.input)} detail="uncached tokens" />
-      <Stat label={t("Output")} value={formatUsageTokens(totals.output)} detail="tokens" />
-      <Stat
-        label={t("Cache")}
-        value={formatUsageTokens(totals.cacheRead + totals.cacheWrite)}
-        detail={`${formatUsageTokens(totals.cacheRead)} read · ${formatUsageTokens(totals.cacheWrite)} written`}
-      />
-    </div>
-  );
-}
-
-function Stat({ label, value, detail }: { label: string; value: string; detail: string }) {
-  useLocale();
-  const decorativeMotion = useDecorativeMotionPreference();
-  return (
-    <div className="min-w-0 px-4 py-3.5">
-      <div className="text-[12px] text-content/45">{label}</div>
-      <div className="mt-1 text-[20px] font-semibold leading-tight tabular-nums text-content">
-        <SlotText value={value} align="end" motion={decorativeMotion ? "auto" : "none"} />
-      </div>
-      <div className="mt-1 truncate text-[11px] text-content/40">{detail}</div>
-    </div>
-  );
-}
-
-function amountText(amount: { cost: number; tokens: number }, metric: Metric) {
-  return metric === "cost"
-    ? `${formatUsageCost(amount.cost)} est.`
-    : `${formatUsageTokens(amount.tokens)} tokens`;
-}
-
-function dayLabel(day: UsageDayBucket, data: UsageOverviewData, metric: Metric) {
-  const total = metric === "cost" ? day.cost : day.tokens;
-  if (total <= 0) return `${formatDay(day.date)}: no activity`;
-  const parts = data.series
-    .filter((series) => day.series[series.key])
-    .map((series) => `${series.label} ${amountText(day.series[series.key], metric)}`);
-  return `${formatDay(day.date)}: ${amountText(day, metric)} (${parts.join(", ")})`;
-}
-
-function DailyChart({
-  data,
-  metric,
-  stackBy,
-  onMetric,
-  onStackBy,
-}: {
-  data: UsageOverviewData;
-  metric: Metric;
-  stackBy: UsageStackBy;
-  onMetric: (metric: Metric) => void;
-  onStackBy: (by: UsageStackBy) => void;
-}) {
-  useLocale();
-  const [active, setActive] = useState<number | null>(null);
-  const { days, series } = data;
-  const value = (amount: { cost: number; tokens: number }) =>
-    metric === "cost" ? amount.cost : amount.tokens;
-  const max = Math.max(...days.map(value), 0);
-  const colors = new Map(
-    series.map((entry, index) => [entry.key, usageSeriesColor(index, entry.key)]),
-  );
-  return (
-    <div className="border-b border-content/5 px-4 py-3.5">
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 pb-3">
-        <div className="min-w-0 flex-1 text-[13px] font-medium text-content">
-          {t("Daily ")}
-          {metric === "cost" ? t("estimated cost") : t("tokens")}
-        </div>
-        <Choice
-          label={t("Chart metric")}
-          value={metric}
-          options={[
-            {
-              value: "cost",
-              get label() {
-                return t("Cost");
-              },
-            },
-            {
-              value: "tokens",
-              get label() {
-                return t("Tokens");
-              },
-            },
-          ]}
-          onChange={onMetric}
-        />
-        <Choice
-          label={t("Stack by")}
-          value={stackBy}
-          options={[
-            {
-              value: "provider",
-              get label() {
-                return t("Provider");
-              },
-            },
-            {
-              value: "model",
-              get label() {
-                return t("Model");
-              },
-            },
-          ]}
-          onChange={onStackBy}
-        />
-      </div>
-      <ul
-        aria-label={t(metric === "cost" ? "Daily estimated cost" : "Daily tokens")}
-        className="relative m-0 flex h-28 list-none items-end gap-px p-0"
-        onMouseLeave={() => setActive(null)}
-      >
-        {days.map((day, index) => {
-          const total = value(day);
-          const height = max > 0 ? (total / max) * 100 : 0;
-          return (
-            <li
-              key={day.key}
-              tabIndex={0}
-              aria-label={dayLabel(day, data, metric)}
-              onMouseEnter={() => setActive(index)}
-              onFocus={() => setActive(index)}
-              onBlur={() => setActive(null)}
-              className="flex h-full min-w-0 flex-1 items-end rounded-t-[3px] outline-none focus-visible:ring-1 focus-visible:ring-accent"
-            >
-              {total <= 0 ? (
-                <div className="h-px w-full bg-content/10" />
-              ) : (
-                <div
-                  className={`mx-auto flex w-full max-w-8 flex-col-reverse overflow-hidden rounded-t-[3px] transition-opacity ${
-                    active != null && active !== index ? "opacity-40" : ""
-                  }`}
-                  style={{ height: `${Math.max(3, height)}%` }}
-                >
-                  {series.map((entry) => {
-                    const slice = day.series[entry.key];
-                    const share = slice ? value(slice) / total : 0;
-                    return share > 0 ? (
-                      <div
-                        key={entry.key}
-                        style={{
-                          flexGrow: share,
-                          flexBasis: 0,
-                          backgroundColor: colors.get(entry.key),
-                        }}
-                      />
-                    ) : null;
-                  })}
-                </div>
-              )}
-            </li>
-          );
-        })}
-      </ul>
-      <div aria-live="polite" className="mt-2 min-h-4 text-[11px] tabular-nums text-content/60">
-        {active != null ? (
-          dayLabel(days[active], data, metric)
-        ) : (
-          <span className="flex justify-between text-content/40">
-            <span>{formatDay(days[0].date)}</span>
-            <span>
-              {t("Peak")} {metric === "cost" ? formatUsageCost(max) : formatUsageTokens(max)}
-            </span>
-            <span>{formatDay(days[days.length - 1].date)}</span>
-          </span>
-        )}
-      </div>
-      <ul className="m-0 mt-2 flex list-none flex-wrap gap-x-4 gap-y-1 p-0 text-[11px] text-content/60">
-        {series.map((entry) => (
-          <li key={entry.key} className="flex items-center gap-1.5">
-            <span
-              aria-hidden
-              className="size-2 rounded-sm"
-              style={{ backgroundColor: colors.get(entry.key) }}
-            />
-            <span className={stackBy === "model" ? "font-mono" : ""}>{entry.label}</span>
-          </li>
-        ))}
-      </ul>
-      <details className="mt-3 text-[11px] text-content/60">
-        <summary className="cursor-pointer select-none text-content/50 hover:text-content">
-          {t("Show as table")}
-        </summary>
-        <div className="mt-2 max-h-56 overflow-auto">
-          <table className="w-full border-collapse text-left tabular-nums">
-            <caption className="sr-only">{t("Estimated cost and tokens per day")}</caption>
-            <thead>
-              <tr className="text-content/45">
-                <th scope="col" className="py-1 pr-3 font-normal">
-                  {t("Day")}
-                </th>
-                {series.map((entry) => (
-                  <th key={entry.key} scope="col" className="py-1 pr-3 text-right font-normal">
-                    {entry.label}
-                  </th>
-                ))}
-                <th scope="col" className="py-1 text-right font-normal">
-                  {t("Total")}
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {[...days].reverse().map((day) => (
-                <tr key={day.key} className="border-t border-content/5">
-                  <th scope="row" className="py-1 pr-3 font-normal">
-                    {formatDay(day.date)}
-                  </th>
-                  {series.map((entry) => (
-                    <td key={entry.key} className="py-1 pr-3 text-right">
-                      {day.series[entry.key] ? amountText(day.series[entry.key], metric) : "–"}
-                    </td>
-                  ))}
-                  <td className="py-1 text-right text-content/85">{dayTotalText(day, metric)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </details>
-    </div>
-  );
-}
-
-function dayTotalText(day: UsageDayBucket, metric: Metric): string {
-  return day.tokens > 0 ? amountText(day, metric) : "–";
-}
-
-function ProjectTable({ data }: { data: UsageOverviewData }) {
-  useLocale();
-  const grouped = data.groups.some((section) => section.name !== null);
-  return (
-    <div className="max-h-80 overflow-auto">
-      {data.groups.map((section) => (
-        <section key={section.key}>
-          {grouped ? (
-            <div className="flex justify-between gap-3 px-4 py-2 text-xs text-content/70">
-              <span>{section.name ?? t("Not in a group")}</span>
-              <span>{formatUsageCost(section.cost)}</span>
-            </div>
-          ) : null}
-          <SortableDataTable
-            caption={
-              grouped ? (section.name ?? t("Not in a group")) : t("Projects by estimated cost")
-            }
-            rowKey="key"
-            rows={section.projects.map((project) => ({
-              ...project,
-              cache: project.cacheRead + project.cacheWrite,
-            }))}
-            defaultSort={{ key: "cost", direction: "desc" }}
-            columns={[
-              {
-                key: "label",
-                label: t("Project"),
-                sortable: true,
-                render: (_, project) => (
-                  <span title={project.title}>
-                    {project.label}
-                    <span aria-hidden className="mt-1 block h-0.5 rounded-full bg-content/10">
-                      <span
-                        className="block h-full rounded-full bg-accent/70"
-                        style={{ width: `${Math.max(2, project.share * 100)}%` }}
-                      />
-                    </span>
-                  </span>
-                ),
-              },
-              {
-                key: "input",
-                label: t("Input"),
-                sortable: true,
-                numeric: true,
-                render: (_, project) => formatUsageTokens(project.input),
-              },
-              {
-                key: "output",
-                label: t("Output"),
-                sortable: true,
-                numeric: true,
-                render: (_, project) => formatUsageTokens(project.output),
-              },
-              {
-                key: "cache",
-                label: t("Cache"),
-                sortable: true,
-                numeric: true,
-                render: (_, project) => (
-                  <span
-                    title={t("{p0} read · {p1} written", {
-                      p0: formatUsageTokens(project.cacheRead),
-                      p1: formatUsageTokens(project.cacheWrite),
-                    })}
-                  >
-                    {formatUsageTokens(project.cache)}
-                  </span>
-                ),
-              },
-              {
-                key: "cost",
-                label: t("Est. cost"),
-                sortable: true,
-                numeric: true,
-                render: (_, project) => (
-                  <>
-                    {formatUsageCost(project.cost)}
-                    {project.partlyUnpriced ? (
-                      <span title={t("Some models here have no known price, so this is a minimum")}>
-                        {" "}
-                        +
-                      </span>
-                    ) : null}
-                  </>
-                ),
-              },
-            ]}
-          />
-        </section>
-      ))}
-    </div>
-  );
-}
-
-function Notes({
-  data,
-  failed,
-  prices,
-}: {
-  data: UsageOverviewData | null;
-  failed: number;
-  prices: ModelPrices | null | undefined;
-}) {
-  useLocale();
-  const notes = [
-    prices === null ? "OpenRouter prices could not be loaded, so built-in prices are used." : null,
-    data?.unpricedModels.length
-      ? `No price is known for ${data.unpricedModels.join(", ")}, so its cost is left out.`
-      : null,
-    failed ? `Could not read the logs for ${failed} account${failed === 1 ? "" : "s"}.` : null,
-  ].filter(Boolean);
-  if (!notes.length) return null;
-  return (
-    <div className="border-t border-content/5 px-4 py-2.5 text-[11px] leading-relaxed text-content/40">
-      {notes.join(" ")}
-    </div>
-  );
-}
-
-/** Exclusive metric/range/group modes; domain values stay with the caller. */
-function Choice<T extends string>({
-  label,
-  value,
-  options,
-  onChange,
-}: {
-  label: string;
-  value: T;
-  options: { value: T; label: string }[];
-  onChange: (value: T) => void;
-}) {
-  return (
-    <SegmentedControl
-      label={label}
-      value={value}
-      options={options}
-      onValueChange={(next) => onChange(next as T)}
-    />
   );
 }

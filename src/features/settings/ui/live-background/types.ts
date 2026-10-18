@@ -16,6 +16,10 @@ export type LiveBackgroundPalette = {
   accent: string;
   contentRgb: readonly [number, number, number];
   accentRgb: readonly [number, number, number];
+  /** Shared artwork roles, with accent fallbacks for callers supplying a minimal palette. */
+  signal?: string;
+  spectrum?: string;
+  spectrumRgb?: readonly [number, number, number];
   monoFont: string;
 };
 

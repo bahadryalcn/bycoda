@@ -43,6 +43,12 @@ export type GitIndexRequest = {
   since?: number;
 };
 
+/** A completed full index can also supply summary counts without another read. */
+export function peekFullGitIndex(cwd: string) {
+  const result = entries.get(cwd)?.result;
+  return result?.full ? result : null;
+}
+
 /**
  * A full index also answers a files-only request. A request is served by a
  * result that finished at or after `since`, else joins a request that started

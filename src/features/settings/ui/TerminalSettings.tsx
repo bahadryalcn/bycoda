@@ -1,6 +1,7 @@
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import { Alert } from "../../../shared/ui/Alert";
 import { Button } from "../../../shared/ui/Button";
+import { Badge } from "../../../shared/ui/Badge";
 import { t, useLocale } from "../../../shared/i18n";
 import { remoteRequest, useRemoteMachines } from "../../connections/model/connections";
 import { HOST_UPDATE_NOTICE } from "../../connections/model/remoteCapabilities";
@@ -17,6 +18,7 @@ import {
 import { useEffect, useState } from "react";
 
 import { AdvancedSettings, Group, Row } from "./settingsControls";
+import "./TerminalSettings.css";
 
 /** Which shell new terminals open in, and `!commands` run in. */
 export function TerminalPage() {
@@ -42,14 +44,12 @@ export function TerminalPage() {
   const current = effectiveProfileId(listed, chosen);
 
   return (
-    <>
+    <div className="terminal-settings">
       <Group
-        title={t("This computer · Default profile")}
-        scope={t("This computer only. Remote and synced hosts have their own preferences below.")}
+        layout="full"
+        title={t("This computer")}
         persistence={{ mode: "automatic" }}
-        description={t(
-          "New terminals on this computer open in this shell, and local `!commands` run in it. A terminal already open keeps the shell it started with.",
-        )}
+        description={t("Choose the shell for new terminals and local !commands.")}
         action={
           <Button
             variant="ghost"
@@ -68,9 +68,7 @@ export function TerminalPage() {
           description={
             missing
               ? t("The shell you picked is no longer installed, so the system default is used.")
-              : t(
-                  "Automatic follows the system: PowerShell on Windows, your login shell elsewhere.",
-                )
+              : undefined
           }
         >
           <SearchableSelect
@@ -99,11 +97,23 @@ export function TerminalPage() {
           {t("Could not discover shells. Use Look again to retry.")} {problem}
         </Alert>
       ) : null}
-      <AdvancedSettings
-        title={t("Advanced terminal settings")}
-        settingIds={["terminal-default-profile", "host-shells"]}
+      <Group
+        id="host-shells"
+        layout="full"
+        title={t("Synced sessions and remote hosts")}
+        description={t("Each machine uses its own shell, wherever you send the command from.")}
+        persistence={{ mode: "automatic" }}
       >
+        <RemoteMachineShells />
+      </Group>
+      <p className="terminal-settings-note">
+        {t(
+          "Applies to new commands on this host. Already open terminals keep their current shell.",
+        )}
+      </p>
+      <AdvancedSettings title={t("Advanced terminal settings")}>
         <Group
+          layout="full"
           title={t("This computer · Available shells")}
           description={t(
             "Found on this computer. Git Bash runs bash commands such as ls, grep and && chains on Windows. Sessions on this computer use this choice even when you type the command on another machine.",
@@ -122,12 +132,13 @@ export function TerminalPage() {
             listed.profiles.map((profile) => (
               <Row key={profile.id} label={profile.name} description={profile.path}>
                 {profile.id === current ? (
-                  <span className="text-[12px] text-content/45">{t("Default")}</span>
+                  <Badge>{t("Default")}</Badge>
                 ) : (
                   <Button
                     variant="ghost"
                     size="sm"
                     type="button"
+                    disabled={scanning}
                     onClick={() => saveTerminalProfile(profile.id)}
                   >
                     {t("Set as default")}
@@ -137,11 +148,34 @@ export function TerminalPage() {
             ))
           )}
         </Group>
-        <div id="setting-host-shells" data-setting-id="host-shells" tabIndex={-1}>
-          <RemoteMachineShells />
-        </div>
+        <Group layout="full" title={t("How it works")}>
+          <Row
+            label={t("This computer")}
+            description={t(
+              "New terminals on this computer open in this shell, and local `!commands` run in it. A terminal already open keeps the shell it started with.",
+            )}
+          />
+          <Row
+            label={t("Automatic")}
+            description={t(
+              "Automatic follows the system: PowerShell on Windows, your login shell elsewhere.",
+            )}
+          />
+          <Row
+            label={t("Local sync")}
+            description={t(
+              "`!commands` in this computer's synced sessions run on this computer, using the shell selected here.",
+            )}
+          />
+          <Row
+            label={t("Remote server")}
+            description={t(
+              "`!commands` in this server's sessions run on the remote server, using the shell selected here, even when you type them on this computer.",
+            )}
+          />
+        </Group>
       </AdvancedSettings>
-    </>
+    </div>
   );
 }
 
@@ -150,7 +184,9 @@ export function RemoteMachineShells() {
   useLocale();
   const { machines } = useRemoteMachines();
   if (machines.length === 0)
-    return <p>{t("Connect a machine in Connections to configure its default shell here.")}</p>;
+    return (
+      <Row label={t("Connect a machine in Connections to configure its default shell here.")} />
+    );
   return (
     <>
       {machines.map((machine) => (
@@ -166,6 +202,7 @@ export function RemoteMachineShell({ machine }: { machine: RemoteMachine }) {
   const [listed, setListed] = useState<ShellProfiles | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [retry, setRetry] = useState(0);
   const explain = (error: unknown) => {
     const text = String(error).replace(/^Error: /, "");
     return /unsupported|unknown method|not supported/i.test(text) ? HOST_UPDATE_NOTICE : text;
@@ -184,7 +221,7 @@ export function RemoteMachineShell({ machine }: { machine: RemoteMachine }) {
     return () => {
       alive = false;
     };
-  }, [machine.id]);
+  }, [machine.id, retry]);
   const choose = (next: string) => {
     setSaving(true);
     setProblem(null);
@@ -204,71 +241,59 @@ export function RemoteMachineShell({ machine }: { machine: RemoteMachine }) {
       ? listed.chosenId
       : "";
   return (
-    <Group
-      title={
-        <span className="flex flex-col gap-1">
-          <span>{local ? t("This computer") : t("Remote server")}</span>
-          <span className="break-words text-[12px] font-normal text-content/60">
-            {local ? t("Local sync") : machine.name}
-          </span>
+    <Row
+      label={
+        <span className="terminal-settings-machine">
+          <span>{local ? t("This computer") : machine.name}</span>
+          <Badge>{local ? t("Local sync") : t("Remote server")}</Badge>
         </span>
       }
-      scope={t(
-        "Applies to new commands on this host. Already open terminals keep their current shell.",
-      )}
-      persistence={{
-        mode: "automatic",
-        state: problem ? "error" : saving ? "saving" : "idle",
-        error: problem,
-      }}
       description={
-        local
-          ? t(
-              "`!commands` in this computer's synced sessions run on this computer, using the shell selected here.",
-            )
-          : t(
-              "`!commands` in this server's sessions run on the remote server, using the shell selected here, even when you type them on this computer.",
-            )
+        listed
+          ? (listed.profiles.find((profile) => profile.id === (chosen || listed.defaultId))?.path ??
+            undefined)
+          : undefined
       }
     >
-      <Row
-        label={t("Default shell")}
-        description={
-          problem ??
-          (listed
-            ? (listed.profiles.find((profile) => profile.id === (chosen || listed.defaultId))
-                ?.path ?? undefined)
-            : t("Asking the machine…"))
-        }
-      >
-        {listed ? (
-          <SearchableSelect
-            disabled={saving}
-            label={
-              local
-                ? t("Default shell on this computer (local sync)")
-                : t("Default shell on remote server {p0}", { p0: machine.name })
-            }
-            value={chosen}
-            options={[
-              {
-                value: "",
-                label: systemDefault
-                  ? t("Automatic ({p0})", { p0: systemDefault.name })
-                  : t("Automatic"),
-              },
-              ...listed.profiles.map((profile) => ({
-                value: profile.id,
-                label: profile.name,
-                description: profile.path,
-              })),
-            ]}
-            onChange={(next) => {
-              if (!saving) choose(next);
-            }}
-          />
-        ) : null}
-      </Row>
-    </Group>
+      {problem ? (
+        <Alert tone="danger" role="alert">
+          {problem}
+        </Alert>
+      ) : null}
+      {problem && !listed ? (
+        <Button variant="ghost" onClick={() => setRetry((value) => value + 1)}>
+          {t("Retry")}
+        </Button>
+      ) : null}
+      {saving ? <span role="status">{t("Saving…")}</span> : null}
+      {!listed && !problem ? <span role="status">{t("Asking the machine…")}</span> : null}
+      {listed ? (
+        <SearchableSelect
+          disabled={saving}
+          label={
+            local
+              ? t("Default shell on this computer (local sync)")
+              : t("Default shell on remote server {p0}", { p0: machine.name })
+          }
+          value={chosen}
+          options={[
+            {
+              value: "",
+              label: systemDefault
+                ? t("Automatic ({p0})", { p0: systemDefault.name })
+                : t("Automatic"),
+            },
+            ...listed.profiles.map((profile) => ({
+              value: profile.id,
+              label: profile.name,
+              description: profile.path,
+            })),
+          ]}
+          onChange={(next) => {
+            if (!saving) choose(next);
+          }}
+        />
+      ) : null}
+    </Row>
   );
 }

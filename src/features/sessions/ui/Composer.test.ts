@@ -2105,6 +2105,36 @@ describe("Composer question focus", () => {
     expect(onWorktreeBaseChange).toHaveBeenLastCalledWith("mc/greeting");
   });
 
+  it("focuses the draft from blank composer space without intercepting controls", async () => {
+    await renderComposer(undefined, vi.fn());
+    const textarea = document.querySelector("textarea")!;
+    const box = document.querySelector("[data-composer-box]")!;
+    const button = box.querySelector("button")!;
+    textarea.blur();
+    await act(async () => {
+      box.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, button: 0 }));
+    });
+    expect(document.activeElement).toBe(textarea);
+    textarea.blur();
+    const press = new PointerEvent("pointerdown", { bubbles: true, cancelable: true, button: 0 });
+    await act(async () => button.dispatchEvent(press));
+    expect(press.defaultPrevented).toBe(false);
+    expect(document.activeElement).not.toBe(textarea);
+  });
+
+  it("honors an explicit session focus request across visible split composers", async () => {
+    await renderComposer(undefined, vi.fn());
+    const other = document.createElement("div");
+    other.setAttribute("data-composer", "");
+    const input = document.createElement("textarea");
+    other.append(input);
+    document.body.append(other);
+    input.focus();
+    await renderComposer(undefined, vi.fn(), false, 1);
+    expect(document.activeElement).toBe(document.querySelector("textarea"));
+    other.remove();
+  });
+
   it("returns focus to the composer textarea once a question is answered", async () => {
     const onQuestionReply = vi.fn();
     await renderComposer(question, onQuestionReply);

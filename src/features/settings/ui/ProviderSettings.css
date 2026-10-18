@@ -15,15 +15,15 @@
 }
 .provider-cli-scope {
   display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 6px;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
 }
 .provider-cli-workspace {
   display: grid;
   grid-template-columns: minmax(9rem, 13rem) minmax(0, 1fr);
   align-items: start;
-  gap: 12px;
+  gap: 24px;
 }
 .provider-cli-selector {
   display: grid;
@@ -44,27 +44,103 @@
 }
 .provider-cli-detail {
   min-inline-size: 0;
+  container-type: inline-size;
 }
 .provider-cli-panel > #setting-enabled-models {
-  margin-block-start: 8px;
+  margin-block-start: 20px;
+  border-block-start: 1px solid var(--color-stroke);
 }
-.provider-cli-panel > #setting-enabled-models > summary {
-  padding-block: 5px;
-  font-size: 11px;
+.provider-cli-panel > #setting-enabled-models > h3 {
+  padding-block: 12px;
+  font-size: 12px;
 }
 .provider-cli-model-list {
-  margin-block-start: 4px;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 15rem), 1fr));
+  column-gap: 24px;
+  max-block-size: 18rem;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
 }
-.provider-cli-panel #setting-enabled-models .settings-row {
-  padding-block: 6px;
+.bycoda-settings-workbench .bycoda-settings-form .provider-cli-model-list .settings-row {
+  align-items: center;
+  gap: 12px;
+  padding-block: 8px;
+  min-block-size: 40px;
+}
+.provider-cli-model-heading {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.provider-accounts-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding-block-end: 8px;
+}
+.provider-accounts-title {
+  flex: 1;
+  min-inline-size: 5rem;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--ui-text-secondary);
+}
+.provider-account-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  padding-block: 12px;
+  border-block-end: 1px solid var(--color-stroke);
+}
+.provider-account-row:last-child {
+  border-block-end: 0;
+}
+.provider-account-identity {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  min-inline-size: 0;
+}
+.provider-account-name {
+  overflow-wrap: anywhere;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--color-content);
+}
+.provider-account-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  min-inline-size: 0;
+  margin-block-start: 6px;
+  font-size: 12px;
+}
+.provider-account-subtitle {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--ui-text-secondary);
+}
+.provider-account-meta > * {
+  max-inline-size: 100%;
+}
+.provider-account-meta > :first-child {
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 .provider-cli-panel > #setting-claude-hooks {
   padding-inline: 12px;
   padding-block: 10px;
 }
 .bycoda-settings-workbench .bycoda-settings-form .provider-cli-detail #setting-provider-accounts {
-  padding-block: 0 12px;
-  border-block-end: 0;
+  padding-block: 0 16px;
+  margin-block-end: 16px;
+  border-block-end: 1px solid var(--color-stroke);
 }
 .bycoda-settings-workbench
   .bycoda-settings-form
@@ -99,6 +175,8 @@
   align-items: center;
   justify-content: space-between;
   gap: 8px;
+  flex-wrap: wrap;
+  padding-block-end: 16px;
 }
 .provider-cli-header-main {
   display: flex;
@@ -112,15 +190,15 @@
 }
 .provider-cli-title-line h3 {
   overflow-wrap: anywhere;
-  font-size: 13px;
+  font-size: 16px;
   font-weight: 500;
   color: var(--color-content);
 }
 .provider-cli-title-line {
   display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
 }
 .provider-cli-status {
   display: flex;
@@ -128,7 +206,7 @@
   align-items: center;
   gap: 5px;
   margin-block-start: 0;
-  font-size: 10px;
+  font-size: 11px;
   line-height: 1.35;
   color: var(--ui-text-secondary);
 }
@@ -139,30 +217,27 @@
   flex: 0 0 auto;
   margin: 0;
 }
-.provider-cli-header > .settings-advanced > summary {
+.provider-cli-header > .settings-advanced > h3 {
   padding-block: 5px;
   font-size: 11px;
   white-space: nowrap;
 }
-.provider-cli-header > .settings-advanced[open] {
-  align-self: flex-start;
+.provider-cli-header > .settings-advanced {
+  flex-basis: 100%;
 }
 .provider-cli-card > .settings-advanced {
   margin-block-start: 12px;
 }
 .provider-cli-fields {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 13rem), 1fr));
   align-items: start;
-  gap: 8px 10px;
+  gap: 12px;
   margin-block-start: 10px;
   margin-block-end: 8px;
 }
 .provider-cli-field {
   min-width: 0;
-}
-.provider-cli-field:first-child:nth-last-child(2) {
-  grid-column: span 2;
 }
 .provider-cli-field > span {
   display: block;
@@ -181,25 +256,16 @@
   margin-block-start: 6px;
 }
 .provider-cli-defaults-heading {
-  margin-block-end: 2px;
+  margin-block-end: 12px;
 }
 .provider-cli-defaults > .provider-cli-fields {
   margin-block: 0 4px;
 }
 .provider-cli-defaults-heading h4 {
   width: fit-content;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 500;
   color: var(--ui-text-secondary);
-}
-.provider-cli-default-grid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 7px 10px;
-}
-.provider-cli-default-grid .provider-cli-field > div > button {
-  width: 100%;
-  justify-content: space-between;
 }
 .provider-cli-footer {
   display: flex;
@@ -207,9 +273,8 @@
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  margin-block-start: 8px;
-  padding-block-start: 8px;
-  border-block-start: 1px solid var(--color-stroke);
+  margin-block-start: 12px;
+  padding-block-start: 4px;
 }
 
 .provider-cli-install {
@@ -217,39 +282,14 @@
   font-size: 11px;
   color: var(--ui-text-secondary);
 }
-.provider-cli-install > summary {
+.provider-cli-install > h3 {
   width: fit-content;
-  cursor: pointer;
-}
-@media (hover: hover) and (pointer: fine) {
-  .provider-cli-install > summary:hover {
-    color: var(--color-content);
-  }
 }
 
-.provider-cli-install > summary:focus-visible {
-  outline: 2px solid var(--color-accent);
-  outline-offset: 3px;
-}
 .provider-cli-install > p {
   margin-block-start: 8px;
   line-height: 1.7;
   overflow-wrap: anywhere;
-}
-@container (max-width: 430px) {
-  .provider-cli-fields,
-  .provider-cli-default-grid {
-    grid-template-columns: minmax(0, 1fr);
-  }
-  .provider-cli-field:first-child:nth-last-child(2) {
-    grid-column: auto;
-  }
-}
-@container (min-width: 431px) and (max-width: 620px) {
-  .provider-cli-fields,
-  .provider-cli-default-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
 }
 @container (max-width: 560px) {
   .provider-cli-workspace {
@@ -264,12 +304,37 @@
   }
   .provider-cli-option {
     flex: 0 0 auto;
+    inline-size: auto;
     min-block-size: 32px;
   }
   .provider-cli-header {
     align-items: flex-start;
   }
-  .provider-cli-header > .settings-advanced > summary {
+  .provider-cli-header > .settings-advanced > h3 {
     font-size: 10px;
   }
+}
+@container (max-width: 430px) {
+  .provider-account-row > :first-child {
+    flex-basis: 100%;
+  }
+  .provider-account-row > :last-child {
+    margin-inline-start: auto;
+  }
+}
+
+/* Update status stays beside the CLI instead of spanning the entire page. */
+.provider-cli-updates {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 22rem), 1fr));
+  column-gap: 24px;
+}
+.bycoda-settings-workbench .bycoda-settings-form .provider-cli-updates .settings-row {
+  align-items: center;
+  min-block-size: 64px;
+  gap: 12px;
+  padding-block: 12px;
+}
+.provider-cli-updates .settings-row-label > div:first-child > span {
+  flex-wrap: wrap;
 }

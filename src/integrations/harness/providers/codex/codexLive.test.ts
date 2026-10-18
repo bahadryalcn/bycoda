@@ -2127,6 +2127,41 @@ describe("codex live turn sequence", () => {
 });
 
 describe("codex subagents", () => {
+  it("routes each child's context to its own agent, including readings before spawn metadata", async () => {
+    const { events, turn } = await startTurn("s1");
+    const usage = (threadId: string, used: number, window = 272_000) =>
+      notify("thread/tokenUsage/updated", {
+        threadId,
+        tokenUsage: { last: { totalTokens: used }, modelContextWindow: window },
+      });
+    usage("child_a", 12_000);
+    for (const [id, child] of [
+      ["spawn_a", "child_a"],
+      ["spawn_b", "child_b"],
+    ]) {
+      notify("item/started", {
+        threadId: "thr_1",
+        item: {
+          id,
+          type: "collabAgentToolCall",
+          tool: "spawnAgent",
+          status: "inProgress",
+          prompt: "Review",
+          agentsStates: { [child]: { status: "running" } },
+        },
+      });
+    }
+    usage("child_b", 24_000, 400_000);
+    usage("child_a", 6_000);
+    notify("turn/completed", { turn: { id: "turn_1", status: "completed" } });
+    await turn;
+    expect(events.filter((event) => event.type === "agent.context")).toEqual([
+      { type: "agent.context", callId: "spawn_a", used: 12_000, window: 272_000 },
+      { type: "agent.context", callId: "spawn_b", used: 24_000, window: 400_000 },
+      { type: "agent.context", callId: "spawn_a", used: 6_000, window: 272_000 },
+    ]);
+    expect(events.filter((event) => event.type === "context")).toEqual([]);
+  });
   beforeEach(() => {
     sent.length = 0;
     onLine = undefined;

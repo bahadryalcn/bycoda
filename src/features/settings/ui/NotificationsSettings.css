@@ -2,7 +2,8 @@
   color: var(--ui-text-secondary);
   font-size: 12px;
   line-height: 1.5;
-  padding-block: 8px 12px;
+  padding: 12px 16px;
+  border-block-start: 1px solid var(--color-stroke);
 }
 
 .notification-permission-status p {
@@ -12,8 +13,9 @@
 .bycoda-settings-workbench .bycoda-settings-form .notification-alert-settings .settings-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
-  padding-block: 10px;
-  border-block-end: 0;
+  padding: 12px 16px;
+  gap: 16px;
+  border-block-end: 1px solid var(--color-stroke);
 }
 
 .bycoda-settings-workbench
@@ -26,10 +28,14 @@
   justify-content: flex-end;
 }
 
-.notification-alert-settings > .settings-group:first-child > .settings-group-content {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 400px), 1fr));
-  column-gap: 32px;
+.bycoda-settings-workbench
+  .bycoda-settings-form
+  .notification-alert-settings
+  .settings-group-content {
+  display: block;
+  background: var(--ui-surface);
+  border: 1px solid var(--color-stroke);
+  border-radius: 8px;
 }
 
 .notification-alert-settings .notification-permission-status {
@@ -38,4 +44,62 @@
 
 .notification-alert-settings .settings-group-title {
   max-inline-size: 75ch;
+}
+
+.notification-alert-settings .settings-group-heading h2 {
+  font-weight: 500;
+}
+
+.notification-alert-settings .settings-row-label {
+  min-inline-size: 0;
+}
+
+.notification-alert-settings .settings-description {
+  max-inline-size: 72ch;
+}
+
+.notification-permission-message {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.notification-summary-help {
+  padding: 12px 16px;
+  color: var(--ui-text-secondary);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.notification-summary-help h3 {
+}
+
+.notification-summary-help p {
+  margin-block-start: 8px;
+  max-inline-size: 75ch;
+}
+
+@media (max-width: 480px) {
+  .bycoda-settings-workbench
+    .bycoda-settings-form
+    .notification-alert-settings
+    [data-setting-id="daily-summary"] {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+.notification-alert-settings {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 400px), 1fr));
+  gap: 24px;
+  padding-block: 24px;
+}
+
+.bycoda-settings-workbench .bycoda-settings-form .notification-alert-settings > .settings-group {
+  padding-block: 0;
+  border-block-end: 0;
+}
+
+.notification-alert-settings > .settings-group:last-child {
+  grid-column: 1 / -1;
 }

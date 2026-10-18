@@ -1,12 +1,4 @@
-import {
-  createContext,
-  useContext,
-  useEffect,
-  useId,
-  useRef,
-  useState,
-  type ReactNode,
-} from "react";
+import { createContext, useContext, useEffect, useId, useRef, type ReactNode } from "react";
 
 import { Select as SharedSelect, type SelectProps } from "../../../shared/ui/Select";
 import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
@@ -131,13 +123,11 @@ function useControlDescriptions(descriptionId: string | undefined) {
   return root;
 }
 
-/** Search may open this disclosure; it stays open after the highlight expires. */
+/** Settings stay visible, including advanced controls. Search can focus the group. */
 export function AdvancedSettings({
   children,
   id,
-  settingIds = [],
   title,
-  defaultOpen = false,
 }: {
   children: ReactNode;
   id?: string;
@@ -146,23 +136,20 @@ export function AdvancedSettings({
   defaultOpen?: boolean;
 }) {
   useLocale();
-  const revealed = useContext(RevealedSetting);
-  const [open, setOpen] = useState(defaultOpen);
-  const target = revealed != null && settingIds.includes(revealed);
-  useEffect(() => {
-    if (target) setOpen(true);
-  }, [target]);
+  const headingId = useId();
   return (
-    <details
+    <section
       id={id ? settingDomId(id) : undefined}
       data-setting-id={id}
       className="settings-advanced"
-      open={open}
-      onToggle={(event) => setOpen(event.currentTarget.open)}
+      aria-labelledby={headingId}
+      tabIndex={-1}
     >
-      <summary>{title ?? t("Advanced")}</summary>
+      <h3 id={headingId} className="settings-subheading">
+        {title ?? t("Advanced")}
+      </h3>
       {children}
-    </details>
+    </section>
   );
 }
 

@@ -1,9 +1,9 @@
 /**
- * One join for every provider's streamed body text.
+ * Legacy token/snapshot reconciliation for protocol-specific snapshot paths.
  *
  * Providers send either a new token or a resent snapshot of the whole message
- * so far. This function is the only place that distinguishes the two, so a new
- * harness does not need its own merge logic.
+ * so far. Known delta events must append exactly instead of using this heuristic.
+ * Prefer explicit snapshotRemainder at a provider's snapshot boundary.
  *
  * Tokens append. A longer chunk that already starts with the current text is a
  * snapshot and replaces. Overlap matching is never used: it ate blank lines,

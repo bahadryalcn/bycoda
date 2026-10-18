@@ -181,7 +181,7 @@ function DockBody({
       }`}
     >
       <div className="relative" data-activity-status-row>
-        <div className="relative flex min-h-8 min-w-0 items-center gap-2 px-3">
+        <div className="relative flex min-h-8 min-w-0 flex-wrap items-center gap-x-2 gap-y-1 px-3 py-1">
           <div className="activity-dock-summary">
             <DockMark state={dock.state} />
             <span
@@ -258,7 +258,7 @@ function DockBody({
         <div
           id={listId}
           ref={lockList}
-          className="flex max-h-40 flex-col gap-px overflow-y-auto overscroll-none border-t border-(--ui-tone-neutral-border) px-1 py-1"
+          className="activity-dock-list flex max-h-60 flex-col overflow-x-hidden overflow-y-auto overscroll-none border-t border-(--ui-tone-neutral-border) px-1"
         >
           {/* Running rows lead, so their Stop buttons are not buried under
               finished ones. The sort is stable: transcript order otherwise. */}
@@ -326,36 +326,35 @@ function DockAgentRow({
   const stoppable = canStopAgent(agent, stop.perItem);
   const stopping = stop.stopping.has(key);
   return (
-    <div className="group flex min-w-0 items-center rounded-md hover:bg-(--ui-surface-raised)">
+    <div className="activity-dock-item flex min-w-0 items-start border-t border-(--ui-tone-neutral-border) py-1 first:border-t-0">
       <Button
-        variant="ghost"
+        variant="item"
         type="button"
         aria-label={`${agent.kind === "agent" ? "Open" : "Show"} ${summary}`}
         title={agent.name}
         data-dock-agent={agent.blockId}
         onClick={() => onOpen(agent)}
-        className="min-w-0 flex-1 text-left"
+        className="min-w-0 flex-1 items-start text-left"
       >
-        <AgentStatusDot status={agent.status} />
-        <span className="min-w-0 flex-1 truncate text-[12px] text-(--ui-text-secondary) group-hover:text-(--ui-tone-neutral-fg)">
-          {agent.name}
+        <span className="mt-1 flex shrink-0">
+          <AgentStatusDot status={agent.status} />
         </span>
-        {agent.model ? (
-          <span className="max-w-[35%] shrink-0 truncate text-[11px] text-(--ui-text-secondary)">
-            {agent.model}
+        <span className="min-w-0 flex-1">
+          <span className="block whitespace-pre-wrap text-(--ui-tone-neutral-fg) [overflow-wrap:anywhere]">
+            {agent.name}
           </span>
-        ) : null}
-        {agent.detail ? (
-          <span className="shrink-0 text-[11px] text-(--ui-text-secondary)">{agent.detail}</span>
-        ) : null}
-        <AgentClock
-          startedAt={agent.startedAt}
-          endedAt={agent.endedAt}
-          live={agent.status === "running"}
-          className="text-[11px] text-(--ui-text-secondary)"
-        />
+          <span className="flex flex-wrap items-center gap-x-2 text-(--ui-text-secondary) [overflow-wrap:anywhere]">
+            {agent.model ? <span className="min-w-0">{agent.model}</span> : null}
+            {agent.detail ? <span className="min-w-0">{agent.detail}</span> : null}
+            <AgentClock
+              startedAt={agent.startedAt}
+              endedAt={agent.endedAt}
+              live={agent.status === "running"}
+            />
+          </span>
+        </span>
         <ChevronRight
-          className="size-3 shrink-0 text-(--ui-text-secondary) group-hover:text-(--ui-text-secondary)"
+          className="mt-1 size-3 shrink-0 text-(--ui-text-secondary)"
           strokeWidth={1.75}
         />
       </Button>

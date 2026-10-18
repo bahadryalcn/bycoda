@@ -1,5 +1,82 @@
 import { test, expect } from "@playwright/test";
 
+test("custom context signal exposes completed TPS and compact and respects reduced motion", async ({
+  page,
+}, testInfo) => {
+  await initializeChatLayout(page);
+  await page.goto("/tests/browser/composer-extras.html?chat-layout&response-speed");
+  const trigger = page.getByRole("button", { name: /^Context usage: 50%.*50.0 TPS/ });
+  await expect(trigger).toHaveText("");
+  for (const light of [false, true]) {
+    await page.evaluate(
+      (value) => document.documentElement.classList.toggle("theme-light", value),
+      light,
+    );
+    for (const width of [390, 1000]) {
+      await page.setViewportSize({ width, height: 800 });
+      await trigger.hover();
+      const panel = page.getByRole("dialog", { name: "Context usage", exact: true });
+      await expect(panel).toBeInViewport();
+      await expect(panel.getByRole("meter")).toHaveAttribute("aria-valuenow", "50");
+      await expect(panel).toContainText("50.0 TPS");
+      await expect(panel).toContainText("200 output tokens in 4.0s");
+      await expect(panel.getByRole("button", { name: "Compact now", exact: true })).toBeEnabled();
+      await expect(trigger.locator("svg")).toBeVisible();
+      await trigger.screenshot({
+        path: testInfo.outputPath(`signal-${light ? "light" : "dark"}-${width}.png`),
+      });
+      await page.screenshot({
+        path: testInfo.outputPath(`context-tps-${light ? "light" : "dark"}-${width}.png`),
+      });
+      await page.mouse.move(0, 0);
+      await expect(panel).toBeHidden();
+    }
+  }
+  await page.emulateMedia({ reducedMotion: "no-preference" });
+  await page.getByRole("button", { name: "Toggle busy", exact: true }).click();
+  const packet = trigger.locator(".context-speed-bolt");
+  await expect(packet).toHaveCSS("animation-name", "context-speed-charge");
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await expect(packet).toHaveCSS("animation-name", "none");
+  await page.getByRole("button", { name: "Toggle busy", exact: true }).click();
+  await trigger.focus();
+  await trigger.press("Enter");
+  await page.getByRole("button", { name: "Compact now", exact: true }).click();
+  await expect(page.getByTestId("compacted")).toHaveText("1");
+});
+
+test("composer blank space focuses the larger draft while controls remain operable", async ({
+  page,
+}) => {
+  await initializeChatLayout(page);
+  await page.goto("/tests/browser/composer-extras.html?chat-layout");
+  const input = page.getByRole("textbox", { name: "Message", exact: true });
+  const box = page.locator("[data-composer-box]");
+  await input.fill("");
+  for (const light of [false, true]) {
+    await page.evaluate(
+      (value) => document.documentElement.classList.toggle("theme-light", value),
+      light,
+    );
+    for (const width of [390, 1000]) {
+      await page.setViewportSize({ width, height: 800 });
+      await input.evaluate((node) => node.blur());
+      await box.click({ position: { x: 2, y: 2 } });
+      await expect(input).toBeFocused();
+      const height = (await input.boundingBox())!.height;
+      expect(height).toBeGreaterThanOrEqual(68);
+      await page.keyboard.type("ready to write");
+      await expect(input).toHaveValue("ready to write");
+      await input.fill("");
+      await input.fill("line\n".repeat(20));
+      await input.fill("");
+      expect((await input.boundingBox())!.height).toBeGreaterThanOrEqual(68);
+    }
+  }
+  await box.getByRole("button", { name: "Add files or choose a mode", exact: true }).click();
+  await expect(page.locator("[data-composer-plus]")).toBeVisible();
+});
+
 test("Antigravity translates directly and only connected providers are listed", async ({
   page,
 }) => {

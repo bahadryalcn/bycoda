@@ -78,6 +78,14 @@ async function selectProject(path: string) {
   );
 }
 
+async function openFilters() {
+  if (!document.querySelector('[role="dialog"][aria-label="Filter MCP servers by provider"]')) {
+    await act(async () =>
+      container.querySelector<HTMLButtonElement>('[aria-label="Filters"]')!.click(),
+    );
+  }
+}
+
 it("lists servers and routes sign in through Claude MCP", async () => {
   await act(async () => root.render(createElement(McpSettings, { cwd: "/repo" })));
   expect(container.textContent).toContain("sentry");
@@ -96,7 +104,8 @@ it("lists servers and routes sign in through Claude MCP", async () => {
 
 it("filters connections by provider", async () => {
   await act(async () => root.render(createElement(McpSettings, { cwd: "/repo" })));
-  const codex = [...container.querySelectorAll("button")].find((button) =>
+  await openFilters();
+  const codex = [...document.querySelectorAll("button")].find((button) =>
     button.textContent?.startsWith("Codex"),
   )!;
   await act(async () => codex.click());
@@ -113,13 +122,43 @@ it("filters connections by provider", async () => {
   });
 });
 
+it("resets the provider and search together from the filter panel", async () => {
+  await act(async () => root.render(createElement(McpSettings, { cwd: "/repo" })));
+  await openFilters();
+  await act(async () => {
+    document
+      .querySelector<HTMLButtonElement>('[role="group"] button[aria-pressed="false"]')!
+      .click();
+  });
+  const search = container.querySelector<HTMLInputElement>('input[type="search"]')!;
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
+      search,
+      "missing",
+    );
+    search.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  await act(async () => {
+    [...document.querySelectorAll<HTMLButtonElement>("button")]
+      .find((button) => button.textContent === "Reset filters")!
+      .click();
+  });
+  expect(search.value).toBe("");
+  expect(container.textContent).toContain("sentry");
+  expect(container.textContent).toContain("docs");
+  expect(container.querySelector('[aria-label="Filters"]')!.getAttribute("aria-expanded")).toBe(
+    "true",
+  );
+});
+
 it("keeps a saved provider filter during a cold delayed discovery after returning to Settings", async () => {
   const render = () => act(async () => root.render(createElement(McpSettings, { cwd: "/repo" })));
   const codexButton = () =>
-    [...container.querySelectorAll("button")].find((button) =>
+    [...document.querySelectorAll("button")].find((button) =>
       button.textContent?.startsWith("Codex"),
     )!;
   await render();
+  await openFilters();
   await act(async () => codexButton().click());
   await act(async () => root.unmount());
   clearMcpSettingsCache();
@@ -134,6 +173,7 @@ it("keeps a saved provider filter during a cold delayed discovery after returnin
       : configured(command, ...args),
   );
   await render();
+  await openFilters();
   expect(codexButton().getAttribute("aria-pressed")).toBe("true");
   await act(async () => finish(await configured("mcp_discover")));
   expect(codexButton().getAttribute("aria-pressed")).toBe("true");
@@ -248,15 +288,22 @@ it("hides Sign in when a server has no known transport", async () => {
 
 it("shows only configured provider chips until the filter button reveals all", async () => {
   await act(async () => root.render(createElement(McpSettings, { cwd: "/repo" })));
-  const chips = container.querySelector('[aria-label="Filter MCP servers by provider"]')!;
+  await openFilters();
+  const chips = document.querySelector(
+    '[role="group"][aria-label="Filter MCP servers by provider"]',
+  )!;
   expect(chips.textContent).toContain("Codex");
   expect(chips.textContent).not.toContain("Cursor");
   await act(async () =>
-    container.querySelector<HTMLButtonElement>('[aria-label="Show all providers"]')!.click(),
+    [...document.querySelectorAll<HTMLButtonElement>("button")]
+      .find((button) => button.getAttribute("aria-label") === "Show all providers")!
+      .click(),
   );
   expect(chips.textContent).toContain("Cursor");
   await act(async () =>
-    container.querySelector<HTMLButtonElement>('[aria-label="Show available providers"]')!.click(),
+    [...document.querySelectorAll<HTMLButtonElement>("button")]
+      .find((button) => button.getAttribute("aria-label") === "Show available providers")!
+      .click(),
   );
   expect(chips.textContent).not.toContain("Cursor");
 });
@@ -320,7 +367,7 @@ it("reuses the loaded list when returning to the page and reloads on Refresh", a
       : "",
   );
   const refresh = [...container.querySelectorAll("button")].find(
-    (button) => button.textContent === "Refresh",
+    (button) => button.getAttribute("aria-label") === "Refresh",
   )!;
   await act(async () => refresh.click());
   expect(invoke).toHaveBeenCalledTimes(4);
@@ -381,7 +428,7 @@ it("caches discovery failures and lets Refresh retry", async () => {
   expect(container.textContent).toContain("Discovery failed");
   expect(invoke).toHaveBeenCalledTimes(1);
   const refresh = [...container.querySelectorAll("button")].find(
-    (button) => button.textContent === "Refresh",
+    (button) => button.getAttribute("aria-label") === "Refresh",
   )!;
   await act(async () => refresh.click());
   expect(container.textContent).toContain("sentry");
@@ -424,7 +471,7 @@ it("uses the shared project picker and caches each project's list", async () => 
   expect(invoke).toHaveBeenCalledTimes(4);
   await selectProject("/other");
   const refresh = [...container.querySelectorAll("button")].find(
-    (button) => button.textContent === "Refresh",
+    (button) => button.getAttribute("aria-label") === "Refresh",
   )!;
   await act(async () => refresh.click());
   expect(invoke).toHaveBeenCalledTimes(6);

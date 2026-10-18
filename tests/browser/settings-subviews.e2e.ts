@@ -1,6 +1,50 @@
 import { test, expect } from "@playwright/test";
 import { mkdirSync } from "node:fs";
 
+for (const theme of ["light", "dark"])
+  for (const width of [390, 768, 1024, 1440]) {
+    test(`compact chat settings: ${theme} ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 900 });
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      await page.goto(`/tests/browser/settings.html?section=chat&theme=${theme}&lang=en`);
+      const chat = page.locator(".chat-settings");
+      await expect(chat.getByText("Changes save automatically", { exact: true })).toHaveCount(1);
+      await expect(chat.getByRole("button", { name: "Save templates", exact: true })).toHaveCount(
+        0,
+      );
+      const anchor = chat.getByRole("switch", { name: "Anchor prompts to top", exact: true });
+      const wasChecked = await anchor.isChecked();
+      await anchor.focus();
+      await page.keyboard.press("Space");
+      await expect(anchor).toBeChecked({ checked: !wasChecked });
+      await page.reload();
+      await expect(anchor).toBeChecked({ checked: !wasChecked });
+      await expect(chat.locator("details, summary")).toHaveCount(0);
+      await expect(
+        chat.getByRole("switch", { name: "Resume at reset", exact: true }),
+      ).toBeVisible();
+      await expect(chat.locator("#setting-translation-model-default button").first()).toBeVisible();
+      await expect(chat.locator("#setting-git-generation-default")).toHaveCount(0);
+      await expect(chat.locator("#setting-chat-width button").first()).toBeVisible();
+      const overflow = await chat.evaluate((root) =>
+        [...root.querySelectorAll(".settings-row, .settings-group-heading, .settings-row-control")]
+          .filter((node) => node.scrollWidth > node.clientWidth + 1)
+          .map((node) => node.className),
+      );
+      expect(overflow).toEqual([]);
+      mkdirSync("temp/verification/2026-10-18-chat-settings", { recursive: true });
+      await page.locator("[data-settings-scroller]").evaluate((node) => {
+        node.scrollTop = 0;
+      });
+      await page.screenshot({
+        path: `temp/verification/2026-10-18-chat-settings/${theme}-${width}.png`,
+      });
+      await chat.getByRole("button", { name: "Add template", exact: true }).click();
+      await expect(chat.getByRole("textbox", { name: "Template name", exact: true })).toBeVisible();
+      await expect(chat.getByRole("button", { name: "Save templates", exact: true })).toBeEnabled();
+    });
+  }
+
 for (const lang of ["en", "tr", "de", "fr", "es", "pt", "zh-CN", "ja"]) {
   for (const theme of ["light", "dark"])
     for (const width of [390, 1440]) {
@@ -24,11 +68,9 @@ for (const lang of ["en", "tr", "de", "fr", "es", "pt", "zh-CN", "ja"]) {
           theme === "light" ? /theme-light/ : /^(?!.*theme-light)/,
         );
         await expect(
-          page.getByRole("radio", { name: themeLabels.theme, exact: true }),
-        ).toHaveAttribute("aria-checked", "true");
-        await page.locator("details.settings-advanced").evaluateAll((nodes) => {
-          for (const node of nodes) (node as HTMLDetailsElement).open = true;
-        });
+          page.getByRole("button", { name: themeLabels.theme, exact: true }),
+        ).toHaveAttribute("aria-pressed", "true");
+        await expect(page.locator("details.settings-advanced")).toHaveCount(0);
         const brightness = page.locator('[data-setting-id="dark-lightness"]').getByRole("slider");
         if (theme === "light") await expect(brightness).toHaveAttribute("aria-disabled", "true");
         else await expect(brightness).not.toHaveAttribute("aria-disabled", "true");
@@ -124,27 +166,18 @@ for (const theme of ["light", "dark"])
       await page.emulateMedia({ reducedMotion: "reduce" });
       await page.goto(`/tests/browser/settings.html?section=mcp&mcp=1&theme=${theme}`);
       const connections = page.locator("#setting-mcp-servers");
-      const details = connections.locator("details:not(.settings-advanced)");
+      const details = connections.locator("section:has(> h3[aria-label])");
       await expect(details).toHaveCount(8);
       await expect(connections.getByRole("status")).toHaveText("1–8 of 25 connections");
       await page.screenshot({
         path: `temp/verification/2026-10-16-ui-system/W5a-SETTINGS-mcp-${theme}-${width}.png`,
       });
       const scroller = page.locator("[data-settings-scroller]");
-      if (width === 1440) {
-        const frame = await scroller.boundingBox();
-        const footer = await connections.getByRole("status").boundingBox();
-        expect(footer!.y + footer!.height).toBeLessThan(frame!.y + frame!.height);
-      }
       await connections.getByRole("button", { name: "Next", exact: true }).click();
       await expect(connections.getByRole("status")).toHaveText("9–16 of 25 connections");
       await connections.getByRole("searchbox", { name: "Search MCP servers" }).fill("server-24");
       await expect(details).toHaveCount(1);
       await expect(connections.getByRole("status")).toHaveText("1–1 of 1 connections");
-      const summary = details.locator("summary");
-      await summary.focus();
-      await page.keyboard.press("Enter");
-      await expect(details).toHaveAttribute("open", "");
       await expect(details.getByText(/config-24.json/)).toBeVisible();
       expect(await scroller.evaluate((node) => node.scrollWidth <= node.clientWidth + 1)).toBe(
         true,
@@ -152,7 +185,12 @@ for (const theme of ["light", "dark"])
       await connections.getByRole("searchbox").fill("missing-server");
       await expect(connections.getByText("No MCP servers match your search.")).toBeVisible();
       await connections.getByRole("searchbox").fill("");
-      await connections.getByRole("button", { name: /^Codex/ }).click();
+      const filters = connections.getByRole("button", { name: "Filters", exact: true });
+      await filters.click();
+      const filterDialog = page.getByRole("dialog", { name: "Filter MCP servers by provider" });
+      await filterDialog.getByRole("button", { name: /^Codex/ }).click();
+      await page.keyboard.press("Escape");
+      await expect(filters).toBeFocused();
       await expect(connections.getByRole("status")).toHaveText("1–8 of 12 connections");
       mkdirSync("temp/verification/2026-10-15-mcp", { recursive: true });
       await page.screenshot({ path: `temp/verification/2026-10-15-mcp/${theme}-${width}.png` });

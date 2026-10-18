@@ -1,18 +1,12 @@
 import { t, useLocale } from "../../../shared/i18n";
-import {
-  saveMaskEmails,
-  saveShowRemainingUsage,
-  useMaskEmails,
-  useShowRemainingUsage,
-} from "../../settings/model/displayPrefs";
-import { Group, Row, Toggle } from "../../settings/ui/settingsControls";
+import { saveShowRemainingUsage, useShowRemainingUsage } from "../../settings/model/displayPrefs";
+import { AdvancedSettings, Row, Toggle } from "../../settings/ui/settingsControls";
 
 export function UsageDisplaySettings() {
   useLocale();
   const showRemainingUsage = useShowRemainingUsage();
-  const maskEmails = useMaskEmails();
   return (
-    <Group title={t("Usage and privacy")}>
+    <AdvancedSettings title={t("Usage")} settingIds={["show-remaining-usage"]}>
       <Row
         id="show-remaining-usage"
         label={t("Show remaining usage")}
@@ -26,15 +20,6 @@ export function UsageDisplaySettings() {
           onChange={saveShowRemainingUsage}
         />
       </Row>
-      <Row
-        id="mask-emails"
-        label={t("Mask account emails")}
-        description={t(
-          "Blur account emails in Settings and the usage popover until you click one, so they stay out of screenshots.",
-        )}
-      >
-        <Toggle label={t("Mask account emails")} on={maskEmails} onChange={saveMaskEmails} />
-      </Row>
-    </Group>
+    </AdvancedSettings>
   );
 }

@@ -419,8 +419,8 @@ export function ExternalMcpAccess({ cwd }: { cwd: string }) {
               <span className={styles.metadata}>
                 {t("Expires")}: {new Date(grant.expiresAt).toLocaleString()}
               </span>
-              <details>
-                <summary>{t("Scopes")}</summary>
+              <section>
+                <h3>{t("Scopes")}</h3>
                 <span className={styles.metadata}>
                   {Object.entries(grant.scopes)
                     .map(
@@ -429,7 +429,7 @@ export function ExternalMcpAccess({ cwd }: { cwd: string }) {
                     )
                     .join(" · ")}
                 </span>
-              </details>
+              </section>
             </div>
             {grant.revokedAt === undefined && (
               <Button

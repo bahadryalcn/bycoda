@@ -13,7 +13,6 @@ import {
   isPiThinkingLevel,
 } from "./piProtocol";
 import { abortTextPromptRace } from "../../core/abortTextPrompt";
-import { mergeStream } from "../../core/streamText";
 import type { HarnessEvent } from "../../core/types";
 
 const INIT_TIMEOUT_MS = 15_000;
@@ -292,7 +291,7 @@ function handleFrame(session: LiveText, rec: Record<string, unknown>) {
   if (!session.collecting) return;
   const delta = assistantDeltaFromEvent(rec);
   if (delta?.kind === "text") {
-    session.output = mergeStream(session.output, delta.text);
+    session.output += delta.text;
     session.onEvent?.({ type: "message.delta", text: delta.text });
   } else if (delta?.kind === "thinking") {
     session.onEvent?.({ type: "reasoning.delta", text: delta.text });

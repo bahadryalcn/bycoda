@@ -1,6 +1,13 @@
 import { invoke } from "@tauri-apps/api/core";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { clearInboxCache, listInboxItems, listGithubWorkItems, peekInboxList } from "./githubTasks";
+import {
+  clearInboxCache,
+  inboxListFetchedAt,
+  inboxListIsFresh,
+  listInboxItems,
+  listGithubWorkItems,
+  peekInboxList,
+} from "./githubTasks";
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
 const query = { assignedToMe: false, state: "open", search: "" } as const;
@@ -39,10 +46,14 @@ it("fetches only PRs and reuses that list when the background requests both kind
 it("shares overlapping reads, respects freshness and allows explicit refresh", async () => {
   await Promise.all([listInboxItems(projects, query), listInboxItems(projects, query)]);
   expect(lists()).toHaveLength(2);
-  vi.advanceTimersByTime(119_999);
+  const fetchedAt = inboxListFetchedAt(projects, query);
+  vi.advanceTimersByTime(299_999);
   await listInboxItems(projects, query);
   expect(lists()).toHaveLength(2);
+  expect(inboxListIsFresh(projects, query)).toBe(true);
+  expect(inboxListFetchedAt(projects, query)).toBe(fetchedAt);
   vi.advanceTimersByTime(1);
+  expect(inboxListIsFresh(projects, query)).toBe(false);
   await listInboxItems(projects, query);
   expect(lists()).toHaveLength(4);
   await listInboxItems(projects, query, { force: true });
@@ -53,6 +64,24 @@ it("separates searches in the cache", async () => {
   await listGithubWorkItems("/app", "acme/app", { ...query, kind: "pr", search: "first" });
   await listGithubWorkItems("/app", "acme/app", { ...query, kind: "pr", search: "second" });
   expect(lists()).toHaveLength(2);
+});
+
+it("uses fifteen-minute freshness in the background without hiding stale data on entry", async () => {
+  await listInboxItems(projects, query);
+  const fetchedAt = inboxListFetchedAt(projects, query);
+  vi.advanceTimersByTime(6 * 60_000);
+  await listInboxItems(projects, query, { maxAgeMs: 15 * 60_000 });
+  expect(lists()).toHaveLength(2);
+  expect(inboxListFetchedAt(projects, query)).toBe(fetchedAt);
+  // Entering the Inbox uses its shorter five-minute freshness policy.
+  await listInboxItems(projects, query);
+  expect(lists()).toHaveLength(4);
+  vi.advanceTimersByTime(15 * 60_000 - 1);
+  await listInboxItems(projects, query, { maxAgeMs: 15 * 60_000 });
+  expect(lists()).toHaveLength(4);
+  vi.advanceTimersByTime(1);
+  await listInboxItems(projects, query, { maxAgeMs: 15 * 60_000 });
+  expect(lists()).toHaveLength(6);
 });
 
 it("keeps saved items visible when GitHub refresh fails", async () => {

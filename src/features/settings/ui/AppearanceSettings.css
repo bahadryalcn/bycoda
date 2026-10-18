@@ -1,32 +1,59 @@
 .appearance-settings {
   container: appearance / inline-size;
   display: grid;
-  gap: 24px;
+  gap: 32px;
   min-inline-size: 0;
 }
-.appearance-settings .appearance-tuning,
-.appearance-options {
+.appearance-save-note {
+  margin: 0;
+  color: var(--ui-text-secondary);
+  font-size: var(--ui-font-secondary);
+}
+.appearance-section {
+  min-inline-size: 0;
+}
+.appearance-section-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 16px;
+  margin-block-end: 16px;
+  padding-block-end: 12px;
+  border-block-end: 1px solid var(--color-stroke);
+}
+.appearance-section-heading h2 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--color-content);
+}
+.appearance-section-heading p {
+  margin: 0;
+  color: var(--ui-text-secondary);
+  font-size: var(--ui-font-secondary);
+  overflow-wrap: anywhere;
+}
+.appearance-section-body {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 25rem), 1fr));
   gap: 20px;
-  align-items: start;
+  min-inline-size: 0;
+}
+.appearance-settings .settings-advanced {
+  margin: 0;
+}
+.appearance-settings .settings-subheading {
+  padding-block: 0 10px;
 }
 .bycoda-settings-workbench .bycoda-settings-form .appearance-settings .settings-group {
   display: block;
   min-inline-size: 0;
   padding: 0;
   border: 0;
-  background: transparent;
 }
-.bycoda-settings-workbench .bycoda-settings-form .appearance-settings .settings-group-heading,
-.bycoda-settings-workbench
-  .bycoda-settings-form
-  .appearance-settings
-  .settings-group[data-settings-layout="full"]
-  > .settings-group-heading {
+.bycoda-settings-workbench .bycoda-settings-form .appearance-settings .settings-group-heading {
   flex-direction: row;
   gap: 8px;
-  padding-block-end: 12px;
+  padding-block: 0 10px;
 }
 .bycoda-settings-workbench .bycoda-settings-form .appearance-settings .settings-group-heading h2 {
   font-size: var(--ui-font-secondary);
@@ -37,11 +64,7 @@
   flex-wrap: wrap;
   align-items: center;
   gap: 12px 20px;
-  padding-block: 12px;
-  border: 0;
-}
-.appearance-settings .settings-row + .settings-row {
-  border-block-start: 1px solid var(--color-stroke);
+  padding: 14px 16px;
 }
 .bycoda-settings-workbench .bycoda-settings-form .appearance-settings .settings-row-label {
   flex: 1 1 180px;
@@ -50,9 +73,6 @@
   max-inline-size: 100%;
   align-self: center;
   justify-content: flex-start;
-}
-.appearance-options > details {
-  grid-column: 1 / -1;
 }
 .appearance-background-empty {
   display: grid;

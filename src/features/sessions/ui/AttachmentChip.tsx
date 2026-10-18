@@ -20,11 +20,19 @@ type Props = {
   onRemove?: () => void;
   /** The token that refers to this attachment in the message text. */
   token?: string;
+  /** Transcript thumbnails keep their reference inside the image, saving a caption row. */
+  tokenLabelPlacement?: "below" | "overlay";
   /** Puts the token into the message text again. */
   onInsertToken?: () => void;
 };
 
-export function AttachmentChip({ attachment, onRemove, token, onInsertToken }: Props) {
+export function AttachmentChip({
+  attachment,
+  onRemove,
+  token,
+  tokenLabelPlacement = "below",
+  onInsertToken,
+}: Props) {
   useLocale();
   const [openedFile, setOpenedFile] = useState<Attachment | null>(null);
   const fileOpen = sameFilePreviewSource(openedFile, attachment);
@@ -52,7 +60,9 @@ export function AttachmentChip({ attachment, onRemove, token, onInsertToken }: P
     label && onInsertToken ? (
       <Button
         motion="none"
-        variant="ghost"
+        variant={image ? "link" : "ghost"}
+        layout={image ? "text" : undefined}
+        className={image ? "block w-14 max-w-14 truncate text-center" : undefined}
         type="button"
         title={t("Insert {p0} into the message", { p0: token })}
         aria-label={t("Insert {p0} into the message", { p0: token })}
@@ -63,10 +73,18 @@ export function AttachmentChip({ attachment, onRemove, token, onInsertToken }: P
           onInsertToken();
         }}
       >
-        {label}
+        <span className={image ? "text-(length:--ui-font-caption) leading-5" : undefined}>
+          {label}
+        </span>
       </Button>
     ) : label ? (
-      <span className={labelClass}>{label}</span>
+      <span
+        className={
+          image && tokenLabelPlacement === "overlay" ? "attachment-token-overlay" : labelClass
+        }
+      >
+        {label}
+      </span>
     ) : null;
 
   const chip = (
@@ -74,14 +92,15 @@ export function AttachmentChip({ attachment, onRemove, token, onInsertToken }: P
       <div
         data-attachment-chip={image ? "image" : "file"}
         className={`group relative flex min-w-0 items-center gap-1.5 rounded-md ${
-          image ? "" : "bg-(--ui-surface-raised) py-0.5 pl-1 pr-1"
+          image ? "w-14 shrink-0 flex-col gap-0" : "bg-(--ui-surface-raised) py-0.5 pl-1 pr-1"
         }`}
         title={attachment.path ?? attachment.name}
       >
         {image ? (
-          <span className="flex shrink-0 flex-col items-center gap-1">
+          <span className="relative flex w-full shrink-0 flex-col items-center">
             <Button
               motion="none"
+              layout="media"
               iconOnly
               label={t("Open {p0} full screen", { p0: attachment.name })}
               variant="ghost"
@@ -147,10 +166,11 @@ export function AttachmentChip({ attachment, onRemove, token, onInsertToken }: P
         {onRemove ? (
           <Button
             motion="none"
-            className="shrink-0"
+            className={image ? "absolute right-0.5 top-0.5 z-10 shrink-0" : "shrink-0"}
             iconOnly
             label={t("Remove {p0}", { p0: attachment.name })}
-            variant="ghost"
+            variant={image ? "secondary" : "ghost"}
+            shape={image ? "pill" : "default"}
             type="button"
             title={t("Remove")}
             aria-label={t("Remove {p0}", { p0: attachment.name })}

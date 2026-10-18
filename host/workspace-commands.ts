@@ -1,6 +1,6 @@
 import { execFileAsync as exec } from "../src/shared/lib/processExecution.node";
 import { constants } from "node:fs";
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import {
   cp,
   lstat,
@@ -348,7 +348,7 @@ export class WorkspaceCommands {
     const find = (roots: string[]) => {
       for (const root of roots) {
         const rel = relative(root, actual);
-        if (rel !== "" && (rel.startsWith("..") || isAbsolute(rel))) continue;
+        if (rel === ".." || /^\.\.[\\/]/.test(rel) || isAbsolute(rel)) continue;
         if (!found || rel.length < found.relative.length) found = { root, relative: rel };
       }
     };
@@ -566,20 +566,24 @@ export class WorkspaceCommands {
       throw new Error(`File is too large to save (maximum ${MAX_TEXT_FILE / 1024 / 1024} MB).`);
     const { root, relative: rel } = await this.locate(input);
     const path = workspacePath(root, rel);
-    if (
-      await stat(path).then(
-        (info) => info.isDirectory(),
-        () => false,
-      )
-    )
-      throw new Error("Cannot save text to a directory.");
+    const previous = await stat(path).catch((error: NodeJS.ErrnoException) => {
+      if (error.code !== "ENOENT") throw error;
+      return undefined;
+    });
+    if (previous?.isDirectory()) throw new Error("Cannot save text to a directory.");
     // Replace atomically, as the local command does.
-    const temporary = `${path}.bycoda-${process.pid}-${Date.now()}`;
-    await writeFile(temporary, content, "utf8");
-    await rename(temporary, path).catch(async (reason) => {
+    const temporary = `${path}.bycoda-${randomUUID()}`;
+    const handle = await open(temporary, "wx", previous?.mode);
+    try {
+      await handle.writeFile(content, "utf8");
+      if (previous) await handle.chmod(previous.mode);
+      await handle.close();
+      await rename(temporary, path);
+    } catch (reason) {
+      await handle.close().catch(() => {});
       await rm(temporary, { force: true });
       throw reason;
-    });
+    }
     invalidateHostFilePaths(root);
   }
 
@@ -1082,7 +1086,7 @@ export class WorkspaceCommands {
       defaultRoot: listed.defaultRoot,
       worktrees: listed.worktrees.map((tree) => ({
         ...tree,
-        locked: false,
+        locked: tree.locked,
         prunable: tree.missing,
         dirty: null,
         unpushed: null,

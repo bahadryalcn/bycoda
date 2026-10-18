@@ -31,8 +31,12 @@ export const REMOTE_QUEUE_MAX_BYTES = 32 * 1024 * 1024;
  * queues are never truncated; a full queue leaves the next draft in the composer. */
 export function canEnqueueRemoteMessage(queue: RemoteQueue, message: RemoteQueueDraft): boolean {
   if (queue.messages.length >= REMOTE_QUEUE_MAX_MESSAGES) return false;
+  return queueWithinByteLimit([...queue.messages, message]);
+}
+
+function queueWithinByteLimit(messages: readonly RemoteQueueDraft[]): boolean {
   let bytes = 0;
-  for (const entry of [...queue.messages, message]) {
+  for (const entry of messages) {
     bytes += entry.text.length * 3;
     for (const attachment of entry.attachments) {
       bytes += (attachment.data?.length ?? 0) * 2;
@@ -66,8 +70,8 @@ export function enqueueRemoteMessage(queue: RemoteQueue, message: RemoteQueueDra
   return {
     ...queue,
     messages: [...queue.messages, message],
-    // A paused queue stays paused; adding to it is not a reason to restart it.
-    status: queue.status === "paused" ? "paused" : "active",
+    // Adding work never releases a queue held for owner review.
+    status: queue.status === "paused" || queue.status === "restored" ? queue.status : "active",
   };
 }
 
@@ -86,11 +90,13 @@ export function editRemoteMessage(
   text: string,
   attachments: Attachment[],
 ): RemoteQueue {
+  const messages = queue.messages.map((entry) =>
+    entry.id === messageId ? applyQueuedEdit(entry, { text, attachments }) : entry,
+  );
+  if (!queueWithinByteLimit(messages)) throw new Error("Remote queue is full");
   return {
     ...queue,
-    messages: queue.messages.map((entry) =>
-      entry.id === messageId ? applyQueuedEdit(entry, { text, attachments }) : entry,
-    ),
+    messages,
     editingId: undefined,
   };
 }

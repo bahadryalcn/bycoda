@@ -46,7 +46,14 @@ import { HostStore } from "./store";
 import { parseRemoteAttachments, resolveAttachments } from "./attachments";
 import { runHostShell } from "./shell";
 import { prepareHostSkillPrompt } from "./prompt-skills";
-import { socialBridge, socialCliHint } from "../src/integrations/harness/core/socialBridge";
+import {
+  forgetRuntimeHint,
+  harnessRuntimeHints,
+  markRuntimeHintDelivered,
+  pendingRuntimeHint,
+  turnCarriesRuntimeHint,
+  withRuntimeHint,
+} from "../src/integrations/harness/core/runtimeGuidance";
 import {
   canRewindConversation,
   markConversationTurnStopped,
@@ -55,7 +62,10 @@ import {
   rewindConversationBeforeMessage,
 } from "../src/features/sessions/model/conversationRewind";
 import { conversationRewindStrategy } from "../src/features/sessions/model/conversationRewindStrategy";
-import { canClearConversation, clearConversation } from "../src/features/sessions/model/clearConversation";
+import {
+  canClearConversation,
+  clearConversation,
+} from "../src/features/sessions/model/clearConversation";
 import { isClearSessionCommand } from "../src/features/sessions/model/newSessionCommand";
 import {
   SHELL_COMMAND_LIMIT,
@@ -223,7 +233,8 @@ export function parseCommand(input: unknown): HostCommand {
     if (
       v.expectedRevision !== undefined &&
       (!Number.isSafeInteger(v.expectedRevision) || Number(v.expectedRevision) < 0)
-    ) throw new Error("Invalid expected session revision");
+    )
+      throw new Error("Invalid expected session revision");
     return {
       type: "rewind",
       commandId,
@@ -342,7 +353,10 @@ export class HostEngine {
     private readonly shell: (cwd: string, command: string) => Promise<ShellResult> = runHostShell,
   ) {
     const checkpointRoot = join(dirname(store.attachmentDir), "checkpoints");
-    this.checkpoints = new HostCheckpoints(checkpointRoot, process.env.VITEST ? undefined : join(homedir(), ".bycoda-host", "checkpoint-active"));
+    this.checkpoints = new HostCheckpoints(
+      checkpointRoot,
+      process.env.VITEST ? undefined : join(homedir(), ".bycoda-host", "checkpoint-active"),
+    );
     // Provider dispatch is not transactional with SQLite. Never replay a send
     // automatically after a crash; its external effects may already exist.
     // Only sessions that need rewriting are parsed; the rest are bound from
@@ -380,7 +394,9 @@ export class HostEngine {
           { type: "shell.interrupted" },
         );
       if (value.status === "running") {
-        void this.checkpoints.recover(value.session.id, value.session.cwd).catch((error) => console.warn("Checkpoint recovery failed", error));
+        void this.checkpoints
+          .recover(value.session.id, value.session.cwd)
+          .catch((error) => console.warn("Checkpoint recovery failed", error));
         this.save(
           this.settled(
             value,
@@ -445,8 +461,7 @@ export class HostEngine {
   /** Takes over a session the desktop app created: same id, then host-owned. */
   adoptSession(snapshot: HostSession): HostSession {
     const id = snapshot.session.id;
-    if (this.rewinding.has(id))
-      throw new Error("A conversation change is in progress");
+    if (this.rewinding.has(id)) throw new Error("A conversation change is in progress");
     if (snapshot.status === "running")
       throw new Error("This session is running in bycoda on that computer. Wait for it to finish.");
     const provider = this.provider(snapshot.session.harness);
@@ -563,7 +578,9 @@ export class HostEngine {
           updatedAt: snapshot.updatedAt,
           // Matching again only when both transcripts are now the same one.
           revision:
-            accepted || synced || (same && !stale) ? current.revision + 1 : current.desktop.revision,
+            accepted || synced || (same && !stale)
+              ? current.revision + 1
+              : current.desktop.revision,
         },
       },
       { type: accepted ? "desktopRefreshed" : same ? "desktopSeen" : "desktopDiverged" },
@@ -628,7 +645,9 @@ export class HostEngine {
           await provider.stop(id);
           this.flush(id);
           const latest = this.store.session(id);
-          await this.checkpoints.finish(id, latest.session.cwd, runId).catch((error) => console.warn("Workspace checkpoint failed", error));
+          await this.checkpoints
+            .finish(id, latest.session.cwd, runId)
+            .catch((error) => console.warn("Workspace checkpoint failed", error));
           if (latest.runId === runId && latest.status === "running")
             this.save(
               this.settled(
@@ -882,9 +901,8 @@ export class HostEngine {
           // Read before the turn's own block lands after them.
           let handoffText: string | undefined;
           let handoffFrom: RemoteProvider | undefined;
-          const rewindReplay = command.type === "send"
-            ? conversationReplayPrompt(value.session)
-            : "";
+          const rewindReplay =
+            command.type === "send" ? conversationReplayPrompt(value.session) : "";
           if (command.type === "send" && value.session.pendingSwitch) {
             const from = value.session.pendingSwitch.from;
             const brief = buildDeterministicHandoff(value.session, command.text);
@@ -979,21 +997,27 @@ export class HostEngine {
             },
           };
           effect = (saved) => {
+            const handoffBlock = handoffText
+              ? `<previous_agent_context>\n${handoffText}\n</previous_agent_context>\n\n`
+              : "";
+            // Codex parses /goal only as the first token; context travels separately.
+            const codexGoal =
+              command.type === "send" &&
+              saved.session.harness === "codex" &&
+              /^\s*\/goal(?=\s|$)/.test(command.text);
             this.run(
               saved,
               command.type === "compact"
                 ? null
-                : withShellContext(
-                    shellRuns,
-                    handoffText
-                      ? `<previous_agent_context>\n${handoffText}\n</previous_agent_context>\n\n${command.text}`
-                      : command.text,
-                  ),
+                : codexGoal
+                  ? command.text
+                  : withShellContext(shellRuns, `${handoffBlock}${command.text}`),
               command.type === "send" ? command.intent : undefined,
               attachments,
               command.resumeAtReset,
               handoffText ? handoffFrom : undefined,
               rewindReplay,
+              codexGoal ? withShellContext(shellRuns, handoffBlock).trim() : "",
             );
             if (firstTurn && command.type === "send") {
               this.generateFirstTurnNames(saved, command.text, placeholderTitle);
@@ -1156,29 +1180,50 @@ export class HostEngine {
   async clearConversation(raw: unknown): Promise<CommandReceipt> {
     if (this.closing) throw new Error("Host is stopping");
     const command = parseCommand(raw);
-    if (command.type !== "send" || !isClearSessionCommand(command.text) || command.attachments?.length)
+    if (
+      command.type !== "send" ||
+      !isClearSessionCommand(command.text) ||
+      command.attachments?.length
+    )
       throw new Error("Invalid clear command");
     const signature = createHash("sha256").update(JSON.stringify(command)).digest("hex");
     const previous = this.store.receipt(command.commandId, signature);
     if (previous) return previous;
-    if (this.rewinding.has(command.sessionId)) throw new Error("A conversation change is in progress");
+    if (this.rewinding.has(command.sessionId))
+      throw new Error("A conversation change is in progress");
     this.rewinding.add(command.sessionId);
     try {
       this.flush(command.sessionId);
       const initial = this.store.session(command.sessionId);
-      if (initial.status === "running" || this.running.has(command.sessionId) || !canClearConversation(initial.session))
-        throw new Error("Stop the current turn and resolve pending messages before clearing the conversation");
+      if (
+        initial.status === "running" ||
+        this.running.has(command.sessionId) ||
+        !canClearConversation(initial.session)
+      )
+        throw new Error(
+          "Stop the current turn and resolve pending messages before clearing the conversation",
+        );
       await this.provider(initial.session.harness).stop(command.sessionId);
-      if (initial.session.pendingSwitch && initial.session.pendingSwitch.from !== initial.session.harness)
+      if (
+        initial.session.pendingSwitch &&
+        initial.session.pendingSwitch.from !== initial.session.harness
+      )
         await this.provider(initial.session.pendingSwitch.from).stop(command.sessionId);
       return this.store.transaction(() => {
         const latest = this.store.session(command.sessionId);
-        if (latest.revision !== initial.revision) throw new Error("The conversation changed while clearing");
-        const saved = this.save({ ...latest, session: clearConversation(latest.session), status: "idle" },
-          { type: "conversation.cleared", commandId: command.commandId });
+        if (latest.revision !== initial.revision)
+          throw new Error("The conversation changed while clearing");
+        const saved = this.save(
+          { ...latest, session: clearConversation(latest.session), status: "idle" },
+          { type: "conversation.cleared", commandId: command.commandId },
+        );
         const live = this.live.get(command.sessionId);
         if (live) live.value = saved;
-        const receipt = { commandId: command.commandId, sessionId: command.sessionId, revision: saved.revision };
+        const receipt = {
+          commandId: command.commandId,
+          sessionId: command.sessionId,
+          revision: saved.revision,
+        };
         this.store.recordReceipt(signature, receipt);
         return receipt;
       });
@@ -1195,17 +1240,16 @@ export class HostEngine {
     const signature = createHash("sha256").update(JSON.stringify(command)).digest("hex");
     const previous = this.store.receipt(command.commandId, signature);
     if (previous) return previous;
-    if (this.rewinding.has(command.sessionId)) throw new Error("Another conversation change is in progress");
+    if (this.rewinding.has(command.sessionId))
+      throw new Error("Another conversation change is in progress");
     this.rewinding.add(command.sessionId);
     let nativeRewindApplied = false;
     let nativeProvider: HostProvider | undefined;
     try {
       this.flush(command.sessionId);
       const initial = this.store.session(command.sessionId);
-      if (
-        command.expectedRevision !== undefined &&
-        initial.revision !== command.expectedRevision
-      ) throw new Error("The conversation changed; refresh before rewinding");
+      if (command.expectedRevision !== undefined && initial.revision !== command.expectedRevision)
+        throw new Error("The conversation changed; refresh before rewinding");
       if (initial.status === "running" || this.running.has(command.sessionId))
         throw new Error("Stop the current turn before rewinding the conversation");
       if (!canRewindConversation(initial.session, command.blockId))
@@ -1219,6 +1263,8 @@ export class HostEngine {
         !!provider.rewind && !!initial.session.providerSessionId,
       );
       let nativeProviderSessionId: string | undefined;
+      // The removed turns may have carried the runtime hint; resend it next turn.
+      forgetRuntimeHint(command.sessionId);
       if (strategy.preserveProviderBinding && provider.rewind) {
         await provider.rewind({
           sessionId: command.sessionId,
@@ -1242,7 +1288,11 @@ export class HostEngine {
         await provider.stop(command.sessionId);
       }
       const current = this.store.session(command.sessionId);
-      if (current.revision !== revision || current.status === "running" || this.running.has(command.sessionId))
+      if (
+        current.revision !== revision ||
+        current.status === "running" ||
+        this.running.has(command.sessionId)
+      )
         throw new Error("The conversation changed while rewind was preparing");
       if (!canRewindConversation(current.session, command.blockId))
         throw new Error("This conversation cannot be rewound at the selected message");
@@ -1263,7 +1313,11 @@ export class HostEngine {
           { ...latest, session: rewound, revision: latest.revision + 1, updatedAt: Date.now() },
           { type: "conversation.rewound", commandId: command.commandId, blockId: command.blockId },
         );
-        const receipt = { commandId: command.commandId, sessionId: value.session.id, revision: value.revision };
+        const receipt = {
+          commandId: command.commandId,
+          sessionId: value.session.id,
+          revision: value.revision,
+        };
         this.store.recordReceipt(signature, receipt);
         return { receipt, saved: value };
       });
@@ -1433,7 +1487,8 @@ export class HostEngine {
       latest.runId !== runId ||
       latest.status !== "running" ||
       latest.session.pendingContextReplay !== replay
-    ) return;
+    )
+      return;
     const saved = this.save(
       { ...latest, session: { ...latest.session, pendingContextReplay: undefined } },
       { type: "conversation.replayAccepted", runId },
@@ -1450,6 +1505,8 @@ export class HostEngine {
     resumeAtReset?: boolean,
     resetConversationFrom?: RemoteProvider,
     rewindReplay = "",
+    /** Shell/handoff context kept out of a leading Codex /goal command. */
+    goalContext = "",
   ): void {
     const { session, runId } = value;
     const provider = this.provider(session.harness);
@@ -1484,6 +1541,7 @@ export class HostEngine {
             // A provider may still have the binding from an earlier stint in
             // this chat. A handoff starts a new conversation with its recap.
             if (resetConversationFrom) {
+              forgetRuntimeHint(session.id);
               if (resetConversationFrom !== session.harness)
                 await this.provider(resetConversationFrom).stop(session.id);
               await provider.stop(session.id);
@@ -1517,25 +1575,57 @@ export class HostEngine {
                   event.type === "message.delta" ||
                   event.type === "reasoning.delta" ||
                   event.type === "tool.started"
-                ) acceptReplay();
+                )
+                  acceptReplay();
                 this.event(session.id, runId!, event);
               },
             };
-            if (prompt === null) await provider.compact!(input);
-            else {
+            if (prompt === null) {
+              await provider.compact!(input);
+              forgetRuntimeHint(session.id);
+            } else {
               const preparedPrompt =
                 /(^|\s)[/$][A-Za-z0-9][A-Za-z0-9_.:-]*(?=\s|$)/.test(prompt) &&
                 !(session.harness === "codex" && /^\s*\/goal(?:\s|$)/.test(prompt))
                   ? await prepareHostSkillPrompt(prompt, session.cwd)
                   : prompt;
               if (this.closing || active.cancelled) throw new Error("Turn cancelled");
-              const runtimeInstructions = socialCliHint(await socialBridge(session.id));
+              const thread = {
+                harness: session.harness,
+                providerAccountId: session.providerAccountId,
+              };
+              const hint = pendingRuntimeHint(
+                session.id,
+                thread,
+                await harnessRuntimeHints(session.id),
+              );
+              const codex = session.harness === "codex";
+              // Codex parses /goal only as the first token; carry replayed
+              // context as runtime instructions instead of prefixing it.
+              const codexGoal = codex && /^\s*\/goal(?=\s|$)/.test(preparedPrompt);
+              const body = codexGoal
+                ? preparedPrompt
+                : [rewindReplay, preparedPrompt].filter(Boolean).join("\n\n");
+              const text = codex ? body : withRuntimeHint(session.harness, body, hint);
+              const deliversHint = turnCarriesRuntimeHint(session.harness, body, text, hint);
+              const runtimeInstructions = [
+                hint,
+                codexGoal ? goalContext : "",
+                codexGoal ? rewindReplay : "",
+              ]
+                .filter(Boolean)
+                .join("\n\n");
+              const markHint = () => {
+                if (deliversHint) markRuntimeHintDelivered(session.id, thread, hint);
+              };
               const providerInput: SendTurnInput = {
                 ...input,
-                onAccepted: acceptReplay,
-                ...(session.harness === "codex"
-                  ? { text: [rewindReplay, preparedPrompt].filter(Boolean).join("\n\n"), runtimeInstructions: runtimeInstructions || undefined }
-                  : { text: [runtimeInstructions, rewindReplay, preparedPrompt].filter(Boolean).join("\n\n") }),
+                onAccepted: () => {
+                  markHint();
+                  acceptReplay();
+                },
+                text,
+                ...(codex && runtimeInstructions ? { runtimeInstructions } : {}),
                 // Async so a 20 MB image does not stall every other RPC.
                 attachments:
                   attachments &&
@@ -1552,6 +1642,7 @@ export class HostEngine {
               };
               if (this.closing || active.cancelled) throw new Error("Turn cancelled");
               await provider.send(providerInput);
+              markHint();
               acceptReplay();
             }
           }
@@ -1565,7 +1656,9 @@ export class HostEngine {
         await provider.stop(session.id);
         // Retire outstanding delivery work before exposing an idle session.
         await active.steers;
-        await this.checkpoints.finish(session.id, session.cwd, runId!).catch((reason) => console.warn("Workspace checkpoint failed", reason));
+        await this.checkpoints
+          .finish(session.id, session.cwd, runId!)
+          .catch((reason) => console.warn("Workspace checkpoint failed", reason));
         this.flush(session.id);
         this.live.delete(session.id);
         const latest = this.store.session(session.id);
@@ -1617,11 +1710,16 @@ export class HostEngine {
   private event(id: string, runId: string, event: HarnessEvent): void {
     const live = this.live.get(id);
     if (!live || live.value.runId !== runId || live.value.status !== "running") return;
-    if (event.type === "tool.updated" && (event.status === "completed" || event.status === "success")
-      && isEditTool(event.kind, event.title, event.preview)) {
+    if (
+      event.type === "tool.updated" &&
+      (event.status === "completed" || event.status === "success") &&
+      isEditTool(event.kind, event.title, event.preview)
+    ) {
       const paths = [...(event.paths ?? []), ...(event.preview?.path ? [event.preview.path] : [])];
-      if (paths.length) void this.checkpoints.claim(id, live.value.session.cwd, runId, paths)
-        .catch((error) => console.warn("Checkpoint tool attribution failed", error));
+      if (paths.length)
+        void this.checkpoints
+          .claim(id, live.value.session.cwd, runId, paths)
+          .catch((error) => console.warn("Checkpoint tool attribution failed", error));
     }
     // The host cannot read the desktop's settings; the turn carried them.
     const session = applyHarnessEvent(live.value.session, event, {

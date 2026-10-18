@@ -1,6 +1,6 @@
 import { expect, it } from "vitest";
 import { newSession } from "./session";
-import { sessionIssue } from "./sessionIssue";
+import { sessionIssue, sessionRetryNotice } from "./sessionIssue";
 import { liveAgentsFromSessions } from "./liveAgents";
 import { liveSessionInfos } from "./recentSessions";
 import { historyWithLiveSessions, summaryFromSession } from "../data/sessionHistory";
@@ -10,6 +10,22 @@ import {
   applyHarnessEvents,
   stopStreaming,
 } from "../../../integrations/harness/core/apply";
+
+it.each([
+  ["Reconnecting... 3/5", true, "3/5"],
+  ["Reconnecting… 2/5", true, "2/5"],
+  ["Reconnecting…", true, undefined],
+  ["Retrying (2/3)…", false, "2/3"],
+  ["Retrying (1/3)...", false, "1/3"],
+  ["Retrying (attempt 2): Service unavailable", false, "Retrying (attempt 2): Service unavailable"],
+  ["Reconnecting to the MCP server failed", false, "Reconnecting to the MCP server failed"],
+  ["Temporary service interruption", false, "Temporary service interruption"],
+] as const)(
+  "formats provider retry notice %s without losing error details",
+  (message, reconnecting, detail) => {
+    expect(sessionRetryNotice(message)).toEqual({ reconnecting, detail });
+  },
+);
 
 it("shows retries without interrupting the transcript and clears them on streaming progress", () => {
   const working = appendUser(newSession("codex", "/repo"), "go");

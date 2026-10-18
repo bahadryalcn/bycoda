@@ -59,8 +59,9 @@ export function rebasePath(path: string, from: string, to: string): string {
   const key = pathKey(normalized);
   const sourceKey = pathKey(source);
   if (key === sourceKey) return /^[A-Za-z]:$/.test(dest) ? `${dest}/` : dest;
-  if (key.startsWith(`${sourceKey}/`)) {
-    return `${dest}${normalized.slice(source.length)}`;
+  const prefix = sourceKey === "/" ? "/" : `${sourceKey}/`;
+  if (key.startsWith(prefix)) {
+    return joinPath(dest, normalized.slice(prefix.length));
   }
   return slash(path);
 }
@@ -70,7 +71,7 @@ export function isEqualOrInside(path: string, root: string): boolean {
   const base = trimSlash(root);
   const key = pathKey(normalized);
   const baseKey = pathKey(base);
-  return key === baseKey || key.startsWith(`${baseKey}/`);
+  return key === baseKey || key.startsWith(baseKey === "/" ? "/" : `${baseKey}/`);
 }
 
 export function joinPath(parent: string, relative: string): string {
@@ -130,8 +131,7 @@ export function resolveDocumentImage(
   const path = value.startsWith("/")
     ? joinPath(base, value)
     : joinPath(parentPath(documentPath), value);
-  if (!isEqualOrInside(path, base) || pathKey(path) === pathKey(base))
-    return undefined;
+  if (!isEqualOrInside(path, base) || pathKey(path) === pathKey(base)) return undefined;
   if (!DOCUMENT_IMAGE_EXTENSION.test(path)) return undefined;
   const relative = path.slice(base.length).replace(/^\/+/, "");
   return relative ? { path, relative } : undefined;

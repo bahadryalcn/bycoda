@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.20]
+
+### Reliability and data preservation
+
+- Preserve unsaved note drafts through failed saves and reconcile external note updates without silently overwriting local edits.
+- Drain in-flight composer draft writes and retain failed writes for retry.
+- Preserve repeated provider stream deltas and restored remote queue holds; enforce queue limits when editing messages.
+- Keep active automation runs and daily limits reliable beyond displayed history, and retain input-needed state when overlap is skipped.
+- Preserve concurrent remote saves and Unix file permissions; enforce busy-project guards for stash operations.
+- Correct remote search, recursive filters, untracked-file coverage, path containment, worktree locks and Git diff accounting.
+- Keep overnight frequency campaigns on schedule and reject frequencies that exceed minute-level scheduling capacity.
+
+### Workspace and shared controls
+
+- Refresh inline editors after cancellation and preserve drafts during IME composition.
+- Run file-preview regular expressions outside the UI thread with bounded execution and cancellation.
+- Restore native radio-group and disclosure keyboard traversal in modals; cancel slider gestures when disabled.
+- Centralize image-preview action layout and review shared UI ownership boundaries.
+- Include accumulated settings, usage, connection, workspace, transcript and host-tool improvements with expanded regression coverage.
+
 ## [0.6.13]
 
 ### Recovery controls and synchronization

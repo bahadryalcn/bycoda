@@ -266,6 +266,7 @@ function FieldFamiliesFixture() {
         />
         <PasswordField
           label="Fixture credential"
+          description="This credential is used only by the local fixture."
           name="secret"
           defaultValue="fixture-only-value"
           required

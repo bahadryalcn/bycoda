@@ -4,6 +4,7 @@ import { useState, type ReactNode } from "react";
 import { Folder, Lock, LockOpen, Shield } from "../../../shared/ui/icons";
 import "./GroupPrivacy.css";
 import { SecondaryButton } from "../../../shared/ui/SecondaryButton";
+import { Badge } from "../../../shared/ui/Badge";
 import { useGroupLock } from "../hooks/useGroupLock";
 import { AUTO_LOCK_MINUTES, autoLockLabel, parseAutoLockMinutes } from "../model/autoLock";
 import {
@@ -27,6 +28,7 @@ export type GroupLockControls = {
     id?: string;
     title: ReactNode;
     description?: string;
+    action?: ReactNode;
     children: ReactNode;
   }) => ReactNode;
   Row: (props: {
@@ -86,22 +88,16 @@ export function GroupLockSettings({
             {t("Lock password")}
           </span>
         }
-        description={t(
-          "One password for your protected groups on this computer. Project files and transcripts on disk are not encrypted.",
-        )}
       >
         {lock.hasPassword ? (
           <>
-            <Row
-              label={<span className="privacy-status">{t("Password is set")}</span>}
-              description={t("Required to unlock groups and reveal hidden names.")}
-            >
+            <Row label={<span className="privacy-status">{t("Password is set")}</span>}>
               <SecondaryButton onClick={() => setDialog({ kind: "change" })}>
                 {t("Change password…")}
               </SecondaryButton>
             </Row>
-            <details className="privacy-recovery">
-              <summary>{t("Password recovery & removal")}</summary>
+            <section className="privacy-recovery">
+              <h3>{t("Password recovery & removal")}</h3>
               <Row
                 label={t("Remove protection")}
                 description={t("Removes the password and all group locks.")}
@@ -120,7 +116,7 @@ export function GroupLockSettings({
                   {t("Forgot password…")}
                 </SecondaryButton>
               </Row>
-            </details>
+            </section>
           </>
         ) : (
           <Row
@@ -133,7 +129,7 @@ export function GroupLockSettings({
           </Row>
         )}
         <AdvancedSettings
-          title={t("Advanced: automatic locking")}
+          title={t("Automatic locking")}
           settingIds={[
             "group-lock-options",
             "group-lock-startup",
@@ -187,72 +183,76 @@ export function GroupLockSettings({
         </AdvancedSettings>
       </Group>
 
-      <HiddenGroupsSettings controls={{ Group, Row }} />
-
       <Group
         id="group-lock-groups"
-        title={t("Group protection")}
-        description={t(
-          "Enable password protection for individual groups. To hide a group’s name too, choose Hide group from its menu.",
-        )}
-      >
-        {listedGroups.length === 0 ? (
-          <Row
-            label={lock.groups.length === 0 ? t("No groups yet") : t("All groups are hidden")}
-            description={
-              lock.groups.length === 0
-                ? t("Create a group in the project list to configure protection.")
-                : t("Manage them in Hidden groups above.")
+        title={
+          <span className="privacy-heading">
+            {t("Group protection")}
+            <Badge>{listedGroups.length}</Badge>
+          </span>
+        }
+        description={t("Choose which groups require your password.")}
+        action={
+          <SecondaryButton
+            disabled={!hasLockable}
+            tooltip={
+              hasLockable
+                ? t("Also hides groups that are temporarily visible.")
+                : t("Protect or hide a group first to use Lock all groups.")
             }
-          />
-        ) : (
-          listedGroups.map((group) => {
-            const locked = lock.lock.lockedGroupIds.has(group.id);
-            return (
-              <Row
-                key={group.id}
-                label={
-                  <span className="privacy-group-name">
-                    <span className="privacy-group-icon" aria-hidden>
-                      {locked ? (
-                        <Lock className="size-3.5 text-content/55" strokeWidth={1.75} />
-                      ) : group.lockable ? (
-                        <LockOpen className="size-3.5 text-content/55" strokeWidth={1.75} />
-                      ) : (
-                        <Folder className="size-3.5" />
-                      )}
-                    </span>
-                    <span className="privacy-group-title">{group.name}</span>
-                    <span className="privacy-group-state">
-                      {locked ? t("Locked") : group.lockable ? t("Unlocked") : t("Not protected")}
-                    </span>
-                  </span>
-                }
-              >
-                <span className="privacy-control-label">{t("Password lock")}</span>
-                <Toggle
-                  label={t("{p0} is lockable", { p0: group.name })}
-                  on={group.lockable === true}
-                  onChange={(on) => toggleLockable(group.id, group.name, on)}
-                />
-              </Row>
-            );
-          })
-        )}
-        <Row
-          label={t("Lock all groups")}
-          description={
-            hasLockable
-              ? t("Also hides groups that are temporarily visible.")
-              : t("Protect or hide a group first to use Lock all groups.")
-          }
-        >
-          <SecondaryButton disabled={!hasLockable} onClick={lockAllGroups}>
+            onClick={lockAllGroups}
+          >
             <Lock aria-hidden className="size-3.5" />
             {t("Lock all groups")}
           </SecondaryButton>
-        </Row>
+        }
+      >
+        <div className="privacy-group-list">
+          {listedGroups.length === 0 ? (
+            <Row
+              label={lock.groups.length === 0 ? t("No groups yet") : t("All groups are hidden")}
+              description={
+                lock.groups.length === 0
+                  ? t("Create a group in the project list to configure protection.")
+                  : t("Manage them in Hidden groups.")
+              }
+            />
+          ) : (
+            listedGroups.map((group) => {
+              const locked = lock.lock.lockedGroupIds.has(group.id);
+              return (
+                <Row
+                  key={group.id}
+                  label={
+                    <span className="privacy-group-name">
+                      <span className="privacy-group-icon" aria-hidden>
+                        {locked ? (
+                          <Lock className="size-3.5" strokeWidth={1.75} />
+                        ) : group.lockable ? (
+                          <LockOpen className="size-3.5" strokeWidth={1.75} />
+                        ) : (
+                          <Folder className="size-3.5" />
+                        )}
+                      </span>
+                      <span className="privacy-group-title">{group.name}</span>
+                      <Badge className="privacy-group-state">
+                        {locked ? t("Locked") : group.lockable ? t("Unlocked") : t("Not protected")}
+                      </Badge>
+                    </span>
+                  }
+                >
+                  <Toggle
+                    label={t("{p0} is lockable", { p0: group.name })}
+                    on={group.lockable === true}
+                    onChange={(on) => toggleLockable(group.id, group.name, on)}
+                  />
+                </Row>
+              );
+            })
+          )}
+        </div>
       </Group>
+      <HiddenGroupsSettings controls={{ Group, Row }} />
       <p className="privacy-footnote">
         {t("Privacy controls affect what appears in ")}
         {PRODUCT_IDENTITY.displayName}

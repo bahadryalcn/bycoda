@@ -105,6 +105,36 @@ test("working sessions and usage meters stay contained in narrow and short works
   const more = rail.getByRole("button", { name: "6 more", exact: true });
   await more.click();
   await expect(rail.locator("[data-live-agent-card]")).toHaveCount(8);
+  // The expanded list must scroll, never squeeze record rows until their text overlaps.
+  for (const height of [560, 800]) {
+    await page.setViewportSize({ width: 390, height });
+    await rail.evaluate((element) => {
+      element.style.width = "260px";
+    });
+    const geometry = await rail.locator("[data-live-agent-card]").evaluateAll((nodes) =>
+      nodes.map((node) => {
+        const row = node.getBoundingClientRect();
+        const title = node.querySelector("[data-live-agent-title]")!.getBoundingClientRect();
+        const details = node.querySelector("[data-live-agent-details]")!.getBoundingClientRect();
+        return {
+          top: row.top,
+          bottom: row.bottom,
+          titleBottom: title.bottom,
+          detailsTop: details.top,
+          detailsBottom: details.bottom,
+        };
+      }),
+    );
+    geometry.forEach((row, index) => {
+      expect(row.detailsTop).toBeGreaterThanOrEqual(row.titleBottom);
+      expect(row.detailsBottom).toBeLessThanOrEqual(row.bottom);
+      if (index > 0) expect(row.top).toBeGreaterThanOrEqual(geometry[index - 1].bottom);
+    });
+    const last = rail.locator("[data-live-agent-card]").last();
+    await last.focus();
+    await expect(last).toBeInViewport();
+    await page.screenshot({ path: testInfo.outputPath(`working-expanded-${height}.png`) });
+  }
   const less = rail.getByRole("button", { name: "Show less", exact: true });
   await expect(less).toBeInViewport();
   await less.click();

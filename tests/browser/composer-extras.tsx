@@ -162,6 +162,19 @@ function Fixture() {
         remoteSession={remoteLayout}
         remoteFeatures={remoteLayout ? { attachments: true, plan: true, draft: true } : undefined}
         context={chatLayout ? { used: 64000, window: 128000 } : undefined}
+        contextBlocks={
+          new URLSearchParams(location.search).has("response-speed")
+            ? [
+                {
+                  id: "measured-turn",
+                  role: "user",
+                  text: "Completed response",
+                  durationMs: 4000,
+                  turnMetrics: { outputTokens: 200 },
+                },
+              ]
+            : undefined
+        }
         compactSupported={chatLayout}
         onCompactContext={() => {
           setCompacted((count) => count + 1);

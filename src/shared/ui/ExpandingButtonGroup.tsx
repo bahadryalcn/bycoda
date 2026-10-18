@@ -6,6 +6,7 @@ import {
 export type {
   ExpandingButtonGroupProps,
   ExpandingButtonGroupItem,
+  ExpandingButtonGroupTriggerProps,
 } from "./arc/expanding-button-group/expanding-button-group";
 
 /** A small set of familiar commands; callbacks retain their async result contracts. */

@@ -135,8 +135,36 @@ describe("harness registry", () => {
     expect(sent.runtimeInstructions).toContain("social_policy_get");
     expect(sent.runtimeInstructions).toContain("runtime_logs_read");
     expect(sent.runtimeInstructions).toContain("conversation_tools_list");
-    expect(sent.runtimeInstructions).toContain("exact machineId");
-    expect(sent.runtimeInstructions).toContain("untrusted diagnostic data");
+    expect(sent.runtimeInstructions).toContain("untrusted data");
+  });
+  it("sends runtime hints on the first accepted turn only", async () => {
+    runtimeLogsBridgeMock.mockResolvedValue({ command: "/fake/node", args: ["/fake/host.mjs"] });
+    let accept = false;
+    const sendTurn = vi.fn(async (input: SendTurnInput) => {
+      if (accept) input.onAccepted?.();
+    });
+    registerHarness(stub("claude", { sendTurn }));
+    const send = (text: string) =>
+      sendHarnessTurn({
+        harness: "claude",
+        sessionId: "hint-once",
+        cwd: "/tmp",
+        model: "claude:test",
+        runtimeMode: "supervised",
+        text,
+        onEvent: vi.fn(),
+      });
+    await send("/compact");
+    await send("not accepted");
+    accept = true;
+    await send("first");
+    await send("second");
+    const texts = sendTurn.mock.calls.map(([input]) => input.text);
+    expect(texts[0]).toBe("/compact");
+    expect(texts[1]).toContain("runtime_logs_read");
+    expect(texts[2]).toContain("runtime_logs_read");
+    expect(texts[3]).toBe("second");
+    runtimeLogsBridgeMock.mockReset().mockResolvedValue(null);
   });
   it("gives CLI-only providers runtime log access instructions without credentials", async () => {
     runtimeLogsBridgeMock.mockResolvedValueOnce({
@@ -156,8 +184,9 @@ describe("harness registry", () => {
     });
     const text = sendTurn.mock.calls[0][0].text;
     expect(text).toContain("runtime_logs_read");
-    expect(text).toContain("runtime-logs <read|sources> --input -");
-    expect(text).toContain("untrusted diagnostic data");
+    expect(text).toContain("<group> <action> --input -");
+    expect(text).toContain("CLI group runtime-logs");
+    expect(text).toContain("untrusted data");
     expect(text).toContain("Inspect errors");
     expect(text).not.toContain("TOKEN");
   });

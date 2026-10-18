@@ -401,6 +401,49 @@ html[data-control-density="touch"] .bycoda-arc-switch {
 .bycoda-image-compare-picker:active {
   background: var(--color-selection-subtle);
 }
+
+/* Shared chart roles follow the selected account hue and the active bycoda theme. */
+.bycoda-chart-colors,
+.bycoda-arc-chart {
+  --ui-chart-heat-0: var(--ui-surface-muted);
+  --ui-chart-heat-1: color-mix(
+    in oklab,
+    var(--ui-chart-color, var(--color-accent)) 20%,
+    var(--ui-surface)
+  );
+  --ui-chart-heat-2: color-mix(
+    in oklab,
+    var(--ui-chart-color, var(--color-accent)) 40%,
+    var(--ui-surface)
+  );
+  --ui-chart-heat-3: color-mix(
+    in oklab,
+    var(--ui-chart-color, var(--color-accent)) 65%,
+    var(--ui-surface)
+  );
+  --ui-chart-heat-4: var(--ui-chart-color, var(--color-accent));
+  --ui-chart-bar: var(--ui-chart-color, var(--color-accent));
+  --ui-chart-bar-muted: color-mix(
+    in oklab,
+    var(--ui-chart-color, var(--color-accent)) 40%,
+    var(--ui-surface)
+  );
+  --ui-chart-area-fill: var(--ui-surface-selected);
+  --ui-chart-tooltip-secondary: color-mix(
+    in oklab,
+    var(--color-background-base) 68%,
+    var(--color-content)
+  );
+}
+.bycoda-arc-chart {
+  --accent: var(--ui-chart-color, var(--color-accent));
+  --series-1: var(--color-accent);
+  --series-2: var(--color-info);
+  --series-3: var(--color-success);
+  --series-4: var(--color-warning);
+  --text-2xl: var(--text-xl);
+  --text-3xl: var(--text-xl);
+}
 @media (hover: hover) and (pointer: fine) {
   .bycoda-image-compare-picker:hover {
     background: var(--color-selection-subtle);

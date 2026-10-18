@@ -84,6 +84,17 @@ function fixture(options: Partial<DevServersOptions> = {}) {
 }
 
 describe("host dev server management", () => {
+  it("associates dot-prefixed children without accepting parent or sibling paths", () => {
+    for (const [base, child, sibling] of [
+      ["C:\\work\\app", "C:\\work\\app\\..preview", "C:\\work\\app-other"],
+      ["/work/app", "/work/app/..preview", "/work/app-other"],
+    ]) {
+      const project = { id: "p", path: base };
+      expect(devServerProject(child, [project])).toBe(project);
+      expect(devServerProject(sibling, [project])).toBeUndefined();
+      expect(devServerProject(`${base}/..`, [project])).toBeUndefined();
+    }
+  });
   it("groups ports by process birth, associates only cwd, and marks uncertain projects", async () => {
     const { discovery, list } = fixture();
     discovery.live.set(102, {

@@ -1,5 +1,6 @@
 .project-notification-collection {
   background: var(--ui-surface);
+  border: 1px solid var(--color-stroke);
   border-radius: 8px;
   overflow: clip;
 }
@@ -41,6 +42,7 @@
   border: 0;
   margin: 0;
   padding: 0;
+  border-block-start: 1px solid var(--color-stroke);
 }
 
 .project-notification-item-heading {
@@ -79,6 +81,37 @@
 }
 
 .project-notification-categories {
-  padding-inline: 16px;
+  padding: 4px 16px;
   background: var(--ui-surface-muted);
+}
+
+.project-notification-category-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr));
+  column-gap: 32px;
+}
+
+.project-notification-category {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-block-size: 44px;
+  gap: 16px;
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--color-content);
+}
+
+.project-notification-mute-hint {
+  grid-column: 1 / -1;
+  padding-block: 8px;
+  color: var(--ui-text-secondary);
+  font-size: 12px;
+}
+
+.project-notification-footnote {
+  margin-block-start: 8px;
+  color: var(--ui-text-secondary);
+  font-size: 12px;
+  line-height: 1.5;
 }

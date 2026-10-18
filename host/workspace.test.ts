@@ -63,6 +63,80 @@ function reviewGit(root: string, ...args: string[]) {
   }).trim();
 }
 
+it("searches untracked files while respecting ignore rules", async () => {
+  const root = reviewRepo();
+  writeFileSync(join(root, "new.txt"), "needle-untracked");
+  writeFileSync(join(root, ".gitignore"), "ignored.txt\n");
+  writeFileSync(join(root, "ignored.txt"), "needle-untracked");
+  expect(
+    (await searchHostContent(root, { query: "needle-untracked" })).matches.map(
+      (match) => match.relative,
+    ),
+  ).toEqual(["new.txt"]);
+});
+
+it("handles zero-directory recursive globs and reports unsupported fallback regex", async () => {
+  const root = mkdtempSync(join(tmpdir(), "bycoda-search-fallback-"));
+  roots.push(root);
+  writeFileSync(join(root, "top.ts"), "needle");
+  mkdirSync(join(root, "src"));
+  writeFileSync(join(root, "src", "nested.ts"), "needle");
+  expect(
+    (await searchHostContent(root, { query: "needle", include: "**/*.ts" })).matches,
+  ).toHaveLength(2);
+  expect(
+    (await searchHostContent(root, { query: "needle", exclude: "**/*.ts" })).matches,
+  ).toHaveLength(0);
+  await expect(searchHostContent(root, { query: "need.*", regex: true })).rejects.toThrow(
+    "Regex search is unavailable",
+  );
+});
+
+it("counts staged lines before the first commit with lossless filenames", async () => {
+  const root = reviewRepo();
+  writeFileSync(join(root, "Türkçe.txt"), "one\ntwo\n");
+  reviewGit(root, "add", ".");
+  const index = await hostGitIndex(root);
+  expect(index.files[0]).toMatchObject({ relative: "Türkçe.txt", additions: 2, deletions: 0 });
+  expect(index.additions).toBe(2);
+});
+
+it("resolves staged rename bases and project-subdirectory diffs", async () => {
+  const root = reviewRepo();
+  mkdirSync(join(root, "app"));
+  writeFileSync(join(root, "app", "Türkçe.txt"), "before\n");
+  reviewGit(root, "add", ".");
+  reviewGit(
+    root,
+    "-c",
+    "user.name=Test",
+    "-c",
+    "user.email=test@example.invalid",
+    "-c",
+    "commit.gpgsign=false",
+    "commit",
+    "-qm",
+    "base",
+  );
+  const child = join(root, "app");
+  writeFileSync(join(child, "Türkçe.txt"), "after\n");
+  expect(await hostFileDiff(child, "Türkçe.txt", false)).toMatchObject({
+    original: "before\n",
+    current: "after\n",
+  });
+  expect((await hostGitIndex(child)).files[0]).toMatchObject({
+    relative: "Türkçe.txt",
+    additions: 1,
+    deletions: 1,
+  });
+  reviewGit(root, "checkout", "--", "app/Türkçe.txt");
+  reviewGit(root, "mv", "app/Türkçe.txt", "app/renamed.txt");
+  expect(await hostFileDiff(child, "renamed.txt", true)).toMatchObject({
+    original: "before\n",
+    current: "before\n",
+  });
+});
+
 it("stages, unstages and discards literal paths without touching matching names", async () => {
   const root = reviewRepo();
   for (const file of ["a[1].txt", "a1.txt"]) writeFileSync(join(root, file), "old\n");

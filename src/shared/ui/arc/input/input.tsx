@@ -1,7 +1,7 @@
 "use client";
 
 import { forwardRef, useId, useState } from "react";
-import type { InputHTMLAttributes } from "react";
+import type { InputHTMLAttributes, ReactNode } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { motionTokens } from "../lib/motion-tokens";
 import styles from "./input.module.css";
@@ -15,6 +15,8 @@ export interface InputProps extends InputHTMLAttributes<HTMLInputElement> {
   fieldClassName?: string;
   hideLabel?: boolean;
   clearable?: boolean;
+  /** A compact trailing icon action, separate from the label and messages. */
+  endAdornment?: ReactNode;
 }
 
 /* Digits roll up when a number grows and down when it shrinks; `custom` hands the latest direction to digits already leaving. */
@@ -211,6 +213,7 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(function Input(
     fieldClassName,
     hideLabel = false,
     clearable = false,
+    endAdornment,
     ...props
   },
   ref,
@@ -222,6 +225,20 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(function Input(
   const describedBy =
     [props["aria-describedby"], hintId, errorId].filter(Boolean).join(" ") || undefined;
   const Control = clearable || props.type === "search" ? SearchInput : "input";
+  const control = (
+    <Control
+      {...props}
+      {...(Control === SearchInput ? { standalone: true } : {})}
+      id={controlId}
+      ref={ref}
+      aria-label={props["aria-label"] ?? (hideLabel && label ? label : undefined)}
+      className={[styles.input, endAdornment != null && styles.withEndAdornment, className]
+        .filter(Boolean)
+        .join(" ")}
+      aria-invalid={error ? true : props["aria-invalid"]}
+      aria-describedby={describedBy}
+    />
+  );
   return (
     <div className={[styles.field, fieldClassName].filter(Boolean).join(" ")}>
       {!hideLabel && (
@@ -229,16 +246,14 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(function Input(
           {label}
         </label>
       )}
-      <Control
-        {...props}
-        {...(Control === SearchInput ? { standalone: true } : {})}
-        id={controlId}
-        ref={ref}
-        aria-label={props["aria-label"] ?? (hideLabel && label ? label : undefined)}
-        className={[styles.input, className].filter(Boolean).join(" ")}
-        aria-invalid={error ? true : props["aria-invalid"]}
-        aria-describedby={describedBy}
-      />
+      {endAdornment != null ? (
+        <div className={styles.control}>
+          {control}
+          <div className={styles.endAdornment}>{endAdornment}</div>
+        </div>
+      ) : (
+        control
+      )}
       <FieldMessage id={hintId} text={description} className={styles.description} />
       <FieldMessage id={errorId} text={error} className={styles.error} alert />
     </div>

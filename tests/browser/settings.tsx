@@ -31,6 +31,120 @@ const skillDocuments = new Map(
 );
 mockIPC(
   (command, args) => {
+    // Synthetic terminal preferences, isolated from the owner's hosts.
+    const shellFixture = new URLSearchParams(location.search).get("terminal");
+    if (shellFixture) {
+      const profiles = [
+        {
+          id: "pwsh",
+          name: "PowerShell 7",
+          path: "C:/Program Files/PowerShell/7/pwsh.exe",
+          kind: "powershell",
+        },
+        { id: "bash", name: "Git Bash", path: "C:/Program Files/Git/bin/bash.exe", kind: "bash" },
+        { id: "cmd", name: "Command Prompt", path: "C:/Windows/System32/cmd.exe", kind: "cmd" },
+        { id: "wsl", name: "WSL", path: "C:/Windows/System32/wsl.exe", kind: "wsl" },
+      ];
+      if (command === "terminal_profiles") {
+        const scans = Number(sessionStorage.getItem("fixture-shell-scans") ?? 0) + 1;
+        sessionStorage.setItem("fixture-shell-scans", String(scans));
+        if (shellFixture === "discovery-error" && scans === 1)
+          throw new Error("Fixture discovery failed");
+        return {
+          profiles: shellFixture === "empty" ? [] : profiles,
+          defaultId: "pwsh",
+          chosenId:
+            shellFixture === "missing"
+              ? "removed-shell"
+              : sessionStorage.getItem("fixture-shell-local"),
+        };
+      }
+      if (command === "set_terminal_profile") {
+        sessionStorage.setItem("fixture-shell-local", (args.id as string) ?? "");
+        return;
+      }
+      if (command === "remote_machines")
+        return shellFixture === "empty"
+          ? []
+          : [
+              {
+                id: "fixture-local",
+                name: "This computer (local sync)",
+                localHost: true,
+                endpoint: "http://127.0.0.1:9999",
+                environmentId: "fixture-local",
+              },
+              {
+                id: "fixture-remote",
+                name: "Development server with a long descriptive name",
+                endpoint: "http://192.0.2.1:9999",
+                environmentId: "fixture-remote",
+              },
+            ];
+      if (
+        command === "remote_request" &&
+        (args.method === "shell.profiles" || args.method === "shell.setProfile")
+      ) {
+        const key = `fixture-shell-${args.machineId}`;
+        if (
+          shellFixture === "host-error" &&
+          args.machineId === "fixture-remote" &&
+          !sessionStorage.getItem("fixture-host-retried")
+        ) {
+          sessionStorage.setItem("fixture-host-retried", "1");
+          throw new Error("Fixture host unavailable");
+        }
+        if (args.method === "shell.setProfile") {
+          if (shellFixture === "save-error") throw new Error("Fixture shell save failed");
+          sessionStorage.setItem(key, (args.params as { profile: string | null }).profile ?? "");
+        }
+        return { profiles, defaultId: "pwsh", chosenId: sessionStorage.getItem(key) };
+      }
+    }
+    if (new URLSearchParams(location.search).get("connections") === "1") {
+      const machines = [
+        {
+          id: "fixture-local",
+          name: "This computer",
+          localHost: true,
+          environmentId: "fixture-local-env",
+          endpoint: "http://127.0.0.1:3776",
+        },
+        {
+          id: "fixture-remote",
+          name: "Studio Mac",
+          environmentId: "fixture-remote-env",
+          endpoint: "ssh://owner@studio.local",
+          ssh: {
+            target: "owner@studio.local",
+            alternate: "owner@studio-tailnet",
+            remotePort: 3776,
+          },
+        },
+      ];
+      if (command === "remote_machines") return machines;
+      if (command === "local_host_bundle_status") return { state: "current" };
+      if (command === "remote_request") {
+        const machine = machines.find((entry) => entry.id === args.machineId)!;
+        if (args.method === "environment.describe")
+          return {
+            environmentId: machine.environmentId,
+            providers: ["codex", "claude"],
+            capabilities: ["workspace.run", "git.worktreeCreate", "tunnels.manage"],
+          };
+        if (args.method === "tunnels.status")
+          return {
+            environmentId: machine.environmentId,
+            hostLocalUrl: "http://127.0.0.1:3776",
+            publicReachability: "unverified",
+            providers: [
+              { provider: "cloudflare", installed: true, credential: "not-required" },
+              { provider: "ngrok", installed: true, credential: "missing" },
+            ],
+            tunnels: [],
+          };
+      }
+    }
     if (new URLSearchParams(location.search).get("mcp") === "1" && command === "mcp_discover") {
       return Array.from({ length: 25 }, (_, index) => ({
         name: index === 0 ? "arc" : `server-${String(index).padStart(2, "0")}`,

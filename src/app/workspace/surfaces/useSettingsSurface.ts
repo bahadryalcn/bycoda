@@ -13,6 +13,7 @@ import {
   loadNotesEnabled,
   loadSettingsSection,
   saveSettingsSection,
+  settingsSectionForAnchor,
   type SettingsSectionId,
 } from "../../../features/settings/model/settings";
 import { OPEN_CONNECTIONS_EVENT } from "../../../features/connections/model/connections";
@@ -106,9 +107,10 @@ export function useSettingsSurfaceActions({
       setInboxViewOpen(false);
       setNotesViewOpen(false);
       setAutomationsViewOpen(false);
-      if (section) {
-        setSettingsSection(section);
-        saveSettingsSection(section);
+      const targetSection = settingsSectionForAnchor(section, anchor);
+      if (targetSection) {
+        setSettingsSection(targetSection);
+        saveSettingsSection(targetSection);
       }
       setSettingsAnchor(anchor ?? null);
       setNotificationProjectPath(null);

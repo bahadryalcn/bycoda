@@ -1,50 +1,99 @@
-.policies-settings .policy-intro,
-.policies-settings .policy-document {
-  padding-block: 1rem;
-  padding-inline: clamp(1rem, 3cqi, 1.5rem);
-  overflow-wrap: anywhere;
-  user-select: text;
+.policies-settings {
+  display: grid;
+  grid-template-columns: minmax(12rem, 16rem) minmax(0, 1fr);
+  flex: 1;
+  min-block-size: 0;
+  gap: 1rem;
+  min-inline-size: 0;
+}
+.policy-sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-inline-size: 0;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
 }
 
-.policies-settings .policy-intro {
-  font-size: 0.8125rem;
-  line-height: 1.7;
-}
-
-.policies-settings .policy-document {
-  font-size: 0.875rem;
-  line-height: 1.75;
-  max-inline-size: 80ch;
-}
-
-.policies-settings .policy-navigation {
+.policy-toolbar {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.5rem;
-  padding-block: 1rem;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  font-size: var(--ui-font-secondary);
+  color: var(--ui-text-muted);
 }
 
-.policies-settings .policy-navigation a {
-  color: var(--color-content);
-  border: 1px solid var(--color-stroke);
-  border-radius: 0.5rem;
-  padding-block: 0.5rem;
-  padding-inline: 0.75rem;
-  font-size: 0.8125rem;
+.policy-navigation {
+  display: grid;
+  gap: 0.25rem;
+  padding-block: 0.25rem;
+  border-block: 1px solid var(--ui-tone-neutral-border);
+}
+
+.policy-navigation > button {
+  min-block-size: 2.75rem;
+  white-space: normal;
+}
+
+.policy-link-title {
+  flex: 1;
+  min-inline-size: 0;
   overflow-wrap: anywhere;
 }
 
-.policies-settings a:focus-visible {
-  outline: 2px solid currentColor;
-  outline-offset: 3px;
+.policy-reading-note {
+  color: var(--ui-text-muted);
+  font-size: var(--ui-font-caption);
+  line-height: 1.6;
+  margin-block-start: auto;
 }
 
-.policies-settings a:active {
-  opacity: 0.7;
+.policy-reading-note summary {
+  cursor: pointer;
+}
+.policy-reading-note h3 {
+  margin-block-start: 8px;
 }
 
-@media (hover: hover) and (pointer: fine) {
-  .policies-settings a:hover {
-    text-decoration: underline;
+.policy-reading-note p {
+  margin-block-start: 0.5rem;
+}
+
+.policy-reader {
+  min-block-size: 0;
+  min-inline-size: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  border: 1px solid var(--color-stroke);
+  border-radius: var(--radius-lg);
+  background: var(--ui-surface);
+  padding-block: 1.5rem;
+  padding-inline: clamp(1rem, 4vi, 2rem);
+}
+
+.policy-document {
+  max-inline-size: 80ch;
+  margin-inline: auto;
+  overflow-wrap: anywhere;
+  user-select: text;
+  font-size: var(--ui-font-secondary);
+  line-height: 1.75;
+}
+@container (max-width: 620px) {
+  .policies-settings {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+  .policy-sidebar {
+    gap: 8px;
+  }
+  .policy-navigation {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .policy-reader {
+    padding: 16px;
   }
 }

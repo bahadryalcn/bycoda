@@ -647,10 +647,11 @@ describe("collapsed project rail setting", () => {
 describe("settings navigation", () => {
   it("lists every section under exactly one rail group", () => {
     const groups = settingsSectionsByGroup();
-    expect(groups.map((group) => group.label)).toEqual(["App", "Workspace", "Agents"]);
+    expect(groups.map((group) => group.label)).toEqual(["App", "Workspace", "Agents", "About"]);
+    expect(groups.at(-1)?.sections.map((section) => section.id)).toEqual(["policies"]);
     const ids = groups.flatMap((group) => group.sections.map((section) => section.id));
-    expect(ids).toHaveLength(17);
-    expect(new Set(ids).size).toBe(17);
+    expect(ids).toHaveLength(18);
+    expect(new Set(ids).size).toBe(18);
     expect([...ids].sort()).toEqual(SETTINGS_SECTIONS.map((section) => section.id).sort());
     for (const group of groups) {
       expect(group.sections.every((section) => section.group === group.id)).toBe(true);

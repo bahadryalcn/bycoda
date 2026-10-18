@@ -77,11 +77,11 @@
   height: 28px;
   object-fit: contain;
 }
-.bycoda-settings-content section > div:first-child h2 {
+.bycoda-settings-content .settings-group > .settings-group-heading h2 {
   font-size: 16px;
   font-weight: 550;
 }
-.bycoda-settings-content section > div:last-child {
+.bycoda-settings-content .settings-group > .settings-group-content {
   border-radius: 6px;
   border: 1px solid var(--color-stroke);
 }
@@ -245,11 +245,6 @@ html [data-composer-box] {
 }
 html.theme-light [data-composer-box] {
   background: color-mix(in srgb, var(--color-background-base) 96%, var(--palette-solidInk));
-}
-html .user-message-bubble {
-  border-radius: 12px;
-  border: 1px solid var(--color-stroke);
-  background: var(--ui-surface);
 }
 .bycoda-title-settle {
   animation: bycoda-title-settle 220ms ease-out both;
@@ -501,4 +496,46 @@ html.theme-light {
 }
 html[data-performance-no-blur] {
   --glass-blur: 0px;
+}
+
+/* Semantic artwork roles follow light, dark and custom theme status colors. */
+:root {
+  --live-background-signal: var(--color-success);
+  --live-background-spectrum: var(--color-feature);
+}
+
+/* Fixed light/dark samples remain legible while the surrounding theme changes.
+   Palette-specific samples supply content colors from the selected theme data. */
+:root {
+  --appearance-sample-light-surface: var(--palette-oklch_95pct_0_none);
+  --appearance-sample-light-ink: var(--palette-oklch_25pct_0_none);
+  --appearance-sample-dark-surface: var(--palette-oklch_12pct_0_none);
+  --appearance-sample-dark-ink: var(--palette-oklch_85pct_0_none);
+}
+.appearance-workspace-preview {
+  --sample-surface: var(--material-base, var(--ui-surface));
+  --sample-ink: var(--material-ink, var(--color-content));
+  --sample-accent: var(--material-accent, var(--color-accent));
+  --sample-line: color-mix(in oklab, var(--sample-ink) 14%, var(--sample-surface));
+  --sample-muted: color-mix(in oklab, var(--sample-ink) 28%, var(--sample-surface));
+  --sample-raised: color-mix(in oklab, var(--sample-ink) 5%, var(--sample-surface));
+}
+.appearance-workspace-preview[data-preview-scheme="light"] {
+  --sample-surface: var(--appearance-sample-light-surface);
+  --sample-ink: var(--appearance-sample-light-ink);
+}
+.appearance-workspace-preview[data-preview-scheme="dark"] {
+  --sample-surface: var(--appearance-sample-dark-surface);
+  --sample-ink: var(--appearance-sample-dark-ink);
+}
+.appearance-workspace-preview[data-preview-scheme="system"] {
+  --sample-surface: var(--appearance-sample-light-surface);
+  --sample-ink: var(--appearance-sample-light-ink);
+}
+.appearance-workspace-preview[data-preview-scheme="system"] .appearance-preview-conversation {
+  --sample-surface: var(--appearance-sample-dark-surface);
+  --sample-ink: var(--appearance-sample-dark-ink);
+  --sample-line: color-mix(in oklab, var(--sample-ink) 14%, var(--sample-surface));
+  --sample-muted: color-mix(in oklab, var(--sample-ink) 28%, var(--sample-surface));
+  --sample-raised: color-mix(in oklab, var(--sample-ink) 5%, var(--sample-surface));
 }

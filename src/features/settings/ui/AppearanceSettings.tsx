@@ -4,7 +4,7 @@ import { t, useLocale } from "../../../shared/i18n";
 import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
 import { ChevronLeft, ChevronRight, ImagePlus, Loader } from "../../../shared/ui/icons";
 import { CrewSettings, TabMotionSettings } from "./AppearanceBehaviorSettings";
-import { useRef, useState } from "react";
+import { useId, useRef, useState, type ReactNode } from "react";
 import { AppearanceStudio, AppearanceInterface, AppearanceTypography } from "./AppearancePreviews";
 
 import { ColorPickerPopover, ColorSwatchRow } from "../../../shared/ui/ColorPickerPopover";
@@ -82,268 +82,295 @@ export function AppearancePage({ appearance }: { appearance: AppearanceSettings 
 
   return (
     <div className="appearance-settings">
-      <AppearanceStudio appearance={appearance} />
-      <div className="appearance-tuning">
+      <p className="appearance-save-note">{t("Changes save automatically")}</p>
+      <AppearanceSection
+        title={t("Theme and colors")}
+        description={[t("Theme palettes"), t("Accent color"), t("Custom surface colors")].join(
+          " · ",
+        )}
+      >
+        <AppearanceStudio appearance={appearance} />
+        <Group title={t("Accent")}>
+          <Row
+            id="accent-color"
+            label={t("Accent color")}
+            description={t("Used for the composer send button and your message bubbles.")}
+          >
+            <AccentColorPicker value={appearance.accentColor} onChange={appearance.onAccentColor} />
+          </Row>
+        </Group>
+        <AdvancedSettings
+          title={t("Custom surface colors")}
+          settingIds={["hue", "saturation", "dark-lightness"]}
+        >
+          <Group
+            title={t("Color")}
+            description={t(
+              "Hue and saturation tint every surface. Lightness only moves the dark theme.",
+            )}
+          >
+            <Row
+              id="hue"
+              label={t("Hue")}
+              description={t("Base hue for accents and tinted surfaces.")}
+            >
+              <Slider
+                label={t("Hue")}
+                value={appearance.themeHue}
+                display={`${appearance.themeHue}°`}
+                min={THEME_HUE_MIN}
+                max={THEME_HUE_MAX}
+                onChange={(value) => appearance.onTint(value, appearance.themeSaturation)}
+              />
+            </Row>
+            <Row
+              id="saturation"
+              label={t("Saturation")}
+              description={t("How strongly the hue tints the interface. Zero keeps it neutral.")}
+            >
+              <Slider
+                label={t("Saturation")}
+                value={appearance.themeSaturation}
+                display={`${appearance.themeSaturation}%`}
+                min={THEME_SATURATION_MIN}
+                max={THEME_SATURATION_MAX}
+                onChange={(value) => appearance.onTint(appearance.themeHue, value)}
+              />
+            </Row>
+            <Row
+              id="dark-lightness"
+              label={t("Dark-mode lightness")}
+              description={
+                glassDisabled
+                  ? t("This only affects dark mode. Your dark-mode value is preserved.")
+                  : t(
+                      "Base brightness of the dark theme. Lower values are darker; zero is true black.",
+                    )
+              }
+            >
+              <Slider
+                label={t("Dark-mode lightness")}
+                value={appearance.themeDarkLightness}
+                display={`${appearance.themeDarkLightness}%`}
+                min={THEME_DARK_LIGHTNESS_MIN}
+                max={THEME_DARK_LIGHTNESS_MAX}
+                onChange={appearance.onDarkLightness}
+                disabled={glassDisabled}
+              />
+            </Row>
+          </Group>
+        </AdvancedSettings>
+      </AppearanceSection>
+      <AppearanceSection
+        title={t("Text and readability")}
+        description={[t("Interface scale"), t("Fonts and code"), t("Contrast")].join(" · ")}
+      >
         <AppearanceInterface appearance={appearance} />
         <AppearanceTypography appearance={appearance} />
-      </div>
-      <Group title={t("Accent")} persistence={{ mode: "automatic" }}>
-        <Row
-          id="accent-color"
-          label={t("Accent color")}
-          description={t("Used for the composer send button and your message bubbles.")}
-        >
-          <AccentColorPicker value={appearance.accentColor} onChange={appearance.onAccentColor} />
-        </Row>
-      </Group>
-      <AdvancedSettings
-        title={t("Layout and backgrounds")}
-        settingIds={[
-          "collapsed-project-rail",
-          "sidebar-opacity",
-          "blur",
-          "main-pane-glass",
-          "main-pane-opacity",
-          "chat-background",
-          "live-background",
-          "decorative-motion",
-          "hue",
-          "saturation",
-          "dark-lightness",
-          "streaming-text-mode",
-          "tab-animations",
-          "session-list",
-          "crew-scene",
-          "crew-theme",
-          "crew-growth",
-        ]}
+      </AppearanceSection>
+      <AppearanceSection
+        title={t("Layout")}
+        description={[t("Collapsed project rail"), t("Session list")].join(" · ")}
       >
-        <div className="appearance-options">
-          <Group
-            title={t("Layout")}
-            persistence={{ mode: "automatic" }}
-            action={
-              <Button
-                variant="ghost"
-                onClick={() =>
-                  appearance.onCollapsedProjectRailMode(COLLAPSED_PROJECT_RAIL_MODE_DEFAULT)
-                }
-              >
-                {t("Reset layout")}
-              </Button>
-            }
-          >
-            <Row
-              id="collapsed-project-rail"
-              label={t("Collapsed project rail")}
-              description={t(
-                "Keep project navigation available as a compact icon rail, or hide the rail completely.",
-              )}
-            >
-              <Segmented
-                label={t("Collapsed project rail")}
-                value={appearance.collapsedProjectRailMode}
-                options={[
-                  {
-                    value: "compact",
-                    get label() {
-                      return t("Icon rail");
-                    },
-                  },
-                  {
-                    value: "hidden",
-                    get label() {
-                      return t("Hidden");
-                    },
-                  },
-                ]}
-                onChange={appearance.onCollapsedProjectRailMode}
-              />
-            </Row>
-          </Group>
-          <SessionListSettings />
-          <Group
-            title={t("Translucency")}
-            action={
-              <Button
-                variant="ghost"
-                onClick={() => {
-                  appearance.onOpacity(Math.round(SIDEBAR_OPACITY_DEFAULT * 100));
-                  appearance.onMainOpacity(Math.round(MAIN_OPACITY_DEFAULT * 100));
-                  appearance.onBlur(SIDEBAR_BLUR_DEFAULT);
-                  appearance.onBodyGlass(BODY_GLASS_DEFAULT);
-                }}
-              >
-                {t("Reset translucency")}
-              </Button>
-            }
-            persistence={{ mode: "automatic" }}
-            description={
-              glassDisabled
-                ? t(
-                    "Light mode always uses an opaque window, so these are off. Your dark-mode values are preserved.",
-                  )
-                : t(
-                    "How much of the desktop shows through {p0}. Blur costs more to composite the higher it goes.",
-                    { p0: PRODUCT_IDENTITY.displayName },
-                  )
-            }
-          >
-            <Row
-              id="sidebar-opacity"
-              label={t("Sidebar opacity")}
-              description={t("Applies to the project rail and the session sidebar.")}
-            >
-              <Slider
-                label={t("Sidebar opacity")}
-                feel="elastic"
-                value={percent}
-                display={`${percent}%`}
-                min={Math.round(SIDEBAR_OPACITY_MIN * 100)}
-                max={Math.round(SIDEBAR_OPACITY_MAX * 100)}
-                onChange={appearance.onOpacity}
-                disabled={glassDisabled}
-              />
-            </Row>
-            <Row
-              id="blur"
-              label={t("Blur radius")}
-              description={t("Background blur behind the window.")}
-            >
-              <Slider
-                label={t("Blur radius")}
-                feel="elastic"
-                value={appearance.blur}
-                display={String(appearance.blur)}
-                min={SIDEBAR_BLUR_MIN}
-                max={SIDEBAR_BLUR_MAX}
-                onChange={appearance.onBlur}
-                disabled={glassDisabled}
-              />
-            </Row>
-            <Row
-              id="main-pane-glass"
-              label={t("Main pane glass")}
-              description={t(
-                "Extend the translucent treatment to the main pane behind sessions and editors.",
-              )}
-            >
-              <Toggle
-                label={t("Main pane glass")}
-                on={appearance.bodyGlass}
-                onChange={appearance.onBodyGlass}
-                disabled={glassDisabled}
-              />
-            </Row>
-            <Row
-              id="main-pane-opacity"
-              dependency={
-                !glassDisabled && !appearance.bodyGlass
-                  ? t("Enable Main pane glass to adjust its opacity. Your value is preserved.")
-                  : undefined
-              }
-              label={t("Main pane opacity")}
-              description={t("Applies to the main pane when main pane glass is on.")}
-            >
-              <Slider
-                label={t("Main pane opacity")}
-                value={mainPercent}
-                display={`${mainPercent}%`}
-                min={Math.round(MAIN_OPACITY_MIN * 100)}
-                max={Math.round(MAIN_OPACITY_MAX * 100)}
-                onChange={appearance.onMainOpacity}
-                disabled={glassDisabled || !appearance.bodyGlass}
-              />
-            </Row>
-          </Group>
+        <Group
+          title={t("Layout")}
 
-          <AdvancedSettings
-            title={t("Custom surface colors")}
-            settingIds={["hue", "saturation", "dark-lightness"]}
-          >
-            <Group
-              title={t("Color")}
-              description={t(
-                "Hue and saturation tint every surface. Lightness only moves the dark theme.",
-              )}
-            >
-              <Row
-                id="hue"
-                label={t("Hue")}
-                description={t("Base hue for accents and tinted surfaces.")}
-              >
-                <Slider
-                  label={t("Hue")}
-                  value={appearance.themeHue}
-                  display={`${appearance.themeHue}°`}
-                  min={THEME_HUE_MIN}
-                  max={THEME_HUE_MAX}
-                  onChange={(value) => appearance.onTint(value, appearance.themeSaturation)}
-                />
-              </Row>
-              <Row
-                id="saturation"
-                label={t("Saturation")}
-                description={t("How strongly the hue tints the interface. Zero keeps it neutral.")}
-              >
-                <Slider
-                  label={t("Saturation")}
-                  value={appearance.themeSaturation}
-                  display={`${appearance.themeSaturation}%`}
-                  min={THEME_SATURATION_MIN}
-                  max={THEME_SATURATION_MAX}
-                  onChange={(value) => appearance.onTint(appearance.themeHue, value)}
-                />
-              </Row>
-              <Row
-                id="dark-lightness"
-                label={t("Dark-mode lightness")}
-                description={
-                  glassDisabled
-                    ? t("This only affects dark mode. Your dark-mode value is preserved.")
-                    : t(
-                        "Base brightness of the dark theme. Lower values are darker; zero is true black.",
-                      )
-                }
-              >
-                <Slider
-                  label={t("Dark-mode lightness")}
-                  value={appearance.themeDarkLightness}
-                  display={`${appearance.themeDarkLightness}%`}
-                  min={THEME_DARK_LIGHTNESS_MIN}
-                  max={THEME_DARK_LIGHTNESS_MAX}
-                  onChange={appearance.onDarkLightness}
-                  disabled={glassDisabled}
-                />
-              </Row>
-            </Group>
-          </AdvancedSettings>
-          <Group title={t("Motion")} persistence={{ mode: "automatic" }}>
-            <TabMotionSettings />
-            <Row
-              id="decorative-motion"
-              label={t("Decorative animations")}
-              description={
-                reducedMotion
-                  ? t(
-                      "Your system requests reduced motion, so decorative animations stay still. Your saved choice is preserved.",
-                    )
-                  : t("Animate project sigils, chat transitions and the agent crew scene.")
+          action={
+            <Button
+              variant="ghost"
+              onClick={() =>
+                appearance.onCollapsedProjectRailMode(COLLAPSED_PROJECT_RAIL_MODE_DEFAULT)
               }
             >
-              <Toggle
-                label={t("Decorative animations")}
-                on={decorativeMotion}
-                onChange={saveDecorativeMotionEnabled}
-              />
-            </Row>
-          </Group>
-          <ChatBackgroundCard appearance={appearance} />
-          <LiveBackgroundCard />
-          <CrewSettings />
-        </div>
-      </AdvancedSettings>
+              {t("Reset layout")}
+            </Button>
+          }
+        >
+          <Row
+            id="collapsed-project-rail"
+            label={t("Collapsed project rail")}
+            description={t(
+              "Keep project navigation available as a compact icon rail, or hide the rail completely.",
+            )}
+          >
+            <Segmented
+              label={t("Collapsed project rail")}
+              value={appearance.collapsedProjectRailMode}
+              options={[
+                {
+                  value: "compact",
+                  get label() {
+                    return t("Icon rail");
+                  },
+                },
+                {
+                  value: "hidden",
+                  get label() {
+                    return t("Hidden");
+                  },
+                },
+              ]}
+              onChange={appearance.onCollapsedProjectRailMode}
+            />
+          </Row>
+        </Group>
+        <SessionListSettings />
+      </AppearanceSection>
+      <AppearanceSection
+        title={t("Translucency")}
+        description={[t("Sidebar opacity"), t("Blur radius"), t("Main pane glass")].join(" · ")}
+      >
+        <Group
+          title={t("Translucency")}
+          action={
+            <Button
+              variant="ghost"
+              onClick={() => {
+                appearance.onOpacity(Math.round(SIDEBAR_OPACITY_DEFAULT * 100));
+                appearance.onMainOpacity(Math.round(MAIN_OPACITY_DEFAULT * 100));
+                appearance.onBlur(SIDEBAR_BLUR_DEFAULT);
+                appearance.onBodyGlass(BODY_GLASS_DEFAULT);
+              }}
+            >
+              {t("Reset translucency")}
+            </Button>
+          }
+
+          description={
+            glassDisabled
+              ? t(
+                  "Light mode always uses an opaque window, so these are off. Your dark-mode values are preserved.",
+                )
+              : t(
+                  "How much of the desktop shows through {p0}. Blur costs more to composite the higher it goes.",
+                  { p0: PRODUCT_IDENTITY.displayName },
+                )
+          }
+        >
+          <Row
+            id="sidebar-opacity"
+            label={t("Sidebar opacity")}
+            description={t("Applies to the project rail and the session sidebar.")}
+          >
+            <Slider
+              label={t("Sidebar opacity")}
+              feel="elastic"
+              value={percent}
+              display={`${percent}%`}
+              min={Math.round(SIDEBAR_OPACITY_MIN * 100)}
+              max={Math.round(SIDEBAR_OPACITY_MAX * 100)}
+              onChange={appearance.onOpacity}
+              disabled={glassDisabled}
+            />
+          </Row>
+          <Row
+            id="blur"
+            label={t("Blur radius")}
+            description={t("Background blur behind the window.")}
+          >
+            <Slider
+              label={t("Blur radius")}
+              feel="elastic"
+              value={appearance.blur}
+              display={`${appearance.blur}px`}
+              min={SIDEBAR_BLUR_MIN}
+              max={SIDEBAR_BLUR_MAX}
+              onChange={appearance.onBlur}
+              disabled={glassDisabled}
+            />
+          </Row>
+          <Row
+            id="main-pane-glass"
+            label={t("Main pane glass")}
+            description={t(
+              "Extend the translucent treatment to the main pane behind sessions and editors.",
+            )}
+          >
+            <Toggle
+              label={t("Main pane glass")}
+              on={appearance.bodyGlass}
+              onChange={appearance.onBodyGlass}
+              disabled={glassDisabled}
+            />
+          </Row>
+          <Row
+            id="main-pane-opacity"
+            dependency={
+              !glassDisabled && !appearance.bodyGlass
+                ? t("Enable Main pane glass to adjust its opacity. Your value is preserved.")
+                : undefined
+            }
+            label={t("Main pane opacity")}
+            description={t("Applies to the main pane when main pane glass is on.")}
+          >
+            <Slider
+              label={t("Main pane opacity")}
+              value={mainPercent}
+              display={`${mainPercent}%`}
+              min={Math.round(MAIN_OPACITY_MIN * 100)}
+              max={Math.round(MAIN_OPACITY_MAX * 100)}
+              onChange={appearance.onMainOpacity}
+              disabled={glassDisabled || !appearance.bodyGlass}
+            />
+          </Row>
+        </Group>
+      </AppearanceSection>
+      <AppearanceSection
+        title={t("Backgrounds")}
+        description={[t("Chat background"), t("Live background")].join(" · ")}
+      >
+        <ChatBackgroundCard appearance={appearance} />
+        <LiveBackgroundCard />
+      </AppearanceSection>
+      <AppearanceSection
+        title={t("Motion and crew")}
+        description={[t("Tab animations"), t("Agent crew")].join(" · ")}
+      >
+        <Group title={t("Motion")}>
+          <TabMotionSettings />
+          <Row
+            id="decorative-motion"
+            label={t("Decorative animations")}
+            description={
+              reducedMotion
+                ? t(
+                    "Your system requests reduced motion, so decorative animations stay still. Your saved choice is preserved.",
+                  )
+                : t("Animate project sigils, chat transitions and the agent crew scene.")
+            }
+          >
+            <Toggle
+              label={t("Decorative animations")}
+              on={decorativeMotion}
+              onChange={saveDecorativeMotionEnabled}
+            />
+          </Row>
+        </Group>
+        <CrewSettings />
+      </AppearanceSection>
     </div>
+  );
+}
+
+/** Open topics preserve search targets and keep every preference directly available. */
+function AppearanceSection({
+  title,
+  description,
+  children,
+}: {
+  title: string;
+  description: string;
+  children: ReactNode;
+}) {
+  const headingId = useId();
+  return (
+    <section className="appearance-section" aria-labelledby={headingId}>
+      <header className="appearance-section-heading">
+        <h2 id={headingId}>{title}</h2>
+        <p>{description}</p>
+      </header>
+      <div className="appearance-section-body">{children}</div>
+    </section>
   );
 }
 

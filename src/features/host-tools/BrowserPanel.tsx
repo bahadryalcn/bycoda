@@ -583,7 +583,7 @@ function ProjectBrowserPanel({
               motion="none"
               type="button"
               disabled={busy}
-              onClick={() => void action(() => request("browser.claim"))}
+              onClick={() => void action(() => request("browser.claim", { takeover: true }))}
             >
               {t("Claim control")}
             </Button>
@@ -962,7 +962,7 @@ function ProjectBrowserPanel({
                   type="button"
                   variant="ghost"
                   disabled={busy}
-                  onClick={() => void action(() => request("browser.claim"))}
+                  onClick={() => void action(() => request("browser.claim", { takeover: true }))}
                 >
                   {state?.controlling ? t("Renew control") : t("Claim control")}
                 </Button>

@@ -23,10 +23,69 @@ afterEach(async () => {
   await act(async () => root.unmount());
   container.remove();
   vi.useRealTimers();
+  vi.restoreAllMocks();
+  Reflect.deleteProperty(document, "elementFromPoint");
   vi.unstubAllGlobals();
 });
 const icon = createElement("svg");
 const button = (id: string) => container.querySelector<HTMLButtonElement>(`[data-id="${id}"]`)!;
+
+async function moveTo(id: string, x = 40) {
+  const target = button(id);
+  vi.spyOn(target, "getBoundingClientRect").mockReturnValue({ left: 0, right: 200 } as DOMRect);
+  document.elementFromPoint = vi.fn(() => target);
+  await act(async () => {
+    const event = new MouseEvent("pointermove", { bubbles: true, clientX: x, clientY: 12 });
+    Object.defineProperty(event, "pointerType", { value: "mouse" });
+    target.dispatchEvent(event);
+  });
+}
+
+async function renderHoverActions() {
+  vi.useFakeTimers();
+  await act(async () =>
+    root.render(
+      createElement(ExpandingButtonGroup, {
+        label: "Actions",
+        items: ["copy", "chat", "link"].map((id) => ({ id, label: id, icon })),
+      }),
+    ),
+  );
+}
+
+it("ignores passing hover, waits for aim, and tolerates a brief pointer exit", async () => {
+  await renderHoverActions();
+  await moveTo("chat");
+  await act(async () => vi.advanceTimersByTime(100));
+  expect(button("copy").dataset.expanded).toBeDefined();
+  await moveTo("link", 50);
+  await act(async () => vi.advanceTimersByTime(100));
+  expect(button("copy").dataset.expanded).toBeDefined();
+  await act(async () => vi.advanceTimersByTime(100));
+  expect(button("link").dataset.expanded).toBeDefined();
+  await act(async () => {
+    const event = new MouseEvent("pointerout", { bubbles: true, relatedTarget: document.body });
+    Object.defineProperty(event, "pointerType", { value: "mouse" });
+    button("link").dispatchEvent(event);
+  });
+  await act(async () => vi.advanceTimersByTime(100));
+  expect(button("link").dataset.expanded).toBeDefined();
+  await moveTo("link", 60);
+  await act(async () => vi.advanceTimersByTime(400));
+  expect(button("link").dataset.expanded).toBeDefined();
+});
+
+it("does not expand a target that moved away or override keyboard focus with pending hover", async () => {
+  await renderHoverActions();
+  await moveTo("chat");
+  document.elementFromPoint = vi.fn(() => button("copy"));
+  await act(async () => vi.advanceTimersByTime(250));
+  expect(button("copy").dataset.expanded).toBeDefined();
+  await moveTo("chat", 50);
+  await act(async () => button("link").focus());
+  await act(async () => vi.advanceTimersByTime(250));
+  expect(button("link").dataset.expanded).toBeDefined();
+});
 it("keeps the current destination while another label expands and supports context menus", async () => {
   const openMenu = vi.fn();
   const openInbox = vi.fn();

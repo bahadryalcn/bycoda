@@ -92,7 +92,7 @@ export function GitGraphDialog({ title, toolbar, onClose, children, expandable =
         className={
           maximized
             ? "absolute inset-0"
-            : `absolute top-1/2 left-1/2 ${expandable ? "h-[calc(100dvh-48px)] w-[calc(100vw-48px)]" : "h-[min(760px,calc(100dvh-48px))] w-[min(1100px,calc(100vw-48px))]"} -translate-x-1/2 -translate-y-1/2`
+            : `absolute inset-0 m-auto ${expandable ? "h-[calc(100dvh-48px)] w-[calc(100vw-48px)]" : "h-[min(760px,calc(100dvh-48px))] w-[min(1100px,calc(100vw-48px))]"}`
         }
       >
         <div

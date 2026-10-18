@@ -25,7 +25,8 @@ import { TextField } from "../../../shared/ui/TextField";
 import styles from "./McpSettings.module.css";
 import { ExternalMcpAccess } from "./ExternalMcpAccess";
 import { Modal } from "../../../shared/ui/Modal";
-import { Globe, Plus, RefreshCw, ListFilter } from "../../../shared/ui/icons";
+import { Popover } from "../../../shared/ui/Popover";
+import { Globe, Plus, RefreshCw, ListFilter, Trash2, FileScript } from "../../../shared/ui/icons";
 import { MCP_PROVIDER_LABELS, type McpConnection } from "../model/mcp";
 import { AdvancedSettings, Row } from "./settingsControls";
 import {
@@ -284,6 +285,8 @@ function McpConnections({ cwd, projectPicker }: { cwd: string; projectPicker: Re
   const [error, setError] = useState(cached?.error ?? "");
   const [claudeError, setClaudeError] = useState(cached?.claudeError ?? "");
   const [addOpen, setAddOpen] = useState(false);
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const filterAnchor = useRef<HTMLButtonElement>(null);
   const [removeScopes, setRemoveScopes] = useState<Record<string, Scope>>({});
   const refreshGeneration = useRef(0);
 
@@ -412,22 +415,15 @@ function McpConnections({ cwd, projectPicker }: { cwd: string; projectPicker: Re
           </div>
         </div>
         <div className={styles.actions}>
-          <Button type="button" onClick={() => void refresh()} disabled={loading || busy !== null}>
-            <RefreshCw className="size-3.5" />
-            {t("Refresh")}
-          </Button>
           <Button
             type="button"
-            aria-label={showAllProviders ? t("Show available providers") : t("Show all providers")}
-            aria-pressed={showAllProviders}
-            title={showAllProviders ? t("Showing all providers") : t("Showing available providers")}
-            selected={showAllProviders}
-            onClick={() => setShowAllProviders(!showAllProviders)}
+            iconOnly
+            label={t("Refresh")}
+            loading={loading}
+            onClick={() => void refresh()}
+            disabled={loading || busy !== null}
           >
-            <ListFilter className="size-3.5" />
-            <span>
-              {showAllProviders ? t("Show available providers") : t("Show all providers")}
-            </span>
+            <RefreshCw className="size-3.5" />
           </Button>
           <Button
             type="button"
@@ -440,60 +436,111 @@ function McpConnections({ cwd, projectPicker }: { cwd: string; projectPicker: Re
           </Button>
         </div>
       </div>
-      <div className={styles.search}>
-        <TextField
-          label={t("Search MCP servers")}
-          hideLabel
-          type="search"
-          placeholder={t("Search MCP servers")}
-          value={query}
-          onChange={(event) => {
-            setQuery(event.target.value);
-            setPage(0);
-          }}
-        />
-      </div>
-      <div
-        role="group"
-        className={styles.providers}
-        aria-label={t("Filter MCP servers by provider")}
-      >
-        {(["all", ...filterProviders] as const).map((provider) => (
-          <Button
-            key={provider}
-            variant="tab"
-            motion="none"
-            type="button"
-            aria-pressed={filter === provider}
-            onClick={() => {
-              setFilter(provider);
+      <div className={styles.toolbar}>
+        <div className={styles.search}>
+          <TextField
+            label={t("Search MCP servers")}
+            hideLabel
+            type="search"
+            placeholder={t("Search MCP servers")}
+            value={query}
+            onChange={(event) => {
+              setQuery(event.target.value);
               setPage(0);
             }}
-          >
-            {provider === "all" ? (
-              <Globe className="size-3.5" />
-            ) : (
-              <ProviderIcon provider={provider} />
-            )}
-            {provider === "all" ? t("All") : MCP_PROVIDER_LABELS[provider]}
-            <span>
-              {provider === "all"
-                ? servers.length
-                : servers.filter((server) => server.provider === provider).length}
-            </span>
-          </Button>
-        ))}
+          />
+        </div>
+        <Button
+          ref={filterAnchor}
+          iconOnly
+          label={t("Filters")}
+          selected={filter !== "all" || showAllProviders}
+          aria-expanded={filtersOpen}
+          aria-haspopup="dialog"
+          onClick={() => setFiltersOpen(!filtersOpen)}
+        >
+          <ListFilter className="size-3.5" />
+        </Button>
+        {filter !== "all" ? (
+          <span className={styles.filterLabel}>{MCP_PROVIDER_LABELS[filter]}</span>
+        ) : null}
       </div>
+      {filtersOpen ? (
+        <Popover
+          anchor={filterAnchor}
+          role="dialog"
+          aria-label={t("Filter MCP servers by provider")}
+          width={300}
+          onDismiss={() => setFiltersOpen(false)}
+        >
+          <div className={styles.filterPanel}>
+            <h3>{t("Provider")}</h3>
+            <div
+              role="group"
+              className={styles.providers}
+              aria-label={t("Filter MCP servers by provider")}
+            >
+              {(["all", ...filterProviders] as const).map((provider) => (
+                <Button
+                  key={provider}
+                  variant="tab"
+                  motion="none"
+                  type="button"
+                  aria-pressed={filter === provider}
+                  onClick={() => {
+                    setFilter(provider);
+                    setPage(0);
+                  }}
+                >
+                  {provider === "all" ? (
+                    <Globe className="size-3.5" />
+                  ) : (
+                    <ProviderIcon provider={provider} />
+                  )}
+                  {provider === "all" ? t("All") : MCP_PROVIDER_LABELS[provider]}
+                  <span>
+                    {provider === "all"
+                      ? servers.length
+                      : servers.filter((server) => server.provider === provider).length}
+                  </span>
+                </Button>
+              ))}
+            </div>
+            <Button
+              variant="ghost"
+              aria-label={
+                showAllProviders ? t("Show available providers") : t("Show all providers")
+              }
+              aria-pressed={showAllProviders}
+              onClick={() => setShowAllProviders(!showAllProviders)}
+            >
+              {showAllProviders ? t("Show available providers") : t("Show all providers")}
+            </Button>
+            <Button
+              variant="secondary"
+              disabled={filter === "all" && !showAllProviders && !query}
+              onClick={() => {
+                setFilter("all");
+                setQuery("");
+                setShowAllProviders(false);
+                setPage(0);
+              }}
+            >
+              {t("Reset filters")}
+            </Button>
+          </div>
+        </Popover>
+      ) : null}
       {error ? (
         <Alert tone="danger" role="alert">
           {error}
         </Alert>
       ) : null}
       {claudeError && (filter === "all" || filter === "claude") ? (
-        <p className="text-xs text-content/55">
-          {t("Claude connection status unavailable: ")}
-          {claudeError}
-        </p>
+        <section className={styles.healthError}>
+          <h3>{t("Claude connection status unavailable: ")}</h3>
+          <p className={styles.path}>{claudeError}</p>
+        </section>
       ) : null}
       {loading ? (
         <p role="status" className="text-sm text-content/55">
@@ -521,31 +568,48 @@ function McpConnections({ cwd, projectPicker }: { cwd: string; projectPicker: Re
                 <div className={styles.name} title={server.name}>
                   {server.name}
                 </div>
-                <div className={styles.metadata}>
-                  {MCP_PROVIDER_LABELS[server.provider]} · {scopeLabel(server.scope)} ·{" "}
-                  {server.transport || "MCP"}
-                </div>
-                <details className={styles.details}>
-                  <summary>{t("Connection details")}</summary>
-                  <div className={styles.detailContent}>
-                    {server.configPath ? (
-                      <span className={styles.path}>{server.configPath}</span>
-                    ) : (
-                      <p>{scopeDescription(server.scope)}</p>
-                    )}
-                    {server.provider !== "claude" ? (
-                      <p>
-                        {server.configPath
-                          ? t("Edit or remove this entry in its provider configuration.")
-                          : t(
-                              "Configuration path unavailable. Open this provider's settings to manage the entry.",
-                            )}
-                      </p>
-                    ) : null}
-                  </div>
-                </details>
               </div>
-              <Badge className={styles.status}>{server.status}</Badge>
+              <Badge
+                className={styles.status}
+                tone={
+                  /needs authentication/i.test(server.status)
+                    ? "warning"
+                    : /failed|error|disconnected/i.test(server.status)
+                      ? "danger"
+                      : /^connected$/i.test(server.status)
+                        ? "success"
+                        : "neutral"
+                }
+              >
+                {server.status}
+              </Badge>
+              <section className={styles.details}>
+                <h3
+                  title={t("Connection details")}
+                  aria-label={`${t("Connection details")}: ${server.name}`}
+                >
+                  <span className={styles.metadata}>
+                    {MCP_PROVIDER_LABELS[server.provider]} &#183; {scopeLabel(server.scope)} &#183;{" "}
+                    {server.transport || "MCP"}
+                  </span>
+                </h3>
+                <div className={styles.detailContent}>
+                  {server.configPath ? (
+                    <span className={styles.path}>{server.configPath}</span>
+                  ) : (
+                    <p>{scopeDescription(server.scope)}</p>
+                  )}
+                  {server.provider !== "claude" ? (
+                    <p>
+                      {server.configPath
+                        ? t("Edit or remove this entry in its provider configuration.")
+                        : t(
+                            "Configuration path unavailable. Open this provider's settings to manage the entry.",
+                          )}
+                    </p>
+                  ) : null}
+                </div>
+              </section>
               <div className={styles.actions}>
                 {server.provider !== "claude_desktop" &&
                 server.transport &&
@@ -577,21 +641,29 @@ function McpConnections({ cwd, projectPicker }: { cwd: string; projectPicker: Re
                     ) : null}
                     <Button
                       type="button"
+                      variant="ghost"
+                      iconOnly
+                      label={t("Remove")}
+                      tooltip={`${t("Remove")}: ${server.name} · ${scopeLabel(server.scope)}`}
                       disabled={busy !== null}
                       onClick={() => void remove(server)}
                     >
-                      {busy === server.name ? t("Working…") : t("Remove")}
+                      <Trash2 className="size-3.5" />
                     </Button>
                   </>
                 ) : (
                   <Button
                     type="button"
+                    variant="ghost"
+                    iconOnly
+                    label={t("Show config")}
+                    tooltip={`${t("Show config")}: ${server.name}`}
                     disabled={!server.configPath}
                     onClick={() =>
                       void revealPath(server.configPath).catch((cause) => setError(String(cause)))
                     }
                   >
-                    {t("Show config")}
+                    <FileScript className="size-3.5" />
                   </Button>
                 )}
               </div>

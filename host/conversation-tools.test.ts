@@ -16,6 +16,21 @@ import {
 
 const principal = { kind: "session" as const, projectId: "p", sessionId: "s", provider: "codex" };
 describe("Conversation Tools boundary", () => {
+  it("exposes bounded skill discovery as reads without accepting paths or identity overrides", () => {
+    for (const action of ["skills.search", "skills.read"]) {
+      expect(
+        conversationToolCatalog().find((tool) => tool.action === action)?.annotations.readOnlyHint,
+      ).toBe(true);
+      const input = action === "skills.read" ? { name: "review" } : { query: "layout" };
+      expect(() => validateConversationTool(action, input)).not.toThrow();
+      expect(() => validateConversationTool(action, { ...input, cwd: "/other" })).toThrow();
+      expect(() => validateConversationTool(action, { ...input, path: "/secret" })).toThrow();
+    }
+    expect(() =>
+      validateConversationTool("skills.read", { name: "review", maxChars: 16001 }),
+    ).toThrow();
+    expect(() => validateConversationTool("skills.search", { query: "x".repeat(201) })).toThrow();
+  });
   it("advertises review context as a read and rejects approval flags and arbitrary nested review fields", () => {
     const input = {
       requestId: "review",
@@ -181,10 +196,24 @@ describe("Conversation Tools boundary", () => {
       const value = JSON.parse(raw);
       if (request.url === "/mcp/conversation") {
         expect(request.headers.authorization).toBe("Bearer test-session-secret");
-        expect(value).toMatchObject({ method: "tools/call", params: { name: "conversation_devices_list" } });
-        response.end(JSON.stringify({ jsonrpc: "2.0", id: value.id, result: {
-          content: [{ type: "text", text: JSON.stringify({ action: "devices.list", input: value.params.arguments }) }],
-        } }));
+        expect(value).toMatchObject({
+          method: "tools/call",
+          params: { name: "conversation_devices_list" },
+        });
+        response.end(
+          JSON.stringify({
+            jsonrpc: "2.0",
+            id: value.id,
+            result: {
+              content: [
+                {
+                  type: "text",
+                  text: JSON.stringify({ action: "devices.list", input: value.params.arguments }),
+                },
+              ],
+            },
+          }),
+        );
         return;
       }
 

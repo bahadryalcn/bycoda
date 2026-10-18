@@ -10,11 +10,9 @@ export type LiveBackground =
   | "none"
   | "gradient-ascii"
   | "code-rain"
-  | "shape-waves"
   | "micro-slats"
   | "web-threads"
   | "scanner"
-  | "ferrofluid"
   | "lightfall"
   | "prism"
   | "side-rays"
@@ -22,17 +20,17 @@ export type LiveBackground =
   | "pixel-blast"
   | "dot-grid"
   | "hyperspeed"
+  | "orb"
+  | "world-tree"
   | "letter-glitch";
 
 export const LIVE_BACKGROUNDS: readonly LiveBackground[] = [
   "none",
   "gradient-ascii",
   "code-rain",
-  "shape-waves",
   "micro-slats",
   "web-threads",
   "scanner",
-  "ferrofluid",
   "lightfall",
   "prism",
   "side-rays",
@@ -41,6 +39,8 @@ export const LIVE_BACKGROUNDS: readonly LiveBackground[] = [
   "dot-grid",
   "hyperspeed",
   "letter-glitch",
+  "orb",
+  "world-tree",
 ];
 
 export const LIVE_BACKGROUND_DEFAULT: LiveBackground = "gradient-ascii";
@@ -51,22 +51,22 @@ export const LIVE_BACKGROUND_INTENSITY_DEFAULT = 0.35;
 
 export function liveBackgroundLabel(value: LiveBackground): string {
   switch (value) {
+    case "orb":
+      return t("Orb");
+    case "world-tree":
+      return t("World tree");
     case "none":
       return t("None");
     case "code-rain":
       return t("Code rain");
     case "gradient-ascii":
       return t("Gradient ASCII");
-    case "shape-waves":
-      return t("Shape waves");
     case "micro-slats":
       return t("Micro slats");
     case "web-threads":
       return t("Web threads");
     case "scanner":
       return t("Scanner");
-    case "ferrofluid":
-      return t("Ferrofluid");
     case "lightfall":
       return t("Lightfall");
     case "prism":
@@ -88,6 +88,12 @@ export function liveBackgroundLabel(value: LiveBackground): string {
 
 export function liveBackgroundDescription(value: LiveBackground): string {
   switch (value) {
+    case "orb":
+      return t("A flowing ring of light that breathes and brightens while the AI replies.");
+    case "world-tree":
+      return t(
+        "A world tree woven from code. Light travels from its roots to its branches while the AI replies.",
+      );
     case "none":
       return t("No animated layer behind chat panes.");
     case "gradient-ascii":
@@ -96,16 +102,12 @@ export function liveBackgroundDescription(value: LiveBackground): string {
       );
     case "code-rain":
       return t("Flickering characters drift down behind the conversation.");
-    case "shape-waves":
-      return t("Palette-colored waves that swell while the AI replies.");
     case "micro-slats":
       return t("Fine slats that tilt and shimmer while the AI replies.");
     case "web-threads":
       return t("A web of threads that tightens and pulses while the AI replies.");
     case "scanner":
       return t("A scan line sweeps the pane, quickening while the AI replies.");
-    case "ferrofluid":
-      return t("Glossy blobs that swell and ripple while the AI replies.");
     case "lightfall":
       return t("Streaks of light fall through the pane, brighter while the AI replies.");
     case "prism":

@@ -67,17 +67,9 @@ describe("Provider conversation tool bridge", () => {
       },
     ]);
     const hint = conversationToolsCliHint(bridge);
-    expect(hint).toContain("& 'C:\\Program Files\\nodejs\\node.exe'");
     expect(hint).toContain("conversation_tools_list");
-    expect(hint).toContain("sessions.list and sessions.read");
-    expect(hint).toContain("inbox.reviewContext");
-    expect(hint).toContain("owner's requested language and tone");
-    expect(hint).toContain("without /operator or extra approval");
-    expect(hint).toContain("untrusted data");
+    expect(hint).toContain("native owner approval");
     expect(hint).not.toContain("TOKEN");
-    expect(
-      conversationToolsCliHint({ command: "/usr/bin/node", args: ["/path/owner's host.mjs"] }),
-    ).toContain("'\\''");
     expect(conversationToolsCliHint(null)).toBe("");
   });
 

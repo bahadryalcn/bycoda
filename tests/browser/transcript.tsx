@@ -175,6 +175,7 @@ function Fixture() {
 }
 
 function ChatLayoutFixture() {
+  const backgroundWork = new URLSearchParams(location.search).has("background-work");
   const startedAt = Date.now() - 269_000;
   const layoutBlocks: Block[] = [
     {
@@ -199,9 +200,13 @@ function ChatLayoutFixture() {
     ...Array.from({ length: 10 }, (_, index): Block => ({
       id: `layout-command-${index}`,
       role: "tool",
-      text: `Run pnpm exec check src/features/sessions/ui/very-long-command-path-${index}.tsx`,
+      text: backgroundWork
+        ? `cd G:/Projects/my_projects/monocode && pnpm exec vitest run ${"src/features/sessions/very-long-unbroken-command-path/".repeat(5)}task-${index}.test.ts > temp/verification/background-work/task-${index}.log 2>&1`
+        : `Run pnpm exec check src/features/sessions/ui/very-long-command-path-${index}.tsx`,
       tool: {
         kind: "shell",
+        background: backgroundWork,
+        callId: backgroundWork ? `layout-call-${index}` : undefined,
         status: index === 9 ? "in_progress" : "completed",
         detail: `Command result ${index}: readable-output-marker`,
       },
@@ -216,13 +221,24 @@ function ChatLayoutFixture() {
       }}
     >
       <div className="min-h-0 min-w-0 flex-1">
-        <AgentTranscript blocks={layoutBlocks} busy harness="codex" model="gpt-6.1" />
+        <AgentTranscript
+          blocks={layoutBlocks}
+          busy
+          liveStatusInDock
+          harness="codex"
+          model="gpt-6.1"
+        />
       </div>
       <div data-composer className="mx-auto w-full max-w-4xl px-4 py-2">
         <ActivityDock
           sessionId="layout-session"
           blocks={layoutBlocks}
           busy
+          backgroundTasks={backgroundWork ? ["layout-command-9"] : undefined}
+          backgroundAgents={backgroundWork ? 0 : undefined}
+          perItemStop={backgroundWork}
+          onStopAgent={backgroundWork ? async () => {} : undefined}
+          onStopAll={backgroundWork ? async () => {} : undefined}
           pendingQuestion={false}
           atEnd
           onOpenAgent={() => {}}
@@ -245,6 +261,7 @@ function MessageBubblesFixture() {
             text: "Bu uzun mesaj ekran genişliğine göre satırlara bölünmeli. ".repeat(8),
           },
           { id: "long-reply", role: "assistant", text: "Uzun mesajı aldım." },
+          { id: "draft-user", role: "user", text: "Bekleyen taslak", draft: true },
         ]}
       />
     </div>

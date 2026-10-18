@@ -21,7 +21,13 @@ vi.mock("../../providers/model/rateLimitsCache", () => ({
   useCachedRateLimits: () => limits,
   loadRateLimits: vi.fn(),
 }));
-vi.mock("./UsageOverview", () => ({ UsageOverview: () => null }));
+vi.mock("./UsageOverview", () => ({
+  UsageOverview: ({
+    limits,
+  }: {
+    limits: (filters: import("../model/usageAnalytics").UsageFilters) => import("react").ReactNode;
+  }) => limits({ provider: [], account: [], project: [], model: [], group: [] }),
+}));
 vi.mock("../../settings/ui/ProviderUsageSettings", () => ({
   ProviderUsageSettings: () => null,
 }));

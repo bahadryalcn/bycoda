@@ -43,12 +43,16 @@ function channels(color: string): readonly [number, number, number] {
 function readPalette(probe: HTMLElement, previous?: LiveBackgroundPalette): LiveBackgroundPalette {
   const content = resolveColor(probe, "--color-content");
   const accent = resolveColor(probe, "--color-accent");
+  const signal = resolveColor(probe, "--live-background-signal");
+  const spectrum = resolveColor(probe, "--live-background-spectrum");
   probe.style.fontFamily = "var(--font-mono)";
   const monoFont = getComputedStyle(probe).fontFamily || "monospace";
   if (
     previous &&
     previous.content === content &&
     previous.accent === accent &&
+    previous.signal === signal &&
+    previous.spectrum === spectrum &&
     previous.monoFont === monoFont
   ) {
     return previous;
@@ -58,6 +62,9 @@ function readPalette(probe: HTMLElement, previous?: LiveBackgroundPalette): Live
     accent,
     contentRgb: channels(content),
     accentRgb: channels(accent),
+    signal,
+    spectrum,
+    spectrumRgb: channels(spectrum),
     monoFont,
   };
 }

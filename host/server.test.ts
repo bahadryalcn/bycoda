@@ -38,37 +38,33 @@ afterEach(async () => {
 describe("scoped Conversation Tools RPC", () => {
   it("routes preview jobs through scoped RPC and rejects foreign ownership and protected input", async () => {
     const spies = [
-      vi
-        .spyOn(DeviceHost.prototype, "preflight")
-        .mockResolvedValue({
-          device: {
-            id: "sim",
-            name: "iPhone",
-            platform: "ios",
-            version: "27",
-            booted: true,
-            physical: false,
-          },
-          status: {
-            running: true,
-            installed: true,
-            agentInstalled: true,
-            platform: "darwin",
-            platforms: [],
-          },
-          devices: [],
-          errors: [],
-          checks: { sdk: true, device: true, tools: true, agentControl: true },
-        }),
-      vi
-        .spyOn(DeviceHost.prototype, "status")
-        .mockResolvedValue({
+      vi.spyOn(DeviceHost.prototype, "preflight").mockResolvedValue({
+        device: {
+          id: "sim",
+          name: "iPhone",
+          platform: "ios",
+          version: "27",
+          booted: true,
+          physical: false,
+        },
+        status: {
           running: true,
           installed: true,
           agentInstalled: true,
           platform: "darwin",
           platforms: [],
-        }),
+        },
+        devices: [],
+        errors: [],
+        checks: { sdk: true, device: true, tools: true, agentControl: true },
+      }),
+      vi.spyOn(DeviceHost.prototype, "status").mockResolvedValue({
+        running: true,
+        installed: true,
+        agentInstalled: true,
+        platform: "darwin",
+        platforms: [],
+      }),
       vi
         .spyOn(DeviceHost.prototype, "prepareExpo")
         .mockResolvedValue({ app: "host.exp.Exponent", version: "57.0.9", installed: false }),
@@ -133,6 +129,53 @@ describe("scoped Conversation Tools RPC", () => {
       s.call("conversation.tools.call", { action, input }, grant.token);
     return { ...s, created, grant, tool };
   }
+  it("allows paired owner browser takeover while denying takeover by conversation tools", async () => {
+    const s = await sessionTools();
+    const agent = (await s.tool("browser.claim")).value.result;
+    const blocked = await s.call("browser.claim");
+    expect(blocked.value.error).toContain("Another client");
+    const owner = (await s.call("browser.claim", { takeover: true })).value.result;
+    expect(owner.controlling).toBe(true);
+    expect(owner.leaseId).not.toBe(agent.leaseId);
+    expect((await s.tool("browser.claim")).value.error).toContain("Another client");
+    expect((await s.tool("browser.claim", { takeover: true })).value.error).toBeTruthy();
+    expect((await s.call("browser.status")).value.result).toMatchObject({
+      controlling: true,
+      leaseId: owner.leaseId,
+    });
+  });
+
+  it("discovers and reads project skills through the scoped RPC without accepting another root", async () => {
+    const s = await sessionTools();
+    const path = join(s.project.cwd, ".agents/skills/scoped-harness-review");
+    mkdirSync(path, { recursive: true });
+    writeFileSync(
+      join(path, "SKILL.md"),
+      "---\ndescription: Harness recovery review\n---\nScoped instructions",
+    );
+    const found = (await s.tool("skills.search", { query: "scoped-harness-review" })).value.result;
+    expect(found.skills.map((entry: { name: string }) => entry.name)).toContain(
+      "scoped-harness-review",
+    );
+    expect(
+      (await s.tool("skills.read", { name: "scoped-harness-review" })).value.result.text,
+    ).toContain("Scoped instructions");
+    expect(
+      (await s.tool("skills.read", { name: "scoped-harness-review", cwd: "/other" })).value.error,
+    ).toContain("protected");
+    const work = join(s.project.cwd, "assigned-workspace");
+    const nestedSkill = join(work, ".agents/skills/assigned-skill");
+    mkdirSync(nestedSkill, { recursive: true });
+    writeFileSync(join(nestedSkill, "SKILL.md"), "Assigned workspace instructions");
+    const current = s.store.session(s.created.sessionId);
+    s.store.save(
+      { ...current, revision: current.revision + 1, session: { ...current.session, cwd: work } },
+      { type: "test.workspace" },
+    );
+    expect((await s.tool("skills.read", { name: "assigned-skill" })).value.result.text).toContain(
+      "Assigned workspace",
+    );
+  });
   it.each([
     ["ui.tools.open", { tab: "devices", placement: "right", machineId: "mac" }],
     ["ui.workspace.open", { view: "settings", section: "connections" }],
@@ -531,13 +574,33 @@ async function setup(providers: RemoteProvider[] = ["codex"]) {
 describe("shared queued messages", () => {
   it("dispatches /clear without opening a session or sending a provider turn", async () => {
     const s = await setup();
-    const created = s.engine.command({ type: "create", commandId: "clear-create", projectId: s.project.id,
-      harness: "codex", model: "codex:test", runtimeMode: "supervised" });
+    const created = s.engine.command({
+      type: "create",
+      commandId: "clear-create",
+      projectId: s.project.id,
+      harness: "codex",
+      model: "codex:test",
+      runtimeMode: "supervised",
+    });
     const current = s.store.session(created.sessionId);
-    s.store.save({ ...current, revision: current.revision + 1, session: { ...current.session,
-      providerSessionId: "old-provider", blocks: [{ id: "old", role: "user", text: "Old context" }] } }, { type: "test.seed" });
-    const response = await s.call("commands.dispatch", { type: "send", commandId: "clear-rpc",
-      sessionId: created.sessionId, text: "/clear" });
+    s.store.save(
+      {
+        ...current,
+        revision: current.revision + 1,
+        session: {
+          ...current.session,
+          providerSessionId: "old-provider",
+          blocks: [{ id: "old", role: "user", text: "Old context" }],
+        },
+      },
+      { type: "test.seed" },
+    );
+    const response = await s.call("commands.dispatch", {
+      type: "send",
+      commandId: "clear-rpc",
+      sessionId: created.sessionId,
+      text: "/clear",
+    });
     expect(response.value.error).toBeUndefined();
     expect(response.value.result.sessionId).toBe(created.sessionId);
     expect(s.store.session(created.sessionId).session.blocks).toEqual([]);
@@ -556,18 +619,21 @@ describe("shared queued messages", () => {
       runtimeMode: "supervised",
     });
     const current = s.store.session(created.sessionId);
-    s.store.save({
-      ...current,
-      revision: current.revision + 1,
-      session: {
-        ...current.session,
-        providerSessionId: "old-provider-session",
-        blocks: [
-          { id: "keep", role: "user", text: "Retained" },
-          { id: "remove", role: "user", text: "Removed" },
-        ],
+    s.store.save(
+      {
+        ...current,
+        revision: current.revision + 1,
+        session: {
+          ...current.session,
+          providerSessionId: "old-provider-session",
+          blocks: [
+            { id: "keep", role: "user", text: "Retained" },
+            { id: "remove", role: "user", text: "Removed" },
+          ],
+        },
       },
-    }, { type: "test.seed" });
+      { type: "test.seed" },
+    );
     const capabilities = (await s.call("environment.describe")).value.result.capabilities;
     expect(capabilities).toContain("sessions.rewind");
     const response = await s.call("commands.dispatch", {
@@ -577,7 +643,9 @@ describe("shared queued messages", () => {
       blockId: "remove",
     });
     expect(response.value.error).toBeUndefined();
-    expect(s.store.session(created.sessionId).session.blocks.map((block) => block.id)).toEqual(["keep"]);
+    expect(s.store.session(created.sessionId).session.blocks.map((block) => block.id)).toEqual([
+      "keep",
+    ]);
   });
 
   it("shares unsent rows between paired computers and consumes them with a durable receipt once", async () => {

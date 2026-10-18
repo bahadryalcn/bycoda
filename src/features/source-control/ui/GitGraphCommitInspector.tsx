@@ -1,3 +1,6 @@
+import { SearchInput } from "../../../shared/ui/SearchInput";
+import { ChevronDown, ChevronRight, ChevronLeft, X } from "../../../shared/ui/icons";
+import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
 import { Button } from "../../../shared/ui/Button";
 import { useCallback, useMemo, useState } from "react";
 import {
@@ -17,6 +20,7 @@ export function GitGraphCommitInspector({
   cwd,
   commit,
   onBranch,
+  onClose,
   disabled = false,
   mode = "changes",
   onMode,
@@ -24,6 +28,7 @@ export function GitGraphCommitInspector({
   cwd: string;
   commit: GitHistoryCommit;
   onBranch: () => void;
+  onClose?: () => void;
   disabled?: boolean;
   mode?: "changes" | "blame";
   onMode?: (mode: "changes" | "blame") => void;
@@ -31,6 +36,8 @@ export function GitGraphCommitInspector({
   useLocale();
   const readFiles = useCallback(() => gitCommitFiles(cwd, commit.sha), [cwd, commit.sha]);
   const files = useGitResource(cwd, `graph-files:${cwd}:${commit.sha}`, true, readFiles, false);
+  const [fileQuery, setFileQuery] = useState("");
+  const [filesOpen, setFilesOpen] = useState(true);
   const [picked, setPicked] = useState<string | null>(null);
   const relative =
     picked && files.data?.some((f) => f.relative === picked) ? picked : files.data?.[0]?.relative;
@@ -63,43 +70,94 @@ export function GitGraphCommitInspector({
       },
     ];
   }, [diff.data, relative]);
+  const visibleFiles = (files.data ?? []).filter((file) =>
+    file.relative.toLocaleLowerCase().includes(fileQuery.trim().toLocaleLowerCase()),
+  );
+  const selectedIndex = visibleFiles.findIndex((file) => file.relative === relative);
+  const totals = (files.data ?? []).reduce(
+    (sum, file) => ({
+      additions: sum.additions + file.additions,
+      deletions: sum.deletions + file.deletions,
+    }),
+    { additions: 0, deletions: 0 },
+  );
   const deleted = files.data?.find((file) => file.relative === relative)?.status === "deleted";
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col">
       <header className="shrink-0 border-b border-stroke p-3">
         <div className="mb-2 flex items-center justify-between gap-2">
           <code className="select-all text-[12px] text-accent">{commit.shortSha}</code>
-          <Button
-            variant="ghost"
-            motion="none"
-            type="button"
-            onClick={onBranch}
-            disabled={disabled}
-          >
-            {t("Create Branch…")}
-          </Button>
+          <div className="flex items-center gap-1">
+            <Button
+              variant="ghost"
+              motion="none"
+              type="button"
+              onClick={onBranch}
+              disabled={disabled}
+            >
+              {t("Create Branch…")}
+            </Button>
+            {onClose ? (
+              <Button
+                variant="ghost"
+                motion="none"
+                iconOnly
+                label={t("Close commit details")}
+                onClick={onClose}
+              >
+                <X className="size-3.5" />
+              </Button>
+            ) : null}
+          </div>
         </div>
         <h3 className="break-words text-[14px] font-medium text-content">{commit.subject}</h3>
         <p className="mt-1 text-[12px] text-[var(--ui-text-secondary)]">
           {commit.author} · {new Date(commit.timestamp * 1000).toLocaleString()}
         </p>
+        <p className="flex gap-2 text-xs tabular-nums text-[var(--ui-text-secondary)]">
+          <span>
+            {files.data?.length ?? "…"} {t("files")}
+          </span>
+          <span className="text-success">+{totals.additions}</span>
+          <span className="text-danger">−{totals.deletions}</span>
+        </p>
       </header>
-      <section
-        aria-label={t("Changed files")}
-        className="max-h-[30%] min-h-24 shrink-0 overflow-y-auto border-b border-stroke"
-      >
-        <h4 className="sticky top-0 bg-[var(--ui-surface)] px-3 py-2 text-[11px] font-semibold text-[var(--ui-text-secondary)]">
-          {t("Changed files")} · {files.data?.length ?? "…"}
-        </h4>
-        {files.error ? (
-          <GitFeedback
-            title={t("Couldn’t load commit")}
-            detail={files.error}
-            onRetry={files.refresh}
+      <div className="flex shrink-0 items-center gap-2 border-b border-stroke px-2 py-1">
+        <Button
+          variant="ghost"
+          motion="none"
+          aria-expanded={filesOpen}
+          onClick={() => setFilesOpen(!filesOpen)}
+        >
+          {filesOpen ? <ChevronDown className="size-3.5" /> : <ChevronRight className="size-3.5" />}
+          {t("Changed files")}
+        </Button>
+        {filesOpen ? (
+          <SearchInput
+            type="search"
+            appearance="field"
+            containerClassName="min-w-0 flex-1"
+            aria-label={t("Filter commit files")}
+            placeholder={t("File or folder name")}
+            value={fileQuery}
+            onChange={(event) => setFileQuery(event.target.value)}
           />
         ) : null}
+      </div>
+      {files.error ? (
+        <GitFeedback
+          title={t("Couldn’t load commit")}
+          detail={files.error}
+          onRetry={files.refresh}
+        />
+      ) : null}
+      <section
+        hidden={!filesOpen}
+        aria-label={t("Changed files")}
+        className="max-h-[30%] min-h-0 shrink-0 overflow-y-auto border-b border-stroke"
+      >
         {files.loading && !files.data ? <GitLoading text="Loading…" /> : null}
-        {files.data?.map((file) => (
+        {visibleFiles.map((file) => (
           <Button
             variant="item"
             motion="none"
@@ -117,9 +175,9 @@ export function GitGraphCommitInspector({
             <span className="text-danger">−{file.deletions}</span>
           </Button>
         ))}
-        {files.data?.length === 0 ? (
+        {files.data && visibleFiles.length === 0 ? (
           <p className="px-3 py-2 text-[12px] text-[var(--ui-text-secondary)]">
-            {t("No changed files")}
+            {t(fileQuery ? "No matching files" : "No changed files")}
           </p>
         ) : null}
       </section>
@@ -132,22 +190,47 @@ export function GitGraphCommitInspector({
             : t("Parent → commit")}
         </span>
         {onMode ? (
-          <div className="flex gap-1">
-            {(["changes", "blame"] as const).map((value) => (
-              <Button
-                variant="ghost"
-                motion="none"
-                key={value}
-                type="button"
-                aria-pressed={mode === value}
-                onClick={() => onMode(value)}
-              >
-                {value === "changes" ? t("Changes") : t("Blame")}
-              </Button>
-            ))}
-          </div>
+          <SegmentedControl
+            label={t("Commit view")}
+            value={mode}
+            options={[
+              { value: "changes", label: t("Changes") },
+              { value: "blame", label: t("Blame") },
+            ]}
+            onValueChange={(value) => onMode(value as "changes" | "blame")}
+          />
         ) : null}
       </div>
+      {relative ? (
+        <div className="flex min-w-0 shrink-0 items-center gap-1 border-b border-stroke px-2 py-1 text-xs">
+          <span title={relative} className="min-w-0 flex-1 truncate">
+            {relative}
+          </span>
+          <span className="tabular-nums text-[var(--ui-text-secondary)]">
+            {selectedIndex < 0 ? "–" : selectedIndex + 1}/{visibleFiles.length}
+          </span>
+          <Button
+            variant="ghost"
+            motion="none"
+            iconOnly
+            label={t("Previous file")}
+            disabled={selectedIndex <= 0}
+            onClick={() => setPicked(visibleFiles[selectedIndex - 1].relative)}
+          >
+            <ChevronLeft className="size-3.5" />
+          </Button>
+          <Button
+            variant="ghost"
+            motion="none"
+            iconOnly
+            label={t("Next file")}
+            disabled={selectedIndex < 0 || selectedIndex >= visibleFiles.length - 1}
+            onClick={() => setPicked(visibleFiles[selectedIndex + 1].relative)}
+          >
+            <ChevronRight className="size-3.5" />
+          </Button>
+        </div>
+      ) : null}
       {diff.error ? (
         <GitFeedback title={t("Couldn’t load diff")} detail={diff.error} onRetry={diff.refresh} />
       ) : null}

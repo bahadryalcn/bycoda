@@ -30,11 +30,7 @@ export function LanguageSettings() {
     }
   };
   return (
-    <Group
-      title={t("Language")}
-      persistence={{ mode: "automatic" }}
-      description={t("Choose the language used for menus, settings and application controls.")}
-    >
+    <Group title={t("Language")} layout="full">
       <Row
         id="interface-language"
         label={t("Application language")}
@@ -87,9 +83,6 @@ function DomainLanguageRow({ domain }: { domain: LanguageDomain }) {
     <Row
       id={`${domain}-language`}
       label={label}
-      scope={t(
-        "Follow application language uses the language selected above. A specific language overrides it for these controls.",
-      )}
       description={
         domain === "git"
           ? t("Git panels, branches, commits and diffs. English by default.")

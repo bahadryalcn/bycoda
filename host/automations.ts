@@ -223,7 +223,10 @@ export class HostAutomations {
       now,
     );
     if (outcome.state === "running") {
-      if (outcome.needsInput !== Boolean(run.needsInput)) {
+      if (
+        outcome.needsInput !== Boolean(run.needsInput) ||
+        outcome.needsInput !== Boolean(automation?.needsInput)
+      ) {
         const needsInput = outcome.needsInput || undefined;
         this.writeRun({ ...run, needsInput });
         // Also on the automation, so a desktop sees it without asking for runs.
@@ -262,13 +265,18 @@ export class HostAutomations {
         lastRunStatus: status,
         lastRunError: finished.error,
         lastSessionId: finished.sessionId ?? automation.lastSessionId,
-        needsInput: undefined,
+        needsInput:
+          this.runs(run.automationId).some(
+            (other) => other.status === "running" && other.needsInput,
+          ) || undefined,
       });
+    const dayStart = new Date(now);
+    dayStart.setHours(0, 0, 0, 0);
     this.store.db
       .prepare(
-        "DELETE FROM automation_runs WHERE automation_id=? AND id NOT IN (SELECT id FROM automation_runs WHERE automation_id=? ORDER BY created_at DESC, rowid DESC LIMIT ?)",
+        "DELETE FROM automation_runs WHERE automation_id=? AND json_extract(value, '$.status') NOT IN ('pending','running') AND COALESCE(json_extract(value, '$.startedAt'), 0) < ? AND id NOT IN (SELECT id FROM automation_runs WHERE automation_id=? ORDER BY created_at DESC, rowid DESC LIMIT ?)",
       )
-      .run(run.automationId, run.automationId, MAX_RUNS_PER_AUTOMATION);
+      .run(run.automationId, dayStart.getTime(), run.automationId, MAX_RUNS_PER_AUTOMATION);
     return finished;
   }
 }

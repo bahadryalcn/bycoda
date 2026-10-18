@@ -53,6 +53,7 @@ it("loads selected host skill bodies afresh with host paths and ignores quoted s
   const first = await prepareHostSkillPrompt("$review inspect", project, home);
   expect(first).toContain(`Skill file: ${path.replace(/\\/g, "/")}`);
   expect(first).toContain("First instructions");
+  expect(first).toContain("Owner instructions and project contracts take precedence");
   write(path, "Updated instructions");
   expect(await prepareHostSkillPrompt("/review inspect", project, home)).toContain(
     "Updated instructions",

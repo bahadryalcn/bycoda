@@ -9,6 +9,7 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
   type ReactNode,
+  type CSSProperties,
 } from "react";
 import type { GitHistoryCommit } from "../../../platform/tauri/fs";
 import { useLockOverscroll } from "../../../shared/hooks/useLockOverscroll";
@@ -22,6 +23,10 @@ import {
 import { visibleRange } from "../model/gitGraphWindow";
 import { GitGraphHoverCard } from "./GitGraphHoverCard";
 import { GraphAvatar, GraphLane, RefPills } from "./GitGraphParts";
+import styles from "./GitGraphList.module.css";
+
+import { GitGraphColumnFilter } from "./GitGraphColumnFilter";
+import type { GitHistoryFilters } from "../model/gitHistoryFilters";
 
 export type GraphListItem = {
   commit: GitHistoryCommit;
@@ -32,6 +37,8 @@ export type GraphVariant = "compact" | "wide" | "workspace";
 
 type Props = {
   variant: GraphVariant;
+  filters?: GitHistoryFilters;
+  onFilters?: (filters: GitHistoryFilters) => void;
   items: GraphListItem[];
   /** Lanes only connect when every commit is shown, so a filtered list drops them. */
   plain: boolean;
@@ -55,7 +62,7 @@ const HOVER_DELAY_MS = 400;
 const HOVER_GRACE_MS = 150;
 const NOW_REFRESH_MS = 60_000;
 
-const WIDE_HEADER_PX = 24;
+const WIDE_HEADER_PX = 32;
 const WIDE_REFS_PX = 190;
 const WIDE_AUTHOR_PX = 150;
 const WIDE_DATE_PX = 64;
@@ -92,6 +99,8 @@ function wideColumns(graphWidth: number): string {
  */
 export function GitGraphList({
   variant,
+  filters,
+  onFilters,
   items,
   plain,
   selectedSha,
@@ -128,6 +137,10 @@ export function GitGraphList({
     observer.observe(scroller);
     return () => observer.disconnect();
   }, [scroller]);
+
+  useEffect(() => {
+    scroller?.scrollTo({ top: 0 });
+  }, [filters, plain, scroller]);
 
   // Hover card: one at a time, owned here so a scroll or a leave closes it.
   const [hover, setHover] = useState<{
@@ -205,32 +218,83 @@ export function GitGraphList({
     <div
       ref={attach}
       onScroll={onScroll}
-      className={`min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-none ${workspace ? "overflow-x-auto" : "overflow-x-hidden"}`}
+      className={`min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-none ${workspace ? `overflow-x-auto ${styles.workspace}` : "overflow-x-hidden"}`}
+      style={workspace ? ({ "--git-graph-width": `${graphWidth}px` } as CSSProperties) : undefined}
     >
-      {empty ? (
+      {empty && !wide ? (
         empty
       ) : (
         <>
           {wide ? (
             <div
-              className="sticky top-0 z-[2] grid items-center border-b border-stroke bg-[var(--ui-surface)] text-[10px] font-semibold tracking-[0.04em] text-[var(--ui-text-secondary)] uppercase"
+              className={`sticky top-0 z-[2] grid items-center border-b border-stroke bg-[var(--ui-surface)] text-[10px] text-[var(--ui-text-secondary)] ${workspace ? styles.workspaceHeader : "font-semibold tracking-[0.04em] uppercase"}`}
               style={{
                 height: WIDE_HEADER_PX,
-                gridTemplateColumns: columns,
-                minWidth: workspace ? 244 + graphWidth : undefined,
+                gridTemplateColumns: workspace ? undefined : columns,
+                minWidth: workspace ? 360 + graphWidth : undefined,
               }}
             >
-              <span className="truncate pl-3">{t("Branch / Tag")}</span>
-              <span className="truncate">{plain ? "" : t("Graph")}</span>
-              <span className="truncate pl-1">{t("Commit Message")}</span>
-              {!workspace ? <span className="truncate">{t("Author")}</span> : null}
-              {!workspace ? <span className="truncate">{t("Date")}</span> : null}
-              <span className="truncate">{"SHA"}</span>
+              {!workspace ? <span className="truncate pl-3">{t("Branch / Tag")}</span> : null}
+              <span className="truncate">
+                <span className={workspace && graphWidth < 44 ? "sr-only" : undefined}>
+                  {plain ? "" : t("Graph")}
+                </span>
+              </span>
+              <span className="min-w-0 ps-1">
+                {filters && onFilters ? (
+                  <GitGraphColumnFilter
+                    label={t("Commit Message")}
+                    field="subject"
+                    filters={filters}
+                    onChange={onFilters}
+                  />
+                ) : (
+                  t("Commit Message")
+                )}
+              </span>
+              <span className={workspace ? styles.author : "truncate"}>
+                {filters && onFilters ? (
+                  <GitGraphColumnFilter
+                    label={t("Author")}
+                    field="author"
+                    filters={filters}
+                    onChange={onFilters}
+                  />
+                ) : (
+                  t("Author")
+                )}
+              </span>
+              <span className="min-w-0">
+                {filters && onFilters ? (
+                  <GitGraphColumnFilter
+                    label={t("Date")}
+                    field="date"
+                    filters={filters}
+                    onChange={onFilters}
+                  />
+                ) : (
+                  t("Date")
+                )}
+              </span>
+              <span className="min-w-0">
+                {filters && onFilters ? (
+                  <GitGraphColumnFilter
+                    label="SHA"
+                    field="sha"
+                    filters={filters}
+                    onChange={onFilters}
+                  />
+                ) : (
+                  "SHA"
+                )}
+              </span>
             </div>
           ) : null}
+          {empty}
           <ul
+            hidden={!!empty}
             className="min-w-0 max-w-full"
-            style={{ minWidth: workspace ? 244 + graphWidth : undefined }}
+            style={{ minWidth: workspace ? 360 + graphWidth : undefined }}
             onKeyDown={onKeyDown}
           >
             {range.padTop > 0 ? <li aria-hidden style={{ height: range.padTop }} /> : null}
@@ -384,16 +448,30 @@ function WideRow(props: RowProps & { columns: string; workspace?: boolean }) {
         variant="item"
         motion="none"
         {...button}
-        className={`   ${button.className}  grid h-[22px] items-center  `}
-        style={{ gridTemplateColumns: columns }}
+        className={`${button.className} grid h-[22px] items-center ${workspace ? styles.workspaceRow : ""}`}
+        style={workspace ? undefined : { gridTemplateColumns: columns }}
       >
-        <span className="flex min-w-0 items-center pr-1 pl-3">
-          <RefPills refs={refs} budgetPx={workspace ? 104 : WIDE_REFS_PX - 16} maxWidth="100%" />
-        </span>
+        {!workspace ? (
+          <span className="flex min-w-0 items-center pr-1 pl-3">
+            <RefPills refs={refs} budgetPx={workspace ? 104 : WIDE_REFS_PX - 16} maxWidth="100%" />
+          </span>
+        ) : null}
         <span className="flex h-[22px] min-w-0 items-stretch overflow-x-clip">
           {plain ? null : <GraphLane row={row} />}
         </span>
-        <span className={`${subjectClass(item)} pl-1`}>{commit.subject || commit.shortSha}</span>
+        {workspace ? (
+          <span className={styles.subject}>
+            <RefPills refs={refs} budgetPx={200} maxWidth="40%" className="shrink-0" />
+            <span className={subjectClass(item)}>{commit.subject || commit.shortSha}</span>
+          </span>
+        ) : (
+          <span className={`${subjectClass(item)} pl-1`}>{commit.subject || commit.shortSha}</span>
+        )}
+        {workspace ? (
+          <span className={styles.author} title={commit.author}>
+            {commit.author}
+          </span>
+        ) : null}
         {!workspace ? (
           <span className={`flex min-w-0 items-center gap-1.5 pr-2 ${dim}`}>
             <GraphAvatar name={commit.author} />
@@ -402,14 +480,14 @@ function WideRow(props: RowProps & { columns: string; workspace?: boolean }) {
             </span>
           </span>
         ) : null}
-        {!workspace ? (
+        {
           <span
             title={formatAbsoluteTime(commit.timestamp)}
-            className="truncate text-[12px] text-[var(--ui-text-secondary)]"
+            className={`truncate text-[12px] text-[var(--ui-text-secondary)] ${workspace ? styles.date : ""}`}
           >
             {formatRelativeTime(commit.timestamp, now)}
           </span>
-        ) : null}
+        }
         <span className="truncate font-mono text-[11px] text-[var(--ui-text-secondary)]">
           {commit.shortSha}
         </span>

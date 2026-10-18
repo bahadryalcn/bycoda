@@ -202,11 +202,9 @@ function GenericAcpMachineSettings({ cwd, embedded }: { cwd: string; embedded: b
   }
   const editing = configs.some((config) => config.id === form.id);
   const openAgentForm = () => {
-    const details = formDisclosureRef.current?.querySelector("details");
-    const summary = details?.querySelector("summary");
-    if (!details || !summary) return;
-    if (!details.open) summary.click();
-    summary.focus();
+    // The shared settings group is always visible. Move keyboard focus to its
+    // first field instead of trying to open the retired native disclosure.
+    formDisclosureRef.current?.querySelector<HTMLInputElement>("input")?.focus();
   };
   const openRegistry = () => {
     if (!activeRef.current || busyRef.current) return;

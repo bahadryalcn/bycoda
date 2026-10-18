@@ -13,7 +13,7 @@ export function SessionListSettings() {
   useLocale();
   const display = useSessionListDisplay();
   return (
-    <Group id="session-list" title={t("Session list")} persistence={{ mode: "automatic" }}>
+    <Group id="session-list" title={t("Session list")}>
       <Row
         label={t("Row density")}
         description={t("How many lines each session uses in the sidebar.")}

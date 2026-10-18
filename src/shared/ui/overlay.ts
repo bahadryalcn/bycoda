@@ -11,6 +11,7 @@ type Entry = {
   modal: boolean;
   escape?: () => void;
   previous: HTMLElement | null;
+  initialFocusSelector?: string;
 };
 const entries: Entry[] = [];
 /** Outer window listeners must leave Escape to the active overlay stack. */
@@ -29,14 +30,50 @@ function visible(element: HTMLElement) {
       style.visibility === "hidden"
     )
       return false;
+    if (current !== element && current instanceof HTMLDetailsElement && !current.open) {
+      const summary = current.querySelector(":scope > summary");
+      if (!summary?.contains(element)) return false;
+    }
   }
   return true;
 }
-const focusable = (root: HTMLElement) =>
-  [
+const focusable = (root: HTMLElement) => {
+  const candidates = [
     root,
-    ...root.querySelectorAll<HTMLElement>("button, input, select, textarea, a[href], [tabindex]"),
-  ].filter((el) => el.tabIndex >= 0 && !el.matches(":disabled") && visible(el));
+    ...root.querySelectorAll<HTMLElement>(
+      "button, input, select, textarea, a[href], summary, [tabindex]",
+    ),
+  ].filter(
+    (el) =>
+      (el.tabIndex >= 0 ||
+        (el.tagName === "SUMMARY" &&
+          !el.hasAttribute("tabindex") &&
+          el.parentElement instanceof HTMLDetailsElement &&
+          el.parentElement.querySelector(":scope > summary") === el)) &&
+      !el.matches(":disabled") &&
+      visible(el),
+  );
+  return candidates.filter((el) => {
+    if (!(el instanceof HTMLInputElement) || el.type !== "radio" || !el.name) return true;
+    const group = candidates.filter(
+      (item): item is HTMLInputElement =>
+        item instanceof HTMLInputElement &&
+        item.type === "radio" &&
+        item.name === el.name &&
+        item.form === el.form &&
+        item.getRootNode() === el.getRootNode(),
+    );
+    return el === (group.find((item) => item.checked) ?? group[0]);
+  });
+};
+function initialFocus(entry: Entry) {
+  const options = focusable(entry.root);
+  return (
+    options.find((el) => entry.initialFocusSelector && el.matches(entry.initialFocusSelector)) ??
+    options[0] ??
+    entry.root
+  );
+}
 function descendant(entry: Entry, id: symbol): boolean {
   if (entry.id === id) return true;
   const parent = entries.find((item) => item.id === entry.parent);
@@ -93,7 +130,8 @@ function onKey(event: KeyboardEvent) {
 function onFocus(event: FocusEvent) {
   const roots = modalRoots();
   if (roots.length && !roots.some((root) => root.contains(event.target as Node))) {
-    (focusable(roots[0])[0] ?? roots[0]).focus({ preventScroll: true });
+    const entry = entries.find((entry) => entry.root === roots[0])!;
+    initialFocus(entry).focus({ preventScroll: true });
   }
 }
 export function useOverlay(
@@ -101,6 +139,7 @@ export function useOverlay(
   modal: boolean,
   escape?: () => void,
   enabled = true,
+  initialFocusSelector?: string,
 ) {
   const id = useRef(Symbol("overlay")).current;
   // Capture before descendant layout effects can move focus into their portals.
@@ -121,6 +160,7 @@ export function useOverlay(
       modal,
       escape: escape ? () => close.current?.() : undefined,
       previous: previous.current,
+      initialFocusSelector,
     };
     // Child layout effects run first: insert ancestors before their descendants.
     const child = entries.findIndex((item) => descendant(item, id));
@@ -132,8 +172,13 @@ export function useOverlay(
       observer.observe(document.body, { childList: true, subtree: true });
     }
     syncInert();
-    if (modal && modalRoots()[0] === entry.root)
-      (focusable(entry.root)[0] ?? entry.root).focus({ preventScroll: true });
+    // Preserve explicit descendant autofocus, including portalled child overlays.
+    if (
+      modal &&
+      modalRoots()[0] === entry.root &&
+      !modalRoots().some((root) => root.contains(document.activeElement))
+    )
+      initialFocus(entry).focus({ preventScroll: true });
     return () => {
       const wasTop = entries[entries.length - 1] === entry;
       entries.splice(entries.indexOf(entry), 1);
@@ -150,6 +195,6 @@ export function useOverlay(
       )
         entry.previous.focus({ preventScroll: true });
     };
-  }, [id, parent, root, modal, Boolean(escape), enabled]);
+  }, [id, parent, root, modal, Boolean(escape), enabled, initialFocusSelector]);
   return id;
 }

@@ -71,6 +71,35 @@ const button = (name: string) =>
 async function render() {
   await act(async () => root.render(createElement(ConnectionsSettings)));
 }
+
+it("keeps a machine draft when moving between connection views", async () => {
+  await render();
+  await act(async () => button("Add machine").click());
+  await fill('input[placeholder="user@my-mac-mini or an SSH alias"]', "me@new-host");
+  const choose = (value: string) =>
+    container.querySelector<HTMLButtonElement>(`[role="radio"][data-value="${value}"]`)!;
+  await act(async () => choose("phone").click());
+  expect(container.querySelector(".connections-view:not([hidden])")?.textContent).toContain(
+    "Scan a QR code",
+  );
+  await act(async () => choose("machines").click());
+  expect(
+    container.querySelector<HTMLInputElement>(
+      'input[placeholder="user@my-mac-mini or an SSH alias"]',
+    )?.value,
+  ).toBe("me@new-host");
+  expect(requested("remote_ssh_begin")).toBe(false);
+});
+
+it("does not label an untouched URL connection as unsaved", async () => {
+  await render();
+  const details = container.querySelectorAll("section");
+  const url = [...details].find((item) =>
+    item.querySelector(":scope > h3")?.textContent?.includes("Connect to an existing host by URL"),
+  )!;
+  expect(url.textContent).not.toContain("Unsaved changes");
+  expect(url.querySelector('input[type="url"]')).toBeTruthy();
+});
 async function fill(selector: string, value: string) {
   const input = container.querySelector<HTMLInputElement>(selector)!;
   await act(async () => {
@@ -92,10 +121,9 @@ async function poll() {
 
 it("keeps the existing-host form open and preserves URL and token when connection fails", async () => {
   await render();
-  const disclosure = [...container.querySelectorAll("details")].find((item) =>
-    item.querySelector("summary")?.textContent?.includes("Connect to an existing host by URL"),
+  const disclosure = [...container.querySelectorAll("section")].find((item) =>
+    item.querySelector(":scope > h3")?.textContent?.includes("Connect to an existing host by URL"),
   )!;
-  disclosure.open = true;
   await fill('input[type="url"]', "https://remote.example.com");
   await fill('input[type="password"]', "device-token");
   const credential = container.querySelector<HTMLInputElement>('input[type="password"]')!;
@@ -124,7 +152,7 @@ it("keeps the existing-host form open and preserves URL and token when connectio
   });
   await act(async () => button("Connect by URL").click());
   expect(disclosure.isConnected).toBe(true);
-  expect(disclosure.open).toBe(true);
+  expect(disclosure.querySelector("details")).toBeNull();
   expect(container.querySelector<HTMLInputElement>('input[type="url"]')?.value).toBe(
     "https://remote.example.com",
   );

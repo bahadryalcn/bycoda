@@ -282,11 +282,8 @@ export function ProviderAccountsSettings({ harness }: { harness?: HarnessId }) {
         aria-label={t(harness === "cursor" || harness === "grok" ? "Sign in" : "Accounts")}
         className="min-w-0"
       >
-        <div
-          className="flex h-8 items-center gap-1.5 border-b border-content/5 px-2"
-          aria-busy={Boolean(working) || usage.refreshing}
-        >
-          <span className="min-w-0 flex-1 truncate text-[11px] font-medium text-content/75">
+        <div className="provider-accounts-heading" aria-busy={Boolean(working) || usage.refreshing}>
+          <span className="provider-accounts-title">
             {t(harness === "cursor" || harness === "grok" ? "Sign in" : "Accounts")}
           </span>
           {accountProvider ? (
@@ -351,17 +348,11 @@ export function ProviderAccountsSettings({ harness }: { harness?: HarnessId }) {
                         onSubmit={submitEditor}
                       />
                     ) : (
-                      <div
-                        key={account.id}
-                        className="flex min-h-11 flex-wrap items-center gap-2 border-b border-content/5 px-3 py-1.5 last:border-b-0"
-                      >
+                      <div key={account.id} className="provider-account-row">
                         <div className="min-w-0 flex-1">
-                          <div className="flex min-w-0 items-center gap-1.5">
+                          <div className="provider-account-identity">
                             <AccountColorPicker account={account} disabled={Boolean(working)} />
-                            <span
-                              title={account.label}
-                              className="break-words text-[12px] text-content/85"
-                            >
+                            <span title={account.label} className="provider-account-name">
                               {displayLabel}
                             </span>
                             {account.isDefault && !autoDefaultLabel ? (
@@ -375,7 +366,7 @@ export function ProviderAccountsSettings({ harness }: { harness?: HarnessId }) {
                               </Badge>
                             ) : null}
                           </div>
-                          <div className="mt-0.5 flex min-w-0 items-center gap-2.5 text-[10px]">
+                          <div className="provider-account-meta">
                             {signedOut ? (
                               <Badge size="sm" tone="warning" className="shrink-0">
                                 {t("Signed out")}
@@ -395,7 +386,7 @@ export function ProviderAccountsSettings({ harness }: { harness?: HarnessId }) {
                                     ? t("Shared CLI profile")
                                     : t("Isolated profile")
                               }
-                              className="truncate text-content/30"
+                              className="provider-account-subtitle"
                             />
                           </div>
                           {duplicateOf ? (

@@ -146,7 +146,21 @@ html.appearance-word-wrap .agent-markdown [data-streamdown="code-block-body"] co
   --ui-annotation-highlight: color-mix(in oklch, var(--color-accent) 12%, transparent);
   --ui-annotation-highlight-selected: color-mix(in oklch, var(--color-accent) 22%, transparent);
   --ui-transparency-grid-ink: color-mix(in srgb, var(--palette-hex808080) 10%, transparent);
-  --ui-transparency-grid-image: linear-gradient(45deg, var(--ui-transparency-grid-ink) 25%, transparent 25%, transparent 75%, var(--ui-transparency-grid-ink) 75%), linear-gradient(45deg, var(--ui-transparency-grid-ink) 25%, transparent 25%, transparent 75%, var(--ui-transparency-grid-ink) 75%);
+  --ui-transparency-grid-image:
+    linear-gradient(
+      45deg,
+      var(--ui-transparency-grid-ink) 25%,
+      transparent 25%,
+      transparent 75%,
+      var(--ui-transparency-grid-ink) 75%
+    ),
+    linear-gradient(
+      45deg,
+      var(--ui-transparency-grid-ink) 25%,
+      transparent 25%,
+      transparent 75%,
+      var(--ui-transparency-grid-ink) 75%
+    );
   --ui-tone-status-on-solid: var(--palette-scrim);
   --ui-tone-status-interaction-ink: var(--palette-solidInk);
   --ui-control-disabled-fg: var(--ui-text-disabled);
@@ -269,7 +283,8 @@ html.theme-light {
 :root {
   --ui-font-secondary: 0.8125rem;
   --ui-font-caption: 0.75rem;
-  --ui-transcript-surface: color-mix(in oklab, var(--color-background-base) 94%, transparent);
+  /* The pane owns the backdrop; growing history must not paint over it. */
+  --ui-transcript-surface: transparent;
   --ui-text-on-active: var(--palette-oklch_0_29_0_066_243);
   --ui-text-secondary: color-mix(
     in srgb,
@@ -635,7 +650,11 @@ html.has-native-glass:not(.theme-light) .sidebar-glass {
 /* The activity dot sits at (23px, 9px) in a 32px button. Its icon is
    centered at (8px, 8px), so this cuts a 2px gap around the 6px dot. */
 .compact-rail-icon-with-dot {
-  -webkit-mask-image: radial-gradient(circle at 15px 1px, transparent 5px, var(--palette-scrim) 5.5px);
+  -webkit-mask-image: radial-gradient(
+    circle at 15px 1px,
+    transparent 5px,
+    var(--palette-scrim) 5.5px
+  );
   mask-image: radial-gradient(circle at 15px 1px, transparent 5px, var(--palette-scrim) 5.5px);
 }
 
@@ -684,7 +703,11 @@ html.chat-background-blurred .chat-pane-background::before {
 /* One masked copy samples the artwork; the soft copy stays hidden. */
 .gradient-blur-background {
   --gradient-blur-strong: 18px;
-  --gradient-blur-strong-mask: linear-gradient(to bottom, transparent 28%, var(--palette-hex000) 76%);
+  --gradient-blur-strong-mask: linear-gradient(
+    to bottom,
+    transparent 28%,
+    var(--palette-hex000) 76%
+  );
   --gradient-blur-overlay: linear-gradient(
     to bottom,
     transparent 16%,
@@ -763,7 +786,11 @@ html.chat-background-blurred .chat-pane-background::before {
 /* Keep the active transcript clear of the wide blurred haze used by the empty hero. */
 .chat-pane-background[data-session-empty="false"] > .gradient-blur-background {
   --gradient-blur-strong: 12px;
-  --gradient-blur-strong-mask: linear-gradient(to bottom, transparent 22%, var(--palette-hex000) 76%);
+  --gradient-blur-strong-mask: linear-gradient(
+    to bottom,
+    transparent 22%,
+    var(--palette-hex000) 76%
+  );
   --gradient-blur-overlay: linear-gradient(
     to bottom,
     transparent 15%,
@@ -868,7 +895,12 @@ html.has-chat-background.chat-background-effect-ready.chat-background-gradient-b
 
 /* Match the Mono transcript's soft edge fade on overflowing tab text. */
 .tab-label[data-overflow="true"] {
-  --tab-label-mask: linear-gradient(to right, var(--palette-hex000), var(--palette-hex000) calc(100% - 2.5rem), transparent);
+  --tab-label-mask: linear-gradient(
+    to right,
+    var(--palette-hex000),
+    var(--palette-hex000) calc(100% - 2.5rem),
+    transparent
+  );
   -webkit-mask-image: var(--tab-label-mask);
   mask-image: var(--tab-label-mask);
 }
@@ -1000,7 +1032,11 @@ html.theme-light .bycoda-sparkles {
   content: "";
   position: absolute;
   inset: 0;
-  background: radial-gradient(120% 70% at 50% 100%, var(--palette-rgb_251_191_36_0_35), transparent 70%);
+  background: radial-gradient(
+    120% 70% at 50% 100%,
+    var(--palette-rgb_251_191_36_0_35),
+    transparent 70%
+  );
   animation: bycoda-ember-glow 2200ms 100ms ease-out both;
 }
 
@@ -2057,6 +2093,7 @@ html.is-grabbing {
   position: absolute;
   z-index: 1;
   inset: 0 68px 0 10px;
+  inline-size: auto;
   display: flex;
   align-items: center;
   gap: 12px;
@@ -2789,7 +2826,9 @@ html:not(.theme-light) .markdown-code-token {
   contain: layout paint;
   transition: grid-template-rows 220ms cubic-bezier(0.25, 0.1, 0.25, 1);
 }
-.project-group-body[data-open="true"] { grid-template-rows: 1fr; }
+.project-group-body[data-open="true"] {
+  grid-template-rows: 1fr;
+}
 .project-group-body-clip {
   min-height: 0;
   overflow: hidden;
@@ -3368,7 +3407,11 @@ html.theme-light .btw-morph-frame {
  * crosses it. The /operator sparkles' cousin, in the accent color.
  */
 .btw-burst {
-  --burst-color: color-mix(in srgb, var(--user-accent-color, var(--color-accent)) 70%, var(--palette-solidInk));
+  --burst-color: color-mix(
+    in srgb,
+    var(--user-accent-color, var(--color-accent)) 70%,
+    var(--palette-solidInk)
+  );
   --burst-glow: color-mix(in srgb, var(--user-accent-color, var(--color-accent)) 75%, transparent);
   position: absolute;
   pointer-events: none;
@@ -3945,20 +3988,41 @@ html.theme-light .btw-burst {
   }
 }
 
-html[data-decorative-motion="off"] :is(.activity-dock-waiting, .zen-thinking-pulse, .terminal-live-bar, .bycoda-sigil-active) {
+html[data-decorative-motion="off"]
+  :is(.activity-dock-waiting, .zen-thinking-pulse, .terminal-live-bar, .bycoda-sigil-active) {
   animation-play-state: paused !important;
 }
 @media (prefers-reduced-motion: reduce) {
-  :is(.activity-dock-waiting, .zen-thinking-pulse, .terminal-live-bar, .bycoda-sigil-active) { animation-play-state: paused !important; }
+  :is(.activity-dock-waiting, .zen-thinking-pulse, .terminal-live-bar, .bycoda-sigil-active) {
+    animation-play-state: paused !important;
+  }
 }
 /* A terminal mark is live only inside its existing active terminal control. */
-.terminal-live:not(button[aria-pressed] .terminal-live, [data-active="true"]) .terminal-live-bar { animation: none; }
-html.is-resizing { --interaction-cursor: col-resize; }
-html.is-explorer-file-dragging { --interaction-cursor: grabbing; }
-html:is(.is-grabbing, .is-resizing, .is-explorer-file-dragging) :is(button, a, input, textarea, select, [role="button"], [data-tab-draggable], [data-tauri-drag-region], [class*="cursor-"]) {
+.terminal-live:not(button[aria-pressed] .terminal-live, [data-active="true"]) .terminal-live-bar {
+  animation: none;
+}
+html.is-resizing {
+  --interaction-cursor: col-resize;
+}
+html.is-explorer-file-dragging {
+  --interaction-cursor: grabbing;
+}
+html:is(.is-grabbing, .is-resizing, .is-explorer-file-dragging)
+  :is(
+    button,
+    a,
+    input,
+    textarea,
+    select,
+    [role="button"],
+    [data-tab-draggable],
+    [data-tauri-drag-region],
+    [class*="cursor-"]
+  ) {
   cursor: var(--interaction-cursor) !important;
 }
-html:is(.is-reordering, .is-resizing) :is(input, textarea, [contenteditable], .select-text, .cm-content, .xterm-screen) {
+html:is(.is-reordering, .is-resizing)
+  :is(input, textarea, [contenteditable], .select-text, .cm-content, .xterm-screen) {
   -webkit-user-select: inherit !important;
   user-select: inherit !important;
 }
@@ -3966,11 +4030,18 @@ html:is(.is-reordering, .is-resizing) :is(input, textarea, [contenteditable], .s
 :is(.backdrop-blur-xl, .backdrop-blur-2xl, .backdrop-blur-lg, .backdrop-blur-md) {
   --tw-backdrop-blur: blur(var(--glass-blur));
 }
-.popover-backdrop { -webkit-backdrop-filter: blur(var(--glass-blur)); backdrop-filter: blur(var(--glass-blur)); }
+.popover-backdrop {
+  -webkit-backdrop-filter: blur(var(--glass-blur));
+  backdrop-filter: blur(var(--glass-blur));
+}
 /* A nested glass surface samples the already blurred parent only once. */
-.popover-backdrop ~ * :is(.backdrop-blur-xl, .backdrop-blur-2xl, .backdrop-blur-lg, .backdrop-blur-md) {
+.popover-backdrop
+  ~ *
+  :is(.backdrop-blur-xl, .backdrop-blur-2xl, .backdrop-blur-lg, .backdrop-blur-md) {
   --tw-backdrop-blur: none;
 }
 /* Effort tiles are short feedback effects, never retained compositor layers. */
 .codex-effort-option .codex-effort-tile--filled,
-.codex-effort-option::after { will-change: auto !important; }
+.codex-effort-option::after {
+  will-change: auto !important;
+}

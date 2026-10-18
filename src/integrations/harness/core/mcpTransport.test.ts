@@ -74,4 +74,16 @@ describe("verified provider HTTP MCP configuration", () => {
       expect(mcpMetadata({ ...base, mcpUrl, token: "secret" } as typeof base)).toEqual(base);
     expect(socialSpawnArgs("codex", ["app-server"], base).join(" ")).toContain(".command=");
   });
+
+  it("keeps every stdio bridge when Codex already has config flags, regardless of insertion order", () => {
+    const base = ["-c", 'model="configured"', "app-server"];
+    for (const ordered of [groups, [...groups].reverse()]) {
+      let args = [...base];
+      for (const [, , configure] of ordered)
+        args = configure("codex", args, { command: "node", args: ["host.mjs"] });
+      for (const [scope] of groups)
+        expect(args.join(" ")).toContain(`mcp_servers.bycoda-${scope}.command=`);
+      expect(args.slice(-base.length)).toEqual(base);
+    }
+  });
 });

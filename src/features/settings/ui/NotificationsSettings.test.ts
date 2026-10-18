@@ -70,6 +70,24 @@ it("refreshes platform availability without enabling notifications", async () =>
   await act(async () => window.dispatchEvent(new Event("focus")));
   expect(container.textContent).toContain("System permission granted");
   expect(
-    container.querySelector('[aria-label="Notifications"]')?.getAttribute("aria-checked"),
+    container.querySelector('[aria-label="Desktop notifications"]')?.getAttribute("aria-checked"),
   ).toBe("false");
+});
+
+it("preserves event choices when desktop delivery is paused and resumed", async () => {
+  permission.value = "granted";
+  await act(async () => root.render(createElement(NotificationAlerts)));
+  const delivery = container.querySelector<HTMLButtonElement>(
+    '[aria-label="Desktop notifications"]',
+  )!;
+  const finished = container.querySelector<HTMLButtonElement>('[aria-label="Agent finished"]')!;
+  await act(async () => delivery.click());
+  expect(finished.disabled).toBe(false);
+  await act(async () => finished.click());
+  expect(finished.getAttribute("aria-checked")).toBe("false");
+  await act(async () => delivery.click());
+  expect(finished.disabled).toBe(true);
+  await act(async () => delivery.click());
+  expect(finished.disabled).toBe(false);
+  expect(finished.getAttribute("aria-checked")).toBe("false");
 });

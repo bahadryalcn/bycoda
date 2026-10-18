@@ -59,8 +59,8 @@ it("keeps every advanced value when editing and saves on the selected host witho
   expect(container.textContent).toContain("remote host host-one");
   act(() => button("Edit").click());
   expect(
-    container.querySelector<HTMLDetailsElement>("#acp-agent-form-disclosure details")?.open,
-  ).toBe(true);
+    container.querySelector("#acp-agent-form-disclosure section")?.getAttribute("aria-labelledby"),
+  ).toBeTruthy();
   expect([...container.querySelectorAll("input")].map((input) => input.value)).toEqual([
     config.id,
     config.name,
@@ -84,9 +84,7 @@ it("keeps every advanced value when editing and saves on the selected host witho
   expect(mock.catalog).not.toHaveBeenCalled();
   expect(mock.probe).not.toHaveBeenCalled();
   expect(container.textContent).toContain("ACP agent saved on the target machine.");
-  expect(
-    container.querySelector<HTMLDetailsElement>("#acp-agent-form-disclosure details")?.open,
-  ).toBe(false);
+  expect(container.querySelector("input")?.value).toBe("");
 });
 
 it("retains the form after a failed save and allows retry", async () => {
@@ -103,11 +101,25 @@ it("retains the form after a failed save and allows retry", async () => {
   );
   expect(container.querySelector('[role="alert"]')?.textContent).toContain("Host save failed");
   expect(
-    container.querySelector<HTMLDetailsElement>("#acp-agent-form-disclosure details")?.open,
-  ).toBe(true);
+    container.querySelector("#acp-agent-form-disclosure section")?.getAttribute("aria-labelledby"),
+  ).toBeTruthy();
   expect(container.querySelector("input")?.value).toBe(config.id);
   expect(container.querySelector<HTMLButtonElement>('button[type="submit"]')?.disabled).toBe(false);
   expect(container.textContent).not.toContain("ACP agent saved on the target machine.");
+  mock.invoke.mockResolvedValue([config]);
+  await act(async () =>
+    container
+      .querySelector("form")!
+      .dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })),
+  );
+  expect(container.textContent).toContain("ACP agent saved on the target machine.");
+  expect(container.querySelector("input")?.value).toBe("");
+});
+
+it("focuses the visible agent form from the Add agent action", async () => {
+  await render();
+  act(() => button("Add agent").click());
+  expect(document.activeElement).toBe(container.querySelector("input"));
 });
 
 it("does not show an empty list before loading finishes or replace a new machine's list with a late response", async () => {

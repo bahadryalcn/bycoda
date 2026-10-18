@@ -9,6 +9,18 @@ import {
 } from "./gitGraph";
 
 describe("layoutGitGraph", () => {
+  it("reuses SVG geometry only for the same immutable layout row", () => {
+    const commits = [
+      { sha: "a", parents: ["b"] },
+      { sha: "b", parents: [] },
+    ];
+    const first = layoutGitGraph(commits)[0]!;
+    const graph = historyItemGraph(first);
+    expect(historyItemGraph(first)).toBe(graph);
+    const refreshed = layoutGitGraph([{ sha: "a", parents: [] }])[0]!;
+    expect(historyItemGraph(refreshed)).not.toBe(graph);
+    expect(historyItemGraph(refreshed)).not.toEqual(graph);
+  });
   it("keeps a linear history on a single swimlane", () => {
     const rows = layoutGitGraph([
       { sha: "c", parents: ["b"] },

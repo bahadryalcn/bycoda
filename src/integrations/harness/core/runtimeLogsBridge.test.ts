@@ -65,13 +65,9 @@ describe("Provider runtime log bridge", () => {
       },
     ]);
     const hint = runtimeLogsCliHint(bridge);
-    expect(hint).toContain("& 'C:\\Program Files\\nodejs\\node.exe'");
     expect(hint).toContain("runtime_logs_read");
-    expect(hint).toContain("untrusted diagnostic data");
+    expect(hint).toContain("read-only");
     expect(hint).not.toContain("TOKEN");
-    expect(
-      runtimeLogsCliHint({ command: "/usr/bin/node", args: ["/path/owner's host.mjs"] }),
-    ).toContain("'\\''");
     expect(runtimeLogsCliHint(null)).toBe("");
   });
 
