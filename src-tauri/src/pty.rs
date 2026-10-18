@@ -2179,22 +2179,41 @@ mod queued_writer_tests {
 
     #[test]
     fn a_stuck_child_never_blocks_the_caller() {
-        struct Stuck;
+        struct Stuck {
+            entered: Option<std::sync::mpsc::Sender<()>>,
+            release: std::sync::mpsc::Receiver<()>,
+        }
         impl Write for Stuck {
-            fn write(&mut self, _: &[u8]) -> std::io::Result<usize> {
-                thread::sleep(Duration::from_secs(5));
-                Ok(0)
+            fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+                if let Some(entered) = self.entered.take() {
+                    let _ = entered.send(());
+                }
+                self.release.recv().map_err(|_| {
+                    std::io::Error::new(std::io::ErrorKind::BrokenPipe, "fixture released")
+                })?;
+                Ok(bytes.len())
             }
             fn flush(&mut self) -> std::io::Result<()> {
                 Ok(())
             }
         }
-        let mut writer = QueuedWriter::spawn(Box::new(Stuck));
+        let (entered_tx, entered_rx) = channel();
+        let (release_tx, release_rx) = channel();
+        let mut writer = QueuedWriter::spawn(Box::new(Stuck {
+            entered: Some(entered_tx),
+            release: release_rx,
+        }));
+        writer.write_all(b"first").unwrap();
+        entered_rx.recv_timeout(Duration::from_secs(2)).unwrap();
+        // The worker is now blocked until this scope releases it, independently
+        // of scheduler load or how a platform implements timed sleeps.
         let started = Instant::now();
-        let results: Vec<_> = (0..WRITE_QUEUE_LEN + 10)
-            .map(|_| writer.write_all(b"x"))
-            .collect();
+        for _ in 0..WRITE_QUEUE_LEN {
+            writer.write_all(b"x").unwrap();
+        }
+        let error = writer.write_all(b"overflow").unwrap_err();
         assert!(started.elapsed() < Duration::from_secs(1));
-        assert!(results.last().unwrap().is_err());
+        assert_eq!(error.kind(), std::io::ErrorKind::WouldBlock);
+        drop(release_tx);
     }
 }
