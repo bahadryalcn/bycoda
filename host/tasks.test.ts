@@ -40,6 +40,7 @@ const git = (cwd: string, ...args: string[]) =>
 function setup(verifyTimeoutMs?: number) {
   const directory = realpathSync.native(mkdtempSync(join(tmpdir(), "bycoda-tasks-test-")));
   const store = new HostStore(join(directory, "host.db"));
+  const gitProjects = new Set<string>();
   const addProject = (name: string) => {
     const cwd = join(directory, name);
     mkdirSync(cwd);
@@ -57,6 +58,7 @@ function setup(verifyTimeoutMs?: number) {
     writeFileSync(join(added.cwd, "file.txt"), "initial\n");
     git(added.cwd, "add", "file.txt");
     git(added.cwd, "commit", "-q", "-m", "initial");
+    gitProjects.add(added.id);
     return added;
   };
   const project = addProject("first");
@@ -132,6 +134,8 @@ function setup(verifyTimeoutMs?: number) {
     modelSettings: {},
     runtimeMode: "auto",
     maxRunMinutes: 0,
+    // Plain fixtures run directly; isolation now requires an actual repository.
+    isolate: gitProjects.has(String(overrides.projectId ?? project.id)),
     // The reviewer has tests of its own.
     review: false,
     ...overrides,
@@ -494,11 +498,13 @@ describe("host tasks", () => {
     tasks.save(input({ id: "child", dependsOn: ["parent"] }));
     const list = vi.spyOn(tasks, "list");
     tasks.onTick(() => {
-      expect(() => tasks.transaction(() => {
-        tasks.save(input({ id: "ghost" }));
-        tasks.save(input({ id: "parent", title: "Uncommitted" }));
-        throw new Error("Rollback fixture");
-      })).toThrow("Rollback fixture");
+      expect(() =>
+        tasks.transaction(() => {
+          tasks.save(input({ id: "ghost" }));
+          tasks.save(input({ id: "parent", title: "Uncommitted" }));
+          throw new Error("Rollback fixture");
+        }),
+      ).toThrow("Rollback fixture");
       expect(tasks.taskIndex().get("parent")?.title).toBe("Ship the report");
       expect(tasks.taskIndex().has("ghost")).toBe(false);
     });
@@ -508,14 +514,15 @@ describe("host tasks", () => {
     expect(turns).toHaveLength(0);
   });
 
-  it("starts a queued task in a session named after it and lands in review", async () => {
+  it("starts a direct queued task in a session named after it and completes it", async () => {
     const { tasks, run, task, store, turns, settled, clock } = setup();
     const started = await run();
     expect(started).toMatchObject({ status: "running", startedAt: clock.now });
     expect(store.session(started.sessionId!).session.title).toBe("Ship the report");
-    expect(JSON.parse(turns[0].input.text).task.instructions.objective).toBe(
-      "Write the weekly report",
-    );
+    expect(
+      JSON.parse(turns[0].input.text.slice(turns[0].input.text.indexOf("{"))).task.instructions
+        .objective,
+    ).toBe("Write the weekly report");
 
     turns[0].finish();
     await settled(started.sessionId!);
@@ -523,7 +530,7 @@ describe("host tasks", () => {
     await tasks.tick();
     await tasks.idle();
     expect(task()).toMatchObject({
-      status: "review",
+      status: "done",
       completedAt: clock.now,
       sessionId: started.sessionId,
       verification: {},
@@ -696,18 +703,16 @@ describe("host tasks", () => {
     });
   });
 
-  it("runs one task per project folder at a time", async () => {
+  it("allows explicit direct tasks to share a project folder within host limits", async () => {
     const { tasks, input, run, task, turns, finish } = setup();
     const first = await run();
     tasks.save(input({ id: "second" }));
     await tasks.tick();
-    expect(task("second").status).toBe("queued");
-    expect(turns).toHaveLength(1);
+    expect(task("second").status).toBe("running");
+    expect(turns).toHaveLength(2);
 
-    // The folder stays taken while the first task is verified.
     await finish(first.sessionId!);
-    expect(task().status).toBe("review");
-    expect(task("second").status).toBe("queued");
+    expect(task().status).toBe("done");
     await tasks.tick();
     expect(task("second").status).toBe("running");
   });
@@ -729,7 +734,7 @@ describe("host tasks", () => {
     await advance();
     expect(task("c").status).toBe("queued");
     await tasks.tick();
-    expect(["a", "b", "c"].map((id) => task(id).status)).toEqual(["review", "running", "running"]);
+    expect(["a", "b", "c"].map((id) => task(id).status)).toEqual(["done", "running", "running"]);
   });
 
   it("mirrors whether the running session is waiting on the user", async () => {
@@ -814,7 +819,7 @@ describe("host tasks", () => {
   });
 
   it("refuses moves the board does not offer", async () => {
-    const { tasks, input, run, review } = setup();
+    const { tasks, input, run, review, addRepo } = setup();
     tasks.save(input({ id: "waiting" }));
     for (const to of ["running", "verifying", "review", "done", "blocked", "queued"])
       await expect(tasks.move("waiting", to)).rejects.toThrow(
@@ -834,7 +839,7 @@ describe("host tasks", () => {
       );
     await tasks.delete("main");
 
-    await review({ id: "reviewed" });
+    await review({ id: "reviewed", projectId: addRepo("review-repo").id });
     for (const to of ["running", "verifying", "blocked"])
       await expect(tasks.move("reviewed", to)).rejects.toThrow(
         `A review task cannot be moved to ${to}.`,
@@ -938,9 +943,10 @@ describe("host tasks", () => {
     await tasks.tick();
     await vi.waitFor(() => expect(turns).toHaveLength(1));
     expect(task().status).toBe("running");
-    expect(JSON.parse(turns[0].input.text).task.instructions.objective).toBe(
-      "Write the weekly report",
-    );
+    expect(
+      JSON.parse(turns[0].input.text.slice(turns[0].input.text.indexOf("{"))).task.instructions
+        .objective,
+    ).toBe("Write the weekly report");
   });
 
   it("refuses to start a task with an empty description", async () => {
@@ -983,13 +989,13 @@ describe("host tasks", () => {
     await tasks.delete("main", true);
 
     await review({ id: "reviewed" });
-    await tasks.move("reviewed", "done");
+    expect(task("reviewed").status).toBe("done");
     expect((await tasks.move("reviewed", "todo")).status).toBe("todo");
     expect(task("reviewed").sessionId).toBeUndefined();
   });
 
   it("refuses to-do moves the board does not offer", async () => {
-    const { tasks, input, run, review } = setup();
+    const { tasks, input, run, review, addRepo } = setup();
     tasks.save(input({ id: "idea", status: "todo" }));
     for (const to of ["running", "verifying", "review", "blocked", "todo"])
       await expect(tasks.move("idea", to)).rejects.toThrow(`A todo task cannot be moved to ${to}.`);
@@ -999,7 +1005,7 @@ describe("host tasks", () => {
     );
     await tasks.move("working", "blocked");
     await tasks.delete("working");
-    await review({ id: "reviewed" });
+    await review({ id: "reviewed", projectId: addRepo("review-repo").id });
     await expect(tasks.move("reviewed", "todo")).rejects.toThrow(
       "A review task cannot be moved to todo.",
     );
@@ -1096,7 +1102,7 @@ describe("a task on its own branch", () => {
     expect(task("a").branch).not.toBe(task("b").branch);
   });
 
-  it("runs in the project folder when not isolated or not a git project", async () => {
+  it("runs explicit direct tasks in the selected folder, including non-Git projects", async () => {
     const { run, review, addRepo, turns } = setup();
     const repo = addRepo("repo");
     const inPlace = await review(
@@ -1110,10 +1116,63 @@ describe("a task on its own branch", () => {
     // The host never commits in the project checkout.
     expect(git(repo.cwd, "status", "--porcelain")).toBe("?? report.md");
 
-    const plain = await run({ id: "plain", isolate: true });
+    const plain = await run({ id: "plain", isolate: false });
     expect(plain.status).toBe("running");
     expect(plain.branch).toBeUndefined();
     expect(plain.worktreeCwd).toBeUndefined();
+  });
+
+  it("blocks explicit isolation in a Git subdirectory without starting a provider", async () => {
+    const { tasks, input, task, store, addRepo, turns } = setup();
+    const repo = addRepo("repo");
+    const child = join(repo.cwd, "child");
+    mkdirSync(child);
+    const project = store.addProject(child, "child");
+    tasks.save(input({ projectId: project.id, isolate: true }));
+    await tasks.tick();
+    expect(task().status).toBe("blocked");
+    expect(task().error).toContain("Open the Git repository root");
+    expect(task().branch).toBeUndefined();
+    expect(task().worktreeCwd).toBeUndefined();
+    expect(turns).toHaveLength(0);
+    expect(git(repo.cwd, "status", "--porcelain")).toBe("");
+  });
+
+  it.each([false, true])(
+    "blocks explicit isolation when Git discovery fails (broken Git metadata: %s)",
+    async (broken) => {
+      const { tasks, input, task, addProject, turns } = setup();
+      const project = addProject("not-git");
+      if (broken) writeFileSync(join(project.cwd, ".git"), "gitdir: missing-repository\n");
+      tasks.save(input({ projectId: project.id, isolate: true }));
+      await tasks.tick();
+      expect(task().status).toBe("blocked");
+      expect(task().error).toContain("Cannot create an isolated task workspace");
+      expect(turns).toHaveLength(0);
+    },
+  );
+
+  it("keeps explicit direct execution in a Git project subdirectory", async () => {
+    const { run, store, addRepo, turns } = setup();
+    const repo = addRepo("repo");
+    const child = join(repo.cwd, "child");
+    mkdirSync(child);
+    const project = store.addProject(child, "child");
+    const started = await run({ projectId: project.id, isolate: false });
+    expect(started.status).toBe("running");
+    expect(started.branch).toBeUndefined();
+    expect(turns[0].input.cwd).toBe(child);
+  });
+
+  it("blocks legacy tasks with unspecified isolation rather than falling back to the shared checkout", async () => {
+    const { tasks, input, task, store, turns } = setup();
+    const saved = tasks.save(input());
+    const legacy = { ...saved, isolate: undefined };
+    store.db.prepare("UPDATE tasks SET value=? WHERE id=?").run(JSON.stringify(legacy), saved.id);
+    await tasks.tick();
+    expect(task().status).toBe("blocked");
+    expect(task().error).toContain("Cannot create an isolated task workspace");
+    expect(turns).toHaveLength(0);
   });
 
   it("blocks a task when the project is not on a branch", async () => {
@@ -1248,7 +1307,7 @@ describe("a task on its own branch", () => {
 
 describe("task verification", () => {
   it(
-    "moves to review when the check command passes, running it once",
+    "completes a direct task when the check command passes, running it once",
     async () => {
       const { tasks, run, task, turns, settled, clock, store } = setup();
       const started = await run({
@@ -1265,7 +1324,7 @@ describe("task verification", () => {
       await tasks.tick();
       await tasks.idle();
       expect(task()).toMatchObject({
-        status: "review",
+        status: "done",
         verification: { command: { exitCode: 0, timedOut: false } },
       });
       expect(readFileSync(join(store.project(started.projectId).cwd, "runs.txt"), "utf8")).toBe(
@@ -1466,7 +1525,7 @@ describe("task verification", () => {
       await finish(task().sessionId!, `Corrected deliverable ${attempt}.`);
     }
     await finish(task().reviewer!.sessionId!, "VERDICT: PASS");
-    expect(task().status).toBe("review");
+    expect(task().status).toBe("done");
     expect(tasks.list()).toHaveLength(1);
   });
 
@@ -1802,7 +1861,7 @@ describe("task verification", () => {
     tasks.recheckReview("main");
     await tasks.idle();
     await finish(task().reviewer!.sessionId!, "VERDICT: PASS");
-    expect(task().status).toBe("review");
+    expect(task().status).toBe("done");
     expect(task().reviewOnly).toBeUndefined();
   });
 
@@ -1900,7 +1959,7 @@ describe("task verification", () => {
       task().reviewer!.sessionId!,
       '```json\n{"reviewNotes":[{"finding":"Consider a shortcut.","kind":"suggestion"}]}\n```\nVERDICT: PASS',
     );
-    expect(task().status).toBe("review");
+    expect(task().status).toBe("done");
     expect(task().reviewNotes).toHaveLength(2);
     expect(task().reviewNotes![0].resolvedAt).toBe(clock.now);
     expect(task().reviewNotes![1].resolvedAt).toBeUndefined();
@@ -1999,7 +2058,7 @@ describe("task verification", () => {
       expect(retry).toContain("fix the findings");
       await finish(task().sessionId!);
       await finish(task().reviewer!.sessionId!, "VERDICT: PASS");
-      expect(task().status).toBe("review");
+      expect(task().status).toBe(isolated ? "review" : "done");
       expect(task().retryFeedback).toBeUndefined();
     },
   );
@@ -2242,7 +2301,7 @@ describe("merging without waiting for approval", () => {
         autoMerge: true,
         verifyCommand: PASSING_CHECK,
       });
-      expect(reviewed).toMatchObject({ status: "review" });
+      expect(reviewed).toMatchObject({ status: "done" });
       expect(reviewed.autoMerged).toBeUndefined();
       expect(reviewed.mergeError).toBeUndefined();
     },
@@ -2250,9 +2309,12 @@ describe("merging without waiting for approval", () => {
   );
 
   it("keeps owner-cancelled auto-merge review work stopped", async () => {
-    const { reviewing, task, finish, tasks, turns, advance } = setup();
+    const { reviewing, task, finish, tasks, store, turns, advance } = setup();
     await reviewing({ autoMerge: true });
     await finish(task().reviewer!.sessionId!, "VERDICT: PASS");
+    // Older non-isolated runs could leave a review card instead of completing.
+    const legacy = { ...task(), status: "review" };
+    store.db.prepare("UPDATE tasks SET value=? WHERE id=?").run(JSON.stringify(legacy), legacy.id);
     await tasks.cancel(task().id, "Goal cancelled");
     await advance();
     expect(task()).toMatchObject({
@@ -2270,7 +2332,13 @@ describe("merging without waiting for approval", () => {
     store.db
       .prepare("INSERT INTO goals VALUES (?, ?)")
       .run("cancelled-owner", JSON.stringify({ status: "cancelled" }));
-    const legacy = { ...task(), branch: "mc/retained", baseBranch: "main" };
+    const legacy = {
+      ...task(),
+      status: "review",
+      isolate: true,
+      branch: "mc/retained",
+      baseBranch: "main",
+    };
     store.db.prepare("UPDATE tasks SET value=? WHERE id=?").run(JSON.stringify(legacy), legacy.id);
     const errors = vi.spyOn(console, "error").mockImplementation(() => {});
     try {
@@ -2830,7 +2898,7 @@ describe("host work limits", () => {
     turns[0].finish();
     await settled(first.sessionId!);
     await advance();
-    expect(task("a").status).toBe("review");
+    expect(task("a").status).toBe("done");
     expect(task("b").status).toBe("queued");
     expect(tasks.limits.usedMinutes()).toBeCloseTo(6, 1);
     expect(turns).toHaveLength(1);

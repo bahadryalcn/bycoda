@@ -1,5 +1,10 @@
 import { lazySurface } from "../../../shared/ui/lazySurface";
+import type { ServersViewProps } from "../../../features/connections/ui/ServersView";
 
+export const ServersView = lazySurface<ServersViewProps>(async () => {
+  const module = await import("../../../features/connections/ui/ServersWorkspaceView");
+  return { default: module.ServersWorkspaceView };
+}, { suspense: false });
 export const SearchView = lazySurface(
   async () => {
     const module = await import("../../../features/search/ui/SearchView");

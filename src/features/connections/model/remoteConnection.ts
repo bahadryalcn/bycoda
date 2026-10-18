@@ -14,6 +14,8 @@ export type RemoteConnectionStatus =
   | "needs-auth"
   /** The machine's host key is unknown, changed or unusable; only the user can decide. */
   | "host-key"
+  /** The saved bycoda Host identity changed; the machine must be added again. */
+  | "identity-mismatch"
   /** SSH works, but Bycoda Host is not listening on the machine. */
   | "host-not-running"
   /** The host answered, but is too old for something the app asked. */
@@ -81,6 +83,12 @@ export function connectionOutcome(error: unknown): {
   specific?: boolean;
 } {
   const failure = classifyRemoteError(error);
+  if (failure.kind === "identity")
+    return {
+      status: "identity-mismatch",
+      error: connectionReason("identity-mismatch", failure.message),
+      specific: true,
+    };
   if (failure.kind === "outdated")
     return { status: "outdated-host", error: connectionReason("outdated-host", failure.message) };
   if (failure.kind !== "unreachable") return { status: "connected" };
@@ -127,10 +135,12 @@ export function reduceConnection(
     case "ok":
       // An old host keeps answering what it knows, so only a reconnect or an
       // update clears that notice.
-      if (state.status === "outdated-host") return state;
+      if (state.status === "outdated-host" || state.status === "identity-mismatch") return state;
       return { status: "connected", lastSeen: event.at };
     case "failure": {
       const outcome = connectionOutcome(event.error);
+      if (state.status === "identity-mismatch" && outcome.status !== "identity-mismatch")
+        return state;
       if (outcome.status === "connected")
         return reduceConnection(state, { type: "ok", at: event.at });
       const sameReason = state.error === outcome.error || (!!state.error && !outcome.specific);
@@ -177,7 +187,8 @@ export const blocksSending = (status: RemoteConnectionStatus) =>
   status === "unreachable" ||
   status === "needs-auth" ||
   status === "host-key" ||
-  status === "host-not-running";
+  status === "host-not-running" ||
+  status === "identity-mismatch";
 
 /** Whether only a sign-in, answered in Connections settings, can fix it. */
 export const needsSignIn = (status: RemoteConnectionStatus) =>

@@ -13,6 +13,7 @@ import { GithubPrActions } from "../../inbox/ui/InboxView";
 
 let container: HTMLDivElement;
 let root: Root;
+const reviewedHeadOid = "a".repeat(40);
 
 function pr(overrides: Partial<InboxItem> = {}): InboxItem {
   return {
@@ -77,6 +78,7 @@ describe("GitHub pull request actions", () => {
           item,
           baseRef: "main",
           headRef: "feature/inbox",
+          reviewedHeadOid,
           onChange,
         }),
       ),
@@ -99,6 +101,7 @@ describe("GitHub pull request actions", () => {
     expect(dialog.textContent).toContain(
       "from “feature/inbox” will be combined into one commit on “main”",
     );
+    expect(dialog.textContent).toContain(`Reviewed head: ${reviewedHeadOid}`);
 
     await act(async () => {
       [...dialog.querySelectorAll("button")]
@@ -107,7 +110,13 @@ describe("GitHub pull request actions", () => {
       await Promise.resolve();
     });
 
-    expect(githubPrAction).toHaveBeenCalledWith("/tmp/web", "acme/web", 42, "squash");
+    expect(githubPrAction).toHaveBeenCalledExactlyOnceWith(
+      "/tmp/web",
+      "acme/web",
+      42,
+      "squash",
+      reviewedHeadOid,
+    );
     expect(onChange).toHaveBeenCalledWith({
       ...item,
       ...merged,
@@ -116,7 +125,7 @@ describe("GitHub pull request actions", () => {
     });
   });
 
-  it("keeps a failed close action open with GitHub's error", async () => {
+  it("shows a failed close action error and requires fresh confirmation before retry", async () => {
     vi.mocked(githubPrAction).mockRejectedValue(
       new Error("You do not have permission to close this pull request"),
     );
@@ -144,7 +153,39 @@ describe("GitHub pull request actions", () => {
       await Promise.resolve();
     });
 
-    expect(dialog.textContent).toContain("You do not have permission to close this pull request");
-    expect(dialog.querySelector('[role="alert"]')).toBeTruthy();
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain(
+      "You do not have permission to close this pull request",
+    );
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
+    expect(githubPrAction).toHaveBeenCalledExactlyOnceWith(
+      "/tmp/web",
+      "acme/web",
+      42,
+      "close",
+      undefined,
+    );
+    act(() => close.click());
+    expect(
+      document.querySelector('[role="dialog"][aria-label="Close this pull request?"]'),
+    ).not.toBeNull();
+    expect(container.querySelector('[role="alert"]')).toBeNull();
+    expect(githubPrAction).toHaveBeenCalledTimes(1);
+  });
+
+  it("requires a reviewed head before offering merge confirmation", () => {
+    act(() =>
+      root.render(
+        createElement(GithubPrActions, { item: pr(), baseRef: "main", headRef: "feature/inbox" }),
+      ),
+    );
+    const merge = container.querySelector<HTMLButtonElement>(
+      '[role="group"][aria-label="Merge pull request"] > button',
+    )!;
+    act(() => merge.click());
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain(
+      "Refresh and review the pull request before merging.",
+    );
+    expect(githubPrAction).not.toHaveBeenCalled();
   });
 });

@@ -49,7 +49,9 @@ export function mergeRuntimeLogs(
   snapshot: RuntimeLogSnapshot,
   maximum = MAX_RETAINED_RUNTIME_LOGS,
 ): RuntimeLogsBuffer {
-  const restarted = snapshot.cursor < previous.cursor;
+  const restarted =
+    (!!previous.streamId && !!snapshot.streamId && snapshot.streamId !== previous.streamId) ||
+    snapshot.cursor < previous.cursor;
   const base = restarted ? createRuntimeLogsBuffer() : previous;
   const incoming = snapshot.entries.filter((entry) => entry.cursor > base.clearAfter);
   let entries = base.entries;
@@ -74,10 +76,12 @@ export function mergeRuntimeLogs(
     snapshot.dropped === previous.dropped &&
     base.clearAfter === previous.clearAfter &&
     trimmed === previous.trimmed &&
-    restarted === previous.restarted
+    restarted === previous.restarted &&
+    snapshot.streamId === previous.streamId
   )
     return previous;
   return {
+    streamId: snapshot.streamId,
     entries,
     sources,
     // An after-cursor request to a restarted host may have no entries. Re-read

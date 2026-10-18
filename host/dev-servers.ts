@@ -16,7 +16,11 @@ import type {
 import { DevServerDiscovery } from "./dev-server-discovery";
 import { resolveShellProfile, shellInvocation, type ShellProfile } from "./shellProfiles";
 import type { RuntimeLogLevel, RuntimeLogSource } from "../src/features/host-tools/runtimeLogTypes";
-import { scrubRuntimeLogText, type RuntimeLogsService } from "./runtime-logs";
+import {
+  RuntimeLogLineRedactor,
+  scrubRuntimeLogText,
+  type RuntimeLogsService,
+} from "./runtime-logs";
 
 export type DevServerProject = { id: string; name: string; path: string };
 export interface DevServerProcessDiscovery {
@@ -75,8 +79,26 @@ function serverLogLevel(line: string): RuntimeLogLevel {
 
 function legacyChunkRedactor() {
   let tail = "";
+  let pemTail = "";
+  let pem = false;
   let continuation: "line" | "bare" | '"' | "'" | undefined;
   return (chunk: string) => {
+    const pemRaw = pemTail + chunk;
+    const begin = /-----BEGIN [^-]*(?:PRIVATE KEY|CERTIFICATE)-----/.exec(pemRaw);
+    if (pem || begin) {
+      const end = /-----END [^-]*(?:PRIVATE KEY|CERTIFICATE)-----/.exec(
+        pemRaw.slice(begin?.index ?? 0),
+      );
+      pemTail = pemRaw.slice(-128);
+      pem = !end;
+      tail = "";
+      continuation = undefined;
+      if (!end) return "[REDACTED]";
+      const suffix = (begin?.index ?? 0) + end.index + end[0].length;
+      pemTail = "";
+      return `[REDACTED]${scrubRuntimeLogText(pemRaw.slice(suffix))}`;
+    }
+    pemTail = pemRaw.slice(-128);
     const raw = tail + chunk;
     let safe = chunk;
     if (continuation) {
@@ -713,12 +735,13 @@ export class DevServersService {
     };
     let closed = false;
     const capture = (stream: "stdout" | "stderr") => {
+      const redactor = new RuntimeLogLineRedactor();
       let pending = "";
       let timestamp = 0;
       let truncated = false;
       const emit = () => {
         // oxlint-disable-next-line no-control-regex -- Strip ANSI controls from process output.
-        const line = pending.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "");
+        const line = redactor.redact(pending.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, ""));
         if (line.trim()) {
           const stack = /^\s+at\s/.test(line) ? line : undefined;
           const frame =
@@ -750,7 +773,10 @@ export class DevServersService {
             if (!timestamp) timestamp = Date.now();
             const remaining = MAX_LINE - pending.length;
             pending += part.slice(0, remaining);
-            if (part.length > remaining) truncated = true;
+            if (part.length > remaining) {
+              redactor.observeOverflow(part.slice(remaining), pending);
+              truncated = true;
+            }
           }
         }
         if (flush) emit();

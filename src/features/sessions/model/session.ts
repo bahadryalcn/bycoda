@@ -160,6 +160,8 @@ export type BtwThread = {
   modelSettings?: Record<string, string>;
   /** Provider-specific side-thread id when the text runner supports resume. */
   providerThreadId?: string;
+  /** Account that owns this side conversation's provider thread. */
+  providerAccountId?: string;
   error?: string;
   /** Live harness blocks for the in-flight reply; not persisted. */
   pendingBlocks?: Block[];

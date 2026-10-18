@@ -1,10 +1,12 @@
 import { AcpClient, type AcpHandlers } from "../../core/acp";
+import { reportAcpStopReason } from "../../core/acpStopReason";
 import { spawnChild, watchChild, killChild, invokeProviderCommand } from "../../core/child";
 import { registerHarness, type HarnessAdapter } from "../../core/registry";
 import type { ApprovalDecision, HarnessEvent, SendTurnInput } from "../../core/types";
 import { promptBlocks } from "../../../../features/sessions/model/attachments";
 import { setHarnessModels } from "../../../../features/sessions/model/models";
 import type { GenericAcpSummary } from "../../../../features/providers/model/genericAcp";
+import { textFromContent } from "../../../../shared/lib/contentText";
 
 type Live = {
   client: AcpClient;
@@ -13,6 +15,10 @@ type Live = {
   cwd: string;
   onEvent: (event: HarnessEvent) => void;
   cancelled: boolean;
+  replaying: boolean;
+  planning: boolean;
+  modes?: { currentModeId: string; availableModes: { id: string }[] };
+  previousMode?: string;
   approvals: Map<number, { options: { optionId: string; kind: string }[] }>;
 };
 const lives = new Map<string, Live>();
@@ -70,12 +76,16 @@ export async function sendGenericAcpTurn(
       providerId: "",
       onEvent: input.onEvent,
       cancelled: false,
+      replaying: false,
+      planning: input.intent === "plan",
       approvals: new Map(),
     };
     handlers.onNotification = (method, params) => {
-      if (method !== "session/update" || state.cancelled) return;
+      if (method !== "session/update" || state.cancelled || state.replaying) return;
       const update = (params as { update?: Record<string, unknown> })?.update;
       if (!update) return;
+      if (update.sessionUpdate === "plan" && typeof update.text === "string" && update.text.trim())
+        state.onEvent({ type: "plan", text: update.text });
       if (
         update.sessionUpdate === "agent_message_chunk" &&
         (update.content as { type?: string })?.type === "text"
@@ -97,6 +107,7 @@ export async function sendGenericAcpTurn(
           type: "tool.updated",
           callId: String(update.toolCallId),
           status: String(update.status ?? "running"),
+          detail: toolResultDetail(update),
         });
     };
     handlers.onRequest = async (id, method, params) => {
@@ -107,14 +118,27 @@ export async function sendGenericAcpTurn(
         });
         return;
       }
-      if (state.cancelled) {
+      if (state.cancelled || state.replaying) {
         await client.respond(id, { outcome: { outcome: "cancelled" } });
         return;
       }
       const permission = params as {
         options?: { optionId: string; kind: string }[];
-        toolCall?: { title?: string; toolCallId?: string };
+        toolCall?: { title?: string; toolCallId?: string; kind?: string };
       };
+      if (state.planning) {
+        const readOnly =
+          permission.toolCall?.kind === "read" || permission.toolCall?.kind === "search";
+        const option = permission.options?.find(
+          (entry) => entry.kind === (readOnly ? "allow_once" : "reject_once"),
+        );
+        await client.respond(id, {
+          outcome: option
+            ? { outcome: "selected", optionId: option.optionId }
+            : { outcome: "cancelled" },
+        });
+        return;
+      }
       state.approvals.set(id, { options: permission.options ?? [] });
       state.onEvent({
         type: "approval.requested",
@@ -164,24 +188,28 @@ export async function sendGenericAcpTurn(
       if (auth) await client.request("authenticate", { methodId: auth }, 60_000);
       const resume = resumes.get(input.sessionId);
       if (resume && resume.cwd === input.cwd && initialized.agentCapabilities?.loadSession) {
-        await client.request(
+        state.replaying = true;
+        const loaded = await client.request<{ modes?: Live["modes"] }>(
           "session/load",
           { sessionId: resume.providerId, cwd: input.cwd, mcpServers: [] },
           30_000,
         );
+        state.modes = loaded.modes;
         state.providerId = resume.providerId;
+        state.replaying = false;
       } else {
         if (resume)
           throw new Error(
             "This ACP agent cannot resume its stored session; start a new conversation or hand off explicitly",
           );
-        const setup = await client.request<{ sessionId?: string }>(
+        const setup = await client.request<{ sessionId?: string; modes?: Live["modes"] }>(
           "session/new",
           { cwd: input.cwd, mcpServers: [] },
           30_000,
         );
         if (!setup.sessionId) throw new Error("ACP agent returned no session id");
         state.providerId = setup.sessionId;
+        state.modes = setup.modes;
       }
       if (cancelled.delete(input.sessionId)) throw new Error("ACP startup cancelled");
       lives.set(input.sessionId, state);
@@ -199,6 +227,35 @@ export async function sendGenericAcpTurn(
   }
   live.onEvent = input.onEvent;
   live.cancelled = false;
+  live.planning = input.intent === "plan";
+  // A resumed agent can already be in plan mode without a prior client transition.
+  if (!live.planning && live.modes?.currentModeId === "plan" && !live.previousMode) {
+    live.previousMode = ["default", "build", "code", "ask"].find((id) =>
+      live.modes?.availableModes.some((mode) => mode.id === id),
+    );
+    if (!live.previousMode)
+      throw new Error("This ACP agent did not advertise a mode for implementing the plan.");
+  }
+  if (live.planning && live.modes?.availableModes.some((mode) => mode.id === "plan")) {
+    if (live.modes.currentModeId !== "plan") {
+      const previousMode = live.modes.currentModeId;
+      await live.client.request(
+        "session/set_mode",
+        { sessionId: live.providerId, modeId: "plan" },
+        30_000,
+      );
+      live.previousMode = previousMode;
+      live.modes.currentModeId = "plan";
+    }
+  } else if (!live.planning && live.previousMode && live.modes) {
+    await live.client.request(
+      "session/set_mode",
+      { sessionId: live.providerId, modeId: live.previousMode },
+      30_000,
+    );
+    live.modes.currentModeId = live.previousMode;
+    live.previousMode = undefined;
+  }
   if (program)
     await live.client.request(
       "session/set_config_option",
@@ -207,14 +264,21 @@ export async function sendGenericAcpTurn(
     );
   input.onEvent({ type: "session.started" });
   try {
-    await live.client.request("session/prompt", {
+    const result = await live.client.request("session/prompt", {
       sessionId: live.providerId,
       prompt: promptBlocks(input.text, input.attachments),
     });
     input.onEvent({ type: "message.completed" });
+    input.onEvent({ type: "reasoning.completed" });
+    if (!live.cancelled) reportAcpStopReason(result, input.onEvent);
   } catch (error) {
     if (!live.cancelled) throw error;
   }
+}
+
+function toolResultDetail(update: Record<string, unknown>): string | undefined {
+  const text = textFromContent(update.content, "\n") || textFromContent(update.rawOutput, "\n");
+  return text.trim() ? text.slice(0, 8_000) : undefined;
 }
 
 export async function refreshGenericAcpCatalog(): Promise<void> {

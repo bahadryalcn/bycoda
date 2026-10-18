@@ -4,6 +4,207 @@ The global Social Media screen opens from the project rail or session composer. 
 
 ## Manage the workspace
 
+### Browser workspace and registration
+
+Every platform account has an owner-assisted **Browser workspace** on its selected
+executor host. It opens a dedicated Chrome/Edge profile for login, registration,
+inbox navigation, supported publishing pages or a validated public post URL for
+comments. WhatsApp and Telegram registration remains in their mobile apps;
+YouTube has no general private-message inbox. Facebook and Instagram open their
+home surface for publishing; the owner chooses the composer there. These routes
+are navigation workflows, not new automated publishing or inbox adapters.
+
+The owner starts or cancels work from Accounts. Registration terms, passwords,
+Google account selection, verification codes and challenges are completed in the
+browser. The host stores up to 20 workflow metadata records per account and tracks
+queued, awaiting-owner, closed, cancelled, expired, interrupted and failed states.
+Closing a window never establishes successful registration, authenticated identity
+or delivery. A host restart marks unfinished work interrupted and does not reopen
+registration automatically. Work expires after 20 minutes. Switching executor or
+disconnecting cancels active assisted work and removes the host's saved browser
+profile. Entered fields, cookies, target post
+URLs and page content are not included in workflow records.
+
+The X workspace shares the existing X browser profile and serialization lock.
+After registration, use **Manage browser connection** to verify the saved X
+identity and connect the existing publishing adapter. Assisted work must finish
+before this verification starts. The other platforms' API capabilities remain
+unchanged: opening their web page does not grant automated messaging, polling or
+publishing support. Their browser identity checks, read/write recipes and live
+delivery acceptance remain to be implemented and verified separately.
+
+Owner-device RPC methods are `social.browser.workflow.begin` (`accountId`,
+`intent`, optional `targetUrl`, `acknowledgeRisk: true`),
+`social.browser.workflow.status` (`accountId`) and
+`social.browser.workflow.cancel` (`accountId`). Session social tools cannot use
+these owner-only methods or gain send permission through them.
+
+### Background operation
+
+Connected X browser accounts also expose an owner-only **X profile and follow**
+section. Explicit actions read the public editor fields, apply changed name/bio/
+location/HTTPS website fields, upload JPEG/PNG avatar/banner assets, or follow one
+exact username. Saved text is re-read from a reopened editor; changed images require
+new persisted public image URLs. Follow resolves the exact profile to a numeric
+target and verifies its Following control; an existing follow is a no-op.
+Unknown layouts/outcomes fail visibly and never cause an automatic retry.
+
+Host owner RPCs are `social.browser.profile.read`, `.update` and `.follow` with
+`accountId`; update accepts `patch` and `confirm: UPDATE_X_PROFILE`, follow accepts
+`handle` and `confirm: FOLLOW_X_ACCOUNT`. These actions require a connected,
+unpaused X browser account on its executor host, share the profile lock, recheck
+identity and honor the global stop state. They do not enable campaign sending or
+change policy. Session social credentials cannot invoke these owner methods.
+Session-agent proposal/owner-review integration and recurring follow rules are not
+implemented. Passwords, passcodes, birth dates and authentication fields are not
+accepted as profile patches. Account setup/credential intervention remains separate
+from ordinary public profile management.
+
+Connected accounts do not need a foreground account window for routine supported
+operations. `SocialService.tick` runs on the host, polls eligible accounts when
+`inbox.polling` is enabled, feeds inbound events into existing activated rules and
+dispatches approved jobs. Continuous product promotion uses the existing
+`SocialPrograms` schedule, verified public facts, generation limits and activation
+signature. Automatic reply rules require explicit activation once; matching events
+then enqueue and execute without a per-message approval. Incoming content never
+changes those grants or limits. This does not enable live sending merely by
+opening a browser workspace or configuring a draft program.
+
+X browser accounts participate in that same loop. The adapter captures recognized
+mentions/reply timeline responses and legacy web DM inbox responses, validates the
+authenticated numeric identity before and after each read, and passes bounded
+inbound events to the existing deduplicating ingestion pipeline. It reads recent
+web snapshots only; complete historical backfill and encrypted X Chat are not
+implemented. If one read channel is unavailable, the successful channel can still
+ingest events while monitoring reports partial coverage. Unrecognized response
+formats never count as an empty inbox.
+
+Browser polling also rotates through two saved published post IDs per tick and
+reads their recognized `TweetDetail` responses. Directed replies are ingested
+through the same account identity checks and event deduplication. The durable
+cursor rotates the saved post list; this is a bounded recent snapshot, not a
+complete historical or hidden-reply backfill. Monitoring reports comments as a
+separate channel.
+
+The X composer accepts up to four owner-uploaded JPEG/PNG images (5 MiB each) or
+one MP4 video (64 MiB), including post replies/comments. Mixed image/video batches
+are rejected. New file selections replace existing attachments; removal is explicit.
+Documents such as PDF are shared by URL, not as native tweet attachments.
+The browser waits for a video attachment and enabled Post control before submitting;
+an ambiguous create response still requires review. The OAuth adapter uses the
+v2 initialize/append/finalize/status media flow, checkpoints pending processing,
+and never creates the post before processing succeeds. These local byte limits
+are deliberately narrower than X's account-dependent platform limits.
+OAuth DM sends accept one uploaded image/video attachment using DM media categories.
+Browser DM media and encrypted X Chat remain unavailable. Editing draft attachments
+is owner-only, revokes the previous approval, and includes the media in the next
+exact draft review and queued send.
+
+A missing mentions response counts as an empty read only when the authenticated
+page positively exposes the selected mentions tab and its known empty-state
+structure on the exact X mentions route. Redirects into `/i/chat/pin/` report
+required Chat credential setup; other `/i/chat` routes report unsupported
+encrypted Chat. Neither route is treated as a legacy inbox or successful read.
+
+Legacy browser DM sends require `dm.write`, an exact numeric recipient and an
+observed conversation containing that recipient and the connected sender. The
+adapter accepts delivery only when a matching platform message ID, sender,
+recipient and exact text are present in the response. Missing/ambiguous evidence
+requires review and is not automatically resent. Newly connected browser accounts
+record DM capabilities; older sessions must reconnect to obtain them. Project
+message permissions, contact consent and send/rule authorization still apply.
+
+`social.monitoring.status` accepts `accountId` and returns the last checked time,
+healthy/partial/blocked status, read-channel coverage, polling enablement and
+whether the account is active on this executor. It contains no cookies or message
+bodies. This status describes the last read and does not prove future delivery.
+The Accounts recovery disclosure displays it and supports explicit refresh.
+
+The X web parser/driver has synthetic adapter and host-loop acceptance; live
+authenticated acceptance, including the current Chat UI, remains unverified.
+Other platforms' autonomous browser read/write adapters and automatic account
+registration are not implemented by the owner-assisted route registry. Credentials,
+verification challenges and account creation/terms approval remain separate from
+routine background operation.
+
+### Platform connections
+
+Accounts supports X, Instagram, Facebook, LinkedIn, YouTube, TikTok, Snapchat,
+WhatsApp and Telegram. Capabilities reflect the implemented adapter, independently
+of a successful account connection. Project grants and external-send approval still apply.
+
+- TikTok: OAuth identity and Direct Post video publishing through `user.info.basic`
+  and `video.publish`. Use the TikTok client
+  key as `BYCODA_SOCIAL_TIKTOK_CLIENT_ID`, and configure the matching
+  `_CLIENT_SECRET`, `_REDIRECT_URI` and `_APPROVED=1` variables. Callback:
+  `/social/oauth/tiktok/callback`. Existing profile-only accounts must reconnect to
+  grant `video.publish`. The campaign editor loads current creator settings, offers
+  only the returned privacy choices without a default, previews the video and
+  requires explicit music/content consent. The current adapter uses one HTTPS video
+  URL on a domain or URL prefix verified with TikTok (`PULL_FROM_URL`); local file
+  uploads and photos are not implemented. Processing keeps a durable publish ID,
+  never initializes the same job twice, and reports success only at `PUBLISH_COMPLETE`.
+  An accepted post cannot be recalled through the queue. App audit/access restrictions
+  still apply; an unaudited client is limited to TikTok's private-account/private-viewing
+  test rules. The integration does not establish that bycoda has obtained an app audit.
+  Personal/creator Login and Content Posting do not provide general comment/DM
+  management. Those require separately eligible TikTok for Business/Organic products;
+  no communication adapter for them is currently installed.
+- Snapchat: Public Profile OAuth with `snapchat-profile-api`. Configure
+  `BYCODA_SOCIAL_SNAPCHAT_CLIENT_ID`, `_CLIENT_SECRET`, `_REDIRECT_URI`,
+  `_APPROVED=1`. Callback: `/social/oauth/snapchat/callback`. An eligible Public
+  Profile and approved API access are required. Publishing, comments and messaging
+  are not implemented; local campaign drafts remain available.
+- Telegram: configure `BYCODA_SOCIAL_TELEGRAM_TOKEN` and
+  `BYCODA_SOCIAL_TELEGRAM_APPROVED=1` on the selected host, then choose **Host hesabını
+  bağla**. The host verifies the bot with `getMe`. Text messages are read using
+  `getUpdates` with a durable offset and sent with `sendMessage`. Existing webhooks
+  disable polling; bycoda never deletes them. Bots cannot contact arbitrary users:
+  the chat must already be accessible, and outbound initiation requires recorded
+  consent. Channel publishing, attachments and personal-user sessions are not supported.
+- WhatsApp: Business Cloud API only. Configure `BYCODA_SOCIAL_WHATSAPP_TOKEN`,
+  `BYCODA_SOCIAL_WHATSAPP_PHONE_NUMBER_ID`, `_APPROVED=1`, `_CLIENT_SECRET`
+  (the Meta app secret) and `_WEBHOOK_VERIFY_TOKEN`. The host verifies the phone
+  identity before connection. Register `/social/webhooks/whatsapp` and subscribe the
+  Business Account to `messages`. Signed text-message events populate Inbox and
+  permit text replies within 24 hours of the inbound timestamp. Replayed events are
+  deduplicated. Personal accounts, historical inbox polling, templates, attachments,
+  Channels/Status publishing and outbound initiation are not implemented.
+
+Token configuration currently selects one bot/phone identity per platform per host.
+Secrets stay in host configuration and the existing OS-protected social credential
+store; they are never returned in account snapshots or supplied to session tools.
+Connecting or preparing a draft does not send anything. Real-account authorization,
+platform reviews and webhook subscriptions require deployment-specific setup.
+
+### Messaging and comments
+
+| Connection                   | Comment reads/replies                                                                                 | Private messages                                                                                              |
+| ---------------------------- | ----------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| X OAuth/API                  | Mentions/replies through permitted reads; replies to post IDs                                         | Read/reply/send with DM scopes, enabled API product and recipient eligibility                                 |
+| X browser session            | Bounded recent mentions/replies from recognized web responses; replies to exact post IDs | Legacy web inbox and verified numeric-conversation text sends; encrypted Chat unavailable |
+| Instagram professional OAuth | Read/reply on owned media                                                                             | Read and reply to user-initiated conversations within the supported response window; no cold initiation       |
+| Facebook Page OAuth          | Read/reply to eligible Page content                                                                   | Read and reply to user-initiated Page conversations within the supported response window; no cold initiation  |
+| LinkedIn OAuth               | Comments on known published posts; organization discovery additionally requires Posts API read access | Not implemented; LinkedIn Messages API is a restricted partner product, not enabled by ordinary sharing OAuth |
+
+Select the intended capabilities before OAuth. Selecting polling requests the
+comment and message read permissions together. An existing account with only one
+authorized read channel can still synchronize that channel; polling does not
+require unrelated Page comment permissions for Messenger-only accounts. X DM sends
+request `dm.write`, `dm.read`, `tweet.read` and `users.read`. Reconnecting to add
+scopes never grants project send permission or turns on external sending.
+
+References: [X messaging](https://docs.x.com/x-api/direct-messages/manage/introduction),
+[Instagram conversations](https://www.postman.com/meta/messenger-platform-api/folder/22794852-255610cd-47f5-4f4d-b3fa-71aec360be9a),
+[LinkedIn partner messaging restrictions](https://learn.microsoft.com/en-us/linkedin/shared/integrations/communications/messages),
+[TikTok Direct Post and audit requirements](https://developers.tiktok.com/docs/en/content-sharing-guidelines),
+[TikTok Business Messaging prerequisites](https://business-api.tiktok.com/portal/docs/business-messaging-api-get-started/v1.3).
+
+API references: [TikTok user info](https://developers.tiktok.com/docs/en/tiktok-api-v2-get-user-info),
+[Snapchat profiles](https://developers.snap.com/marketing-api/Public-Profile-API/Profiles),
+[Telegram Bot API](https://core.telegram.org/bots/api),
+[WhatsApp Cloud API](https://developers.facebook.com/documentation/business-messaging/whatsapp/overview).
+
 The left navigation separates Accounts, Campaigns, Inbox, Audience, Automations and Settings.
 The connection and project filters stay visible. Forms retain their content when
 switching sections or visiting another tool; reply forms also retain separate text
@@ -79,7 +280,8 @@ conversations** to answer multiple comments or messages. In **Audience**, select
 individual contacts or select all members of a displayed segment, then prepare
 new messages or comments. A new comment requires the target platform post ID for
 each selected person. Bulk selection does not expand a platform's supported
-operations; for example, X browser-session mode has no direct-message capability.
+operations; for example, X browser-session mode cannot read or send encrypted
+X Chat messages.
 
 The recipient preview checks the account's effective character policy, project
 access, platform capability, opt-out state and communication eligibility. New
@@ -122,7 +324,13 @@ The host launches system Microsoft Edge or Google Chrome (`BYCODA_SOCIAL_BROWSER
 
 Sends use the same approval, queue and policy checks as OAuth accounts. Each send launches the profile headless (`BYCODA_SOCIAL_BROWSER_HEADED=1` shows the window for debugging), verifies the logged-in user ID matches the account, types the text, attaches up to four images and clicks Post. The post ID comes from the X web `CreateTweet`/`CreateNoteTweet` response. If no response confirms the outcome after the click, the job goes to review and is never retried automatically. Operations on one profile are serialized and sends are spaced at least 30 seconds apart.
 
-Only publishing (text, link, up to four images) and replying to a given post ID are supported. Inbox/DM reading, direct messages, search and polling are unsupported in this mode. The executor host must run in an interactive user session for the login window to appear.
+Publishing supports text, links, up to four JPEG/PNG images or one MP4 video, and
+replies to a given post ID. Background monitoring reads recognized mentions and
+saved-post comments, plus legacy web DM responses. Legacy text DM sending requires
+verified numeric participants and a matching delivery acknowledgement. Encrypted
+X Chat, browser DM attachments and search are unavailable. Inspect monitoring
+coverage for partial results. The executor host must run in an interactive user
+session for the login window to appear.
 
 ## Project access and approval
 
@@ -190,7 +398,7 @@ activating a plan is not evidence that it has been sent.
 
 ## Current adapter boundaries
 
-- X: text and up to four locally uploaded JPEG/PNG images, each at most 5 MiB; mentions and API direct messages. External search is a documented product candidate, not an implemented discovery command.
+- X: text with up to four locally uploaded JPEG/PNG images (5 MiB each) or one MP4 video (64 MiB); mentions, saved-post browser comments and API direct messages. API messages accept one image/video attachment. Encrypted browser Chat is unavailable. External search is a documented product candidate, not an implemented discovery command.
 - Instagram: one HTTPS image, owned-media comments and permitted professional inbox replies. Cold messaging and arbitrary third-party comments are unavailable.
 - Facebook: managed Page text/link or one HTTPS photo, eligible comments and standard-window inbox replies. Personal-profile publication and unsolicited messaging are unavailable.
 - LinkedIn: member/organization text and one locally uploaded organization image with readiness verification; approved comments. General inbox messaging is unavailable. Member image publishing is not implemented with write-only tokens.

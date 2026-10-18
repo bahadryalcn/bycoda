@@ -36,6 +36,7 @@ export interface NewSessionActionDeps {
   setInboxViewOpen: Dispatch<SetStateAction<boolean>>;
   setNotesViewOpen: Dispatch<SetStateAction<boolean>>;
   setAutomationsViewOpen: Dispatch<SetStateAction<boolean>>;
+  setServersViewOpen?: Dispatch<SetStateAction<boolean>>;
   setSidebarTab: (tab: SidebarTabId, project?: string) => void;
   setActiveTabId: (id: string) => void;
   setComposerFocused: Dispatch<SetStateAction<boolean>>;
@@ -73,6 +74,7 @@ export function useNewSessionActions(deps: NewSessionActionDeps): NewSessionActi
     setInboxViewOpen,
     setNotesViewOpen,
     setAutomationsViewOpen,
+    setServersViewOpen,
     setSidebarTab,
     setActiveTabId,
     setComposerFocused,
@@ -99,6 +101,7 @@ export function useNewSessionActions(deps: NewSessionActionDeps): NewSessionActi
       setInboxViewOpen(false);
       setNotesViewOpen(false);
       setAutomationsViewOpen(false);
+      setServersViewOpen?.(false);
       const source = sourceSessionId
         ? sessionsRef.current.find((session) => session.id === sourceSessionId)
         : undefined;
@@ -126,6 +129,7 @@ export function useNewSessionActions(deps: NewSessionActionDeps): NewSessionActi
       setInboxViewOpen(false);
       setNotesViewOpen(false);
       setAutomationsViewOpen(false);
+      setServersViewOpen?.(false);
       workspaceNavigation.cancel();
       const existing = findRemoteSessionTab(
         tabsRef.current,
@@ -176,6 +180,7 @@ export function useNewSessionActions(deps: NewSessionActionDeps): NewSessionActi
         setInboxViewOpen(false);
         setNotesViewOpen(false);
         setAutomationsViewOpen(false);
+        setServersViewOpen?.(false);
         const cwd = item.projectPath || active?.cwd || sessionDefaults?.cwd || projectCwd;
         setSidebarTab("sessions", cwd);
         const ref =
@@ -208,6 +213,7 @@ export function useNewSessionActions(deps: NewSessionActionDeps): NewSessionActi
       setInboxViewOpen(false);
       setNotesViewOpen(false);
       setAutomationsViewOpen(false);
+      setServersViewOpen?.(false);
       const cwd =
         (card.sourceCwd && looksLikeProject(card.sourceCwd) ? card.sourceCwd : undefined) ||
         active?.cwd ||

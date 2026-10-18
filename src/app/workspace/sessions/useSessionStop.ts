@@ -1,4 +1,10 @@
-import { useCallback, useEffect, type Dispatch, type MutableRefObject, type SetStateAction } from "react";
+import {
+  useCallback,
+  useEffect,
+  type Dispatch,
+  type MutableRefObject,
+  type SetStateAction,
+} from "react";
 import { orchestrator } from "../../../features/orchestration/model/orchestration";
 import { cancelHarnessTurn, stopStreaming } from "../../../integrations/harness";
 import {
@@ -62,34 +68,79 @@ export function useSessionStop(deps: SessionStopDeps) {
         }
       }
       const session = sessionsRef.current.find((s) => s.id === sessionId);
-      turnGen.current.set(sessionId, (turnGen.current.get(sessionId) ?? 0) + 1);
-      flushHarnessEvents();
-      if (session) {
-        for (const id of sessionChildHarnesses(session)) {
-          void cancelHarnessTurn(id, sessionId);
-        }
-      }
+      // Completion may arrive while the provider is processing Stop. Prevent
+      // that completion from draining another queued turn in the meantime.
       setSessions((prev) =>
-        prev.map((s) => {
-          if (s.id !== sessionId) return s;
-          const stopped = s.busy ? markConversationTurnStopped(stopStreaming(s)) : stopStreaming(s);
-          const completed = isPreparingHandoff(stopped)
-            ? completeHandoff(stopped, buildDeterministicHandoff(stopped))
-            : stopped;
-          const ready = { ...completed, worktreePreparing: undefined };
-          return ready.queuedMessages?.length ? { ...ready, queueStatus: "paused" } : ready;
-        }),
+        prev.map((s) =>
+          s.id === sessionId && s.queuedMessages?.length ? { ...s, queueStatus: "paused" } : s,
+        ),
       );
-      if (session) {
-        notifyFinishedWorkspace(
-          sessionId,
-          sessionWorkCwd(session),
-          deferWorkspaceWork,
-          "workspace-first",
+      flushHarnessEvents();
+      const generation = turnGen.current.get(sessionId) ?? 0;
+      const failureBlockId = `stop-error:${sessionId}`;
+      void (async () => {
+        // Keep the current event generation live until cancellation is delivered.
+        // A failed Stop must leave provider events and another Stop actionable.
+        const cancellations = await Promise.allSettled(
+          session
+            ? sessionChildHarnesses(session).map((id) => cancelHarnessTurn(id, sessionId))
+            : [],
         );
-      } else {
-        notifyReviewChanged(sessionId);
-      }
+        if ((turnGen.current.get(sessionId) ?? 0) !== generation) return;
+        const failure = cancellations.find((result) => result.status === "rejected");
+        if (failure?.status === "rejected") {
+          const detail =
+            failure.reason instanceof Error ? failure.reason.message : String(failure.reason);
+          setSessions((prev) =>
+            prev.map((s) =>
+              s.id === sessionId
+                ? {
+                    ...s,
+                    blocks: [
+                      ...s.blocks.filter((block) => block.id !== failureBlockId),
+                      {
+                        id: failureBlockId,
+                        role: "system" as const,
+                        notice: "error" as const,
+                        text: `Stop failed: ${detail}. Try Stop again.`,
+                      },
+                    ],
+                    ...(s.queuedMessages?.length ? { queueStatus: "paused" as const } : {}),
+                  }
+                : s,
+            ),
+          );
+          return;
+        }
+        turnGen.current.set(sessionId, generation + 1);
+        setSessions((prev) =>
+          prev.map((s) => {
+            if (s.id !== sessionId) return s;
+            const stopped = s.busy
+              ? markConversationTurnStopped(stopStreaming(s))
+              : stopStreaming(s);
+            const completed = isPreparingHandoff(stopped)
+              ? completeHandoff(stopped, buildDeterministicHandoff(stopped))
+              : stopped;
+            const ready = {
+              ...completed,
+              worktreePreparing: undefined,
+              blocks: completed.blocks.filter((block) => block.id !== failureBlockId),
+            };
+            return ready.queuedMessages?.length ? { ...ready, queueStatus: "paused" } : ready;
+          }),
+        );
+        if (session) {
+          notifyFinishedWorkspace(
+            sessionId,
+            sessionWorkCwd(session),
+            deferWorkspaceWork,
+            "workspace-first",
+          );
+        } else {
+          notifyReviewChanged(sessionId);
+        }
+      })().catch(console.error);
     },
     [flushHarnessEvents],
   );

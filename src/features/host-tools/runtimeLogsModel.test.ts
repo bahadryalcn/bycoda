@@ -34,6 +34,22 @@ const snapshot = (
 });
 
 describe("runtime log view buffer", () => {
+  it.each([1, 2, 5])("replaces history across generations at cursor %s", (cursor) => {
+    const previous = clearRuntimeLogs(
+      mergeRuntimeLogs(createRuntimeLogsBuffer(), {
+        ...snapshot([entry(1), entry(2)], 2),
+        streamId: "old",
+      }),
+    );
+    const next = mergeRuntimeLogs(previous, {
+      ...snapshot([entry(1, { message: "new stream" })], cursor),
+      streamId: "new",
+    });
+    expect(next.restarted).toBe(true);
+    expect(next.entries.map((value) => value.message)).toEqual(["new stream"]);
+    expect(next.clearAfter).toBe(0);
+    expect(next.streamId).toBe("new");
+  });
   it("retains buffer identity for unchanged pages but observes source, cursor and drop changes", () => {
     const first = mergeRuntimeLogs(createRuntimeLogsBuffer(), snapshot([entry(1)], 1));
     expect(mergeRuntimeLogs(first, snapshot([], 1))).toBe(first);

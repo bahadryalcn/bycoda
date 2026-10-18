@@ -26,6 +26,7 @@ export interface RepairChecksDeps {
   setInboxViewOpen: Dispatch<SetStateAction<boolean>>;
   setNotesViewOpen: Dispatch<SetStateAction<boolean>>;
   setSearchViewOpen: Dispatch<SetStateAction<boolean>>;
+  setServersViewOpen?: Dispatch<SetStateAction<boolean>>;
   setSidebarTab: (tab: SidebarTabId, project?: string) => void;
 }
 
@@ -43,6 +44,7 @@ export function useRepairChecks(deps: RepairChecksDeps): {
     setInboxViewOpen,
     setNotesViewOpen,
     setSearchViewOpen,
+    setServersViewOpen,
     setSidebarTab,
   } = deps;
 
@@ -87,6 +89,7 @@ export function useRepairChecks(deps: RepairChecksDeps): {
       setInboxViewOpen(false);
       setNotesViewOpen(false);
       setSearchViewOpen(false);
+      setServersViewOpen?.(false);
       setSidebarTab("sessions", cwd);
       await onSelectHistorySession(session.id);
     },

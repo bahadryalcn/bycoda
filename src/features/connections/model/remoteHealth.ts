@@ -104,9 +104,11 @@ export function reportRemoteConnection(cwd: string, source: string, error?: unkn
  * the machine's environment when it is known. */
 export function notifyRemoteRecovered(environmentId?: string): void {
   if (environmentId) applyRemoteConnection(environmentId, { type: "recovered", at: Date.now() });
-  unreachable.clear();
+  if (environmentId) unreachable.delete(environmentId);
+  else unreachable.clear();
   for (const [key, failure] of [...failures])
-    if (failure.kind === "unreachable") failures.delete(key);
+    if (failure.kind === "unreachable" && (!environmentId || key.startsWith(`${environmentId}\n`)))
+      failures.delete(key);
   emit();
   recoveredListeners.forEach((listener) => listener());
 }

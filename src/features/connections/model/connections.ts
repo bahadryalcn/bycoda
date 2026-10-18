@@ -46,6 +46,11 @@ export const refreshRemoteProjectSessions = () =>
   window.dispatchEvent(new Event(REMOTE_HISTORY_CHANGE));
 let cachedMachines: RemoteMachine[] = [];
 let machinesLoaded = false;
+/** The inventory projects the same native records; health/host consumers keep one cache. */
+export function adoptRemoteMachineInventory(machines: RemoteMachine[]) {
+  cachedMachines = machines;
+  machinesLoaded = true;
+}
 export const OPEN_CONNECTIONS_EVENT = "bycoda:open-connections";
 export const OPEN_REMOTE_PROJECT_EVENT = "bycoda:open-remote-project";
 export const refreshRemoteMachines = () => window.dispatchEvent(new Event(CHANGE));

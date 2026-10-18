@@ -3,6 +3,7 @@ import { useSurfaceForwardHistory } from "../../hooks/useSurfaceForwardHistory";
 import { loadNotesEnabled } from "../../../features/settings/model/settings";
 
 export interface SettingsReturnView {
+  servers?: boolean;
   search: boolean;
   inbox: boolean;
   notes: boolean;
@@ -17,6 +18,8 @@ export interface RailNavigationDeps {
   inboxViewOpen: boolean;
   notesViewOpen: boolean;
   automationsViewOpen: boolean;
+  serversViewOpen?: boolean;
+  setServersViewOpen?: Dispatch<SetStateAction<boolean>>;
   setSettingsOpen: Dispatch<SetStateAction<boolean>>;
   setSearchViewOpen: Dispatch<SetStateAction<boolean>>;
   setInboxViewOpen: Dispatch<SetStateAction<boolean>>;
@@ -29,6 +32,7 @@ export interface RailNavigationDeps {
 }
 
 export interface RailSurface {
+  servers: boolean;
   tabId: string;
   cwd: string;
   settings: boolean;
@@ -61,6 +65,8 @@ export function useRailNavigation({
   inboxViewOpen,
   notesViewOpen,
   automationsViewOpen,
+  serversViewOpen = false,
+  setServersViewOpen,
   setSettingsOpen,
   setSearchViewOpen,
   setInboxViewOpen,
@@ -72,6 +78,7 @@ export function useRailNavigation({
   onVisitForward,
 }: RailNavigationDeps): RailNavigation {
   const railSurface: RailSurface = {
+    servers: serversViewOpen,
     tabId: activeTabId,
     cwd: projectCwd,
     settings: settingsOpen,
@@ -86,6 +93,7 @@ export function useRailNavigation({
     setInboxViewOpen(surface.inbox);
     setNotesViewOpen(surface.notes && loadNotesEnabled());
     setAutomationsViewOpen(surface.automations);
+    setServersViewOpen?.(surface.servers);
   });
 
   const onRailBack = useCallback(() => {
@@ -102,6 +110,11 @@ export function useRailNavigation({
     if (searchViewOpen) {
       surfaceForward.remember({ ...railSurface, search: false });
       setSearchViewOpen(false);
+      return;
+    }
+    if (serversViewOpen) {
+      surfaceForward.remember({ ...railSurface, servers: false });
+      setServersViewOpen?.(false);
       return;
     }
     if (inboxViewOpen) {
@@ -128,6 +141,7 @@ export function useRailNavigation({
     inboxViewOpen,
     notesViewOpen,
     automationsViewOpen,
+    serversViewOpen,
     surfaceForward,
     railSurface,
   ]);
@@ -139,6 +153,7 @@ export function useRailNavigation({
     setInboxViewOpen(false);
     setNotesViewOpen(false);
     setAutomationsViewOpen(false);
+    setServersViewOpen?.(false);
     onVisitForward();
   }, [onVisitForward, surfaceForward]);
 

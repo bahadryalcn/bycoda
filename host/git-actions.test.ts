@@ -3,6 +3,7 @@ import { mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { WorkspaceCommands } from "./workspace-commands";
 import {
   BranchCache,
   GIT_ACTION_COMMANDS,
@@ -45,6 +46,30 @@ function repo() {
 }
 
 describe("validation", () => {
+  it.each(["git_merge", "git_rebase", "git_create_branch_from"] as const)(
+    "%s targets the selected local branch when a tag has the same name",
+    async (command) => {
+      const r = repo();
+      const base = r.commit("a.txt", "base\n");
+      r.git("checkout", "-qb", "topic");
+      const target = r.commit("b.txt", "feature\n");
+      r.git("checkout", "-q", "main");
+      r.git("tag", "topic", base);
+      await r.run(command, { reference: "topic", name: "from-topic" });
+      expect(r.git("rev-parse", "HEAD")).toBe(target);
+    },
+  );
+
+  it("merges the exact remote branch when a tag has the same spelling", async () => {
+    const r = repo();
+    const base = r.commit("a.txt", "base\n");
+    const target = r.commit("b.txt", "feature\n");
+    r.git("update-ref", "refs/remotes/origin/topic", target);
+    r.git("checkout", "-qb", "before", base);
+    r.git("tag", "origin/topic", base);
+    await r.run("git_merge", { reference: "origin/topic" });
+    expect(r.git("rev-parse", "HEAD")).toBe(target);
+  });
   it("trusts only the confirmed repository, preserving other safe.directory entries", async () => {
     const r = repo();
     r.commit("a.txt", "one\n");
@@ -189,6 +214,27 @@ describe("validation", () => {
 });
 
 describe("stashes", () => {
+  it.each(["apply", "pop", "drop"])(
+    "rejects stale stash identity for %s without touching either stash",
+    async (action) => {
+      const r = repo();
+      r.commit("tracked.txt", "base\n");
+      r.write("tracked.txt", "A\n");
+      await r.run("git_stash", { message: "A" });
+      const expectedSha = r.git("rev-parse", "stash@{0}");
+      r.write("tracked.txt", "B\n");
+      await r.run("git_stash", { message: "B" });
+      const before = r.git("stash", "list", "--format=%H");
+      await expect(r.run("git_stash_action", { action, index: 0, expectedSha })).rejects.toThrow(
+        "Stash list changed",
+      );
+      expect(r.git("stash", "list", "--format=%H")).toBe(before);
+      expect(readFileSync(join(r.cwd, "tracked.txt"), "utf8")).toBe("base\n");
+      await expect(r.run("git_stash_action", { action, index: 0 })).rejects.toThrow(
+        "Expected stash SHA",
+      );
+    },
+  );
   it("stashes by mode, lists, applies, pops, drops and clears", async () => {
     const r = repo();
     r.commit("tracked.txt", "base\n");
@@ -203,17 +249,29 @@ describe("stashes", () => {
     expect(await r.run("git_stash_list")).toEqual([
       expect.objectContaining({ index: 0, message: expect.stringContaining("tracked only") }),
     ]);
-    await r.run("git_stash_action", { action: "pop", index: 0 });
+    await r.run("git_stash_action", {
+      action: "pop",
+      index: 0,
+      expectedSha: r.git("rev-parse", "stash@{0}"),
+    });
     expect(readFileSync(join(r.cwd, "tracked.txt"), "utf8")).toBe("changed\n");
     expect(await r.run("git_stash_list")).toEqual([]);
 
     // The default includes untracked files.
     await r.run("git_stash", {});
     expect(r.git("status", "--porcelain")).toBe("");
-    await r.run("git_stash_action", { action: "apply", index: 0 });
+    await r.run("git_stash_action", {
+      action: "apply",
+      index: 0,
+      expectedSha: r.git("rev-parse", "stash@{0}"),
+    });
     expect(r.git("status", "--porcelain")).toContain("fresh.txt");
     expect(await r.run("git_stash_list")).toHaveLength(1);
-    await r.run("git_stash_action", { action: "drop", index: 0 });
+    await r.run("git_stash_action", {
+      action: "drop",
+      index: 0,
+      expectedSha: r.git("rev-parse", "stash@{0}"),
+    });
     expect(await r.run("git_stash_list")).toEqual([]);
 
     // `staged` leaves unstaged edits in place.
@@ -408,17 +466,25 @@ describe("history and blame", () => {
 
   it("classifies refs in history records", () => {
     const sha = "a".repeat(40);
-    const fields = [
-      sha,
-      "aaaaaaa",
-      "",
-      "Ann",
-      "100",
-      "HEAD -> main, tag: v1, origin/main, origin/HEAD, topic",
-      "subject",
-    ];
+    const fields = [sha, "aaaaaaa", "", "Ann", "100", "subject"];
     const record = `${fields.join("\0")}\x1e`;
-    expect(parseHistoryLog(record, sha, ["origin"])).toEqual([
+    expect(
+      parseHistoryLog(
+        record,
+        sha,
+        new Map([
+          [
+            sha,
+            [
+              { name: "main", kind: "local" },
+              { name: "v1", kind: "tag" },
+              { name: "origin/main", kind: "remote" },
+              { name: "topic", kind: "local" },
+            ],
+          ],
+        ]),
+      ),
+    ).toEqual([
       {
         sha,
         shortSha: "aaaaaaa",
@@ -435,6 +501,44 @@ describe("history and blame", () => {
         head: true,
       },
     ]);
+  });
+
+  it("preserves comma-containing tags and branches through real history actions", async () => {
+    const r = repo();
+    const sha = r.commit("a.txt", "first\n");
+    r.git("tag", "-a", "release,one", "-m", "Annotated release");
+    r.git("branch", "topic,one");
+    r.git("update-ref", "refs/remotes/origin/topic,one", sha);
+    r.git("remote", "add", "origin", "https://example.invalid/repo.git");
+    r.git("symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/topic,one");
+    r.git("symbolic-ref", "refs/heads/alias,one", "refs/heads/main");
+    r.git("symbolic-ref", "refs/remotes/origin/stable,one", "refs/remotes/origin/topic,one");
+    const parsed = (await r.run("git_file_history", { relative: "a.txt" })) as ReturnType<
+      typeof parseHistoryLog
+    >;
+    expect(parsed[0].refs).toEqual(
+      expect.arrayContaining([
+        { name: "main", kind: "local" },
+        { name: "release,one", kind: "tag" },
+        { name: "topic,one", kind: "local" },
+        { name: "origin/topic,one", kind: "remote" },
+        { name: "alias,one", kind: "local" },
+        { name: "origin/stable,one", kind: "remote" },
+      ]),
+    );
+    expect(parsed[0].refs).toHaveLength(6);
+    const commands = new WorkspaceCommands(
+      { projects: () => [{ cwd: r.cwd }], attachmentDir: join(r.cwd, "attachments") } as never,
+      (async (_id: string, action: () => Promise<unknown>) => action()) as never,
+    );
+    const graph = (await commands.run("git_history", { cwd: r.cwd, all: true })) as {
+      commits: typeof parsed;
+    };
+    expect(graph.commits[0].refs).toEqual(parsed[0].refs);
+    r.git("checkout", "--detach", "-q", sha);
+    const detached = (await r.run("git_file_history", { relative: "a.txt" })) as typeof parsed;
+    expect(detached[0].head).toBe(true);
+    expect(detached[0].refs).not.toContainEqual({ name: "HEAD", kind: "local" });
   });
 });
 

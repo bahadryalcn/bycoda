@@ -1,5 +1,4 @@
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
-import { Alert } from "../../../shared/ui/Alert";
 import { Button } from "../../../shared/ui/Button";
 import { Badge } from "../../../shared/ui/Badge";
 import { t, useLocale } from "../../../shared/i18n";
@@ -15,30 +14,43 @@ import {
   type ShellProfiles,
 } from "../../terminal/model/terminalProfiles";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
-import { AdvancedSettings, Group, Row } from "./settingsControls";
+import { AdvancedSettings, Group, Row, SettingsFeedback } from "./settingsControls";
 import "./TerminalSettings.css";
 
 /** Which shell new terminals open in, and `!commands` run in. */
 export function TerminalPage() {
   useLocale();
   const [listed, setListed] = useState<ShellProfiles | null>(null);
-  const [scanning, setScanning] = useState(false);
+  const [scanning, setScanning] = useState(true);
   const [problem, setProblem] = useState<string | null>(null);
+  const request = useRef(0);
   const chosen = useTerminalProfile();
+  const readProfiles = (refresh: boolean, generation: number) => {
+    void listTerminalProfiles(refresh)
+      .then((value) => {
+        if (generation === request.current) setListed(value);
+      })
+      .catch((error: unknown) => {
+        if (generation === request.current) setProblem(String(error));
+      })
+      .finally(() => {
+        if (generation === request.current) setScanning(false);
+      });
+  };
   const scan = (refresh: boolean) => {
+    const generation = ++request.current;
     setScanning(true);
     setProblem(null);
-    void listTerminalProfiles(refresh)
-      .then(setListed)
-      .catch((error: unknown) => {
-        setProblem(String(error));
-        setListed({ profiles: [], defaultId: null });
-      })
-      .finally(() => setScanning(false));
+    readProfiles(refresh, generation);
   };
-  useEffect(() => scan(false), []);
+  useEffect(() => {
+    readProfiles(false, ++request.current);
+    return () => {
+      request.current++;
+    };
+  }, []);
   const systemDefault = listed?.profiles.find((profile) => profile.id === listed.defaultId);
   const missing = !!listed && !!chosen && !listed.profiles.some((profile) => profile.id === chosen);
   const current = effectiveProfileId(listed, chosen);
@@ -50,6 +62,15 @@ export function TerminalPage() {
         title={t("This computer")}
         persistence={{ mode: "automatic" }}
         description={t("Choose the shell for new terminals and local !commands.")}
+        feedback={
+          problem ? (
+            <SettingsFeedback state="error">
+              {t("Could not discover shells. Use Look again to retry.")} {problem}
+            </SettingsFeedback>
+          ) : scanning ? (
+            <SettingsFeedback state="loading">{t("Looking for shells…")}</SettingsFeedback>
+          ) : null
+        }
         action={
           <Button
             variant="ghost"
@@ -92,11 +113,6 @@ export function TerminalPage() {
           />
         </Row>
       </Group>
-      {problem ? (
-        <Alert tone="danger" role="alert">
-          {t("Could not discover shells. Use Look again to retry.")} {problem}
-        </Alert>
-      ) : null}
       <Group
         id="host-shells"
         layout="full"
@@ -119,9 +135,11 @@ export function TerminalPage() {
             "Found on this computer. Git Bash runs bash commands such as ls, grep and && chains on Windows. Sessions on this computer use this choice even when you type the command on another machine.",
           )}
         >
-          {listed === null ? (
-            <Row label={t("Looking for shells…")} />
-          ) : listed.profiles.length === 0 ? (
+          {scanning ? (
+            <SettingsFeedback state="loading">{t("Looking for shells…")}</SettingsFeedback>
+          ) : problem ? (
+            <Row label={t("Not checked yet")} />
+          ) : !listed?.profiles.length ? (
             <Row
               label={t("No shells found")}
               description={t(
@@ -197,11 +215,18 @@ export function RemoteMachineShells() {
 }
 
 export function RemoteMachineShell({ machine }: { machine: RemoteMachine }) {
+  return <RemoteMachineShellState key={machine.id} machine={machine} />;
+}
+
+function RemoteMachineShellState({ machine }: { machine: RemoteMachine }) {
   useLocale();
   const local = isLocalSyncMachine(machine);
   const [listed, setListed] = useState<ShellProfiles | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [saved, setSaved] = useState(false);
+  const generation = useRef(0);
   const [retry, setRetry] = useState(0);
   const explain = (error: unknown) => {
     const text = String(error).replace(/^Error: /, "");
@@ -209,21 +234,29 @@ export function RemoteMachineShell({ machine }: { machine: RemoteMachine }) {
   };
   useEffect(() => {
     let alive = true;
-    setProblem(null);
-    void remoteRequest<ShellProfiles>(machine.id, "shell.profiles").then(
-      (value) => {
-        if (alive) setListed(value);
-      },
-      (error) => {
-        if (alive) setProblem(explain(error));
-      },
-    );
+    generation.current++;
+    void remoteRequest<ShellProfiles>(machine.id, "shell.profiles")
+      .then(
+        (value) => {
+          if (alive) setListed(value);
+        },
+        (error) => {
+          if (alive) setProblem(explain(error));
+        },
+      )
+      .finally(() => {
+        if (alive) setLoading(false);
+      });
     return () => {
       alive = false;
+      generation.current++;
     };
   }, [machine.id, retry]);
   const choose = (next: string) => {
+    if (saving || loading) return;
+    const version = generation.current;
     setSaving(true);
+    setSaved(false);
     setProblem(null);
     void remoteRequest<ShellProfiles>(
       machine.id,
@@ -232,8 +265,19 @@ export function RemoteMachineShell({ machine }: { machine: RemoteMachine }) {
       false,
       true,
     )
-      .then(setListed, (error) => setProblem(explain(error)))
-      .finally(() => setSaving(false));
+      .then(
+        (value) => {
+          if (version !== generation.current) return;
+          setListed(value);
+          setSaved(true);
+        },
+        (error) => {
+          if (version === generation.current) setProblem(explain(error));
+        },
+      )
+      .finally(() => {
+        if (version === generation.current) setSaving(false);
+      });
   };
   const systemDefault = listed?.profiles.find((profile) => profile.id === listed.defaultId);
   const chosen =
@@ -242,6 +286,35 @@ export function RemoteMachineShell({ machine }: { machine: RemoteMachine }) {
       : "";
   return (
     <Row
+      feedback={
+        problem ? (
+          <SettingsFeedback
+            state="error"
+            action={
+              !listed ? (
+                <Button
+                  variant="ghost"
+                  onClick={() => {
+                    setListed(null);
+                    setLoading(true);
+                    setSaved(false);
+                    setProblem(null);
+                    setRetry((value) => value + 1);
+                  }}
+                >
+                  {t("Retry")}
+                </Button>
+              ) : undefined
+            }
+          >
+            {problem}
+          </SettingsFeedback>
+        ) : loading || saving || saved ? (
+          <SettingsFeedback state={saved ? "success" : "loading"}>
+            {saving ? t("Saving…") : loading ? t("Asking the machine…") : t("Saved")}
+          </SettingsFeedback>
+        ) : null
+      }
       label={
         <span className="terminal-settings-machine">
           <span>{local ? t("This computer") : machine.name}</span>
@@ -255,21 +328,9 @@ export function RemoteMachineShell({ machine }: { machine: RemoteMachine }) {
           : undefined
       }
     >
-      {problem ? (
-        <Alert tone="danger" role="alert">
-          {problem}
-        </Alert>
-      ) : null}
-      {problem && !listed ? (
-        <Button variant="ghost" onClick={() => setRetry((value) => value + 1)}>
-          {t("Retry")}
-        </Button>
-      ) : null}
-      {saving ? <span role="status">{t("Saving…")}</span> : null}
-      {!listed && !problem ? <span role="status">{t("Asking the machine…")}</span> : null}
       {listed ? (
         <SearchableSelect
-          disabled={saving}
+          disabled={saving || loading}
           label={
             local
               ? t("Default shell on this computer (local sync)")

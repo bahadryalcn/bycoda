@@ -2491,6 +2491,24 @@ slow("brings a saved queue back after a restart and waits for Send next", async 
   expect(sentTexts()).toEqual(["saved one", "saved two"]);
 });
 
+slow("dispatches only the selected idle queue row and keeps the other rows paused", async () => {
+  steerSupported = true;
+  savedQueue = [
+    { id: "a", text: "saved one", attachments: [] },
+    { id: "b", text: "selected two", attachments: [] },
+  ];
+  openExistingChat();
+  await renderRemoteProbe();
+  await settle();
+  expect(sends()).toHaveLength(0);
+  await act(async () => remoteOverrides.onSteerQueuedMessage!("shell", "b"));
+  await vi.waitFor(() => expect(sends()).toHaveLength(1));
+  await settle();
+  expect(sentTexts()).toEqual(["selected two"]);
+  expect(remoteOverrides.session?.queuedMessages?.map((row) => row.id)).toEqual(["a"]);
+  expect(remoteOverrides.session?.queueStatus).toBe("paused");
+});
+
 slow("keeps one chat's queue from showing on another", async () => {
   savedQueue = [{ id: "q1", text: "belongs to the first", attachments: [] }];
   openExistingChat();

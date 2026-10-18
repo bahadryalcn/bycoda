@@ -1,9 +1,27 @@
-import { HARNESS_TITLE, sessionWorkCwd, type BtwThread, type HarnessId, type Session } from "../../../features/sessions/model/session";
+import {
+  HARNESS_TITLE,
+  sessionWorkCwd,
+  type BtwThread,
+  type HarnessId,
+  type Session,
+} from "../../../features/sessions/model/session";
 import { type MutableRefObject, useCallback } from "react";
 import { type setSessions } from "../../../features/sessions/model/sessionsStore";
-import { applyBtwHarnessEvent, buildBtwPrompt, replaceBtwThread, sealBtwResponseBlocks, supportsBtwHarness } from "../../../features/sessions/model/btw";
+import {
+  applyBtwHarnessEvent,
+  buildBtwPrompt,
+  replaceBtwThread,
+  sealBtwResponseBlocks,
+  supportsBtwHarness,
+} from "../../../features/sessions/model/btw";
 import { nativeModelId } from "../../../features/sessions/model/models";
 import { runHarnessTextPrompt } from "../../../integrations/harness";
+import {
+  defaultProviderAccountId,
+  providerAccountExists,
+  sessionProviderAccountId,
+  supportsProviderAccounts,
+} from "../../../features/providers/model/providerAccounts";
 export interface BtwRequestInput {
   sessionId: string;
   userBlockId: string;
@@ -19,7 +37,11 @@ export interface BtwThreadActions {
     threadId: string,
     update: (thread: BtwThread | undefined) => BtwThread | undefined,
   ) => Session | undefined;
-  removeBtwThread: (sessionId: string, userBlockId: string, threadId: string) => Session | undefined;
+  removeBtwThread: (
+    sessionId: string,
+    userBlockId: string,
+    threadId: string,
+  ) => Session | undefined;
   runBtwRequest: (input: BtwRequestInput) => void;
 }
 
@@ -116,8 +138,41 @@ export function useBtwThreads({
       thread: BtwThread;
       harness: HarnessId;
     }) => {
-      const harness = input.harness;
+      const harness = input.thread.harness ?? input.harness;
       if (!supportsBtwHarness(harness)) return;
+      let providerAccountId = input.thread.providerAccountId;
+      if (supportsProviderAccounts(harness)) {
+        // A legacy resumed thread has no trustworthy account identity. Preserve
+        // its transcript, but never pair it with the parent's current account.
+        if (!providerAccountId && !input.thread.providerThreadId) {
+          providerAccountId =
+            input.source.harness === harness
+              ? sessionProviderAccountId(harness, input.source)
+              : defaultProviderAccountId(harness);
+        }
+        if (!providerAccountId || !providerAccountExists(harness, providerAccountId)) {
+          updateBtwThread(input.sessionId, input.userBlockId, input.thread.id, (thread) =>
+            thread
+              ? {
+                  ...thread,
+                  status: "error",
+                  updatedAt: Date.now(),
+                  error:
+                    "The account owning this side conversation is unavailable or unknown. Start a new side conversation to continue with the current account.",
+                }
+              : undefined,
+          );
+          return;
+        }
+        const owner = providerAccountId;
+        const pinned = updateBtwThread(
+          input.sessionId,
+          input.userBlockId,
+          input.thread.id,
+          (thread) => (thread ? { ...thread, harness, providerAccountId: owner } : undefined),
+        );
+        if (!pinned) return;
+      }
       const cwd = sessionWorkCwd(input.source);
       const model = nativeModelId(input.thread.model ?? input.source.model).trim();
       if (!cwd || cwd === "~") {
@@ -186,7 +241,7 @@ export function useBtwThreads({
       void runHarnessTextPrompt({
         harness,
         cwd,
-        providerAccountId: input.source.providerAccountId,
+        providerAccountId,
         model: model || undefined,
         modelSettings: input.thread.modelSettings ?? input.source.modelSettings,
         threadId: input.thread.providerThreadId,

@@ -136,6 +136,17 @@ export function useAppearanceSettings(
       setThemeHue(loadThemeHue());
       setThemeSaturation(loadThemeSaturation());
       setThemeDarkLightness(loadThemeDarkLightness());
+      setOpacity(loadSidebarOpacity());
+      setMainOpacity(loadMainOpacity());
+      setBlur(loadSidebarBlur());
+      setBodyGlass(loadBodyGlass());
+      setChatBackgroundPath(loadChatBackgroundPath());
+      setChatBackgroundEmptyOpacity(loadChatBackgroundEmptyOpacity());
+      setChatBackgroundSessionOpacity(loadChatBackgroundSessionOpacity());
+      setChatBackgroundScope(loadChatBackgroundScope());
+      setChatBackgroundBlur(loadChatBackgroundBlur());
+      setDiffPalette(loadDiffPalette());
+      setBackgroundEffect(loadNewThreadBackgroundEffect());
     };
     const unsubscribe = subscribeThemeStorage(sync);
     sync();

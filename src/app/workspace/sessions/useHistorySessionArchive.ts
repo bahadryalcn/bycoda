@@ -22,6 +22,7 @@ export interface HistorySessionArchiveDeps {
   inboxViewOpenRef: MutableRefObject<boolean>;
   notesViewOpenRef: MutableRefObject<boolean>;
   automationsViewOpenRef: MutableRefObject<boolean>;
+  serversViewOpenRef?: MutableRefObject<boolean>;
   settingsOpenRef: MutableRefObject<boolean>;
   filePickerOpenRef: MutableRefObject<boolean>;
   whatsNewVersionRef: MutableRefObject<string | null>;
@@ -40,6 +41,7 @@ export function useHistorySessionArchive(deps: HistorySessionArchiveDeps) {
     inboxViewOpenRef,
     notesViewOpenRef,
     automationsViewOpenRef,
+    serversViewOpenRef,
     settingsOpenRef,
     filePickerOpenRef,
     whatsNewVersionRef,
@@ -80,6 +82,7 @@ export function useHistorySessionArchive(deps: HistorySessionArchiveDeps) {
             inboxViewOpenRef.current ||
             notesViewOpenRef.current ||
             automationsViewOpenRef.current ||
+            serversViewOpenRef?.current ||
             settingsOpenRef.current ||
             filePickerOpenRef.current ||
             whatsNewVersionRef.current,

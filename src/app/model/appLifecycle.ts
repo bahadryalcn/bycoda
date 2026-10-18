@@ -1,6 +1,8 @@
 import { t } from "../../shared/i18n";
 import { PRODUCT_IDENTITY } from "../../shared/lib/productIdentity";
+import { serverTerminalRestoreState } from "../../features/connections/model/serverTerminalRestoreState";
 import { invoke } from "@tauri-apps/api/core";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { ask } from "@tauri-apps/plugin-dialog";
 import {
   bindHarnessSession,
@@ -306,10 +308,29 @@ async function historyForCwd(
 }
 
 async function loadResumedWorkspaceOnce(): Promise<ResumedWorkspace | null> {
-  const [snapshotRaw, refs] = await Promise.all([
-    loadWorkspaceSnapshot().catch(() => null),
+  let serverRestoreOwner = false;
+  try {
+    serverRestoreOwner = getCurrentWindow().label === "main";
+  } catch {
+    // No desktop window authority: leave this optional state uninitialized.
+  }
+  if (serverRestoreOwner) serverTerminalRestoreState.beginLoad();
+  const [snapshotResult, refs] = await Promise.all([
+    loadWorkspaceSnapshot()
+      .then((raw) => ({ ok: true, raw }))
+      .catch(() => ({ ok: false, raw: null })),
     listInFlightSessions().catch(() => []),
   ]);
+  const snapshotRaw = snapshotResult.raw;
+  if (serverRestoreOwner && snapshotResult.ok) {
+    serverTerminalRestoreState.initialize(
+      snapshotRaw && typeof snapshotRaw === "object" && "serversRestore" in snapshotRaw
+        ? snapshotRaw.serversRestore
+        : undefined,
+    );
+  } else if (serverRestoreOwner) {
+    serverTerminalRestoreState.loadFailed();
+  }
   const interrupted = new Set(refs.map((ref) => ref.sessionId));
   const snapshot = parseWorkspaceSnapshot(snapshotRaw);
   const previousRecovery = parseSessionRecovery(

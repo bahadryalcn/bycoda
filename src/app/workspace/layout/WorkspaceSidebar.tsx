@@ -38,6 +38,7 @@ export interface WorkspaceSidebarProps extends Omit<SidebarProps, DerivedSidebar
   searchViewOpen: boolean;
   inboxViewOpen: boolean;
   notesViewOpen: boolean;
+  serversViewOpen?: boolean;
   automationsViewOpen: boolean;
   taskBoardShown: boolean;
   socialBoardShown: boolean;
@@ -55,6 +56,7 @@ export const WorkspaceSidebar = memo(
     searchViewOpen,
     inboxViewOpen,
     notesViewOpen,
+    serversViewOpen = false,
     automationsViewOpen,
     taskBoardShown,
     socialBoardShown,
@@ -81,6 +83,7 @@ export const WorkspaceSidebar = memo(
           props.settingsOpen ||
           inboxViewOpen ||
           notesViewOpen ||
+          serversViewOpen ||
           automationsViewOpen
         }
         canGoForward={surfaceForward.canForward || tabVisitNav.canForward}

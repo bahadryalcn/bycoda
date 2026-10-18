@@ -1,14 +1,23 @@
 import {
   useCallback,
+  useRef,
   type Dispatch,
   type MutableRefObject,
   type SetStateAction,
 } from "react";
 import type { Session } from "../../../features/sessions/model/session";
-import { type ProviderAccountProvider, providerAccountExists, providerAccountLabel } from "../../../features/providers/model/providerAccounts";
+import {
+  type ProviderAccountProvider,
+  providerAccountExists,
+  providerAccountLabel,
+} from "../../../features/providers/model/providerAccounts";
 import { switchSessionAccount } from "../../../features/sessions/model/accountSwitch";
 import { transferProviderSession } from "../../../platform/tauri/providerSessionTransfer";
-import { bindHarnessSession, forgetHarnessSession, type HarnessEvent } from "../../../integrations/harness";
+import {
+  bindHarnessSession,
+  forgetHarnessSession,
+  type HarnessEvent,
+} from "../../../integrations/harness";
 import { CONTINUE_PROMPT } from "../../../features/sessions/model/inFlight";
 import type { useSubmitSession } from "../sessions/submit/useSubmitSession";
 
@@ -51,6 +60,7 @@ export function useUsageLimitAccountActions(deps: UsageLimitAccountActionDeps): 
     promptProviderAccountSignIn,
     onSubmit,
   } = deps;
+  const accountRequests = useRef(new Map<string, object>());
 
   const onUsageLimitDismiss = useCallback((sessionId: string) => {
     setSessions((prev) =>
@@ -65,6 +75,9 @@ export function useUsageLimitAccountActions(deps: UsageLimitAccountActionDeps): 
   /** Move one session to another account of its provider, keeping the conversation. */
   const onSwitchSessionAccount = useCallback(
     async (sessionId: string, provider: ProviderAccountProvider, accountId: string) => {
+      const request = {};
+      accountRequests.current.set(sessionId, request);
+      const ownsRequest = () => accountRequests.current.get(sessionId) === request;
       if (isMovingPane(sessionId)) return false;
       if (!providerAccountExists(provider, accountId)) return false;
       const result = await switchSessionAccount(sessionId, provider, accountId, {
@@ -74,7 +87,9 @@ export function useUsageLimitAccountActions(deps: UsageLimitAccountActionDeps): 
         latest: (id) => sessionsRef.current.find((s) => s.id === id),
         label: providerAccountLabel,
         removing: (id) => removingSessionIds.current.has(id),
+        ownsRequest,
       });
+      if (!ownsRequest()) return false;
       const say = (text: string) => {
         enqueueHarnessEvent(sessionId, { type: "status", text });
         flushHarnessEvents();
@@ -89,6 +104,8 @@ export function useUsageLimitAccountActions(deps: UsageLimitAccountActionDeps): 
         }
         return result.kind === "noop";
       }
+      const latest = sessionsRef.current.find((s) => s.id === sessionId);
+      if (!latest || result.update(latest) === latest) return false;
       setSessions((prev) => prev.map((s) => (s.id === sessionId ? result.update(s) : s)));
       if (result.status) say(result.status);
       promptProviderAccountSignIn(sessionId, provider, accountId);

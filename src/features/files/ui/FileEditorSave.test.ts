@@ -1,10 +1,12 @@
 // @vitest-environment happy-dom
 import { EditorView } from "@codemirror/view";
+import { undo } from "@codemirror/commands";
 import { Storage } from "happy-dom";
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { FileEditor } from "./FileEditor";
+import { FILE_EDITOR_AUTOSAVE_DELAY_MS, FileEditor } from "./FileEditor";
+import { invalidateWatchedFiles } from "../model/fileWatch";
 
 const bridge = vi.hoisted(() => ({ invoke: vi.fn() }));
 vi.mock("@tauri-apps/api/core", async (original) => ({
@@ -50,6 +52,7 @@ async function render(active = true, path = "/repo/save.txt") {
     root.render(
       createElement(FileEditor, {
         path,
+        documentId: "stable-tab",
         cwd: "/repo",
         active,
         onDirtyChange,
@@ -62,6 +65,71 @@ async function render(active = true, path = "/repo/save.txt") {
 function saveButton() {
   return [...container.querySelectorAll("button")].find((button) => button.textContent === "Save")!;
 }
+
+it.each(["/repo/renamed.txt", "/repo/moved/save.txt", "/renamed-repo/save.txt"])(
+  "preserves unsaved document and undo across relocation to %s, then saves at its new path",
+  async (path) => {
+    const view = await render();
+    act(() =>
+      view.dispatch({
+        changes: { from: 0, insert: "UNSAVED " },
+        selection: { anchor: 1, head: 5 },
+      }),
+    );
+    const moved = await render(true, path);
+    expect(moved.state.doc.toString()).toBe("UNSAVED original\n");
+    expect(moved.state.selection.main.anchor).toBe(1);
+    expect(moved.state.selection.main.head).toBe(5);
+    expect(container.textContent).toContain("Unsaved changes");
+    act(() => {
+      expect(undo(moved)).toBe(true);
+    });
+    expect(moved.state.doc.toString()).toBe("original\n");
+    act(() => moved.dispatch({ changes: { from: 0, insert: "new " } }));
+    await act(async () => saveButton().click());
+    expect(bridge.invoke).toHaveBeenCalledWith(
+      "write_text_file",
+      expect.objectContaining({ path, content: "new original\r\n" }),
+    );
+    expect(onDirtyChange).toHaveBeenLastCalledWith(path, false);
+  },
+);
+
+it.each(["original\r\n", "external\r\n"])(
+  "reloads clean saved content after an external change to %j",
+  async (external) => {
+    const view = await render();
+    act(() => view.dispatch({ changes: { from: 0, insert: "saved " } }));
+    await act(async () => saveButton().click());
+    expect(disk).toBe("saved original\r\n");
+    disk = external;
+    await act(async () => {
+      invalidateWatchedFiles(["/repo/save.txt"]);
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    });
+    expect(view.state.doc.toString()).toBe(external.replaceAll("\r\n", "\n"));
+    expect(onDirtyChange).toHaveBeenLastCalledWith("/repo/save.txt", false);
+    act(() => view.dispatch({ changes: { from: 0, insert: "next " } }));
+    await act(async () => saveButton().click());
+    expect(disk).toBe(`next ${external}`);
+  },
+);
+
+it("keeps unsaved edits and blocks autosave over externally changed saved content", async () => {
+  const view = await render();
+  act(() => view.dispatch({ changes: { from: 0, insert: "saved " } }));
+  await act(async () => saveButton().click());
+  localStorage.setItem("bycoda.autosave", "1");
+  act(() => view.dispatch({ changes: { from: 0, insert: "dirty " } }));
+  disk = "original\r\n";
+  await act(async () => invalidateWatchedFiles(["/repo/save.txt"]));
+  expect(view.state.doc.toString()).toBe("dirty saved original\n");
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, FILE_EDITOR_AUTOSAVE_DELAY_MS + 100));
+  });
+  expect(disk).toBe("original\r\n");
+  expect(onDirtyChange).toHaveBeenLastCalledWith("/repo/save.txt", true);
+});
 
 function shortcut(target: EventTarget, extra: KeyboardEventInit = {}) {
   const event = new KeyboardEvent("keydown", {

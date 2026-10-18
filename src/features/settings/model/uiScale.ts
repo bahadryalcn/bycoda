@@ -1,7 +1,7 @@
 import { clamp } from "../../../shared/lib/numbers";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 
-const UI_SCALE_KEY = "bycoda.uiScale";
+export const UI_SCALE_KEY = "bycoda.uiScale";
 
 export const UI_SCALE_DEFAULT = 1;
 export const UI_SCALE_MIN = 0.5;
@@ -53,12 +53,17 @@ export function saveUiScale(value: number) {
  * all computed from getBoundingClientRect / clientX — stay consistent.
  * Outside Tauri (plain `vite dev` in a browser) it falls back to CSS zoom.
  */
+let scaleGeneration = 0;
+
 export async function applyUiScale(value: number) {
+  const generation = ++scaleGeneration;
   const next = normalizeUiScale(value);
   try {
     await getCurrentWebview().setZoom(next);
+    if (generation !== scaleGeneration) return next;
     document.documentElement.style.removeProperty("zoom");
   } catch {
+    if (generation !== scaleGeneration) return next;
     // No Tauri runtime (browser dev): fall back to CSS zoom.
     document.documentElement.style.setProperty("zoom", String(next));
   }
@@ -93,8 +98,33 @@ export function uiScaleCommand(e: {
   return null;
 }
 
+function isScaleStorage(event: StorageEvent) {
+  return (
+    (!event.storageArea || event.storageArea === localStorage) &&
+    (event.key === null || event.key === UI_SCALE_KEY)
+  );
+}
+
+let scaleStorageWatching = false;
+export function initUiScale() {
+  if (!scaleStorageWatching) {
+    scaleStorageWatching = true;
+    window.addEventListener("storage", (event) => {
+      if (isScaleStorage(event)) void applyUiScale(loadUiScale());
+    });
+  }
+  void applyUiScale(loadUiScale());
+}
+
 export function subscribeUiScale(onStoreChange: () => void) {
   if (typeof window === "undefined") return () => {};
+  const onStorage = (event: StorageEvent) => {
+    if (isScaleStorage(event)) onStoreChange();
+  };
   window.addEventListener(UI_SCALE_CHANGE_EVENT, onStoreChange);
-  return () => window.removeEventListener(UI_SCALE_CHANGE_EVENT, onStoreChange);
+  window.addEventListener("storage", onStorage);
+  return () => {
+    window.removeEventListener(UI_SCALE_CHANGE_EVENT, onStoreChange);
+    window.removeEventListener("storage", onStorage);
+  };
 }

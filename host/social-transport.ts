@@ -1,17 +1,21 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { SocialPlatform } from "../src/features/social/model/social";
 import { SocialOAuth } from "./social-oauth";
+import { SocialTokenConnections } from "./social-token-connections";
 import type { XBrowserSessions } from "./social-browser";
 import type { SocialPrincipal, SocialService } from "./social";
 import type { SocialOperation } from "../src/features/social/model/social";
+import type { SocialBrowserIntent } from "../src/features/social/model/socialBrowser";
 
 export class SocialTransport {
   readonly oauth: SocialOAuth;
+  readonly tokens: SocialTokenConnections;
   constructor(
     readonly service: SocialService,
     private readonly browser?: XBrowserSessions,
   ) {
     this.oauth = new SocialOAuth(service);
+    this.tokens = new SocialTokenConnections(service);
   }
   async rpc(p: SocialPrincipal, method: string, params: Record<string, unknown>): Promise<unknown> {
     if (method === "social.tools.call") {
@@ -34,7 +38,14 @@ export class SocialTransport {
         this.input(params.input),
         typeof params.requestId === "string" ? params.requestId : undefined,
       );
-    if (method === "social.oauth.availability") return this.oauth.availability();
+    if (method === "social.oauth.availability")
+      return { ...this.oauth.availability(), ...this.tokens.availability() };
+    if (method === "social.token.connect")
+      return this.tokens.connect(p, String(params.accountId ?? ""));
+    if (method === "social.monitoring.status")
+      return this.service.monitoringStatus(p, String(params.accountId ?? ""));
+    if (method === "social.tiktok.creator")
+      return this.service.tiktokCreator(p, String(params.accountId ?? ""));
     if (method === "social.oauth.begin")
       return this.oauth.begin(
         p,
@@ -49,6 +60,33 @@ export class SocialTransport {
     if (method.startsWith("social.browser.")) {
       if (!this.browser) throw new Error("Browser-session connection is unavailable on this host.");
       if (method === "social.browser.availability") return this.browser.availability();
+      if (
+        [
+          "social.browser.profile.read",
+          "social.browser.profile.update",
+          "social.browser.profile.follow",
+        ].includes(method)
+      )
+        return this.browser.profileAction(
+          this.service,
+          p,
+          String(params.accountId ?? ""),
+          method.split(".").at(-1) as "read" | "update" | "follow",
+          params,
+        );
+      if (method === "social.browser.workflow.begin")
+        return this.browser.workflowBegin(
+          this.service,
+          p,
+          String(params.accountId ?? ""),
+          params.intent as SocialBrowserIntent,
+          params.targetUrl,
+          params.acknowledgeRisk,
+        );
+      if (method === "social.browser.workflow.status")
+        return this.browser.workflows.status(this.service, p, String(params.accountId ?? ""));
+      if (method === "social.browser.workflow.cancel")
+        return this.browser.workflows.cancel(this.service, p, String(params.accountId ?? ""));
       if (method === "social.browser.begin")
         return this.browser.begin(
           this.service,
@@ -93,9 +131,9 @@ export class SocialTransport {
       return true;
     }
     const callback = parsed.pathname.match(
-      /^\/social\/oauth\/(x|instagram|facebook|linkedin|youtube)\/callback$/,
+      /^\/social\/oauth\/(x|instagram|facebook|linkedin|youtube|tiktok|snapchat)\/callback$/,
     );
-    const webhook = parsed.pathname.match(/^\/social\/webhooks\/(instagram|facebook)$/);
+    const webhook = parsed.pathname.match(/^\/social\/webhooks\/(instagram|facebook|whatsapp)$/);
     if (!callback && !webhook) return false;
     response.setHeader("Cache-Control", "no-store");
     response.setHeader("X-Content-Type-Options", "nosniff");
@@ -114,7 +152,7 @@ export class SocialTransport {
         );
         return true;
       }
-      const platform = webhook![1] as "instagram" | "facebook";
+      const platform = webhook![1] as "instagram" | "facebook" | "whatsapp";
       const prefix = `BYCODA_SOCIAL_${platform.toUpperCase()}_`;
       const secret = process.env[`${prefix}CLIENT_SECRET`];
       const verifyToken = process.env[`${prefix}WEBHOOK_VERIFY_TOKEN`];

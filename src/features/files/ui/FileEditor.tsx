@@ -53,6 +53,8 @@ const REVEAL_LABEL = IS_MAC
 
 type Props = {
   path: string;
+  /** Stable tab identity; filesystem relocation changes the path, not this document. */
+  documentId?: string;
   cwd: string;
   active: boolean;
   showDiff?: boolean;
@@ -73,6 +75,7 @@ type SaveState = { status: "idle" | "saving" | "saved" } | { status: "error"; me
 
 export function FileEditor({
   path,
+  documentId = path,
   cwd,
   active,
   showDiff = false,
@@ -192,6 +195,8 @@ export function FileEditor({
   const diskTextRef = useRef<string | null>(null);
   const eolRef = useRef<LineEnding>("\n");
   const onDirtyChangeRef = useRef(onDirtyChange);
+  const loadedDocumentRef = useRef<{ id: string; reloadKey: number } | null>(null);
+  const renderedDocumentRef = useRef<string | null>(null);
   onDirtyChangeRef.current = onDirtyChange;
 
   const applyDiskContent = useCallback((raw: string) => {
@@ -243,6 +248,8 @@ export function FileEditor({
   );
 
   useEffect(() => {
+    const loaded = loadedDocumentRef.current;
+    if (loaded?.id === documentId && loaded.reloadKey === reloadKey) return;
     dirtyRef.current = false;
     pendingDiskRef.current = false;
     let cancelled = false;
@@ -252,6 +259,7 @@ export function FileEditor({
     void readTextFile(path)
       .then((content) => {
         if (cancelled || generation !== loadGeneration.current) return;
+        loadedDocumentRef.current = { id: documentId, reloadKey };
         applyDiskContent(content);
       })
       .catch((error: unknown) => {
@@ -264,7 +272,7 @@ export function FileEditor({
     return () => {
       cancelled = true;
     };
-  }, [applyDiskContent, path, reloadKey]);
+  }, [applyDiskContent, documentId, path, reloadKey]);
 
   useEffect(() => {
     if (!showDiff) {
@@ -414,6 +422,11 @@ export function FileEditor({
       try {
         await operation;
         diskTextRef.current = serializedContent;
+        // Keep the reload prop at the saved baseline, so restoring the initial
+        // text still changes it. CodeMirror preserves any newer dirty edits.
+        setLoadState((current) =>
+          current.status === "ready" ? { status: "ready", content } : current,
+        );
         await syncWatchedMtime(path);
         notifyGitChanged(cwd, "index");
         if (generation === saveGeneration.current) {
@@ -441,7 +454,12 @@ export function FileEditor({
       }
       try {
         // Keep the index convention outside the selected text hunk.
-        await gitStageContents(cwd, relative, restoreLineEnding(contents, gitDiff.lineEnding));
+        await gitStageContents(
+          cwd,
+          relative,
+          restoreLineEnding(contents, gitDiff.lineEnding),
+          restoreLineEnding(gitDiff.original, gitDiff.lineEnding),
+        );
         notifyGitChanged(cwd, "index");
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
@@ -483,7 +501,8 @@ export function FileEditor({
     cwd !== "~" &&
     !!diffRelative &&
     diffRelative !== path &&
-    gitSettledPath !== path;
+    gitSettledPath !== path &&
+    renderedDocumentRef.current !== documentId;
 
   if (loadState.status === "loading" || diffPending) {
     return (
@@ -539,6 +558,7 @@ export function FileEditor({
     );
   }
 
+  renderedDocumentRef.current = documentId;
   const saveAction = (
     <Button
       size="sm"
@@ -599,7 +619,7 @@ export function FileEditor({
           source={
             <div className="flex h-full min-h-0 min-w-0 flex-col">
               <CodeMirrorEditor
-                key={`${path}:${reloadKey}`}
+                key={`${documentId}:${reloadKey}`}
                 path={path}
                 cwd={cwd}
                 commentPath={relativePath}
@@ -622,7 +642,7 @@ export function FileEditor({
         />
       ) : (
         <CodeMirrorEditor
-          key={`${path}:${reloadKey}`}
+          key={`${documentId}:${reloadKey}`}
           path={path}
           cwd={cwd}
           commentPath={relativePath}

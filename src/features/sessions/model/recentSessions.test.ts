@@ -53,6 +53,16 @@ function build(rows: StoredSessionRow[], liveInfos: LiveSessionInfo[] = [], limi
 }
 
 describe("buildRecentSessions", () => {
+  it("preserves completion recency after the Done badge is read", () => {
+    const rows = [stored("finished", 100), stored("other", 200)];
+    const info = live("finished", { activityAt: 300, status: "done" });
+    const unread = build(rows, [info]);
+    const read = build(rows, [{ ...info, status: undefined }]);
+    expect(unread.map((row) => row.id)).toEqual(["finished", "other"]);
+    expect(read.map((row) => row.id)).toEqual(["finished", "other"]);
+    expect(read[0].updatedAt).toBe(300);
+  });
+
   it("orders by last activity and strips the harness prefix from titles", () => {
     const rows = build([stored("old", 10), stored("new", 30), stored("mid", 20)]);
     expect(rows.map((row) => row.id)).toEqual(["new", "mid", "old"]);

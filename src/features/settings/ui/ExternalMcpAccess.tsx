@@ -1,4 +1,4 @@
-import { Alert } from "../../../shared/ui/Alert";
+import { SettingsFeedback } from "./settingsControls";
 import { NumberField } from "../../../shared/ui/NumberField";
 import { invoke } from "@tauri-apps/api/core";
 import { ask } from "@tauri-apps/plugin-dialog";
@@ -247,11 +247,7 @@ function CreateToken({
             disabled={busy}
             onChange={(e) => setDays(e.target.value)}
           />
-          {error && (
-            <Alert tone="danger" role="alert">
-              {error}
-            </Alert>
-          )}
+          {error && <SettingsFeedback state="error">{error}</SettingsFeedback>}
           <div className={styles.actions}>
             <Button disabled={busy} onClick={onClose}>
               {t("Cancel")}
@@ -391,17 +387,17 @@ export function ExternalMcpAccess({ cwd }: { cwd: string }) {
           </Button>
         </div>
       </div>
-      {error && (
-        <Alert tone="danger" role="alert">
-          {error}
-        </Alert>
+      {error && <SettingsFeedback state="error">{error}</SettingsFeedback>}
+      {loading && <SettingsFeedback state="loading">{t("Loading tokens…")}</SettingsFeedback>}
+      {!loading && !error && data && !data.projects.length && (
+        <SettingsFeedback state="empty">
+          {t("Register a project on the local host before creating a token.")}
+        </SettingsFeedback>
       )}
-      {loading && <p role="status">{t("Loading tokens…")}</p>}
-      {!loading && data && !data.projects.length && (
-        <p>{t("Register a project on the local host before creating a token.")}</p>
-      )}
-      {!loading && data && !data.tokens.length && (
-        <p>{t("No external tokens. Create a token to connect a client.")}</p>
+      {!loading && !error && data && data.projects.length > 0 && !data.tokens.length && (
+        <SettingsFeedback state="empty">
+          {t("No external tokens. Create a token to connect a client.")}
+        </SettingsFeedback>
       )}
       <div className={styles.list}>
         {data?.tokens.map((grant) => (

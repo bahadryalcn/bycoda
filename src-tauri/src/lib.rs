@@ -56,12 +56,30 @@ mod remote_files;
 mod remote_ssh;
 mod runtime_logs_bridge;
 mod search;
+mod server_inventory;
 mod session_import;
 mod session_store;
 mod session_transfer;
 mod skills;
 mod social_bridge;
+mod ssh_agent_forwarding;
 pub mod ssh_askpass;
+mod ssh_certificate;
+mod ssh_configuration;
+mod ssh_environment;
+mod ssh_execution;
+mod ssh_forward;
+mod ssh_group_defaults;
+pub mod ssh_http_proxy;
+mod ssh_http_proxy_credentials;
+mod ssh_jump_config;
+mod ssh_keys;
+mod ssh_runbooks;
+mod ssh_security;
+mod ssh_sftp;
+mod ssh_shell_integration;
+mod ssh_terminal;
+mod ssh_window_lifecycle;
 mod terminal_profiles;
 mod trackpad_zoom;
 mod tray;
@@ -313,8 +331,16 @@ pub fn run() {
         .manage(git_watch::GitWatchHost::default())
         .manage(pty::PtyHost::new())
         .manage(remote::RemoteConnections::default())
+        .manage(ssh_forward::SshForwards::default())
+        .manage(ssh_agent_forwarding::AgentForwardingReviews::default())
+        .manage(ssh_http_proxy_credentials::HttpProxyCredentials::default())
+        .manage(ssh_execution::SshExecutionReviews::default())
+        .manage(std::sync::Arc::new(ssh_execution::SshExecutions::default()))
         .manage(window_transfer::WindowTransferState::new())
         .setup(|app| {
+            for window in window::workspace_windows(app.handle()) {
+                ssh_window_lifecycle::register(window.label())?;
+            }
             harness::reap_orphaned_harness_processes();
             app.state::<remote::RemoteConnections>()
                 .emit_tunnel_exits(app.handle().clone());
@@ -353,6 +379,52 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             remote::remote_machines,
+            server_inventory::server_inventory_list,
+            server_inventory::server_ssh_save,
+            server_inventory::server_metadata_update,
+            server_inventory::server_ssh_remove,
+            server_inventory::server_activity_bookmark,
+            ssh_terminal::ssh_terminal_spawn,
+            ssh_terminal::ssh_terminal_quick_spawn,
+            pty::ssh_terminal_suggestions_request,
+            pty::ssh_terminal_suggestion_accept,
+            pty::ssh_terminal_suggestions_dismiss,
+            pty::ssh_terminal_command_insert,
+            ssh_sftp::ssh_sftp_list,
+            ssh_sftp::ssh_sftp_download,
+            ssh_sftp::ssh_sftp_upload,
+            ssh_sftp::ssh_sftp_cancel,
+            ssh_sftp::ssh_sftp_recoveries,
+            ssh_sftp::ssh_sftp_resume,
+            ssh_sftp::ssh_sftp_discard,
+            ssh_forward::ssh_forward_start,
+            ssh_forward::ssh_forward_stop,
+            ssh_forward::ssh_forward_list,
+            ssh_security::ssh_config_preview,
+            ssh_configuration::ssh_group_defaults_list,
+            ssh_configuration::ssh_group_defaults_save,
+            ssh_configuration::ssh_group_defaults_remove,
+            ssh_configuration::server_ssh_configuration_preview,
+            ssh_configuration::server_ssh_inheritance_set,
+            ssh_runbooks::ssh_runbooks_list,
+            ssh_runbooks::ssh_runbook_save,
+            ssh_runbooks::ssh_runbook_remove,
+            ssh_runbooks::ssh_runbook_preview,
+            ssh_runbooks::ssh_runbook_start,
+            ssh_runbooks::ssh_runbook_status,
+            ssh_runbooks::ssh_runbook_cancel,
+            ssh_runbooks::ssh_runbook_pending_intents,
+            ssh_runbooks::ssh_runbook_trigger_intent,
+            ssh_runbooks::ssh_runbook_dismiss_intent,
+            ssh_http_proxy_credentials::ssh_http_proxy_credentials_approve,
+            ssh_http_proxy_credentials::ssh_http_proxy_credentials_revoke,
+            ssh_runbooks::ssh_runbook_abandon_missing,
+            ssh_security::ssh_known_hosts_list,
+            ssh_security::ssh_public_keys_list,
+            ssh_security::ssh_agent_identities,
+            ssh_keys::ssh_key_generate,
+            ssh_certificate::ssh_certificate_inspect,
+            ssh_terminal::ssh_agent_forwarding_review,
             remote::remote_connect,
             local_host::local_host_connect,
             local_host::local_host_status,
@@ -763,6 +835,7 @@ pub fn run() {
             window_transfer::window_transfer_ready,
             window_transfer::reject_window_transfer,
             window_transfer::move_window_tabs,
+            window_transfer::try_relocate_workspace_window,
             window_transfer::preview_window_tab_drag,
             window_transfer::clear_window_tab_drag,
             chat_background::save_chat_background,
@@ -818,6 +891,23 @@ pub fn run() {
             ..
         } => {
             window_transfer::window_closed(handle, &label);
+            ssh_window_lifecycle::close(&label);
+            handle
+                .state::<ssh_forward::SshForwards>()
+                .kill_window(&label);
+            ssh_sftp::kill_window(&label);
+            handle
+                .state::<ssh_http_proxy_credentials::HttpProxyCredentials>()
+                .close_window(&label);
+            handle
+                .state::<ssh_execution::SshExecutionReviews>()
+                .close_window(&label);
+            handle
+                .state::<std::sync::Arc<ssh_execution::SshExecutions>>()
+                .close_window(&label);
+            handle
+                .state::<ssh_agent_forwarding::AgentForwardingReviews>()
+                .kill_window(&label);
             window::forget_quit_window(handle, &label);
             tray::window_closed(handle, &label);
             let other_window = window::workspace_windows(handle)
@@ -861,9 +951,21 @@ pub fn run() {
             window::request_quit(handle);
         }
         tauri::RunEvent::Exit => {
+            ssh_window_lifecycle::shutdown();
             if let Some(state) = handle.try_state::<keep_awake::KeepAwakeState>() {
                 state.shutdown();
             }
+            ssh_sftp::shutdown();
+            handle
+                .state::<ssh_http_proxy_credentials::HttpProxyCredentials>()
+                .shutdown();
+            handle
+                .state::<std::sync::Arc<ssh_execution::SshExecutions>>()
+                .shutdown();
+            handle.state::<ssh_forward::SshForwards>().kill_all();
+            handle
+                .state::<ssh_agent_forwarding::AgentForwardingReviews>()
+                .kill_all();
             handle.state::<remote::RemoteConnections>().shutdown();
             reap_harness_children(handle);
         }

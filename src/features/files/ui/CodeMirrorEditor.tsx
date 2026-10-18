@@ -1,7 +1,7 @@
 import { Button } from "../../../shared/ui/Button";
 import { t, useLocale } from "../../../shared/i18n/technical";
 import { acceptCompletion, completionStatus } from "@codemirror/autocomplete";
-import { indentLess, indentMore, isolateHistory } from "@codemirror/commands";
+import { historyField, indentLess, indentMore, isolateHistory } from "@codemirror/commands";
 import { foldGutter, foldKeymap, getIndentUnit, indentUnit } from "@codemirror/language";
 import type { MergeView } from "@codemirror/merge";
 import {
@@ -458,6 +458,9 @@ function StandardCodeMirrorEditor({
     const extensions: Extension[] = [
       editorZoom(),
       minimalSetup,
+      carry?.state.field(historyField, false)
+        ? historyField.init(() => carry.state.field(historyField))
+        : [],
       editorGitConfig.of(showDiffRef.current && !splitDiff ? editorGit(gitOptions) : []),
       // Ahead of the line numbers, so the blame gutter is the leftmost one.
       editorBlameConfig.of(blameOnRef.current ? inlineBlameExtension : []),
@@ -564,7 +567,7 @@ function StandardCodeMirrorEditor({
         syncChunkNav(update.view);
       }),
     ];
-    // Unsaved edits survive a rebuild; anything else re-reads the file.
+    // Path and layout changes rebuild extensions, while the document identity stays intact.
     const initialDoc = carry?.doc ?? valueRef.current;
     let leftView: EditorView | null = null;
     if (splitDiff) {
@@ -606,7 +609,7 @@ function StandardCodeMirrorEditor({
     lockOverscroll(scrollerRef.current as HTMLDivElement);
     if (carry) {
       view.dispatch({
-        selection: { anchor: Math.min(carry.head, view.state.doc.length) },
+        selection: carry.state.selection,
       });
       scrollLineToTop(view, carry.topLine);
       if (dirtyRef.current) scheduleAutosave();
@@ -651,9 +654,9 @@ function StandardCodeMirrorEditor({
       onErrorCountChangeRef.current(0);
       lockOverscroll(null);
       carryRef.current = {
-        doc: dirtyRef.current ? view.state.doc : null,
-        saved: dirtyRef.current ? savedDocumentRef.current : null,
-        head: view.state.selection.main.head,
+        doc: view.state.doc,
+        saved: savedDocumentRef.current,
+        state: view.state,
         topLine: topVisibleLine(view, scrollerRef.current ?? view.scrollDOM),
       };
       viewRef.current = null;
@@ -1118,10 +1121,10 @@ function indentOrInsertTab(view: EditorView): boolean {
 type LineRange = { from: number; to: number };
 
 type EditorCarry = {
-  /** Set only when the old editor held unsaved edits. */
+  /** Document and history carried when path-specific extensions are rebuilt. */
   doc: Text | null;
   saved: Text | null;
-  head: number;
+  state: EditorState;
   topLine: number;
 };
 

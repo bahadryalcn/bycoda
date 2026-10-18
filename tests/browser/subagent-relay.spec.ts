@@ -1,6 +1,48 @@
 import { expect, test } from "@playwright/test";
 
 for (const theme of ["dark", "light"]) {
+  for (const width of [320, 542]) {
+    test(`long trail and resized composer stay within ${width}px ${theme} panel`, async ({
+      page,
+    }, testInfo) => {
+      await page.setViewportSize({ width, height: 500 });
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      await page.goto("/tests/browser/subagent-relay.html?layout");
+      await page.evaluate(
+        (light) => document.documentElement.classList.toggle("theme-light", light),
+        theme === "light",
+      );
+      await page.getByRole("button", { name: "Open reviewer", exact: true }).click();
+      const panel = page.getByRole("dialog");
+      const nested = panel.getByRole("button", {
+        name: "Open Root subagent in its own panel",
+        exact: true,
+      });
+      await nested.scrollIntoViewIfNeeded();
+      const row = await nested.boundingBox();
+      const mascot = await nested.locator("svg").first().boundingBox();
+      expect(mascot!.x - row!.x).toBeLessThan(20);
+      await panel.getByRole("textbox").evaluate((input) => {
+        input.style.height = "900px";
+      });
+      const send = panel.getByRole("button", { name: "Relay via main agent" });
+      await send.scrollIntoViewIfNeeded();
+      const bounds = await panel.boundingBox();
+      const sendBounds = await send.boundingBox();
+      expect(sendBounds!.y + sendBounds!.height).toBeLessThanOrEqual(bounds!.y + bounds!.height);
+      const geometry = await panel.evaluate((el) => ({
+        width: el.clientWidth,
+        scroll: el.scrollWidth,
+      }));
+      expect(geometry.scroll).toBeLessThanOrEqual(geometry.width);
+      await page.screenshot({ path: testInfo.outputPath("layout.png") });
+      await panel.getByRole("button", { name: "Close agent panel" }).click();
+      await expect(panel).toHaveCount(0);
+    });
+  }
+}
+
+for (const theme of ["dark", "light"]) {
   for (const width of [390, 768, 1024, 1440]) {
     test(`relay at ${width}px in ${theme} theme`, async ({ page }, testInfo) => {
       await page.setViewportSize({ width, height: 850 });

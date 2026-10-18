@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import {
@@ -15,7 +15,7 @@ import { SocialService } from "./social";
 import { HostStore } from "./store";
 import type { SocialCredential } from "./social-credentials";
 import type { SocialAdapters } from "../src/integrations/social/adapter";
-import { accountCapabilities } from "../src/integrations/social/capabilities";
+import { accountCapabilities, X_BROWSER_SCOPES } from "../src/integrations/social/capabilities";
 import type { SocialAccount, SocialJob } from "../src/features/social/model/social";
 
 const cleanup: (() => void)[] = [];
@@ -29,7 +29,9 @@ const loggedIn = (id = "42") => [
 function fakeBrowser(options: {
   cookies?: () => { name: string; value: string }[];
   path?: string;
+  emptyMentions?: boolean;
   response?: string;
+  responses?: { mentions?: string; inbox?: string };
 }) {
   const calls: string[] = [];
   let closed!: () => void;
@@ -38,6 +40,8 @@ function fakeBrowser(options: {
       calls.push(`goto ${url}`);
     }),
     evaluate: vi.fn(async (expression: string) => {
+      if (expression.includes("empty_state_body_text")) return options.emptyMentions === true;
+      if (expression === "location.pathname") return options.path ?? "/messages/42-7";
       if (expression.includes("AppTabBar_Profile_Link")) return "/owner";
       if (expression.includes("location.pathname"))
         return options.path === "login" ? "login" : "ready";
@@ -49,11 +53,19 @@ function fakeBrowser(options: {
     insertText: vi.fn(async (text: string) => {
       calls.push(`text ${text}`);
     }),
+    fill: vi.fn(async (selector, text) => {
+      calls.push(`fill ${selector} ${text}`);
+    }),
     setFiles: vi.fn(async (_selector: string, files: string[]) => {
       calls.push(`files ${files.length}`);
     }),
-    watchResponse: () => ({
-      body: async () => options.response,
+    watchResponse: (path) => ({
+      body: async () =>
+        options.responses && path.test("/NotificationsTimeline")
+          ? options.responses.mentions
+          : options.responses && path.test("/inbox_initial_state.json")
+            ? options.responses.inbox
+            : options.response,
       stop: () => undefined,
     }),
     cookies: async () => (options.cookies ?? (() => loggedIn()))(),
@@ -119,7 +131,7 @@ async function fixture(
     {} as SocialAdapters,
     path,
     undefined,
-    undefined,
+    now,
     undefined,
     browser.adapter(),
   );
@@ -134,7 +146,7 @@ async function fixture(
     accountType: "member",
     projectIds: [project.id],
   })) as SocialAccount;
-  return { social, browser, account, tokens };
+  return { social, browser, account, tokens, project };
 }
 async function settle(check: () => boolean) {
   for (let attempt = 0; attempt < 200 && !check(); attempt++)
@@ -160,6 +172,50 @@ const created = JSON.stringify({
 });
 
 describe("X tarayıcı oturumu", () => {
+  it("keeps profile mutations owner-only, explicitly confirmed and on the executor", async () => {
+    const fake = fakeBrowser({});
+    const s = await fixture(fake.launcher);
+    await s.social.connectAccount(
+      s.account.id,
+      {
+        platformId: "42",
+        name: "owner",
+        scopes: X_BROWSER_SCOPES,
+        accessApproved: true,
+        connection: "browser",
+      },
+      { accessToken: "browser-session" },
+    );
+    await expect(
+      s.browser.profileAction(
+        s.social,
+        {
+          kind: "session",
+          actorId: "agent",
+          provider: "codex",
+          sessionId: "untrusted",
+          projectId: s.project.id,
+        },
+        s.account.id,
+        "follow",
+        { handle: "github", confirm: "FOLLOW_X_ACCOUNT" },
+      ),
+    ).rejects.toThrow("owner");
+    await expect(
+      s.browser.profileAction(s.social, owner, s.account.id, "update", { patch: { bio: "New" } }),
+    ).rejects.toThrow("confirmation");
+    await s.social.call(owner, "accounts.executor", {
+      accountId: s.account.id,
+      executorId: "other-host",
+    });
+    await expect(
+      s.browser.profileAction(s.social, owner, s.account.id, "follow", {
+        handle: "github",
+        confirm: "FOLLOW_X_ACCOUNT",
+      }),
+    ).rejects.toMatchObject({ code: "denied" });
+    expect(fake.launcher).not.toHaveBeenCalled();
+  });
   it("logs in through a plain window and verifies the session after it closes", async () => {
     let cookies: { name: string; value: string }[] = [];
     const fake = fakeBrowser({ cookies: () => cookies });
@@ -205,9 +261,9 @@ describe("X tarayıcı oturumu", () => {
       publish: "available",
       media: "available",
       comment: "available",
-      poll: "unsupported",
-      "inbox.read": "unsupported",
-      "message.start": "unsupported",
+      poll: "available",
+      "inbox.read": "available",
+      "message.start": "available",
     });
   });
   it("fails when the window closes without an X login and removes the profile on disconnect", async () => {
@@ -265,7 +321,7 @@ describe("X tarayıcı oturumu", () => {
         ],
       }),
       "browser-session",
-      async () => new Uint8Array([0x89, 0x50, 0x4e, 0x47]),
+      async () => new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]),
     );
     expect(result).toEqual({
       platformId: "777",
@@ -281,7 +337,31 @@ describe("X tarayıcı oturumu", () => {
       "close",
     ]);
   });
-  it("replies inline on the target post and refuses DMs", async () => {
+  it("stages an MP4 for a post reply, waits for video attachment readiness and cleans staging", async () => {
+    const fake = fakeBrowser({ response: created });
+    const s = await fixture(fake.launcher);
+    let staged = "";
+    fake.page.setFiles = vi.fn(async (_selector, paths) => {
+      staged = paths[0];
+      expect(staged.endsWith(".mp4")).toBe(true);
+      expect(readFileSync(staged).subarray(4, 8).toString()).toBe("ftyp");
+    });
+    await s.browser.adapter().send(
+      { ...s.account, platformId: "42" },
+      {
+        ...job({ postId: "123", media: [{ kind: "video", uploadId: "local" }] }),
+        kind: "reply",
+      },
+      "browser-session",
+      async () => new Uint8Array([0, 0, 0, 12, 102, 116, 121, 112, 105, 115, 111, 109]),
+    );
+    expect(fake.page.evaluate).toHaveBeenCalledWith(
+      expect.stringContaining('[role="progressbar"]'),
+    );
+    expect(existsSync(staged)).toBe(false);
+    expect(fake.calls).toContain('click [data-testid="tweetButtonInline"]');
+  });
+  it("replies inline on the target post and refuses DMs without recipient and write scope", async () => {
     const fake = fakeBrowser({ response: created });
     const s = await fixture(fake.launcher);
     const account = { ...s.account, platformId: "42" };
@@ -332,6 +412,279 @@ describe("X tarayıcı oturumu", () => {
       code: "rate_limit",
       retryAt: 1_030_000,
     });
+  });
+});
+
+describe("X browser background monitoring and messaging", () => {
+  it("rotates owned post comment reads and deduplicates mentions from the same poll", async () => {
+    const fake = fakeBrowser({});
+    const s = await fixture(fake.launcher);
+    const body = JSON.stringify({
+      global_objects: {
+        tweets: {
+          inbound: {
+            id_str: "800",
+            user_id_str: "7",
+            full_text: "Reply",
+            in_reply_to_status_id_str: "101",
+            in_reply_to_user_id_str: "42",
+            created_at: new Date(999000).toUTCString(),
+          },
+        },
+      },
+    });
+    fake.page.watchResponse = (path) => ({
+      body: async () => (path.test("/TweetDetail") ? body : undefined),
+      stop: () => undefined,
+    });
+    const result = await s.browser
+      .adapter()
+      .poll({ ...s.account, platformId: "42", scopes: ["tweet.read"] }, "", ["101", "102", "103"]);
+    expect(result.events.map((event) => event.eventId)).toEqual(["800"]);
+    expect(result.coverage).toContainEqual({ channel: "comments", status: "read" });
+    expect(result.cursor).toBe("2");
+    expect(fake.calls).toContain("goto https://x.com/i/status/101");
+    expect(fake.calls).toContain("goto https://x.com/i/status/102");
+    expect(fake.calls).not.toContain("goto https://x.com/i/status/103");
+  });
+  it("accepts a confirmed empty mentions page while reporting required Chat setup", async () => {
+    const fake = fakeBrowser({ emptyMentions: true, path: "/i/chat/pin/new" });
+    const s = await fixture(fake.launcher);
+    const body = vi.fn(async () => undefined);
+    fake.page.watchResponse = () => ({ body, stop: () => undefined });
+    await expect(
+      s.browser
+        .adapter()
+        .poll({ ...s.account, platformId: "42", scopes: X_BROWSER_SCOPES }, "", []),
+    ).resolves.toEqual({
+      events: [],
+      coverage: [
+        { channel: "mentions", status: "read" },
+        { channel: "messages", status: "unavailable", reason: "chat_setup_required" },
+      ],
+    });
+    expect(body).toHaveBeenCalledTimes(1);
+  });
+  it("never treats an unknown empty-looking layout as a successful read", async () => {
+    const fake = fakeBrowser({ path: "/i/chat" });
+    const s = await fixture(fake.launcher);
+    await expect(
+      s.browser
+        .adapter()
+        .poll({ ...s.account, platformId: "42", scopes: X_BROWSER_SCOPES }, "", []),
+    ).rejects.toMatchObject({ code: "unsupported" });
+  });
+  const now = Date.parse("2026-10-19T00:00:00Z");
+  const mentions = JSON.stringify({
+    global_objects: {
+      tweets: {
+        inbound: {
+          id_str: "800",
+          user_id_str: "7",
+          full_text: "@owner what is bycoda?",
+          created_at: new Date(now - 1000).toUTCString(),
+          entities: { user_mentions: [{ id_str: "42" }] },
+        },
+      },
+    },
+  });
+  const inbox = JSON.stringify({
+    inbox_initial_state: {
+      entries: [
+        {
+          message: {
+            conversation_id: "7-42",
+            time: String(now - 1000),
+            message_data: { id: "900", sender_id: "7", recipient_id: "42", text: "hello" },
+          },
+        },
+      ],
+    },
+  });
+  it("polls an authenticated browser account through the host scheduler, ingests once and reports partial channels", async () => {
+    let clock = now;
+    const fake = fakeBrowser({ responses: { mentions, inbox } });
+    const s = await fixture(fake.launcher, () => clock);
+    await s.social.connectAccount(
+      s.account.id,
+      {
+        platformId: "42",
+        name: "owner",
+        scopes: X_BROWSER_SCOPES,
+        accessApproved: true,
+        connection: "browser",
+      },
+      { accessToken: "browser-session" },
+    );
+    await s.social.call(owner, "inbox.polling", { enabled: true });
+    await s.social.tick();
+    expect(fake.calls).toContain("goto https://x.com/notifications/mentions");
+    expect(fake.calls).toContain("goto https://x.com/messages");
+    expect(s.social.monitoringStatus(owner, s.account.id)).toMatchObject({
+      status: "healthy",
+      coverage: [
+        { channel: "mentions", status: "read" },
+        { channel: "messages", status: "read" },
+      ],
+    });
+    const snapshot = (await s.social.call(owner, "snapshot", {})) as { threads: unknown[] };
+    expect(snapshot.threads).toHaveLength(2);
+    clock += 61000;
+    expect(await s.social.pollAccount(s.account.id)).toEqual({ ingested: 0 });
+    fake.page.watchResponse = (path) => ({
+      body: async () => (path.test("/NotificationsTimeline") ? mentions : '{"encrypted":true}'),
+      stop: () => undefined,
+    });
+    clock += 61000;
+    await s.social.pollAccount(s.account.id);
+    expect(s.social.monitoringStatus(owner, s.account.id)).toMatchObject({
+      status: "partial",
+      coverage: [
+        { channel: "mentions", status: "read" },
+        { channel: "messages", status: "unavailable" },
+      ],
+    });
+  });
+  it("runs an owner-activated automatic reply from a browser mention through the existing queue exactly once", async () => {
+    let clock = now;
+    const responses = {
+      mentions: '{"global_objects":{"tweets":{}}}',
+      inbox: '{"inbox_initial_state":{"entries":[]}}',
+    };
+    const fake = fakeBrowser({ responses, response: created });
+    const s = await fixture(fake.launcher, () => clock);
+    await s.social.connectAccount(
+      s.account.id,
+      {
+        platformId: "42",
+        name: "owner",
+        scopes: X_BROWSER_SCOPES,
+        accessApproved: true,
+        connection: "browser",
+      },
+      { accessToken: "browser-session" },
+    );
+    await s.social.call(owner, "accounts.grants", {
+      accountId: s.account.id,
+      projectId: s.project.id,
+      permissions: ["read", "draft", "reply"],
+    });
+    await s.social.call(owner, "profiles.save", {
+      projectId: s.project.id,
+      productName: "bycoda",
+      brandVoice: "Helpful",
+      facts: [
+        {
+          id: "fact",
+          topic: "product",
+          text: "bycoda helps develop software.",
+          source: "Public product description",
+        },
+      ],
+    });
+    const rule = (await s.social.call(owner, "automations.create", {
+      accountId: s.account.id,
+      projectId: s.project.id,
+      name: "Product help",
+      mode: "automatic",
+      trigger: "comment",
+      topics: ["product"],
+      dailyLimit: 1,
+      answers: [{ keyword: "what is bycoda", factId: "fact" }],
+    })) as { id: string };
+    await s.social.call(owner, "automations.activate", {
+      id: rule.id,
+      confirm: "ENABLE_AUTOMATIC_REPLIES",
+    });
+    await s.social.call(owner, "execution.enable", { confirm: "ENABLE_EXTERNAL_SENDS" });
+    await s.social.call(owner, "inbox.polling", { enabled: true });
+    clock += 2000;
+    responses.mentions = JSON.stringify({
+      global_objects: {
+        tweets: {
+          incoming: {
+            id_str: "800",
+            user_id_str: "7",
+            full_text: "What is bycoda?",
+            created_at: new Date(clock).toUTCString(),
+            entities: { user_mentions: [{ id_str: "42" }] },
+          },
+        },
+      },
+    });
+    await s.social.tick();
+    const snapshot = s.social.snapshot(owner);
+    expect(snapshot.jobs).toHaveLength(1);
+    expect(snapshot.jobs[0]).toMatchObject({
+      kind: "reply",
+      status: "succeeded",
+      platformId: "777",
+    });
+    expect(fake.calls).toContain("text bycoda helps develop software.");
+    clock += 61000;
+    await s.social.tick();
+    expect(s.social.snapshot(owner).jobs).toHaveLength(1);
+  });
+  it("does not read another account's profile", async () => {
+    const fake = fakeBrowser({ cookies: () => loggedIn("99"), responses: { mentions, inbox } });
+    const s = await fixture(fake.launcher, () => now);
+    await expect(
+      s.browser
+        .adapter()
+        .poll({ ...s.account, platformId: "42", scopes: X_BROWSER_SCOPES }, "", []),
+    ).rejects.toMatchObject({ code: "denied" });
+    expect(fake.calls.some((call) => call.startsWith("goto"))).toBe(false);
+  });
+  it("sends a DM only to verified numeric conversation participants and confirms the returned message ID", async () => {
+    const response = JSON.stringify({
+      event: {
+        id: "777",
+        message_create: {
+          sender_id: "42",
+          target: { recipient_id: "7" },
+          message_data: { text: "Hello" },
+        },
+      },
+    });
+    const fake = fakeBrowser({ response });
+    const s = await fixture(fake.launcher, () => now);
+    const result = await s.browser
+      .adapter()
+      .send(
+        { ...s.account, platformId: "42", scopes: X_BROWSER_SCOPES },
+        { ...job({ recipientId: "7" }), kind: "message" },
+        "",
+        async () => new Uint8Array(),
+      );
+    expect(result).toEqual({ platformId: "777" });
+    expect(fake.calls).toContain('click [data-testid="dmComposerSendButton"]');
+    const other = fakeBrowser({ path: "/messages/42-8", response });
+    const t = await fixture(other.launcher, () => now);
+    await expect(
+      t.browser
+        .adapter()
+        .send(
+          { ...t.account, platformId: "42", scopes: X_BROWSER_SCOPES },
+          { ...job({ recipientId: "7" }), kind: "message" },
+          "",
+          async () => new Uint8Array(),
+        ),
+    ).rejects.toMatchObject({ code: "denied" });
+    expect(other.calls).not.toContain('click [data-testid="dmComposerSendButton"]');
+  });
+  it("treats missing DM acknowledgement as uncertain instead of successful", async () => {
+    const fake = fakeBrowser({ response: undefined });
+    const s = await fixture(fake.launcher, () => now);
+    await expect(
+      s.browser
+        .adapter()
+        .send(
+          { ...s.account, platformId: "42", scopes: X_BROWSER_SCOPES },
+          { ...job({ recipientId: "7" }), kind: "message" },
+          "",
+          async () => new Uint8Array(),
+        ),
+    ).rejects.toMatchObject({ code: "unknown" });
   });
 });
 

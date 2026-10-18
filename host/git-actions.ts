@@ -161,11 +161,10 @@ async function branchName(root: string, input: unknown): Promise<string> {
 async function branchRef(root: string, input: unknown): Promise<string> {
   const reference = text(input, "branch", 255);
   if (!reference || reference.startsWith("-")) throw new Error("Invalid branch");
-  if (
-    (await refExists(root, `refs/heads/${reference}`)) ||
-    (await refExists(root, `refs/remotes/${reference}`))
-  )
-    return reference;
+  for (const prefix of ["refs/heads/", "refs/remotes/"]) {
+    const qualified = `${prefix}${reference}`;
+    if (await refExists(root, qualified)) return qualified;
+  }
   throw new Error(`Branch ${reference} does not exist`);
 }
 
@@ -246,35 +245,18 @@ export type HostHistoryCommit = {
 };
 
 /** Format for `git log` records that `parseHistoryLog` reads. */
-export const HISTORY_FORMAT = "--format=%H%x00%h%x00%P%x00%an%x00%at%x00%D%x00%s%x1e";
+export const HISTORY_FORMAT = "--format=%H%x00%h%x00%P%x00%an%x00%at%x00%s%x1e";
+export const HISTORY_REFS_FORMAT =
+  "--format=%(objectname)%00%(*objectname)%00%(refname)%00%(symref)";
 
 export function parseHistoryLog(
   output: string,
   headSha: string | null,
-  remotes: string[],
+  refsBySha: ReadonlyMap<string, HostHistoryCommit["refs"]>,
 ): HostHistoryCommit[] {
   return output.split("\x1e").flatMap((record) => {
-    const [sha, shortSha, parents, author, timestamp, decorations, subject] = record
-      .trim()
-      .split("\0");
+    const [sha, shortSha, parents, author, timestamp, subject] = record.trim().split("\0");
     if (!sha || !/^[0-9a-f]{40,64}$/i.test(sha)) return [];
-    const refs = (decorations ?? "")
-      .split(",")
-      .map((raw) => raw.trim())
-      .filter(Boolean)
-      .flatMap((raw) => {
-        if (raw === "HEAD" || raw.endsWith("/HEAD")) return [];
-        if (raw.startsWith("HEAD -> ")) return [{ name: raw.slice(8), kind: "local" }];
-        if (raw.startsWith("tag: ")) return [{ name: raw.slice(5), kind: "tag" }];
-        return [
-          {
-            name: raw,
-            kind: remotes.some((remote) => raw === remote || raw.startsWith(`${remote}/`))
-              ? "remote"
-              : "local",
-          },
-        ];
-      });
     return [
       {
         sha,
@@ -283,11 +265,36 @@ export function parseHistoryLog(
         author,
         timestamp: Number(timestamp),
         subject,
-        refs,
+        refs: refsBySha.get(sha) ?? [],
         head: sha === headSha,
       },
     ];
   });
+}
+
+/** Structured refs avoid ambiguous decoration delimiters and work on older Git. */
+export function parseHistoryRefs(output: string): Map<string, HostHistoryCommit["refs"]> {
+  const result = new Map<string, HostHistoryCommit["refs"]>();
+  for (const line of output.split("\n")) {
+    const [object, peeled, ref, symbolic] = line.replace(/\r$/, "").split("\0");
+    if (!ref || (symbolic && ref.startsWith("refs/remotes/") && ref.endsWith("/HEAD"))) continue;
+    const prefix = ref.startsWith("refs/heads/")
+      ? "refs/heads/"
+      : ref.startsWith("refs/tags/")
+        ? "refs/tags/"
+        : ref.startsWith("refs/remotes/")
+          ? "refs/remotes/"
+          : null;
+    if (!prefix) continue;
+    const sha = peeled || object;
+    const refs = result.get(sha) ?? [];
+    refs.push({
+      name: ref.slice(prefix.length),
+      kind: prefix === "refs/heads/" ? "local" : prefix === "refs/tags/" ? "tag" : "remote",
+    });
+    result.set(sha, refs);
+  }
+  return result;
 }
 
 const operationState = hostOperationState;
@@ -536,7 +543,21 @@ async function runGitActionUncached(
     case "git_stash_action": {
       if (input.action !== "apply" && input.action !== "pop" && input.action !== "drop")
         throw new Error("Invalid stash action");
-      await git(root, ["stash", input.action, `stash@{${stashIndex(input.index)}}`]);
+      const selector = `stash@{${stashIndex(input.index)}}`;
+      if (typeof input.expectedSha !== "string" || !/^[a-f0-9]{40,64}$/i.test(input.expectedSha))
+        throw new Error("Expected stash SHA is required");
+      const check = async () => {
+        if (
+          (await gitOrNull(root, ["rev-parse", "--verify", selector]))?.trim() !== input.expectedSha
+        )
+          throw new Error("Stash list changed; refresh and select the stash again");
+      };
+      await check();
+      if (input.action !== "drop") await git(root, ["stash", "apply", input.expectedSha]);
+      if (input.action !== "apply") {
+        await check();
+        await git(root, ["stash", "drop", selector]);
+      }
       return;
     }
     case "git_stash_clear":
@@ -697,13 +718,12 @@ async function runGitActionUncached(
       return hostConflictStages(root, await repoPath(root, input.relative));
     case "git_file_history": {
       const path = await repoPath(root, input.relative);
-      const [head, remotes, output] = await Promise.all([
+      const [head, refs, output] = await Promise.all([
         gitOrNull(root, ["rev-parse", "HEAD"]),
-        remoteNames(root),
+        git(root, ["for-each-ref", HISTORY_REFS_FORMAT, "refs/heads", "refs/tags", "refs/remotes"]),
         gitOrNull(root, [
           "log",
           "--follow",
-          "--decorate=short",
           "--max-count",
           historyLimit(input.limit),
           HISTORY_FORMAT,
@@ -711,7 +731,7 @@ async function runGitActionUncached(
           path,
         ]),
       ]);
-      return parseHistoryLog(output ?? "", head, remotes);
+      return parseHistoryLog(output ?? "", head, parseHistoryRefs(refs));
     }
     case "git_blame": {
       const path = await repoPath(root, input.relative);

@@ -18,6 +18,18 @@ beforeEach(() => {
 
 describe("file attachment preparation", () => {
   it.each([
+    ["recording.wav", "audio/wav"],
+    ["report.txt", "text/plain"],
+  ])("reports a failed paste write for %s and permits retry", async (name, type) => {
+    invoke.mockRejectedValueOnce(new Error("disk full"));
+    const file = new File(["contents"], name, { type });
+    await expect(attachmentsFromFiles([file])).rejects.toThrow(
+      `Could not attach ${name}: disk full`,
+    );
+    invoke.mockResolvedValueOnce(`/tmp/${name}`);
+    expect(await attachmentsFromFiles([file])).toMatchObject([{ name, path: `/tmp/${name}` }]);
+  });
+  it.each([
     ["report.pdf", "application/pdf"],
     ["transcript.md", "text/markdown"],
     ["server.log", "text/plain"],

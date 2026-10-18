@@ -1,5 +1,258 @@
 import { test, expect, type Locator, type Page } from "@playwright/test";
 
+test("X media selection replaces image batches with video and keeps removal explicit", async ({
+  page,
+}, testInfo) => {
+  await page.goto("/tests/browser/social.html?x-media=1");
+  const files = page.getByLabel("Resim veya video dosyası", { exact: true });
+  await files.setInputFiles([
+    {
+      name: "one.png",
+      mimeType: "image/png",
+      buffer: Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]),
+    },
+    {
+      name: "two.png",
+      mimeType: "image/png",
+      buffer: Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]),
+    },
+  ]);
+  await expect(page.getByText("2 görsel host'a yüklendi.", { exact: true })).toBeVisible();
+  await expect(page.getByRole("status", { name: "Eklerin türleri" })).toHaveText("image,image");
+  await files.setInputFiles({
+    name: "demo.mp4",
+    mimeType: "video/mp4",
+    buffer: Buffer.from([0, 0, 0, 12, 102, 116, 121, 112, 105, 115, 111, 109]),
+  });
+  await expect(page.getByRole("status", { name: "Eklerin türleri" })).toHaveText("video");
+  for (const theme of ["dark", "light"]) {
+    await page.evaluate(
+      (light) => document.documentElement.classList.toggle("theme-light", light),
+      theme === "light",
+    );
+    for (const width of [390, 1024]) {
+      await page.setViewportSize({ width, height: 750 });
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+        true,
+      );
+      await page.screenshot({ path: testInfo.outputPath(`x-media-${theme}-${width}.png`) });
+    }
+  }
+  await page.getByRole("button", { name: "Ekleri kaldır", exact: true }).click();
+  await expect(page.getByRole("status", { name: "Eklerin türleri" })).toBeEmpty();
+});
+
+test("X profile editor applies a field diff and follows one selected account", async ({
+  page,
+}, testInfo) => {
+  await page.addInitScript(() => localStorage.setItem("bycoda.language", "tr"));
+  await page.goto("/tests/browser/social.html?browser-monitor=1");
+  await page.getByRole("navigation").getByRole("button", { name: "Hesaplar", exact: true }).click();
+  await page
+    .locator("summary")
+    .filter({ hasText: /^Tarayıcı çalışma alanı$/ })
+    .click();
+  await page
+    .locator("summary")
+    .filter({ hasText: /^X profili ve takip$/ })
+    .click();
+  await page.getByRole("button", { name: "Profili oku", exact: true }).click();
+  await page.getByLabel("Hakkında", { exact: true }).fill("Reviewed fixture bio");
+  await page
+    .getByRole("button", { name: "Değişiklikleri X profiline uygula", exact: true })
+    .click();
+  await expect(
+    page.getByText("Profil kaydı yeniden okunarak doğrulandı.", { exact: true }),
+  ).toBeVisible();
+  await page.getByLabel("Takip edilecek X kullanıcı adı", { exact: true }).fill("github");
+  await page.getByRole("button", { name: "Bu hesabı takip et", exact: true }).click();
+  await expect(page.getByText("@github takip edildi.", { exact: true })).toBeVisible();
+  for (const theme of ["dark", "light"]) {
+    await page.evaluate(
+      (light) => document.documentElement.classList.toggle("theme-light", light),
+      theme === "light",
+    );
+    for (const width of [390, 1024]) {
+      await page.setViewportSize({ width, height: 900 });
+      const editor = page
+        .locator("details")
+        .filter({ has: page.locator(":scope > summary", { hasText: /^X profili ve takip$/ }) });
+      expect(
+        await editor.evaluate((element) => element.scrollWidth <= element.clientWidth + 1),
+      ).toBe(true);
+      await page.screenshot({ path: testInfo.outputPath(`x-profile-${theme}-${width}.png`) });
+    }
+  }
+});
+
+test("browser monitoring shows partial coverage without claiming all channels are healthy", async ({
+  page,
+}, testInfo) => {
+  await page.addInitScript(() => localStorage.setItem("bycoda.language", "tr"));
+  await page.goto("/tests/browser/social.html?browser-monitor=1");
+  await page.getByRole("navigation").getByRole("button", { name: "Hesaplar", exact: true }).click();
+  const workspace = page
+    .locator("details")
+    .filter({ has: page.locator(":scope > summary", { hasText: "Tarayıcı çalışma alanı" }) });
+  await workspace.locator(":scope > summary").click();
+  await expect(workspace.getByText(/Kısmi takip; bazı kanallar okunamadı/)).toBeVisible();
+  await expect(workspace.getByText("Son kontrol başarılı", { exact: true })).toHaveCount(0);
+  for (const theme of ["dark", "light"]) {
+    await page.evaluate(
+      (light) => document.documentElement.classList.toggle("theme-light", light),
+      theme === "light",
+    );
+    for (const width of [390, 1440]) {
+      await page.setViewportSize({ width, height: 900 });
+      expect(
+        await workspace.evaluate((element) => element.scrollWidth <= element.clientWidth + 1),
+      ).toBe(true);
+      await page.screenshot({
+        path: testInfo.outputPath(`monitoring-${theme}-${width}.png`),
+        animations: "disabled",
+      });
+    }
+  }
+});
+
+test("browser workspace tracks assisted registration without reporting account connection", async ({
+  page,
+}, testInfo) => {
+  await page.addInitScript(() => localStorage.setItem("bycoda.language", "tr"));
+  await page.goto("/tests/browser/social.html");
+  await page.getByRole("navigation").getByRole("button", { name: "Hesaplar", exact: true }).click();
+  const workspace = page
+    .locator("details")
+    .filter({ has: page.locator(":scope > summary", { hasText: "Tarayıcı çalışma alanı" }) });
+  await workspace.locator(":scope > summary").click();
+  await workspace.getByRole("button", { name: /^Tarayıcı işlemi:/ }).click();
+  await page.getByRole("option", { name: "Kayıt ol", exact: true }).click();
+  await workspace.getByLabel("Bu hesap için ayrı tarayıcı profilini aç").check();
+  await workspace.getByRole("button", { name: "Tarayıcıda aç", exact: true }).click();
+  await expect(
+    workspace.getByText("Kayıt ol: Tarayıcıda kullanıcı işlemi bekleniyor", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    workspace.getByRole("button", { name: "Tarayıcıda aç", exact: true }),
+  ).toBeDisabled();
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  for (const theme of ["dark", "light"]) {
+    await page.evaluate(
+      (light) => document.documentElement.classList.toggle("theme-light", light),
+      theme === "light",
+    );
+    for (const width of [390, 768, 1024, 1440]) {
+      await page.setViewportSize({ width, height: 900 });
+      expect(
+        await workspace.evaluate((element) => element.scrollWidth <= element.clientWidth + 1),
+      ).toBe(true);
+      await page.screenshot({
+        path: testInfo.outputPath(`browser-workspace-${theme}-${width}.png`),
+        animations: "disabled",
+      });
+    }
+  }
+  await workspace.getByRole("button", { name: "İşlemi iptal et", exact: true }).click();
+  await expect(workspace.getByText("Kayıt ol: İptal edildi", { exact: true })).toBeVisible();
+});
+
+test("TikTok publishing shows current privacy choices and explicit consent without enabling communication", async ({
+  page,
+}, testInfo) => {
+  await page.addInitScript(() => localStorage.setItem("bycoda.language", "tr"));
+  await page.goto("/tests/browser/social.html?tiktok=1");
+  await page
+    .getByRole("navigation")
+    .getByRole("button", { name: "Kampanyalar", exact: true })
+    .click();
+  await page.locator(".social-composer > summary").filter({ hasText: "Yeni kampanya" }).click();
+  const form = page.locator("dialog.social-composer-dialog[open]");
+  await form.getByRole("button", { name: "Sosyal hesaplar", exact: true }).click();
+  await page.getByRole("option", { name: /Demo TikTok/ }).click();
+  await page.getByRole("button", { name: "Bitti", exact: true }).click();
+  await expect(
+    form.getByText("Hesap: Demo TikTok · En fazla 60 saniye", { exact: true }),
+  ).toBeVisible();
+  const privacy = form.getByLabel("Görünürlük", { exact: true });
+  await expect(privacy).toHaveValue("");
+  await expect(form.getByLabel("Yorumlara izin ver", { exact: true })).toBeDisabled();
+  await expect(form.getByLabel(/Videoyu önizledim/)).toBeDisabled();
+  await form.getByRole("button", { name: "Yeni kampanya formunu kapat", exact: true }).click();
+  await page.locator(".social-composer > summary").filter({ hasText: "Yeni kampanya" }).click();
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () =>
+          (
+            window as unknown as { socialFixtureCalls: { args: { method?: string } }[] }
+          ).socialFixtureCalls.filter((call) => call.args.method === "social.tiktok.creator")
+            .length,
+      ),
+    )
+    .toBeGreaterThan(1);
+  for (const theme of ["dark", "light"]) {
+    await page.evaluate(
+      (light) => document.documentElement.classList.toggle("theme-light", light),
+      theme === "light",
+    );
+    for (const width of [1440, 390]) {
+      await page.setViewportSize({ width, height: 900 });
+      expect(await form.evaluate((element) => element.scrollWidth <= element.clientWidth + 1)).toBe(
+        true,
+      );
+      await page.screenshot({
+        path: testInfo.outputPath(`tiktok-publish-${theme}-${width}.png`),
+        animations: "disabled",
+      });
+    }
+  }
+});
+
+test("new social platforms are searchable and keyboard accessible in both themes", async ({
+  page,
+}, testInfo) => {
+  await page.addInitScript(() => localStorage.setItem("bycoda.language", "tr"));
+  await page.goto("/tests/browser/social.html");
+  await page.getByRole("navigation").getByRole("button", { name: "Hesaplar", exact: true }).click();
+  await page.locator(".social-composer > summary").filter({ hasText: "Hesap ekle" }).click();
+  const form = page.locator("dialog.social-composer-dialog[open]");
+  for (const theme of ["dark", "light"]) {
+    await page.evaluate(
+      (light) => document.documentElement.classList.toggle("theme-light", light),
+      theme === "light",
+    );
+    for (const width of [1440, 390]) {
+      await page.setViewportSize({ width, height: 844 });
+      const trigger = form.getByRole("button", { name: "Platform", exact: true });
+      for (const [name, type] of [
+        ["TikTok", "member"],
+        ["Snapchat", "public_profile"],
+        ["WhatsApp", "business"],
+        ["Telegram", "bot"],
+      ]) {
+        await trigger.click();
+        // Search is owned by the shared combobox, including localized placeholder text.
+        await page.locator("[data-dialog-popover]:visible input").fill(name);
+        await page.getByRole("option", { name, exact: true }).click();
+        await expect(form.locator('select[name="type"]')).toHaveValue(type);
+        await expect(trigger).toContainText(name);
+      }
+      await trigger.focus();
+      await page.keyboard.press("Enter");
+      await expect(page.getByRole("option", { name: "Telegram", exact: true })).toBeVisible();
+      await page.keyboard.press("Escape");
+      await expect(trigger).toBeFocused();
+      expect(await form.evaluate((element) => element.scrollWidth <= element.clientWidth + 1)).toBe(
+        true,
+      );
+      await page.screenshot({
+        path: testInfo.outputPath(`new-platforms-${theme}-${width}.png`),
+        animations: "disabled",
+      });
+    }
+  }
+});
+
 test("scope menus and scheduling help remain readable and keyboard dismissible", async ({
   page,
 }) => {

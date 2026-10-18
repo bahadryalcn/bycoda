@@ -47,3 +47,58 @@ it("lists and switches only clean existing local branches", async () => {
     current: "review",
   });
 });
+
+it("keeps local branch identity stable when a tag has the same name (#39)", async () => {
+  const cwd = mkdtempSync(join(tmpdir(), "bycoda-host-branches-"));
+  dirs.push(cwd);
+  const git = (...args: string[]) => execFileSync("git", args, { cwd });
+  git("init", "-b", "main");
+  git(
+    "-c",
+    "user.name=Test",
+    "-c",
+    "user.email=test@example.com",
+    "commit",
+    "--allow-empty",
+    "-m",
+    "initial",
+  );
+  git("branch", "topic");
+  git("tag", "topic");
+  expect((await hostBranches(cwd)).branches).toEqual(["main", "topic"]);
+  expect(await switchHostBranch(cwd, "topic")).toMatchObject({ current: "topic" });
+  expect(await switchHostBranch(cwd, "main")).toMatchObject({ current: "main" });
+});
+
+it("preserves slash-containing remote and branch names (#40)", async () => {
+  const cwd = mkdtempSync(join(tmpdir(), "bycoda-host-branches-"));
+  dirs.push(cwd);
+  const git = (...args: string[]) => execFileSync("git", args, { cwd });
+  git("init", "-b", "main");
+  git(
+    "-c",
+    "user.name=Test",
+    "-c",
+    "user.email=test@example.com",
+    "commit",
+    "--allow-empty",
+    "-m",
+    "initial",
+  );
+  git("remote", "add", "origin", cwd);
+  git("remote", "add", "team/origin", cwd);
+  git("update-ref", "refs/remotes/team/origin/topic/nested", "HEAD");
+  git("update-ref", "refs/remotes/origin/simple", "HEAD");
+  git("symbolic-ref", "refs/remotes/team/origin/HEAD", "refs/remotes/team/origin/topic/nested");
+  expect((await hostBranches(cwd)).remotes).toEqual([
+    { remote: "origin", name: "simple" },
+    { remote: "team/origin", name: "topic/nested" },
+  ]);
+  expect(await switchHostBranch(cwd, "topic/nested", "team/origin")).toMatchObject({
+    current: "topic/nested",
+  });
+  expect(git("config", "branch.topic/nested.remote").toString().trim()).toBe("team/origin");
+  expect(git("config", "branch.topic/nested.merge").toString().trim()).toBe(
+    "refs/heads/topic/nested",
+  );
+});

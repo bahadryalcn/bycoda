@@ -72,6 +72,26 @@ describe("deleteDraftTokenAtCaret", () => {
 });
 
 describe("addDraftAttachments", () => {
+  it("replaces a selected image token and renumbers the surviving tokens", () => {
+    const draft = { text: "[image1] and [image2]", attachments: [file("old"), file("keep")] };
+    const result = addDraftAttachments(draft, [file("new")], { start: 0, end: 8 });
+    expect(result.draft).toEqual({
+      text: "[image2] and [image1]",
+      attachments: [file("keep"), file("new")],
+    });
+    expect(result.caret).toBe(8);
+  });
+
+  it("frees attachment capacity before replacing a selected token", () => {
+    const attachments = Array.from({ length: 20 }, (_, i) => file(`f${i}`));
+    const result = addDraftAttachments({ text: "[image1]", attachments }, [file("new")], {
+      start: 0,
+      end: 8,
+    });
+    expect(result.draft.attachments).toHaveLength(20);
+    expect(result.draft.attachments.some((item) => item.id === "f0")).toBe(false);
+    expect(result.draft.text).toBe("[image20]");
+  });
   it("appends the files and puts their tokens at the caret", () => {
     const draft = { text: "hello", attachments: [file("x")] };
     const result = addDraftAttachments(draft, [file("y"), file("d", "file")], {
@@ -123,6 +143,20 @@ describe("applyQueuedEdit", () => {
 });
 
 describe("isQueuedEditEmpty", () => {
+  it.each(["noteCard", "handoffCard"] as const)(
+    "accepts retained %s after clearing text and missing files",
+    (cardKind) => {
+      const card = { id: "retained" } as never;
+      const original = message({ text: "old", [cardKind]: card });
+      const draft = { text: "[image1]", attachments: [file("gone", "image", { missing: true })] };
+      expect(isQueuedEditEmpty(original, draft)).toBe(false);
+      expect(applyQueuedEdit(original, draft)).toMatchObject({
+        text: "",
+        attachments: [],
+        [cardKind]: card,
+      });
+    },
+  );
   it("is empty with no text and no attachments", () => {
     expect(isQueuedEditEmpty(message(), { text: "  \n", attachments: [] })).toBe(true);
   });

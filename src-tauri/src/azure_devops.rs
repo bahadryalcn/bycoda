@@ -458,6 +458,16 @@ fn azure_devops_mr_diff_for(
     );
     let response = azure_get(config, &changes_path)?;
     let changes = parse_iteration_change_list(&response.value);
+    render_iteration_diff(&changes, response.truncated, |change| {
+        diff_iteration_file(config, &project, &repo_name, change, &source_sha, &base_sha)
+    })
+}
+
+fn render_iteration_diff(
+    changes: &[IterationChange],
+    initially_truncated: bool,
+    mut render_file: impl FnMut(&IterationChange) -> Result<FileDiff, String>,
+) -> Result<AzureDevOpsMrDiff, String> {
     let mut files: Vec<AzureDevOpsMrFile> = changes
         .iter()
         .map(|change| AzureDevOpsMrFile {
@@ -469,14 +479,14 @@ fn azure_devops_mr_diff_for(
     let mut patch = String::new();
     let mut additions = 0_i64;
     let mut deletions = 0_i64;
-    let mut truncated = response.truncated;
+    let mut truncated = initially_truncated;
     let mut hunked = 0_usize;
     for (index, change) in changes.iter().enumerate() {
         if hunked >= MAX_DIFF_HUNK_FILES {
             truncated = true;
             break;
         }
-        match diff_iteration_file(config, &project, &repo_name, change, &source_sha, &base_sha) {
+        match render_file(change) {
             Ok(FileDiff::Ready {
                 additions: file_adds,
                 deletions: file_dels,
@@ -502,8 +512,12 @@ fn azure_devops_mr_diff_for(
                 truncated = truncated || too_large;
             }
             Err(_) => {
-                // A single unreadable file must not fail the whole diff; the
-                // file stays listed without hunks.
+                // Do not publish zero counts for a file whose content could not
+                // be read. The caller's existing error surface supports retry.
+                return Err(format!(
+                    "Could not load the Azure DevOps diff for {}. Retry loading the pull request diff.",
+                    change.path
+                ));
             }
         }
     }
@@ -2077,6 +2091,42 @@ fn expand_home(input: &str) -> PathBuf {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn discovered_file_read_failure_cannot_return_a_complete_zero_diff() {
+        let changes = parse_iteration_change_list(&json!({ "changeEntries": [
+            { "item": { "path": "/first.ts" }, "changeType": "edit" },
+            { "item": { "path": "/second.ts" }, "changeType": "edit" }
+        ] }));
+        let result = render_iteration_diff(&changes, false, |change| {
+            if change.path == "second.ts" {
+                Err("Synthetic content fetch failure with private authentication detail".into())
+            } else {
+                Ok(FileDiff::Ready {
+                    additions: 1,
+                    deletions: 1,
+                    block: "first patch".into(),
+                })
+            }
+        });
+        let error = result.expect_err("a partial diff must be an error");
+        assert!(error.contains("second.ts"));
+        assert!(error.contains("Retry"));
+        assert!(!error.contains("private authentication"));
+    }
+
+    #[test]
+    fn successfully_unchanged_file_is_a_complete_zero_diff() {
+        let changes = vec![IterationChange {
+            path: "same.ts".into(),
+            change_type: "edit".into(),
+        }];
+        let result = render_iteration_diff(&changes, false, |_| Ok(FileDiff::Unchanged)).unwrap();
+        assert!(!result.truncated);
+        assert_eq!(result.additions, 0);
+        assert_eq!(result.deletions, 0);
+        assert!(result.patch.is_empty());
+    }
 
     #[test]
     fn normalizes_organization_urls() {

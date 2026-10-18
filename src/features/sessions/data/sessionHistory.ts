@@ -1,4 +1,5 @@
 import { sessionIssue } from "../model/sessionIssue";
+import { sessionActivityAt } from "../model/sessionActivity";
 import type { OrchestrationRun } from "../../orchestration/model/orchestration";
 import { summarizeOrchestration } from "../../orchestration/model/orchestrationSummary";
 import { fuzzyMatch } from "../../../shared/lib/fuzzy";
@@ -115,7 +116,7 @@ export function summaryFromSession(session: Session, git?: SessionGitHint): Sess
       : {}),
     ...(git?.repo ? { repo: git.repo } : {}),
     createdAt: 0,
-    updatedAt: Date.now(),
+    updatedAt: sessionActivityAt(session) || Date.now(),
   };
 }
 
@@ -171,7 +172,9 @@ export function historyWithLiveSessions(
       const draft = !!sessionDraftBlock(session);
       const automationId = session.automationId || stored.automationId;
       const linkedWorkItem = session.linkedWorkItem ?? stored.linkedWorkItem;
+      const updatedAt = Math.max(stored.updatedAt, sessionActivityAt(session));
       if (
+        stored.updatedAt !== updatedAt ||
         stored.issue !== sessionIssue(session) ||
         !!stored.draft !== draft ||
         stored.automationId !== automationId ||
@@ -180,6 +183,7 @@ export function historyWithLiveSessions(
       ) {
         rows[storedIndex] = {
           ...stored,
+          updatedAt,
           issue: sessionIssue(session),
           title: session.title,
           draft: draft || undefined,

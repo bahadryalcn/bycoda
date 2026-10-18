@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { callConversationAppRead } from "./conversation-app-read";
-import { APP_UI_VIEWS, APP_UI_SETTINGS } from "../src/app/model/appUiControl";
+import { APP_UI_NAVIGATION_VIEWS, APP_UI_SETTINGS } from "../src/app/model/appUiControl";
 import { createInterface } from "node:readline";
 import { HOST_PROTOCOL_VERSION } from "../src/features/connections/model/protocol";
 import type { RuntimeLogPrincipal } from "./runtime-log-tools";
@@ -91,10 +91,10 @@ export const CONVERSATION_TOOLS = {
   "ui.workspace.list": object({}),
   "ui.workspace.status": object({}),
   "ui.workspace.open": object(
-    { view: { enum: APP_UI_VIEWS }, section: { enum: APP_UI_SETTINGS } },
+    { view: { enum: APP_UI_NAVIGATION_VIEWS }, section: { enum: APP_UI_SETTINGS } },
     ["view"],
   ),
-  "ui.workspace.close": object({ view: { enum: APP_UI_VIEWS } }, ["view"]),
+  "ui.workspace.close": object({ view: { enum: APP_UI_NAVIGATION_VIEWS } }, ["view"]),
   "ui.tools.status": object({}),
   "ui.tools.open": object({
     tab: { enum: ["devices", "browser", "servers", "logs", "resources"] },
@@ -191,6 +191,13 @@ export const CONVERSATION_TOOLS = {
     {
       requestId: string,
       item: inboxItem,
+      expectedHeadOid: {
+        type: "string",
+        minLength: 40,
+        maxLength: 40,
+        description:
+          "Reviewed PR head SHA. Required for merge, squash and rebase; stale heads are rejected.",
+      },
       prAction: { enum: ["merge", "squash", "rebase", "draft", "ready", "close", "reopen"] },
     },
     ["requestId", "item", "prAction"],
@@ -220,38 +227,65 @@ export const CONVERSATION_TOOLS = {
     {
       ...device,
       action: {
+        description:
+          "Use integer coordinates in 0..20000; type text must contain 1..4096 characters, no NUL or leading hyphen. App targets: 1..256 trimmed characters, no leading hyphen or line breaks. Labels and text expectations: 1..300 nonblank characters without NUL or line breaks; expectations cannot start with a hyphen.",
         oneOf: [
           object({ type: { const: "home" } }, ["type"]),
           object({ type: { const: "snapshot" } }, ["type"]),
-          object({ type: { const: "pressElement" }, label: string }, ["type", "label"]),
+          object(
+            {
+              type: { const: "pressElement" },
+              label: { ...string, pattern: "^(?=[\\s\\S]*\\S)[^\\r\\n\\u0000]+(?![\\s\\S])" },
+            },
+            ["type", "label"],
+          ),
           object(
             {
               type: { const: "waitForText" },
-              text: string,
+              text: { ...string, pattern: "^(?!-)(?=[\\s\\S]*\\S)[^\\r\\n\\u0000]+(?![\\s\\S])" },
               timeoutMs: { type: "integer", minimum: 1, maximum: 120000 },
             },
             ["type", "text"],
           ),
-          object({ type: { const: "openApp" }, app: string }, ["type", "app"]),
-          object({ type: { const: "type" }, text: { type: "string", maxLength: 10000 } }, [
-            "type",
-            "text",
-          ]),
+          object(
+            {
+              type: { const: "openApp" },
+              app: {
+                type: "string",
+                minLength: 1,
+                pattern:
+                  "^(?![\\s\\S]*[\\r\\n\\u0000])\\s*(?!-)(?=\\S)\\S(?:[\\s\\S]{0,254}\\S)?\\s*$",
+              },
+            },
+            ["type", "app"],
+          ),
+          object(
+            {
+              type: { const: "type" },
+              text: {
+                type: "string",
+                minLength: 1,
+                maxLength: 4096,
+                pattern: "^(?!-)[^\\u0000]+$",
+              },
+            },
+            ["type", "text"],
+          ),
           object(
             {
               type: { const: "press" },
-              x: { type: "number", minimum: 0 },
-              y: { type: "number", minimum: 0 },
+              x: { type: "integer", minimum: 0, maximum: 20000 },
+              y: { type: "integer", minimum: 0, maximum: 20000 },
             },
             ["type", "x", "y"],
           ),
           object(
             {
               type: { const: "swipe" },
-              x: { type: "number", minimum: 0 },
-              y: { type: "number", minimum: 0 },
-              endX: { type: "number", minimum: 0 },
-              endY: { type: "number", minimum: 0 },
+              x: { type: "integer", minimum: 0, maximum: 20000 },
+              y: { type: "integer", minimum: 0, maximum: 20000 },
+              endX: { type: "integer", minimum: 0, maximum: 20000 },
+              endY: { type: "integer", minimum: 0, maximum: 20000 },
             },
             ["type", "x", "y", "endX", "endY"],
           ),
@@ -277,6 +311,7 @@ export const CONVERSATION_TOOLS = {
   "logs.read": object({
     source: { enum: ["browser", "server"] },
     sourceId: string,
+    streamId: string,
     after: { type: "integer", minimum: 0 },
     limit: { type: "integer", minimum: 1, maximum: 500 },
     search: { type: "string", maxLength: 500 },
@@ -467,7 +502,9 @@ function validate(schema: any, value: any): void {
         }
       })
     )
-      throw new Error("Invalid action.");
+      throw new Error(
+        schema.description ? `Invalid action. ${schema.description}` : "Invalid action.",
+      );
     return;
   }
   if (schema.const !== undefined && value !== schema.const) throw new Error("Invalid constant.");
@@ -485,6 +522,7 @@ function validate(schema: any, value: any): void {
       typeof value !== "string" ||
       value.length < (schema.minLength ?? 0) ||
       value.length > (schema.maxLength ?? Infinity) ||
+      (schema.pattern && !new RegExp(schema.pattern).test(value)) ||
       value.includes("\0")
     )
       throw new Error("Invalid text field.");

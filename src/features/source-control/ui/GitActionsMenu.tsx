@@ -577,18 +577,26 @@ export function GitActionsMenu({
       case "stash-staged":
         return stashWith("staged");
       case "stash-apply-latest":
-        return run(() => gitStashAction(cwd, "apply", 0));
+        return run(async () => {
+          const entry = (await gitStashList(cwd))[0];
+          if (!entry) throw new Error("No stashes");
+          await gitStashAction(cwd, "apply", entry.index, entry.sha);
+        });
       case "stash-pop-latest":
-        return run(() => gitStashAction(cwd, "pop", 0));
+        return run(async () => {
+          const entry = (await gitStashList(cwd))[0];
+          if (!entry) throw new Error("No stashes");
+          await gitStashAction(cwd, "pop", entry.index, entry.sha);
+        });
       case "stash-apply":
         return pickStash(
           "Apply Stash",
-          (entry) => void run(() => gitStashAction(cwd, "apply", entry.index)),
+          (entry) => void run(() => gitStashAction(cwd, "apply", entry.index, entry.sha)),
         );
       case "stash-pop":
         return pickStash(
           "Pop Stash",
-          (entry) => void run(() => gitStashAction(cwd, "pop", entry.index)),
+          (entry) => void run(() => gitStashAction(cwd, "pop", entry.index, entry.sha)),
         );
       case "stash-drop":
         return pickStash(
@@ -599,7 +607,7 @@ export function GitActionsMenu({
                 `Drop "${entry.message}"? The stashed changes are lost.`,
                 "Drop",
               );
-              if (confirmed) await run(() => gitStashAction(cwd, "drop", entry.index));
+              if (confirmed) await run(() => gitStashAction(cwd, "drop", entry.index, entry.sha));
             })(),
         );
       case "stash-drop-all": {

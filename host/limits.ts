@@ -61,16 +61,33 @@ export class HostLimits {
     return next;
   }
 
-  /** Adds the time a run took, from its start to `endedAt`, to the day it
-   * ended on. */
+  /** Splits elapsed agent time at local calendar midnights, including DST. */
   record(startedAt: number | undefined, endedAt = this.now()): void {
-    if (startedAt === undefined || !(endedAt > startedAt)) return;
-    const day = localDay(endedAt);
-    this.store.db
-      .prepare(
-        "INSERT INTO agent_usage VALUES (?, ?) ON CONFLICT(day) DO UPDATE SET ms=ms+excluded.ms",
-      )
-      .run(day, endedAt - startedAt);
+    if (
+      startedAt === undefined ||
+      !Number.isFinite(startedAt) ||
+      !Number.isFinite(endedAt) ||
+      !(endedAt > startedAt)
+    )
+      return;
+    const add = this.store.db.prepare(
+      "INSERT INTO agent_usage VALUES (?, ?) ON CONFLICT(day) DO UPDATE SET ms=ms+excluded.ms",
+    );
+    this.store.db.exec("SAVEPOINT record_agent_usage");
+    try {
+      for (let start = startedAt; start < endedAt;) {
+        const midnight = new Date(start);
+        midnight.setHours(0, 0, 0, 0);
+        midnight.setDate(midnight.getDate() + 1);
+        const end = Math.min(endedAt, midnight.getTime());
+        add.run(localDay(start), end - start);
+        start = end;
+      }
+      this.store.db.exec("RELEASE record_agent_usage");
+    } catch (error) {
+      this.store.db.exec("ROLLBACK TO record_agent_usage; RELEASE record_agent_usage");
+      throw error;
+    }
     this.store.db
       .prepare("DELETE FROM agent_usage WHERE day < ?")
       .run(localDay(endedAt - KEEP_DAYS * 24 * 60 * MINUTE_MS));

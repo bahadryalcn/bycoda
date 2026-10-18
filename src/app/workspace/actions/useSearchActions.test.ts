@@ -14,6 +14,7 @@ it("preserves the current surface for dialog search and leaves it only on expand
     setInboxViewOpen: vi.fn(),
     setNotesViewOpen: vi.fn(),
     setAutomationsViewOpen: vi.fn(),
+    setServersViewOpen: vi.fn(),
     setSearchViewOpen: vi.fn(),
     setSearchViewFocusToken: vi.fn(),
   };
@@ -33,6 +34,7 @@ it("preserves the current surface for dialog search and leaves it only on expand
       deps.setInboxViewOpen,
       deps.setNotesViewOpen,
       deps.setAutomationsViewOpen,
+      deps.setServersViewOpen,
     ]) {
       expect(setter).not.toHaveBeenCalled();
     }
@@ -40,6 +42,7 @@ it("preserves the current surface for dialog search and leaves it only on expand
     act(() => actions.onExpandSearch());
     expect(actions.searchDialogOpen).toBe(false);
     expect(deps.setSearchViewOpen).toHaveBeenLastCalledWith(true);
+    expect(deps.setServersViewOpen).toHaveBeenLastCalledWith(false);
     act(() => actions.onOpenSearch());
     act(() => actions.onLeaveSearch());
     expect(actions.searchDialogOpen).toBe(false);

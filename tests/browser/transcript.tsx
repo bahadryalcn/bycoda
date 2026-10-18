@@ -182,15 +182,29 @@ function ChatLayoutFixture() {
       id: "layout-user",
       role: "user",
       startedAt,
-      text: "[image1] Sohbet ekranındaki mesajları daha okunabilir yap. [image2] [image3] [image4] [image5] [image6] [image7] Ekler ve çalışan işlemler de anlaşılır olmalı.",
-      attachments: Array.from({ length: 7 }, (_, index) => ({
-        id: `layout-image-${index}`,
-        name: `screenshot-${index + 1}.png`,
-        kind: "image",
-        mimeType: "image/png",
-        size: 42,
-        previewUrl: "/brand/bycoda/mark-light.svg",
-      })),
+      text: `${new URLSearchParams(location.search).has("mixed-attachments") ? "[file1] " : ""}[image1] Sohbet ekranındaki mesajları daha okunabilir yap. [image2] [image3] [image4] [image5] [image6] [image7] Ekler ve çalışan işlemler de anlaşılır olmalı.`,
+      attachments: [
+        ...(new URLSearchParams(location.search).has("mixed-attachments")
+          ? [
+              {
+                id: "layout-file",
+                name: "notes.txt",
+                kind: "file" as const,
+                mimeType: "text/plain",
+                size: 20,
+                data: btoa("Attachment file content"),
+              },
+            ]
+          : []),
+        ...Array.from({ length: 7 }, (_, index) => ({
+          id: `layout-image-${index}`,
+          name: `screenshot-${index + 1}.png`,
+          kind: "image" as const,
+          mimeType: "image/png",
+          size: 42,
+          previewUrl: "/brand/bycoda/mark-light.svg",
+        })),
+      ],
     },
     {
       id: "layout-intro",

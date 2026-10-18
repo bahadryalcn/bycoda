@@ -14,6 +14,7 @@ export interface SessionReminderActionsDeps {
   setInboxViewOpen: Dispatch<SetStateAction<boolean>>;
   setNotesViewOpen: Dispatch<SetStateAction<boolean>>;
   setAutomationsViewOpen: Dispatch<SetStateAction<boolean>>;
+  setServersViewOpen?: Dispatch<SetStateAction<boolean>>;
   setSettingsOpen: Dispatch<SetStateAction<boolean>>;
   setFilePickerOpen: Dispatch<SetStateAction<boolean>>;
   setSidebarTab: (tab: SidebarTabId, project?: string) => void;
@@ -31,6 +32,7 @@ export function useSessionReminderActions({
   setInboxViewOpen,
   setNotesViewOpen,
   setAutomationsViewOpen,
+  setServersViewOpen,
   setSettingsOpen,
   setFilePickerOpen,
   setSidebarTab,
@@ -45,6 +47,7 @@ export function useSessionReminderActions({
       setInboxViewOpen(false);
       setNotesViewOpen(false);
       setAutomationsViewOpen(false);
+      setServersViewOpen?.(false);
       setSettingsOpen(false);
       setFilePickerOpen(false);
       setSidebarTab("sessions", session.cwd);

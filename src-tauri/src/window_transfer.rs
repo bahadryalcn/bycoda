@@ -532,6 +532,42 @@ pub fn clear_window_tab_drag(
     Ok(())
 }
 
+/// Moving an entire detached workspace does not transfer execution ownership.
+/// Resolve another workspace under the pointer before opting into this fast path.
+#[tauri::command]
+pub async fn try_relocate_workspace_window(
+    window: WebviewWindow,
+    client_x: f64,
+    client_y: f64,
+    pixel_ratio: Option<f64>,
+) -> Result<bool, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        if window.label() == "main" {
+            return Ok(false);
+        }
+        let app = window.app_handle();
+        let (px, py) = source_screen_point(&window, client_x, client_y, pixel_ratio)?;
+        if window_at_point(app, window.label(), px, py, pixel_ratio).is_some() {
+            return Ok(false);
+        }
+        finish_drag_preview(&window, &app.state::<WindowTransferState>());
+        let scale = pointer_pixel_ratio(
+            window.scale_factor().map_err(|error| error.to_string())?,
+            pixel_ratio,
+        );
+        window
+            .set_position(tauri::PhysicalPosition::new(
+                (px - 120.0 * scale) as i32,
+                (py - 16.0 * scale) as i32,
+            ))
+            .map_err(|error| error.to_string())?;
+        crate::window::ensure_window_reachable(&window)?;
+        Ok(true)
+    })
+    .await
+    .map_err(|error| error.to_string())?
+}
+
 /// Pointer coordinates are relative to the source webview. Convert to physical
 /// screen pixels before comparing windows on monitors with different scaling.
 #[tauri::command]

@@ -1,4 +1,4 @@
-import { Alert } from "../../../shared/ui/Alert";
+import { SettingsFeedback } from "./settingsControls";
 import { Badge } from "../../../shared/ui/Badge";
 import { t, useLocale } from "../../../shared/i18n";
 import { ask } from "@tauri-apps/plugin-dialog";
@@ -516,15 +516,7 @@ export function ProviderAccountsSettings({ harness }: { harness?: HarnessId }) {
         <div hidden={Boolean(harness && harness !== "antigravity")}>
           <AntigravityAccountSettings embedded />
         </div>
-        {error ? (
-          <Alert
-            tone="danger"
-
-            role="alert"
-          >
-            {error}
-          </Alert>
-        ) : null}
+        {error ? <SettingsFeedback state="error">{error}</SettingsFeedback> : null}
       </section>
     </div>
   );

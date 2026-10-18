@@ -205,6 +205,23 @@ it("keeps automatic refresh out of the user-action busy indicator", async () => 
   await act(async () => finish(result([], 4)));
 });
 
+it("sends the retained stream generation and replaces equal-cursor history after restart", async () => {
+  vi.mocked(hostToolRequest).mockResolvedValueOnce({ ...result(entries, 4), streamId: "old" });
+  await mount({}, false);
+  vi.mocked(hostToolRequest).mockResolvedValueOnce({
+    ...result([{ ...base, id: "fresh-event", cursor: 4, message: "Fresh host" }], 4),
+    streamId: "new",
+  });
+  await act(async () => button("Refresh").click());
+  expect(vi.mocked(hostToolRequest).mock.calls.at(-1)?.[3]).toEqual({
+    after: 4,
+    streamId: "old",
+    limit: 1_000,
+  });
+  expect(container.textContent).toContain("Fresh host");
+  expect(container.textContent).not.toContain("Failed to fetch account");
+});
+
 it("starts live reads on mount and exposes capture and compact filters without opening a browser", async () => {
   await mount({}, false);
   expect(hostToolRequest).toHaveBeenCalledWith(

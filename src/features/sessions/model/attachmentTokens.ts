@@ -1,4 +1,5 @@
 import type { Attachment } from "./session";
+import { markdownLanguage } from "@codemirror/lang-markdown";
 
 /**
  * Inline references to a message's attachments: `[image1]`, `[file2]`.
@@ -24,7 +25,6 @@ export type TextSegment =
   | { token: string; label: string; attachment: Attachment };
 
 const TOKEN = /\[(image|file)([1-9]\d*)\]/g;
-const CODE = /```[\s\S]*?(?:```|$)|`[^`\n]*`/g;
 /** A token glued to a word is an index expression (`arr[image1]`), not a reference. */
 const WORD_CHAR = /[\p{L}\p{N}_$]/u;
 
@@ -56,9 +56,15 @@ export function tokenLabel(token: string): string {
 export function findTokens(text: string, files: Pick<Attachment, "kind">[]): TokenMatch[] {
   if (!files.length || !text.includes("[")) return [];
   const indexByToken = new Map(attachmentTokens(files).map((token, index) => [token, index]));
-  const code = [...text.matchAll(CODE)].map(
-    (match) => [match.index, match.index + match[0].length] as const,
-  );
+  const code: [number, number][] = [];
+  markdownLanguage.parser.parse(text).iterate({
+    enter(node) {
+      if (["InlineCode", "FencedCode", "CodeBlock"].includes(node.name)) {
+        code.push([node.from, node.to]);
+        return false;
+      }
+    },
+  });
   const matches: TokenMatch[] = [];
   for (const match of text.matchAll(TOKEN)) {
     const index = indexByToken.get(match[0]);

@@ -7,6 +7,7 @@ import {
   readFile,
   readdir,
   realpath,
+  rename,
   rm,
   stat,
   writeFile,
@@ -99,7 +100,10 @@ async function git(
       )
     ).stdout;
   } catch (reason) {
-    if ((reason as { killed?: boolean }).killed)
+    if (
+      (reason as { killed?: boolean }).killed &&
+      (reason as { code?: string }).code !== "ERR_CHILD_PROCESS_STDIO_MAXBUFFER"
+    )
       throw new Error(`git ${args[0]} timed out after ${timeout / 1000} seconds`);
     throw reason;
   }
@@ -321,7 +325,7 @@ function searchOptions(input: unknown): ContentSearchOptions {
       .map((part) => part.trim())
       .filter(Boolean);
   return {
-    query: value.query.trim(),
+    query: value.query,
     caseSensitive: value.caseSensitive === true,
     wholeWord: value.wholeWord === true,
     regex: value.regex === true,
@@ -331,17 +335,16 @@ function searchOptions(input: unknown): ContentSearchOptions {
 }
 
 function searchColumn(line: string, options: ContentSearchOptions): number {
-  if (options.regex) return 1;
   const pattern = new RegExp(
     options.query.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"),
     options.caseSensitive ? "g" : "gi",
   );
   for (const match of line.matchAll(pattern)) {
     if (options.wholeWord) {
-      const before = line[match.index - 1];
-      const after = line[match.index + match[0].length];
-      if ((before && /[\p{L}\p{N}_]/u.test(before)) || (after && /[\p{L}\p{N}_]/u.test(after)))
-        continue;
+      // Match complete code points, including letters outside the BMP.
+      const before = line.slice(0, match.index);
+      const after = line.slice(match.index + match[0].length);
+      if (/[\p{L}\p{N}_]$/u.test(before) || /^[\p{L}\p{N}_]/u.test(after)) continue;
     }
     return match.index + 1;
   }
@@ -355,40 +358,59 @@ export async function searchHostContent(
 ): Promise<ProjectSearchResult> {
   const options = searchOptions(input);
   if (!options.query) return { matches: [], truncated: false };
-  const args = ["grep", "--untracked", "-z", "-n"];
+  const args = ["grep", "--untracked", "-z", "-n", "--column"];
   if (!options.caseSensitive) args.push("-i");
-  if (options.wholeWord) args.push("-w");
+  if (options.wholeWord && options.regex) args.push("-w");
   args.push(options.regex ? "-E" : "-F", "-e", options.query, "--");
   args.push(...options.include, ...options.exclude.map((glob) => `:(exclude)${glob}`));
+  let output: string | undefined;
+  let outputTruncated = false;
   try {
     // Search includes/excludes deliberately use glob and pathspec magic.
-    const output = await git(root, args, 8 * 1024 * 1024, 10_000, false);
+    output = await git(root, args, 8 * 1024 * 1024, 10_000, false);
+  } catch (reason) {
+    const error = reason as { code?: number | string; stdout?: string };
+    if (error.code === 1 || error.code === "1") return { matches: [], truncated: false };
+    if (error.code === "ERR_CHILD_PROCESS_STDIO_MAXBUFFER" && typeof error.stdout === "string") {
+      output = error.stdout;
+      outputTruncated = true;
+    } else if (!/not a git repository|not in a git directory/i.test(String(reason))) {
+      throw reason;
+    }
+  }
+  if (output !== undefined) {
     const matches: ProjectSearchMatch[] = [];
     let offset = 0;
     while (offset < output.length && matches.length < 501) {
       const pathEnd = output.indexOf("\0", offset);
       const lineEnd = output.indexOf("\0", pathEnd + 1);
-      const previewEnd = output.indexOf("\n", lineEnd + 1);
-      if (pathEnd < 0 || lineEnd < 0) break;
+      const columnEnd = output.indexOf("\0", lineEnd + 1);
+      const previewEnd = output.indexOf("\n", columnEnd + 1);
+      if (pathEnd < 0 || lineEnd < 0 || columnEnd < 0) break;
+      // A buffer-limited process may end in the middle of a result record.
+      if (outputTruncated && previewEnd < 0) break;
       const relative = output.slice(offset, pathEnd).replace(/\\/g, "/");
-      const preview = output.slice(lineEnd + 1, previewEnd < 0 ? undefined : previewEnd);
+      const preview = output.slice(columnEnd + 1, previewEnd < 0 ? undefined : previewEnd);
       offset = previewEnd < 0 ? output.length : previewEnd + 1;
       if (!relative || !Number.isFinite(Number(output.slice(pathEnd + 1, lineEnd)))) continue;
       const path = workspacePath(root, relative);
+      const byteColumn = Number(output.slice(lineEnd + 1, columnEnd));
+      // Git columns count UTF-8 bytes; editor columns count UTF-16 code units.
+      const column = options.regex
+        ? Buffer.from(preview)
+            .subarray(0, byteColumn - 1)
+            .toString("utf8").length + 1
+        : searchColumn(preview, options);
+      if (!column || !Number.isInteger(byteColumn) || byteColumn < 1) continue;
       matches.push({
         path: path.split(sep).join("/"),
         relative,
         line: Number(output.slice(pathEnd + 1, lineEnd)),
-        column: searchColumn(preview, options) || 1,
+        column,
         preview,
       });
     }
-    return { matches: matches.slice(0, 500), truncated: matches.length > 500 };
-  } catch (reason) {
-    const code = (reason as { code?: number | string }).code;
-    if (code === 1 || code === "1") return { matches: [], truncated: false };
-    if (!/not a git repository|not in a git directory|maxBuffer/i.test(String(reason)))
-      throw reason;
+    return { matches: matches.slice(0, 500), truncated: outputTruncated || matches.length > 500 };
   }
 
   // Ordinary folders use a bounded text scan, like the local fallback.
@@ -616,7 +638,7 @@ async function hostChangedEntries(root: string, paths?: string[]): Promise<GitCh
   return (await readChangedEntries(root)).filter((file) => wanted.has(file.relative));
 }
 
-type ChangedEntry = GitChangedFile & { originalPath?: string };
+type ChangedEntry = GitChangedFile & { originalPath?: string; stagedRename?: boolean };
 
 async function readChangedEntries(root: string, paths?: string[]): Promise<ChangedEntry[]> {
   const prefix = (await git(root, ["rev-parse", "--show-prefix"])).trim();
@@ -642,6 +664,7 @@ async function readChangedEntries(root: string, paths?: string[]): Promise<Chang
       path,
       relative: path,
       ...(originalPath ? { originalPath } : {}),
+      ...(code[0] === "R" ? { stagedRename: true } : {}),
       status: statusName(code),
       additions: 0,
       deletions: 0,
@@ -907,9 +930,10 @@ export async function hostGitAction(
   input?: unknown,
   message?: unknown,
   contents?: unknown,
+  expectedOriginal?: unknown,
 ) {
   try {
-    return await runHostGitAction(root, action, input, message, contents);
+    return await runHostGitAction(root, action, input, message, contents, expectedOriginal);
   } finally {
     invalidateHostFilePaths(root);
     invalidateHostGitIndex(root);
@@ -922,6 +946,7 @@ async function runHostGitAction(
   input?: unknown,
   message?: unknown,
   contents?: unknown,
+  expectedOriginal?: unknown,
 ) {
   const discard = async (file: GitChangedFile) => {
     const path = relative(root, await safeGitPath(root, file.relative));
@@ -935,12 +960,63 @@ async function runHostGitAction(
         .join("/");
       if (typeof contents !== "string" || Buffer.byteLength(contents) > MAX_FILE)
         throw new Error("File too large or invalid");
-      const hash = (
-        await gitWithInput(root, ["hash-object", "-w", "--path", path, "--stdin"], contents)
-      ).trim();
-      const staged = await git(root, ["ls-files", "--stage", "--", path]);
-      const mode = staged.match(/^([0-7]{6})\s/)?.[1] ?? "100644";
-      await git(root, ["update-index", "--add", "--cacheinfo", mode, hash, path]);
+      if (expectedOriginal !== undefined && typeof expectedOriginal !== "string")
+        throw new Error("Invalid index base");
+      const indexPath = resolve(
+        root,
+        (await git(root, ["rev-parse", "--git-path", "index"])).trim(),
+      );
+      const lockPath = `${indexPath}.lock`;
+      // Own Git's real lock from comparison through publication, including external clients.
+      const lock = await open(lockPath, "wx");
+      let published = false;
+      try {
+        const index = await readFile(indexPath).catch((error: NodeJS.ErrnoException) => {
+          if (error.code === "ENOENT") return null;
+          throw error;
+        });
+        if (index) await lock.writeFile(index);
+        await lock.close();
+        const staged = await git(root, ["ls-files", "--stage", "--", path]);
+        const expectedHash =
+          typeof expectedOriginal === "string"
+            ? (
+                await gitWithInput(
+                  root,
+                  ["hash-object", "--path", path, "--stdin"],
+                  expectedOriginal,
+                )
+              ).trim()
+            : null;
+        const entry = staged.match(/^([0-7]{6}) ([a-f0-9]+) 0\t/);
+        if (
+          expectedHash !== null &&
+          ((staged && !entry) || (entry ? entry[2] !== expectedHash : expectedOriginal !== ""))
+        )
+          throw new Error("The Git index changed. Refresh the diff before staging this hunk.");
+        const hash = (
+          await gitWithInput(root, ["hash-object", "-w", "--path", path, "--stdin"], contents)
+        ).trim();
+        const mode = entry?.[1] ?? "100644";
+        if (!index)
+          await exec("git", ["read-tree", "--empty"], {
+            cwd: root,
+            windowsHide: true,
+            timeout: 10_000,
+            env: { ...process.env, GIT_INDEX_FILE: lockPath, GIT_TERMINAL_PROMPT: "0" },
+          });
+        await exec("git", ["update-index", "--add", "--cacheinfo", mode, hash, path], {
+          cwd: root,
+          windowsHide: true,
+          timeout: 10_000,
+          env: { ...process.env, GIT_INDEX_FILE: lockPath, GIT_TERMINAL_PROMPT: "0" },
+        });
+        await rename(lockPath, indexPath);
+        published = true;
+      } finally {
+        await lock.close().catch(() => {});
+        if (!published) await rm(lockPath, { force: true });
+      }
       return;
     }
     case "stage":
@@ -952,12 +1028,27 @@ async function runHostGitAction(
           () => true,
           () => false,
         ));
+      const paths = [path];
+      if (hasHead) {
+        const selected = path.split(sep).join("/");
+        const renames = (await readChangedEntries(root)).filter(
+          (entry) =>
+            entry.stagedRename &&
+            (entry.relative === selected || entry.relative.startsWith(`${selected}/`)),
+        );
+        if (renames.length) {
+          const repositoryRoot = (await git(root, ["rev-parse", "--show-toplevel"])).trim();
+          for (const entry of renames) {
+            paths.push(relative(root, resolve(repositoryRoot, entry.originalPath!)));
+          }
+        }
+      }
       await git(
         root,
         action === "stage"
           ? ["add", "--", path]
           : hasHead
-            ? ["restore", "--staged", "--", path]
+            ? ["restore", "--staged", "--", ...paths]
             : ["rm", "--cached", "-r", "-f", "--", path],
       );
       return;

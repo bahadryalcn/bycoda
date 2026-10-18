@@ -119,6 +119,7 @@ it("serializes stage and hunk mutations and keeps the current operation busy", a
     await one;
   });
   expect(api.hunk).toHaveBeenCalledTimes(1);
+  expect(api.hunk).toHaveBeenCalledWith("/repo", "b.txt", "new\n", "old\n");
   expect(props().busyId).toBe(view.files[1].id);
   await act(async () => {
     second.resolve();

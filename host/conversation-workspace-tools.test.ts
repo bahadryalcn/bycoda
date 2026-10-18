@@ -300,9 +300,49 @@ describe("direct application workspace tools", () => {
       return { approved: true };
     });
     await expect(
-      s.call("inbox.prAction", { requestId: "merge", item, prAction: "merge" }),
+      s.call("inbox.prAction", {
+        requestId: "merge",
+        item,
+        prAction: "merge",
+        expectedHeadOid: "a".repeat(40),
+      }),
     ).rejects.toThrow("revoked");
   });
+  it.each(["merge", "squash", "rebase"])(
+    "keeps the reviewed head immutable while %s approval is pending",
+    async (prAction) => {
+      const s = await setup();
+      s.inbox.beat("native", "desktop", { version: 1 });
+      const listed: any = await s.call("inbox.providers.list", { requestId: "list-head" });
+      s.inbox.beat("native", "desktop", { version: 1 });
+      s.inbox.beat("native", "desktop", {
+        version: 1,
+        replies: [{ id: listed.id, result: { items: [{ ...item, projectPath: s.project.cwd }] } }],
+      });
+      let approve!: (value: { approved: boolean }) => void;
+      s.approval.mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            approve = resolve;
+          }),
+      );
+      const input = { requestId: "merge-head", item, prAction, expectedHeadOid: "a".repeat(40) };
+      const pending = s.call("inbox.prAction", input);
+      await vi.waitFor(() => expect(s.approval).toHaveBeenCalled());
+      expect(s.approval.mock.calls[0][0]).toMatchObject({
+        expectedHeadOid: "a".repeat(40),
+        prAction,
+      });
+      await expect(
+        s.call("inbox.prAction", { ...input, expectedHeadOid: "b".repeat(40) }),
+      ).rejects.toThrow("another pending operation");
+      approve({ approved: true });
+      await pending;
+      const jobs = s.inbox.beat("native", "desktop", { version: 1 });
+      expect(JSON.stringify(jobs)).toContain("a".repeat(40));
+      expect(JSON.stringify(jobs)).not.toContain("b".repeat(40));
+    },
+  );
   it("requires exact approval for inline reviews and deduplicates the entire batch", async () => {
     const s = await setup();
     s.inbox.beat("native", "desktop", { version: 1 });

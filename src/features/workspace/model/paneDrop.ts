@@ -32,18 +32,22 @@ function getNullDrop(): PaneDrop | null {
   return null;
 }
 
+/** Pointer travel inside one semantic target must not redraw the workspace. */
+export function samePaneDrop(left: PaneDrop | null, right: PaneDrop | null): boolean {
+  if (left === right) return true;
+  if (!left || !right) return false;
+  return (
+    left.fromId === right.fromId &&
+    left.overId === right.overId &&
+    left.edge === right.edge &&
+    left.tabPosition === right.tabPosition &&
+    left.targetFileId === right.targetFileId &&
+    left.invalid === right.invalid
+  );
+}
+
 export function setExternalPaneDrop(next: PaneDrop | null) {
-  if (
-    drop?.fromId === next?.fromId &&
-    drop?.overId === next?.overId &&
-    drop?.edge === next?.edge &&
-    drop?.tabPosition === next?.tabPosition &&
-    drop?.targetFileId === next?.targetFileId &&
-    drop?.invalid === next?.invalid
-  ) {
-    return;
-  }
-  if (drop == null && next == null) return;
+  if (samePaneDrop(drop, next)) return;
   drop = next;
   for (const listener of listeners) listener();
 }

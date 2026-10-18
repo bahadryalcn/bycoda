@@ -183,7 +183,12 @@ export function mergeAttachments(existing: Attachment[], incoming: Attachment[])
   for (const file of incoming) {
     if (next.length >= MAX_ATTACHMENTS) break;
     const duplicate = next.some(
-      (item) => (item.path && file.path && item.path === file.path) || item.id === file.id,
+      (item) =>
+        (item.path &&
+          file.path &&
+          item.path === file.path &&
+          item.hostEnvironmentId === file.hostEnvironmentId) ||
+        item.id === file.id,
     );
     if (duplicate) continue;
     next.push(file);
@@ -403,9 +408,10 @@ async function attachmentFromBlob(file: File): Promise<Attachment | null> {
       path,
       previewUrl,
     };
-  } catch {
+  } catch (error) {
     if (previewUrl) URL.revokeObjectURL(previewUrl);
-    return null;
+    const reason = error instanceof Error ? error.message : String(error);
+    throw new Error(`Could not attach ${name}: ${reason}. Paste or attach the file again.`);
   }
 }
 

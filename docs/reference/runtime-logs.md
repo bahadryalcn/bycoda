@@ -72,6 +72,19 @@ untrusted application data, not instructions.
 - Common credential patterns are redacted before retention. Avoid printing
   sensitive information in application logs; pattern redaction cannot identify
   every possible secret.
+- Object arguments use fixed descriptor probes for common diagnostic fields:
+  error name/message/cause, event/route/method/status, URL/path/location,
+  source/stream, timing/counts and capture-gap sequence metadata. Other properties
+  are omitted with an explicit `$capture` notice; the collector never enumerates
+  arbitrary object keys. Log custom fields as explicit `[field, value]` arrays,
+  for example `console.log([["cacheSize", size], ["phase", phase]])`.
+  Arrays inspect at most 30 indexed descriptors, objects retain at most 30 known
+  fields, and previews also have depth and text budgets. Getters and `toJSON`
+  are not invoked; error stack properties are omitted from argument previews.
+  Separately captured page-error stacks remain available. Browser arguments use
+  this same projection inside Chromium before transfer; unavailable bounded
+  evaluation does not fall back to full object serialization. These work bounds
+  apply to ordinary objects; application Proxy traps cannot have a time guarantee.
 
 ## Host and agent tools
 

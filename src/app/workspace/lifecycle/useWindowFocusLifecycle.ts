@@ -12,6 +12,7 @@ export interface WindowFocusLifecycleDeps {
   inboxViewOpenRef: MutableRefObject<boolean>;
   notesViewOpenRef: MutableRefObject<boolean>;
   automationsViewOpenRef: MutableRefObject<boolean>;
+  serversViewOpenRef?: MutableRefObject<boolean>;
   settingsOpenRef: MutableRefObject<boolean>;
   setComposerFocused: Dispatch<SetStateAction<boolean>>;
   setComposerFocusToken: Dispatch<SetStateAction<number>>;
@@ -25,6 +26,7 @@ export function useWindowFocusLifecycle({
   inboxViewOpenRef,
   notesViewOpenRef,
   automationsViewOpenRef,
+  serversViewOpenRef,
   settingsOpenRef,
   setComposerFocused,
   setComposerFocusToken,
@@ -43,6 +45,7 @@ export function useWindowFocusLifecycle({
             !inboxViewOpenRef.current &&
             !notesViewOpenRef.current &&
             !automationsViewOpenRef.current &&
+            !serversViewOpenRef?.current &&
             !settingsOpenRef.current
           ) {
             setComposerFocused(true);

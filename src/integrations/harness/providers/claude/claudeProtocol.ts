@@ -889,8 +889,7 @@ function toolResultText(value: unknown): string {
 
 export function extractExitPlanModePlan(value: unknown): string | undefined {
   const rec = asRecord(value);
-  const plan = stringField(rec, "plan");
-  return plan;
+  return stringField(rec, "plan") ?? stringField(rec, "planContent") ?? stringField(rec, "content");
 }
 
 export function extractAskUserQuestionTitle(input: Record<string, unknown>): string {

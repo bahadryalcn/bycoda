@@ -92,7 +92,9 @@ export function AttachmentChip({
       <div
         data-attachment-chip={image ? "image" : "file"}
         className={`group relative flex min-w-0 items-center gap-1.5 rounded-md ${
-          image ? "w-14 shrink-0 flex-col gap-0" : "max-w-full bg-(--ui-surface-raised) py-0.5 px-1"
+          image
+            ? "w-14 shrink-0 flex-col gap-0"
+            : "shrink-0 self-center max-w-full bg-(--ui-surface-raised) py-0.5 px-1"
         }`}
         title={attachment.path ?? attachment.name}
       >
@@ -119,7 +121,6 @@ export function AttachmentChip({
           </span>
         ) : (
           <>
-            {labelNode}
             <span className="min-w-0 max-w-48 text-(length:--ui-font-caption) text-(--ui-text-secondary)">
               {canOpen || canOpenFile ? (
                 <Button
@@ -140,6 +141,7 @@ export function AttachmentChip({
                     } else void show();
                   }}
                 >
+                  {labelNode}
                   <FileTypeIcon
                     name={attachment.name}
                     isDir={isAttachmentFolder(attachment)}
@@ -151,6 +153,7 @@ export function AttachmentChip({
                 </Button>
               ) : (
                 <span className="flex min-w-0 items-center gap-1.5">
+                  {labelNode}
                   <FileTypeIcon
                     name={attachment.name}
                     isDir={isAttachmentFolder(attachment)}

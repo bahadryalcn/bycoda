@@ -4,6 +4,8 @@ import {
   canRestoreOver,
   droppedAttachmentsNotice,
   persistableDraft,
+  composerDraftBytes,
+  COMPOSER_DRAFT_MAX_BYTES,
   restoreDraft,
   settleRestoredDraft,
   type ComposerDraft,
@@ -37,6 +39,25 @@ const allPresent = async (paths: string[]) => new Set(paths);
 const nonePresent = async () => new Set<string>();
 
 describe("persistableDraft", () => {
+  it("bounds combined inline images while retaining explicit recovery metadata", () => {
+    const saved = persistableDraft(
+      draft({
+        attachments: [
+          image({ data: "A".repeat(4_500_000) }),
+          image({ id: "a2", data: "B".repeat(4_500_000) }),
+        ],
+      }),
+    )!;
+    expect(composerDraftBytes(saved)).toBeLessThanOrEqual(COMPOSER_DRAFT_MAX_BYTES);
+    expect(saved.attachments).toHaveLength(2);
+    expect(saved.attachments.some((file) => file.missing && !file.data)).toBe(true);
+  });
+
+  it("round-trips the non-agent intent and ignores unknown modes", () => {
+    const saved = persistableDraft(draft({ mode: "save" }));
+    expect(restoreDraft(saved)?.mode).toBe("save");
+    expect(restoreDraft({ ...saved, mode: "unknown" })?.mode).toBeUndefined();
+  });
   it("keeps text, tags and attachments but not object URLs", () => {
     const saved = persistableDraft(draft({ mcpTags: [tag as never] }));
     expect(saved?.text).toBe("look at [image1]");

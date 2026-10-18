@@ -91,6 +91,40 @@ beforeEach(() => {
 });
 
 describe("provider-aware skill catalog", () => {
+  it("passes remote disabled identities before resolution and preserves personal fallback", async () => {
+    const storage = new Map<string, string>();
+    vi.stubGlobal("localStorage", {
+      getItem: (key: string) => storage.get(key) ?? null,
+      setItem: (key: string, value: string) => storage.set(key, value),
+    });
+    vi.stubGlobal("window", new EventTarget());
+    const projectPath = "remote://host/work/repo/.agents/skills/review/SKILL.md";
+    const personalPath = "remote://host/home/user/.agents/skills/review/SKILL.md";
+    const context = { harness: "claude" as const, cwd: "remote://host/work/repo" };
+    const project = {
+      name: "review",
+      path: projectPath,
+      source: "agents",
+      scope: "project",
+      description: "project",
+    };
+    const personal = { ...project, path: personalPath, scope: "user", description: "personal" };
+    mocks.listSkills.mockImplementation(async (_cwd, disabled: string[] = []) => {
+      const candidate = [project, personal].find((skill) => !disabled.includes(skill.path));
+      return candidate ? [candidate] : [];
+    });
+    saveDisabledSkillPaths([]);
+    expect((await loadSkills(context))[0].path).toBe(projectPath);
+    saveDisabledSkillPaths([projectPath]);
+    expect((await loadSkills(context))[0].path).toBe(personalPath);
+    expect(mocks.listSkills).toHaveBeenLastCalledWith(context.cwd, [projectPath]);
+    saveDisabledSkillPaths([projectPath, personalPath]);
+    expect(await loadSkills(context)).toEqual([]);
+    saveDisabledSkillPaths([personalPath]);
+    expect((await loadSkills(context))[0].path).toBe(projectPath);
+    saveDisabledSkillPaths([]);
+    vi.unstubAllGlobals();
+  });
   it("discovers remote skills on their machine even for native-command harnesses and shares in-flight loads", async () => {
     const pending = deferred<DiscoveredSkill[]>();
     mocks.listSkills.mockReturnValue(pending.promise);
@@ -102,7 +136,7 @@ describe("provider-aware skill catalog", () => {
     const first = loadSkills(context);
     const second = loadSkills({ ...context, sessionId: "two" });
     expect(mocks.discoverOmpCommands).not.toHaveBeenCalled();
-    expect(mocks.listSkills).toHaveBeenCalledExactlyOnceWith(context.cwd);
+    expect(mocks.listSkills).toHaveBeenCalledExactlyOnceWith(context.cwd, []);
     pending.resolve([
       {
         name: "review",

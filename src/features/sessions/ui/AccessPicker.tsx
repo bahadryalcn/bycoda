@@ -139,7 +139,7 @@ export function AccessPicker({ value, onChange, onClose, busy = false, unavailab
             const highlighted = index === active && !reason;
             return (
               <Button
-                className="w-full items-start py-2 text-start"
+                className="w-full items-start text-start"
                 fullWidth
                 layout="inline"
                 selected={highlighted}

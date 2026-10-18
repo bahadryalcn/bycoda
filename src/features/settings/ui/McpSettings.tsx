@@ -1,4 +1,4 @@
-import { Alert } from "../../../shared/ui/Alert";
+import { SettingsFeedback } from "./settingsControls";
 import { Badge } from "../../../shared/ui/Badge";
 import { Select as SharedSelect, NativeSelect } from "../../../shared/ui/Select";
 import { TextareaField } from "../../../shared/ui/TextareaField";
@@ -225,11 +225,7 @@ function AddServerModal({
             )}
           />
         </AdvancedSettings>
-        {error ? (
-          <Alert tone="danger" role="alert">
-            {error}
-          </Alert>
-        ) : null}
+        {error ? <SettingsFeedback state="error">{error}</SettingsFeedback> : null}
         <div className="flex justify-end gap-2">
           <Button variant="ghost" size="sm" type="button" onClick={onClose} disabled={busy}>
             {t("Cancel")}
@@ -531,29 +527,22 @@ function McpConnections({ cwd, projectPicker }: { cwd: string; projectPicker: Re
           </div>
         </Popover>
       ) : null}
-      {error ? (
-        <Alert tone="danger" role="alert">
-          {error}
-        </Alert>
-      ) : null}
+      {error ? <SettingsFeedback state="error">{error}</SettingsFeedback> : null}
       {claudeError && (filter === "all" || filter === "claude") ? (
-        <section className={styles.healthError}>
-          <h3>{t("Claude connection status unavailable: ")}</h3>
-          <p className={styles.path}>{claudeError}</p>
-        </section>
+        <SettingsFeedback state="warning">
+          {t("Claude connection status unavailable: ")} {claudeError}
+        </SettingsFeedback>
       ) : null}
       {loading ? (
-        <p role="status" className="text-sm text-content/55">
-          {t("Checking servers…")}
-        </p>
-      ) : visible.length === 0 ? (
-        <p className="text-sm text-content/55">
+        <SettingsFeedback state="loading">{t("Checking servers…")}</SettingsFeedback>
+      ) : visible.length === 0 && !error ? (
+        <SettingsFeedback state="empty">
           {query.trim()
             ? t("No MCP servers match your search.")
             : filter === "all"
               ? t("No MCP servers configured. Add a server or choose another project.")
               : t("No MCP servers configured for this provider.")}
-        </p>
+        </SettingsFeedback>
       ) : (
         <div className={styles.list}>
           {pageServers.map((server) => (

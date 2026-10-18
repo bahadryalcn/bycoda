@@ -1,5 +1,5 @@
 import type { ComponentProps, Dispatch, SetStateAction } from "react";
-import type { ToolId, ToolWindow } from "../../model/toolWindows";
+import type { WorkspaceToolId, ToolWindow } from "../../model/toolWindows";
 import { NavigationBoundary } from "../../shell/NavigationBoundary";
 import { ToolNavigationContext, ToolPanel } from "../../shell/ToolNavigation";
 import {
@@ -8,6 +8,7 @@ import {
   NotesView,
   SocialView,
   TasksView,
+  ServersView,
 } from "../surfaces/lazySurfaces";
 import { revealExistingTool } from "../helpers/appHelpers";
 
@@ -20,6 +21,7 @@ export interface WorkspaceToolPanelsProps {
   // Tool view open state and setters
   inboxViewOpen: boolean;
   notesViewOpen: boolean;
+  serversViewOpen: boolean;
   automationsViewOpen: boolean;
   socialBoardShown: boolean;
   taskBoardShown: boolean;
@@ -30,6 +32,7 @@ export interface WorkspaceToolPanelsProps {
   setInboxViewOpen: SetBoolean;
   setPullRequestsOnly: SetBoolean;
   setNotesViewOpen: SetBoolean;
+  setServersViewOpen: SetBoolean;
   setAutomationsViewOpen: SetBoolean;
   setSocialBoardShown: SetBoolean;
   setTaskBoardShown: SetBoolean;
@@ -59,6 +62,7 @@ export interface WorkspaceToolPanelsProps {
   onOpenInboxIntegrations: InboxProps["onOpenIntegrations"];
   // Notes, social, tasks, automations
   onLeaveNotes: NotesProps["onClose"];
+  onLeaveServers: () => void;
   onLeaveAutomations: AutomationsProps["onClose"];
   onOpenBackgroundSession: AutomationsProps["onOpenBackgroundSession"];
   onOpenAutomationSession: AutomationsProps["onOpenSession"];
@@ -73,6 +77,7 @@ export interface WorkspaceToolPanelsProps {
 export function WorkspaceToolPanels({
   inboxViewOpen,
   notesViewOpen,
+  serversViewOpen,
   automationsViewOpen,
   socialBoardShown,
   taskBoardShown,
@@ -83,6 +88,7 @@ export function WorkspaceToolPanels({
   setInboxViewOpen,
   setPullRequestsOnly,
   setNotesViewOpen,
+  setServersViewOpen,
   setAutomationsViewOpen,
   setSocialBoardShown,
   setTaskBoardShown,
@@ -109,6 +115,7 @@ export function WorkspaceToolPanels({
   onOpenInboxSession,
   onOpenInboxIntegrations,
   onLeaveNotes,
+  onLeaveServers,
   onLeaveAutomations,
   onOpenBackgroundSession,
   onOpenAutomationSession,
@@ -118,27 +125,31 @@ export function WorkspaceToolPanels({
   return (
     <ToolNavigationContext.Provider
       value={{
-        active: inboxViewOpen
-          ? "inbox"
-          : notesViewOpen
-            ? "notes"
-            : automationsViewOpen
-              ? socialBoardShown
-                ? "social"
-                : taskBoardShown
-                  ? "tasks"
-                  : "automations"
-              : null,
+        active: serversViewOpen
+          ? "servers"
+          : inboxViewOpen
+            ? "inbox"
+            : notesViewOpen
+              ? "notes"
+              : automationsViewOpen
+                ? socialBoardShown
+                  ? "social"
+                  : taskBoardShown
+                    ? "tasks"
+                    : "automations"
+                : null,
         cwd:
           automationsViewOpen && socialBoardShown && socialPanelCwd ? socialPanelCwd : projectCwd,
         notesEnabled,
+        includeServers: !toolWindow,
         grouped: toolWindow?.grouped ?? true,
-        onSelect: async (tool: ToolId) => {
+        onSelect: async (tool: WorkspaceToolId) => {
           if (
-            await revealExistingTool(
+            tool !== "servers" &&
+            (await revealExistingTool(
               tool,
               socialBoardShown && socialPanelCwd ? socialPanelCwd : projectCwd,
-            )
+            ))
           )
             return;
           setFilePickerOpen(false);
@@ -147,12 +158,23 @@ export function WorkspaceToolPanels({
           setInboxViewOpen(tool === "inbox");
           setPullRequestsOnly(false);
           setNotesViewOpen(tool === "notes" && notesEnabled);
+          setServersViewOpen(tool === "servers");
           setAutomationsViewOpen(tool === "social" || tool === "tasks" || tool === "automations");
           setSocialBoardShown(tool === "social");
           setTaskBoardShown(tool === "tasks");
         },
       }}
     >
+      <ToolPanel active={serversViewOpen} keepEffects>
+        <NavigationBoundary name="Servers" onBack={onLeaveServers}>
+          <ServersView
+            besideRail={!detachedSessionWindow && (projectRailOpen || compactProjectRail)}
+            compactRail={compactRailActive}
+            onClose={onLeaveServers}
+            onToggleSidebar={onToggleSidebar}
+          />
+        </NavigationBoundary>
+      </ToolPanel>
       <ToolPanel active={inboxViewOpen}>
         <InboxView
           key={pullRequestsOnly ? "pullRequests" : "inbox"}

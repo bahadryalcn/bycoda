@@ -212,16 +212,69 @@ function toggleCode(doc: string, from: number, to: number): MarkdownEdit {
   const selected = doc.slice(from, to);
   // Part of one line reads as inline code; anything else gets a fenced block.
   if (selected && !selected.includes("\n")) {
-    return toggleInline(doc, from, to, "`");
+    return toggleInlineCode(doc, from, to);
   }
+  const fence = "`".repeat(Math.max(3, longestBacktickRun(selected) + 1));
   const before = from > 0 && doc[from - 1] !== "\n" ? "\n" : "";
   const after = to < doc.length && doc[to] !== "\n" ? "\n" : "";
-  const open = `${before}\`\`\`\n`;
+  const open = `${before}${fence}\n`;
   const anchor = from + open.length;
   return {
     from,
     to,
-    insert: `${open}${selected}\n\`\`\`${after}`,
+    insert: `${open}${selected}\n${fence}${after}`,
+    anchor,
+    head: anchor + selected.length,
+  };
+}
+
+function longestBacktickRun(text: string): number {
+  let longest = 0;
+  for (const match of text.matchAll(/`+/g)) longest = Math.max(longest, match[0].length);
+  return longest;
+}
+
+function toggleInlineCode(doc: string, from: number, to: number): MarkdownEdit {
+  const selected = doc.slice(from, to);
+  // A toolbar-created selection excludes both delimiters and any required padding.
+  for (const padding of [0, 1]) {
+    if (padding && (doc[from - 1] !== " " || doc[to] !== " ")) continue;
+    const left = runLength(doc, from - padding, -1, "`");
+    const right = runLength(doc, to + padding, 1, "`");
+    if (left && left === right && left > longestBacktickRun(selected)) {
+      const start = from - padding - left;
+      return {
+        from: start,
+        to: to + padding + right,
+        insert: selected,
+        anchor: start,
+        head: start + selected.length,
+      };
+    }
+  }
+  const left = runLength(selected, 0, 1, "`");
+  const right = runLength(selected, selected.length, -1, "`");
+  if (left && left === right && selected.length > left * 2) {
+    let content = selected.slice(left, -right);
+    if (left > longestBacktickRun(content)) {
+      // CommonMark removes one padding space from each end, except for all-space spans.
+      if (content.startsWith(" ") && content.endsWith(" ") && content.trim()) {
+        content = content.slice(1, -1);
+      }
+      return { from, to, insert: content, anchor: from, head: from + content.length };
+    }
+  }
+  const marker = "`".repeat(longestBacktickRun(selected) + 1);
+  const padded =
+    selected.startsWith("`") ||
+    selected.endsWith("`") ||
+    (selected.startsWith(" ") && selected.endsWith(" ") && selected.trim() !== "");
+  const padding = padded ? " " : "";
+  const anchor = from + marker.length + padding.length;
+  return {
+    from,
+    to,
+    insert: `${marker}${padding}${selected}${padding}${marker}`,
     anchor,
     head: anchor + selected.length,
   };
@@ -233,7 +286,7 @@ function insertLink(doc: string, from: number, to: number): MarkdownEdit {
     return {
       from,
       to,
-      insert: `[text](${selected})`,
+      insert: `[text](${selected.startsWith("www.") ? `https://${selected}` : selected})`,
       anchor: from + 1,
       head: from + 5,
     };
@@ -241,11 +294,12 @@ function insertLink(doc: string, from: number, to: number): MarkdownEdit {
   if (!selected) {
     return { from, to, insert: "[text](url)", anchor: from + 1, head: from + 5 };
   }
-  const anchor = from + selected.length + 3;
+  const label = selected.replace(/[\\[\]]/g, "\\$&");
+  const anchor = from + label.length + 3;
   return {
     from,
     to,
-    insert: `[${selected}](url)`,
+    insert: `[${label}](url)`,
     anchor,
     head: anchor + 3,
   };

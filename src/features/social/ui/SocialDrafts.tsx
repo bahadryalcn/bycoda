@@ -3,8 +3,14 @@ import { TextareaField } from "../../../shared/ui/TextareaField";
 import { Checkbox } from "../../../shared/ui/Checkbox";
 import { Button } from "../../../shared/ui/Button";
 import { useEffect, useState } from "react";
+import { XMediaFields } from "./XMediaFields";
 import { socialRows } from "../model/socialWorkspace";
-import type { SocialDraft, SocialPolicy, SocialSnapshot } from "../model/social";
+import type {
+  SocialDraft,
+  SocialDraftApprovalInput,
+  SocialPolicy,
+  SocialSnapshot,
+} from "../model/social";
 import type { SocialClient } from "../model/socialClient";
 import {
   effectiveSocialPolicy,
@@ -49,6 +55,8 @@ function Draft({
   const [editing, setEditing] = useState(false);
   const [text, setText] = useState(draft.text);
   const [factIds, setFactIds] = useState(draft.factIds);
+  const [media, setMedia] = useState(draft.media ?? []);
+  const [mediaBusy, setMediaBusy] = useState(false);
   const [editPolicy, setEditPolicy] = useState<SocialPolicy>();
   const [policyError, setPolicyError] = useState("");
   const [policyAttempt, setPolicyAttempt] = useState(0);
@@ -161,10 +169,19 @@ function Draft({
           }
         </p>
       ) : null}
+      {draft.media?.length ? (
+        <p role="status">
+          Ekler:{" "}
+          {draft.media.some((item) => item.kind === "video")
+            ? "1 video"
+            : `${draft.media.length} görsel`}
+        </p>
+      ) : null}
       {editing ? (
         <form
           onSubmit={(event) => {
             event.preventDefault();
+            if (mediaBusy) return;
             void (async () => {
               if (
                 await run(async () => {
@@ -182,6 +199,7 @@ function Draft({
                     id: draft.id,
                     text,
                     factIds,
+                    ...(account?.platform === "x" ? { media } : {}),
                   });
                 }, "Taslak güncellendi. Yeni içerik gönderim için yeniden onaylanmalı.")
               )
@@ -254,12 +272,26 @@ function Draft({
           {limit && count > limit ? (
             <Alert tone="danger">Karakter sınırını {count - limit} karakter aştınız.</Alert>
           ) : null}
+          {account?.platform === "x" &&
+          !(
+            account.connection === "browser" &&
+            (draft.kind === "message" || thread?.kind === "message")
+          ) ? (
+            <XMediaFields
+              value={media}
+              client={client}
+              onChange={setMedia}
+              onBusyChange={setMediaBusy}
+              message={draft.kind === "message" || thread?.kind === "message"}
+            />
+          ) : null}
           <div className="social-actions">
             <Button
               type="submit"
               variant="primary"
 
               disabled={
+                mediaBusy ||
                 !text.trim() ||
                 (!!limit && count > limit) ||
                 !!missingFacts.length ||
@@ -302,6 +334,7 @@ function Draft({
             onClick={() => {
               setText(draft.text);
               setFactIds(draft.factIds);
+              setMedia(draft.media ?? []);
               setEditing(true);
             }}
           >
@@ -314,6 +347,7 @@ function Draft({
             disabled={!!disabledReason || !draft.text.trim()}
             onClick={() =>
               void run(async () => {
+                const reviewedDraft = structuredClone(draft);
                 const { effective } = await client.request<{ effective: SocialPolicy }>(
                   "policy.get",
                   { accountId: draft.accountId },
@@ -326,7 +360,10 @@ function Draft({
                   throw new Error(
                     `Metin ${latestLimit} karakter sınırını aşıyor. Taslağı düzenleyin.`,
                   );
-                await client.request("drafts.approve", { id: draft.id });
+                await client.request("drafts.approve", {
+                  id: reviewedDraft.id,
+                  reviewedDraft,
+                } satisfies SocialDraftApprovalInput);
                 await client.request(
                   `${draft.kind === "reply" ? "replies" : draft.kind === "message" ? "messages" : "comments"}.send`,
                   { id: draft.id },

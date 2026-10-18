@@ -90,7 +90,7 @@ export function GitStashSection({ cwd, enabled, hasChanges, onOpenCommit }: Prop
       kind: "warning",
       okLabel: "Drop",
     });
-    if (confirmed) await run(() => gitStashAction(cwd, "drop", entry.index));
+    if (confirmed) await run(() => gitStashAction(cwd, "drop", entry.index, entry.sha));
   };
 
   return (
@@ -224,7 +224,7 @@ export function GitStashSection({ cwd, enabled, hasChanges, onOpenCommit }: Prop
             if (busy) return;
             if (id === "drop") void drop(entry);
             else if (id === "apply" || id === "pop")
-              void run(() => gitStashAction(cwd, id, entry.index));
+              void run(() => gitStashAction(cwd, id, entry.index, entry.sha));
           }}
         />
       ) : null}

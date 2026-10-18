@@ -9,12 +9,11 @@ import {
 import { invalidateProjectFiles } from "../../files/model/fileIndex";
 import { joinPath } from "../../../shared/lib/paths";
 import { isLocalProject, normalizeProjectPath } from "../../projects/model/recents";
-import { isMarkdownBlockquotePosition } from "../../sessions/model/quoteDraft";
+import { skillInvocationTokens } from "./skillTokens";
 import type { HarnessId } from "../../sessions/model/session";
 import { getHarness } from "../../../integrations/harness/core/registry";
 import type { NativeCommand } from "../../../integrations/harness/core/nativeCommands";
 import { isCliCommandText } from "./cliCommands";
-import { dollarTokenAt } from "./slashCommands";
 import { SKILL_INVOCATION_GUIDANCE } from "../../../integrations/harness/core/skillGuidance";
 import { REMOTE_PATH_PREFIX } from "../../../shared/lib/remotePaths";
 import { CREATE_SKILL_BODY, CREATE_SKILL_DESCRIPTION, CREATE_SKILL_NAME } from "./createSkill";
@@ -121,7 +120,6 @@ export const BUILTIN_CREATE_SKILL: BuiltinSkill = {
 };
 
 const SKILL_NAME_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
-const SKILL_TOKEN_RE = /(^|\s)[/$]([A-Za-z0-9][A-Za-z0-9_.:-]*)(?=\s|$)/g;
 const NATIVE_SKILL_TTL_MS = 30_000;
 const NATIVE_SKILL_RETRY_MS = 5_000;
 
@@ -310,7 +308,7 @@ function startCatalogLoad(
 async function loadCatalog(context: SkillCatalogContext): Promise<Skill[]> {
   if (context.cwd.startsWith(REMOTE_PATH_PREFIX)) {
     const disabled = disabledSkillPathSet();
-    const discovered = await listSkills(context.cwd);
+    const discovered = await listSkills(context.cwd, loadDisabledSkillPaths());
     return discovered.filter((skill) => !disabled.has(skill.path)).map(asSkill);
   }
   const provider = getHarness(context.harness)?.commands;
@@ -356,25 +354,7 @@ function asSkill(skill: DiscoveredSkill): FileSkill {
 }
 
 export function skillNamesInText(text: string): string[] {
-  const names: string[] = [];
-  const seen = new Set<string>();
-  SKILL_TOKEN_RE.lastIndex = 0;
-  let match: RegExpExecArray | null;
-  while ((match = SKILL_TOKEN_RE.exec(text))) {
-    const name = match[2];
-    const start = match.index + (match[1]?.length ?? 0);
-    if (
-      !name ||
-      seen.has(name) ||
-      isMarkdownBlockquotePosition(text, start) ||
-      (text[start] === "$" && !dollarTokenAt(text, start + name.length + 1))
-    ) {
-      continue;
-    }
-    seen.add(name);
-    names.push(name);
-  }
-  return names;
+  return [...new Set(skillInvocationTokens(text).map((token) => token.name))];
 }
 
 export type SkillTextPart = {
@@ -398,22 +378,9 @@ export function skillTextParts(text: string, names: ReadonlySet<string>): SkillT
     parts.push({ text: value, skill });
   };
 
-  SKILL_TOKEN_RE.lastIndex = 0;
   let cursor = 0;
-  let match: RegExpExecArray | null;
-  while ((match = SKILL_TOKEN_RE.exec(text))) {
-    const name = match[2];
-    const lead = match[1] ?? "";
-    const start = match.index + lead.length;
-    if (
-      !name ||
-      !names.has(name) ||
-      isMarkdownBlockquotePosition(text, start) ||
-      (text[start] === "$" && !dollarTokenAt(text, start + name.length + 1))
-    ) {
-      continue;
-    }
-    const end = start + 1 + name.length;
+  for (const { name, start, end } of skillInvocationTokens(text)) {
+    if (!names.has(name)) continue;
     push(text.slice(cursor, start), false);
     push(text.slice(start, end), true);
     cursor = end;

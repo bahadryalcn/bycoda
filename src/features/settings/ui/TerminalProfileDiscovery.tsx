@@ -1,4 +1,4 @@
-import { Alert } from "../../../shared/ui/Alert";
+import { SettingsFeedback } from "./settingsControls";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import { useContext, useEffect, useLayoutEffect, useRef, useState } from "react";
@@ -251,11 +251,7 @@ export function TerminalProfileDiscovery({
                 {message}
               </p>
             ) : null}
-            {error ? (
-              <Alert tone="danger" role="alert">
-                {error}
-              </Alert>
-            ) : null}
+            {error ? <SettingsFeedback state="error">{error}</SettingsFeedback> : null}
           </div>
         </Popover>
       ) : null}

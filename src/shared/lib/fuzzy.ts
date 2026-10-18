@@ -41,6 +41,9 @@ function matchToken(needle: string, text: string): FuzzyHit | null {
   if (!needle) return { score: 0, positions: [] };
 
   const hay = text.toLowerCase();
+  // Lowercasing can expand a character (İ becomes i + combining dot). Keep
+  // matching the folded text, but return offsets into the original UTF-16 text.
+  const originalIndices = hay.length === text.length ? null : lowercaseIndices(text);
   const positions: number[] = [];
   let score = 0;
   let consecutive = 0;
@@ -51,17 +54,31 @@ function matchToken(needle: string, text: string): FuzzyHit | null {
       consecutive = 0;
       continue;
     }
-    positions.push(i);
+    const originalIndex = originalIndices?.[i] ?? i;
+    if (positions[positions.length - 1] !== originalIndex) positions.push(originalIndex);
     consecutive += 1;
     score += 1 + consecutive * 4;
-    if (i === 0 || isBreak(text[i - 1])) score += 14;
-    else if (isUpper(text[i]) && !isUpper(text[i - 1])) score += 10;
+    if (originalIndex === 0 || isBreak(text[originalIndex - 1])) score += 14;
+    else if (isUpper(text[originalIndex]) && !isUpper(text[originalIndex - 1])) score += 10;
     qi += 1;
   }
 
   if (qi !== needle.length) return null;
   score -= hay.length - needle.length;
   return { score, positions };
+}
+
+function lowercaseIndices(text: string): number[] {
+  const indices: number[] = [];
+  let originalIndex = 0;
+  for (const character of text) {
+    const lowered = character.toLowerCase();
+    for (let index = 0; index < lowered.length; index++) {
+      indices.push(originalIndex + Math.min(index, character.length - 1));
+    }
+    originalIndex += character.length;
+  }
+  return indices;
 }
 
 function isBreak(ch: string): boolean {

@@ -69,6 +69,7 @@ fn execute_desktop_request(app: &AppHandle, request: &Value) -> Result<Value, St
                 .as_str()
                 .ok_or("Project directory required")?,
         )?;
+        let thread_context = inbox_reply_approval_context(&input["operation"])?;
         static APPROVAL_GATE: Mutex<()> = Mutex::new(());
         let _guard = APPROVAL_GATE
             .lock()
@@ -85,7 +86,7 @@ fn execute_desktop_request(app: &AppHandle, request: &Value) -> Result<Value, St
         }
         let approved = app
             .dialog()
-            .message(message)
+            .message(format!("{message}{thread_context}"))
             .title("bycoda — Inbox operation approval")
             .buttons(MessageDialogButtons::OkCancelCustom(
                 "Approve this operation".into(),
@@ -160,6 +161,33 @@ fn execute_desktop_request(app: &AppHandle, request: &Value) -> Result<Value, St
     }
 }
 
+fn inbox_reply_approval_context(operation: &Value) -> Result<String, String> {
+    if operation["action"] != "comment" || operation["item"]["provider"] != "github" {
+        return Ok(String::new());
+    }
+    let Some(thread) = operation["inReplyTo"]
+        .as_str()
+        .filter(|thread| !thread.is_empty())
+    else {
+        return Ok(String::new());
+    };
+    if operation["item"]["kind"] != "pr" {
+        return Err("Review replies require a pull request".into());
+    }
+    let cwd = operation["cwd"].as_str().ok_or("Project required")?;
+    let context = crate::fs::github_review_reply_context(
+        std::path::Path::new(cwd),
+        operation["item"]["repo"]
+            .as_str()
+            .ok_or("Repository required")?,
+        operation["item"]["number"]
+            .as_i64()
+            .ok_or("PR number required")?,
+        thread,
+    )?;
+    Ok(format!("\n\nVerified review thread:\n{context}"))
+}
+
 fn inbox_approval_message(operation: &Value, cwd: &str) -> Result<String, String> {
     let action = operation["action"]
         .as_str()
@@ -201,7 +229,15 @@ fn inbox_approval_message(operation: &Value, cwd: &str) -> Result<String, String
         {
             return Err("Invalid PR approval".into());
         }
-        format!("Change pull request state: {change}")
+        if matches!(change, "merge" | "squash" | "rebase") {
+            let head = operation["expectedHeadOid"]
+                .as_str()
+                .ok_or("Reviewed PR head required")?;
+            crate::fs::validate_reviewed_head(head)?;
+            format!("Change pull request state: {change}\nReviewed head SHA: {head}\nIf the head changes, refresh and review again.")
+        } else {
+            format!("Change pull request state: {change}")
+        }
     };
     Ok(format!("An agent requests this external Inbox operation. Approve only if the exact target and content match your request.\n\nProject: {cwd}\nProvider: {provider}\nTarget: {repo} #{number} {key}\nReply to: {}\n\n{content}", operation["inReplyTo"].as_str().unwrap_or("(new comment)")))
 }
@@ -378,6 +414,18 @@ pub fn configure_child(app: &AppHandle, session_id: &str, command: &mut Command)
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn merge_approval_displays_reviewed_head_for_every_mode() {
+        for action in ["merge", "squash", "rebase"] {
+            let mut operation = json!({"action":"pr-action","cwd":"/project","item":{"provider":"github","kind":"pr","number":7,"repo":"owner/project"},"prAction":action});
+            assert!(inbox_approval_message(&operation, "/project").is_err());
+            operation["expectedHeadOid"] = json!("a".repeat(40));
+            let message = inbox_approval_message(&operation, "/project").unwrap();
+            assert!(message.contains(&"a".repeat(40)));
+            assert!(message.contains("refresh and review again"));
+        }
+    }
+
     #[test]
     fn acp_session_reads_keep_local_grants_when_host_grants_are_unavailable() {
         let raw = json!({"method":"session/new","params":{"mcpServers":[

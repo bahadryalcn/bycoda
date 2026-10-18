@@ -21,6 +21,7 @@ export interface WindowChromeActionDeps {
   setInboxViewOpen: Dispatch<SetStateAction<boolean>>;
   setNotesViewOpen: Dispatch<SetStateAction<boolean>>;
   setAutomationsViewOpen: Dispatch<SetStateAction<boolean>>;
+  setServersViewOpen?: Dispatch<SetStateAction<boolean>>;
   setFilePickerOpen: Dispatch<SetStateAction<boolean>>;
   setFilePickerInitialQuery: Dispatch<SetStateAction<string>>;
   setFilePickerResetToken: Dispatch<SetStateAction<number>>;
@@ -52,6 +53,7 @@ export function useWindowChromeActions(deps: WindowChromeActionDeps): WindowChro
     setInboxViewOpen,
     setNotesViewOpen,
     setAutomationsViewOpen,
+    setServersViewOpen,
     setFilePickerOpen,
     setFilePickerInitialQuery,
     setFilePickerResetToken,
@@ -103,6 +105,7 @@ export function useWindowChromeActions(deps: WindowChromeActionDeps): WindowChro
     setInboxViewOpen(false);
     setNotesViewOpen(false);
     setAutomationsViewOpen(false);
+    setServersViewOpen?.(false);
     setFilePickerInitialQuery("");
     setFilePickerResetToken((token) => token + 1);
     setFilePickerOpen(true);
@@ -112,6 +115,7 @@ export function useWindowChromeActions(deps: WindowChromeActionDeps): WindowChro
     setInboxViewOpen(false);
     setNotesViewOpen(false);
     setAutomationsViewOpen(false);
+    setServersViewOpen?.(false);
     setFilePickerInitialQuery(">");
     setFilePickerResetToken((token) => token + 1);
     setFilePickerOpen(true);
@@ -128,6 +132,7 @@ export function useWindowChromeActions(deps: WindowChromeActionDeps): WindowChro
     setInboxViewOpen(false);
     setNotesViewOpen(false);
     setAutomationsViewOpen(false);
+    setServersViewOpen?.(false);
     setSidebarTab("files");
     setFilesSearchOpen(true);
     setSearchFocusToken((token) => token + 1);

@@ -1,4 +1,5 @@
 import type { BuiltinSkill } from "../../skills/model/skills";
+import type { Block, Session } from "./session";
 
 export const PLAN_COMMAND: BuiltinSkill = {
   kind: "builtin",
@@ -17,6 +18,44 @@ export function consumePlanCommand(text: string): {
   const match = text.match(/^\s*\/plan(?=\s|$)\s*/i);
   if (!match) return { text, planning: false };
   return { text: text.slice(match[0].length), planning: true };
+}
+
+export function isBuildablePlan(block: Block): boolean {
+  return (
+    block.role === "plan" &&
+    !block.orchestration &&
+    !!block.text.trim() &&
+    !block.streaming &&
+    (!block.plan || block.plan.status === "ready")
+  );
+}
+
+/** Only unambiguous, whole-message approval of the most recent pending plan. */
+export function approvedPlanForMessage(session: Session, text: string): Block | undefined {
+  if (session.busy) return undefined;
+  const approval = text
+    .trim()
+    .toLowerCase()
+    .replace(/\u0307/g, "")
+    .replace(/[.!]+$/, "")
+    .trim();
+  if (
+    !/^(?:(?:tamam|evet)[, ]+)?(?:(?:bu |son |hazırladığın )?plan[ıi] (?:uygula|başlat|hayata geçir)|uygulamaya (?:başla|geç))$/.test(
+      approval,
+    ) &&
+    !/^(?:(?:yes|ok|okay)[, ]+)?(?:implement|execute|build|start) (?:the |this |approved )?plan$/.test(
+      approval,
+    )
+  )
+    return undefined;
+  for (let index = session.blocks.length - 1; index >= 0; index--) {
+    const block = session.blocks[index];
+    if (block.draft || block.internal) continue;
+    // A later user turn may have changed the scope; never approve an older plan.
+    if (block.role === "user") return undefined;
+    if (block.role === "plan") return isBuildablePlan(block) ? block : undefined;
+  }
+  return undefined;
 }
 
 /**

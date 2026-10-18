@@ -4,13 +4,24 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { SearchView } from "./SearchView";
 import { resetRetainedState } from "../../../shared/hooks/useRetainedState";
+import type { ProjectFile } from "../../../platform/tauri/fs";
+
+const index = vi.hoisted(() => ({
+  files: new Map<string, ProjectFile[]>(),
+  listeners: new Set<() => void>(),
+  load: vi.fn<(cwd: string) => Promise<ProjectFile[]>>(),
+}));
 
 vi.mock("../../../app/shell/TitleBar", () => ({ OverlayNav: () => null }));
 vi.mock("../../../app/shell/WindowControls", () => ({ WindowControls: () => null }));
-vi.mock("../../files/model/fileIndex", () => ({
-  peekProjectFiles: () => [],
-  loadProjectFiles: async () => [],
-  rankProjectFiles: () => [],
+vi.mock("../../files/model/fileIndex", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../files/model/fileIndex")>()),
+  peekProjectFiles: (cwd: string) => index.files.get(cwd) ?? null,
+  loadProjectFiles: index.load,
+  subscribeProjectFiles: (listener: () => void) => {
+    index.listeners.add(listener);
+    return () => index.listeners.delete(listener);
+  },
   recentOpenedFiles: () => [],
 }));
 vi.mock("../model/useConversationSearch", () => ({
@@ -31,6 +42,9 @@ vi.mock("../../group-lock/hooks/useGroupLock", () => ({ useLockSnapshot: () => (
 let root: Root;
 let host: HTMLDivElement;
 beforeEach(() => {
+  index.files.clear();
+  index.listeners.clear();
+  index.load.mockReset().mockImplementation(async (cwd) => index.files.get(cwd) ?? []);
   localStorage.clear();
   resetRetainedState();
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
@@ -64,6 +78,68 @@ const render = (
       }),
     ),
   );
+
+const file = (name: string, cwd = "/repo"): ProjectFile => ({
+  name,
+  path: `${cwd}/${name}`,
+  relative: name,
+});
+function notifyIndex() {
+  for (const listener of index.listeners) listener();
+}
+async function typeQuery(query: string) {
+  await act(async () => {
+    const input = host.querySelector("input")!;
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, query);
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    input.focus();
+  });
+}
+it("refreshes created, renamed and deleted filename results without losing query or focus", async () => {
+  index.files.set("/repo", [file("needle.ts")]);
+  await render();
+  await typeQuery("needle");
+  const input = host.querySelector("input")!;
+  expect(host.textContent).toContain("needle.ts");
+  for (const files of [[file("needle-new.ts")], [file("needle-renamed.ts")], []]) {
+    await act(async () => {
+      index.files.set("/repo", files);
+      notifyIndex();
+    });
+    expect(host.textContent).not.toContain("needle.ts");
+    if (files.length) expect(host.textContent).toContain(files[0].name);
+    else expect(host.textContent).not.toContain("needle-renamed.ts");
+    expect(input.value).toBe("needle");
+    expect(document.activeElement).toBe(input);
+  }
+  await render("/repo", false);
+  expect(index.listeners.size).toBe(0);
+});
+
+it("ignores obsolete index loads after notifications and project changes", async () => {
+  const pending: Array<(files: ProjectFile[]) => void> = [];
+  index.load.mockImplementation(() => new Promise((resolve) => pending.push(resolve)));
+  await render();
+  await typeQuery("needle");
+  await act(async () => {
+    index.files.set("/repo", [file("needle-current.ts")]);
+    notifyIndex();
+    pending[0]([file("needle-old.ts")]);
+  });
+  expect(host.textContent).toContain("needle-current.ts");
+  expect(host.textContent).not.toContain("needle-old.ts");
+  await act(async () => {
+    index.files.delete("/repo");
+    notifyIndex();
+  });
+  await render("/other");
+  await typeQuery("needle");
+  await act(async () => pending[1]([file("needle-wrong-project.ts")]));
+  expect(host.textContent).not.toContain("needle-wrong-project.ts");
+  await act(async () => pending[2]([file("needle-other.ts", "/other")]));
+  expect(host.textContent).toContain("needle-other.ts");
+  expect(index.listeners.size).toBe(1);
+});
 it("retains workspace search text and category across close/reopen and remount with project isolation", async () => {
   await render();
   await act(async () => {

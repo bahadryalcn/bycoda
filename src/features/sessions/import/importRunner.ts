@@ -209,11 +209,26 @@ async function buildSession(
     truncated = transcript.truncated || transcript.oversizeSkipped > 0;
   }
   if (!built.blocks.some((block) => block.role === "user")) {
-    throw new Error("The conversation has no messages to import");
+    if (
+      !truncated ||
+      !built.blocks.some((block) => block.role === "assistant" || block.role === "tool")
+    ) {
+      throw new Error("The conversation has no messages to import");
+    }
   }
 
   const fitted = fitBlocks(built.blocks);
   truncated ||= fitted.trimmed;
+  if (truncated && !fitted.blocks.some((block) => block.role === "user")) {
+    fitted.blocks = [
+      {
+        id: crypto.randomUUID(),
+        role: "system",
+        text: "The retained history starts inside a turn; its user prompt is outside the imported portion.",
+      },
+      ...fitted.blocks,
+    ];
+  }
   const resumable = target.real && candidate.resumable;
   const note: Block = {
     id: crypto.randomUUID(),

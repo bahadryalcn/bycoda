@@ -30,6 +30,7 @@ tauri-plugin-dialog = "2"
 tauri-plugin-fs = "2"
 rusqlite = { version = "0.40.2", features = ["bundled", "hooks"], default-features = false }
 ureq = { version = "2.12.1", default-features = false, features = ["tls", "gzip"] }
+webpki-roots = "=1.0.9"
 url = "2.5"
 time = { version = "0.3", features = ["parsing"] }
 tauri-plugin-process = "2"

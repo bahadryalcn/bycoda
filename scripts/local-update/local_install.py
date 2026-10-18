@@ -6,11 +6,12 @@ import plistlib
 import re
 import shutil
 import sys
+import tempfile
 import time
 import urllib.request
 
 from local_update_lib import (alive, backup, count, digest, lock, ps, ps_quote,
-                              read_json, run, safe_child, verify_tree, write_json, windows_binary_digest, PRODUCT_IDENTITY, package_identity)
+                              read_json, run, safe_child, tree_hashes, verify_tree, write_json, windows_binary_digest, PRODUCT_IDENTITY, package_identity)
 
 BASE = pathlib.Path.home() / PRODUCT_IDENTITY['hostDirectory']
 MAC_APPLICATIONS = pathlib.Path('/Applications')
@@ -34,6 +35,25 @@ def windows_app_process_filter(app):
     allowed = '@(' + ','.join(ps_quote(path) for path in paths) + ')'
     return (f'Get-Process | Where-Object {{ $_.ProcessName -eq "{PRODUCT_IDENTITY["binaryName"]}" '
             f'-and {allowed} -contains $_.Path }}')
+
+def restore_windows_app(app, saved, hashes, rollback, process_filter):
+    """Restore the complete installation, keeping the failed tree for diagnosis."""
+    # Validate the recovery copy before touching the failed replacement. Keep the
+    # database in APPDATA intact: an app rollback is never a database rollback.
+    verify_tree(saved, hashes)
+    ps(process_filter + ' | Stop-Process -Force -PassThru | Wait-Process -Timeout 30')
+    recovery = pathlib.Path(tempfile.mkdtemp(
+        prefix='.' + PRODUCT_IDENTITY['productName'] + '-failed-', dir=app.parent.parent))
+    write_json(rollback / 'windows-recovery.json', {'failedInstallation': str(recovery / 'installation')})
+    if app.parent.exists():
+        app.parent.rename(recovery / 'installation')
+    try:
+        shutil.copytree(saved, app.parent)
+        if tree_hashes(app.parent) != hashes:
+            raise RuntimeError('Restored Windows installation failed integrity verification')
+    except Exception:
+        # Both the known-good snapshot and failed replacement remain available.
+        raise RuntimeError('Windows rollback failed; recovery artifacts retained at ' + str(rollback))
 
 def wait_idle(db, sql, report):
     last = object()
@@ -215,21 +235,40 @@ def app_install(release, manifest, report):
     report('installing')
     if windows:
         app = pathlib.Path(os.environ['LOCALAPPDATA']) / PRODUCT_IDENTITY['productName']/(PRODUCT_IDENTITY['binaryName']+'.exe')
+        saved = rollback / 'installation'
+        previous_hashes = None
         if not first_install:
-            shutil.copy2(app, rollback / 'bycoda.exe')
+            if saved.exists():
+                raise RuntimeError('Windows rollback installation already exists; refusing overwrite')
+            previous_hashes = tree_hashes(app.parent)
+            shutil.copytree(app.parent, saved)
+            if tree_hashes(saved) != previous_hashes:
+                raise RuntimeError('Windows rollback snapshot failed integrity verification')
+            write_json(rollback / 'windows-installation-hashes.json', previous_hashes)
         app_q = ps_quote(app)
         process_filter = windows_app_process_filter(app)
+        was_running = ps('@(' + process_filter + ').Count') != '0'
         ps(process_filter + ' | ForEach-Object { [void]$_.CloseMainWindow() }')
         time.sleep(5)
         if has_database and count(desktop_db(), 'select count(*) from in_flight_sessions') != 0:
             raise RuntimeError('A new turn started; app installation canceled')
         # Close-to-tray retains an idle process; only terminate the known app path.
-        ps(process_filter + ' | Stop-Process -Force')
-        run([str(release / 'setup.exe'), '/S'], timeout=180)
-        version = ps(f'(Get-Item -LiteralPath {app_q}).VersionInfo.ProductVersion')
-        if version != manifest['version'] or windows_binary_digest(app) != manifest['binaryHash']:
-            raise RuntimeError('Installed Windows executable version/hash mismatch; rollback EXE retained')
-        ps(f'Start-Process -FilePath {app_q}')
+        ps(process_filter + ' | Stop-Process -Force -PassThru | Wait-Process -Timeout 30')
+        try:
+            run([str(release / 'setup.exe'), '/S'], timeout=180)
+            version = ps(f'(Get-Item -LiteralPath {app_q}).VersionInfo.ProductVersion')
+            if version != manifest['version'] or windows_binary_digest(app) != manifest['binaryHash']:
+                raise RuntimeError('Installed Windows executable version/hash mismatch')
+            ps(f'Start-Process -FilePath {app_q}')
+        except Exception as install_error:
+            if not first_install:
+                try:
+                    restore_windows_app(app, saved, previous_hashes, rollback, process_filter)
+                    if was_running:
+                        ps(f'Start-Process -FilePath {app_q}')
+                except Exception as recovery_error:
+                    raise RuntimeError('Windows update failed and rollback requires recovery: ' + str(recovery_error)) from install_error
+            raise
     else:
         saved, staged = mac_app_update_paths(app, manifest['id'])
         if saved.exists() or staged.exists():

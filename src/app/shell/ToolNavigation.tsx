@@ -1,19 +1,41 @@
 import { Alert } from "../../shared/ui/Alert";
-import { Activity, createContext, useContext, useRef, useState, type ReactNode } from "react";
+import {
+  Activity,
+  createContext,
+  useContext,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { AppWindow, DashboardSquare, Globe, Inbox, StickyNote, Zap } from "../../shared/ui/icons";
+import {
+  AppWindow,
+  DashboardSquare,
+  Globe,
+  Inbox,
+  StickyNote,
+  Server,
+  Zap,
+} from "../../shared/ui/icons";
 import { t, useLocale } from "../../shared/i18n";
-import { TOOL_IDS, type ToolId } from "../model/toolWindows";
+import { TOOL_IDS, type WorkspaceToolId } from "../model/toolWindows";
 import { routeWindowDestination } from "../model/windowNavigation";
 import { Button } from "../../shared/ui/Button";
+import { useSshRunbookQueue } from "../../features/connections/model/sshRunbookQueue";
 import "./toolNavigation.css";
 
+// Retained panels own separate headers. Carry keyboard focus into the header
+// revealed by switching tools, after the previous tablist becomes hidden.
+let pendingKeyboardFocus: WorkspaceToolId | null = null;
+
 export const ToolNavigationContext = createContext<{
-  active: ToolId | null;
+  active: WorkspaceToolId | null;
   cwd: string;
   notesEnabled: boolean;
   grouped?: boolean;
-  onSelect: (tool: ToolId) => void;
+  includeServers?: boolean;
+  onSelect: (tool: WorkspaceToolId) => void;
 } | null>(null);
 
 export function ToolHeader({ children }: { children: ReactNode }) {
@@ -22,6 +44,7 @@ export function ToolHeader({ children }: { children: ReactNode }) {
 }
 
 const labels = {
+  servers: "Servers",
   social: "Social Media",
   tasks: "Tasks",
   automations: "Automations",
@@ -29,6 +52,7 @@ const labels = {
   notes: "Notes",
 };
 const icons = {
+  servers: Server,
   social: Globe,
   tasks: DashboardSquare,
   automations: Zap,
@@ -37,9 +61,26 @@ const icons = {
 };
 
 /** Mount on first visit, retain edits and selection, suspend effects while hidden. */
-export function ToolPanel({ active, children }: { active: boolean; children: ReactNode }) {
+export function ToolPanel({
+  active,
+  children,
+  keepEffects = false,
+}: {
+  active: boolean;
+  children: ReactNode;
+  keepEffects?: boolean;
+}) {
   const visited = useRef(false);
   if (active) visited.current = true;
+  if (visited.current && keepEffects)
+    return (
+      <div
+        className={active ? "flex min-h-0 min-w-0 flex-1 flex-col" : "hidden"}
+        inert={!active ? true : undefined}
+      >
+        {children}
+      </div>
+    );
   return visited.current ? (
     <Activity mode={active ? "visible" : "hidden"}>{children}</Activity>
   ) : null;
@@ -47,24 +88,37 @@ export function ToolPanel({ active, children }: { active: boolean; children: Rea
 
 export function ToolNavigation() {
   useLocale();
+  const sshReviews = useSshRunbookQueue();
   const navigation = useContext(ToolNavigationContext);
   const [opening, setOpening] = useState(false);
   const [error, setError] = useState("");
-  const tabRefs = useRef(new Map<ToolId, HTMLButtonElement>());
+  const tabRefs = useRef(new Map<WorkspaceToolId, HTMLButtonElement>());
+  useLayoutEffect(() => {
+    if (pendingKeyboardFocus && pendingKeyboardFocus === navigation?.active) {
+      tabRefs.current.get(pendingKeyboardFocus)?.focus();
+      pendingKeyboardFocus = null;
+    }
+  }, [navigation?.active]);
   if (!navigation?.active) return null;
-  const tools =
+  const tools: WorkspaceToolId[] =
     navigation.grouped === false
       ? [navigation.active]
-      : TOOL_IDS.filter((id) => id !== "notes" || navigation.notesEnabled);
+      : [
+          ...(navigation.includeServers || navigation.active === "servers"
+            ? ["servers" as const]
+            : []),
+          ...TOOL_IDS.filter((id) => id !== "notes" || navigation.notesEnabled),
+        ];
   const open = async (grouped: boolean) => {
-    if (opening) return;
+    if (opening || navigation.active === "servers") return;
+    const active = navigation.active!;
     setOpening(true);
     setError("");
     try {
       if (
         await routeWindowDestination({
           kind: "tool",
-          tool: navigation.active!,
+          tool: active,
           cwd: navigation.cwd,
           grouped,
         })
@@ -97,6 +151,13 @@ export function ToolNavigation() {
                     : -1;
           if (next < 0) return;
           event.preventDefault();
+          const nextTool = tools[next];
+          pendingKeyboardFocus = nextTool;
+          // Revealing an existing native window may leave this workspace as-is.
+          // Do not carry a stale keyboard request into a later unrelated visit.
+          window.setTimeout(() => {
+            if (pendingKeyboardFocus === nextTool) pendingKeyboardFocus = null;
+          }, 1000);
           navigation.onSelect(tools[next]);
           tabRefs.current.get(tools[next])?.focus();
         }}
@@ -122,39 +183,44 @@ export function ToolNavigation() {
             >
               <Icon className="size-3.5 shrink-0" aria-hidden />
               <span>{t(labels[tool])}</span>
+              {tool === "servers" && sshReviews.intents.length ? (
+                <span aria-label={t("Pending SSH reviews")}>{sshReviews.intents.length}</span>
+              ) : null}
             </Button>
           );
         })}
       </div>
-      <div className="tool-window-actions">
-        <Button
-          variant="ghost"
-          motion="none"
-          iconOnly
-          label={t("Open in new window")}
-          data-tauri-drag-region="false"
-          disabled={opening}
-          onClick={() => void open(false)}
-          aria-label={t("Open in new window")}
-          title={t("Open in new window")}
-        >
-          <AppWindow className="size-3.5" aria-hidden />
-        </Button>
-        <Button
-          variant="ghost"
-          motion="none"
-          data-tauri-drag-region="false"
-          disabled={opening}
-          onClick={() => void open(true)}
-          aria-label={t("Open all tools in one window")}
-          title={t("Open all tools in one window")}
-        >
-          <DashboardSquare className="size-3.5" aria-hidden />
-          <span className="tool-action-label">
-            {opening ? t("Opening new window…") : t("All tools in one window")}
-          </span>
-        </Button>
-      </div>
+      {navigation.active !== "servers" ? (
+        <div className="tool-window-actions">
+          <Button
+            variant="ghost"
+            motion="none"
+            iconOnly
+            label={t("Open in new window")}
+            data-tauri-drag-region="false"
+            disabled={opening}
+            onClick={() => void open(false)}
+            aria-label={t("Open in new window")}
+            title={t("Open in new window")}
+          >
+            <AppWindow className="size-3.5" aria-hidden />
+          </Button>
+          <Button
+            variant="ghost"
+            motion="none"
+            data-tauri-drag-region="false"
+            disabled={opening}
+            onClick={() => void open(true)}
+            aria-label={t("Open all tools in one window")}
+            title={t("Open all tools in one window")}
+          >
+            <DashboardSquare className="size-3.5" aria-hidden />
+            <span className="tool-action-label">
+              {opening ? t("Opening new window…") : t("All tools in one window")}
+            </span>
+          </Button>
+        </div>
+      ) : null}
       {error ? (
         <Alert tone="danger" role="alert" data-tauri-drag-region="false">
           <span>

@@ -7,7 +7,7 @@ import {
   mergeProjectHistorySummary,
   replaceProjectHistory,
 } from "./sessionHistory";
-import { newSession } from "../model/session";
+import { newSession, type Session } from "../model/session";
 import type { SessionSummary } from "./sessionStore";
 import type { OrchestrationRun } from "../../orchestration/model/orchestration";
 
@@ -27,6 +27,38 @@ function summary(id: string, cwd: string, updatedAt = 1): SessionSummary {
 }
 
 describe("historyWithLiveSessions", () => {
+  it("uses turn completion for recency even while persisted history is stale", () => {
+    const session: Session = {
+      ...newSession("codex", "/tmp/project-a"),
+      id: "finished",
+      blocks: [
+        { id: "turn", role: "user" as const, text: "Work", startedAt: 100, durationMs: 200 },
+      ],
+    };
+    const history = [
+      summary("newer-start", session.cwd, 200),
+      summary(session.id, session.cwd, 100),
+    ];
+    const rows = historyWithLiveSessions(history, [session], session.cwd);
+    expect(rows.map((row) => row.id)).toEqual(["finished", "newer-start"]);
+    expect(rows[0].updatedAt).toBe(300);
+    expect(history[1].updatedAt).toBe(100);
+    expect(historyWithLiveSessions([], [session], session.cwd)[0].updatedAt).toBe(300);
+    session.blocks.push({
+      id: "draft",
+      role: "user",
+      text: "Unsent",
+      startedAt: 900,
+      durationMs: 0,
+      draft: true,
+    });
+    expect(historyWithLiveSessions(history, [session], session.cwd)[0].updatedAt).toBe(300);
+    expect(
+      historyWithLiveSessions([summary(session.id, session.cwd, 400)], [session], session.cwd)[0]
+        .updatedAt,
+    ).toBe(400);
+  });
+
   it("overlays live titles and work-item changes without rewriting persisted metadata", () => {
     const session = {
       ...newSession("codex", "/tmp/project-a"),

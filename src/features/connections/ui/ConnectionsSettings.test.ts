@@ -4,6 +4,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
 import { ConnectionsSettings } from "./ConnectionsSettings";
+import { requestMachineAdd } from "../model/machineAdd";
 import { REMOTE_PROVIDERS, type RemoteMachine, type SshSetup } from "../model/protocol";
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
@@ -71,6 +72,15 @@ const button = (name: string) =>
 async function render() {
   await act(async () => root.render(createElement(ConnectionsSettings)));
 }
+
+it("opens the existing add editor for a Servers request made before Settings mounts", async () => {
+  requestMachineAdd();
+  await render();
+  expect(
+    container.querySelector('input[placeholder="user@my-mac-mini or an SSH alias"]'),
+  ).toBeTruthy();
+  expect(requested("remote_ssh_begin")).toBe(false);
+});
 
 it("keeps a machine draft when moving between connection views", async () => {
   await render();

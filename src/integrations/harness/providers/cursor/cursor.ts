@@ -14,6 +14,7 @@ import {
 import { knownToolKindTitle } from "../../../../shared/lib/toolKindTitles";
 import { nativeModelId } from "../../../../features/sessions/model/models";
 import { JsonRpcResponseError } from "../../core/jsonRpc";
+import { reportAcpStopReason } from "../../core/acpStopReason";
 import { AcpSubagents } from "../../core/acpSubagents";
 import type { RuntimeMode } from "../../../../features/sessions/model/session";
 import { promptBlocks } from "../../../../features/sessions/model/attachments";
@@ -477,7 +478,7 @@ async function prompt(live: Live, input: SendTurnInput): Promise<void> {
       prompt: blocks,
     });
     input.onAccepted?.();
-    await response;
+    const result = await response;
     live.promptActive = false;
     if (live.cancelled) {
       live.backgroundAgentTools.clear();
@@ -490,6 +491,7 @@ async function prompt(live: Live, input: SendTurnInput): Promise<void> {
     scheduleCursorSubagents(live, 500);
     live.onEvent({ type: "message.completed" });
     live.onEvent({ type: "reasoning.completed" });
+    reportAcpStopReason(result, live.onEvent);
     wakeCursorToolEnrichment(live);
   } catch (error) {
     live.promptActive = false;

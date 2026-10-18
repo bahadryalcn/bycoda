@@ -72,6 +72,82 @@ function stub(id: HarnessId, extra: Partial<HarnessAdapter> = {}): HarnessAdapte
 }
 
 describe("harness registry", () => {
+  it("deduplicates in-flight Stop but retries a rejected cancellation", async () => {
+    let finish!: () => void;
+    let fail!: (error: Error) => void;
+    const sendTurn = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const cancelTurn = vi
+      .fn(
+        () =>
+          new Promise<void>((_resolve, reject) => {
+            fail = reject;
+          }),
+      )
+      .mockImplementationOnce(
+        () =>
+          new Promise<void>((_resolve, reject) => {
+            fail = reject;
+          }),
+      )
+      .mockResolvedValueOnce(undefined);
+    registerHarness(stub("claude", { sendTurn, cancelTurn }));
+    const input = {
+      harness: "claude" as const,
+      sessionId: "retry-stop",
+      cwd: "/tmp",
+      model: "claude:test",
+      runtimeMode: "supervised" as const,
+      text: "hello",
+      onEvent: vi.fn(),
+    };
+    const turn = sendHarnessTurn(input);
+    await vi.waitFor(() => expect(sendTurn).toHaveBeenCalledOnce());
+    const first = cancelHarnessTurn("claude", input.sessionId);
+    const second = cancelHarnessTurn("claude", input.sessionId);
+    const results = Promise.allSettled([first, second]);
+    await vi.waitFor(() => expect(cancelTurn).toHaveBeenCalledOnce());
+    fail(new Error("pipe unavailable"));
+    expect((await results).map((result) => result.status)).toEqual(["rejected", "rejected"]);
+    await cancelHarnessTurn("claude", input.sessionId);
+    expect(cancelTurn).toHaveBeenCalledTimes(2);
+    finish();
+    await turn;
+  });
+
+  it("does not start queued compaction after Stop invalidates it", async () => {
+    let finish!: () => void;
+    const sendTurn = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const compactContext = vi.fn(async () => undefined);
+    registerHarness(stub("claude", { sendTurn, compactContext }));
+    const input = {
+      harness: "claude" as const,
+      sessionId: "stop-compact",
+      cwd: "/tmp",
+      model: "claude:test",
+      runtimeMode: "supervised" as const,
+      text: "hello",
+      onEvent: vi.fn(),
+    };
+    const turn = sendHarnessTurn(input);
+    await vi.waitFor(() => expect(sendTurn).toHaveBeenCalledOnce());
+    await cancelHarnessTurn("claude", input.sessionId);
+    const compaction = compactHarnessContext(input);
+    const rejected = expect(compaction).rejects.toThrow("Compaction cancelled before it started");
+    await cancelHarnessTurn("claude", input.sessionId);
+    finish();
+    await Promise.all([turn, rejected]);
+    expect(compactContext).not.toHaveBeenCalled();
+  });
   it("releases an idle Codex writer before allowing a queued follow-up", async () => {
     const order: string[] = [];
     let release!: () => void;

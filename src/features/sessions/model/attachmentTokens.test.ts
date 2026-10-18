@@ -66,15 +66,40 @@ describe("findTokens", () => {
   });
 
   it("leaves tokens in inline code and fenced blocks alone", () => {
-    const text = "use `[image1]` here, ```\n[image1]\n[image2]\n``` but [image2] counts";
+    const text = "use `[image1]` here,\n```\n[image1]\n[image2]\n```\nbut [image2] counts";
     expect(findTokens(text, files).map((m) => m.start)).toEqual([text.lastIndexOf("[image2]")]);
     // An unclosed fence swallows the rest, as markdown does.
     expect(findTokens("```\n[image1]", files)).toEqual([]);
   });
 
+  it.each([
+    "``[image1] ` [image2]``",
+    "````[image1] ``` [image2]````",
+    "`[image1]\n[image2]`",
+    "~~~markdown\n[image1]\n[image2]\n~~~",
+    "````markdown\n```\n[image1]\n[image2]\n````",
+    "~~~~\n~~~\n[image1]\n[image2]\n~~~~",
+    "    [image1]\n    [image2]",
+  ])("preserves literal Markdown code through token operations: %s", (code) => {
+    const text = `${code}\n\n[image2]`;
+    expect(findTokens(text, files).map((match) => match.start)).toEqual([
+      text.lastIndexOf("[image2]"),
+    ]);
+    expect(removeAttachmentFromText(text, files, 0)).toBe(`${code}\n\n[image1]`);
+    expect(stripAttachmentTokens(text, files)).toBe(`${code}\n\n`);
+    expect(
+      deleteTokenAtCaret(text, code.indexOf("[image1]") + "[image1]".length, "back", files),
+    ).toBeNull();
+  });
+
   it("matches the exact token only", () => {
     expect(findTokens("[Image1] [image0] [image01] [image 1] [img1]", files)).toEqual([]);
     expect(findTokens("[image1]", [])).toEqual([]);
+  });
+  it("protects an unclosed tilde fence through the end of the draft", () => {
+    const text = "~~~\n[image1]\n[image2]";
+    expect(findTokens(text, files)).toEqual([]);
+    expect(removeAttachmentFromText(text, files, 0)).toBe(text);
   });
 });
 

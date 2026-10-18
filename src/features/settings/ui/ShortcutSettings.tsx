@@ -1,4 +1,3 @@
-import { Alert } from "../../../shared/ui/Alert";
 import { TextField } from "../../../shared/ui/TextField";
 import { useRetainedState } from "../../../shared/hooks/useRetainedState";
 import { Button } from "../../../shared/ui/Button";
@@ -21,11 +20,13 @@ import {
   loadQuickComposerEnabled,
   loadQuickComposerShortcut,
   saveKeybindingOverride,
+  prepareKeybindingOverride,
   validateKeybindingShortcut,
   saveQuickComposerEnabled,
   saveQuickComposerShortcut,
   subscribeKeybindings,
   type KeybindingOverride,
+  type KeybindingRow,
 } from "../model/settings";
 
 import { setQuickComposerShortcut } from "../../quick-composer/model/quickComposer";
@@ -37,10 +38,12 @@ import {
   shortcutFromKeyEvent,
 } from "../../quick-composer/model/quickComposerShortcut";
 
-import { Group, Row, RevealedSetting, Select } from "./settingsControls";
+import { Group, Row, RevealedSetting, Select, SettingsFeedback } from "./settingsControls";
 import { ShortcutRecorder } from "../../../shared/ui/ShortcutRecorder";
 
 export type ShortcutModifier = "metaKey" | "ctrlKey" | "altKey" | "shiftKey";
+type ShortcutFeedback = { state: "loading" | "success" | "error"; message: string };
+type ShortcutFeedbackProps = { onFeedbackChange?: (feedback: ShortcutFeedback | null) => void };
 
 export function shortcutModifier(event: KeyboardEvent): ShortcutModifier | null {
   if (event.key === "Meta" || event.code.startsWith("Meta")) return "metaKey";
@@ -54,6 +57,8 @@ export function ShortcutEditor({
   name,
   display,
   resetVisible,
+  disabled = false,
+  onFeedbackChange,
   onApply,
   onDisable,
   onReset,
@@ -61,13 +66,16 @@ export function ShortcutEditor({
   name: string;
   display: string | null;
   resetVisible: boolean;
+  disabled?: boolean;
   onApply: (shortcut: string) => void | Promise<void>;
   onDisable: () => void | Promise<void>;
   onReset: () => void | Promise<void>;
-}) {
-  useLocale();
+} & ShortcutFeedbackProps) {
+  const locale = useLocale();
   const [recording, setRecording] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const pending = useRef(false);
   const [error, setError] = useState<string | null>(null);
   const [preview, setPreview] = useState("");
   const held = useRef({
@@ -76,21 +84,39 @@ export function ShortcutEditor({
     altKey: false,
     shiftKey: false,
   });
+  useEffect(() => {
+    onFeedbackChange?.(
+      error
+        ? { state: "error", message: error }
+        : busy || saved
+          ? {
+              state: busy ? "loading" : "success",
+              message: busy ? t("Saving…") : t("Saved"),
+            }
+          : null,
+    );
+  }, [onFeedbackChange, error, busy, saved, locale]);
 
   const run = async (action: () => void | Promise<void>) => {
+    if (pending.current) return;
+    pending.current = true;
     setRecording(false);
     setBusy(true);
     setError(null);
+    setSaved(false);
     try {
       await action();
+      setSaved(true);
     } catch (reason) {
       setError(String(reason));
     } finally {
       setBusy(false);
+      pending.current = false;
     }
   };
 
   const beginRecording = () => {
+    if (disabled || pending.current) return;
     held.current = {
       metaKey: false,
       ctrlKey: false,
@@ -99,6 +125,7 @@ export function ShortcutEditor({
     };
     setPreview("");
     setError(null);
+    setSaved(false);
     setRecording(true);
   };
 
@@ -170,7 +197,7 @@ export function ShortcutEditor({
           hideLabel
           hideActions
           platform={IS_MAC ? "mac" : "other"}
-          disabled={busy}
+          disabled={busy || disabled}
           recording={recording}
           displayKeys={
             !recording && !busy && display && display !== t("Unassigned")
@@ -184,7 +211,11 @@ export function ShortcutEditor({
             else setRecording(false);
           }}
           displayText={
-            recording || busy ? preview || t("Record shortcut") : (display ?? t("Disabled"))
+            busy
+              ? t("Saving…")
+              : recording
+                ? preview || t("Record shortcut")
+                : (display ?? t("Disabled"))
           }
         />
         {resetVisible ? (
@@ -192,7 +223,7 @@ export function ShortcutEditor({
             variant="ghost"
             iconOnly
             label={t("Reset {p0} shortcut", { p0: name })}
-            disabled={busy}
+            disabled={busy || disabled}
             onClick={() => void run(onReset)}
           >
             <RotateCcw className="size-3.5" />
@@ -204,16 +235,21 @@ export function ShortcutEditor({
           {t("Del disables · Esc cancels")}
         </p>
       ) : null}
-      {error ? (
-        <Alert tone="danger" role="alert">
-          {error}
-        </Alert>
+      {onFeedbackChange ? null : error ? (
+        <SettingsFeedback state="error">{error}</SettingsFeedback>
+      ) : busy || saved ? (
+        <SettingsFeedback state={busy ? "loading" : "success"}>
+          {busy ? t("Saving…") : t("Saved")}
+        </SettingsFeedback>
       ) : null}
     </div>
   );
 }
 
-export function QuickComposerShortcutEditor({ onSaved }: { onSaved?: () => void } = {}) {
+export function QuickComposerShortcutEditor({
+  onSaved,
+  onFeedbackChange,
+}: { onSaved?: () => void } & ShortcutFeedbackProps = {}) {
   useLocale();
   const [shortcut, setShortcut] = useState(loadQuickComposerShortcut);
   const [enabled, setEnabled] = useState(loadQuickComposerEnabled);
@@ -242,6 +278,7 @@ export function QuickComposerShortcutEditor({ onSaved }: { onSaved?: () => void 
   return (
     <ShortcutEditor
       name={t("Quick composer")}
+      onFeedbackChange={onFeedbackChange}
       display={enabled ? quickComposerShortcutLabel(shortcut) : null}
       resetVisible={enabled !== true || shortcut !== QUICK_COMPOSER_DEFAULT_SHORTCUT}
       onApply={apply}
@@ -261,22 +298,84 @@ export function KeybindingShortcutEditor({
   display,
   modified,
   onSave,
+  disabled,
+  onFeedbackChange,
 }: {
   command: string;
   display: string | null;
   modified: boolean;
+  disabled?: boolean;
   onSave: (command: string, override: KeybindingOverride) => void | Promise<void>;
-}) {
+} & ShortcutFeedbackProps) {
   useLocale();
   return (
     <ShortcutEditor
       name={command}
       display={display}
       resetVisible={modified}
+      disabled={disabled}
+      onFeedbackChange={onFeedbackChange}
       onApply={(shortcut) => onSave(command, { shortcut })}
       onDisable={() => onSave(command, { disabled: true })}
       onReset={() => onSave(command, {})}
     />
+  );
+}
+
+function KeybindingSettingsRow({
+  row,
+  override,
+  modified,
+  saving,
+  onSave,
+  onSaved,
+}: {
+  row: KeybindingRow;
+  override?: KeybindingOverride;
+  modified: boolean;
+  saving: boolean;
+  onSave: (command: string, override: KeybindingOverride) => Promise<void>;
+  onSaved: () => void;
+}) {
+  const [feedback, setFeedback] = useState<ShortcutFeedback | null>(null);
+  const disabled = row.keys === "Disabled";
+  return (
+    <Row
+      id={keybindingSettingId(row.command)}
+      label={
+        <span title={t(row.command)} className={disabled ? styles.disabled : undefined}>
+          {t(row.command).replace(/^[^:]+:\s*/, "")}
+          {modified ? <span className={styles.modified}>{t("Modified")}</span> : null}
+        </span>
+      }
+      scope={row.when === "Always" ? undefined : t("When: {p0}", { p0: t(row.when) })}
+      description={
+        modified
+          ? t("Default: {p0}", {
+              p0:
+                KEYBINDINGS.find((entry) => entry.command === row.command)?.keys || t("Unassigned"),
+            })
+          : undefined
+      }
+      feedback={
+        feedback ? (
+          <SettingsFeedback state={feedback.state}>{feedback.message}</SettingsFeedback>
+        ) : null
+      }
+    >
+      {row.command === "App: Quick Composer" ? (
+        <QuickComposerShortcutEditor onSaved={onSaved} onFeedbackChange={setFeedback} />
+      ) : (
+        <KeybindingShortcutEditor
+          command={row.command}
+          display={disabled ? null : row.keys || t("Unassigned")}
+          modified={Boolean(override)}
+          disabled={saving}
+          onSave={onSave}
+          onFeedbackChange={setFeedback}
+        />
+      )}
+    </Row>
   );
 }
 
@@ -288,6 +387,8 @@ export function KeybindingsPage() {
   const [status, setStatus] = useRetainedState("keybindings:status", "all");
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const pendingSave = useRef(false);
   const filterAnchor = useRef<HTMLButtonElement>(null);
   const helpAnchor = useRef<HTMLButtonElement>(null);
   const [lastRevealed, setLastRevealed] = useState(revealed);
@@ -325,8 +426,23 @@ export function KeybindingsPage() {
   };
 
   const save = async (command: string, override: KeybindingOverride) => {
-    const next = saveKeybindingOverride(command, override);
-    if (IS_MAC) await invoke("keybindings_set_overrides", { overrides: next });
+    if (pendingSave.current) throw new Error(t("Saving…"));
+    pendingSave.current = true;
+    setSaving(true);
+    try {
+      const previous = loadKeybindingOverrides();
+      const next = prepareKeybindingOverride(command, override);
+      if (IS_MAC) await invoke("keybindings_set_overrides", { overrides: next });
+      try {
+        saveKeybindingOverride(command, override);
+      } catch (error) {
+        if (IS_MAC) await invoke("keybindings_set_overrides", { overrides: previous });
+        throw error;
+      }
+    } finally {
+      pendingSave.current = false;
+      setSaving(false);
+    }
   };
 
   return (
@@ -435,18 +551,22 @@ export function KeybindingsPage() {
         </div>
         <div className={styles.list}>
           {rows.length === 0 ? (
-            <div className={styles.empty}>
-              <p>{t("No matching bindings")}</p>
-              <Button
-                variant="ghost"
-                onClick={() => {
-                  setQuery("");
-                  resetFilters();
-                }}
-              >
-                {t("Reset filters")}
-              </Button>
-            </div>
+            <SettingsFeedback
+              state="empty"
+              action={
+                <Button
+                  variant="ghost"
+                  onClick={() => {
+                    setQuery("");
+                    resetFilters();
+                  }}
+                >
+                  {t("Reset filters")}
+                </Button>
+              }
+            >
+              {t("No matching bindings")}
+            </SettingsFeedback>
           ) : (
             categories.map((group) => {
               const entries = rows.filter((row) => row.command.startsWith(`${group}:`));
@@ -456,52 +576,17 @@ export function KeybindingsPage() {
                   <h3 className={styles.category}>
                     {t(group)} <span>{entries.length}</span>
                   </h3>
-                  {entries.map((row) => {
-                    const override = overrides[row.command];
-                    const disabled = override?.disabled === true;
-                    return (
-                      <Row
-                        key={row.command}
-                        id={keybindingSettingId(row.command)}
-                        label={
-                          <span
-                            title={t(row.command)}
-                            className={disabled ? styles.disabled : undefined}
-                          >
-                            {t(row.command).replace(/^[^:]+:\s*/, "")}
-                            {isModified(row.command) ? (
-                              <span className={styles.modified}>{t("Modified")}</span>
-                            ) : null}
-                          </span>
-                        }
-                        scope={
-                          row.when === "Always" ? undefined : t("When: {p0}", { p0: t(row.when) })
-                        }
-                        description={
-                          isModified(row.command)
-                            ? t("Default: {p0}", {
-                                p0:
-                                  KEYBINDINGS.find((entry) => entry.command === row.command)
-                                    ?.keys || t("Unassigned"),
-                              })
-                            : undefined
-                        }
-                      >
-                        {row.command === "App: Quick Composer" ? (
-                          <QuickComposerShortcutEditor
-                            onSaved={() => setOverrides({ ...loadKeybindingOverrides() })}
-                          />
-                        ) : (
-                          <KeybindingShortcutEditor
-                            command={row.command}
-                            display={disabled ? null : row.keys || t("Unassigned")}
-                            modified={Boolean(override)}
-                            onSave={save}
-                          />
-                        )}
-                      </Row>
-                    );
-                  })}
+                  {entries.map((row) => (
+                    <KeybindingSettingsRow
+                      key={row.command}
+                      row={row}
+                      override={overrides[row.command]}
+                      modified={isModified(row.command)}
+                      saving={saving}
+                      onSave={save}
+                      onSaved={() => setOverrides({ ...loadKeybindingOverrides() })}
+                    />
+                  ))}
                 </section>
               );
             })

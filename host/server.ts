@@ -319,7 +319,12 @@ export function createHostServer(
       socialAgentGenerator(join(featureDirectory, "social")),
       xBrowser.adapter(),
     );
-  social.forgetBrowserSession ??= (accountId) => xBrowser.forget(accountId);
+  social.forgetBrowserSession ??= async (accountId) => {
+    await xBrowser.workflows.cancelAccount(social, accountId);
+    await xBrowser.forget(accountId);
+  };
+  social.cancelBrowserWorkflow ??= (accountId) =>
+    xBrowser.workflows.cancelAccount(social, accountId);
   const runtimeLogAccess = new RuntimeLogAccess(social);
   const conversationAccess = new RuntimeLogAccess(social);
   const conversationDesktop = new ConversationDesktopRelay(engine.store.environmentId);
@@ -1966,7 +1971,7 @@ export function createHostServer(
                 "The owning desktop is preparing a queued send. Wait for its acknowledgement.",
               );
             const queued = params.queued as
-              | { id?: unknown; clientId?: unknown; revision?: unknown }
+              | { id?: unknown; clientId?: unknown; revision?: unknown; selected?: unknown }
               | undefined;
             if (queued && !engine.store.receiptStatus(String(params.commandId ?? ""))) {
               if (!["send", "steer", "compact"].includes(String(params.type)))
@@ -1984,7 +1989,7 @@ export function createHostServer(
                 queued.id,
                 queued.clientId,
                 Number(queued.revision),
-                params.type === "steer",
+                params.type === "steer" || queued.selected === true,
               );
               const row = currentQueue.messages.find((entry) => entry.id === queued.id)!;
               if (
@@ -2163,6 +2168,9 @@ export function createHostServer(
           }
           case "automations.list":
             result = automations.list();
+            break;
+          case "automations.preview":
+            result = automations.preview(params.schedule);
             break;
           case "automations.save":
             result = automations.save(params.automation);
@@ -2452,7 +2460,14 @@ export function createHostServer(
             const cwd = await resolveHostWorktreeAsync(project.cwd, params.cwd);
             result =
               (await engine.withIdleProject(project.id, () =>
-                hostGitAction(cwd, params.action, params.path, params.message, params.content),
+                hostGitAction(
+                  cwd,
+                  params.action,
+                  params.path,
+                  params.message,
+                  params.content,
+                  params.expectedOriginal,
+                ),
               )) ?? null;
             break;
           }
@@ -2494,7 +2509,10 @@ export function createHostServer(
     desktop.close();
     desktopDelete.close();
   });
-  server.on("close", () => social.stop());
+  server.on("close", () => {
+    xBrowser.workflows.stop(social);
+    social.stop();
+  });
   server.on("close", () => mobilePairing.close());
   server.on("close", () => {
     void mobileLan.close();

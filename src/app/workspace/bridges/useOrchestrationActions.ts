@@ -3,7 +3,11 @@ import { useCallback, useMemo, useRef } from "react";
 import type { Submit } from "../helpers/types";
 import { type OrchestrationWorkerDetail } from "../../../features/orchestration/ui/OrchestrationActions";
 import { focusWindowLiveAgent } from "../../model/useWindowLiveAgents";
-import { type OrchestrationProposal, withOrchestrationProposal, validateOrchestrationSettings } from "../../../features/orchestration/model/orchestrationPlan";
+import {
+  type OrchestrationProposal,
+  withOrchestrationProposal,
+  validateOrchestrationSettings,
+} from "../../../features/orchestration/model/orchestrationPlan";
 import { sessionsRef, setSessions } from "../../../features/sessions/model/sessionsStore";
 import { orchestrator } from "../../../features/orchestration/model/orchestration";
 import { upsertSession } from "../../../features/sessions/data/sessionStore";
@@ -22,6 +26,7 @@ export interface OrchestrationActionsDeps {
   setInboxViewOpen: Dispatch<SetStateAction<boolean>>;
   setNotesViewOpen: Dispatch<SetStateAction<boolean>>;
   setAutomationsViewOpen: Dispatch<SetStateAction<boolean>>;
+  setServersViewOpen?: Dispatch<SetStateAction<boolean>>;
 }
 
 export function useOrchestrationActions({
@@ -36,6 +41,7 @@ export function useOrchestrationActions({
   setInboxViewOpen,
   setNotesViewOpen,
   setAutomationsViewOpen,
+  setServersViewOpen,
 }: OrchestrationActionsDeps) {
   const confirmingOrchestration = useRef(new Set<string>());
   const updateOrchestrationCard = useCallback(
@@ -146,6 +152,7 @@ export function useOrchestrationActions({
       setInboxViewOpen(false);
       setNotesViewOpen(false);
       setAutomationsViewOpen(false);
+      setServersViewOpen?.(false);
       const remote = unopenedRemoteRef.current.find(({ session }) => session.id === sessionId);
       if (remote) {
         dismissRemoteFinished(sessionId);

@@ -299,12 +299,13 @@ async function runSyncCycleInner(machineId: string, request: SyncRequest): Promi
     }
     invalidOps += pushResult.invalid?.length ?? 0;
   }
+  // Invalid outgoing values stay pending, but cannot starve unrelated incoming
+  // edits or deletions. pullAndApply protects every pending local record.
+  await pullAndApply(machineId, request);
   if (invalidOps)
     throw new Error(
       "Some library changes exceed the sync limit or are invalid. They remain pending on this computer.",
     );
-
-  await pullAndApply(machineId, request);
 }
 
 export const CYCLE_INTERVAL_MS = 30_000;

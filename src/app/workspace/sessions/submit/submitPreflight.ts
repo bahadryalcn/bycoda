@@ -8,6 +8,7 @@ import { isPreparingHandoff } from "../../../../features/sessions/model/handoff"
 import { queuedMessageForSubmit } from "../../../../features/sessions/model/messageQueue";
 import { saveRecentModelChoice } from "../../../../features/sessions/model/models";
 import { consumeOperatorCommand, operatorEnabledInThread } from "../../../../features/sessions/model/operatorCommand";
+import { approvedPlanForMessage, isBuildablePlan } from "../../../../features/sessions/model/plan";
 import { sessionWorkCwd } from "../../../../features/sessions/model/session";
 import { sessionsRef } from "../../../../features/sessions/model/sessionsStore";
 import { pendingShellRuns, withShellContext } from "../../../../features/sessions/model/shellRun";
@@ -105,7 +106,12 @@ export function prepareSubmitPreflight(ctx: SubmitDeps, input: SubmitInput): Pre
   if (editedResend) {
     current = { ...current, blocks: editedResend.blocks };
   }
-  const intent = options?.intent ?? "default";
+  const messagePlan = (options?.intent ?? "default") === "default" &&
+    !options?.managed && !options?.resendEdited && !options?.ciRepair &&
+    !current.inboxAsk && !orchestrator.forSession(sessionId) && attachments.length === 0
+      ? approvedPlanForMessage(current, text)
+      : undefined;
+  const intent = messagePlan ? "build" : options?.intent ?? "default";
   if (intent === "orchestrate") {
     try {
       const run = orchestrator.forSession(sessionId);
@@ -124,8 +130,9 @@ export function prepareSubmitPreflight(ctx: SubmitDeps, input: SubmitInput): Pre
   }
   const approvedPlan = options?.planBlockId
     ? current.blocks.find((block) => block.id === options.planBlockId && block.role === "plan")
-    : undefined;
-  if (intent === "build" && !approvedPlan?.text.trim()) return { settled: true, value: false };
+    : messagePlan;
+  if (intent === "build" && (!approvedPlan || current.busy || !isBuildablePlan(approvedPlan)))
+    return { settled: true, value: false };
   if (options?.queuedMessageId) {
     const mode = options.followUpBehavior === "steer" ? "steer" : "dispatch";
     if (!queuedMessageForSubmit(current, options.queuedMessageId, mode)) {

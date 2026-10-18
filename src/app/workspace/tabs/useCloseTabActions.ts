@@ -1,5 +1,7 @@
 import {
   useCallback,
+  useLayoutEffect,
+  useRef,
   type Dispatch,
   type MutableRefObject,
   type SetStateAction,
@@ -57,72 +59,133 @@ export function useCloseTabActions({
   rememberRemoteSession,
   rememberRemotePendingWorktree,
 }: CloseTabActionDeps) {
+  type CloseCommit = { closing: WorkspaceTab[]; next: WorkspaceTab[]; nextActiveTabId?: string };
+  const pending = useRef<{ checked: boolean; commit?: CloseCommit }[]>([]);
+  const closePolicy = useRef({ tabCloseScope, tabWorktreeOf });
+  closePolicy.current = { tabCloseScope, tabWorktreeOf };
 
+  // React can defer or replay functional updaters. External effects belong to
+  // the committed removal, never to the stale pre-confirmation snapshot.
+  useLayoutEffect(() => {
+    const ready = pending.current.filter((entry) => entry.checked);
+    pending.current = pending.current.filter((entry) => !entry.checked);
+    for (const { commit } of ready) {
+      if (
+        !commit ||
+        commit.closing.some((tab) => tabsRef.current.some((current) => current.id === tab.id))
+      )
+        continue;
+      const closingIds = new Set(commit.closing.map((tab) => tab.id));
+      const sessionIds = new Set(commit.closing.flatMap((tab) => leafIds(tab.layout)));
+      for (const sessionId of sessionIds) {
+        const session = sessionsRef.current.find((value) => value.id === sessionId);
+        if (!session) continue;
+        persistSession(session);
+        rememberRemoteSession(sessionId);
+        rememberRemotePendingWorktree(sessionId);
+      }
+      const files = commit.closing.flatMap((tab) => [
+        ...tab.editorPanes.flatMap((pane) => pane.files),
+        ...(tab.terminalPanes ?? []).flatMap((pane) => pane.files),
+      ]);
+      setDirtyFiles((previous) => {
+        const next = new Set(previous);
+        for (const file of files) next.delete(file.id);
+        return next;
+      });
+      if (closingIds.has(activeTabIdRef.current)) {
+        const fallback =
+          tabsRef.current.find((tab) => tab.id === commit.nextActiveTabId) ?? tabsRef.current[0];
+        if (fallback) activateTab(fallback.id);
+      }
+      void refreshHistory(sidebarCwd);
+    }
+  });
+
+  const commitClose = useCallback(
+    (build: (previous: WorkspaceTab[]) => CloseCommit | undefined) => {
+      const entry: { checked: boolean; commit?: CloseCommit } = { checked: false };
+      pending.current.push(entry);
+      setTabs((previous) => {
+        entry.checked = true;
+        entry.commit = build(previous);
+        return entry.commit?.next ?? previous;
+      });
+    },
+    [setTabs],
+  );
   const onCloseTab = useCallback(
     (id: string, opts?: { confirmedTerminalIds?: string[] }) => {
       if (windowTransferPendingRef.current || movingTabIds.current.has(id)) return;
-      const current = tabsRef.current;
-      const index = current.findIndex((t) => t.id === id);
-      if (index < 0) return;
-      const closePlan = planWorkspaceTabClose({
-        tabs: current,
-        sessions: sessionsRef.current,
-        closingTabId: id,
-        scope: tabCloseScope,
-        worktreeOf: tabWorktreeOf,
-      });
-      if (closePlan.action === "keep") return;
-      const closing = current[index];
-      const closingFiles = [
-        ...closing.editorPanes.flatMap((pane) => pane.files),
-        ...(closing.terminalPanes ?? []).flatMap((pane) => pane.files),
-      ];
-      const unsaved = closingFiles.filter(
-        (file) => isFilesystemTab(file) && dirtyFilesRef.current.has(file.id),
-      );
+      const approvedDirty = new Set<string>();
       const confirmed = new Set(opts?.confirmedTerminalIds ?? []);
-      const terminals = closingFiles.filter((file) => file.terminal && !confirmed.has(file.id));
-
-      const finishClose = () => {
+      const readClose = (current = tabsRef.current) => {
         if (windowTransferPendingRef.current || movingTabIds.current.has(id)) return;
-        const nextActiveTabId = closePlan.nextActiveTabId;
-        const next = current.filter((t) => t.id !== id);
-        const gone = new Set(
-          leafIds(closing.layout).filter((paneId) =>
-            sessionsRef.current.some((session) => session.id === paneId),
-          ),
-        );
-        for (const sessionId of gone) {
-          persistSession(sessionsRef.current.find((s) => s.id === sessionId));
-          rememberRemoteSession(sessionId);
-          rememberRemotePendingWorktree(sessionId);
-        }
-        setDirtyFiles((prev) => {
-          const updated = new Set(prev);
-          for (const file of closingFiles) updated.delete(file.id);
-          return updated;
+        const closing = current.find((tab) => tab.id === id);
+        if (!closing) return;
+        const plan = planWorkspaceTabClose({
+          tabs: current,
+          sessions: sessionsRef.current,
+          closingTabId: id,
+          scope: closePolicy.current.tabCloseScope,
+          worktreeOf: closePolicy.current.tabWorktreeOf,
         });
-        setTabs(next);
-        if (id === activeTabIdRef.current && nextActiveTabId) {
-          activateTab(nextActiveTabId);
-        }
-        void refreshHistory(sidebarCwd);
+        if (plan.action === "keep") return;
+        const files = [
+          ...closing.editorPanes.flatMap((pane) => pane.files),
+          ...(closing.terminalPanes ?? []).flatMap((pane) => pane.files),
+        ];
+        return {
+          closing,
+          plan,
+          files,
+          unsaved: files.filter(
+            (file) =>
+              isFilesystemTab(file) &&
+              dirtyFilesRef.current.has(file.id) &&
+              !approvedDirty.has(file.id),
+          ),
+          terminals: files.filter((file) => file.terminal && !confirmed.has(file.id)),
+        };
       };
 
       void (async () => {
-        if (
-          !(await confirmWorkspaceClose(
-            unsaved.length > 0
-              ? () => confirmDiscardUnsaved("Close this tab with unsaved files?")
-              : undefined,
-            terminals.length > 0 ? () => confirmCloseTerminals(terminals) : undefined,
-          ))
-        )
-          return;
-        finishClose();
+        // Every await invalidates the workspace snapshot, including the dirty
+        // files and fallback. Confirm newly affected resources before retrying.
+        let state;
+        while ((state = readClose())) {
+          if (state.unsaved.length) {
+            if (
+              !(await confirmWorkspaceClose(() =>
+                confirmDiscardUnsaved("Close this tab with unsaved files?"),
+              ))
+            )
+              return;
+            for (const file of state.unsaved) approvedDirty.add(file.id);
+            continue;
+          }
+          if (state.terminals.length) {
+            const terminals = state.terminals;
+            if (!(await confirmWorkspaceClose(undefined, () => confirmCloseTerminals(terminals))))
+              return;
+            for (const file of terminals) confirmed.add(file.id);
+            continue;
+          }
+          break;
+        }
+        if (!state) return;
+        commitClose((previous) => {
+          const latest = readClose(previous);
+          if (!latest || latest.unsaved.length || latest.terminals.length) return;
+          return {
+            closing: [latest.closing],
+            next: previous.filter((tab) => tab.id !== id),
+            nextActiveTabId: latest.plan.nextActiveTabId,
+          };
+        });
       })();
     },
-    [activateTab, persistSession, refreshHistory, sidebarCwd, tabCloseScope],
+    [commitClose],
   );
 
   const onCloseTabs = useCallback(
@@ -145,31 +208,64 @@ export function useCloseTabActions({
       const terminals = closingFiles.filter((file) => file.terminal);
 
       const finishClose = () => {
+        const latest = tabsRef.current;
+        const latestClosing = latest.filter((tab) => closingIds.has(tab.id));
+        const latestFallback =
+          latest.find((tab) => tab.id === fallbackId && !closingIds.has(tab.id)) ??
+          latest.find((tab) => !closingIds.has(tab.id));
+        if (!latestFallback || !latestClosing.length) return;
         if (
           windowTransferPendingRef.current ||
-          closing.some((tab) => movingTabIds.current.has(tab.id))
+          latestClosing.some((tab) => movingTabIds.current.has(tab.id))
         )
           return;
-        const sessionIds = new Set(
-          closing.flatMap((tab) =>
-            leafIds(tab.layout).filter((paneId) =>
-              sessionsRef.current.some((session) => session.id === paneId),
-            ),
-          ),
-        );
-        for (const sessionId of sessionIds) {
-          persistSession(sessionsRef.current.find((session) => session.id === sessionId));
-          rememberRemoteSession(sessionId);
-          rememberRemotePendingWorktree(sessionId);
+        const latestFiles = latestClosing.flatMap((tab) => [
+          ...tab.editorPanes.flatMap((pane) => pane.files),
+          ...(tab.terminalPanes ?? []).flatMap((pane) => pane.files),
+        ]);
+        if (
+          latestFiles.some(
+            (file) =>
+              (isFilesystemTab(file) &&
+                dirtyFilesRef.current.has(file.id) &&
+                !unsaved.some((approved) => approved.id === file.id)) ||
+              (file.terminal && !terminals.some((approved) => approved.id === file.id)),
+          )
+        ) {
+          // The caller's approval cannot cover files added while it waited.
+          onCloseTabs(ids, latestFallback.id);
+          return;
         }
-        setDirtyFiles((prev) => {
-          const next = new Set(prev);
-          for (const file of closingFiles) next.delete(file.id);
-          return next;
+        commitClose((previous) => {
+          const closing = previous.filter((tab) => closingIds.has(tab.id));
+          const next = previous.filter((tab) => !closingIds.has(tab.id));
+          if (
+            !closing.length ||
+            !next.length ||
+            windowTransferPendingRef.current ||
+            closing.some((tab) => movingTabIds.current.has(tab.id))
+          )
+            return;
+          const files = closing.flatMap((tab) => [
+            ...tab.editorPanes.flatMap((pane) => pane.files),
+            ...(tab.terminalPanes ?? []).flatMap((pane) => pane.files),
+          ]);
+          if (
+            files.some(
+              (file) =>
+                (isFilesystemTab(file) &&
+                  dirtyFilesRef.current.has(file.id) &&
+                  !unsaved.some((approved) => approved.id === file.id)) ||
+                (file.terminal && !terminals.some((approved) => approved.id === file.id)),
+            )
+          )
+            return;
+          return {
+            closing,
+            next,
+            nextActiveTabId: next.find((tab) => tab.id === latestFallback.id)?.id ?? next[0].id,
+          };
         });
-        setTabs((prev) => prev.filter((tab) => !closingIds.has(tab.id)));
-        if (closingIds.has(activeTabIdRef.current)) activateTab(fallback.id);
-        void refreshHistory(sidebarCwd);
       };
 
       // The caller already confirmed unsaved files and terminals.
@@ -191,7 +287,7 @@ export function useCloseTabActions({
         finishClose();
       })();
     },
-    [activateTab, persistSession, refreshHistory, sidebarCwd],
+    [commitClose],
   );
 
   const onCloseOtherTabs = useCallback(() => {

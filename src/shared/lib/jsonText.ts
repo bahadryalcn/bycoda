@@ -45,8 +45,8 @@ export function parseJsonObject(raw: string): Record<string, unknown> | null {
     const start = trimmed.indexOf("{", searchFrom);
     if (start < 0) break;
     const json = extractJsonObject(trimmed.slice(start));
-    if (!json) break;
     searchFrom = start + 1;
+    if (!json) continue;
     try {
       const parsed: unknown = JSON.parse(json);
       if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {

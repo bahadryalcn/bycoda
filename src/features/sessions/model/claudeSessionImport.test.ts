@@ -5,6 +5,7 @@ import {
   type ClaudeImportTarget,
 } from "./claudeSessionImport";
 import { newSession, type Session } from "./session";
+import { sanitizeSessionForPersist } from "../data/sessionStore";
 
 function jsonl(records: Array<Record<string, unknown>>): string {
   return records.map((record) => JSON.stringify(record)).join("\n");
@@ -19,6 +20,54 @@ function importOf(records: Array<Record<string, unknown>>) {
 }
 
 describe("importing a stored Claude conversation", () => {
+  it("preserves mixed and image-only prompts and marks unsupported images", () => {
+    const image = {
+      type: "image",
+      source: { type: "base64", media_type: "image/png", data: "YWJj" },
+    };
+    const answer = {
+      type: "assistant",
+      message: { role: "assistant", content: [{ type: "text", text: "Answer" }] },
+    };
+    const session = importOf([
+      { type: "user", message: { content: [{ type: "text", text: "Look" }, image] } },
+      answer,
+      { type: "user", message: { content: [image] } },
+      answer,
+      {
+        type: "user",
+        message: {
+          content: [
+            { type: "image", source: { type: "url", url: "https://example.invalid/image.png" } },
+          ],
+        },
+      },
+    ]);
+    const users = session.blocks.filter((block) => block.role === "user");
+    expect(users).toHaveLength(3);
+    expect(users[0].text).toContain("Look\n[Imported image 1:");
+    expect(users[1].text).toContain("[Imported image 1:");
+    for (const user of users.slice(0, 2))
+      expect(user.attachments?.[0]).toMatchObject({
+        kind: "image",
+        mimeType: "image/png",
+        data: "YWJj",
+        size: 3,
+      });
+    expect(users[2].text).toContain("image content is unavailable");
+    const saved = JSON.parse(JSON.stringify(sanitizeSessionForPersist(session)));
+    expect(JSON.stringify(saved)).not.toContain("YWJj");
+    expect(
+      JSON.stringify(saved).match(/embedded image unavailable in saved history/g),
+    ).toHaveLength(2);
+    expect(session.blocks.map((block) => block.role)).toEqual([
+      "user",
+      "assistant",
+      "user",
+      "assistant",
+      "user",
+    ]);
+  });
   it("rebuilds the exchange as alternating blocks", () => {
     const session = importOf([
       { type: "user", message: { role: "user", content: "neden bozuldu" } },

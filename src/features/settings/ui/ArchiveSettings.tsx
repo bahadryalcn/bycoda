@@ -28,7 +28,7 @@ import type { SessionSummary } from "../../sessions/data/sessionStore";
 
 import { loadTabGroupLabels, resolveTabGroupLabel } from "../../workspace/model/tabGroups";
 
-import { AdvancedSettings, Group, Row, Toggle } from "./settingsControls";
+import { AdvancedSettings, Group, Row, Toggle, SettingsFeedback } from "./settingsControls";
 
 export function useArchivedProjects(): ArchivedProject[] {
   const [items, setItems] = useState(loadArchivedProjects);
@@ -98,7 +98,7 @@ export function ArchivePage({
           </p>
         ) : null}
         {archivedProjects.length === 0 ? (
-          <p className="px-4 py-3.5 text-[12px] text-content/45">{t("No archived projects.")}</p>
+          <SettingsFeedback state="empty">{t("No archived projects.")}</SettingsFeedback>
         ) : (
           archivedProjects.map((project) => (
             <div
@@ -156,13 +156,13 @@ export function ArchivePage({
           </Row>
         </AdvancedSettings>
         {!looksLikeProject(cwd) ? (
-          <p className="px-4 py-3.5 text-[12px] text-content/45">
+          <SettingsFeedback state="empty">
             {t("Open a project to see its archived conversations.")}
-          </p>
+          </SettingsFeedback>
         ) : archived.length === 0 ? (
-          <p className="px-4 py-3.5 text-[12px] text-content/45">
+          <SettingsFeedback state="empty">
             {t("No archived conversations in this project.")}
-          </p>
+          </SettingsFeedback>
         ) : (
           archived.map((session) => (
             <div

@@ -1,11 +1,62 @@
 import { describe, expect, it } from "vitest";
 import {
   buildPlanPrompt,
+  approvedPlanForMessage,
   consumePlanCommand,
   isProviderFailureText,
   isReviewablePlan,
   planTurnPrompt,
 } from "./plan";
+import { newSession, type Block } from "./session";
+
+describe("explicit plan approval", () => {
+  const plan: Block = {
+    id: "p",
+    role: "plan",
+    text: "# Edited plan\n\n1. Implement",
+    plan: { status: "ready", originalText: "# Old plan" },
+  };
+  const session = { ...newSession("codex", "/repo"), blocks: [plan] };
+  it.each([
+    "planı uygula",
+    "Planı başlat!",
+    "PLANI UYGULA",
+    "tamam, bu planı uygula",
+    "uygulamaya geç",
+    "Implement the plan.",
+    "yes, build this plan",
+  ])("approves the exact pending plan: %s", (text) => {
+    expect(approvedPlanForMessage(session, text)).toBe(plan);
+  });
+  it.each([
+    "tamam",
+    "evet",
+    "Planı uygula mı?",
+    "planı uygulama",
+    "planı uygula ama önce güvenliği tartışalım",
+    "explain how to implement the plan",
+    "implement the plan\nexcept delete the tests",
+  ])("leaves ambiguous or conditional text as a normal message: %s", (text) => {
+    expect(approvedPlanForMessage(session, text)).toBeUndefined();
+  });
+  it("does not approve stale, running, or built plans", () => {
+    expect(approvedPlanForMessage({ ...session, busy: true }, "planı uygula")).toBeUndefined();
+    expect(
+      approvedPlanForMessage(
+        { ...session, blocks: [plan, { id: "u", role: "user", text: "Different task" }] },
+        "planı uygula",
+      ),
+    ).toBeUndefined();
+    for (const status of ["streaming", "building", "built"] as const) {
+      expect(
+        approvedPlanForMessage(
+          { ...session, blocks: [plan, { ...plan, id: "new", plan: { status } }] },
+          "planı uygula",
+        ),
+      ).toBeUndefined();
+    }
+  });
+});
 
 describe("plan mode prompts", () => {
   it("consumes only a leading /plan command", () => {

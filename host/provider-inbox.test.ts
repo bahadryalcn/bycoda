@@ -36,6 +36,63 @@ afterEach(() => {
 });
 
 describe("desktop provider inbox job bridge", () => {
+  it.each([21_000, 121_000])(
+    "stores same-client late success after %i ms before acknowledging",
+    (elapsed) => {
+      const { bridge, advance } = setup();
+      bridge.beat("native", "desktop", { version: 1 });
+      const receipt = bridge.request("client", "review-late", write);
+      bridge.beat("native", "desktop", { version: 1 });
+      advance(elapsed);
+      expect(bridge.result("client", "review-late").state).toBe("uncertain");
+      const result = { url: "https://example.invalid/review/1" };
+      expect(
+        bridge.beat("other-owner", "desktop", {
+          version: 1,
+          replies: [{ id: receipt.id, result }],
+        }).acked,
+      ).toEqual([]);
+      expect(
+        bridge.beat("native", "other-desktop", {
+          version: 1,
+          replies: [{ id: receipt.id, result }],
+        }).acked,
+      ).toEqual([]);
+      const reply = { version: 1, replies: [{ id: receipt.id, result }] };
+      expect(bridge.beat("native", "desktop", reply)).toEqual({ jobs: [], acked: [receipt.id] });
+      expect(bridge.result("client", "review-late")).toEqual({
+        id: receipt.id,
+        state: "completed",
+        result,
+      });
+      expect(
+        bridge.beat("native", "desktop", {
+          version: 1,
+          replies: [{ id: receipt.id, result: "duplicate cannot replace result" }],
+        }).acked,
+      ).toEqual([receipt.id]);
+      expect(bridge.result("client", "review-late").result).toEqual(result);
+    },
+  );
+
+  it("retains a successful write reply after host restart without redispatch", () => {
+    const { bridge, db, now } = setup();
+    bridge.beat("native", "desktop", { version: 1 });
+    const receipt = bridge.request("client", "review-restart", write);
+    bridge.beat("native", "desktop", { version: 1 });
+    const restarted = new ProviderInboxBridge(db, now);
+    expect(
+      restarted.beat("native", "desktop", {
+        version: 1,
+        replies: [{ id: receipt.id, result: { url: "https://example.invalid/review/2" } }],
+      }),
+    ).toEqual({ jobs: [], acked: [receipt.id] });
+    expect(restarted.result("client", "review-restart")).toMatchObject({
+      state: "completed",
+      result: { url: "https://example.invalid/review/2" },
+    });
+  });
+
   it("reports unavailable instead of inventing an empty inbox when desktop is absent", () => {
     const { bridge } = setup();
     expect(bridge.availability()).toMatchObject({ available: false });

@@ -26,6 +26,7 @@ import {
 } from "../../model/windowTransferPopout";
 import { abortQuit, relinquishTransferredWindow } from "../../model/appLifecycle";
 import type { TabActivation } from "../tabs/useTabActivation";
+import { beginWindowMoveTiming } from "../../model/windowMoveTiming";
 
 export interface MoveTabsOptions {
   position?: WindowMovePosition;
@@ -113,9 +114,49 @@ export function useMoveTabsToNewWindow(deps: MoveTabsToNewWindowDeps): {
         );
         return "failed" as const;
       }
+      const timing = beginWindowMoveTiming(movingIds);
+      // A detached window containing exactly the requested tabs can move as-is.
+      // Its live turn, PTYs and unsaved buffers keep their existing owner.
+      if (
+        opts?.position &&
+        typeof opts.position.clientX === "number" &&
+        typeof opts.position.clientY === "number" &&
+        !opts.targetWindowLabel &&
+        getCurrentWindow().label !== "main" &&
+        movingIds.length === tabsRef.current.length
+      ) {
+        for (const id of movingIds) movingTabIds.current.add(id);
+        try {
+          timing.stage("native-start");
+          const relocated = await invoke<boolean>("try_relocate_workspace_window", {
+            clientX: opts.position.clientX,
+            clientY: opts.position.clientY,
+            pixelRatio: opts.position.pixelRatio,
+          });
+          if (relocated) {
+            timing.stage("native-ready");
+            timing.finish("relocated");
+            return "relocated" as const;
+          }
+        } catch (error) {
+          timing.finish("failed");
+          void message(
+            `Could not move this window. Your workspace is still here.\n\n${String(error)}`,
+            {
+              get title() {
+                return t("Move tab");
+              },
+            },
+          );
+          return "failed" as const;
+        } finally {
+          for (const id of movingIds) movingTabIds.current.delete(id);
+        }
+      }
       // A shell cannot change windows: the source would kill the pty its
       // twin in the new window just respawned under the same id.
       if (filesInWorkspaceTabs(movingTabs).some((file) => file.terminal)) {
+        timing.finish("failed");
         void message("Close terminal tabs before moving this workspace to another window.", {
           get title() {
             return t("Move tab");
@@ -126,6 +167,7 @@ export function useMoveTabsToNewWindow(deps: MoveTabsToNewWindowDeps): {
       // A running turn lives in this window's harness listeners, so the
       // move waits until it finishes rather than dropping the stream.
       if (busySessionsInTabs(tabsRef.current, sessionsRef.current, movingIds).length > 0) {
+        timing.stage("queued");
         setPendingWindowMoves((prev) =>
           queueWindowMoves(prev, movingIds, {
             ...opts?.position,
@@ -134,6 +176,8 @@ export function useMoveTabsToNewWindow(deps: MoveTabsToNewWindowDeps): {
         );
         return "queued" as const;
       }
+      timing.stage("preparing");
+      let moveOutcome: "failed" | "relocated" | "transferred" = "failed";
       for (const id of movingIds) movingTabIds.current.add(id);
       // Freeze composer input before collecting its draft, attachments and model.
       flushSync(() => setMovingWindows(new Set(movingTabIds.current)));
@@ -192,10 +236,12 @@ export function useMoveTabsToNewWindow(deps: MoveTabsToNewWindowDeps): {
           splitDocks.moving,
         );
         if (!payload) return;
+        timing.stage("payload-ready");
 
         const sessionIds = new Set(payload.sessions.map((session) => session.id));
         for (const id of sessionIds) skipForgetSessionIds.current.add(id);
         try {
+          timing.stage("native-start");
           const outcome = await invoke<string>("move_window_tabs", {
             transfer: JSON.stringify(payload),
             targetWindowLabel: opts?.targetWindowLabel ?? null,
@@ -206,7 +252,9 @@ export function useMoveTabsToNewWindow(deps: MoveTabsToNewWindowDeps): {
             pixelRatio: opts?.position?.pixelRatio ?? null,
             relocate: getCurrentWindow().label !== "main" && plan.remaining.length === 0,
           });
+          timing.stage("native-ready");
           if (outcome === "relocated") {
+            moveOutcome = "relocated";
             for (const id of sessionIds) skipForgetSessionIds.current.delete(id);
             return "relocated" as const;
           }
@@ -286,8 +334,10 @@ export function useMoveTabsToNewWindow(deps: MoveTabsToNewWindowDeps): {
           }
         }
         for (const id of sessionIds) skipForgetSessionIds.current.delete(id);
+        moveOutcome = "transferred";
         return "transferred" as const;
       } finally {
+        timing.finish(moveOutcome);
         for (const id of movingIds) movingTabIds.current.delete(id);
         setMovingWindows(new Set(movingTabIds.current));
         for (const id of lockedSessionIds) movingSessionIds.current.delete(id);

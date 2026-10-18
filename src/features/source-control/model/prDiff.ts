@@ -97,8 +97,47 @@ function parsePrFile(block: string): PrDiffFile | null {
   let oldNum = 0;
   let newNum = 0;
   let inHunk = false;
+  let sawHunk = false;
+  let oldRemaining = 0;
+  let newRemaining = 0;
 
   for (const line of lines) {
+    const hunk = line.match(/^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/);
+    if (hunk) {
+      sawHunk = true;
+      oldNum = Number(hunk[1]);
+      newNum = Number(hunk[3]);
+      oldRemaining = Number(hunk[2] ?? 1);
+      newRemaining = Number(hunk[4] ?? 1);
+      inHunk = oldRemaining > 0 || newRemaining > 0;
+      diffLines.push({ kind: "hunk", text: line, oldNumber: null, newNumber: null });
+      continue;
+    }
+    if (sawHunk) {
+      // Only prefixed records within the declared ranges are source lines.
+      // In particular, ---/+++ inside a hunk are deletion/addition records.
+      if (!inHunk) continue;
+      if (line.startsWith("+") && newRemaining > 0) {
+        additions += 1;
+        diffLines.push({ kind: "add", text: line.slice(1), oldNumber: null, newNumber: newNum++ });
+        newRemaining -= 1;
+      } else if (line.startsWith("-") && oldRemaining > 0) {
+        deletions += 1;
+        diffLines.push({ kind: "del", text: line.slice(1), oldNumber: oldNum++, newNumber: null });
+        oldRemaining -= 1;
+      } else if (line.startsWith(" ") && oldRemaining > 0 && newRemaining > 0) {
+        diffLines.push({
+          kind: "context",
+          text: line.slice(1),
+          oldNumber: oldNum++,
+          newNumber: newNum++,
+        });
+        oldRemaining -= 1;
+        newRemaining -= 1;
+      }
+      inHunk = oldRemaining > 0 || newRemaining > 0;
+      continue;
+    }
     if (line.startsWith("diff --git ")) {
       const paths = parseGitPaths(line);
       if (paths) {
@@ -147,51 +186,6 @@ function parsePrFile(block: string): PrDiffFile | null {
       }
       continue;
     }
-    const hunk = line.match(/^@@\s+-(\d+)(?:,\d+)?\s+\+(\d+)/);
-    if (hunk) {
-      inHunk = true;
-      oldNum = Number(hunk[1]);
-      newNum = Number(hunk[2]);
-      diffLines.push({
-        kind: "hunk",
-        text: line,
-        oldNumber: null,
-        newNumber: null,
-      });
-      continue;
-    }
-    if (!inHunk) continue;
-    if (line.startsWith("+")) {
-      additions += 1;
-      diffLines.push({
-        kind: "add",
-        text: line.slice(1),
-        oldNumber: null,
-        newNumber: newNum,
-      });
-      newNum += 1;
-    } else if (line.startsWith("-")) {
-      deletions += 1;
-      diffLines.push({
-        kind: "del",
-        text: line.slice(1),
-        oldNumber: oldNum,
-        newNumber: null,
-      });
-      oldNum += 1;
-    } else if (line.startsWith("\\")) {
-      continue;
-    } else {
-      const text = line.startsWith(" ") ? line.slice(1) : line;
-      diffLines.push({
-        kind: "context",
-        text,
-        oldNumber: oldNum,
-        newNumber: newNum,
-      });
-      oldNum += 1;
-      newNum += 1;
-    }
   }
 
   if (!path) return null;
@@ -209,12 +203,8 @@ function parsePrFile(block: string): PrDiffFile | null {
 
 function parseGitPaths(line: string): [string, string] | null {
   const rest = line.slice("diff --git ".length).trim();
-  const quoted = rest.match(/^"a\/(.+)" "b\/(.+)"$/);
-  if (quoted) {
-    return [unquoteDiffPath(quoted[1]), unquoteDiffPath(quoted[2])];
-  }
-  const plain = rest.match(/^a\/(.*) b\/(.*)$/);
-  if (plain) return [plain[1], plain[2]];
+  const paths = rest.match(/^("(?:\\.|[^"\\])*"|a\/.*) ("(?:\\.|[^"\\])*"|b\/.*)$/);
+  if (paths) return [stripDiffPath(paths[1]), stripDiffPath(paths[2])];
   return null;
 }
 
@@ -222,17 +212,32 @@ function stripDiffPath(raw: string): string {
   let value = raw.trim();
   const tab = value.indexOf("\t");
   if (tab >= 0) value = value.slice(0, tab);
-  if (
-    (value.startsWith('"') && value.endsWith('"')) ||
-    (value.startsWith("'") && value.endsWith("'"))
-  ) {
-    value = unquoteDiffPath(value.slice(1, -1));
-  }
+  value = unquoteDiffPath(value);
   if (value === "/dev/null") return value;
   if (value.startsWith("a/") || value.startsWith("b/")) return value.slice(2);
   return value;
 }
 
 function unquoteDiffPath(value: string): string {
-  return value.replace(/\\"/g, '"').replace(/\\\\/g, "\\");
+  if (!value.startsWith('"') || !value.endsWith('"')) return value;
+  const escapes: Record<string, string> = {
+    a: "\x07",
+    b: "\b",
+    t: "\t",
+    n: "\n",
+    v: "\v",
+    f: "\f",
+    r: "\r",
+    '"': '"',
+    "\\": "\\",
+  };
+  return value.slice(1, -1).replace(/(?:\\[0-7]{1,3})+|\\[abtnvfr"\\]/g, (escape) => {
+    if (/^\\[0-7]/.test(escape)) {
+      const bytes = Array.from(escape.matchAll(/\\([0-7]{1,3})/g), (match) =>
+        parseInt(match[1], 8),
+      );
+      return new TextDecoder().decode(new Uint8Array(bytes));
+    }
+    return escapes[escape[1]];
+  });
 }

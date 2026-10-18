@@ -2,6 +2,7 @@ import { continueAfterFailure } from "../../../../shared/lib/promiseQueue";
 import { nativeModelId } from "../../../../features/sessions/model/models";
 import type { RuntimeMode } from "../../../../features/sessions/model/session";
 import { AcpClient, type AcpHandlers } from "../../core/acp";
+import { reportAcpStopReason } from "../../core/acpStopReason";
 import { AcpSubagents } from "../../core/acpSubagents";
 import {
   killChild,
@@ -274,9 +275,6 @@ async function ensureLive(input: HarnessSessionInput): Promise<Live> {
         );
         acpSessionId = hermesSessionId(setup) ?? resume.acpSessionId;
         didLoad = true;
-      } catch {
-        setup = undefined;
-        acpSessionId = undefined;
       } finally {
         muteGate.current = false;
       }
@@ -369,12 +367,13 @@ async function prompt(live: Live, input: SendTurnInput): Promise<void> {
         accepted = true;
         input.onAccepted?.();
       }
-      await response;
+      const result = await response;
       if (live.cancelled) return;
       // Close this assistant bubble without ending Bycoda's busy turn. A
       // background handoff opens a fresh assistant bubble after it arrives.
       live.onEvent({ type: "message.completed" });
       live.onEvent({ type: "reasoning.completed" });
+      if (reportAcpStopReason(result, live.onEvent)) return;
 
       const finished = await waitForBackground(live);
       if (live.cancelled || finished.length === 0) return;

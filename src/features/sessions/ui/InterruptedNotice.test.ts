@@ -3,6 +3,7 @@ import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { InterruptedNotice } from "./InterruptedNotice";
+import { setLanguagePreference } from "../../../shared/i18n";
 import { newSession, type Session } from "../model/session";
 import { markTurnInterrupted } from "../model/inFlight";
 import {
@@ -46,6 +47,18 @@ afterEach(async () => {
   resetAutoContinueForTests();
   setSessionRecovery(null);
   vi.unstubAllGlobals();
+  await setLanguagePreference("en");
+});
+
+it("localizes both local and hosted recovery explanations when the language changes", async () => {
+  await act(async () => setLanguagePreference("en"));
+  await render();
+  expect(container.textContent).toContain("This turn was cut off when bycoda quit.");
+  await act(async () => setLanguagePreference("tr"));
+  expect(container.textContent).toContain("bycoda kapandığında bu tur kesintiye uğradı.");
+  await render({ message: "The host stopped this turn before it finished." });
+  expect(container.textContent).toContain("Ana makine bu turu tamamlanmadan durdurdu.");
+  expect(container.textContent).not.toContain("The host stopped");
 });
 
 async function render(extra: Partial<Parameters<typeof InterruptedNotice>[0]> = {}) {

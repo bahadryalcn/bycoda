@@ -1,5 +1,19 @@
 import { keybindingPressed, matchCustomKeybinding, type ShortcutEvent } from "./settings";
 import type { LayoutPreset } from "../../workspace/model/layoutPresets";
+import type { SettingsSectionId } from "./settings";
+
+/** Optional direct destinations, available to record without taking existing chords. */
+export const SETTINGS_SHORTCUTS: Record<string, SettingsSectionId> = {
+  "Settings: General": "general",
+  "Settings: Providers": "providers",
+  "Settings: Connections": "connections",
+  "Settings: Appearance": "appearance",
+  "Settings: Workspace": "workspace",
+  "Settings: Terminal": "terminal",
+  "Settings: Keybindings": "keybindings",
+  "Settings: Notifications": "notifications",
+  "Settings: Inbox": "inbox",
+};
 
 /** Layout actions are opt-in so they do not take over editor/terminal chords. */
 export const LAYOUT_SHORTCUTS: Record<string, LayoutPreset> = {
@@ -34,7 +48,10 @@ const APP_SHORTCUTS: [string, string, boolean][] = [
   ["App: Open Automations", "u", true],
 ];
 
-const APP_COMMANDS = new Set(APP_SHORTCUTS.map(([command]) => command));
+const APP_COMMANDS = new Set([
+  ...APP_SHORTCUTS.map(([command]) => command),
+  ...Object.keys(SETTINGS_SHORTCUTS),
+]);
 
 /**
  * Which app command a key press should run, or null. Ignores the event during

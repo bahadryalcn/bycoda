@@ -50,7 +50,10 @@
   cursor: not-allowed;
 }
 .valueText {
+  position: relative;
   display: grid;
+  /* The outgoing label must stay inside the newly sized trigger during a swap. */
+  overflow: clip;
   flex: 1;
   min-width: 0;
   grid-template-columns: minmax(0, 1fr);

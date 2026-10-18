@@ -19,7 +19,7 @@ import {
   EXPLORER_FILE_POINTER_DRAG_EVENT,
   type ExplorerFilePointerDragDetail,
 } from "../../../shared/lib/drag";
-import { FileTree } from "./FileTree";
+import { FileTree, NameRow } from "./FileTree";
 import { invoke } from "@tauri-apps/api/core";
 
 const { iconRender, directories, failures, pendingReads, clipboardFiles, copied, dragDrop } =
@@ -165,6 +165,66 @@ afterEach(() => {
   vi.unstubAllGlobals();
   clipboardFiles.length = 0;
   copied.length = 0;
+});
+
+describe("NameRow filesystem collision ownership", () => {
+  it("submits a case variant to the owner and displays its collision rejection", async () => {
+    const onCommit = vi
+      .fn()
+      .mockRejectedValue(new Error("Owner filesystem: Foo.ts already exists"));
+    await act(async () =>
+      root.render(
+        createElement(NameRow, {
+          depth: 0,
+          isDir: false,
+          initial: "Foo.ts",
+          siblings: ["foo.ts"],
+          onCommit,
+          onCancel: vi.fn(),
+        }),
+      ),
+    );
+    const input = container.querySelector<HTMLInputElement>("input")!;
+    await press(input, { key: "Enter" });
+    expect(onCommit).toHaveBeenCalledWith("Foo.ts");
+    expect(container.textContent).toContain("Owner filesystem: Foo.ts already exists");
+    expect(input.disabled).toBe(false);
+  });
+
+  it("allows a successful case-sensitive owner and keeps exact duplicates blocked locally", async () => {
+    const onCommit = vi.fn().mockResolvedValue(undefined);
+    const onCancel = vi.fn();
+    await act(async () =>
+      root.render(
+        createElement(NameRow, {
+          depth: 0,
+          isDir: false,
+          initial: "Foo.ts",
+          siblings: ["foo.ts"],
+          onCommit,
+          onCancel,
+        }),
+      ),
+    );
+    await press(container.querySelector<HTMLInputElement>("input")!, { key: "Enter" });
+    expect(onCommit).toHaveBeenCalledTimes(1);
+    await act(async () =>
+      root.render(
+        createElement(NameRow, {
+          key: "exact",
+          depth: 0,
+          isDir: false,
+          initial: "foo.ts",
+          siblings: ["foo.ts"],
+          onCommit,
+          onCancel,
+        }),
+      ),
+    );
+    await press(container.querySelector<HTMLInputElement>("input")!, { key: "Enter" });
+    expect(onCommit).toHaveBeenCalledTimes(1);
+    expect(onCancel).not.toHaveBeenCalled();
+  });
 });
 
 describe("FileTree render isolation", () => {

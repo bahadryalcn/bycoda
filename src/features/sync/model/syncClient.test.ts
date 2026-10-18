@@ -17,6 +17,7 @@ import {
 } from "./syncClient";
 import { loadPeerState, peerRev, queueLocalChange } from "./syncPeerState";
 import { loadProjectGroups, saveProjectGroups } from "../../projects/model/projectGroups";
+import type { SyncRecord } from "./syncProtocol";
 
 function mockLocalStorage() {
   const data = new Map<string, string>();
@@ -34,6 +35,69 @@ const MACHINE = "host-1";
 
 describe("runSyncCycle", () => {
   beforeEach(mockLocalStorage);
+  it.each([70_000, 1_100_000])(
+    "pulls changes on repeated retries with an invalid %i-byte local group",
+    async (size) => {
+      let revision = 3;
+      const records: SyncRecord[] = [
+        { table: "group", id: "large", rev: 1, value: { id: "large", name: "Original" } },
+        { table: "group", id: "edited", rev: 2, value: { id: "edited", name: "Before" } },
+        { table: "group", id: "deleted", rev: 3, value: { id: "deleted", name: "Delete me" } },
+      ];
+      const request = vi.fn(async (method: string, params: any) => {
+        if (method === "sync.pull")
+          return {
+            rev: revision,
+            records: records.filter((record) => record.rev > params.sinceRev),
+          };
+        const applied = [];
+        const invalid = [];
+        for (const op of params.ops) {
+          if (op.id === "large" && op.value?.name.length > 64 * 1024)
+            invalid.push({ table: op.table, id: op.id, error: "too large" });
+          else applied.push({ table: op.table, id: op.id, rev: ++revision });
+        }
+        return { rev: revision, applied, invalid, rejected: [] };
+      });
+      await runSyncCycle(MACHINE, request);
+      const name = "x".repeat(size);
+      saveProjectGroups(
+        loadProjectGroups().map((group) => (group.id === "large" ? { ...group, name } : group)),
+      );
+      const log = vi.spyOn(console, "warn").mockImplementation(() => {});
+      try {
+        for (const cycle of [1, 2]) {
+          records.push({
+            table: "group",
+            id: "edited",
+            rev: ++revision,
+            value: { id: "edited", name: `Remote ${cycle}` },
+          });
+          records.push({
+            table: "group",
+            id: "large",
+            rev: ++revision,
+            value: { id: "large", name: "Must not overwrite pending" },
+          });
+          if (cycle === 1)
+            records.push({ table: "group", id: "deleted", rev: ++revision, value: null });
+          request.mockClear();
+          await expect(runSyncCycle(MACHINE, request)).rejects.toThrow("remain pending");
+          expect(request.mock.calls.filter(([method]) => method === "sync.pull")).toHaveLength(1);
+          const groups = loadProjectGroups();
+          expect(groups.find((group) => group.id === "edited")?.name).toBe(`Remote ${cycle}`);
+          expect(groups.some((group) => group.id === "deleted")).toBe(false);
+          expect(groups.find((group) => group.id === "large")?.name).toBe(name);
+          expect(
+            loadPeerState(MACHINE).outbox.find((op) => op.id === "large")?.value,
+          ).toMatchObject({ name });
+          expect(getSyncStatus(MACHINE).state).toBe("error");
+        }
+      } finally {
+        log.mockRestore();
+      }
+    },
+  );
   it("keeps host group order when its referenced groups arrive on later pages", async () => {
     let revision = 3;
     const request = async (method: string, params: any) => {

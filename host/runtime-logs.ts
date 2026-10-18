@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import type {
   RuntimeLogEntry,
   RuntimeLogQuery,
@@ -6,13 +7,15 @@ import type {
 } from "../src/features/host-tools/runtimeLogTypes";
 
 const MAX_TEXT = 8192;
-const SECRET_KEY =
-  /^(?:authorization|proxy-authorization|cookie|set-cookie|password|passwd|secret|client[_-]?secret|(?:access|refresh|id)[_-]?token|token|api[_-]?key|x-api-key|credentials)$/i;
 
 /** Redact before retention, export or agent access. This is a best-effort scrubber,
  * not a reason to log credentials; arbitrary application secrets cannot be inferred. */
 export function scrubRuntimeLogText(input: string, maxLength = MAX_TEXT) {
   const text = input
+    .replace(
+      /(["'])(authorization|proxy-authorization|cookie|set-cookie|credentials)\1\s*:\s*("(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*')/gi,
+      (_match, quote, key) => `${quote}${key}${quote}: "[REDACTED]"`,
+    )
     .replace(
       /-----BEGIN [^-]*(?:PRIVATE KEY|CERTIFICATE)-----[\s\S]*?(?:-----END [^-]+-----|$)/g,
       "[REDACTED]",
@@ -34,9 +37,88 @@ export function scrubRuntimeLogText(input: string, maxLength = MAX_TEXT) {
   return text.length > maxLength ? `${text.slice(0, maxLength)}… [truncated]` : text;
 }
 
-/** Produce only small JSON values, even for cycles, errors and hostile getters. */
-export function runtimeLogDetails(input: unknown): unknown {
-  let budget = MAX_TEXT;
+/** One instance per ordered output stream; never reset this state at packet gaps. */
+export class RuntimeLogLineRedactor {
+  private pem = false;
+  private overflowTail = "";
+
+  observeOverflow(text: string, retainedPrefix = "") {
+    const raw = (this.overflowTail || retainedPrefix.slice(-128)) + text;
+    if (/-----BEGIN [^-]*(?:PRIVATE KEY|CERTIFICATE)-----/.test(raw)) this.pem = true;
+    this.overflowTail = raw.slice(-128);
+  }
+
+  interrupt(partialLine: string) {
+    // A lost packet can complete a PEM opener. Stay closed until an END marker.
+    if (partialLine.includes("-----")) this.pem = true;
+  }
+
+  redact(line: string) {
+    this.overflowTail = "";
+    if (!line) return "";
+    const begin = /-----BEGIN [^-]*(?:PRIVATE KEY|CERTIFICATE)-----/.exec(line);
+    if (!this.pem && !begin) return line;
+    this.pem = true;
+    const end = /-----END [^-]*(?:PRIVATE KEY|CERTIFICATE)-----/.exec(line);
+    if (end && (!begin || end.index > begin.index)) {
+      this.pem = false;
+      return `${begin ? line.slice(0, begin.index) : ""}[REDACTED]${line.slice(end.index + end[0].length)}`;
+    }
+    return `${begin ? line.slice(0, begin.index) : ""}[REDACTED]`;
+  }
+}
+
+/** Self-contained: also executed in Chromium before values cross the protocol.
+ * Unknown objects use fixed descriptor probes, never enumerate arbitrary keys.
+ * Custom fields can be logged as explicit [field, value] arrays instead. */
+export function runtimeLogPreview(input: unknown): unknown {
+  let budget = 8192;
+  const fields = [
+    "name",
+    "message",
+    "code",
+    "status",
+    "statusCode",
+    "type",
+    "event",
+    "route",
+    "method",
+    "url",
+    "path",
+    "file",
+    "line",
+    "column",
+    "reason",
+    "cause",
+    "error",
+    "details",
+    "data",
+    "stream",
+    "streamId",
+    "captureGap",
+    "expectedSequence",
+    "receivedSequence",
+    "interrupted",
+    "sequence",
+    "source",
+    "level",
+    "timestamp",
+    "duration",
+    "count",
+    "exitCode",
+    "signal",
+    "authorization",
+    "cookie",
+    "credentials",
+    "password",
+    "secret",
+    "token",
+    "apiKey",
+    "accessToken",
+    "refreshToken",
+  ];
+  const secret =
+    /^(?:authorization|proxy-authorization|cookie|set-cookie|password|passwd|secret|client[_-]?secret|(?:access|refresh|id)[_-]?token|token|api[_-]?key|x-api-key|credentials)$/i;
   const seen = new WeakSet<object>();
   const visit = (value: unknown, depth: number): unknown => {
     if (budget <= 0) return "[truncated]";
@@ -44,7 +126,7 @@ export function runtimeLogDetails(input: unknown): unknown {
     if (value === null || typeof value === "boolean") return value;
     if (typeof value === "number") return Number.isFinite(value) ? value : String(value);
     if (typeof value === "string") {
-      const result = scrubRuntimeLogText(value, Math.max(0, Math.min(2048, budget)));
+      const result = value.slice(0, Math.max(0, Math.min(2048, budget)));
       budget -= result.length;
       return result;
     }
@@ -54,32 +136,82 @@ export function runtimeLogDetails(input: unknown): unknown {
     if (seen.has(value)) return "[circular]";
     if (depth >= 4) return "[max depth]";
     seen.add(value);
-    if (value instanceof Error)
-      return visit({ name: value.name, message: value.message, stack: value.stack }, depth + 1);
-    if (Array.isArray(value)) return value.slice(0, 30).map((item) => visit(item, depth + 1));
-    const result: Record<string, unknown> = {};
-    let properties: ReturnType<typeof Object.getOwnPropertyDescriptors>;
     try {
-      properties = Object.getOwnPropertyDescriptors(value);
-    } catch {
-      return "[unavailable]";
-    }
-    for (const [key, descriptor] of Object.entries(properties).slice(0, 30)) {
-      if (budget <= 0) break;
-      const safeKey = scrubRuntimeLogText(key, 128);
-      budget -= safeKey.length;
-      Object.defineProperty(result, safeKey, {
-        value: SECRET_KEY.test(key)
+      if (Array.isArray(value)) {
+        const length = Object.getOwnPropertyDescriptor(value, "length")?.value;
+        const out: unknown[] = [];
+        const label = Object.getOwnPropertyDescriptor(value, "0");
+        const secretPair =
+          length === 2 &&
+          label &&
+          "value" in label &&
+          typeof label.value === "string" &&
+          secret.test(label.value);
+        for (let i = 0; i < Math.min(30, length); i++) {
+          if (budget <= 0) {
+            out.push("[truncated]");
+            break;
+          }
+          budget -= 16;
+          const descriptor = Object.getOwnPropertyDescriptor(value, String(i));
+          out.push(
+            secretPair && i === 1
+              ? "[REDACTED]"
+              : !descriptor
+                ? "[empty]"
+                : "value" in descriptor
+                  ? visit(descriptor.value, depth + 1)
+                  : "[getter]",
+          );
+        }
+        if (length > 30) out.push("[more entries omitted]");
+        return out;
+      }
+      const result: Record<string, unknown> = {
+        $capture:
+          "Fixed diagnostic fields only; other properties omitted. Use [field, value] arrays for custom fields.",
+      };
+      budget -= 128;
+      let count = 0;
+      for (const key of fields) {
+        if (budget <= 0 || count >= 30) break;
+        let descriptor = Object.getOwnPropertyDescriptor(value, key);
+        // Native errors usually inherit their name. Inspect a small prototype
+        // prefix without invoking name/stack getters or enumerating prototypes.
+        if (!descriptor && key === "name") {
+          let prototype = Object.getPrototypeOf(value);
+          for (let i = 0; prototype && i < 3 && !descriptor; i++) {
+            descriptor = Object.getOwnPropertyDescriptor(prototype, key);
+            prototype = Object.getPrototypeOf(prototype);
+          }
+        }
+        if (!descriptor) continue;
+        count++;
+        budget -= key.length;
+        result[key] = secret.test(key)
           ? "[REDACTED]"
           : "value" in descriptor
             ? visit(descriptor.value, depth + 1)
-            : "[getter]",
-        enumerable: true,
-      });
+            : "[getter]";
+      }
+      return result;
+    } catch {
+      return "[unavailable]";
     }
-    return result;
   };
   return visit(input, 0);
+}
+
+/** Redact the bounded owned preview, never enumerate the original input. */
+export function runtimeLogDetails(input: unknown): unknown {
+  const redact = (value: unknown): unknown => {
+    if (typeof value === "string") return scrubRuntimeLogText(value);
+    if (Array.isArray(value)) return value.map(redact);
+    if (value && typeof value === "object")
+      return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, redact(item)]));
+    return value;
+  };
+  return redact(runtimeLogPreview(input));
 }
 
 export type RuntimeLogsOptions = { maxEntries?: number; maxSources?: number; maxBytes?: number };
@@ -88,6 +220,7 @@ type StoredEntry = { entry: RuntimeLogEntry; bytes: number };
 
 /** Host-local, ephemeral store shared by server and browser capture. No disk history. */
 export class RuntimeLogsService {
+  private readonly streamId = randomUUID();
   private entries: StoredEntry[] = [];
   private readonly registered = new Map<string, RuntimeLogSource>();
   private cursor = 0;
@@ -134,7 +267,7 @@ export class RuntimeLogsService {
     const safeSource = this.setSource(source);
     const cursor = ++this.cursor;
     const entry: RuntimeLogEntry = {
-      id: `log:${cursor}`,
+      id: `log:${this.streamId}:${cursor}`,
       cursor,
       timestamp: Number.isFinite(input.timestamp) ? input.timestamp : Date.now(),
       sourceId: safeSource.id,
@@ -183,12 +316,18 @@ export class RuntimeLogsService {
       1,
       Math.min(1000, Math.floor(Number.isFinite(query.limit) ? query.limit! : 200)),
     );
-    const after = Number.isFinite(query.after) ? Math.max(0, query.after!) : undefined;
+    const after =
+      query.streamId && query.streamId !== this.streamId
+        ? undefined
+        : Number.isFinite(query.after)
+          ? Math.max(0, query.after!)
+          : undefined;
     const matching = this.entries.filter(
       ({ entry }) => (after === undefined || entry.cursor > after) && this.matches(entry, query),
     );
     const selected = after === undefined ? matching.slice(-limit) : matching.slice(0, limit);
     return {
+      streamId: this.streamId,
       entries: selected.map(({ entry }) => structuredClone(entry)),
       sources: this.sources(query),
       // Incremental pagination must not skip matching entries when a poll hits its limit.

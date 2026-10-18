@@ -17,12 +17,8 @@ const row = (id: string, issue?: SessionSummary["issue"]): SessionSummary => ({
   deletions: 0,
 });
 
-it("prioritizes input, failure, working, done and then history, preserving ties", () => {
-  const compare = sessionStatusOrder(
-    new Set(["input"]),
-    new Set(["working", "input", "failed"]),
-    new Set(["done", "failed"]),
-  );
+it("prioritizes input, failure and working, preserving finished/history ties", () => {
+  const compare = sessionStatusOrder(new Set(["input"]), new Set(["working", "input", "failed"]));
   const rows = [
     row("old-b"),
     row("done"),
@@ -35,8 +31,8 @@ it("prioritizes input, failure, working, done and then history, preserving ties"
     "input",
     "failed",
     "working",
-    "done",
     "old-b",
+    "done",
     "old-a",
   ]);
   expect(compare(row("retry", "retrying"), row("working"))).toBe(0);
@@ -44,7 +40,7 @@ it("prioritizes input, failure, working, done and then history, preserving ties"
 
 it("applies status changes inside ordered folders, pins, reminders and loose rows", () => {
   const rows = [row("old"), row("working"), row("input")];
-  let compare = sessionStatusOrder(new Set(["input"]), new Set(["working"]), new Set());
+  let compare = sessionStatusOrder(new Set(["input"]), new Set(["working"]));
   const folder = {
     id: "group",
     name: "Group",
@@ -75,7 +71,7 @@ it("applies status changes inside ordered folders, pins, reminders and loose row
   expect(
     sessionListNavigationIds(buildSessionList(pins, [], pins, false, undefined, compare), false),
   ).toEqual(["input", "working", "old"]);
-  compare = sessionStatusOrder(new Set(["old"]), new Set(["working"]), new Set(["input"]));
+  compare = sessionStatusOrder(new Set(["old"]), new Set(["working"]));
   expect(
     sessionListNavigationIds(buildSessionList(rows, [], rows, false, undefined, compare), false),
   ).toEqual(["old", "working", "input"]);

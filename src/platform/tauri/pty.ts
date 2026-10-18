@@ -94,7 +94,7 @@ function clearBuffered(id: string) {
 }
 
 function ensureBridge() {
-  if (bridge) return;
+  if (bridge) return bridge;
   const pending = Promise.allSettled([
     listen<DataPayload>("pty-data", (event) => {
       const { id, data } = event.payload;
@@ -125,10 +125,17 @@ function ensureBridge() {
       }
     }
     if (bridge === pending) bridge = null;
-    console.warn("PTY listener registration failed", failure.reason);
-    return [];
+    throw new Error("Terminal event listeners could not start. Reopen the terminal to retry.");
   });
   bridge = pending;
+  // Subscriptions are synchronous; spawn/readiness callers observe the failure.
+  void pending.catch(() => undefined);
+  return pending;
+}
+
+/** Every PTY producer (including SSH/key generation) must await both listeners. */
+export async function readyPtyBridge(): Promise<void> {
+  await ensureBridge();
 }
 
 function retain() {
@@ -148,7 +155,7 @@ function release() {
     teardownTimer = undefined;
     if (users > 0) return;
     bridge = null;
-    void pending.then((fns) => fns.forEach((fn) => fn()));
+    void pending.then((fns) => fns.forEach((fn) => fn())).catch(() => undefined);
   }, 500);
 }
 
@@ -160,6 +167,7 @@ export async function spawnPty(
   rows: number,
   profile?: string,
 ): Promise<void> {
+  await readyPtyBridge();
   await invoke("pty_spawn", { id, cwd, cols, rows, profile: profile ?? null });
 }
 

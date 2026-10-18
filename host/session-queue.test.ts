@@ -17,6 +17,21 @@ function setup() {
 }
 afterEach(() => databases.splice(0).forEach((db) => db.close()));
 
+it("validates explicit selected-row sends without releasing a paused queue", () => {
+  const { queues } = setup();
+  const paused = queues.change(
+    "chat",
+    { messages: [] },
+    { messages: [message("a"), message("b")], status: "paused" },
+    "pc1",
+  );
+  expect(() => queues.assertSend("chat", "b", "pc1", paused.revision)).toThrow(/queue changed/);
+  expect(queues.assertSend("chat", "b", "pc1", paused.revision, true)).toEqual(paused);
+  queues.consumed("chat", "b");
+  expect(queues.get("chat").messages.map((row) => row.id)).toEqual(["a"]);
+  expect(queues.get("chat").status).toBe("paused");
+});
+
 it("persists ordered messages and saved settings across queue service restarts", () => {
   const { db, queues } = setup();
   const first = queues.change(

@@ -388,6 +388,7 @@ describe("a queue restored after a restart", () => {
   async function renderQueue(
     queuedMessages: { id: string; text: string; attachments: unknown[] }[],
     onSteer = vi.fn(),
+    onResume?: () => void,
   ) {
     await act(async () =>
       root.render(
@@ -403,6 +404,7 @@ describe("a queue restored after a restart", () => {
           queuedMessages: queuedMessages as never,
           queueStatus: "restored",
           onSteerQueuedMessage: onSteer,
+          onResumeQueue: onResume,
           onFocus: () => {},
           onCwdChange: () => {},
           onModelChange: () => {},
@@ -441,6 +443,18 @@ describe("a queue restored after a restart", () => {
     const send = [...card.querySelectorAll("button")].find((b) => b.textContent === "Send next")!;
     expect(send.disabled).toBe(true);
     act(() => send.click());
+    expect(onSteer).not.toHaveBeenCalled();
+  });
+
+  it("resumes normal queue dispatch from the recovery header instead of steering a row", async () => {
+    const onSteer = vi.fn();
+    const onResume = vi.fn();
+    await renderQueue([{ id: "q1", text: "first", attachments: [] }], onSteer, onResume);
+    const send = [
+      ...container.querySelectorAll<HTMLButtonElement>("[data-message-queue-card] button"),
+    ].find((button) => button.textContent === "Send next")!;
+    act(() => send.click());
+    expect(onResume).toHaveBeenCalledOnce();
     expect(onSteer).not.toHaveBeenCalled();
   });
 });

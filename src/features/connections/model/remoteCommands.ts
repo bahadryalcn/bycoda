@@ -176,6 +176,14 @@ async function runOnMachine(
   );
   if (!environmentId) throw new Error(UNAVAILABLE);
   const env = environmentId;
+  if (command === "list_skills" && Array.isArray(args.disabledPaths)) {
+    // Settings contain paths for every machine. Only this host's identities
+    // belong in its discovery request, before same-name deduplication.
+    hostArgs.disabledPaths = args.disabledPaths.flatMap((value) => {
+      const parsed = typeof value === "string" ? parseRemotePath(value) : undefined;
+      return parsed?.environmentId === env ? [parsed.hostPath] : [];
+    });
+  }
   const machine = await remoteMachineFor(env);
   if (!machine) throw new Error("This project’s machine isn’t connected on this computer.");
   let result: unknown;
@@ -198,12 +206,22 @@ async function runOnMachine(
     throw reason;
   }
   const fromHost = (path: string) => remotePath(env, path);
-  if (["session_checkpoint_status", "session_checkpoint_undo", "session_checkpoint_keep"].includes(command) && result && typeof result === "object") {
+  if (
+    ["session_checkpoint_status", "session_checkpoint_undo", "session_checkpoint_keep"].includes(
+      command,
+    ) &&
+    result &&
+    typeof result === "object"
+  ) {
     const status = result as { files: { path: string }[] };
-    return { ...status, files: status.files.map(file => ({ ...file, path: fromHost(file.path) })) };
+    return {
+      ...status,
+      files: status.files.map((file) => ({ ...file, path: fromHost(file.path) })),
+    };
   }
   if (command === "session_checkpoint_file_diff" && result && typeof result === "object") {
-    const diff = result as { path: string }; return { ...diff, path: fromHost(diff.path) };
+    const diff = result as { path: string };
+    return { ...diff, path: fromHost(diff.path) };
   }
   if (command === "browse_dir" && result && typeof result === "object") {
     const folder = result as FolderListing;

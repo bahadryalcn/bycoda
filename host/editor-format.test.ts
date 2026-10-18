@@ -66,6 +66,30 @@ it("selects Oxfmt when the project format script specifies it", async () => {
   await writeFile(join(root, ".oxfmtrc.json"), JSON.stringify({ semi: false }));
   expect((await formatWorkspaceText(root, path, "const a=1;", 0))?.formatted).toBe("const a = 1\n");
 });
+
+it.each([
+  [".prettierrc.toml", "semi = false\n"],
+  [".prettierrc.json5", "{semi: false}\n"],
+  [".prettierrc.ts", "export default { semi: false };\n"],
+  [".prettierrc.mts", "export default { semi: false };\n"],
+  [".prettierrc.cts", "module.exports = { semi: false };\n"],
+  ["prettier.config.ts", "export default { semi: false };\n"],
+  ["prettier.config.mts", "export default { semi: false };\n"],
+  ["prettier.config.cts", "module.exports = { semi: false };\n"],
+])("selects nearer %s ahead of the parent Oxfmt script", async (name, config) => {
+  const { root } = await project();
+  await writeFile(
+    join(root, "package.json"),
+    JSON.stringify({ scripts: { format: "oxfmt --write ." } }),
+  );
+  const nested = join(root, "nested");
+  await mkdir(nested);
+  await writeFile(join(nested, name), config);
+  const path = join(nested, "example.js");
+  await writeFile(path, "disk content");
+  expect((await formatWorkspaceText(root, path, "const a=1;", 6))?.formatted).toBe("const a = 1\n");
+  expect(await readFile(path, "utf8")).toBe("disk content");
+});
 it("rejects oversized buffers and paths outside registered projects", async () => {
   const { root, path } = await project();
   expect(() => formatWorkspaceText(root, path, "x".repeat(512 * 1024 + 1), 0)).toThrow("too large");

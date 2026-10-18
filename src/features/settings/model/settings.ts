@@ -2227,6 +2227,17 @@ export const KEYBINDINGS: KeybindingRow[] = [
   { command: "Terminal: Toggle Dock", keys: `${MOD}J`, when: "Always" },
   { command: "Editor: Find", keys: `${MOD}F`, when: "editorFocus" },
   { command: "Editor: Replace", keys: `${MOD}${ALT}F`, when: "editorFocus" },
+  ...[
+    "General",
+    "Providers",
+    "Connections",
+    "Appearance",
+    "Workspace",
+    "Terminal",
+    "Keybindings",
+    "Notifications",
+    "Inbox",
+  ].map((section) => ({ command: `Settings: ${section}`, keys: "", when: "Always" })),
 ];
 
 const KEYBINDING_OVERRIDES_KEY = "bycoda.keybindingOverrides";
@@ -2379,7 +2390,7 @@ export function loadKeybindingOverrides(): KeybindingOverrides {
   }
 }
 
-export function saveKeybindingOverride(
+export function prepareKeybindingOverride(
   command: string,
   override: KeybindingOverride,
 ): KeybindingOverrides {
@@ -2389,6 +2400,14 @@ export function saveKeybindingOverride(
     const shortcut = validateKeybindingShortcut(command, override.shortcut);
     next[command] = { shortcut };
   } else delete next[command];
+  return next;
+}
+
+export function saveKeybindingOverride(
+  command: string,
+  override: KeybindingOverride,
+): KeybindingOverrides {
+  const next = prepareKeybindingOverride(command, override);
   try {
     if (Object.keys(next).length) {
       localStorage.setItem(KEYBINDING_OVERRIDES_KEY, JSON.stringify(next));

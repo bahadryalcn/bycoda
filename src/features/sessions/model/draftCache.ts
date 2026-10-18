@@ -23,8 +23,16 @@ import type { Attachment } from "./session";
 const drafts = new Map<string, string>();
 const mcpTags = new Map<string, McpTag[]>();
 const attachments = new Map<string, Attachment[]>();
+const modes = new Map<string, "save">();
 const notices = new Map<string, string>();
 const listeners = new Set<(sessionId: string) => void>();
+let revision = 0;
+const changedAt = new Map<string, number>();
+
+/** Capture before an async restore so late work cannot overwrite a newer clear. */
+export function composerDraftRevision(): number {
+  return revision;
+}
 
 /** Called with the session id whenever its draft changes. Returns the unsubscribe. */
 export function subscribeComposerDrafts(listener: (sessionId: string) => void): () => void {
@@ -33,11 +41,23 @@ export function subscribeComposerDrafts(listener: (sessionId: string) => void): 
 }
 
 function changed(sessionId: string) {
+  changedAt.set(sessionId, ++revision);
   for (const listener of listeners) listener(sessionId);
 }
 
 export function getComposerDraft(sessionId: string): string | undefined {
   return drafts.get(sessionId);
+}
+
+export function getComposerDraftMode(sessionId: string): "save" | undefined {
+  return modes.get(sessionId);
+}
+
+export function setComposerDraftMode(sessionId: string, mode: "save" | undefined): void {
+  if (modes.get(sessionId) === mode) return;
+  if (mode) modes.set(sessionId, mode);
+  else modes.delete(sessionId);
+  changed(sessionId);
 }
 
 export function setComposerDraft(sessionId: string, text: string): void {
@@ -91,8 +111,16 @@ export function takeComposerNotice(sessionId: string): string | undefined {
  */
 export function restoreComposerDraft(
   sessionId: string,
-  saved: { text: string; mcpTags: McpTag[]; attachments: Attachment[]; notice?: string },
+  saved: {
+    text: string;
+    mcpTags: McpTag[];
+    attachments: Attachment[];
+    mode?: "save";
+    notice?: string;
+  },
+  startedAt = revision,
 ): boolean {
+  if ((changedAt.get(sessionId) ?? 0) > startedAt) return false;
   if (
     !canRestoreOver({
       text: drafts.get(sessionId),
@@ -104,6 +132,7 @@ export function restoreComposerDraft(
   if (saved.text) drafts.set(sessionId, saved.text);
   if (saved.mcpTags.length > 0) mcpTags.set(sessionId, saved.mcpTags);
   if (saved.attachments.length > 0) attachments.set(sessionId, saved.attachments);
+  if (saved.mode) modes.set(sessionId, saved.mode);
   if (saved.notice) notices.set(sessionId, saved.notice);
   return true;
 }
@@ -113,11 +142,13 @@ export function composerDraftOf(sessionId: string): {
   text: string;
   mcpTags: McpTag[];
   attachments: Attachment[];
+  mode?: "save";
 } {
   return {
     text: drafts.get(sessionId) ?? "",
     mcpTags: mcpTags.get(sessionId) ?? [],
     attachments: attachments.get(sessionId) ?? [],
+    ...(modes.has(sessionId) ? { mode: modes.get(sessionId) } : {}),
   };
 }
 
@@ -125,6 +156,7 @@ export function clearComposerDraft(sessionId: string): void {
   drafts.delete(sessionId);
   mcpTags.delete(sessionId);
   attachments.delete(sessionId);
+  modes.delete(sessionId);
   notices.delete(sessionId);
   changed(sessionId);
 }

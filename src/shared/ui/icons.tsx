@@ -113,6 +113,7 @@ import {
   Star as LucideStar,
   StickyNote as LucideStickyNote,
   Terminal as LucideTerminal,
+  Server as LucideServer,
   Trash2 as LucideTrash2,
   Undo2 as LucideUndo2,
   UnfoldVertical as LucideUnfoldVertical,
@@ -267,6 +268,7 @@ export const SquarePlus = wrap(LucideSquarePlus, "SquarePlus");
 export const Star = wrap(LucideStar, "Star");
 export const StickyNote = wrap(LucideStickyNote, "StickyNote");
 export const Terminal = wrap(LucideTerminal, "Terminal");
+export const Server = wrap(LucideServer, "Server");
 export const Trash2 = wrap(LucideTrash2, "Trash2");
 export const Undo2 = wrap(LucideUndo2, "Undo2");
 export const UnfoldVertical = wrap(LucideUnfoldVertical, "UnfoldVertical");

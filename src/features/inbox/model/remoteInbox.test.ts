@@ -19,6 +19,18 @@ const item = {
   projectPath: "/project",
 };
 describe("pure remote provider inbox contract", () => {
+  it.each(["merge", "squash", "rebase"])("binds %s to the exact reviewed SHA", (prAction) => {
+    const input = { action: "pr-action", item: { ...item, kind: "pr" }, prAction };
+    expect(() => parseRemoteInboxOperation(input, projects)).toThrow(/head|expectedHeadOid/);
+    const reviewed = "a".repeat(40);
+    const operation = parseRemoteInboxOperation({ ...input, expectedHeadOid: reviewed }, projects);
+    if (operation.action !== "pr-action") throw new Error("Wrong fixture");
+    expect(nativeInboxCommand(operation).args.expectedHeadOid).toBe(reviewed);
+    expect(nativeInboxCommand(operation).args.expectedHeadOid).not.toBe("b".repeat(40));
+    expect(() =>
+      parseRemoteInboxOperation({ ...input, expectedHeadOid: "main" }, projects),
+    ).toThrow();
+  });
   const review = {
     action: "review",
     item: { ...item, kind: "pr" },

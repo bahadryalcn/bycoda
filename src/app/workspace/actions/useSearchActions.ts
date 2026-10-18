@@ -8,6 +8,7 @@ export interface SearchActionDeps {
   setInboxViewOpen: Dispatch<SetStateAction<boolean>>;
   setNotesViewOpen: Dispatch<SetStateAction<boolean>>;
   setAutomationsViewOpen: Dispatch<SetStateAction<boolean>>;
+  setServersViewOpen?: Dispatch<SetStateAction<boolean>>;
   setSearchViewOpen: Dispatch<SetStateAction<boolean>>;
   setSearchViewFocusToken: Dispatch<SetStateAction<number>>;
 }
@@ -29,6 +30,7 @@ export function useSearchActions(deps: SearchActionDeps): {
     setInboxViewOpen,
     setNotesViewOpen,
     setAutomationsViewOpen,
+    setServersViewOpen,
     setSearchViewOpen,
     setSearchViewFocusToken,
   } = deps;
@@ -54,6 +56,7 @@ export function useSearchActions(deps: SearchActionDeps): {
       setInboxViewOpen(false);
       setNotesViewOpen(false);
       setAutomationsViewOpen(false);
+      setServersViewOpen?.(false);
       setSearchViewOpen(true);
       setSearchViewFocusToken((token) => token + 1);
     });

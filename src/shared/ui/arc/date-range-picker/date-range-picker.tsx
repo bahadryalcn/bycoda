@@ -198,7 +198,7 @@ const fade: Variants = {
 };
 /** Panel content arrives just behind the growing surface and leaves ahead of it. */
 const faceIn: Variants = {
-  hidden: { opacity: 0, y: -4,},
+  hidden: { opacity: 0, y: -4 },
   shown: {
     opacity: 1,
     y: 0,
@@ -216,7 +216,7 @@ const faceFade: Variants = {
   gone: { opacity: 0, transition: { duration: 0.08 } },
 };
 const slide: Variants = {
-  enter: (direction: number) => ({ opacity: 0, x: direction * 48,}),
+  enter: (direction: number) => ({ opacity: 0, x: direction * 48 }),
   center: {
     opacity: 1,
     x: 0,
@@ -604,6 +604,16 @@ export function DateRangePicker({
     [count, view],
   );
   const shown = anchor ? ordered(anchor, hover ?? anchor) : draft;
+  const allowedRange = (range: DateRange | null): range is DateRange =>
+    Boolean(
+      range &&
+      Number.isFinite(range.start.getTime()) &&
+      Number.isFinite(range.end.getTime()) &&
+      dayDiff(range.start, range.end) <= 0 &&
+      (!minDate || dayDiff(range.start, minDate) >= 0) &&
+      (!maxDate || dayDiff(range.end, maxDate) <= 0),
+    );
+  const applicable = anchor ? { start: anchor, end: anchor } : draft;
   const activePreset =
     today && !anchor ? presets.findIndex((preset) => sameRange(preset.range(today), draft)) : -1;
   const days = shown ? dayDiff(shown.end, shown.start) + 1 : 0;
@@ -797,7 +807,7 @@ export function DateRangePicker({
 
   const apply = () => {
     const next = anchor ? { start: anchor, end: anchor } : draft;
-    if (!next) return;
+    if (!allowedRange(next)) return;
     if (value === undefined) setInner(next);
     onChange?.(next);
     close(true);
@@ -875,6 +885,7 @@ export function DateRangePicker({
   const choosePreset = (preset: DateRangePreset) => {
     if (!today) return;
     const range = preset.range(today);
+    if (!allowedRange(range)) return;
     setDraft(range);
     setAnchor(null);
     setHover(null);
@@ -911,7 +922,7 @@ export function DateRangePicker({
     const keys = compact ? ["ArrowLeft", "ArrowRight"] : ["ArrowUp", "ArrowDown"];
     if (!keys.includes(event.key)) return;
     const buttons = Array.from(
-      event.currentTarget.querySelectorAll<HTMLButtonElement>("[data-preset]"),
+      event.currentTarget.querySelectorAll<HTMLButtonElement>("[data-preset]:not(:disabled)"),
     );
     const at = buttons.indexOf(document.activeElement as HTMLButtonElement);
     if (at < 0) return;
@@ -981,11 +992,7 @@ export function DateRangePicker({
       ? Math.max(32, Math.min(42, Math.floor((panelWidth - 24) / 7)))
       : WIDE_CELL;
 
-  const quiet = open
-    ? reduced
-      ? { opacity: 0 }
-      : { opacity: 0,}
-    : { opacity: 1,};
+  const quiet = open ? (reduced ? { opacity: 0 } : { opacity: 0 }) : { opacity: 1 };
   const quietTransition = open
     ? { duration: 0.12, ease: standardEase }
     : { duration: 0.22, ease: enterEase, delay: reduced ? 0 : 0.1 };
@@ -1098,6 +1105,7 @@ export function DateRangePicker({
                       className={styles.preset}
                       data-preset={index}
                       aria-pressed={index === activePreset}
+                      disabled={!today || !allowedRange(preset.range(today))}
                       onClick={() => choosePreset(preset)}
                     >
                       {preset.label}
@@ -1211,7 +1219,7 @@ export function DateRangePicker({
                     type="button"
                     className={styles.primary}
                     onClick={apply}
-                    disabled={!shown}
+                    disabled={!allowedRange(applicable)}
                   >
                     {t("Apply")}
                   </button>

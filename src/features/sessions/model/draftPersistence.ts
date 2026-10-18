@@ -22,12 +22,20 @@ export type ComposerDraft = {
   text: string;
   mcpTags: McpTag[];
   attachments: Attachment[];
+  /** A retained draft must never silently become an agent submission. */
+  mode?: "save";
 };
 
 /** What restoring a draft cost: the names of attachments that could not come back. */
 export type RestoredDraft = { draft: ComposerDraft; dropped: string[] };
 
 const DRAFT_ID = "draft";
+/** Matches session_store.rs. Inline bytes can be spilled before serialization. */
+export const COMPOSER_DRAFT_MAX_BYTES = 8_000_000;
+
+export function composerDraftBytes(draft: ComposerDraft): number {
+  return new TextEncoder().encode(JSON.stringify(draft)).byteLength;
+}
 
 function asMessage(draft: Pick<ComposerDraft, "text" | "attachments">): QueuedMessage {
   return { id: DRAFT_ID, text: draft.text, attachments: draft.attachments };
@@ -38,11 +46,26 @@ export function persistableDraft(draft: ComposerDraft): ComposerDraft | null {
   if (!draft.text.trim() && draft.attachments.length === 0) return null;
   const [message] = persistableQueue([asMessage(draft)]) ?? [];
   if (!message) return null;
-  return {
+  const saved: ComposerDraft = {
     text: message.text,
     attachments: message.attachments,
     mcpTags: draft.mcpTags,
+    ...(draft.mode === "save" ? { mode: "save" as const } : {}),
   };
+  // Keep a bounded recovery record even for callers without a file writer. The
+  // store spills these payloads first, preserving their bytes rather than loss.
+  let bytes = composerDraftBytes(saved);
+  for (const file of [...saved.attachments].sort(
+    (a, b) => (b.data?.length ?? 0) - (a.data?.length ?? 0),
+  )) {
+    if (bytes <= COMPOSER_DRAFT_MAX_BYTES) break;
+    if (!file.data) continue;
+    const previousBytes = new TextEncoder().encode(JSON.stringify(file)).byteLength;
+    delete file.data;
+    file.missing = true;
+    bytes -= previousBytes - new TextEncoder().encode(JSON.stringify(file)).byteLength;
+  }
+  return saved;
 }
 
 function restoreMcpTags(raw: unknown): McpTag[] {
@@ -73,6 +96,7 @@ export function restoreDraft(raw: unknown): ComposerDraft | null {
     text: message.text,
     attachments: message.attachments,
     mcpTags: restoreMcpTags(value.mcpTags),
+    ...(value.mode === "save" ? { mode: "save" as const } : {}),
   };
 }
 

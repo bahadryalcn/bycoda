@@ -115,6 +115,7 @@ export interface WorkspaceMainAreaProps {
   searchViewOpen: boolean;
   settingsOpen: boolean;
   notesViewOpen: boolean;
+  serversViewOpen?: boolean;
   automationsViewOpen: boolean;
   activeLinkedWorkItemPanel: LinkedWorkItemPanelState | null;
 }
@@ -179,6 +180,7 @@ export function WorkspaceMainArea({
   searchViewOpen,
   settingsOpen,
   notesViewOpen,
+  serversViewOpen = false,
   automationsViewOpen,
   activeLinkedWorkItemPanel,
 }: WorkspaceMainAreaProps) {
@@ -315,6 +317,7 @@ export function WorkspaceMainArea({
               !settingsOpen &&
               !inboxViewOpen &&
               !notesViewOpen &&
+              !serversViewOpen &&
               !automationsViewOpen &&
               activeLinkedWorkItemPanel?.sessionId === panel.sessionId
             }

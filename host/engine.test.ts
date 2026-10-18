@@ -1311,7 +1311,7 @@ describe("headless session ownership", () => {
       type: "send",
       commandId: "build-turn",
       sessionId: id,
-      text: `Build the approved plan:\n\n${plan.text}`,
+      text: "Build a stale client copy of the plan",
       intent: "build",
       planBlockId: plan.id,
     });
@@ -1319,11 +1319,34 @@ describe("headless session ownership", () => {
       store.session(id).session.blocks.find((block) => block.id === plan.id)?.plan?.status,
     ).toBe("building");
     await vi.waitFor(() => expect(turns).toHaveLength(2));
+    expect(turns[1].input.text).toContain(`<approved_plan>\n${plan.text}\n</approved_plan>`);
+    expect(turns[1].input.text).not.toContain("stale client copy");
     turns[1].finish();
     await vi.waitFor(() => expect(store.session(id).status).toBe("idle"));
     expect(
       store.session(id).session.blocks.find((block) => block.id === plan.id)?.plan?.status,
     ).toBe("built");
+  });
+
+  it("captures a text-only host plan and builds its exact stored text after explicit message approval", async () => {
+    const { engine, store, turns, id } = setup();
+    engine.command({ type: "send", commandId: "text-plan", sessionId: id, text: "Investigate search", intent: "plan" });
+    await vi.waitFor(() => expect(turns).toHaveLength(1));
+    expect(turns[0].input.text).toContain("You are in plan mode");
+    const text = "# Implementation plan\n\n1. Add search.\n2. Verify keyboard access.";
+    turns[0].input.onEvent({ type: "message.delta", text });
+    turns[0].finish();
+    await vi.waitFor(() => expect(store.session(id).status).toBe("idle"));
+    const plan = store.session(id).session.blocks.find((block) => block.role === "plan")!;
+    expect(plan?.text).toBe(text);
+    engine.command({ type: "send", commandId: "approve-message", sessionId: id, text: "planı uygula" });
+    await vi.waitFor(() => expect(turns).toHaveLength(2));
+    expect(turns[1].input.intent).toBe("build");
+    expect(turns[1].input.text).toContain(`<approved_plan>\n${text}\n</approved_plan>`);
+    expect(store.session(id).session.blocks.find((block) => block.id === plan.id)?.plan).toMatchObject({ status: "building", approvedText: text });
+    turns[1].finish();
+    await vi.waitFor(() => expect(store.session(id).status).toBe("idle"));
+    expect(store.session(id).session.blocks.find((block) => block.id === plan.id)?.plan?.status).toBe("built");
   });
 
   it("keeps a manually renamed title when first-turn generation finishes later", async () => {

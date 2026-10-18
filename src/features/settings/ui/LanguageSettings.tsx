@@ -1,4 +1,3 @@
-import { Badge } from "../../../shared/ui/Badge";
 import { useState } from "react";
 import {
   getLanguagePreference,
@@ -11,13 +10,14 @@ import {
   t,
   useLocale,
 } from "../../../shared/i18n";
-import { Group, Row, Select } from "./settingsControls";
+import { Group, Row, Select, SettingsFeedback } from "./settingsControls";
 
 export function LanguageSettings() {
   useLocale();
   const [pending, setPending] = useState(false);
   const [error, setError] = useState(false);
   const change = async (value: string) => {
+    if (pending) return;
     if (value !== "system" && !isLocale(value)) return;
     setPending(true);
     setError(false);
@@ -35,6 +35,13 @@ export function LanguageSettings() {
         id="interface-language"
         label={t("Application language")}
         description={t("Changes apply immediately. Your conversations and drafts are preserved.")}
+        feedback={
+          pending || error ? (
+            <SettingsFeedback state={error ? "error" : "loading"}>
+              {error ? t("Could not load the language. Please try again.") : t("Loading language…")}
+            </SettingsFeedback>
+          ) : null
+        }
       >
         <Select
           label={t("Application language")}
@@ -45,16 +52,6 @@ export function LanguageSettings() {
           }}
           disabled={pending}
         />
-        {pending ? (
-          <span role="status" className="text-[12px] text-content/60">
-            {t("Loading language…")}
-          </span>
-        ) : null}
-        {error ? (
-          <Badge tone="danger" role="alert">
-            {t("Could not load the language. Please try again.")}
-          </Badge>
-        ) : null}
       </Row>
       <DomainLanguageRow domain="git" />
       <DomainLanguageRow domain="technical" />
@@ -68,6 +65,7 @@ function DomainLanguageRow({ domain }: { domain: LanguageDomain }) {
   const [error, setError] = useState(false);
   const label = domain === "git" ? t("Git interface language") : t("Technical interface language");
   const change = async (value: string) => {
+    if (pending) return;
     if (value !== "app" && !isLocale(value)) return;
     setPending(true);
     setError(false);
@@ -83,6 +81,13 @@ function DomainLanguageRow({ domain }: { domain: LanguageDomain }) {
     <Row
       id={`${domain}-language`}
       label={label}
+      feedback={
+        pending || error ? (
+          <SettingsFeedback state={error ? "error" : "loading"}>
+            {error ? t("Could not load the language. Please try again.") : t("Loading language…")}
+          </SettingsFeedback>
+        ) : null
+      }
       description={
         domain === "git"
           ? t("Git panels, branches, commits and diffs. English by default.")
@@ -100,16 +105,6 @@ function DomainLanguageRow({ domain }: { domain: LanguageDomain }) {
         }}
         disabled={pending}
       />
-      {pending ? (
-        <span role="status" className="text-[12px] text-content/60">
-          {t("Loading language…")}
-        </span>
-      ) : null}
-      {error ? (
-        <Badge tone="danger" role="alert">
-          {t("Could not load the language. Please try again.")}
-        </Badge>
-      ) : null}
     </Row>
   );
 }

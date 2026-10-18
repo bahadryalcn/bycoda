@@ -229,7 +229,7 @@ export function sessionReferenceKey(reference: SessionReference): string {
 }
 export type HostCommand = HostCommandBody & {
   /** Atomic queue validation/consumption on hosts advertising sessions.queue. */
-  queued?: { id: string; clientId: string; revision: number };
+  queued?: { id: string; clientId: string; revision: number; selected?: boolean };
 };
 type HostCommandBody =
   | {

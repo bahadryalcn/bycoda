@@ -4,6 +4,7 @@ import {
   recoverAutomationRuns,
 } from "../../../features/automations/model/automations";
 import type { useAutomationLaunch } from "./useAutomationLaunch";
+import { refreshSshRunbookQueue } from "../../../features/connections/model/sshRunbookQueue";
 
 export interface AutomationRecoveryDeps {
   launchAutomation: ReturnType<typeof useAutomationLaunch>["launchAutomation"];
@@ -44,6 +45,8 @@ export function useAutomationRecovery({ launchAutomation }: AutomationRecoveryDe
     const evaluate = async () => {
       if (disposed || evaluating) return;
       evaluating = true;
+      // Materialize review intents only. SSH execution always needs a new owner review.
+      void refreshSshRunbookQueue();
       try {
         await ensureAutomationRecovery();
         const due = await claimDueAutomations();

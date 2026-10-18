@@ -17,6 +17,17 @@ const MAX_CLIPBOARD_PAYLOAD_CHARS = MAX_CLIPBOARD_BASE64_CHARS * 3 + MAX_CLIPBOA
 const MAX_CLIPBOARD_HTML_CHARS =
   MAX_CLIPBOARD_PAYLOAD_CHARS + MAX_CLIPBOARD_BASE64_CHARS + MAX_CLIPBOARD_METADATA_CHARS;
 
+function embeddedByteLength(data: string): number {
+  if (
+    data.length > MAX_CLIPBOARD_BASE64_CHARS ||
+    data.length % 4 !== 0 ||
+    !/^[A-Za-z0-9+/]*={0,2}$/.test(data)
+  )
+    throw new Error("Invalid or oversized attachment content.");
+  const padding = data.endsWith("==") ? 2 : data.endsWith("=") ? 1 : 0;
+  return (data.length * 3) / 4 - padding;
+}
+
 /** Folder paths the plain text does not already list, one per line. */
 function textWithFolderPaths(text: string, paths: string[]): string {
   const lines = new Set(text.split("\n"));
@@ -30,6 +41,7 @@ function textWithFolderPaths(text: string, paths: string[]): string {
 /** HTML keeps arbitrary files together with text across Bycoda windows. */
 export async function copyMessage(text: string, attachments: Attachment[] = []): Promise<void> {
   const files: CopiedFile[] = [];
+  let decodedBytes = 0;
   const folderPaths: string[] = [];
   for (const attachment of attachments) {
     // A folder has no bytes to copy, and asking for them fails the whole copy.
@@ -43,17 +55,29 @@ export async function copyMessage(text: string, attachments: Attachment[] = []):
       attachment.kind === "image" &&
       !attachment.data &&
       !attachment.previewUrl &&
+      !attachment.loadPreview &&
       !attachment.copyFromPath
     )
       continue;
     try {
       let data = attachment.data;
-      if (data === undefined && attachment.path) {
+      if (data === undefined && attachment.loadPreview) {
+        data = await attachment.loadPreview();
+      } else if (data === undefined && attachment.path) {
         data = await invoke<string>("read_file_base64", {
           path: attachment.path,
         });
       }
       if (data === undefined) throw new Error("File content is no longer available.");
+      decodedBytes += embeddedByteLength(data);
+      if (decodedBytes > MAX_EMBED_BYTES)
+        throw new Error(
+          "Copied attachments exceed the combined 20 MB clipboard limit. Copy fewer files.",
+        );
+      if (files.length >= MAX_ATTACHMENTS)
+        throw new Error(
+          `A clipboard message supports up to ${MAX_ATTACHMENTS} files. Copy fewer files.`,
+        );
       files.push({
         name: attachment.name,
         mimeType: attachment.mimeType,
@@ -81,7 +105,10 @@ export async function copyMessage(text: string, attachments: Attachment[] = []):
           "'": "&#39;",
         })[char]!,
     );
-  const html = `<div data-bycoda-files="${encodeURIComponent(JSON.stringify(files))}"><pre>${escape(payload)}</pre>${files
+  const encodedFiles = encodeURIComponent(JSON.stringify(files));
+  if (encodedFiles.length > MAX_CLIPBOARD_PAYLOAD_CHARS)
+    throw new Error("The copied attachment payload is too large. Copy fewer files.");
+  const html = `<div data-bycoda-files="${encodedFiles}"><pre>${escape(payload)}</pre>${files
     .map((file) => {
       const src = `data:${escape(file.mimeType)};base64,${escape(file.data)}`;
       return file.mimeType.startsWith("image/")
@@ -89,6 +116,8 @@ export async function copyMessage(text: string, attachments: Attachment[] = []):
         : `<a href="${src}" download="${escape(file.name)}">${escape(file.name)}</a>`;
     })
     .join("")}</div>`;
+  if (html.length > MAX_CLIPBOARD_HTML_CHARS)
+    throw new Error("The copied message is too large. Copy less text or fewer files.");
   const formats: Record<string, Blob> = {
     "text/plain": new Blob([payload], { type: "text/plain" }),
     "text/html": new Blob([html], { type: "text/html" }),
@@ -125,8 +154,7 @@ export function messageFilesFromClipboard(clipboard: Pick<DataTransfer, "getData
         typeof file?.data !== "string"
       )
         throw new Error("Invalid attachment");
-      const padding = file.data.endsWith("==") ? 2 : file.data.endsWith("=") ? 1 : 0;
-      decodedBytes += Math.floor((file.data.length * 3) / 4) - padding;
+      decodedBytes += embeddedByteLength(file.data);
       if (decodedBytes > MAX_EMBED_BYTES) return null;
     }
 

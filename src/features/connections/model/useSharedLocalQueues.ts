@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import { useEffect, type MutableRefObject } from "react";
+import { useEffect, useSyncExternalStore, type MutableRefObject } from "react";
 import type { QueuedMessage, Session } from "../../sessions/model/session";
 import { isRemoteProjectPath } from "../../projects/model/recents";
 import { loadRemoteCapabilities } from "./connections";
@@ -18,6 +18,19 @@ type Entry = {
   read: () => RemoteQueue;
 };
 const localQueues = new Map<string, Entry>();
+const queueListeners = new Set<() => void>();
+const notifyQueues = () => queueListeners.forEach((listener) => listener());
+export function useLocalSharedQueueClient(sessionId: string) {
+  return useSyncExternalStore(
+    (listener) => {
+      queueListeners.add(listener);
+      return () => {
+        queueListeners.delete(listener);
+      };
+    },
+    () => localQueues.get(sessionId)?.client,
+  );
+}
 const fields = (session: Session): RemoteQueue => ({
   messages: session.queuedMessages ?? [],
   status: session.queueStatus,
@@ -38,6 +51,7 @@ export async function submitSharedLocalQueue(
   entry.claiming = true;
   let token: string | undefined;
   let accepted = false;
+  let uncertain = false;
   try {
     entry.publish();
     if (steer) {
@@ -54,13 +68,15 @@ export async function submitSharedLocalQueue(
     entry.apply(true);
     const message = entry.client.snapshot().queue.messages.find((row) => row.id === id);
     if (!message) return false;
+    uncertain = true;
     accepted = await send(message);
+    uncertain = false;
     return accepted;
   } catch (error) {
     console.warn("Shared queued send is held", error);
     return false;
   } finally {
-    if (token) {
+    if (token && !uncertain) {
       try {
         await entry.client.finish(token, accepted);
         if (!accepted) {
@@ -185,6 +201,7 @@ export function useSharedLocalQueues(
               return changed;
             };
             localQueues.set(session.id, current);
+            notifyQueues();
             owned.add(session.id);
             await client.initialize(current.observed);
             current.apply();
@@ -213,6 +230,7 @@ export function useSharedLocalQueues(
       stopped = true;
       clearInterval(timer);
       for (const id of owned) localQueues.delete(id);
+      notifyQueues();
     };
   }, [sessionsRef, setSessions, hostReachable]);
 }

@@ -2,7 +2,7 @@ import { Button } from "../../../shared/ui/Button";
 import { t, useLocale } from "../../../shared/i18n";
 import { GitCompare, GripVertical, Terminal, X } from "../../../shared/ui/icons";
 import type { PointerEvent as ReactPointerEvent, ReactNode } from "react";
-import { useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useLayoutEffect, useRef, useState } from "react";
 import { copyText } from "../../../platform/tauri/clipboard";
 import { basename, openPathWithDefaultApp, prepareLocalFileCopy } from "../../../platform/tauri/fs";
 import { localExplorerPath } from "../../../shared/lib/remoteExplorerPaths";
@@ -43,6 +43,7 @@ import { useRemoteFolderBrowser } from "../../files/ui/useRemoteFolderBrowser";
 import { HarnessIcon } from "../../sessions/ui/HarnessIcon";
 import { TabLabel } from "../../../shared/ui/TabLabel";
 import { isRemoteProjectPath } from "../../projects/model/recents";
+import { adjacentItemId } from "../model/tabKeys";
 
 type Props = {
   files: FilePaneTab[];
@@ -274,10 +275,30 @@ export function SurfaceTabs({
   useLocale();
   const lockOverscroll = useLockOverscroll<HTMLDivElement>();
   const activeTabRef = useRef<HTMLDivElement | null>(null);
+  const rootRef = useRef<HTMLDivElement | null>(null);
+  const closingFocus = useRef<{ id: string; index: number; node: HTMLElement } | null>(null);
   const [menu, setMenu] = useState<SurfaceTabMenu | null>(null);
   const [fileActionError, setFileActionError] = useState<string | null>(null);
   const { revealInFileManager, folderBrowser } = useRemoteFolderBrowser();
   const fileIds = files.map((file) => file.id);
+  const entryFileId = fileIds.includes(activeFileId) ? activeFileId : fileIds[0];
+  const focusFileTab = useCallback((id: string | undefined) => {
+    Array.from(rootRef.current?.querySelectorAll<HTMLButtonElement>("[role=tab]") ?? [])
+      .find((node) => node.dataset.fileTabId === id)
+      ?.focus();
+  }, []);
+  useLayoutEffect(() => {
+    const fileIds = files.map((file) => file.id);
+    const pending = closingFocus.current;
+    if (!pending || fileIds.includes(pending.id)) return;
+    closingFocus.current = null;
+    if (document.activeElement !== pending.node && document.activeElement !== document.body) return;
+    focusFileTab(
+      fileIds.includes(activeFileId)
+        ? activeFileId
+        : fileIds[Math.min(pending.index, fileIds.length - 1)],
+    );
+  }, [files, activeFileId, focusFileTab]);
   const externalDrop = useExternalPaneDrop(Boolean(paneId));
   const nativeFileDrag = useRef<ReturnType<typeof beginWindowTabDrag> | null>(null);
   useLayoutEffect(
@@ -456,7 +477,7 @@ export function SurfaceTabs({
   }, [activeFileId, sortable.draggingId]);
 
   return (
-    <div className="flex h-9 min-w-0 shrink-0 border-b border-stroke">
+    <div ref={rootRef} className="flex h-9 min-w-0 shrink-0 border-b border-stroke">
       <div
         ref={lockOverscroll}
         role="tablist"
@@ -555,6 +576,60 @@ export function SurfaceTabs({
                 type="button"
                 role="tab"
                 aria-selected={active}
+                data-file-tab-id={closing ? undefined : file.id}
+                tabIndex={!closing && file.id === entryFileId ? 0 : -1}
+                aria-keyshortcuts="Delete Shift+F10 F2"
+                onKeyDown={(event) => {
+                  if (
+                    closing ||
+                    event.nativeEvent.isComposing ||
+                    event.ctrlKey ||
+                    event.metaKey ||
+                    event.altKey
+                  )
+                    return;
+                  if (event.key === "ContextMenu" || (event.shiftKey && event.key === "F10")) {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    const rect = event.currentTarget.getBoundingClientRect();
+                    onSelectFile(file.id);
+                    setMenu({ x: rect.left, y: rect.bottom, fileId: file.id });
+                    return;
+                  }
+                  if (event.shiftKey) return;
+                  if (event.key === "Delete") {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    closingFocus.current = {
+                      id: file.id,
+                      index: fileIds.indexOf(file.id),
+                      node: event.currentTarget,
+                    };
+                    onCloseFile(file.id);
+                    return;
+                  }
+                  if (event.key === "F2" && onPinFile) {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    onPinFile(file.id);
+                    return;
+                  }
+                  const next =
+                    event.key === "Home"
+                      ? fileIds[0]
+                      : event.key === "End"
+                        ? fileIds[fileIds.length - 1]
+                        : event.key === "ArrowLeft"
+                          ? adjacentItemId(fileIds, file.id, -1)
+                          : event.key === "ArrowRight"
+                            ? adjacentItemId(fileIds, file.id, 1)
+                            : null;
+                  if (!next) return;
+                  event.preventDefault();
+                  event.stopPropagation();
+                  onSelectFile(next);
+                  focusFileTab(next);
+                }}
                 title={appendProblems(tooltip, errors)}
                 onClick={() => {
                   if (sortable.consumeClick()) return;
@@ -600,6 +675,7 @@ export function SurfaceTabs({
                 title={t("Close {p0}", { p0: label })}
                 aria-label={t("Close {p0}", { p0: label })}
                 data-no-drag
+                tabIndex={-1}
                 onPointerDown={(event) => event.stopPropagation()}
                 onClick={(event) => {
                   event.stopPropagation();

@@ -5,7 +5,7 @@ import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { hslToRgb, isHexColor, type Rgb } from "../../../shared/lib/colorUtils";
 import { IS_LINUX, IS_MAC } from "../../../platform/tauri/platform";
 import { readFlag, writeFlag } from "./storageFlags";
-import { applyUiScale, loadUiScale } from "./uiScale";
+import { initUiScale } from "./uiScale";
 import { runThemeTransition } from "./themeTransition";
 import {
   applyPreparedNewThreadBackground,
@@ -179,9 +179,16 @@ function readNumber(key: string): number | null {
   }
 }
 
+const SHARED_APPEARANCE_EVENT = "bycoda:sharedappearancechange";
+function notifyAppearance(key: string) {
+  if (typeof window !== "undefined" && SHARED_APPEARANCE_KEYS.has(key))
+    window.dispatchEvent(new CustomEvent(SHARED_APPEARANCE_EVENT, { detail: key }));
+}
+
 function writeNumber(key: string, value: number) {
   try {
     localStorage.setItem(key, String(value));
+    notifyAppearance(key);
   } catch {
     // private mode / quota
   }
@@ -242,6 +249,7 @@ export function saveAccentColor(value: string | null) {
     if (value == null || next == null || next.toLowerCase() === ACCENT_COLOR_DEFAULT.toLowerCase())
       localStorage.removeItem(ACCENT_COLOR_KEY);
     else localStorage.setItem(ACCENT_COLOR_KEY, next);
+    notifyAppearance(ACCENT_COLOR_KEY);
   } catch {
     // private mode / quota
   }
@@ -332,14 +340,72 @@ const THEME_KEYS = new Set([
   SCHEME_KEY,
 ]);
 
-/** Other windows receive storage events; the writer already applies its theme. */
-export function subscribeThemeStorage(onChange: () => void) {
+const SHARED_APPEARANCE_KEYS = new Set([
+  ...THEME_KEYS,
+  OPACITY_KEY,
+  MAIN_OPACITY_KEY,
+  BLUR_KEY,
+  BODY_KEY,
+  CHAT_BACKGROUND_PATH_KEY,
+  CHAT_BACKGROUND_OPACITY_KEY,
+  CHAT_BACKGROUND_EMPTY_OPACITY_KEY,
+  CHAT_BACKGROUND_SESSION_OPACITY_KEY,
+  CHAT_BACKGROUND_SCOPE_KEY,
+  CHAT_BACKGROUND_BLUR_KEY,
+  NEW_THREAD_BACKGROUND_EFFECT_KEY,
+  DIFF_PALETTE_KEY,
+]);
+
+/** Shared preference notifications; window layout/open state stays local. */
+export function subscribeThemeStorage(onChange: (key: string | null) => void) {
   const onStorage = (event: StorageEvent) => {
     if (event.storageArea && event.storageArea !== localStorage) return;
-    if (event.key === null || THEME_KEYS.has(event.key)) onChange();
+    if (event.key === null || SHARED_APPEARANCE_KEYS.has(event.key)) onChange(event.key);
   };
+  const onLocal = (event: Event) => onChange((event as CustomEvent<string>).detail);
   window.addEventListener("storage", onStorage);
-  return () => window.removeEventListener("storage", onStorage);
+  window.addEventListener(SHARED_APPEARANCE_EVENT, onLocal);
+  return () => {
+    window.removeEventListener("storage", onStorage);
+    window.removeEventListener(SHARED_APPEARANCE_EVENT, onLocal);
+  };
+}
+
+function applyStoredAppearance(key: string | null = null) {
+  if (key === null || THEME_KEYS.has(key)) applyStoredTheme();
+  if (key === null || key === OPACITY_KEY) applySidebarOpacity(loadSidebarOpacity());
+  if (key === null || key === MAIN_OPACITY_KEY || key === OPACITY_KEY)
+    applyMainOpacity(loadMainOpacity());
+  if (key === null || key === BLUR_KEY) applySidebarBlur(loadSidebarBlur());
+  if (key === null || key === BODY_KEY) {
+    applyBodyGlass(loadBodyGlass());
+    if (nativeGlassReady && IS_LINUX) syncNativeGlass(isLightScheme() ? "light" : "dark");
+  }
+  if (
+    key === null ||
+    key === CHAT_BACKGROUND_PATH_KEY ||
+    key === NEW_THREAD_BACKGROUND_EFFECT_KEY
+  ) {
+    applyChatBackground(loadChatBackgroundPath());
+    window.dispatchEvent(new Event(CHAT_BACKGROUND_PATH_CHANGE_EVENT));
+  }
+  if (
+    key === null ||
+    key === CHAT_BACKGROUND_EMPTY_OPACITY_KEY ||
+    key === CHAT_BACKGROUND_OPACITY_KEY
+  )
+    applyChatBackgroundEmptyOpacity(loadChatBackgroundEmptyOpacity());
+  if (
+    key === null ||
+    key === CHAT_BACKGROUND_SESSION_OPACITY_KEY ||
+    key === CHAT_BACKGROUND_OPACITY_KEY
+  )
+    applyChatBackgroundSessionOpacity(loadChatBackgroundSessionOpacity());
+  if (key === null || key === CHAT_BACKGROUND_SCOPE_KEY)
+    applyChatBackgroundScope(loadChatBackgroundScope());
+  if (key === null || key === CHAT_BACKGROUND_BLUR_KEY)
+    applyChatBackgroundBlur(loadChatBackgroundBlur());
+  if (key === null || key === DIFF_PALETTE_KEY) applyDiffPalette(loadDiffPalette());
 }
 
 function applyStoredTheme() {
@@ -354,23 +420,13 @@ let themeStorageWatching = false;
 export function initAppearance() {
   initAppearancePreferences();
   document.documentElement.classList.toggle("is-mac", IS_MAC);
-  applyStoredTheme();
+  applyStoredAppearance();
   watchSystemColorScheme();
   if (!themeStorageWatching) {
     themeStorageWatching = true;
-    subscribeThemeStorage(applyStoredTheme);
+    subscribeThemeStorage(applyStoredAppearance);
   }
-  applySidebarOpacity(loadSidebarOpacity());
-  applyMainOpacity(loadMainOpacity());
-  applySidebarBlur(loadSidebarBlur());
-  applyBodyGlass(loadBodyGlass());
-  applyChatBackground(loadChatBackgroundPath());
-  applyChatBackgroundEmptyOpacity(loadChatBackgroundEmptyOpacity());
-  applyChatBackgroundSessionOpacity(loadChatBackgroundSessionOpacity());
-  applyChatBackgroundScope(loadChatBackgroundScope());
-  applyChatBackgroundBlur(loadChatBackgroundBlur());
-  applyDiffPalette(loadDiffPalette());
-  void applyUiScale(loadUiScale());
+  initUiScale();
 }
 
 function isThemePreference(value: unknown): value is ThemePreference {
@@ -389,6 +445,7 @@ export function loadThemePreference(): ThemePreference {
 export function saveThemePreference(value: ThemePreference) {
   try {
     localStorage.setItem(SCHEME_KEY, value);
+    notifyAppearance(SCHEME_KEY);
   } catch {
     // private mode / quota
   }
@@ -570,6 +627,7 @@ export function loadBodyGlass(): boolean {
 
 export function saveBodyGlass(value: boolean) {
   writeFlag(BODY_KEY, value);
+  notifyAppearance(BODY_KEY);
 }
 
 export function applyBodyGlass(value: boolean) {
@@ -589,6 +647,7 @@ export function saveChatBackgroundPath(value: string | null) {
   try {
     if (value) localStorage.setItem(CHAT_BACKGROUND_PATH_KEY, value);
     else localStorage.removeItem(CHAT_BACKGROUND_PATH_KEY);
+    notifyAppearance(CHAT_BACKGROUND_PATH_KEY);
   } catch {
     // private mode / quota
   }
@@ -634,6 +693,7 @@ export function loadNewThreadBackgroundEffect(): NewThreadBackgroundEffect {
 export function saveNewThreadBackgroundEffect(effect: NewThreadBackgroundEffect) {
   try {
     localStorage.setItem(NEW_THREAD_BACKGROUND_EFFECT_KEY, effect);
+    notifyAppearance(NEW_THREAD_BACKGROUND_EFFECT_KEY);
   } catch {
     // private mode / quota
   }
@@ -764,6 +824,7 @@ export function loadChatBackgroundScope(): ChatBackgroundScope {
 export function saveChatBackgroundScope(value: ChatBackgroundScope) {
   try {
     localStorage.setItem(CHAT_BACKGROUND_SCOPE_KEY, value);
+    notifyAppearance(CHAT_BACKGROUND_SCOPE_KEY);
   } catch {
     // private mode / quota
   }
@@ -790,6 +851,7 @@ export function loadDiffPalette(): DiffPalette {
 export function saveDiffPalette(value: DiffPalette) {
   try {
     localStorage.setItem(DIFF_PALETTE_KEY, value);
+    notifyAppearance(DIFF_PALETTE_KEY);
   } catch {
     // private mode / quota
   }

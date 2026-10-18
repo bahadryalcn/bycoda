@@ -22,6 +22,8 @@ import {
 } from "../../projects/model/projectTerminal";
 import { normalizeProjectPath } from "../../projects/model/recents";
 import { pathKey } from "../../../shared/lib/paths";
+import type { ServerTerminalRestore } from "../../connections/model/serverTerminalRestore";
+import { serverTerminalRestoreState } from "../../connections/model/serverTerminalRestoreState";
 import { parseRemotePath, remotePath } from "../../connections/model/remoteProjects";
 import {
   cachedRemoteSessionSummary,
@@ -61,6 +63,7 @@ export type WorkspaceSessionStub = {
 };
 
 export type WorkspaceSnapshot = {
+  serversRestore?: ServerTerminalRestore | null;
   tabs: WorkspaceTab[];
   sessions: WorkspaceSessionStub[];
   activeTabId: string;
@@ -107,6 +110,9 @@ export function collectWorkspaceSnapshot(
     projectTerminals: projectTerminals
       .map(sanitizeProjectTerminal)
       .filter((dock): dock is ProjectTerminalDock => dock != null),
+    ...(serverTerminalRestoreState.getSnapshot().initialized
+      ? { serversRestore: serverTerminalRestoreState.getSnapshot().restore ?? null }
+      : {}),
     ...(isDockSide(lastDockSide) ? { lastDockSide } : {}),
   });
   return withProjectReturnTargets(snapshot, memory);

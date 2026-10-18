@@ -29,6 +29,7 @@ import type { WorkspaceTab } from "../../../features/workspace/model/layout";
 import type { ToolWindow } from "../../model/toolWindows";
 import type { WindowTransferPayload } from "../../model/windowTransfer";
 import type { ProjectTerminalDockState } from "../terminal/useProjectTerminalDockState";
+import { useServerTerminalRestoreState } from "../../../features/connections/model/serverTerminalRestoreState";
 
 export interface WorkspaceSnapshotSyncDeps {
   tabs: WorkspaceTab[];
@@ -77,6 +78,7 @@ export function useWorkspaceSnapshotSync({
   setProjectCwd,
   setRecents,
 }: WorkspaceSnapshotSyncDeps): void {
+  const serverRestore = useServerTerminalRestoreState();
   useEffect(() => {
     const refs = inFlightRefs(sessions, tabs);
     if (refs.length > 0) sawInFlight.current = true;
@@ -129,6 +131,8 @@ export function useWorkspaceSnapshotSync({
     projectWorktreePath,
     workspaceNavigationRevision,
     remoteBindingRevision,
+    serverRestore.initialized,
+    serverRestore.restore,
   ]);
 
   useEffect(() => {

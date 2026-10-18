@@ -1,5 +1,5 @@
 .page {
-  inline-size: min(100%, 800px);
+  inline-size: 100%;
   min-inline-size: 0;
 }
 
@@ -37,7 +37,7 @@
 }
 
 .hint,
-.h3,
+.summary,
 .modified {
   color: var(--ui-text-muted);
 }
@@ -46,7 +46,7 @@
   color: var(--color-danger);
 }
 
-.h3 {
+.summary {
   white-space: nowrap;
   font-size: var(--ui-font-caption);
   font-variant-numeric: tabular-nums;
@@ -126,7 +126,7 @@
     grid-template-columns: minmax(0, 1fr) auto auto;
   }
 
-  .h3 {
+  .summary {
     grid-row: 2;
     grid-column: 1 / -1;
   }

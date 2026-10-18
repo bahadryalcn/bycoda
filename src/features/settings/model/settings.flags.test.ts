@@ -95,7 +95,7 @@ describe.each([
     appearance.loadBodyGlass,
     appearance.saveBodyGlass,
     appearance.BODY_GLASS_DEFAULT,
-    undefined,
+    "bycoda:sharedappearancechange",
   ],
   [
     "bycoda.projectRailOpen",
@@ -144,7 +144,9 @@ describe.each([
   it.each([false, true])("persists %s before notifying listeners", (value) => {
     const dispatch = vi.spyOn(window, "dispatchEvent");
     const listener = vi.fn((event: Event) => {
-      expect((event as CustomEvent<boolean>).detail).toBe(value);
+      expect((event as CustomEvent<boolean | string>).detail).toBe(
+        key === "bycoda.bodyGlass" ? key : value,
+      );
       expect(load()).toBe(value);
     });
     if (eventName) window.addEventListener(eventName, listener);
@@ -172,7 +174,10 @@ describe.each([
     expect(dispatch).toHaveBeenCalledTimes(eventName ? 1 : 0);
     if (eventName) {
       expect(dispatch).toHaveBeenCalledWith(
-        expect.objectContaining({ type: eventName, detail: value }),
+        expect.objectContaining({
+          type: eventName,
+          detail: key === "bycoda.bodyGlass" ? key : value,
+        }),
       );
     }
   });

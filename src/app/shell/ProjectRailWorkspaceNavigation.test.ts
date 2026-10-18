@@ -64,6 +64,27 @@ const render = async (cwd = "G:/wallet/api", paths = ["G:/wallet/api", "G:/walle
 const workspaceButton = () =>
   host.querySelector<HTMLButtonElement>('button[aria-label="Open Wallet"]')!;
 
+it("opens Servers from expanded and compact tools without a project", async () => {
+  const onOpenServers = vi.fn();
+  await act(async () =>
+    root.render(
+      createElement(ProjectRail, {
+        cwd: "",
+        recents: [],
+        onSelectProject: select,
+        onOpenProject: vi.fn(),
+        onOpenServers,
+        serversActive: true,
+      }),
+    ),
+  );
+  const buttons = [...host.querySelectorAll<HTMLButtonElement>('button[aria-label="Servers"]')];
+  expect(buttons).toHaveLength(2);
+  for (const button of buttons) await act(async () => button.click());
+  expect(onOpenServers).toHaveBeenCalledTimes(2);
+  expect(select).not.toHaveBeenCalled();
+});
+
 it("selects the workspace root through normal project navigation without opening a modal", async () => {
   await render();
   expect(workspaceButton().title).toBe("G:/wallet");

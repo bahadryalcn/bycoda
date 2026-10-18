@@ -34,6 +34,7 @@ pub struct Note {
     pub slug_pending: bool,
     pub created_at: i64,
     pub updated_at: i64,
+    pub content_updated_at: i64,
 }
 
 /// The bounded library/picker payload; details stay behind notes_get.
@@ -52,11 +53,13 @@ pub struct NoteSummary {
     pub slug_pending: bool,
     pub created_at: i64,
     pub updated_at: i64,
+    pub content_updated_at: i64,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct NoteUpsert {
+    pub expected_updated_at: Option<i64>,
     pub id: String,
     pub title: String,
     pub body: String,
@@ -121,6 +124,15 @@ pub fn ensure_notes_table(conn: &Connection) -> rusqlite::Result<()> {
             [],
         )?;
     }
+    let content_present: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM pragma_table_info('notes') WHERE name = 'content_updated_at'",
+        [],
+        |row| row.get(0),
+    )?;
+    if content_present == 0 {
+        conn.execute_batch("ALTER TABLE notes ADD COLUMN content_updated_at INTEGER NOT NULL DEFAULT 0; UPDATE notes SET content_updated_at = updated_at;")?;
+    }
+    conn.execute_batch("CREATE INDEX IF NOT EXISTS notes_content_updated_idx ON notes (content_updated_at DESC, id);")?;
     let search_exists: bool = conn.query_row(
         "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE name = 'notes_search_index')",
         [],
@@ -194,7 +206,7 @@ pub fn notes_upsert(store: State<'_, SessionStore>, note: NoteUpsert) -> Result<
         return Err("Note is too large".into());
     }
     let conn = store.lock_conn()?;
-    upsert_note(&conn, &note).map_err(|e| e.to_string())
+    checked_upsert_note(&conn, &note)
 }
 
 #[tauri::command(async)]
@@ -211,8 +223,8 @@ pub fn notes_link_session(
 
 fn link_note_session(conn: &Connection, id: &str, session_id: &str) -> rusqlite::Result<Note> {
     conn.execute(
-        "UPDATE notes SET source_session_id = ?2 WHERE id = ?1",
-        params![id, session_id],
+        "UPDATE notes SET source_session_id = ?2, updated_at = MAX(updated_at + 1, ?3) WHERE id = ?1 AND source_session_id IS NOT ?2",
+        params![id, session_id, now_millis()],
     )?;
     get_note(conn, id)?.ok_or(rusqlite::Error::QueryReturnedNoRows)
 }
@@ -222,10 +234,11 @@ pub fn notes_delete(
     app: AppHandle,
     store: State<'_, SessionStore>,
     id: String,
+    expected_updated_at: i64,
 ) -> Result<(), String> {
     validate_id(&id, "note")?;
     let conn = store.lock_conn()?;
-    delete_note(&conn, &id).map_err(|e| e.to_string())?;
+    checked_delete_note(&conn, &id, expected_updated_at)?;
     drop(conn);
     // The note deletion is authoritative. A cleanup failure should not leave a
     // successfully deleted note visible in the UI.
@@ -407,9 +420,9 @@ fn remove_note_assets(app: &AppHandle, note_id: &str) -> Result<(), String> {
 fn list_notes(conn: &Connection) -> rusqlite::Result<Vec<Note>> {
     let mut stmt = conn.prepare(
         "SELECT id, slug, title, body, source_session_id, source_cwd, tags_json,
-                created_at, updated_at, slug_pending
+                created_at, updated_at, slug_pending, content_updated_at
          FROM notes
-         ORDER BY updated_at DESC, id ASC",
+         ORDER BY content_updated_at DESC, id ASC",
     )?;
     let rows = stmt.query_map([], read_note)?;
     rows.collect()
@@ -418,8 +431,8 @@ fn list_notes(conn: &Connection) -> rusqlite::Result<Vec<Note>> {
 fn list_note_summaries(conn: &Connection) -> rusqlite::Result<Vec<NoteSummary>> {
     let mut stmt = conn.prepare(
         "SELECT id, slug, title, substr(body, 1, 1024), source_session_id, source_cwd,
-                tags_json, created_at, updated_at, slug_pending
-         FROM notes ORDER BY updated_at DESC, id ASC",
+                tags_json, created_at, updated_at, slug_pending, content_updated_at
+         FROM notes ORDER BY content_updated_at DESC, id ASC",
     )?;
     let rows = stmt.query_map([], |row| {
         let tags: String = row.get(6)?;
@@ -433,6 +446,7 @@ fn list_note_summaries(conn: &Connection) -> rusqlite::Result<Vec<NoteSummary>> 
             tags: serde_json::from_str(&tags).unwrap_or_default(),
             created_at: row.get(7)?,
             updated_at: row.get(8)?,
+            content_updated_at: row.get(10)?,
             slug_pending: row.get(9)?,
         })
     })?;
@@ -451,7 +465,7 @@ fn search_notes(conn: &Connection, query: &str) -> rusqlite::Result<Vec<String>>
         let mut stmt = conn.prepare(
             "SELECT notes.id FROM notes_search_index
              JOIN notes ON notes.rowid = notes_search_index.rowid
-             WHERE notes_search_index MATCH ?1 ORDER BY notes.updated_at DESC, notes.id ASC",
+             WHERE notes_search_index MATCH ?1 ORDER BY notes.content_updated_at DESC, notes.id ASC",
         )?;
         let rows = stmt.query_map(params![phrase], |row| row.get(0))?;
         rows.collect()
@@ -460,7 +474,7 @@ fn search_notes(conn: &Connection, query: &str) -> rusqlite::Result<Vec<String>>
         // searches in SQLite without transporting bodies to the webview.
         let mut stmt = conn.prepare(
             "SELECT id, title, body, slug, coalesce(source_cwd, ''), tags_json
-             FROM notes ORDER BY updated_at DESC, id ASC",
+             FROM notes ORDER BY content_updated_at DESC, id ASC",
         )?;
         let needle = query.to_lowercase();
         let rows = stmt.query_map([], |row| {
@@ -486,13 +500,50 @@ fn search_notes(conn: &Connection, query: &str) -> rusqlite::Result<Vec<String>>
 fn get_note(conn: &Connection, id: &str) -> rusqlite::Result<Option<Note>> {
     conn.query_row(
         "SELECT id, slug, title, body, source_session_id, source_cwd, tags_json,
-                created_at, updated_at, slug_pending
+                created_at, updated_at, slug_pending, content_updated_at
          FROM notes
          WHERE id = ?1",
         params![id],
         read_note,
     )
     .optional()
+}
+
+fn checked_upsert_note(conn: &Connection, note: &NoteUpsert) -> Result<Note, String> {
+    let tx = rusqlite::Transaction::new_unchecked(conn, rusqlite::TransactionBehavior::Immediate)
+        .map_err(|e| e.to_string())?;
+    let existing = get_note(&tx, &note.id).map_err(|e| e.to_string())?;
+    match (existing, note.expected_updated_at) {
+        (None, Some(0)) => {}
+        (Some(current), Some(expected)) if expected > 0 && current.updated_at == expected => {}
+        (None, _) => {
+            return Err(
+                "This note was deleted. Your draft is preserved; save it as a new note.".into(),
+            )
+        }
+        _ => {
+            return Err(
+                "This note changed elsewhere. Your draft is preserved; refresh before retrying."
+                    .into(),
+            )
+        }
+    }
+    let saved = upsert_note(&tx, note).map_err(|e| e.to_string())?;
+    tx.commit().map_err(|e| e.to_string())?;
+    Ok(saved)
+}
+
+fn checked_delete_note(conn: &Connection, id: &str, expected: i64) -> Result<(), String> {
+    let changed = conn
+        .execute(
+            "DELETE FROM notes WHERE id = ?1 AND updated_at = ?2",
+            params![id, expected],
+        )
+        .map_err(|e| e.to_string())?;
+    if changed != 1 {
+        return Err("This note changed or was deleted. Refresh before deleting it.".into());
+    }
+    Ok(())
 }
 
 fn upsert_note(conn: &Connection, note: &NoteUpsert) -> rusqlite::Result<Note> {
@@ -514,14 +565,9 @@ fn upsert_note(conn: &Connection, note: &NoteUpsert) -> rusqlite::Result<Note> {
     let now = now_millis();
 
     if let Some(existing) = get_note(conn, &note.id)? {
-        let project_cwd = source_cwd.map(str::to_string).or(existing.source_cwd);
-        // Project changes keep the note in its current position in the list.
-        let updated_at =
-            if title == existing.title && body == existing.body && tags == existing.tags {
-                existing.updated_at
-            } else {
-                now
-            };
+        let project_cwd = source_cwd
+            .map(str::to_string)
+            .or(existing.source_cwd.clone());
         // A pending slug is replaced once, by the first finalizing save with
         // a real title; every other slug stays put so @note/ references keep
         // working. Nothing here sets pending back on.
@@ -529,12 +575,29 @@ fn upsert_note(conn: &Connection, note: &NoteUpsert) -> rusqlite::Result<Note> {
             if note.finalize_slug && existing.slug_pending && !is_placeholder_title(&title) {
                 (unique_slug(conn, &title)?, false)
             } else {
-                (existing.slug, existing.slug_pending)
+                (existing.slug.clone(), existing.slug_pending)
             };
+        let changed = title != existing.title
+            || body != existing.body
+            || tags != existing.tags
+            || project_cwd != existing.source_cwd
+            || slug != existing.slug
+            || slug_pending != existing.slug_pending;
+        let content_updated_at =
+            if title != existing.title || body != existing.body || tags != existing.tags {
+                now.max(existing.content_updated_at + 1)
+            } else {
+                existing.content_updated_at
+            };
+        let updated_at = if changed {
+            now.max(existing.updated_at + 1)
+        } else {
+            existing.updated_at
+        };
         conn.execute(
             "UPDATE notes
              SET title = ?1, body = ?2, tags_json = ?3, updated_at = ?4,
-                 source_cwd = ?6, slug = ?7, slug_pending = ?8
+                 source_cwd = ?6, slug = ?7, slug_pending = ?8, content_updated_at = ?9
              WHERE id = ?5",
             params![
                 title,
@@ -544,7 +607,8 @@ fn upsert_note(conn: &Connection, note: &NoteUpsert) -> rusqlite::Result<Note> {
                 note.id,
                 project_cwd,
                 slug,
-                slug_pending
+                slug_pending,
+                content_updated_at
             ],
         )?;
         Ok(Note {
@@ -558,6 +622,7 @@ fn upsert_note(conn: &Connection, note: &NoteUpsert) -> rusqlite::Result<Note> {
             slug_pending,
             created_at: existing.created_at,
             updated_at,
+            content_updated_at,
         })
     } else {
         // Decided before normalization: a blank title gets a generated slug,
@@ -567,8 +632,8 @@ fn upsert_note(conn: &Connection, note: &NoteUpsert) -> rusqlite::Result<Note> {
         conn.execute(
             "INSERT INTO notes (
                id, slug, title, body, source_session_id, source_cwd, tags_json,
-               created_at, updated_at, slug_pending
-             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+               created_at, updated_at, slug_pending, content_updated_at
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
             params![
                 note.id,
                 slug,
@@ -579,7 +644,8 @@ fn upsert_note(conn: &Connection, note: &NoteUpsert) -> rusqlite::Result<Note> {
                 tags_json,
                 now,
                 now,
-                slug_pending
+                slug_pending,
+                now
             ],
         )?;
         Ok(Note {
@@ -593,10 +659,12 @@ fn upsert_note(conn: &Connection, note: &NoteUpsert) -> rusqlite::Result<Note> {
             slug_pending,
             created_at: now,
             updated_at: now,
+            content_updated_at: now,
         })
     }
 }
 
+#[cfg(test)]
 fn delete_note(conn: &Connection, id: &str) -> rusqlite::Result<()> {
     conn.execute("DELETE FROM notes WHERE id = ?1", params![id])?;
     Ok(())
@@ -615,6 +683,7 @@ fn read_note(row: &rusqlite::Row<'_>) -> rusqlite::Result<Note> {
         source_cwd: row.get(5)?,
         created_at: row.get(7)?,
         updated_at: row.get(8)?,
+        content_updated_at: row.get(10)?,
         slug_pending: row.get(9)?,
     })
 }
@@ -717,6 +786,109 @@ fn unique_slug(conn: &Connection, title: &str) -> rusqlite::Result<String> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn independent_connections_cannot_both_save_the_same_version() {
+        let path = std::env::temp_dir().join(format!(
+            "bycoda-note-concurrency-{}-{}.db",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let conn = Connection::open(&path).unwrap();
+        ensure_notes_table(&conn).unwrap();
+        let mut input = NoteUpsert {
+            expected_updated_at: Some(0),
+            id: "race".into(),
+            title: "Plan".into(),
+            body: "Original".into(),
+            tags: vec![],
+            source_session_id: None,
+            source_cwd: None,
+            finalize_slug: false,
+        };
+        let original = checked_upsert_note(&conn, &input).unwrap();
+        input.expected_updated_at = Some(original.updated_at);
+        let gate = std::sync::Arc::new(std::sync::Barrier::new(2));
+        let writers: Vec<_> = ["Writer A", "Writer B"]
+            .into_iter()
+            .map(|body| {
+                let path = path.clone();
+                let gate = gate.clone();
+                let mut input = input.clone();
+                input.body = body.into();
+                std::thread::spawn(move || {
+                    let conn = Connection::open(path).unwrap();
+                    conn.busy_timeout(std::time::Duration::from_secs(2))
+                        .unwrap();
+                    gate.wait();
+                    checked_upsert_note(&conn, &input)
+                })
+            })
+            .collect();
+        let results: Vec<_> = writers
+            .into_iter()
+            .map(|writer| writer.join().unwrap())
+            .collect();
+        assert_eq!(results.iter().filter(|result| result.is_ok()).count(), 1);
+        assert!(results
+            .iter()
+            .find_map(|result| result.as_ref().err())
+            .unwrap()
+            .contains("changed elsewhere"));
+        let saved = get_note(&conn, "race").unwrap().unwrap();
+        assert_eq!(
+            saved.body,
+            results
+                .iter()
+                .find_map(|result| result.as_ref().ok())
+                .unwrap()
+                .body
+        );
+        drop(conn);
+        std::fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn atomic_versions_reject_overlapping_writers_and_deleted_rows() {
+        let store = SessionStore::open_in_memory().unwrap();
+        let conn = store.lock_conn().unwrap();
+        let mut input = NoteUpsert {
+            expected_updated_at: Some(0),
+            id: "atomic".into(),
+            title: "Plan".into(),
+            body: "Original".into(),
+            tags: vec![],
+            source_session_id: None,
+            source_cwd: Some("/a".into()),
+            finalize_slug: false,
+        };
+        let original = checked_upsert_note(&conn, &input).unwrap();
+        assert!(checked_upsert_note(&conn, &input).is_err());
+        input.expected_updated_at = Some(original.updated_at);
+        input.source_cwd = Some("/b".into());
+        let moved = checked_upsert_note(&conn, &input).unwrap();
+        assert!(moved.updated_at > original.updated_at);
+        assert_eq!(moved.content_updated_at, original.content_updated_at);
+        input.body = "Stale writer".into();
+        assert!(checked_upsert_note(&conn, &input)
+            .unwrap_err()
+            .contains("changed elsewhere"));
+        assert!(checked_delete_note(&conn, &input.id, original.updated_at).is_err());
+        assert_eq!(
+            get_note(&conn, &input.id).unwrap().unwrap().body,
+            "Original"
+        );
+        checked_delete_note(&conn, &input.id, moved.updated_at).unwrap();
+        input.expected_updated_at = Some(moved.updated_at);
+        assert!(checked_upsert_note(&conn, &input)
+            .unwrap_err()
+            .contains("deleted"));
+        assert!(get_note(&conn, &input.id).unwrap().is_none());
+        input.expected_updated_at = None;
+        assert!(checked_upsert_note(&conn, &input).is_err());
+    }
     use super::*;
     use crate::session_store::SessionStore;
 
@@ -817,7 +989,7 @@ mod tests {
             assert_eq!(linked.source_session_id.as_deref(), Some("session-1"));
             assert_eq!(linked.body, original.body);
             assert_eq!(linked.slug, original.slug);
-            assert_eq!(linked.updated_at, original.updated_at);
+            assert!(linked.updated_at > original.updated_at);
             assert!(link_note_session(&conn, "missing", "session-1").is_err());
         }
         let edited = upsert(&store, "linked", "Renamed", "Edited text");
@@ -830,6 +1002,7 @@ mod tests {
         upsert_note(
             &conn,
             &NoteUpsert {
+                expected_updated_at: None,
                 id: id.into(),
                 title: title.into(),
                 body: body.into(),
@@ -927,6 +1100,7 @@ mod tests {
         let updated = upsert_note(
             &conn,
             &NoteUpsert {
+                expected_updated_at: None,
                 id: "n1".into(),
                 title: "Alpha renamed".into(),
                 body: "changed".into(),
@@ -961,10 +1135,11 @@ mod tests {
     }
 
     #[test]
-    fn changing_only_project_preserves_note_order() {
+    fn changing_only_project_invalidates_stale_versions() {
         let store = SessionStore::open_in_memory().unwrap();
         let conn = store.lock_conn().unwrap();
         let mut input = NoteUpsert {
+            expected_updated_at: None,
             id: "older".into(),
             title: "Plan".into(),
             body: "Keep this text.".into(),
@@ -978,6 +1153,7 @@ mod tests {
         upsert_note(
             &conn,
             &NoteUpsert {
+                expected_updated_at: None,
                 id: "newer".into(),
                 title: "Newer note".into(),
                 body: "Another note.".into(),
@@ -992,7 +1168,7 @@ mod tests {
 
         input.source_cwd = Some("/work/portognjeeen".into());
         let moved = upsert_note(&conn, &input).unwrap();
-        assert_eq!(moved.updated_at, original.updated_at);
+        assert!(moved.updated_at > original.updated_at);
         assert_eq!(moved.source_cwd.as_deref(), Some("/work/portognjeeen"));
         assert_eq!(moved.source_session_id, original.source_session_id);
         assert_eq!(moved.slug, original.slug);
@@ -1001,7 +1177,7 @@ mod tests {
         let listed = list_notes(&conn).unwrap();
         assert_eq!(listed[0].id, "newer");
         assert_eq!(listed[1].id, "older");
-        assert_eq!(listed[1].updated_at, original.updated_at);
+        assert_eq!(listed[1].content_updated_at, original.content_updated_at);
         assert_eq!(listed[1].source_cwd, moved.source_cwd);
 
         input.title = "Updated plan".into();
@@ -1025,6 +1201,7 @@ mod tests {
         upsert_note(
             &conn,
             &NoteUpsert {
+                expected_updated_at: None,
                 id: id.into(),
                 title: title.into(),
                 body: String::new(),
@@ -1153,6 +1330,7 @@ mod tests {
                 let saved = upsert_note(
                     &conn,
                     &NoteUpsert {
+                        expected_updated_at: None,
                         id: id.into(),
                         title: "Release notes".into(),
                         body: "edited".into(),

@@ -18,6 +18,10 @@ const entries: Entry[] = [];
 export function hasActiveOverlay() {
   return entries.length > 0;
 }
+/** A modal owns workspace keyboard scope, including its portalled children. */
+export function hasActiveModalOverlay() {
+  return entries.some((entry) => entry.modal);
+}
 const inert = new Map<HTMLElement, boolean>();
 let observer: MutationObserver | undefined;
 function visible(element: HTMLElement) {

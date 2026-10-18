@@ -3,6 +3,9 @@ import { createRoot } from "react-dom/client";
 import { useState } from "react";
 import { ToolPanel } from "../../src/app/shell/ToolNavigation";
 import { SocialView } from "../../src/features/social/ui/SocialView";
+import { XMediaFields } from "../../src/features/social/ui/XMediaFields";
+import type { SocialClient } from "../../src/features/social/model/socialClient";
+import type { SocialMedia } from "../../src/features/social/model/social";
 import {
   SOCIAL_COLLECTIONS,
   type SocialCollection,
@@ -14,6 +17,8 @@ import "../../src/styles/index.css";
 import type { SocialProgram } from "../../src/features/social/model/socialProgram";
 const programFixture = new URLSearchParams(location.search).has("programs");
 const programRecords: SocialProgram[] = [];
+const browserWorkflows: import("../../src/features/social/model/socialBrowser").SocialBrowserWorkflow[] =
+  [];
 
 // Deterministic host bridge: never reads live social accounts or sends content.
 const snapshot: SocialSnapshot = {
@@ -64,6 +69,32 @@ const snapshot: SocialSnapshot = {
 const calls: { command: string; args: Record<string, unknown> }[] = [];
 let configured = false;
 let oauthStatus = "idle";
+let xProfileFixture = {
+  name: "bycoda",
+  bio: "Fixture bio",
+  location: "",
+  website: "https://example.test",
+};
+if (new URLSearchParams(location.search).has("browser-monitor")) {
+  snapshot.accounts[0].connected = true;
+  snapshot.accounts[0].connection = "browser";
+}
+if (new URLSearchParams(location.search).has("tiktok")) {
+  snapshot.accounts.push({
+    id: "tiktok",
+    platform: "tiktok",
+    platformId: "creator",
+    name: "Demo TikTok",
+    accountType: "member",
+    scopes: ["user.info.basic", "video.publish"],
+    connected: true,
+    accessApproved: true,
+    paused: false,
+    executorId: "fixture",
+    grants: { demo: ["read", "draft", "publish"] },
+    createdAt: 1,
+  });
+}
 let projects = [{ id: "demo", cwd: "/demo", name: "Demo project" }];
 let workflowWrites = false;
 function fixtureCampaignState(campaign: SocialSnapshot["campaigns"][number]) {
@@ -478,9 +509,80 @@ Object.assign(window, {
       if (command === "social_authority_status") return null;
       if (command === "remote_request") {
         if (args.method === "projects.list") return structuredClone(projects);
+        if (args.method === "social.browser.profile.read") return structuredClone(xProfileFixture);
+        if (args.method === "social.browser.profile.update") {
+          const patch = (args.params as { patch: Partial<typeof xProfileFixture> }).patch;
+          xProfileFixture = { ...xProfileFixture, ...patch };
+          return structuredClone(xProfileFixture);
+        }
+        if (args.method === "social.browser.profile.follow")
+          return {
+            handle: (args.params as { handle: string }).handle,
+            platformId: "123",
+            following: true,
+            changed: true,
+          };
+        if (args.method === "social.monitoring.status")
+          return {
+            status: "partial",
+            pollingEnabled: true,
+            accountActive: true,
+            checkedAt: Date.parse("2026-10-19T00:00:00Z"),
+            coverage: [
+              { channel: "mentions", status: "read" },
+              { channel: "messages", status: "unavailable" },
+            ],
+          };
+        if (args.method === "social.browser.workflow.status") {
+          const { accountId } = args.params as { accountId: string };
+          return {
+            available: true,
+            reason: "Fixture only",
+            workflows: structuredClone(
+              browserWorkflows.filter((item) => item.accountId === accountId),
+            ),
+          };
+        }
+        if (args.method === "social.browser.workflow.begin") {
+          const input = args.params as {
+            accountId: string;
+            intent: import("../../src/features/social/model/socialBrowser").SocialBrowserIntent;
+          };
+          const account = snapshot.accounts.find((item) => item.id === input.accountId)!;
+          const workflow: import("../../src/features/social/model/socialBrowser").SocialBrowserWorkflow =
+            {
+              id: `workflow-${browserWorkflows.length}`,
+              accountId: account.id,
+              platform: account.platform,
+              intent: input.intent,
+              status: "awaiting_owner",
+              outcome: "unverified",
+              createdAt: Date.now(),
+              updatedAt: Date.now(),
+              expiresAt: Date.now() + 1200000,
+            };
+          browserWorkflows.unshift(workflow);
+          return structuredClone(workflow);
+        }
+        if (args.method === "social.browser.workflow.cancel") {
+          const { accountId } = args.params as { accountId: string };
+          for (const workflow of browserWorkflows)
+            if (workflow.accountId === accountId && workflow.status === "awaiting_owner")
+              workflow.status = "cancelled";
+          return null;
+        }
         if (args.method === "social.oauth.availability")
           return { x: { configured, reason: "Fixture configuration" } };
         if (args.method === "social.oauth.status") return { status: oauthStatus, candidates: [] };
+        if (args.method === "social.tiktok.creator")
+          return {
+            nickname: "Demo TikTok",
+            privacyOptions: ["SELF_ONLY", "PUBLIC_TO_EVERYONE"],
+            commentDisabled: true,
+            duetDisabled: false,
+            stitchDisabled: false,
+            maxDurationSeconds: 60,
+          };
         if (args.method === "social.oauth.begin") {
           oauthStatus = "waiting";
           return {
@@ -636,6 +738,7 @@ document.body.style.cssText =
 function SocialFixture() {
   const [shown, setShown] = useState(true);
   Object.assign(window, { socialFixtureShow: setShown });
+  if (new URLSearchParams(location.search).has("x-media")) return <XMediaFixture />;
   return (
     <div className="flex h-screen min-w-0 flex-col">
       <ToolPanel active={shown}>
@@ -643,6 +746,22 @@ function SocialFixture() {
       </ToolPanel>
       {shown ? null : <div data-other-tool>Diğer araç</div>}
     </div>
+  );
+}
+function XMediaFixture() {
+  const [media, setMedia] = useState<SocialMedia[]>([]);
+  const client = {
+    upload: async () => ({ uploadId: "synthetic-image" }),
+    uploadVideo: async (_file: File, progress: (percent: number) => void) => {
+      progress(100);
+      return { uploadId: "synthetic-video" };
+    },
+  } as unknown as SocialClient;
+  return (
+    <main className="bycoda-arc">
+      <XMediaFields value={media} client={client} onChange={setMedia} />
+      <output aria-label="Eklerin türleri">{media.map((item) => item.kind).join(",")}</output>
+    </main>
   );
 }
 const fixtureQueryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });

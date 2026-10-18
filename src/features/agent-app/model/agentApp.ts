@@ -242,6 +242,18 @@ function startLaunch(source: Session, input: Record<string, unknown>): QuickLaun
   };
 }
 
+/** Preserve valid persisted request keys; bound deeper ancestry for every API. */
+async function agentRequestKey(sourceId: string, requestId: string, limit = 256): Promise<string> {
+  // Session/note IDs allow 256 characters; persisted appRequestId allows 512.
+  const legacy = `app-${sourceId}-${requestId}`;
+  if (legacy.length <= limit) return legacy;
+  const digest = await crypto.subtle.digest(
+    "SHA-256",
+    new TextEncoder().encode(JSON.stringify([sourceId, requestId])),
+  );
+  return `app-h-${Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("")}`;
+}
+
 export async function handleAgentApp(
   source: Session,
   requestId: string,
@@ -289,7 +301,7 @@ export async function handleAgentApp(
         throw new Error("Use the current conversation to continue this session");
       if (!/^[A-Za-z0-9_-]{1,128}$/.test(requestId)) throw new Error("Invalid request ID");
       await projectSession(source, id, host);
-      const result = await host.send(id, prompt, `app-${source.id}-${requestId}`);
+      const result = await host.send(id, prompt, await agentRequestKey(source.id, requestId, 512));
       return { sessionId: id, submitted: true, requestId, ...result };
     }
     case "sessions.wait": {
@@ -311,7 +323,8 @@ export async function handleAgentApp(
         throw new Error("This session is already waiting; wait for one session at a time");
       waitingSources.add(source.id);
       try {
-        const appRequestId = sentRequestId && `app-${source.id}-${sentRequestId}`;
+        const appRequestId =
+          sentRequestId && (await agentRequestKey(source.id, sentRequestId, 512));
         const deadline = Date.now() + (timeoutSeconds as number) * 1000;
         for (;;) {
           const target = await host.session(id);
@@ -336,7 +349,7 @@ export async function handleAgentApp(
       if (id === source.id) throw new Error("Use the composer to save a draft in this session");
       if (!/^[A-Za-z0-9_-]{1,128}$/.test(requestId)) throw new Error("Invalid request ID");
       await projectSession(source, id, host);
-      const result = await host.draft(id, prompt, `app-${source.id}-${requestId}`);
+      const result = await host.draft(id, prompt, await agentRequestKey(source.id, requestId, 512));
       return { sessionId: id, saved: true, ...result };
     }
     case "sessions.start": {
@@ -359,7 +372,7 @@ export async function handleAgentApp(
         placement === "tab"
           ? undefined
           : (optionalString(input.besideSessionId, "besideSessionId", 256) ?? source.id);
-      const id = `app-${source.id}-${requestId}`;
+      const id = await agentRequestKey(source.id, requestId);
       if (besideSessionId)
         await host.start(launch, id, {
           direction: placement as SplitDir,
@@ -461,6 +474,7 @@ export async function handleAgentApp(
         if (!current) throw new Error("Note was not found");
         return host.saveNote({
           id,
+          expectedUpdatedAt: current.updatedAt,
           title: title ?? current.title,
           body: body ?? current.body,
           tags: tags ?? current.tags,
@@ -468,7 +482,7 @@ export async function handleAgentApp(
       }
       if (body === undefined) throw new Error("body is required to create a note");
       if (!/^[A-Za-z0-9_-]{1,128}$/.test(requestId)) throw new Error("Invalid request ID");
-      const createdId = `app-${source.id}-${requestId}`;
+      const createdId = await agentRequestKey(source.id, requestId);
       const existing = await host.note(createdId);
       if (existing) {
         if (
@@ -481,6 +495,7 @@ export async function handleAgentApp(
       }
       return host.saveNote({
         id: createdId,
+        expectedUpdatedAt: 0,
         title: title ?? noteTitle(body),
         body,
         tags: tags ?? [],

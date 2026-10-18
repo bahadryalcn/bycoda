@@ -1,5 +1,5 @@
-import { Alert } from "../../../shared/ui/Alert";
-import { Badge } from "../../../shared/ui/Badge";
+import { SettingsFeedback } from "./settingsControls";
+
 import { TextareaField } from "../../../shared/ui/TextareaField";
 import { TextField } from "../../../shared/ui/TextField";
 import { Button } from "../../../shared/ui/Button";
@@ -210,15 +210,11 @@ export function TemplatesSettings() {
             {dirty && !error && !changedElsewhere ? (
               <span className="text-[12px] text-content/45">{t("Unsaved changes")}</span>
             ) : null}
-            {error ? (
-              <Badge tone="danger" role="alert">
-                {error}
-              </Badge>
-            ) : null}
+            {error ? <SettingsFeedback state="error">{error}</SettingsFeedback> : null}
           </div>
         ) : null}
         {changedElsewhere && dirty ? (
-          <Alert tone="danger" role="alert">
+          <SettingsFeedback state="error">
             <span>
               {t(
                 "Templates changed in another window. Reload before saving to avoid overwriting those changes.",
@@ -237,7 +233,7 @@ export function TemplatesSettings() {
             >
               {t("Discard changes and reload")}
             </Button>
-          </Alert>
+          </SettingsFeedback>
         ) : null}
       </div>
     </Group>

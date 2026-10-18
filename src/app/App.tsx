@@ -412,6 +412,8 @@ function Workspace({
   } = useLinkedWorkItemPanelState();
   const { inboxAskPortal, setInboxAskPortal, openingInboxSessions } = useInboxAskPortal();
   const {
+    serversViewOpen,
+    setServersViewOpen,
     notesViewOpen,
     setNotesViewOpen,
     automationsViewOpen,
@@ -432,6 +434,7 @@ function Workspace({
         setSettingsOpen(false);
         setSearchViewOpen(false);
         setInboxViewOpen(false);
+        setServersViewOpen(false);
         setNotesViewOpen(false);
         setSocialPanelCwd(detail.cwd);
         setSocialBoardShown(true);
@@ -581,10 +584,12 @@ function Workspace({
   const {
     searchViewOpenRef,
     inboxViewOpenRef,
+    serversViewOpenRef,
     notesViewOpenRef,
     automationsViewOpenRef,
     filePickerOpenRef,
   } = useSurfaceFlagRefs({
+    serversViewOpen,
     searchViewOpen,
     inboxViewOpen,
     notesViewOpen,
@@ -597,7 +602,7 @@ function Workspace({
   }>({ workspaceVisible: true });
   foregroundSurfaceRef.current = {
     workspaceVisible:
-      !searchViewOpen && !inboxViewOpen && !notesViewOpen && !automationsViewOpen && !settingsOpen,
+      !searchViewOpen && !inboxViewOpen && !notesViewOpen && !serversViewOpen && !automationsViewOpen && !settingsOpen,
     inboxSessionId: inboxViewOpen ? inboxAskPortal?.sessionId : undefined,
   };
   const sessionNavigationIdsRef = useRef<readonly string[]>([]);
@@ -823,6 +828,7 @@ function Workspace({
   }, [sessions]);
 
   useWindowFocusLifecycle({
+    serversViewOpenRef,
     flushHarnessEvents,
     projectTerminalFocusedRef,
     searchViewOpenRef,
@@ -947,6 +953,7 @@ function Workspace({
     onStartInboxItem,
     onAddNoteToChat,
   } = useNewSessionActions({
+    setServersViewOpen,
     setTabs,
     active,
     sessionDefaults,
@@ -1392,6 +1399,7 @@ function Workspace({
   });
 
   const { sessionReminders } = useSessionReminderActions({
+    setServersViewOpen,
     sessions,
     sessionsRef,
     ensureOpenSession,
@@ -1507,6 +1515,7 @@ function Workspace({
 
   const { onArchiveHistorySession, onArchiveFocusedSession, onArchiveHistorySessions } =
     useHistorySessionArchive({
+      serversViewOpenRef,
       onRemoveHistorySession,
       removingSessionIds,
       setHistory,
@@ -1524,6 +1533,7 @@ function Workspace({
     });
 
   const { onToggleNotesPanel } = useNotesPanelToggle({
+    serversViewOpenRef,
     activeTabIdRef,
     tabsRef,
     sessionsRef,
@@ -1614,6 +1624,7 @@ function Workspace({
     pickProject,
     openSyncedProject,
   } = useProjectOpen({
+    setServersViewOpen,
     readProjectReturnMemory,
     tabsRef,
     sessionsRef,
@@ -1804,6 +1815,7 @@ function Workspace({
 
   const onStopRef = useRef<(sessionId: string) => void>(() => undefined);
   const { launchAutomation } = useAutomationLaunch({
+    setServersViewOpen,
     appendTab,
     focusOpenSession,
     submitSession,
@@ -1817,6 +1829,7 @@ function Workspace({
     onStopRef,
   });
   const { launchQuickSession } = useQuickSessionLaunch({
+    setServersViewOpen,
     appendTab,
     submitSession,
     onSaveDraft,
@@ -2018,6 +2031,7 @@ function Workspace({
     setWorkerDetailRequest,
   });
   const { orchestrationActions, onSelectLiveAgent } = useOrchestrationActions({
+    setServersViewOpen,
     onOpenApprovalSession,
     queueWorkerPanes,
     onSubmit,
@@ -2089,6 +2103,7 @@ function Workspace({
     onReload,
     onFindInProject,
   } = useWindowChromeActions({
+    setServersViewOpen,
     setProjectRailOpen,
     setSessionSidebarOpen,
     setSearchViewOpen,
@@ -2119,12 +2134,15 @@ function Workspace({
   const {
     onOpenInbox,
     onLeaveInbox,
+    onOpenServers,
+    onLeaveServers,
     onOpenNotes,
     onLeaveNotes,
     onOpenAutomations,
     onOpenTasks,
     onLeaveAutomations,
   } = useSurfaceOpeners({
+    setServersViewOpen,
     projectCwd,
     setFilePickerOpen,
     setSettingsOpen,
@@ -2145,6 +2163,8 @@ function Workspace({
     onCloseSettings,
     onSelectSettingsSection,
   } = useSettingsSurfaceActions({
+    setServersViewOpen,
+    serversViewOpenRef,
     setSettingsOpen,
     setSettingsSection,
     setSettingsAnchor,
@@ -2163,6 +2183,7 @@ function Workspace({
   });
 
   const onOpenLinkedWorkItem = useOpenLinkedWorkItem({
+    setServersViewOpen,
     linkedWorkItemPanelRequest,
     setFilePickerOpen,
     setSettingsOpen,
@@ -2187,6 +2208,7 @@ function Workspace({
   });
 
   const { onRepairChecks } = useRepairChecks({
+    setServersViewOpen,
     ensureOpenSession,
     onSubmit,
     onSelectHistorySession,
@@ -2200,6 +2222,7 @@ function Workspace({
   });
 
   const { onOpenAutomationSession, onOpenBackgroundSession } = useAutomationSessionOpeners({
+    setServersViewOpen,
     toolWindow,
     ensureOpenSession,
     onSelectHistorySession,
@@ -2266,6 +2289,7 @@ function Workspace({
       setSearchViewOpen(false);
       setInboxViewOpen(target.tool === "inbox");
       setPullRequestsOnly(false);
+      setServersViewOpen(false);
       setNotesViewOpen(target.tool === "notes");
       setAutomationsViewOpen(["tasks", "automations", "social"].includes(target.tool));
       setTaskBoardShown(target.tool === "tasks");
@@ -2292,6 +2316,7 @@ function Workspace({
       searchViewOpen,
       inboxViewOpen,
       notesViewOpen,
+      serversViewOpen,
       automationsViewOpen,
       socialBoardShown,
       taskBoardShown,
@@ -2303,6 +2328,7 @@ function Workspace({
       dockVisible,
     },
     actions: {
+      setServersViewOpen,
       setSettingsOpen,
       setSearchViewOpen,
       setInboxViewOpen,
@@ -2324,6 +2350,8 @@ function Workspace({
   });
 
   const { surfaceForward, onRailBack, onRailForward } = useRailNavigation({
+    serversViewOpen,
+    setServersViewOpen,
     activeTabId,
     projectCwd,
     settingsOpen,
@@ -2410,6 +2438,7 @@ function Workspace({
       setSettingsOpen(false);
       setSearchViewOpen(false);
       setInboxViewOpen(false);
+      setServersViewOpen(false);
       setNotesViewOpen(false);
       setAutomationsViewOpen(false);
     },
@@ -2419,6 +2448,7 @@ function Workspace({
   });
 
   useWorkspaceKeyboardShortcuts({
+    serversViewOpenRef,
     actions,
     run,
     nativeFullscreenRef,
@@ -2514,6 +2544,7 @@ function Workspace({
     compactRailActive,
     trayProjectKeys,
   } = useWorkspaceChromeFlags({
+    serversViewOpen,
     toolWindow,
     windowTransfer,
     searchViewOpen,
@@ -2665,6 +2696,7 @@ function Workspace({
       }
       setSearchViewOpen(false);
       setInboxViewOpen(false);
+      setServersViewOpen(false);
       setNotesViewOpen(false);
       setAutomationsViewOpen(false);
       const remote = unopenedRemoteRef.current.find(({ session }) => session.id === sessionId);
@@ -2756,6 +2788,7 @@ function Workspace({
                 searchViewOpen={searchViewOpen}
                 inboxViewOpen={inboxViewOpen}
                 notesViewOpen={notesViewOpen}
+                serversViewOpen={serversViewOpen}
                 automationsViewOpen={automationsViewOpen}
                 surfaceForward={surfaceForward}
                 onGoBack={sidebarActions.onGoBack}
@@ -2783,6 +2816,8 @@ function Workspace({
                 onSearch={sidebarActions.onSearch}
                 onOpenInbox={sidebarActions.onOpenInbox}
                 onOpenInboxItem={sidebarActions.onOpenInboxItem}
+                onOpenServers={onOpenServers}
+                serversActive={serversViewOpen}
                 onOpenNotes={sidebarActions.onOpenNotes}
                 onOpenAutomations={sidebarActions.onOpenAutomations}
                 onOpenTasks={sidebarActions.onOpenTasks}
@@ -2819,6 +2854,7 @@ function Workspace({
                   settingsOpen ||
                   inboxViewOpen ||
                   notesViewOpen ||
+                  serversViewOpen ||
                   automationsViewOpen
                     ? "hidden"
                     : "flex min-h-0 min-w-0 flex-1 flex-col"
@@ -2828,6 +2864,7 @@ function Workspace({
                   settingsOpen ||
                   inboxViewOpen ||
                   notesViewOpen ||
+                  serversViewOpen ||
                   automationsViewOpen
                 }
                 inert={
@@ -2835,6 +2872,7 @@ function Workspace({
                   settingsOpen ||
                   inboxViewOpen ||
                   notesViewOpen ||
+                  serversViewOpen ||
                   automationsViewOpen ||
                   undefined
                 }
@@ -2925,6 +2963,7 @@ function Workspace({
                   searchViewOpen={searchViewOpen}
                   settingsOpen={settingsOpen}
                   notesViewOpen={notesViewOpen}
+                serversViewOpen={serversViewOpen}
                   automationsViewOpen={automationsViewOpen}
                   activeLinkedWorkItemPanel={activeLinkedWorkItemPanel}
                 />
@@ -2955,9 +2994,12 @@ function Workspace({
                 sessionPaneProps={sessionPaneProps}
               />
               <WorkspaceToolPanels
+                onLeaveServers={onLeaveServers}
+                setServersViewOpen={setServersViewOpen}
                 onLaunchAutomationAssistant={launchQuickSession}
                 inboxViewOpen={inboxViewOpen}
                 notesViewOpen={notesViewOpen}
+                serversViewOpen={serversViewOpen}
                 automationsViewOpen={automationsViewOpen}
                 socialBoardShown={socialBoardShown}
                 taskBoardShown={taskBoardShown}
@@ -3030,6 +3072,7 @@ function Workspace({
                 searchViewOpen={searchViewOpen}
                 inboxViewOpen={inboxViewOpen}
                 notesViewOpen={notesViewOpen}
+                serversViewOpen={serversViewOpen}
                 automationsViewOpen={automationsViewOpen}
                 settingsOpen={settingsOpen}
                 settingsSection={settingsSection}

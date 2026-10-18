@@ -665,6 +665,8 @@ describe("helpers", () => {
       { text: "Two", status: "pending" },
     ]);
     expect(extractExitPlanModePlan({ plan: "# Plan" })).toBe("# Plan");
+    expect(extractExitPlanModePlan({ planContent: "# Full plan" })).toBe("# Full plan");
+    expect(extractExitPlanModePlan({ allowedPrompts: [] })).toBeUndefined();
   });
 
   it("answers AskUserQuestion with the selected options", () => {

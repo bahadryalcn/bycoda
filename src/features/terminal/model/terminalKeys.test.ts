@@ -14,6 +14,20 @@ it("reserves terminal tools while preserving find-in-files and macOS fullscreen"
   expect(terminalToolShortcut(key("Tab"))).toBeNull();
 });
 
+it("leaves remote shell assistance keys to the PTY when app suggestions are unavailable", () => {
+  for (const event of [
+    key("ArrowUp"),
+    key("ArrowDown"),
+    key("Tab"),
+    key("r", { ctrlKey: true }),
+    key(" ", { ctrlKey: true }),
+    key("Escape"),
+  ]) {
+    expect(terminalToolShortcut(event, false)).toBeNull();
+  }
+  expect(terminalToolShortcut(key("f", { ctrlKey: true }), false)).toBe("search");
+});
+
 function key(
   key: string,
   modifiers: Partial<Pick<KeyboardEvent, "altKey" | "ctrlKey" | "metaKey" | "shiftKey">> = {},

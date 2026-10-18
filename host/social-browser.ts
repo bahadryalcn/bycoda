@@ -4,14 +4,27 @@ import { existsSync } from "node:fs";
 import { lstat, mkdir, open, readFile, rm, writeFile } from "node:fs/promises";
 import { join, win32 } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
-import type { SocialAccount, SocialJob } from "../src/features/social/model/social";
+import type {
+  SocialAccount,
+  SocialJob,
+  SocialMonitorChannel,
+} from "../src/features/social/model/social";
 import {
   SocialPlatformError,
   type SocialAdapter,
   type SocialSendResult,
 } from "../src/integrations/social/adapter";
+import {
+  parseXBrowserInbox,
+  parseXBrowserMentions,
+  parseXBrowserMessageSent,
+} from "./social-browser-inbound";
 import { X_BROWSER_SCOPES } from "../src/integrations/social/capabilities";
+import { xMediaFormat, xMediaIssue } from "../src/integrations/social/xMedia";
 import type { SocialPrincipal, SocialService } from "./social";
+import { SocialBrowserWorkflows } from "./social-browser-workflows";
+import type { SocialBrowserIntent } from "../src/features/social/model/socialBrowser";
+import { XProfileActions, parseXProfilePatch } from "./social-browser-profile";
 
 /** Minimal page surface used by the X browser-session flows; mocked in tests. */
 export interface BrowserPage {
@@ -19,6 +32,7 @@ export interface BrowserPage {
   evaluate<T>(expression: string): Promise<T>;
   click(selector: string): Promise<void>;
   insertText(text: string): Promise<void>;
+  fill(selector: string, text: string): Promise<void>;
   setFiles(selector: string, files: string[]): Promise<void>;
   /** Starts capturing the first response whose URL path matches before the action that causes it. */
   watchResponse(path: RegExp): {
@@ -82,11 +96,15 @@ export function findBrowser(
 
 type CdpListener = (method: string, params: any, sessionId?: string) => void;
 /** Chrome DevTools Protocol over Node's built-in WebSocket; no browser download or driver package. */
-class Cdp {
+export class Cdp {
   private next = 0;
   private pending = new Map<
     number,
-    { resolve: (value: any) => void; reject: (error: Error) => void }
+    {
+      resolve: (value: any) => void;
+      reject: (error: Error) => void;
+      timer: ReturnType<typeof setTimeout>;
+    }
   >();
   private listeners = new Set<CdpListener>();
   readonly closed: Promise<void>;
@@ -101,12 +119,16 @@ class Cdp {
       const waiter = this.pending.get(message.id);
       if (!waiter) return;
       this.pending.delete(message.id);
+      clearTimeout(waiter.timer);
       if (message.error) waiter.reject(new Error(message.error.message));
       else waiter.resolve(message.result ?? {});
     });
     this.closed = new Promise((resolve) =>
       socket.addEventListener("close", () => {
-        for (const waiter of this.pending.values()) waiter.reject(new Error("Browser closed."));
+        for (const waiter of this.pending.values()) {
+          clearTimeout(waiter.timer);
+          waiter.reject(new Error("Browser closed."));
+        }
         this.pending.clear();
         resolve();
       }),
@@ -115,10 +137,27 @@ class Cdp {
   static async connect(url: string): Promise<Cdp> {
     const socket = new WebSocket(url);
     await new Promise<void>((resolve, reject) => {
-      socket.addEventListener("open", () => resolve(), { once: true });
+      const timer = setTimeout(() => {
+        try {
+          socket.close();
+        } catch {}
+        reject(new Error("Browser debugging connection timed out."));
+      }, 10_000);
+      timer.unref();
+      socket.addEventListener(
+        "open",
+        () => {
+          clearTimeout(timer);
+          resolve();
+        },
+        { once: true },
+      );
       socket.addEventListener(
         "error",
-        () => reject(new Error("Browser debugging connection failed.")),
+        () => {
+          clearTimeout(timer);
+          reject(new Error("Browser debugging connection failed."));
+        },
         { once: true },
       );
     });
@@ -131,8 +170,19 @@ class Cdp {
   ): Promise<T> {
     const id = ++this.next;
     return new Promise<T>((resolve, reject) => {
-      this.pending.set(id, { resolve, reject });
-      this.socket.send(JSON.stringify({ id, method, params, sessionId }));
+      const timer = setTimeout(() => {
+        this.pending.delete(id);
+        reject(new Error("Browser command timed out."));
+      }, 30_000);
+      timer.unref();
+      this.pending.set(id, { resolve, reject, timer });
+      try {
+        this.socket.send(JSON.stringify({ id, method, params, sessionId }));
+      } catch {
+        clearTimeout(timer);
+        this.pending.delete(id);
+        reject(new Error("Browser command could not be sent."));
+      }
     });
   }
   on(listener: CdpListener) {
@@ -254,7 +304,13 @@ export function systemBrowserLauncher(executable = findBrowser()): BrowserLaunch
         "The browser did not start. Close any window still using the bycoda X profile and try again.",
       );
     }
-    const cdp = await Cdp.connect(endpoint);
+    let cdp: Cdp;
+    try {
+      cdp = await Cdp.connect(endpoint);
+    } catch (error) {
+      child.kill();
+      throw error;
+    }
     const close = async () => {
       // An already-exited browser never answers; never let close block the profile lock.
       await Promise.race([cdp.send("Browser.close").catch(() => undefined), sleep(3000)]);
@@ -328,7 +384,7 @@ function cdpPage(
     evaluate,
     async click(selector) {
       const point = await evaluate<{ x: number; y: number } | null>(
-        `(() => { const element = document.querySelector(${JSON.stringify(selector)}); if (!element) return null; element.scrollIntoView({ block: "center" }); const box = element.getBoundingClientRect(); return { x: box.x + box.width / 2, y: box.y + box.height / 2 }; })()`,
+        `(() => { const matches = [...document.querySelectorAll(${JSON.stringify(selector)})].filter(e => e.getClientRects().length && getComputedStyle(e).visibility !== "hidden"); if (matches.length !== 1) return null; const element = matches[0]; if (element.disabled || element.getAttribute("aria-disabled") === "true") return null; element.scrollIntoView({ block: "center" }); const box = element.getBoundingClientRect(); const x = box.x + box.width / 2, y = box.y + box.height / 2; const hit = document.elementFromPoint(x, y); return hit && element.contains(hit) ? { x, y } : null; })()`,
       );
       if (!point) throw new Error("Page element is missing.");
       // Trusted input events; X ignores many synthetic DOM clicks.
@@ -343,6 +399,37 @@ function cdpPage(
     },
     async insertText(text) {
       await send("Input.insertText", { text });
+    },
+    async fill(selector, text) {
+      await this.click(selector);
+      const modifiers = process.platform === "darwin" ? 4 : 2;
+      await send("Input.dispatchKeyEvent", {
+        type: "keyDown",
+        key: "a",
+        code: "KeyA",
+        windowsVirtualKeyCode: 65,
+        modifiers,
+      });
+      await send("Input.dispatchKeyEvent", {
+        type: "keyUp",
+        key: "a",
+        code: "KeyA",
+        windowsVirtualKeyCode: 65,
+        modifiers,
+      });
+      await send("Input.dispatchKeyEvent", {
+        type: "keyDown",
+        key: "Backspace",
+        code: "Backspace",
+        windowsVirtualKeyCode: 8,
+      });
+      await send("Input.dispatchKeyEvent", {
+        type: "keyUp",
+        key: "Backspace",
+        code: "Backspace",
+        windowsVirtualKeyCode: 8,
+      });
+      if (text) await send("Input.insertText", { text });
     },
     async setFiles(selector, files) {
       const { root } = await send<{ root: { nodeId: number } }>("DOM.getDocument", { depth: 0 });
@@ -364,6 +451,7 @@ function cdpPage(
         if (
           method === "Network.responseReceived" &&
           !requestId &&
+          ["https://x.com", "https://api.x.com"].includes(new URL(params.response.url).origin) &&
           path.test(new URL(params.response.url).pathname)
         )
           requestId = params.requestId;
@@ -460,6 +548,7 @@ const message = (error: unknown) => (error instanceof Error ? error.message : St
  * reaches the renderer, session tools or logs. Every operation on a profile is serialized.
  */
 export class XBrowserSessions {
+  readonly workflows: SocialBrowserWorkflows;
   private locks = new Map<string, Promise<unknown>>();
   private logins = new Map<string, LoginFlow>();
   private lastSend = new Map<string, number>();
@@ -470,7 +559,30 @@ export class XBrowserSessions {
     private readonly wait: (ms: number) => Promise<unknown> = sleep,
     private readonly background = process.env.BYCODA_SOCIAL_BROWSER_HEADED !== "1",
     private readonly plain: PlainBrowserLauncher | undefined = systemPlainLauncher(),
-  ) {}
+  ) {
+    this.workflows = new SocialBrowserWorkflows(
+      plain,
+      (account) =>
+        account.platform === "x"
+          ? this.profile(account.id)
+          : this.profile(account.id, "browser-profiles"),
+      (id, action) => this.exclusive(id, action),
+      now,
+      wait,
+    );
+  }
+  workflowBegin(
+    service: SocialService,
+    p: SocialPrincipal,
+    accountId: string,
+    intent: SocialBrowserIntent,
+    targetUrl: unknown,
+    acknowledgeRisk: unknown,
+  ) {
+    if (this.logins.get(accountId)?.status === "waiting")
+      throw new Error("Finish or cancel the account's current login first.");
+    return this.workflows.begin(service, p, { accountId, intent, targetUrl, acknowledgeRisk });
+  }
   availability() {
     return this.launcher
       ? { available: true, reason: "Google Chrome or Microsoft Edge found." }
@@ -480,9 +592,81 @@ export class XBrowserSessions {
             "Install Microsoft Edge or Google Chrome on this host, or set BYCODA_SOCIAL_BROWSER.",
         };
   }
-  private profile(accountId: string) {
+  async profileAction(
+    service: SocialService,
+    p: SocialPrincipal,
+    accountId: string,
+    action: "read" | "update" | "follow",
+    input: Record<string, unknown>,
+  ) {
+    const account = service.accountForBrowserManagement(p, accountId, action !== "read");
+    const check = async () => {
+      const current = service.accountForBrowserManagement(p, accountId, action !== "read");
+      if (
+        current.platform !== "x" ||
+        current.connection !== "browser" ||
+        !current.connected ||
+        current.paused ||
+        current.platformId !== account.platformId ||
+        current.executorId !== service.store.environmentId
+      )
+        throw new SocialPlatformError("denied");
+      if (this.workflows.hasActive(accountId) || this.logins.get(accountId)?.status === "waiting")
+        throw new Error("Finish the account's active browser operation first.");
+    };
+    await check();
+    if (!this.launcher) throw new SocialPlatformError("unsupported");
+    if (
+      action !== "read" &&
+      input.confirm !== (action === "follow" ? "FOLLOW_X_ACCOUNT" : "UPDATE_X_PROFILE")
+    )
+      throw new Error("Explicit profile action confirmation required.");
+    const patch = action === "update" ? parseXProfilePatch(input.patch) : undefined;
+    if (
+      action === "follow" &&
+      (typeof input.handle !== "string" || !/^[A-Za-z0-9_]{1,15}$/.test(input.handle))
+    )
+      throw new Error("Enter an exact X username.");
+    return this.exclusive(accountId, async () => {
+      await check();
+      const staging = join(this.directory, "x-profile-uploads", randomUUID());
+      let session: BrowserSession | undefined;
+      try {
+        const files: { avatar?: string; banner?: string } = {};
+        for (const kind of ["avatar", "banner"] as const) {
+          const id = patch?.[kind === "avatar" ? "avatarUploadId" : "bannerUploadId"];
+          if (!id) continue;
+          const bytes = await service.readOwnerMedia(p, id);
+          const format = xMediaFormat(bytes);
+          if (format === "mp4") throw new SocialPlatformError("rejected");
+          await mkdir(staging, { recursive: true, mode: 0o700 });
+          files[kind] = join(staging, `${kind}.${format}`);
+          await writeFile(files[kind]!, bytes, { mode: 0o600, flag: "wx" });
+        }
+        session = await this.launcher!(this.profile(accountId), this.background);
+        const page = session.page;
+        const actions = new XProfileActions(
+          page,
+          async () => {
+            await check();
+            await this.identity(page, account);
+          },
+          (expression, timeout) => this.until(page, expression, timeout),
+        );
+        return action === "read"
+          ? await actions.read()
+          : action === "update"
+            ? await actions.update(patch!, files)
+            : await actions.follow(input.handle as string);
+      } finally {
+        await session?.close().catch(() => undefined);
+        await rm(staging, { recursive: true, force: true }).catch(() => undefined);
+      }
+    });
+  }
+  private profile(accountId: string, folder = "x-browser") {
     if (!/^[0-9a-f-]{36}$/i.test(accountId)) throw new Error("Invalid social account.");
-    return join(this.directory, "x-browser", accountId);
+    return join(this.directory, folder, accountId);
   }
   private exclusive<T>(accountId: string, action: () => Promise<T>): Promise<T> {
     const previous = this.locks.get(accountId) ?? Promise.resolve();
@@ -505,6 +689,10 @@ export class XBrowserSessions {
         "Confirm that browser-session mode is unofficial and can restrict the X account.",
       );
     const account = service.accountForOAuth(p, accountId);
+    if (this.workflows.hasActive(accountId))
+      throw new Error(
+        "Close or cancel the account's browser workflow before verifying its connection.",
+      );
     if (account.platform !== "x")
       throw new Error("Browser-session connection is only available for X.");
     // The profile must live on the host that executes this account's sends.
@@ -604,14 +792,15 @@ export class XBrowserSessions {
       await flow.session?.close().catch(() => undefined);
     }
     // Browser helper processes can hold profile files briefly after closing.
-    return this.exclusive(accountId, () =>
-      rm(this.profile(accountId), {
-        recursive: true,
-        force: true,
-        maxRetries: 10,
-        retryDelay: 200,
-      }),
-    );
+    return this.exclusive(accountId, async () => {
+      for (const folder of ["x-browser", "browser-profiles"])
+        await rm(this.profile(accountId, folder), {
+          recursive: true,
+          force: true,
+          maxRetries: 10,
+          retryDelay: 200,
+        });
+    });
   }
   private async until<T>(
     page: BrowserPage,
@@ -630,10 +819,198 @@ export class XBrowserSessions {
     return {
       send: (account, job, _token, media) =>
         this.exclusive(account.id, () => this.publish(account, job, media)),
-      poll: async () => {
-        throw new SocialPlatformError("unsupported");
-      },
+      poll: (account, _token, posts, cursor) =>
+        this.exclusive(account.id, () => this.poll(account, posts, cursor)),
     };
+  }
+  private async identity(page: BrowserPage, account: SocialAccount) {
+    const id = xUserId(await page.cookies());
+    if (!id) throw new SocialPlatformError("expired");
+    if (account.platform !== "x" || id !== account.platformId)
+      throw new SocialPlatformError("denied");
+  }
+  private async poll(account: SocialAccount, posts: string[], cursor?: string) {
+    if (!this.launcher) throw new SocialPlatformError("unsupported");
+    const session = await this.launcher(this.profile(account.id), this.background);
+    const events: import("../src/integrations/social/adapter").SocialInbound[] = [];
+    const coverage: SocialMonitorChannel[] = [];
+    try {
+      await this.identity(session.page, account);
+      const channels = [
+        {
+          scope: "tweet.read",
+          name: "mentions" as const,
+          url: "https://x.com/notifications/mentions",
+          path: /\/(NotificationsTimeline(?:Mentions)?|MentionsTimeline|mentions\.json)$/,
+          parse: (body: string) =>
+            parseXBrowserMentions(body, account.platformId, posts, this.now()),
+        },
+        {
+          scope: "dm.read",
+          name: "messages" as const,
+          url: "https://x.com/messages",
+          path: /\/(inbox_initial_state|inbox_timeline|inbox_updates)\.json$/,
+          parse: (body: string) => parseXBrowserInbox(body, account.platformId, this.now()),
+        },
+      ];
+      let supported = 0;
+      for (const channel of channels) {
+        if (!account.scopes.includes(channel.scope)) continue;
+        const result: SocialMonitorChannel = {
+          channel: channel.name,
+          status: "unavailable",
+          reason: "response_unavailable",
+        };
+        coverage.push(result);
+        const capture = session.page.watchResponse(channel.path);
+        try {
+          await session.page.goto(channel.url);
+          if (channel.name === "messages") {
+            const path = await session.page.evaluate<string>("location.pathname");
+            if (path === "/i/chat" || path.startsWith("/i/chat/")) {
+              await this.identity(session.page, account);
+              result.reason = path.startsWith("/i/chat/pin/")
+                ? "chat_setup_required"
+                : "encrypted_chat_unsupported";
+              continue;
+            }
+          }
+          const body = await capture.body(20_000);
+          await this.identity(session.page, account);
+          if (!body) {
+            // Positive, route-specific empty-state evidence; absence of a response alone is not success.
+            if (
+              channel.name === "mentions" &&
+              (await session.page.evaluate<boolean>(`(() => {
+              return location.origin === "https://x.com" &&
+                location.pathname === "/notifications/mentions" &&
+                !!document.querySelector('a[role="tab"][aria-selected="true"][href="/notifications/mentions"]') &&
+                document.querySelector('[data-testid="emptyState"] [data-testid="empty_state_header_text"]')?.textContent?.trim() === "Nothing to see here — yet" &&
+                document.querySelector('[data-testid="emptyState"] [data-testid="empty_state_body_text"]')?.textContent?.trim() === "When someone mentions you, you’ll find it here." &&
+                !document.querySelector('article[data-testid="tweet"]');
+            })()`))
+            ) {
+              supported++;
+              result.status = "read";
+              delete result.reason;
+            }
+            continue;
+          }
+          try {
+            events.push(...channel.parse(body));
+            supported++;
+            result.status = "read";
+            delete result.reason;
+          } catch (error) {
+            if (!(error instanceof SocialPlatformError) || error.code !== "unsupported")
+              throw error;
+          }
+        } finally {
+          capture.stop();
+        }
+      }
+      const targets = [...new Set(posts.filter((id) => /^\d{1,25}$/.test(id)))];
+      let nextCursor: string | undefined;
+      if (targets.length && account.scopes.includes("tweet.read")) {
+        const start = /^\d{1,9}$/.test(cursor ?? "") ? Number(cursor) % targets.length : 0;
+        const count = Math.min(2, targets.length);
+        const comments: SocialMonitorChannel = { channel: "comments", status: "read" };
+        coverage.push(comments);
+        // Rotate saved posts across ticks. Never walk an unbounded number of threads in one poll.
+        for (let index = 0; index < count; index++) {
+          const post = targets[(start + index) % targets.length];
+          const capture = session.page.watchResponse(/\/TweetDetail$/);
+          try {
+            await session.page.goto(`https://x.com/i/status/${post}`);
+            const body = await capture.body(15_000);
+            await this.identity(session.page, account);
+            if (!body) {
+              comments.status = "unavailable";
+              comments.reason = "response_unavailable";
+              continue;
+            }
+            try {
+              events.push(...parseXBrowserMentions(body, account.platformId, [post], this.now()));
+              supported++;
+            } catch (error) {
+              if (!(error instanceof SocialPlatformError) || error.code !== "unsupported")
+                throw error;
+              comments.status = "unavailable";
+              comments.reason = "response_unavailable";
+            }
+          } finally {
+            capture.stop();
+          }
+        }
+        nextCursor = String((start + count) % targets.length);
+      }
+      if (!supported) throw new SocialPlatformError("unsupported");
+      return {
+        events: [...new Map(events.map((event) => [event.eventId, event])).values()],
+        coverage,
+        ...(nextCursor !== undefined ? { cursor: nextCursor } : {}),
+      };
+    } finally {
+      await session.close().catch(() => undefined);
+    }
+  }
+  private async sendMessage(
+    page: BrowserPage,
+    account: SocialAccount,
+    job: SocialJob,
+  ): Promise<SocialSendResult> {
+    const recipient = job.payload.recipientId;
+    if (
+      !recipient ||
+      !/^\d{1,25}$/.test(recipient) ||
+      recipient === account.platformId ||
+      job.payload.media.length ||
+      job.payload.postId ||
+      !account.scopes.includes("dm.write")
+    )
+      throw new SocialPlatformError("unsupported");
+    const text = [job.payload.text, job.payload.link].filter(Boolean).join("\n");
+    if (!text.trim()) throw new SocialPlatformError("rejected");
+    await this.identity(page, account);
+    await page.goto(`https://x.com/messages/compose?recipient_id=${recipient}`);
+    const editor = '[data-testid="dmComposerTextInput"]';
+    const ready = await this.until<string>(
+      page,
+      `${LOGIN_PATH}.test(location.pathname) ? "login" : document.querySelector(${JSON.stringify(editor)}) ? "ready" : ""`,
+      30_000,
+    );
+    if (ready === "login") throw new SocialPlatformError("expired");
+    if (ready !== "ready") throw new SocialPlatformError("unsupported");
+    await this.identity(page, account);
+    // A composer alone is insufficient: pin the actual numeric conversation participants.
+    const conversation = await page.evaluate<string>("location.pathname");
+    const ids = /^\/messages\/(\d{1,25})-(\d{1,25})\/?$/.exec(conversation);
+    if (!ids || !ids.slice(1).includes(recipient) || !ids.slice(1).includes(account.platformId))
+      throw new SocialPlatformError("denied");
+    await page.click(editor);
+    await page.insertText(text);
+    const button = '[data-testid="dmComposerSendButton"]';
+    const enabled = await this.until<boolean>(
+      page,
+      `!!document.querySelector(${JSON.stringify(`${button}:not([disabled]):not([aria-disabled="true"])`)})`,
+      10_000,
+    );
+    if (!enabled) throw new SocialPlatformError("rejected");
+    await this.identity(page, account);
+    const capture = page.watchResponse(/\/dm\/new2?\.json$/);
+    this.lastSend.set(account.id, this.now());
+    try {
+      try {
+        await page.click(button);
+      } catch {
+        throw new SocialPlatformError("unknown");
+      }
+      const body = await capture.body(30_000);
+      if (!body) throw new SocialPlatformError("unknown");
+      return parseXBrowserMessageSent(body, account.platformId, recipient, text, this.now());
+    } finally {
+      capture.stop();
+    }
   }
   private async publish(
     account: SocialAccount,
@@ -641,7 +1018,14 @@ export class XBrowserSessions {
     media: (id: string) => Promise<Uint8Array>,
   ): Promise<SocialSendResult> {
     const postId = job.payload.postId;
-    if (job.kind === "message" || (job.kind === "reply" && !postId))
+    const message = job.kind === "message" || (job.kind === "reply" && !postId);
+    if (
+      message &&
+      (!job.payload.recipientId ||
+        !/^\d{1,25}$/.test(job.payload.recipientId) ||
+        job.payload.media.length ||
+        !account.scopes.includes("dm.write"))
+    )
       throw new SocialPlatformError("unsupported");
     if (postId && !/^\d{1,25}$/.test(postId)) throw new SocialPlatformError("rejected");
     if (!this.launcher) throw new SocialPlatformError("unsupported");
@@ -649,21 +1033,23 @@ export class XBrowserSessions {
     if (this.now() - last < MIN_SEND_GAP)
       throw new SocialPlatformError("rate_limit", last + MIN_SEND_GAP);
     const text = [job.payload.text, job.payload.link].filter(Boolean).join("\n");
-    if (job.payload.media.length > 4) throw new SocialPlatformError("unsupported");
+    if (xMediaIssue(job.payload.media, message)) throw new SocialPlatformError("unsupported");
     const staging = join(this.directory, "x-browser-uploads", randomUUID());
     try {
       const files: string[] = [];
       for (const [index, item] of job.payload.media.entries()) {
-        if (item.kind !== "image" || !item.uploadId) throw new SocialPlatformError("unsupported");
-        const bytes = await media(item.uploadId);
-        const png = bytes[0] === 0x89 && bytes[1] === 0x50;
+        const bytes = await media(item.uploadId!);
+        const format = xMediaFormat(bytes);
+        if ((item.kind === "video") !== (format === "mp4"))
+          throw new SocialPlatformError("rejected");
         await mkdir(staging, { recursive: true });
-        const file = join(staging, `${index}.${png ? "png" : "jpg"}`);
+        const file = join(staging, `${index}.${format}`);
         await writeFile(file, bytes);
         files.push(file);
       }
       const session = await this.launcher(this.profile(account.id), this.background);
       try {
+        if (message) return await this.sendMessage(session.page, account, job);
         return await this.compose(session.page, account, postId, text, files);
       } finally {
         await session.close().catch(() => undefined);
@@ -698,17 +1084,20 @@ export class XBrowserSessions {
       await page.setFiles(FILE_INPUT, files);
       const attached = await this.until<boolean>(
         page,
-        `document.querySelectorAll('[data-testid="attachments"] img').length >= ${files.length}`,
-        60_000,
+        files[0].endsWith(".mp4")
+          ? `!!document.querySelector('[data-testid="attachments"] video, [data-testid="attachments"] [data-testid="videoPlayer"]') && !document.querySelector('[data-testid="attachments"] [role="progressbar"]')`
+          : `document.querySelectorAll('[data-testid="attachments"] img').length >= ${files.length}`,
+        120_000,
       );
       if (!attached) throw new SocialPlatformError("rejected");
     }
     const enabled = await this.until<boolean>(
       page,
-      `!!document.querySelector(${JSON.stringify(`${button}:not([aria-disabled="true"])`)})`,
+      `!!document.querySelector(${JSON.stringify(`${button}:not([aria-disabled="true"]):not(:disabled)`)})`,
       20_000,
     );
     if (!enabled) throw new SocialPlatformError("rejected");
+    await this.identity(page, account);
     const response = page.watchResponse(/\/(CreateTweet|CreateNoteTweet)$/);
     this.lastSend.set(account.id, this.now());
     try {

@@ -1,4 +1,5 @@
 import { terminalOutputBuffer } from "../model/outputBuffer";
+import { terminalInput } from "../model/terminalInput";
 import { themePalette } from "../../../shared/theme/palette";
 import {
   APPEARANCE_PREFERENCES_EVENT,
@@ -6,11 +7,13 @@ import {
 } from "../../settings/model/appearancePreferences";
 import { Terminal, type IDisposable } from "@xterm/xterm";
 import { WebLinksAddon } from "@xterm/addon-web-links";
-import { useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import {
   getPtyStatus,
   killPty,
   resizePty,
+  readyPtyBridge,
   spawnPty,
   subscribePty,
   writePty,
@@ -37,12 +40,38 @@ import { takeTerminalCommand } from "../model/terminalLaunchCommand";
 import { activateTerminalLink } from "../model/terminalLinks";
 import { TerminalSelectionMenu } from "./TerminalSelectionMenu";
 import { TerminalTools, type TerminalTool } from "./TerminalTools";
+import type { SshEndpoint } from "../../connections/model/serverInventory";
+import { useSshShellIntegration } from "../model/sshShellIntegration";
+import { Modal } from "../../../shared/ui/Modal";
+import { Button } from "../../../shared/ui/Button";
+import { t } from "../../../shared/i18n";
+
+const ServerSnippets = lazy(() =>
+  import("../../connections/ui/ServerSnippets").then((module) => ({
+    default: module.ServerSnippets,
+  })),
+);
 
 type Props = {
   id: string;
   cwd: string;
   /** Terminal profile to start in; the user's default when absent. */
   profile?: string;
+  /** Canonical SSH-only connection. No local profile, cwd or launch replay. */
+  sshConnectionId?: string;
+  /** Quick connections remain ephemeral and use the same native SSH engine. */
+  sshEndpoint?: SshEndpoint;
+  shellIntegration?: "bash" | "zsh" | "powershell";
+  /** Native one-use approval for this ephemeral launch. Never restored. */
+  agentForwardingReviewId?: string;
+  expectedConfigurationDigest?: string;
+  httpProxyTicketId?: string;
+  /** A structured native integration prompt, never inferred from terminal text. */
+  onSshPromptReady?: () => void;
+  onStartupReview?: () => Promise<void>;
+  onEnableShellIntegration?: (shell?: "bash" | "zsh" | "powershell") => void;
+  /** Explicit local ssh-keygen in a private PTY; never restored or replayed. */
+  keyGenerationPath?: string;
   active: boolean;
   onMetaChange?: (patch: TerminalMetaPatch) => void;
 };
@@ -194,10 +223,61 @@ function oscColors(scope?: HTMLElement) {
 // no terminal asks again.
 let metaSupported = true;
 
-export function TerminalView({ id, cwd, profile, active, onMetaChange }: Props) {
+export function TerminalView({
+  id,
+  cwd,
+  profile,
+  sshConnectionId,
+  sshEndpoint,
+  shellIntegration,
+  agentForwardingReviewId,
+  expectedConfigurationDigest,
+  httpProxyTicketId,
+  onSshPromptReady,
+  onStartupReview,
+  onEnableShellIntegration,
+  keyGenerationPath,
+  active,
+  onMetaChange,
+}: Props) {
+  const privateTerminal = Boolean(sshConnectionId || sshEndpoint || keyGenerationPath);
+  const integrated = Boolean(
+    (shellIntegration === "bash" ||
+      shellIntegration === "zsh" ||
+      shellIntegration === "powershell") &&
+    (sshConnectionId || sshEndpoint),
+  );
+  const remoteShell = useSshShellIntegration(id, integrated);
+  const promptCallback = useRef(onSshPromptReady);
+  useLayoutEffect(() => {
+    promptCallback.current = onSshPromptReady;
+  }, [onSshPromptReady]);
+  const promptedId = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    if (
+      integrated &&
+      remoteShell.state?.id === id &&
+      remoteShell.state.status === "ready" &&
+      remoteShell.state.promptReady === true &&
+      promptedId.current !== id
+    ) {
+      promptedId.current = id;
+      promptCallback.current?.();
+    }
+  }, [id, integrated, remoteShell.state]);
+  const remoteShellRef = useRef(remoteShell);
+  remoteShellRef.current = remoteShell;
+  const activeRef = useRef(active);
+  activeRef.current = active;
+  const composingRef = useRef(false);
+  const editRevisionRef = useRef(0);
+  const invalidateRemoteShell = remoteShell.invalidate;
+  const [snippetsOpen, setSnippetsOpen] = useState(false);
   // Same signal as the WebGL addon: the terminal is actually on screen. Without
   // IntersectionObserver there is no signal, so assume visible.
   const [onScreen, setOnScreen] = useState(typeof IntersectionObserver === "undefined");
+  const onScreenRef = useRef(onScreen);
+  onScreenRef.current = onScreen;
   const profileRef = useRef(profile);
   profileRef.current = profile;
   const cwdRef = useRef(cwd);
@@ -208,6 +288,8 @@ export function TerminalView({ id, cwd, profile, active, onMetaChange }: Props) 
   const [terminal, setTerminal] = useState<Terminal | null>(null);
   const [tool, setTool] = useState<TerminalTool>(null);
   const [shellReady, setShellReady] = useState(false);
+  const [inputError, setInputError] = useState<string | null>(null);
+  const resumeInputRef = useRef<() => void>(() => {});
   const spawned = useRef(false);
   const applySizeRef = useRef<() => void>(() => {});
   const onMetaChangeRef = useRef(onMetaChange);
@@ -238,6 +320,7 @@ export function TerminalView({ id, cwd, profile, active, onMetaChange }: Props) 
     termRef.current = term;
     setTerminal(term);
     setShellReady(false);
+    setInputError(null);
     setTool(null);
     let closed = false;
 
@@ -333,7 +416,8 @@ export function TerminalView({ id, cwd, profile, active, onMetaChange }: Props) 
 
     let unsubscribe = () => {};
     let didStart = false;
-    const start = () => {
+    let exited = false;
+    const start = async () => {
       if (closed) return;
       unsubscribe = subscribePty(
         id,
@@ -343,29 +427,63 @@ export function TerminalView({ id, cwd, profile, active, onMetaChange }: Props) 
         },
         (code) => {
           if (closed) return;
+          exited = true;
           spawned.current = false;
           setShellReady(false);
           runningProcessRef.current = null;
-          onMetaChangeRef.current?.({
-            title: defaultTerminalTitle(cwdRef.current),
-            foreground: null,
-          });
+          if (!privateTerminal) {
+            onMetaChangeRef.current?.({
+              title: defaultTerminalTitle(cwdRef.current),
+              foreground: null,
+            });
+          }
           const status = code == null ? "" : ` (${code})`;
           output.append(`
 [process exited${status}]\r\n`);
         },
       );
+      await readyPtyBridge();
+      if (closed) return;
       didStart = true;
+      if (keyGenerationPath)
+        return invoke("ssh_key_generate", {
+          id,
+          path: keyGenerationPath,
+          cols: term.cols,
+          rows: term.rows,
+        });
+      if (sshConnectionId) {
+        return invoke<void>("ssh_terminal_spawn", {
+          id,
+          connectionId: sshConnectionId,
+          cols: term.cols,
+          rows: term.rows,
+          ...(shellIntegration ? { shellIntegration } : {}),
+          ...(agentForwardingReviewId ? { agentForwardingReviewId } : {}),
+          ...(expectedConfigurationDigest ? { expectedConfigurationDigest } : {}),
+          ...(httpProxyTicketId ? { httpProxyTicketId } : {}),
+        });
+      }
+      if (sshEndpoint)
+        return invoke<void>("ssh_terminal_quick_spawn", {
+          id,
+          endpoint: sshEndpoint,
+          cols: term.cols,
+          rows: term.rows,
+          ...(shellIntegration ? { shellIntegration } : {}),
+          ...(agentForwardingReviewId ? { agentForwardingReviewId } : {}),
+          ...(httpProxyTicketId ? { httpProxyTicketId } : {}),
+        });
       return spawnPty(id, cwd, term.cols, term.rows, profileRef.current ?? loadTerminalProfile());
     };
 
     const starting = (stoppingPtys.get(id) ?? Promise.resolve())
       .then(start)
       .then(() => {
-        if (!closed) {
+        if (!closed && !exited) {
           spawned.current = true;
           setShellReady(true);
-          const command = takeTerminalCommand(id);
+          const command = privateTerminal ? undefined : takeTerminalCommand(id);
           if (command) return writePty(id, `${command}\r`);
         }
       })
@@ -379,14 +497,68 @@ export function TerminalView({ id, cwd, profile, active, onMetaChange }: Props) 
       });
     void starting.catch(() => undefined);
 
+    const input = terminalInput(
+      async (data) => {
+        await starting;
+        if (closed || exited) throw new Error("Terminal is disconnected.");
+        await writePty(id, data);
+      },
+      (error) => {
+        if (closed) return;
+        term.options.disableStdin = true;
+        const message = error instanceof Error ? error.message : String(error);
+        setInputError(message);
+      },
+    );
+    resumeInputRef.current = () => {
+      input.resume();
+      term.options.disableStdin = false;
+      setInputError(null);
+      term.focus();
+    };
+
     const dataSub = term.onData((data) => {
-      void starting.then(() => (closed ? undefined : writePty(id, data))).catch(() => undefined);
+      const revision = ++editRevisionRef.current;
+      const composingInput = composingRef.current;
+      // Do not inject a snapshot chord between native history/completion/search
+      // keystrokes. PSReadLine/Readline own those navigation groups.
+      // oxlint-disable-next-line no-control-regex -- classify transient input without storing or logging it
+      const textEdit = data === "\x7f" || data === "\b" || !/[\x00-\x1f\x7f]/.test(data);
+      if (integrated) {
+        invalidateRemoteShell();
+        setTool((current) => (current === "remote" ? null : current));
+      }
+      void input.enqueue(data).then((written) => {
+        if (!written) return;
+        if (
+          integrated &&
+          textEdit &&
+          !closed &&
+          revision === editRevisionRef.current &&
+          activeRef.current &&
+          onScreenRef.current &&
+          !composingInput &&
+          !composingRef.current &&
+          term.buffer.active.type !== "alternate"
+        )
+          remoteShellRef.current.notifyInput();
+      });
     });
+    const onCompositionStart = () => {
+      ++editRevisionRef.current;
+      composingRef.current = true;
+      remoteShellRef.current.suspendAutomatic();
+    };
+    const onCompositionEnd = () => {
+      composingRef.current = false;
+    };
+    host.addEventListener("compositionstart", onCompositionStart);
+    host.addEventListener("compositionend", onCompositionEnd);
 
     const replyOsc = (code: 10 | 11 | 12, hex: string) => {
       const reply = oscColorReply(code, hex);
       if (reply) {
-        void starting.then(() => (closed ? undefined : writePty(id, reply))).catch(() => undefined);
+        void input.enqueue(reply);
       }
       return true;
     };
@@ -394,6 +566,7 @@ export function TerminalView({ id, cwd, profile, active, onMetaChange }: Props) 
     // (split sequences included) instead of a second per-chunk decode here.
     // Replayed output for a not-yet-mounted terminal flows through term.write too.
     const oscCwd = term.parser.registerOscHandler(7, (data) => {
+      if (privateTerminal) return false;
       const cwd = parseOsc7Cwd(data);
       const onMeta = onMetaChangeRef.current;
       if (cwd && onMeta && !closed) {
@@ -446,6 +619,10 @@ export function TerminalView({ id, cwd, profile, active, onMetaChange }: Props) 
       const next = fitMode() === "tui";
       if (next === tuiMode) return;
       tuiMode = next;
+      if (next) {
+        ++editRevisionRef.current;
+        remoteShellRef.current.suspendAutomatic();
+      }
       applyTerminalChrome(term, outer, next);
       if (!next) resetGridStretch(term);
       lastCols = 0;
@@ -489,6 +666,8 @@ export function TerminalView({ id, cwd, profile, active, onMetaChange }: Props) 
 
     return () => {
       closed = true;
+      input.dispose();
+      remoteShellRef.current.suspendAutomatic();
       cancelAnimationFrame(frame);
       if (raf) cancelAnimationFrame(raf);
       observer.disconnect();
@@ -500,6 +679,8 @@ export function TerminalView({ id, cwd, profile, active, onMetaChange }: Props) 
       applySizeRef.current = () => {};
       host.removeEventListener("copy", onCopy);
       host.removeEventListener("paste", onPaste);
+      host.removeEventListener("compositionstart", onCompositionStart);
+      host.removeEventListener("compositionend", onCompositionEnd);
       window.removeEventListener(SCHEME_CHANGE_EVENT, onSchemeChange);
       themeObserver.disconnect();
       window.removeEventListener(APPEARANCE_PREFERENCES_EVENT, onTypographyChange);
@@ -524,7 +705,26 @@ export function TerminalView({ id, cwd, profile, active, onMetaChange }: Props) 
       termRef.current = null;
       spawned.current = false;
     };
-  }, [id]);
+  }, [
+    id,
+    sshConnectionId,
+    sshEndpoint,
+    shellIntegration,
+    agentForwardingReviewId,
+    expectedConfigurationDigest,
+    httpProxyTicketId,
+    integrated,
+    keyGenerationPath,
+    privateTerminal,
+    invalidateRemoteShell,
+  ]);
+
+  useEffect(() => {
+    if (!active || !onScreen) {
+      ++editRevisionRef.current;
+      remoteShellRef.current.suspendAutomatic();
+    }
+  }, [active, onScreen]);
 
   // Identity-stable: the callers pass an inline arrow, so depending on the
   // prop itself would tear down and re-arm the poll — and repeat lookup — on
@@ -532,7 +732,7 @@ export function TerminalView({ id, cwd, profile, active, onMetaChange }: Props) 
   const wantsMeta = !!onMetaChange;
 
   useEffect(() => {
-    if (!wantsMeta || !onScreen || !metaSupported) return;
+    if (privateTerminal || !wantsMeta || !onScreen || !metaSupported) return;
     // The first idle reply must clear metadata retained while hidden/reattached.
     let lastForeground: string | null | undefined;
     let inFlight = false;
@@ -582,7 +782,7 @@ export function TerminalView({ id, cwd, profile, active, onMetaChange }: Props) 
       clearInterval(interval);
       document.removeEventListener("visibilitychange", refresh);
     };
-  }, [id, cwd, wantsMeta, onScreen]);
+  }, [id, cwd, wantsMeta, onScreen, privateTerminal]);
 
   useEffect(() => {
     if (!active) return;
@@ -596,8 +796,9 @@ export function TerminalView({ id, cwd, profile, active, onMetaChange }: Props) 
       className="bycoda-terminal flex h-full w-full min-h-0 min-w-0 flex-col"
       onMouseDown={() => termRef.current?.focus()}
       onKeyDownCapture={(event) => {
+        if (snippetsOpen) return;
         if (event.nativeEvent.isComposing) return;
-        const next = terminalToolShortcut(event);
+        const next = terminalToolShortcut(event, !privateTerminal || integrated);
         if (!next) return;
         // Scope shortcuts to this terminal (including split panes), before xterm
         // or workspace search handlers consume them.
@@ -608,6 +809,11 @@ export function TerminalView({ id, cwd, profile, active, onMetaChange }: Props) 
           (!spawned.current || termRef.current?.buffer.active.type === "alternate")
         )
           return;
+        if (next === "command" && integrated) {
+          setTool("remote");
+          void remoteShell.request(remoteShell.source);
+          return;
+        }
         if (tool === next) {
           const input = outerRef.current?.querySelector<HTMLInputElement>(
             "[data-terminal-tools] input",
@@ -618,12 +824,104 @@ export function TerminalView({ id, cwd, profile, active, onMetaChange }: Props) 
         setTool(next);
       }}
     >
-      <TerminalTools terminal={terminal} mode={tool} onModeChange={setTool} ready={shellReady} />
+      <TerminalTools
+        terminal={terminal}
+        mode={tool}
+        onModeChange={setTool}
+        ready={shellReady}
+        suggestionsAllowed={!privateTerminal}
+        remoteShell={integrated ? remoteShell : undefined}
+        onStartupReview={sshConnectionId ? onStartupReview : undefined}
+        onEnableShellIntegration={
+          !integrated && (sshConnectionId || sshEndpoint) ? onEnableShellIntegration : undefined
+        }
+        onSavedCommands={
+          integrated && sshConnectionId
+            ? () => {
+                setSnippetsOpen(true);
+                void remoteShell.request();
+              }
+            : undefined
+        }
+      />
+      {snippetsOpen && sshConnectionId ? (
+        <Modal
+          title={t("Saved SSH commands")}
+          onClose={() => {
+            setSnippetsOpen(false);
+            remoteShell.dismiss();
+            termRef.current?.focus();
+          }}
+          fitViewport
+        >
+          <div className="flex flex-wrap items-center gap-2 text-xs text-(--ui-text-muted)">
+            <Button
+              variant="ghost"
+              size="sm"
+              loading={remoteShell.waiting}
+              onClick={() => void remoteShell.request()}
+            >
+              {t("Refresh")}
+            </Button>
+            <span>
+              {(remoteShell.error ? t(remoteShell.error) : "") ||
+                t("Insert commands at an empty shell prompt. Press Enter in the terminal to run.")}
+            </span>
+          </div>
+          <Suspense fallback={<p role="status">{t("Loading…")}</p>}>
+            <ServerSnippets
+              serverId={sshConnectionId}
+              serverName={
+                remoteShell.state
+                  ? `${remoteShell.state.user}@${remoteShell.state.host}`
+                  : undefined
+              }
+              onInsert={
+                remoteShell.state?.status === "suggestions" && remoteShell.state.prefix === ""
+                  ? async (value) => {
+                      const snapshot = remoteShell.state;
+                      if (
+                        !snapshot?.requestId ||
+                        snapshot.prefix !== "" ||
+                        snapshot.status !== "suggestions"
+                      )
+                        throw new Error("Request a fresh snapshot at an empty shell prompt");
+                      await invoke("ssh_terminal_command_insert", {
+                        id,
+                        requestId: snapshot.requestId,
+                        value,
+                      });
+                      remoteShell.dismiss();
+                      setSnippetsOpen(false);
+                      termRef.current?.focus();
+                    }
+                  : undefined
+              }
+            />
+          </Suspense>
+        </Modal>
+      ) : null}
+      {inputError !== null ? (
+        <div
+          role="alert"
+          className="flex flex-wrap items-center gap-2 px-2 text-xs text-(--ui-text)"
+        >
+          <span>
+            {t(
+              "Input paused. Some input may not have reached the terminal. Check the shell before continuing.",
+            )}{" "}
+            {inputError}
+          </span>
+          <Button size="sm" variant="ghost" onClick={() => resumeInputRef.current()}>
+            {t("Resume input")}
+          </Button>
+        </div>
+      ) : null}
       <div ref={hostRef} className="bycoda-terminal-host min-h-0 min-w-0 flex-1 overflow-hidden" />
       <TerminalSelectionMenu
         terminal={terminal}
         host={hostRef}
-        active={active && onScreen && tool !== "search"}
+        active={active && onScreen && tool !== "search" && !privateTerminal}
         cwd={cwd}
       />
     </div>

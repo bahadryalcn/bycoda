@@ -17,6 +17,7 @@ import { useProjectWorktrees } from "../../source-control/hooks/useProjectWorktr
 import type { Worktree } from "../../source-control/model/worktrees";
 import { MOD, SHIFT } from "../../../platform/tauri/platform";
 import { prettyCwd } from "../../../shared/lib/paths";
+import { isImeComposition } from "../../../shared/lib/keyboard";
 import type { WorkspaceMode } from "../../sessions/model/session";
 import {
   Check,
@@ -567,6 +568,7 @@ export function WorktreeBasePicker({
                 setActive(0);
               }}
               onKeyDown={(event) => {
+                if (isImeComposition(event.nativeEvent)) return;
                 if (event.key === "ArrowDown" || event.key === "ArrowUp") {
                   event.preventDefault();
                   setActive((index) =>

@@ -41,6 +41,11 @@ struct PtyExit {
 }
 
 struct LivePty {
+    _http_proxy: Option<Arc<crate::ssh_http_proxy::HttpProxyLease>>,
+    _jump_config: Option<Arc<crate::ssh_jump_config::PreparedJumpConfig>>,
+    /// SSH targets never inherit local project access or runtime output capture.
+    ssh_identity: Option<String>,
+    shell_integration: Option<Arc<Mutex<crate::ssh_shell_integration::ShellIntegration>>>,
     cwd: std::path::PathBuf,
     writer: Mutex<Box<dyn Write + Send>>,
     #[cfg(unix)]
@@ -66,7 +71,7 @@ pub struct PtyHost {
 impl PtyHost {
     pub(crate) fn conversation_list(&self, cwd: &std::path::Path) -> serde_json::Value {
         let sessions = self.sessions.lock().unwrap_or_else(|e| e.into_inner());
-        serde_json::json!({"terminals": sessions.iter().filter(|(_, live)| crate::worktrees::contains_working_dir(cwd, &live.cwd)).map(|(id, live)| serde_json::json!({"id": id, "cwd": live.cwd, "pid": live.pid})).collect::<Vec<_>>()})
+        serde_json::json!({"terminals": sessions.iter().filter(|(_, live)| live.ssh_identity.is_none() && crate::worktrees::contains_working_dir(cwd, &live.cwd)).map(|(id, live)| serde_json::json!({"id": id, "cwd": live.cwd, "pid": live.pid})).collect::<Vec<_>>()})
     }
     pub(crate) fn conversation_write(
         &self,
@@ -75,7 +80,7 @@ impl PtyHost {
         data: &str,
     ) -> Result<serde_json::Value, String> {
         let live = self.get(id).ok_or("Terminal is not running")?;
-        if !crate::worktrees::contains_working_dir(cwd, &live.cwd) {
+        if live.ssh_identity.is_some() || !crate::worktrees::contains_working_dir(cwd, &live.cwd) {
             return Err("Terminal belongs to another project".into());
         }
         if data.is_empty() || data.len() > 65536 {
@@ -93,7 +98,10 @@ impl PtyHost {
             .lock()
             .unwrap_or_else(|e| e.into_inner())
             .values()
-            .any(|live| crate::worktrees::contains_working_dir(path, &live.cwd))
+            .any(|live| {
+                live.ssh_identity.is_none()
+                    && crate::worktrees::contains_working_dir(path, &live.cwd)
+            })
     }
 
     pub fn new() -> Self {
@@ -130,6 +138,35 @@ impl PtyHost {
             .cloned()
     }
 
+    fn get_for_window(&self, id: &str, owner: &str) -> Result<Arc<LivePty>, String> {
+        let live = self.get(id).ok_or("Terminal is not running")?;
+        ensure_window(&live, owner)?;
+        Ok(live)
+    }
+
+    fn remove_for_window(&self, id: &str, owner: &str) -> Result<Option<Arc<LivePty>>, String> {
+        let mut sessions = self.sessions.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some(live) = sessions.get(id) {
+            ensure_window(live, owner)?;
+        }
+        Ok(sessions.remove(id))
+    }
+
+    fn kill_for_window(&self, owner: &str) {
+        let kids = {
+            let mut sessions = self.sessions.lock().unwrap_or_else(|e| e.into_inner());
+            let ids: Vec<_> = sessions
+                .iter()
+                .filter(|(_, live)| live.ssh_identity.is_none() || live.owned_by(owner))
+                .map(|(id, _)| id.clone())
+                .collect();
+            ids.into_iter()
+                .filter_map(|id| sessions.remove(&id))
+                .collect()
+        };
+        reap(kids);
+    }
+
     fn output_owner(&self, id: &str, source: &Arc<Mutex<String>>) -> Option<String> {
         let sessions = self.sessions.lock().unwrap_or_else(|e| e.into_inner());
         if sessions
@@ -141,13 +178,6 @@ impl PtyHost {
         // Final buffered bytes can outlive removal from the session map. Keep
         // their original owner without holding the master PTY open for them.
         Some(source.lock().unwrap_or_else(|e| e.into_inner()).clone())
-    }
-
-    fn remove(&self, id: &str) -> Option<Arc<LivePty>> {
-        self.sessions
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .remove(id)
     }
 
     fn remove_if_pid(&self, id: &str, pid: u32) -> Option<Arc<LivePty>> {
@@ -253,6 +283,7 @@ pub fn pty_spawn(
         .lock()
         .unwrap_or_else(|e| e.into_inner());
     let (cols, rows) = (cols.max(2), rows.max(2));
+    ensure_identity(host.get(&id).as_deref(), None)?;
     // A reloaded page restores its terminals under the same ids while the old
     // shells are still running. Hand the live PTY to the new view instead of
     // hanging up the shell and every job in it.
@@ -267,12 +298,38 @@ pub fn pty_spawn(
 
     #[cfg(unix)]
     {
-        spawn_unix(app, host, window.label(), id, workdir, cols, rows, shell)
+        spawn_unix(
+            app,
+            host,
+            window.label(),
+            id,
+            workdir,
+            cols,
+            rows,
+            shell,
+            None,
+            None,
+            None,
+            None,
+        )
     }
 
     #[cfg(windows)]
     {
-        spawn_windows(app, host, window.label(), id, workdir, cols, rows, shell)
+        spawn_windows(
+            app,
+            host,
+            window.label(),
+            id,
+            workdir,
+            cols,
+            rows,
+            shell,
+            None,
+            None,
+            None,
+            None,
+        )
     }
 
     #[cfg(not(any(unix, windows)))]
@@ -280,6 +337,221 @@ pub fn pty_spawn(
         let _ = (app, cwd, cols, rows, shell);
         Err("Terminals are not supported on this platform.".into())
     }
+}
+
+fn ensure_identity(live: Option<&LivePty>, identity: Option<&str>) -> Result<(), String> {
+    if live.is_some_and(|live| live.ssh_identity.as_deref() != identity) {
+        return Err("Terminal belongs to another connection; close it before reconnecting".into());
+    }
+    Ok(())
+}
+
+fn ensure_window(live: &LivePty, owner: &str) -> Result<(), String> {
+    if live.ssh_identity.is_some() && !live.owned_by(owner) {
+        return Err("SSH terminal belongs to another window".into());
+    }
+    Ok(())
+}
+
+pub(crate) fn integration_for_spawn(
+    host: &PtyHost,
+    id: &str,
+    owner: &str,
+    mode: Option<&str>,
+) -> Result<Option<Arc<Mutex<crate::ssh_shell_integration::ShellIntegration>>>, String> {
+    match mode {
+        None => Ok(None),
+        Some(mode @ ("bash" | "zsh" | "powershell")) => {
+            if let Some(live) = host.get(id) {
+                ensure_window(&live, owner)?;
+                if let Some(integration) = &live.shell_integration {
+                    if integration
+                        .lock()
+                        .unwrap_or_else(|error| error.into_inner())
+                        .shell_mode()
+                        != mode
+                    {
+                        return Err(
+                            "This terminal already belongs to a different shell integration".into(),
+                        );
+                    }
+                    return Ok(Some(integration.clone()));
+                }
+            }
+            Ok(Some(Arc::new(Mutex::new(
+                crate::ssh_shell_integration::ShellIntegration::for_shell(mode)?,
+            ))))
+        }
+        _ => Err("Unsupported shell integration".into()),
+    }
+}
+
+/// Explicit SSH connect only. This uses the same PTY lifecycle, job ownership,
+/// window cleanup and byte transport as local terminals, without output logging.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn spawn_ssh(
+    app: AppHandle,
+    window: tauri::Window,
+    host: State<'_, PtyHost>,
+    id: String,
+    identity: String,
+    args: Vec<String>,
+    cols: u16,
+    rows: u16,
+    integration: Option<Arc<Mutex<crate::ssh_shell_integration::ShellIntegration>>>,
+    jump_config: Option<Arc<crate::ssh_jump_config::PreparedJumpConfig>>,
+    http_proxy: Option<Arc<crate::ssh_http_proxy::HttpProxyLease>>,
+) -> Result<(), String> {
+    spawn_private_program(
+        app,
+        window,
+        host,
+        id,
+        identity,
+        "ssh",
+        args,
+        None,
+        integration,
+        jump_config,
+        http_proxy,
+        cols,
+        rows,
+    )
+}
+
+fn validate_new_key_path(path: &std::path::Path) -> Result<(), String> {
+    if !path.is_absolute()
+        || path.to_string_lossy().chars().any(char::is_control)
+        || path.file_name().is_none()
+        || !path.parent().is_some_and(|parent| parent.is_dir())
+    {
+        return Err("Choose an absolute new key path in an existing directory".into());
+    }
+    let public = std::path::PathBuf::from(format!("{}.pub", path.to_string_lossy()));
+    for candidate in [path, public.as_path()] {
+        match std::fs::symlink_metadata(candidate) {
+            Ok(_) => {
+                return Err("Key or public key path already exists. Choose a new filename.".into())
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(_) => return Err("Could not verify that key path is new".into()),
+        }
+    }
+    Ok(())
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn spawn_keygen(
+    app: AppHandle,
+    window: tauri::Window,
+    host: State<'_, PtyHost>,
+    id: String,
+    path: String,
+    cols: u16,
+    rows: u16,
+) -> Result<(), String> {
+    let identity = serde_json::to_string(&("keygen", &path)).map_err(|_| "Invalid key filename")?;
+    let args = keygen_args(&path);
+    spawn_private_program(
+        app,
+        window,
+        host,
+        id,
+        identity,
+        "ssh-keygen",
+        args,
+        Some(path.into()),
+        None,
+        None,
+        None,
+        cols,
+        rows,
+    )
+}
+
+fn keygen_args(path: &str) -> Vec<String> {
+    vec![
+        "-t".into(),
+        "ed25519".into(),
+        "-a".into(),
+        "64".into(),
+        "-f".into(),
+        path.into(),
+    ]
+}
+
+#[allow(clippy::too_many_arguments)]
+fn spawn_private_program(
+    app: AppHandle,
+    window: tauri::Window,
+    host: State<'_, PtyHost>,
+    id: String,
+    identity: String,
+    program: &'static str,
+    args: Vec<String>,
+    new_key_path: Option<std::path::PathBuf>,
+    integration: Option<Arc<Mutex<crate::ssh_shell_integration::ShellIntegration>>>,
+    jump_config: Option<Arc<crate::ssh_jump_config::PreparedJumpConfig>>,
+    http_proxy: Option<Arc<crate::ssh_http_proxy::HttpProxyLease>>,
+    cols: u16,
+    rows: u16,
+) -> Result<(), String> {
+    let gate_host = host.clone();
+    let _gate = gate_host
+        .spawn_gate
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
+    let (cols, rows) = (cols.max(2), rows.max(2));
+    ensure_identity(host.get(&id).as_deref(), Some(&identity))?;
+    if let Some(live) = host.get(&id) {
+        ensure_window(&live, window.label())?;
+    }
+    if let Some(attached) = host.reattach(&id, window.label(), cols, rows) {
+        return attached;
+    }
+    if id.is_empty() || id.len() > 200 || id.chars().any(char::is_control) {
+        return Err("Invalid terminal identifier".into());
+    }
+    if let Some(path) = new_key_path {
+        validate_new_key_path(&path)?;
+    }
+    let workdir = dirs_home()
+        .map(std::path::PathBuf::from)
+        .filter(|path| path.is_dir())
+        .ok_or("Home directory is unavailable")?;
+    let shell = (program.into(), args, vec![("SSH_ASKPASS_REQUIRE", "never")]);
+    #[cfg(unix)]
+    return spawn_unix(
+        app,
+        host,
+        window.label(),
+        id,
+        workdir,
+        cols,
+        rows,
+        shell,
+        Some(identity),
+        integration,
+        jump_config,
+        http_proxy,
+    );
+    #[cfg(windows)]
+    return spawn_windows(
+        app,
+        host,
+        window.label(),
+        id,
+        workdir,
+        cols,
+        rows,
+        shell,
+        Some(identity),
+        integration,
+        jump_config,
+        http_proxy,
+    );
+    #[cfg(not(any(unix, windows)))]
+    Err("Terminals are not supported on this platform".into())
 }
 
 /// The new view starts blank. Resizing and a SIGWINCH make the shell reprint
@@ -319,22 +591,53 @@ fn reattach(live: &LivePty, cols: u16, rows: u16) -> Result<(), String> {
 /// order, and the writer only queues them for the terminal's own
 /// writer thread, so a child that stops reading cannot hang the UI.
 #[tauri::command]
-pub fn pty_write(host: State<PtyHost>, id: String, data: String) -> Result<(), String> {
-    let live = host
-        .get(&id)
-        .ok_or_else(|| "Terminal is not running".to_string())?;
+pub fn pty_write(
+    window: tauri::Window,
+    host: State<PtyHost>,
+    id: String,
+    data: String,
+) -> Result<(), String> {
+    let live = host.get_for_window(&id, window.label())?;
+    write_shell_input(&live, &id, &data, |event| {
+        emit_shell_event(window.app_handle(), window.label(), event)
+    })
+}
+
+fn write_shell_input(
+    live: &LivePty,
+    id: &str,
+    data: &str,
+    mut emit: impl FnMut(crate::ssh_shell_integration::ShellEvent),
+) -> Result<(), String> {
+    // The writer is the transport ordering gate. State is never held across
+    // potentially blocking Unix I/O, so output parsing can always progress.
     let mut writer = live.writer.lock().unwrap_or_else(|e| e.into_inner());
+    if let Some(integration) = &live.shell_integration {
+        let event = integration
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .input_changed(id, data);
+        emit(event);
+    }
+    write_locked(writer.as_mut(), data.as_bytes())
+}
+
+fn write_locked(writer: &mut dyn Write, data: &[u8]) -> Result<(), String> {
     writer
-        .write_all(data.as_bytes())
+        .write_all(data)
         .and_then(|_| writer.flush())
         .map_err(|e| format!("Failed to write to terminal: {e}"))
 }
 
 #[tauri::command]
-pub fn pty_resize(host: State<PtyHost>, id: String, cols: u16, rows: u16) -> Result<(), String> {
-    let live = host
-        .get(&id)
-        .ok_or_else(|| "Terminal is not running".to_string())?;
+pub fn pty_resize(
+    window: tauri::Window,
+    host: State<PtyHost>,
+    id: String,
+    cols: u16,
+    rows: u16,
+) -> Result<(), String> {
+    let live = host.get_for_window(&id, window.label())?;
     #[cfg(unix)]
     {
         resize_fd(live.master_fd, cols.max(2), rows.max(2))
@@ -369,10 +672,18 @@ pub(crate) struct PtyStatus {
 /// Off the main thread: process lookup can fall back to `ps`. Visible terminals
 /// poll once a second; Linux normally reads argv directly from `/proc`.
 #[tauri::command(async)]
-pub fn pty_status(host: State<'_, PtyHost>, id: String) -> Result<PtyStatus, String> {
-    let live = host
-        .get(&id)
-        .ok_or_else(|| "Terminal is not running".to_string())?;
+pub fn pty_status(
+    window: tauri::Window,
+    host: State<'_, PtyHost>,
+    id: String,
+) -> Result<PtyStatus, String> {
+    let live = host.get_for_window(&id, window.label())?;
+    if live.ssh_identity.is_some() {
+        return Ok(PtyStatus {
+            foreground: None,
+            supported: false,
+        });
+    }
     #[cfg(unix)]
     {
         let foreground = foreground_label(live.master_fd, live.pid);
@@ -395,8 +706,8 @@ pub fn pty_status(host: State<'_, PtyHost>, id: String) -> Result<PtyStatus, Str
 /// id right after cannot see it. Only the Windows `taskkill` wait moves to the
 /// blocking pool; the signals on Unix return at once.
 #[tauri::command]
-pub fn pty_kill(host: State<PtyHost>, id: String) -> Result<(), String> {
-    if let Some(live) = host.remove(&id) {
+pub fn pty_kill(window: tauri::Window, host: State<PtyHost>, id: String) -> Result<(), String> {
+    if let Some(live) = host.remove_for_window(&id, window.label())? {
         #[cfg(windows)]
         {
             tauri::async_runtime::spawn_blocking(move || {
@@ -417,8 +728,8 @@ pub fn pty_kill(host: State<PtyHost>, id: String) -> Result<(), String> {
 /// Off the main thread: `kill_all` waits for the shells to die before it
 /// returns, and a window close calls this while the app keeps running.
 #[tauri::command(async)]
-pub fn pty_kill_all(host: State<'_, PtyHost>) -> Result<(), String> {
-    host.kill_all();
+pub fn pty_kill_all(window: tauri::Window, host: State<'_, PtyHost>) -> Result<(), String> {
+    host.kill_for_window(window.label());
     Ok(())
 }
 
@@ -434,7 +745,12 @@ fn spawn_unix(
     cols: u16,
     rows: u16,
     (shell, args, env): LaunchShell,
+    ssh_identity: Option<String>,
+    integration: Option<Arc<Mutex<crate::ssh_shell_integration::ShellIntegration>>>,
+    jump_config: Option<Arc<crate::ssh_jump_config::PreparedJumpConfig>>,
+    http_proxy: Option<Arc<crate::ssh_http_proxy::HttpProxyLease>>,
 ) -> Result<(), String> {
+    let private = ssh_identity.is_some();
     use std::fs::File;
     use std::os::unix::io::FromRawFd;
     use std::os::unix::process::CommandExt;
@@ -443,6 +759,9 @@ fn spawn_unix(
     let (master, slave) = open_pty(cols, rows)?;
 
     let mut cmd = Command::new(&shell);
+    if let Some(proxy) = &http_proxy {
+        cmd.envs(proxy.environment());
+    }
     cmd.envs(env.iter().copied());
     cmd.args(&args)
         .current_dir(&workdir)
@@ -477,17 +796,36 @@ fn spawn_unix(
         });
     }
 
-    let mut child = cmd
-        .spawn()
-        .map_err(|e| format!("Failed to start {shell}: {e}"))?;
+    set_cloexec(master);
+    let io = (|| -> Result<_, String> {
+        let reader = unsafe { File::from_raw_fd(dup_fd(master)?) };
+        let writer = unsafe { File::from_raw_fd(dup_fd(master)?) };
+        Ok((reader, writer))
+    })();
+    let (reader, writer) = match io {
+        Ok(io) => io,
+        Err(error) => {
+            close_fd(slave);
+            close_fd(master);
+            return Err(error);
+        }
+    };
+    let spawned = cmd.spawn();
     close_fd(slave);
+    let mut child = match spawned {
+        Ok(child) => child,
+        Err(error) => {
+            close_fd(master);
+            return Err(format!("Failed to start {shell}: {error}"));
+        }
+    };
     let pid = child.id();
 
-    set_cloexec(master);
-    let reader = unsafe { File::from_raw_fd(dup_fd(master)?) };
-    let writer = unsafe { File::from_raw_fd(dup_fd(master)?) };
-
     let live = Arc::new(LivePty {
+        _http_proxy: http_proxy,
+        _jump_config: jump_config,
+        ssh_identity: ssh_identity.clone(),
+        shell_integration: integration.clone(),
         cwd: workdir.clone(),
         writer: Mutex::new(Box::new(QueuedWriter::spawn(Box::new(writer)))),
         master_fd: master,
@@ -497,7 +835,9 @@ fn spawn_unix(
     let data_owner = live.owner.clone();
     host.insert(id.clone(), live);
 
-    let terminal_logs = crate::pty_runtime_logs::TerminalLogSender::new(&app, &workdir);
+    let terminal_logs = ssh_identity
+        .is_none()
+        .then(|| crate::pty_runtime_logs::TerminalLogSender::new(&app, &workdir));
     let data_app = app.clone();
     let data_id = id.clone();
     thread::spawn(move || {
@@ -519,8 +859,17 @@ fn spawn_unix(
             } else if pty_should_flush(acc.len(), last_emit.elapsed())
                 || !wait_readable(fd, PTY_COALESCE.saturating_sub(last_emit.elapsed()))
             {
-                terminal_logs.push(&acc);
-                emit_pty_data(&data_app, &data_id, &data_owner, &acc);
+                if let Some(logs) = &terminal_logs {
+                    logs.push(&acc);
+                }
+                emit_pty_data(
+                    &data_app,
+                    &data_id,
+                    &data_owner,
+                    &acc,
+                    private,
+                    &integration,
+                );
                 acc.clear();
                 last_emit = Instant::now();
             } else {
@@ -531,8 +880,17 @@ fn spawn_unix(
                 }
             }
         }
-        terminal_logs.push(&acc);
-        emit_pty_data(&data_app, &data_id, &data_owner, &acc);
+        if let Some(logs) = &terminal_logs {
+            logs.push(&acc);
+        }
+        emit_pty_data(
+            &data_app,
+            &data_id,
+            &data_owner,
+            &acc,
+            private,
+            &integration,
+        );
     });
 
     let wait_app = app;
@@ -556,6 +914,7 @@ fn spawn_unix(
                 Some(owner),
                 EXIT_EVENT,
                 PtyExit { id: wait_id, code },
+                private,
             );
         }
     });
@@ -575,7 +934,12 @@ fn spawn_windows(
     cols: u16,
     rows: u16,
     (shell, args, env): LaunchShell,
+    ssh_identity: Option<String>,
+    integration: Option<Arc<Mutex<crate::ssh_shell_integration::ShellIntegration>>>,
+    jump_config: Option<Arc<crate::ssh_jump_config::PreparedJumpConfig>>,
+    http_proxy: Option<Arc<crate::ssh_http_proxy::HttpProxyLease>>,
 ) -> Result<(), String> {
+    let private = ssh_identity.is_some();
     use portable_pty::{native_pty_system, CommandBuilder, PtySize};
 
     let pty_system = native_pty_system();
@@ -589,6 +953,11 @@ fn spawn_windows(
         .map_err(|err| format!("Failed to open terminal: {err}"))?;
 
     let mut cmd = CommandBuilder::new(&shell);
+    if let Some(proxy) = &http_proxy {
+        for (key, value) in proxy.environment() {
+            cmd.env(key, value);
+        }
+    }
     cmd.args(&args);
     cmd.cwd(&workdir);
     cmd.env("TERM", "xterm-256color");
@@ -605,9 +974,8 @@ fn spawn_windows(
         cmd.env(key, value);
     }
 
-    let mut child = crate::windows::spawn_pty(pair.slave.as_ref(), cmd)
-        .map_err(|err| format!("Failed to start {shell}: {err}"))?;
-    let pid = child.process_id().unwrap_or(0);
+    // Allocate I/O before creating a child. A failed pipe allocation must not
+    // leave a running SSH process outside the registered terminal lifecycle.
     let mut reader = pair
         .master
         .try_clone_reader()
@@ -617,7 +985,15 @@ fn spawn_windows(
         .take_writer()
         .map_err(|err| format!("Failed to write to terminal: {err}"))?;
 
+    let mut child = crate::windows::spawn_pty(pair.slave.as_ref(), cmd)
+        .map_err(|err| format!("Failed to start {shell}: {err}"))?;
+    let pid = child.process_id().unwrap_or(0);
+
     let live = Arc::new(LivePty {
+        _http_proxy: http_proxy,
+        _jump_config: jump_config,
+        ssh_identity: ssh_identity.clone(),
+        shell_integration: integration.clone(),
         cwd: workdir.clone(),
         writer: Mutex::new(Box::new(QueuedWriter::spawn(writer))),
         master: Mutex::new(pair.master),
@@ -627,7 +1003,9 @@ fn spawn_windows(
     let data_owner = live.owner.clone();
     host.insert(id.clone(), live);
 
-    let terminal_logs = crate::pty_runtime_logs::TerminalLogSender::new(&app, &workdir);
+    let terminal_logs = ssh_identity
+        .is_none()
+        .then(|| crate::pty_runtime_logs::TerminalLogSender::new(&app, &workdir));
     let data_app = app.clone();
     let data_id = id.clone();
     // A blocking read on the ConPTY pipe cannot be polled with a timeout, so
@@ -650,8 +1028,17 @@ fn spawn_windows(
     });
     thread::spawn(move || {
         coalesce_chunks(&rx, PTY_COALESCE, READ_CHUNK, |bytes| {
-            terminal_logs.push(bytes);
-            emit_pty_data(&data_app, &data_id, &data_owner, bytes)
+            if let Some(logs) = &terminal_logs {
+                logs.push(bytes);
+            }
+            emit_pty_data(
+                &data_app,
+                &data_id,
+                &data_owner,
+                bytes,
+                private,
+                &integration,
+            )
         });
     });
 
@@ -671,6 +1058,7 @@ fn spawn_windows(
                 Some(owner),
                 EXIT_EVENT,
                 PtyExit { id: wait_id, code },
+                private,
             );
         }
     });
@@ -688,6 +1076,10 @@ fn working_dir(cwd: &str) -> std::path::PathBuf {
 
 /// A shell to start: its path, its arguments, and environment it needs.
 type LaunchShell = (String, Vec<String>, Vec<(&'static str, &'static str)>);
+
+#[cfg(all(test, windows))]
+#[path = "ssh_keygen_tests.rs"]
+mod keygen_tests;
 
 /// The terminal profile `profile` names, the default one, or the old
 /// fallback when no shell could be listed.
@@ -901,7 +1293,14 @@ fn os_err(ctx: &str) -> String {
     format!("{ctx}: {}", std::io::Error::last_os_error())
 }
 
-fn emit_pty_data(app: &AppHandle, id: &str, source: &Arc<Mutex<String>>, bytes: &[u8]) {
+fn emit_pty_data(
+    app: &AppHandle,
+    id: &str,
+    source: &Arc<Mutex<String>>,
+    bytes: &[u8],
+    private: bool,
+    integration: &Option<Arc<Mutex<crate::ssh_shell_integration::ShellIntegration>>>,
+) {
     if bytes.is_empty() {
         return;
     }
@@ -913,6 +1312,23 @@ fn emit_pty_data(app: &AppHandle, id: &str, source: &Arc<Mutex<String>>, bytes: 
     else {
         return;
     };
+    let filtered;
+    let bytes = if let Some(integration) = integration {
+        let (visible, events) = integration
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .filter(id, bytes);
+        for event in events {
+            emit_shell_event(app, &owner, event);
+        }
+        filtered = visible;
+        filtered.as_slice()
+    } else {
+        bytes
+    };
+    if bytes.is_empty() {
+        return;
+    }
     let data = base64::Engine::encode(&base64::engine::general_purpose::STANDARD, bytes);
     emit_to_owner(
         app,
@@ -922,16 +1338,18 @@ fn emit_pty_data(app: &AppHandle, id: &str, source: &Arc<Mutex<String>>, bytes: 
             id: id.to_string(),
             data,
         },
+        private,
     );
 }
 
-/// Deliver to the window that owns the terminal; every window only when that
-/// owner is unknown or gone, so no output is lost.
+/// Private SSH payloads fail closed if their owner disappears or delivery fails.
+/// Local terminals retain their existing broadcast fallback.
 fn emit_to_owner<P: Serialize + Clone>(
     app: &AppHandle,
     owner: Option<String>,
     event: &str,
     payload: P,
+    private: bool,
 ) {
     if let Some(label) = owner {
         if app.get_webview_window(&label).is_some()
@@ -940,7 +1358,153 @@ fn emit_to_owner<P: Serialize + Clone>(
             return;
         }
     }
-    let _ = app.emit(event, payload);
+    if allow_broadcast_fallback(private) {
+        let _ = app.emit(event, payload);
+    }
+}
+
+fn allow_broadcast_fallback(private: bool) -> bool {
+    !private
+}
+
+fn emit_shell_event(app: &AppHandle, owner: &str, event: crate::ssh_shell_integration::ShellEvent) {
+    if app.get_webview_window(owner).is_some() {
+        let _ = app.emit_to(owner, "ssh-shell-state", event);
+    }
+}
+
+fn request_shell_snapshot(
+    live: &LivePty,
+    id: &str,
+    source: &str,
+    mut emit: impl FnMut(crate::ssh_shell_integration::ShellEvent),
+) -> Result<String, String> {
+    let integration = live
+        .shell_integration
+        .as_ref()
+        .ok_or("This terminal has no opted-in shell integration")?;
+    let mut writer = live.writer.lock().unwrap_or_else(|e| e.into_inner());
+    let (request_id, event) = integration
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .request_with_source(id, source)?;
+    emit(event);
+    write_locked(
+        writer.as_mut(),
+        crate::ssh_shell_integration::request_keys(source)?,
+    )?;
+    Ok(request_id)
+}
+
+#[tauri::command]
+pub fn ssh_terminal_suggestions_request(
+    app: AppHandle,
+    window: tauri::Window,
+    host: State<'_, PtyHost>,
+    id: String,
+    source: Option<String>,
+) -> Result<String, String> {
+    let live = host.get_for_window(&id, window.label())?;
+    let integration = live
+        .shell_integration
+        .as_ref()
+        .ok_or("This terminal has no opted-in shell integration")?
+        .clone();
+    let request_id = request_shell_snapshot(
+        &live,
+        &id,
+        source.as_deref().unwrap_or("reviewed"),
+        |event| emit_shell_event(&app, window.label(), event),
+    )?;
+    let acknowledgement = request_id.clone();
+    thread::spawn(move || {
+        thread::sleep(Duration::from_millis(1500));
+        let Some(host) = app.try_state::<PtyHost>() else {
+            return;
+        };
+        if !host
+            .get(&id)
+            .is_some_and(|current| Arc::ptr_eq(&current, &live))
+        {
+            return;
+        }
+        let event = integration
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .timeout(&id, &request_id);
+        if let Some(event) = event {
+            emit_shell_event(&app, &live.owner_label(), event);
+        }
+    });
+    Ok(acknowledgement)
+}
+
+fn insert_shell_value(
+    app: &AppHandle,
+    window: &tauri::Window,
+    host: &PtyHost,
+    id: &str,
+    request_id: &str,
+    value: &str,
+    command: bool,
+) -> Result<(), String> {
+    let live = host.get_for_window(id, window.label())?;
+    let integration = live
+        .shell_integration
+        .as_ref()
+        .ok_or("This terminal has no opted-in shell integration")?;
+    let mut writer = live.writer.lock().unwrap_or_else(|e| e.into_inner());
+    let (insertion, event) = {
+        let mut integration = integration.lock().unwrap_or_else(|e| e.into_inner());
+        let insertion = integration.accept(request_id, value, command)?;
+        (insertion, integration.dismiss(id))
+    };
+    emit_shell_event(app, window.label(), event);
+    write_locked(writer.as_mut(), insertion.as_bytes())
+}
+#[tauri::command]
+pub fn ssh_terminal_suggestion_accept(
+    app: AppHandle,
+    window: tauri::Window,
+    host: State<'_, PtyHost>,
+    id: String,
+    request_id: String,
+    value: String,
+) -> Result<(), String> {
+    insert_shell_value(&app, &window, &host, &id, &request_id, &value, false)
+}
+#[tauri::command]
+pub fn ssh_terminal_command_insert(
+    app: AppHandle,
+    window: tauri::Window,
+    host: State<'_, PtyHost>,
+    id: String,
+    request_id: String,
+    value: String,
+) -> Result<(), String> {
+    insert_shell_value(&app, &window, &host, &id, &request_id, &value, true)
+}
+#[tauri::command]
+pub fn ssh_terminal_suggestions_dismiss(
+    app: AppHandle,
+    window: tauri::Window,
+    host: State<'_, PtyHost>,
+    id: String,
+) -> Result<(), String> {
+    let live = host.get_for_window(&id, window.label())?;
+    let integration = live
+        .shell_integration
+        .as_ref()
+        .ok_or("This terminal has no opted-in shell integration")?;
+    emit_shell_event(
+        &app,
+        window.label(),
+        integration
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .dismiss(&id),
+    );
+    Ok(())
 }
 
 /// Merges what `rx` delivers into few emits, in order. The first chunk after a
@@ -1195,6 +1759,10 @@ mod tests {
 
     fn fake_pty(pid: u32, owner: &str) -> Arc<LivePty> {
         Arc::new(LivePty {
+            _jump_config: None,
+            _http_proxy: None,
+            ssh_identity: None,
+            shell_integration: None,
             cwd: std::path::PathBuf::from("/test"),
             writer: Mutex::new(Box::new(std::io::sink())),
             master_fd: -1,
@@ -1260,7 +1828,7 @@ mod tests {
             host.output_owner("term", &source).as_deref(),
             Some("window-2")
         );
-        host.remove("term");
+        host.remove_for_window("term", "main").unwrap();
         assert_eq!(
             host.output_owner("term", &source).as_deref(),
             Some("window-2")
@@ -1374,6 +1942,19 @@ mod coalesce_tests {
 
 #[cfg(test)]
 mod queued_writer_tests {
+    #[test]
+    fn explicit_powershell_integration_uses_shared_factory_without_spawning() {
+        let host = super::PtyHost::new();
+        assert!(super::integration_for_spawn(&host, "raw", "main", None)
+            .unwrap()
+            .is_none());
+        let integration = super::integration_for_spawn(&host, "fresh", "main", Some("powershell"))
+            .unwrap()
+            .unwrap();
+        assert_eq!(integration.lock().unwrap().shell_mode(), "powershell");
+        assert!(host.get("fresh").is_none());
+        assert!(super::integration_for_spawn(&host, "fresh", "main", Some("unknown")).is_err());
+    }
     use super::*;
     use std::sync::mpsc::channel;
 
@@ -1387,6 +1968,141 @@ mod queued_writer_tests {
         fn flush(&mut self) -> std::io::Result<()> {
             Ok(())
         }
+    }
+
+    #[test]
+    fn ssh_terminal_identity_isolation_and_raw_input_are_preserved() {
+        let (tx, rx) = channel();
+        #[cfg(windows)]
+        let pair = portable_pty::native_pty_system()
+            .openpty(portable_pty::PtySize::default())
+            .unwrap();
+        let live = Arc::new(LivePty {
+            _jump_config: None,
+            _http_proxy: None,
+            ssh_identity: Some("server:user:endpoint".into()),
+            shell_integration: None,
+            cwd: std::env::temp_dir(),
+            writer: Mutex::new(Box::new(QueuedWriter::spawn(Box::new(Capture(tx))))),
+            #[cfg(unix)]
+            master_fd: -1,
+            #[cfg(windows)]
+            master: Mutex::new(pair.master),
+            pid: 0,
+            owner: Arc::new(Mutex::new("main".into())),
+        });
+        assert!(ensure_identity(Some(&live), None).is_err());
+        assert!(ensure_identity(Some(&live), Some("another-server:user:endpoint")).is_err());
+        assert!(ensure_identity(Some(&live), Some("server:user:endpoint")).is_ok());
+        let host = PtyHost::new();
+        host.insert("ssh".into(), live.clone());
+        assert_eq!(
+            host.conversation_list(&live.cwd)["terminals"],
+            serde_json::json!([])
+        );
+        assert!(!host.has_working_dir(&live.cwd));
+        assert!(host
+            .conversation_write(&live.cwd, "ssh", "echo secret\n")
+            .is_err());
+        assert!(host.get_for_window("ssh", "main").is_ok());
+        assert!(host.get_for_window("ssh", "other-window").is_err());
+        assert!(host.remove_for_window("ssh", "other-window").is_err());
+        assert!(host.get("ssh").is_some());
+        // The transport never interprets arrows, shell completion, reverse
+        // search, interrupt, bracketed multiline paste, Unicode or IME text.
+        let bytes = "\x1b[A\x1b[B\t\x12\x03\x1b[200~echo α\n日本語\x1b[201~".as_bytes();
+        live.writer.lock().unwrap().write_all(bytes).unwrap();
+        assert_eq!(rx.recv_timeout(Duration::from_secs(2)).unwrap(), bytes);
+        host.kill_for_window("other-window");
+        assert!(host.get("ssh").is_some());
+        host.kill_for_window("main");
+        assert!(host.get("ssh").is_none());
+    }
+
+    #[test]
+    fn ssh_output_never_falls_back_to_global_delivery() {
+        assert!(!allow_broadcast_fallback(true));
+        assert!(allow_broadcast_fallback(false));
+    }
+
+    #[test]
+    fn shell_writer_gate_orders_requests_without_blocking_output_state() {
+        struct BlockingWriter {
+            entered: std::sync::mpsc::Sender<()>,
+            release: std::sync::mpsc::Receiver<()>,
+        }
+        impl Write for BlockingWriter {
+            fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+                self.entered.send(()).unwrap();
+                self.release.recv().unwrap();
+                Ok(bytes.len())
+            }
+            fn flush(&mut self) -> std::io::Result<()> {
+                Ok(())
+            }
+        }
+        let (entered_tx, entered_rx) = channel();
+        let (release_tx, release_rx) = channel();
+        #[cfg(windows)]
+        let pair = portable_pty::native_pty_system()
+            .openpty(portable_pty::PtySize::default())
+            .unwrap();
+        let state = Arc::new(Mutex::new(
+            crate::ssh_shell_integration::ShellIntegration::new(),
+        ));
+        let live = Arc::new(LivePty {
+            _jump_config: None,
+            _http_proxy: None,
+            ssh_identity: Some("fixture".into()),
+            shell_integration: Some(state.clone()),
+            cwd: std::env::temp_dir(),
+            writer: Mutex::new(Box::new(BlockingWriter {
+                entered: entered_tx,
+                release: release_rx,
+            })),
+            #[cfg(unix)]
+            master_fd: -1,
+            #[cfg(windows)]
+            master: Mutex::new(pair.master),
+            pid: 0,
+            owner: Arc::new(Mutex::new("main".into())),
+        });
+        let input = live.clone();
+        let writing = thread::spawn(move || write_shell_input(&input, "fixture", "x", |_| {}));
+        entered_rx.recv_timeout(Duration::from_secs(2)).unwrap();
+        // Output state must remain available even when the child stops reading.
+        assert!(state.try_lock().is_ok());
+        let request = live.clone();
+        let (done_tx, done_rx) = channel();
+        let requesting = thread::spawn(move || {
+            let result = request_shell_snapshot(&request, "fixture", "reviewed", |_| {});
+            done_tx.send(()).unwrap();
+            result
+        });
+        assert!(
+            done_rx.recv_timeout(Duration::from_millis(50)).is_err(),
+            "request may not race ahead of raw input enqueue"
+        );
+        release_tx.send(()).unwrap();
+        writing.join().unwrap().unwrap();
+        assert!(requesting.join().unwrap().is_err());
+    }
+
+    #[test]
+    fn private_key_generation_refuses_existing_key_or_public_file() {
+        let root = std::env::temp_dir().join(format!("bycoda-key-path-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir(&root).unwrap();
+        let key = root.join("test_key");
+        assert!(validate_new_key_path(&key).is_ok());
+        assert!(validate_new_key_path(std::path::Path::new("relative_key")).is_err());
+        std::fs::write(&key, b"test-only existing file").unwrap();
+        assert!(validate_new_key_path(&key).is_err());
+        std::fs::remove_file(&key).unwrap();
+        let public = root.join("test_key.pub");
+        std::fs::write(&public, b"test-only public metadata").unwrap();
+        assert!(validate_new_key_path(&key).is_err());
+        std::fs::remove_file(&public).unwrap();
+        std::fs::remove_dir(&root).unwrap();
     }
 
     #[test]
@@ -1406,6 +2122,10 @@ mod queued_writer_tests {
         host.insert(
             "project-terminal".into(),
             Arc::new(LivePty {
+                _jump_config: None,
+                _http_proxy: None,
+                ssh_identity: None,
+                shell_integration: None,
                 cwd: root.join("subdir"),
                 writer: Mutex::new(Box::new(Capture(tx))),
                 #[cfg(unix)]

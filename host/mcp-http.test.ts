@@ -9,7 +9,7 @@ import { HostStore } from "./store";
 import { HostEngine } from "./engine";
 import { createHostServer } from "./server";
 import { McpTokens, MCP_GROUPS } from "./mcp-tokens";
-import { mcpCatalog } from "./mcp-http";
+import { mcpCatalog, externalMcpCatalog } from "./mcp-http";
 import { conversationToolCatalog } from "./conversation-tools";
 import { HOST_PROTOCOL_VERSION } from "../src/features/connections/model/protocol";
 import { SOCIAL_TOOLS, socialToolName } from "../src/features/social/model/social";
@@ -101,17 +101,18 @@ async function setup() {
 describe("Streamable HTTP MCP", () => {
   it("negotiates stateless HTTP and serves the existing catalogs and schemas", async () => {
     const s = await setup();
-    const { token } = s.grant({
+    const grant = s.grant({
       conversation: ["read", "write"],
       social: ["read", "write"],
       "runtime-logs": ["read"],
     });
+    const { token } = grant;
     expect(
       (await s.send(token, "initialize", { protocolVersion: "2025-06-18" })).body.result
         .protocolVersion,
     ).toBe("2025-06-18");
     expect((await s.send(token)).body.result.tools).toHaveLength(
-      MCP_GROUPS.flatMap(mcpCatalog).length,
+      MCP_GROUPS.flatMap((group) => externalMcpCatalog(group, grant)).length,
     );
     expect(mcpCatalog("conversation")).toEqual(conversationToolCatalog());
     for (const tool of SOCIAL_TOOLS) {
@@ -136,12 +137,11 @@ describe("Streamable HTTP MCP", () => {
   it.each(MCP_GROUPS)("enforces independent read/write scopes for %s", async (group) => {
     const s = await setup();
     for (const mode of ["read", "write"] as const) {
-      const { token } = s.grant({ [group]: [mode] });
+      const grant = s.grant({ [group]: [mode] });
+      const { token } = grant;
       const listed = (await s.send(token)).body.result.tools;
       expect(listed.map((tool: any) => tool.name)).toEqual(
-        mcpCatalog(group)
-          .filter((tool) => tool.annotations.readOnlyHint === (mode === "read"))
-          .map((tool) => tool.name),
+        externalMcpCatalog(group, grant).map((tool) => tool.name),
       );
       const denied = mcpCatalog(group).find(
         (tool) => tool.annotations.readOnlyHint !== (mode === "read"),
@@ -154,6 +154,65 @@ describe("Streamable HTTP MCP", () => {
       expect((await s.send(token, "tools/list", {}, `/mcp/${other}`)).status).toBe(401);
     }
   });
+
+  it.each([["read"], ["write"], ["read", "write"]] as const)(
+    "advertises only external project capabilities for grants %j",
+    async (...modes) => {
+      const s = await setup();
+      const grant = s.grant({ conversation: modes });
+      const tools = (await s.send(grant.token, "tools/list", {}, "/mcp/conversation")).body.result
+        .tools;
+      const names = tools.map((tool: any) => tool.name);
+      for (const forbidden of [
+        "skills_search",
+        "skills_read",
+        "ui_workspace_list",
+        "ui_tools_open",
+        "devices_list",
+        "tasks_list",
+        "automations_create",
+        "inbox_list",
+        "inbox_comment",
+        "inbox_review",
+        "inbox_prAction",
+      ])
+        expect(names).not.toContain(`conversation_${forbidden}`);
+      expect(
+        tools.every((tool: any) =>
+          tool.annotations.readOnlyHint
+            ? modes.includes("read" as never)
+            : modes.includes("write" as never),
+        ),
+      ).toBe(true);
+      if (modes.includes("read" as never)) {
+        expect(names).toContain("conversation_notes_list");
+        expect(names).toContain("conversation_sessions_list");
+        const nested = (
+          await s.send(grant.token, "tools/call", {
+            name: "conversation_tools_list",
+            arguments: {},
+          })
+        ).body;
+        const nestedTools = JSON.parse(nested.result.content[0].text).tools;
+        expect(nestedTools.map((tool: any) => tool.name)).toEqual(names);
+        const sessions = (
+          await s.send(grant.token, "tools/call", {
+            name: "conversation_sessions_list",
+            arguments: {},
+          })
+        ).body;
+        expect(sessions.result.isError).toBeUndefined();
+      }
+      if (modes.includes("write" as never)) expect(names).toContain("conversation_notes_create");
+      const refused = (
+        await s.send(grant.token, "tools/call", {
+          name: "conversation_skills_search",
+          arguments: { query: "review" },
+        })
+      ).body;
+      expect(refused.result.isError).toBe(true);
+    },
+  );
 
   it("persists hashes only, supports owner RPC lifecycle, revocation and expiry across store instances", async () => {
     const s = await setup();
@@ -252,6 +311,11 @@ describe("Streamable HTTP MCP", () => {
       runtimeMode: "supervised",
     });
     const sessionToken = s.server.conversationAccess.issueSessionGrant(created.sessionId).token;
+    expect(
+      (await s.send(sessionToken, "tools/list", {}, "/mcp/conversation")).body.result.tools.map(
+        (tool: any) => tool.name,
+      ),
+    ).toEqual(conversationToolCatalog().map((tool) => tool.name));
     const direct = await s.rpc(
       "conversation.tools.call",
       { action: "tools.list", input: {} },

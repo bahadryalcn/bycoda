@@ -21,6 +21,88 @@ from local_install import wait_idle, stop_windows_host, host_install
 from local_install import app_install, windows_app_process_filter, desktop_db, mac_app_update_paths
 
 class LocalUpdateTests(unittest.TestCase):
+    @unittest.skipUnless(os.name == 'nt', 'Windows installation recovery')
+    def test_windows_failed_update_restores_complete_installation(self):
+        for failure in ('installer', 'version', 'hash'):
+            for running in (False, True):
+                with self.subTest(failure=failure, running=running), tempfile.TemporaryDirectory() as folder:
+                    root = pathlib.Path(folder)
+                    app = root / 'local/bycoda/bycoda.exe'
+                    app.parent.mkdir(parents=True)
+                    app.write_bytes(b'working old exe')
+                    (app.parent / 'resources').mkdir()
+                    (app.parent / 'resources/sidecar.dll').write_bytes(b'old sidecar')
+                    (app.parent / 'uninstall.exe').write_bytes(b'old uninstaller')
+                    release = root / 'release'
+                    release.mkdir()
+                    built = release / 'built.exe'
+                    built.write_bytes(b'new exe-__TAURI_BUNDLE_TYPE_VAR_UNK')
+                    db = root / 'desktop.db'
+                    with closing(sqlite3.connect(db)) as conn:
+                        conn.execute('CREATE TABLE in_flight_sessions (id TEXT)')
+                    manifest = {'version': '0.6.25', 'appHashes': {}, 'binaryHash': digest(built)}
+                    events = []
+                    commands = []
+                    def powershell(command):
+                        commands.append(command)
+                        if command.endswith('.Count'):
+                            return '1' if running else '0'
+                        if 'ProductVersion' in command:
+                            return 'wrong' if failure == 'version' else manifest['version']
+                        return ''
+                    def installer(args, **kwargs):
+                        app.write_bytes(b'bad exe-__TAURI_BUNDLE_TYPE_VAR_UNK' if failure == 'hash' else built.read_bytes())
+                        (app.parent / 'resources/sidecar.dll').write_bytes(b'new incompatible sidecar')
+                        (app.parent / 'new-only.dll').write_bytes(b'new resource')
+                        (app.parent / 'uninstall.exe').unlink()
+                        if failure == 'installer':
+                            raise RuntimeError('setup failed after replacing files')
+                    with patch.dict(os.environ, {'LOCALAPPDATA': str(root / 'local')}), \
+                         patch('local_install.desktop_db', return_value=db), \
+                         patch('local_install.time.sleep'), \
+                         patch('local_install.ps', side_effect=powershell), \
+                         patch('local_install.run', side_effect=installer):
+                        with self.assertRaisesRegex(RuntimeError, 'setup failed|version/hash mismatch'):
+                            app_install(release, manifest, lambda state, **data: events.append(state))
+                    self.assertEqual(app.read_bytes(), b'working old exe')
+                    self.assertEqual((app.parent / 'resources/sidecar.dll').read_bytes(), b'old sidecar')
+                    self.assertEqual((app.parent / 'uninstall.exe').read_bytes(), b'old uninstaller')
+                    self.assertFalse((app.parent / 'new-only.dll').exists())
+                    recovery = read_json(release / 'rollback-app/windows-recovery.json')
+                    self.assertTrue((pathlib.Path(recovery['failedInstallation']) / 'new-only.dll').exists())
+                    self.assertTrue((release / 'rollback-app/installation/bycoda.exe').exists())
+                    self.assertEqual(count(db, 'pragma quick_check'), 'ok')
+                    self.assertNotIn('installed', events)
+                    self.assertEqual(sum('Start-Process' in command for command in commands), int(running))
+
+    @unittest.skipUnless(os.name == 'nt', 'Windows installation recovery')
+    def test_windows_update_keeps_successful_replacement_and_backup(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = pathlib.Path(folder)
+            app = root / 'local/bycoda/bycoda.exe'
+            app.parent.mkdir(parents=True)
+            app.write_bytes(b'old executable')
+            release = root / 'release'
+            release.mkdir()
+            expected = release / 'built.exe'
+            expected.write_bytes(b'new executable-__TAURI_BUNDLE_TYPE_VAR_UNK')
+            db = root / 'desktop.db'
+            db.touch()
+            events = []
+            def powershell(command):
+                return '0' if command.endswith('.Count') else '0.6.25' if 'ProductVersion' in command else ''
+            with patch.dict(os.environ, {'LOCALAPPDATA': str(root / 'local')}), \
+                 patch('local_install.desktop_db', return_value=db), \
+                 patch('local_install.time.sleep'), patch('local_install.wait_idle'), \
+                 patch('local_install.count', return_value=0), patch('local_install.backup'), \
+                 patch('local_install.ps', side_effect=powershell), \
+                 patch('local_install.run', side_effect=lambda *args, **kwargs: shutil.copy2(expected, app)):
+                app_install(release, {'version': '0.6.25', 'appHashes': {}, 'binaryHash': digest(expected)},
+                            lambda state, **data: events.append(state))
+            self.assertEqual(app.read_bytes(), expected.read_bytes())
+            self.assertEqual((release / 'rollback-app/installation/bycoda.exe').read_bytes(), b'old executable')
+            self.assertEqual(events[-1], 'installed')
+
     def test_mac_update_keeps_one_visible_app_and_restores_failed_install(self):
         for fail_verification in (False, True):
             with self.subTest(fail_verification=fail_verification), tempfile.TemporaryDirectory() as folder:

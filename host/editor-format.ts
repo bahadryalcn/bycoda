@@ -74,7 +74,7 @@ for (let dir = dirname(path);; dir = dirname(dir)) {
     else if (/\bprettier\b/.test(script)) tool = 'prettier';
     else if (await exists(join(dir, 'biome.json')) || await exists(join(dir, 'biome.jsonc'))) tool = 'biome';
     else if (await exists(join(dir, '.oxfmtrc.json')) || await exists(join(dir, '.oxfmtrc.jsonc'))) tool = 'oxfmt';
-    else if (pkg.prettier || (await Promise.all(['.prettierrc', '.prettierrc.json', '.prettierrc.js', '.prettierrc.cjs', '.prettierrc.mjs', '.prettierrc.yaml', '.prettierrc.yml', 'prettier.config.js', 'prettier.config.cjs', 'prettier.config.mjs'].map(name => exists(join(dir, name))))).some(Boolean)) tool = 'prettier';
+    else if (pkg.prettier || (await Promise.all(['.prettierrc', '.prettierrc.json', '.prettierrc.json5', '.prettierrc.js', '.prettierrc.cjs', '.prettierrc.mjs', '.prettierrc.ts', '.prettierrc.cts', '.prettierrc.mts', '.prettierrc.toml', '.prettierrc.yaml', '.prettierrc.yml', 'prettier.config.js', 'prettier.config.cjs', 'prettier.config.mjs', 'prettier.config.ts', 'prettier.config.cts', 'prettier.config.mts'].map(name => exists(join(dir, name))))).some(Boolean)) tool = 'prettier';
   }
   if (relative(root, dir) === '' || dirname(dir) === dir) break;
 }

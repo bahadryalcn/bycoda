@@ -26,6 +26,7 @@ function setup(session: Session | undefined, transfer?: AccountSwitchDeps["trans
     latest: vi.fn(() => state.session),
     label: (_p: string, id: string) => `Label ${id}`,
     removing: vi.fn(() => false),
+    ownsRequest: vi.fn(() => true),
   };
   return { state, deps };
 }
@@ -34,6 +35,108 @@ const run = (s: ReturnType<typeof setup>, account = "account-b") =>
   switchSessionAccount(s.state.session?.id ?? "x", "claude", account, s.deps);
 
 describe("switchSessionAccount", () => {
+  const changes: [string, Partial<Session>][] = [
+    ["running turn", { busy: true }],
+    ["provider", { harness: "codex" }],
+    ["thread", { providerSessionId: "new-thread" }],
+    ["account", { providerAccountId: "new-account" }],
+    ["working directory", { cwd: "/tmp/other-project" }],
+  ];
+
+  it.each(changes)(
+    "does not rebind after %s changes while forget awaits",
+    async (_name, change) => {
+      const s = setup(convo());
+      let finishForget!: () => void;
+      let startedForget!: () => void;
+      const started = new Promise<void>((resolve) => {
+        startedForget = resolve;
+      });
+      s.deps.forget.mockImplementation(() => {
+        startedForget();
+        return new Promise<void>((resolve) => {
+          finishForget = resolve;
+        });
+      });
+      const switching = run(s);
+      await started;
+      const newer = { ...s.state.session!, ...change };
+      s.state.session = newer;
+      finishForget();
+      expect(await switching).toEqual({ kind: "stale" });
+      expect(s.deps.transfer).toHaveBeenCalledTimes(1);
+      expect(s.deps.bind).not.toHaveBeenCalled();
+      expect(s.state.session).toBe(newer);
+    },
+  );
+
+  it("drops an empty conversation switch when a turn starts during forget", async () => {
+    const s = setup(newSession("claude", "/tmp/project"));
+    let finishForget!: () => void;
+    s.deps.forget.mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          finishForget = resolve;
+        }),
+    );
+    const switching = run(s);
+    const newer = {
+      ...s.state.session!,
+      busy: true,
+      blocks: convo().blocks,
+      providerSessionId: "new-thread",
+    };
+    s.state.session = newer;
+    finishForget();
+    expect(await switching).toEqual({ kind: "stale" });
+    expect(s.deps.transfer).not.toHaveBeenCalled();
+    expect(s.deps.bind).not.toHaveBeenCalled();
+    expect(s.state.session).toBe(newer);
+  });
+
+  it.each(["account", "transferred", "handoff"] as const)(
+    "a deferred %s update preserves a newer session state",
+    async (mode) => {
+      const original = mode === "account" ? newSession("claude", "/tmp/project") : convo();
+      const s = setup(original, async () => mode === "transferred");
+      const result = await run(s);
+      expect(result.kind === "switched" && result.mode).toBe(mode);
+      if (result.kind !== "switched") throw new Error("Expected successful account switch");
+      for (const [, change] of changes) {
+        const newer = { ...original, ...change };
+        expect(result.update(newer)).toBe(newer);
+      }
+      const withNewBlocks = {
+        ...original,
+        blocks: [...original.blocks, { id: "later-turn", role: "user" as const, text: "new work" }],
+      };
+      expect(result.update(withNewBlocks)).toBe(withNewBlocks);
+      expect(result.update(original).providerAccountId).toBe("account-b");
+    },
+  );
+
+  it.each([false, true])(
+    "refuses a superseded request during forget (empty conversation: %s)",
+    async (empty) => {
+      const s = setup(empty ? newSession("claude", "/tmp/project") : convo());
+      s.deps.forget.mockImplementation(async () => {
+        s.deps.ownsRequest.mockReturnValue(false);
+      });
+      expect(await run(s)).toEqual({ kind: "stale" });
+      expect(s.deps.bind).not.toHaveBeenCalled();
+      expect(s.state.session?.providerAccountId).not.toBe("account-b");
+    },
+  );
+
+  it("ignores a superseded request when its returned updater is applied later", async () => {
+    const original = convo();
+    const s = setup(original);
+    const result = await run(s);
+    expect(result.kind).toBe("switched");
+    if (result.kind !== "switched") throw new Error("Expected successful account switch");
+    s.deps.ownsRequest.mockReturnValue(false);
+    expect(result.update(original)).toBe(original);
+  });
   it("silinen hesabın sağlayıcı geçmişi yoksa aynı konuşmayı bağlamıyla sürdürür", async () => {
     const original = convo({ providerAccountId: "removed" });
     const s = setup(original, async () => false);

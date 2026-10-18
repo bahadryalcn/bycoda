@@ -71,3 +71,25 @@ it("skips an uninitialized submodule instead of treating it as its parent reposi
   expect(await hostGitSubmodules(parent)).toEqual([]);
   expect(await hostGitSubmodules(source)).toEqual([]);
 });
+
+it("deduplicates conflicted gitlink stages and preserves recursive discovery without index mutation", async () => {
+  const f = fixture();
+  const source = f.repo("source");
+  const parent = f.repo("parent");
+  f.add(parent, source, "core pack");
+  const child = join(parent, "core pack");
+  f.add(child, source, "nested");
+  const sha = f.git(child, "rev-parse", "HEAD");
+  execFileSync("git", ["update-index", "--index-info"], {
+    cwd: parent,
+    windowsHide: true,
+    input: `0 ${"0".repeat(40)}\tcore pack\n${[1, 2, 3].map((stage) => `160000 ${sha} ${stage}\tcore pack\n`).join("")}`,
+  });
+  const before = f.git(parent, "ls-files", "--stage");
+  expect(before).toContain(`160000 ${sha} 1\tcore pack`);
+  expect(before).not.toContain(`160000 ${sha} 0\tcore pack`);
+  expect(await hostGitSubmodules(parent)).toEqual(["core pack", "core pack/nested"]);
+  expect(f.git(parent, "ls-files", "--stage")).toBe(before);
+  f.git(child, "submodule", "deinit", "-f", "--", "nested");
+  expect(await hostGitSubmodules(parent)).toEqual(["core pack"]);
+});

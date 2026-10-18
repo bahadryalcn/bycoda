@@ -386,7 +386,10 @@ export function canCompactHarnessContext(id: HarnessId): boolean {
 export function compactHarnessContext(
   input: CompactContextInput & { harness: HarnessId },
 ): Promise<void> {
+  const epoch = cancellationEpoch.get(input.sessionId) ?? 0;
   return queueSessionOperation(input.sessionId, async () => {
+    if ((cancellationEpoch.get(input.sessionId) ?? 0) !== epoch)
+      throw new Error("Compaction cancelled before it started");
     const adapter = requireHarness(input.harness);
     if (!adapter.live) {
       throw new Error(`${input.harness} is not connected yet`);
@@ -458,8 +461,16 @@ export async function cancelHarnessTurn(harness: HarnessId, sessionId: string): 
   const owner = adapterOperations.get(sessionId);
   if (!owner || owner.adapter.id !== harness) return;
   cancelIdlePark(sessionId);
-  owner.cancellation ??= Promise.resolve().then(() => owner.adapter.cancelTurn(sessionId));
-  await owner.cancellation;
+  const cancellation = (owner.cancellation ??= Promise.resolve().then(() =>
+    owner.adapter.cancelTurn(sessionId),
+  ));
+  try {
+    await cancellation;
+  } catch (error) {
+    // Share an in-flight attempt, but allow Stop to retry a delivery failure.
+    if (owner.cancellation === cancellation) owner.cancellation = undefined;
+    throw error;
+  }
   if (!adapterOperations.has(sessionId) || adapterOperations.get(sessionId) === owner) {
     scheduleIdlePark(harness, sessionId);
   }

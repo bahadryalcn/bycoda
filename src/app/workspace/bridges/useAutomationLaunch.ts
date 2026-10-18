@@ -43,6 +43,7 @@ export interface AutomationLaunchDeps {
   setInboxViewOpen: (open: boolean) => void;
   setNotesViewOpen: (open: boolean) => void;
   setAutomationsViewOpen: (open: boolean) => void;
+  setServersViewOpen?: (open: boolean) => void;
   setSidebarTab: (tab: SidebarTabId, project?: string) => void;
   onStopRef: { current: (sessionId: string) => void };
 }
@@ -58,6 +59,7 @@ export function useAutomationLaunch({
   setInboxViewOpen,
   setNotesViewOpen,
   setAutomationsViewOpen,
+  setServersViewOpen,
   setSidebarTab,
   onStopRef,
 }: AutomationLaunchDeps) {
@@ -74,6 +76,9 @@ export function useAutomationLaunch({
       prompt = run.prompt ?? automation.prompt,
       sourceWorkItem?: LinkedWorkItem,
     ) => {
+      // A runbook must use its native target-bound approval and process owner.
+      // Scheduled/recovered agent launch paths never execute its script.
+      if (automation.executor === "ssh" || automation.sshRunbook) return;
       let reservationId: string | undefined;
       let releaseAfterSettle = false;
       const releaseReservation = () => {
@@ -196,6 +201,7 @@ export function useAutomationLaunch({
           setInboxViewOpen(false);
           setNotesViewOpen(false);
           setAutomationsViewOpen(false);
+          setServersViewOpen?.(false);
           setSidebarTab("sessions", session.cwd);
         }
 

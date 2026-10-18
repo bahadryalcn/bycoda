@@ -58,6 +58,7 @@ import {
   Settings,
   SplitSquare,
   StickyNote,
+  Server,
   Trash2,
   Zap,
 } from "../../shared/ui/icons";
@@ -400,12 +401,14 @@ type Props = {
   onOpenInbox?: () => void;
   onOpenInboxItem?: (item: LinkedWorkItem, sessionId: string) => void;
   onOpenNotes?: () => void;
+  onOpenServers?: () => void;
   onOpenAutomations?: () => void;
   onOpenTasks?: () => void;
   onGoToFile?: () => void;
   searchActive?: boolean;
   inboxActive?: boolean;
   notesActive?: boolean;
+  serversActive?: boolean;
   automationsActive?: boolean;
   tasksActive?: boolean;
   socialActive?: boolean;
@@ -506,12 +509,14 @@ function SidebarComponent({
   onOpenInbox,
   onOpenInboxItem,
   onOpenNotes,
+  onOpenServers,
   onOpenAutomations,
   onOpenTasks,
   onGoToFile,
   searchActive = false,
   inboxActive = false,
   notesActive = false,
+  serversActive = false,
   automationsActive = false,
   tasksActive = false,
   socialActive = false,
@@ -917,7 +922,6 @@ function SidebarComponent({
     const compareStatus = sessionStatusOrder(
       listedApprovalSessionIds,
       listedBusySessionIds,
-      unseenFinishedIds,
     );
     // Status leads within each group; saved order breaks ties.
     const ungroupedVisible = [
@@ -1024,6 +1028,7 @@ function SidebarComponent({
     !searchActive &&
     !inboxActive &&
     !notesActive &&
+    !serversActive &&
     !automationsActive &&
     !tasksActive &&
     !socialActive &&
@@ -2606,6 +2611,8 @@ function SidebarComponent({
               onOpenInbox={onOpenInbox}
               onOpenNotificationSettings={onOpenNotificationSettings}
               onOpenNotes={notesEnabled ? onOpenNotes : undefined}
+              onOpenServers={onOpenServers}
+              serversActive={serversActive}
               onOpenAutomations={onOpenAutomations}
               onOpenTasks={onOpenTasks}
               searchActive={searchActive}
@@ -3204,6 +3211,8 @@ function SidebarComponent({
           inboxActive={inboxActive}
           onOpenNotificationSettings={onOpenNotificationSettings}
           onOpenNotes={notesEnabled ? onOpenNotes : undefined}
+          onOpenServers={onOpenServers}
+          serversActive={serversActive}
           notesActive={notesActive}
           onOpenAutomations={onOpenAutomations}
           onOpenTasks={onOpenTasks}
@@ -3243,6 +3252,8 @@ function SidebarComponent({
           inboxActive={inboxActive}
           notesEnabled={notesEnabled}
           onOpenNotes={onOpenNotes}
+          onOpenServers={onOpenServers}
+          serversActive={serversActive}
           notesActive={notesActive}
           onOpenAutomations={onOpenAutomations}
           onOpenTasks={onOpenTasks}
@@ -3326,11 +3337,13 @@ function SidebarProjectPicker({
   onOpenInbox,
   onOpenNotificationSettings,
   onOpenNotes,
+  onOpenServers,
   onOpenAutomations,
   onOpenTasks,
   searchActive = false,
   inboxActive = false,
   notesActive = false,
+  serversActive = false,
   automationsActive = false,
   tasksActive = false,
   socialActive = false,
@@ -3347,11 +3360,13 @@ function SidebarProjectPicker({
   onOpenInbox?: () => void;
   onOpenNotificationSettings?: (projectPath?: string) => void;
   onOpenNotes?: () => void;
+  onOpenServers?: () => void;
   onOpenAutomations?: () => void;
   onOpenTasks?: () => void;
   searchActive?: boolean;
   inboxActive?: boolean;
   notesActive?: boolean;
+  serversActive?: boolean;
   automationsActive?: boolean;
   tasksActive?: boolean;
   socialActive?: boolean;
@@ -3415,6 +3430,11 @@ function SidebarProjectPicker({
               </span>
             </IconButton>
           </WorkspaceFeatureGate>
+        ) : null}
+        {onOpenServers ? (
+          <IconButton label={t("Servers")} active={serversActive} onClick={onOpenServers}>
+            <Server className="size-3.5" strokeWidth={1.75} />
+          </IconButton>
         ) : null}
         {onOpenNotes ? (
           <span className="contents @max-[230px]/picker:hidden">
@@ -3496,7 +3516,9 @@ function CompactProjectRail({
   inboxActive,
   onOpenNotificationSettings,
   onOpenNotes,
+  onOpenServers,
   notesActive,
+  serversActive = false,
   onOpenAutomations,
   onOpenTasks,
   automationsActive,
@@ -3531,7 +3553,9 @@ function CompactProjectRail({
   inboxActive: boolean;
   onOpenNotificationSettings?: (projectPath?: string) => void;
   onOpenNotes?: () => void;
+  onOpenServers?: () => void;
   notesActive: boolean;
+  serversActive?: boolean;
   onOpenAutomations?: () => void;
   onOpenTasks?: () => void;
   automationsActive: boolean;
@@ -3555,6 +3579,7 @@ function CompactProjectRail({
     !searchActive &&
     !inboxActive &&
     !notesActive &&
+    !serversActive &&
     !automationsActive &&
     !tasksActive &&
     !socialActive;
@@ -3659,6 +3684,14 @@ function CompactProjectRail({
             }}
           />
         </WorkspaceFeatureGate>
+        {onOpenServers ? (
+          <CompactRailAction
+            label={t("Servers")}
+            icon={Server}
+            active={serversActive}
+            onClick={action(serversActive, onOpenServers)}
+          />
+        ) : null}
         {onOpenNotes ? (
           <CompactRailAction
             label={t("Notes")}

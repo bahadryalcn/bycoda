@@ -117,15 +117,17 @@ export function QuotaHistory({
                 .map((s) => ({
                   key: String(s.at),
                   at: s.at,
-                  time: new Date(s.at).toLocaleString(locale),
+                  time: s.at,
                   used: s.used,
                   minutes: s.minutes,
-                  reset: s.resetsAt
-                    ? new Date(s.resetsAt).toLocaleString(locale)
-                    : t("Reset time unavailable"),
+                  reset: s.resetsAt ?? null,
                 }))}
               columns={[
-                { key: "time", label: t("Time") },
+                {
+                  key: "time",
+                  label: t("Time"),
+                  render: (v) => new Date(Number(v)).toLocaleString(locale),
+                },
                 {
                   key: "used",
                   label: t("Used (%)"),
@@ -133,7 +135,14 @@ export function QuotaHistory({
                   render: (v) => `${Number(v).toFixed(1)}%`,
                 },
                 { key: "minutes", label: t("Window (minutes)"), numeric: true },
-                { key: "reset", label: t("Reset") },
+                {
+                  key: "reset",
+                  label: t("Reset"),
+                  render: (v) =>
+                    v == null
+                      ? t("Reset time unavailable")
+                      : new Date(Number(v)).toLocaleString(locale),
+                },
               ]}
             />
             <p className="usage-muted">{t("Latest 100 samples in the selected interval.")}</p>

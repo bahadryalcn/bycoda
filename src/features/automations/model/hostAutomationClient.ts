@@ -8,6 +8,7 @@ import {
 } from "../../connections/model/protocol";
 import { parseRemotePath, remotePath } from "../../connections/model/remoteProjects";
 import { pathKey } from "../../../shared/lib/paths";
+import type { AutomationSchedule } from "./automationSchedule";
 import { collectMachineResults, type LastGoodLists, type MachineResult } from "./machineResults";
 import { invalidateMachineSnapshot, machineCapabilities, machineProjects } from "./machineSnapshot";
 import {
@@ -27,6 +28,19 @@ export const BACKGROUND_TRIGGER_ERROR =
   "A background automation runs on one schedule. Remove the other triggers.";
 export const BACKGROUND_MACHINE_ERROR =
   "This project’s machine isn’t connected, or its bycoda Host needs an update.";
+
+export type HostSchedulePreview = { timeZone: string; nextRunAt: number };
+
+export async function previewHostAutomation(machineId: string, schedule: AutomationSchedule) {
+  const preview = await remoteRequest<HostSchedulePreview>(machineId, "automations.preview", {
+    schedule,
+  });
+  if (!preview || typeof preview.timeZone !== "string" || !Number.isFinite(preview.nextRunAt))
+    throw new Error("Host schedule preview unavailable");
+  // Validate the host's IANA zone before the render path formats its instant.
+  new Intl.DateTimeFormat(undefined, { timeZone: preview.timeZone }).format(preview.nextRunAt);
+  return preview;
+}
 
 /** Machines whose host does background work on its own, this computer's
  * included. `capability` is what the host must advertise: automations unless

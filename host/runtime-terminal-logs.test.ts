@@ -43,9 +43,13 @@ it("discards a partial line after dropped chunks, rejects replay, and bounds unt
   terminals.append("project", packet("ret\nGET / 200 in 2ms\n", 2));
   terminals.append("project", packet("duplicate\n", 2));
   terminals.append("project", packet("x".repeat(20_000) + "\n", 3));
-  expect(logs.read().entries).toHaveLength(2);
-  expect(logs.read().entries[0].message).toBe("GET / 200 in 2ms");
-  expect(logs.read().entries[1].message.length).toBeLessThan(8300);
+  expect(logs.read().entries).toHaveLength(3);
+  expect(logs.read().entries[0]).toMatchObject({
+    level: "warn",
+    details: { captureGap: true, expectedSequence: 1, receivedSequence: 2 },
+  });
+  expect(logs.read().entries[1].message).toBe("GET / 200 in 2ms");
+  expect(logs.read().entries[2].message.length).toBeLessThan(8300);
 });
 
 it("discards partial lines after native queue gaps within a batched packet", () => {
@@ -53,5 +57,45 @@ it("discards partial lines after native queue gaps within a batched packet", () 
   const terminals = new RuntimeTerminalLogs(logs);
   terminals.append("project", packet("password=sec", 0));
   terminals.append("project", packet("ret\nReady in 100ms\n", 1, { interrupted: true }));
-  expect(logs.read().entries.map((entry) => entry.message)).toEqual(["Ready in 100ms"]);
+  expect(logs.read().entries[0]).toMatchObject({
+    sourceId: "server:terminal:term-1",
+    level: "warn",
+    details: { captureGap: true, interrupted: true },
+  });
+  expect(
+    logs
+      .read()
+      .entries.slice(1)
+      .map((entry) => entry.message),
+  ).toEqual(["Ready in 100ms"]);
+});
+
+it("redacts multiline PEM across packets, stream gaps and closure with isolated terminal state", () => {
+  const logs = new RuntimeLogsService();
+  const terminals = new RuntimeTerminalLogs(logs);
+  terminals.append("project", packet("-----BEGIN PRI", 0));
+  terminals.append("project", packet("VATE KEY-----\nSYNTHETIC_BODY_A\n", 1));
+  terminals.append("project", {
+    ...packet("other terminal diagnostic\n", 0),
+    terminalId: "term-2",
+  });
+  terminals.append("project", packet("lost-tail\nSYNTHETIC_BODY_B\n", 3));
+  terminals.append("project", packet("-----END PRIVATE KEY-----\nrecovered\n", 4));
+  terminals.append(
+    "project",
+    packet("-----BEGIN RSA PRIVATE KEY-----\nSYNTHETIC_FINAL", 5, { closed: true }),
+  );
+  expect(JSON.stringify(logs.read())).not.toContain("SYNTHETIC");
+  expect(logs.read().entries.map((entry) => entry.message)).toContain("other terminal diagnostic");
+  expect(logs.read().entries.map((entry) => entry.message)).toContain("recovered");
+});
+
+it("recognizes PEM openers beyond the retained line length", () => {
+  const logs = new RuntimeLogsService();
+  const terminals = new RuntimeTerminalLogs(logs);
+  terminals.append(
+    "project",
+    packet("prefix".repeat(1500) + "-----BEGIN PRIVATE KEY-----\nSYNTHETIC_BODY\n", 0),
+  );
+  expect(JSON.stringify(logs.read())).not.toContain("SYNTHETIC");
 });

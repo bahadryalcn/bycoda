@@ -280,6 +280,34 @@ afterEach(async () => {
 });
 
 describe("claude streamed tool inputs", () => {
+  it.each(["interrupt", "stop_task"])(
+    "keeps a turn observable and retryable when Stop cannot deliver %s",
+    async (request) => {
+      const { turn, events } = await startTurn("s1");
+      if (request === "stop_task") emitBackgroundBash("failed-stop-task");
+      let settled = false;
+      void turn.then(() => {
+        settled = true;
+      });
+      writeChild.mockRejectedValueOnce(new Error("pipe unavailable"));
+      await expect(cancelClaudeTurn("s1")).rejects.toThrow("pipe unavailable");
+      expect(settled).toBe(false);
+      expect(events.some((event) => event.type === "message.completed")).toBe(false);
+      emit({
+        type: "stream_event",
+        session_id: "sess_1",
+        event: {
+          type: "content_block_delta",
+          index: 0,
+          delta: { type: "text_delta", text: "still working" },
+        },
+      });
+      expect(events.some((event) => event.type === "message.delta")).toBe(true);
+      await cancelClaudeTurn("s1");
+      await turn;
+      expect(settled).toBe(true);
+    },
+  );
   it("launches the selected advisor and rebinds when it is disabled", async () => {
     const first = await startTurn("advisor-session", {
       modelSettings: { advisor: "opus", subagentModel: "haiku", subagentPolicy: "force" },
@@ -1662,9 +1690,24 @@ describe("claude subagents", () => {
 
   it("does not carry a replayed task's rate limit into the real turn", async () => {
     const { events, turn } = await startTurn("s1");
-    emit({ type: "rate_limit_event", rate_limit_info: { status: "rejected", resetsAt: 1_800_000_000 } });
-    emit({ type: "result", subtype: "success", num_turns: 0, origin: { kind: "task-notification" }, result: "" });
-    emit({ type: "result", subtype: "error_during_execution", is_error: true, errors: ["Temporary provider error"], result: "Temporary provider error" });
+    emit({
+      type: "rate_limit_event",
+      rate_limit_info: { status: "rejected", resetsAt: 1_800_000_000 },
+    });
+    emit({
+      type: "result",
+      subtype: "success",
+      num_turns: 0,
+      origin: { kind: "task-notification" },
+      result: "",
+    });
+    emit({
+      type: "result",
+      subtype: "error_during_execution",
+      is_error: true,
+      errors: ["Temporary provider error"],
+      result: "Temporary provider error",
+    });
     await turn;
     expect(events.some((event) => event.type === "usage.limited")).toBe(false);
   });
@@ -2555,6 +2598,32 @@ describe("claude plan permissions", () => {
     expect(plan?.text).toContain("Rewrite the auth module.");
     expect(plan?.streaming).toBeFalsy();
     expect(plan?.plan?.status).toBe("ready");
+  });
+
+  it("requests the full final plan when ExitPlanMode provides only file-backed metadata", async () => {
+    const { turn } = await startTurn("missing-plan", { intent: "plan" });
+    emit({
+      type: "control_request",
+      request_id: "exit_missing",
+      request: {
+        subtype: "can_use_tool",
+        tool_name: "ExitPlanMode",
+        input: { allowedPrompts: [] },
+      },
+    });
+    await waitFor(
+      () =>
+        parse().some((m) => (m.response as Record<string, unknown>)?.request_id === "exit_missing"),
+      "missing plan response",
+    );
+    const response = parse().find(
+      (m) => (m.response as Record<string, unknown>)?.request_id === "exit_missing",
+    )?.response as { response: { behavior: string; message: string } };
+    expect(response.response.behavior).toBe("deny");
+    expect(response.response.message).toContain("complete implementation plan");
+    expect(response.response.message).not.toContain("captured your proposed plan");
+    emit({ type: "result", subtype: "success", session_id: "sess_1" });
+    await turn;
   });
 });
 

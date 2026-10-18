@@ -209,7 +209,10 @@ export class ProviderInboxBridge {
         .prepare("SELECT * FROM remote_inbox_jobs WHERE id=? AND client_key=?")
         .get(reply.id, clientKey) as JobRow | undefined;
       if (!row) continue;
-      if (row.state === "running") {
+      // The same authenticated desktop still owns a dispatched write after its
+      // lease expires. Persist its late reply before acknowledging delivery;
+      // uncertain writes are never put back in the dispatch queue.
+      if (row.state === "running" || (row.state === "uncertain" && row.result_json === null)) {
         if (typeof reply.error === "string") {
           this.db
             .prepare("UPDATE remote_inbox_jobs SET state=?,error=? WHERE id=?")
@@ -226,7 +229,9 @@ export class ProviderInboxBridge {
               );
           } else
             this.db
-              .prepare("UPDATE remote_inbox_jobs SET state='completed',result_json=? WHERE id=?")
+              .prepare(
+                "UPDATE remote_inbox_jobs SET state='completed',result_json=?,error=NULL WHERE id=?",
+              )
               .run(result, row.id);
         }
       }

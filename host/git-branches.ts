@@ -13,26 +13,30 @@ export type HostBranches = {
 };
 
 export async function hostBranches(cwd: string): Promise<HostBranches> {
-  const [{ stdout: names }, { stdout: remoteNames }, current] = await Promise.all([
-    exec("git", ["for-each-ref", "--format=%(refname:short)", "refs/heads"], options(cwd)),
-    exec(
-      "git",
-      ["for-each-ref", "--format=%(refname:short)%00%(symref)", "refs/remotes"],
-      options(cwd),
-    ),
-    exec("git", ["symbolic-ref", "--quiet", "--short", "HEAD"], options(cwd))
-      .then(({ stdout }) => stdout.trim())
-      .catch(() => null),
-  ]);
+  const [{ stdout: names }, { stdout: remoteNames }, { stdout: configuredRemotes }, current] =
+    await Promise.all([
+      exec("git", ["for-each-ref", "--format=%(refname:strip=2)", "refs/heads"], options(cwd)),
+      exec(
+        "git",
+        ["for-each-ref", "--format=%(refname:strip=2)%00%(symref)", "refs/remotes"],
+        options(cwd),
+      ),
+      exec("git", ["remote"], options(cwd)),
+      exec("git", ["symbolic-ref", "--quiet", "HEAD"], options(cwd))
+        .then(({ stdout }) => stdout.trim().replace(/^refs\/heads\//, ""))
+        .catch(() => null),
+    ]);
+  const remotePrefixes = configuredRemotes
+    .split("\n")
+    .filter(Boolean)
+    .sort((a, b) => b.length - a.length);
   const remotes = remoteNames
     .split("\n")
     .filter(Boolean)
     .flatMap((line) => {
       const [ref, symref] = line.split("\0");
-      const slash = ref.indexOf("/");
-      return slash > 0 && !symref
-        ? [{ remote: ref.slice(0, slash), name: ref.slice(slash + 1) }]
-        : [];
+      const remote = remotePrefixes.find((name) => ref.startsWith(`${name}/`));
+      return remote && !symref ? [{ remote, name: ref.slice(remote.length + 1) }] : [];
     });
   return { current, branches: names.split("\n").filter(Boolean), remotes };
 }

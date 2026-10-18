@@ -196,6 +196,11 @@
   gap: var(--space-2);
 }
 
+/* Let full-width native actions distribute and truncate their own content. */
+.control.fullWidth > .nativeContent {
+  flex: 1;
+}
+
 .control.item,
 .control.tab {
   transform: none;

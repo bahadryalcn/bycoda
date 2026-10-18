@@ -1,5 +1,5 @@
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
-import { Alert } from "../../../shared/ui/Alert";
+import { SettingsFeedback } from "./settingsControls";
 import { Badge } from "../../../shared/ui/Badge";
 import { projectDisplayName } from "../../projects/model/projectNames";
 import { t, useLocale, getLocale } from "../../../shared/i18n";
@@ -533,10 +533,13 @@ export function HarnessUpdatesGroup() {
       }
     >
       {error ? (
-        <Alert tone="danger" role="alert">
+        <SettingsFeedback state="error">
           {t("Could not check CLI updates: ")}
           {error}
-        </Alert>
+        </SettingsFeedback>
+      ) : null}
+      {checking ? (
+        <SettingsFeedback state="loading">{t("Checking installed CLIs…")}</SettingsFeedback>
       ) : null}
       {checks === null ? (
         <Row
@@ -545,11 +548,10 @@ export function HarnessUpdatesGroup() {
             "Runs each installed CLI to read its version, then looks up the newest release.",
           )}
         />
-      ) : checks.length === 0 ? (
-        <Row
-          label={t("No CLIs to check")}
-          description={t("None of the CLIs with a release feed are installed.")}
-        />
+      ) : checks.length === 0 && !error && !checking ? (
+        <SettingsFeedback state="empty">
+          {t("No CLIs to check")}. {t("None of the CLIs with a release feed are installed.")}
+        </SettingsFeedback>
       ) : (
         <div className="provider-cli-updates">
           {checks.map((entry) => (
@@ -578,17 +580,17 @@ export function HarnessUpdateSettingsRow({
   useLocale();
   const title = HARNESS_TITLE[check.harness];
   const description =
-    check.status === "unknown"
-      ? `Could not check: ${check.error}`
-      : check.status === "current"
-        ? state.status === "updated"
+    state.status === "failed"
+      ? state.error
+      : state.status === "updating"
+        ? t("Updating…")
+        : state.status === "updated"
           ? `Updated to ${state.version}.`
-          : "Up to date."
-        : state.status === "updating"
-          ? "Updating…"
-          : state.status === "failed"
-            ? state.error
-            : `Version ${check.latest} is available.`;
+          : check.status === "unknown"
+            ? `Could not check: ${check.error}`
+            : check.status === "current"
+              ? t("Up to date.")
+              : `Version ${check.latest} is available.`;
 
   return (
     <Row
@@ -601,12 +603,27 @@ export function HarnessUpdateSettingsRow({
           ) : null}
         </span>
       }
-      description={description}
+      feedback={
+        <SettingsFeedback
+          state={
+            state.status === "failed"
+              ? "error"
+              : state.status === "updating"
+                ? "loading"
+                : state.status === "updated" || check.status === "current"
+                  ? "success"
+                  : "warning"
+          }
+        >
+          {description}
+        </SettingsFeedback>
+      }
     >
       {check.status === "behind" ? (
         <SecondaryButton
           onClick={() => onUpdate(check)}
           disabled={state.status === "updating"}
+          loading={state.status === "updating"}
           aria-label={
             state.status === "failed"
               ? t("Retry updating {p0}", { p0: title })

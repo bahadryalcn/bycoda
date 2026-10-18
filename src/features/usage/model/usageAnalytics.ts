@@ -184,10 +184,15 @@ export function usageBreakdown(
 export function bucketStart(timestamp: number, resolution: UsageResolution): number {
   const date = new Date(timestamp);
   if (resolution === "15m") return Math.floor(timestamp / 900_000) * 900_000;
-  if (resolution === "hour")
-    return (
-      timestamp - date.getMinutes() * 60_000 - date.getSeconds() * 1000 - date.getMilliseconds()
-    );
+  if (resolution === "hour") {
+    const start =
+      timestamp - date.getMinutes() * 60_000 - date.getSeconds() * 1000 - date.getMilliseconds();
+    // A partial repeated hour starts at the offset transition, not at an
+    // invented local hour boundary before it (for example Lord Howe's 01:30).
+    return new Date(start).getTimezoneOffset() === date.getTimezoneOffset()
+      ? start
+      : offsetTransition(start, timestamp);
+  }
   date.setHours(0, 0, 0, 0);
   if (resolution === "week") date.setDate(date.getDate() - ((date.getDay() + 6) % 7));
   return date.getTime();
@@ -195,10 +200,31 @@ export function bucketStart(timestamp: number, resolution: UsageResolution): num
 
 export function nextBucket(timestamp: number, resolution: UsageResolution): number {
   if (resolution === "15m") return timestamp + 900_000;
-  if (resolution === "hour") return timestamp + 3_600_000;
+  if (resolution === "hour") {
+    const date = new Date(timestamp);
+    const end =
+      timestamp +
+      (60 - date.getMinutes()) * 60_000 -
+      date.getSeconds() * 1000 -
+      date.getMilliseconds();
+    return new Date(end - 1).getTimezoneOffset() === date.getTimezoneOffset()
+      ? end
+      : offsetTransition(timestamp, end - 1);
+  }
   const date = new Date(timestamp);
   date.setDate(date.getDate() + (resolution === "week" ? 7 : 1));
   return date.getTime();
+}
+
+/** First instant with a new UTC offset, within an interval crossing a transition. */
+function offsetTransition(start: number, end: number): number {
+  const offset = new Date(start).getTimezoneOffset();
+  while (end - start > 1) {
+    const middle = Math.floor((start + end) / 2);
+    if (new Date(middle).getTimezoneOffset() === offset) start = middle;
+    else end = middle;
+  }
+  return end;
 }
 
 /** Keep the entire selected interval while bounding the chart DOM. */

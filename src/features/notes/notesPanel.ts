@@ -121,7 +121,10 @@ export type PanelNotes<NoteItem extends NoteMetadata = Note> = {
 };
 
 function newestFirst(a: NoteMetadata, b: NoteMetadata): number {
-  return b.updatedAt - a.updatedAt || a.id.localeCompare(b.id);
+  return (
+    (b.contentUpdatedAt ?? b.updatedAt) - (a.contentUpdatedAt ?? a.updatedAt) ||
+    a.id.localeCompare(b.id)
+  );
 }
 
 /**

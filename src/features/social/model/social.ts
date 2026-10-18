@@ -11,9 +11,56 @@ export type SocialPolicies = {
   global: SocialPolicy;
   platforms: Partial<Record<SocialPlatform, SocialPolicy>>;
 };
+export type SocialMonitorChannel = {
+  channel: "mentions" | "messages" | "comments";
+  status: "read" | "unavailable";
+  reason?: "response_unavailable" | "chat_setup_required" | "encrypted_chat_unsupported";
+};
+export type SocialMonitorStatus = {
+  status: "idle" | "healthy" | "partial" | "blocked";
+  checkedAt?: number;
+  error?: string;
+  pollingEnabled?: boolean;
+  accountActive?: boolean;
+  coverage?: SocialMonitorChannel[];
+};
 export const SOCIAL_CAPABILITY = "social.v1";
-export const SOCIAL_PLATFORMS = ["x", "instagram", "facebook", "linkedin", "youtube"] as const;
+export const SOCIAL_PLATFORMS = [
+  "x",
+  "instagram",
+  "facebook",
+  "linkedin",
+  "youtube",
+  "tiktok",
+  "snapchat",
+  "whatsapp",
+  "telegram",
+] as const;
 export type SocialPlatform = (typeof SOCIAL_PLATFORMS)[number];
+export const SOCIAL_PLATFORM_NAMES: Record<SocialPlatform, string> = {
+  x: "X",
+  instagram: "Instagram",
+  facebook: "Facebook",
+  linkedin: "LinkedIn",
+  youtube: "YouTube",
+  tiktok: "TikTok",
+  snapchat: "Snapchat",
+  whatsapp: "WhatsApp",
+  telegram: "Telegram",
+};
+export const SOCIAL_ACCOUNT_TYPES = {
+  x: ["member"],
+  instagram: ["professional"],
+  facebook: ["page"],
+  linkedin: ["member", "organization"],
+  youtube: ["channel"],
+  tiktok: ["member"],
+  snapchat: ["public_profile"],
+  whatsapp: ["business"],
+  telegram: ["bot"],
+} as const satisfies Record<SocialPlatform, readonly string[]>;
+export const PROFILE_ONLY_PLATFORMS: readonly SocialPlatform[] = ["snapchat"];
+export const TOKEN_PLATFORMS: readonly SocialPlatform[] = ["whatsapp", "telegram"];
 export type SocialPermission = "read" | "draft" | "publish" | "reply" | "message" | "comment";
 export type SocialOperation =
   | "publish"
@@ -39,13 +86,21 @@ export type SocialAccount = {
   platform: SocialPlatform;
   platformId: string;
   name: string;
-  accountType: "member" | "organization" | "professional" | "page" | "channel";
+  accountType:
+    | "member"
+    | "organization"
+    | "professional"
+    | "page"
+    | "channel"
+    | "public_profile"
+    | "business"
+    | "bot";
   scopes: string[];
   accessApproved: boolean;
   expiresAt?: number;
   connected: boolean;
-  /** Undefined means platform OAuth. "browser" drives the owner's logged-in X web session. */
-  connection?: "oauth" | "browser";
+  /** Undefined means OAuth. Browser is X only; token uses host-configured bot/business credentials. */
+  connection?: "oauth" | "browser" | "token";
   paused: boolean;
   executorId: string;
   grants: Record<string, SocialPermission[]>;
@@ -78,6 +133,26 @@ export type CampaignVariant = {
   scheduledAt: number;
   factIds: string[];
   youtube?: YouTubeVideoOptions;
+  tiktok?: TikTokVideoOptions;
+};
+export type TikTokCreatorInfo = {
+  nickname: string;
+  privacyOptions: string[];
+  commentDisabled: boolean;
+  duetDisabled: boolean;
+  stitchDisabled: boolean;
+  maxDurationSeconds: number;
+};
+export type TikTokVideoOptions = {
+  privacy: string;
+  durationSeconds: number;
+  allowComment: boolean;
+  allowDuet: boolean;
+  allowStitch: boolean;
+  brandContent: boolean;
+  brandOrganic: boolean;
+  isAigc: boolean;
+  consent: boolean;
 };
 export type YouTubeVideoOptions = {
   title: string;
@@ -186,6 +261,7 @@ export type SocialDraft = {
   contactId: string;
   postId?: string;
   text: string;
+  media?: SocialMedia[];
   factIds: string[];
   inboundEventId?: string;
   createdAt: number;
@@ -200,6 +276,8 @@ export type SocialDraft = {
   };
   ruleId?: string;
 };
+/** Owner approval must carry the full preview displayed before any async lookup. */
+export type SocialDraftApprovalInput = { id: string; reviewedDraft: SocialDraft };
 export type SocialRule = {
   id: string;
   name: string;
@@ -240,6 +318,7 @@ export type SocialJob = {
     postId?: string;
     objectPostId?: string;
     youtube?: YouTubeVideoOptions;
+    tiktok?: TikTokVideoOptions;
   };
   contactId?: string;
   status: "queued" | "running" | "succeeded" | "failed" | "review" | "cancelled";
@@ -252,7 +331,12 @@ export type SocialJob = {
   visibility?: "private" | "unlisted" | "public";
   createdAt: number;
   actorId: string;
-  preparation?: { containerId?: string; mediaIds?: string[] };
+  preparation?: {
+    containerId?: string;
+    mediaIds?: string[];
+    tiktokPublishId?: string;
+    xVideo?: { id: string; expiresAt: number };
+  };
 };
 export type SocialAudit = {
   operationId: string;

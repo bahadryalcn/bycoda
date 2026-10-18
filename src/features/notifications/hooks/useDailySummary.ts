@@ -21,28 +21,32 @@ export function useDailySummary() {
   useEffect(() => {
     let cancelled = false;
     let running = false;
+    let deliveredAt: number | null = null;
     const check = async () => {
-      if (running) return;
-      const now = Date.now();
-      const lastSentAt = loadDailySummarySentAt();
-      if (
-        !loadNotificationsEnabled() ||
-        !dailySummaryDue({
-          enabled: loadDailySummaryEnabled(),
-          time: loadDailySummaryTime(),
-          now,
-          lastSentAt,
-        }) ||
-        !(await isLeadWindow())
-      )
-        return;
+      if (running || cancelled) return;
       running = true;
       try {
+        const now = Date.now();
+        const lastSentAt = Math.max(deliveredAt ?? 0, loadDailySummarySentAt() ?? 0) || null;
+        if (
+          !loadNotificationsEnabled() ||
+          !dailySummaryDue({
+            enabled: loadDailySummaryEnabled(),
+            time: loadDailySummaryTime(),
+            now,
+            lastSentAt,
+          }) ||
+          !(await isLeadWindow())
+        )
+          return;
+        if (cancelled) return;
         const summary = await gatherDailySummary(dailySummarySince(now, lastSentAt), now);
         if (cancelled) return;
         saveStoredDailySummary(summary);
-        saveDailySummarySentAt(now);
-        void notifyDailySummary(summaryHeadline(summary));
+        if (await notifyDailySummary(summaryHeadline(summary))) {
+          deliveredAt = now;
+          saveDailySummarySentAt(deliveredAt);
+        }
       } catch {
         // Tried again next time.
       } finally {

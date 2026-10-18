@@ -1,4 +1,3 @@
-import { Badge } from "../../../shared/ui/Badge";
 import { useEffect, useState } from "react";
 import { IS_MAC, IS_WIN } from "../../../platform/tauri/platform";
 import { t, useLocale } from "../../../shared/i18n";
@@ -26,7 +25,7 @@ import {
 } from "../../notifications/model/notifications";
 import { SecondaryButton } from "../../../shared/ui/SecondaryButton";
 import { loadSoundsEnabled, saveSoundsEnabled } from "../model/sounds";
-import { Group, Row, Select, Toggle } from "./settingsControls";
+import { Group, Row, Select, Toggle, SettingsFeedback } from "./settingsControls";
 import "./NotificationsSettings.css";
 
 export function NotificationAlerts() {
@@ -36,15 +35,25 @@ export function NotificationAlerts() {
   const [notificationEvents, setNotificationEvents] = useState(loadNotificationEvents);
   const [summaryEnabled, setSummaryEnabled] = useState(loadDailySummaryEnabled);
   const [summaryTime, setSummaryTime] = useState(loadDailySummaryTime);
+  const [permissionPending, setPermissionPending] = useState(false);
+  const [permissionError, setPermissionError] = useState(false);
   const [notificationPermission, setNotificationPermission] = useState<NotificationPermission>(
     cachedNotificationPermission,
   );
   useEffect(() => {
     let active = true;
     const refresh = () => {
-      void probeNotificationPermission().then((permission) => {
-        if (active) setNotificationPermission(permission);
-      });
+      void probeNotificationPermission().then(
+        (permission) => {
+          if (active) {
+            setNotificationPermission(permission);
+            setPermissionError(false);
+          }
+        },
+        () => {
+          if (active) setPermissionError(true);
+        },
+      );
     };
     refresh();
     window.addEventListener("focus", refresh);
@@ -58,10 +67,15 @@ export function NotificationAlerts() {
     setSoundsEnabled(next);
   };
   const onNotificationsEnabled = (next: boolean) => {
+    if (permissionPending) return;
     saveNotificationsEnabled(next);
     setNotificationsEnabled(next);
     if (!next) return;
-    void requestNotificationPermission().then(setNotificationPermission);
+    setPermissionPending(true);
+    setPermissionError(false);
+    void requestNotificationPermission()
+      .then(setNotificationPermission, () => setPermissionError(true))
+      .finally(() => setPermissionPending(false));
   };
   return (
     <div className="notification-alert-settings">
@@ -89,17 +103,40 @@ export function NotificationAlerts() {
             label={t("Desktop notifications")}
             on={notificationsEnabled}
             onChange={onNotificationsEnabled}
+            disabled={permissionPending}
           />
         </Row>
-        <div className="notification-permission-status" role="status">
-          {notificationPermission === "denied" ? <NotificationsBlocked /> : null}
-          {notificationPermission === "unsupported" ? t("Not available on this platform") : null}
-          {notificationPermission === "granted" ? t("System permission granted") : null}
-          {notificationPermission === "prompt"
-            ? t(
-                "System permission has not been granted yet. Enabling notifications requests permission.",
-              )
-            : null}
+        <div className="notification-permission-status">
+          <SettingsFeedback
+            state={
+              permissionError
+                ? "error"
+                : permissionPending
+                  ? "loading"
+                  : notificationPermission === "granted"
+                    ? "success"
+                    : "warning"
+            }
+          >
+            {permissionError ? (
+              t("Status unavailable")
+            ) : permissionPending ? (
+              t("Waiting for approval…")
+            ) : (
+              <>
+                {notificationPermission === "denied" ? <NotificationsBlocked /> : null}
+                {notificationPermission === "unsupported"
+                  ? t("Not available on this platform")
+                  : null}
+                {notificationPermission === "granted" ? t("System permission granted") : null}
+                {notificationPermission === "prompt"
+                  ? t(
+                      "System permission has not been granted yet. Enabling notifications requests permission.",
+                    )
+                  : null}
+              </>
+            )}
+          </SettingsFeedback>
         </div>
       </Group>
       <Group
@@ -212,7 +249,7 @@ function NotificationsBlocked() {
     }
   };
   return (
-    <span className="notification-permission-message">
+    <div className="notification-permission-message">
       {t("Notifications are blocked by system permission.")}
       {IS_MAC || IS_WIN ? (
         <SecondaryButton onClick={() => void openSettings()} disabled={opening}>
@@ -222,12 +259,12 @@ function NotificationsBlocked() {
         <span>{t("Allow notifications in your system settings to receive desktop alerts.")}</span>
       )}
       {error ? (
-        <Badge tone="danger" role="alert">
+        <SettingsFeedback state="error">
           {t(
             "Could not open system settings. Open notification permissions from your system settings.",
           )}
-        </Badge>
+        </SettingsFeedback>
       ) : null}
-    </span>
+    </div>
   );
 }

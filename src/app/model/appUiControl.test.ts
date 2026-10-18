@@ -8,6 +8,7 @@ describe("direct workspace navigation boundary", () => {
     try {
       for (const input of [
         { view: "unknown" },
+        { view: "servers" },
         { view: "notes", section: "providers" },
         { view: "settings", section: "unknown" },
         { view: "tasks", cwd: "foreign" },
@@ -19,6 +20,10 @@ describe("direct workspace navigation boundary", () => {
       );
       expect(handler).not.toHaveBeenCalled();
       expect(APP_UI_VIEWS).toContain("tasks");
+      expect(APP_UI_VIEWS).toContain("servers");
+      await expect(
+        requestAppUi(context, "ui.workspace.close", { view: "servers" }),
+      ).rejects.toThrow("field");
       expect(APP_UI_SETTINGS).toContain("connections");
     } finally {
       dispose();

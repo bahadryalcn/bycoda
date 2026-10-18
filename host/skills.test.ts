@@ -36,6 +36,24 @@ function skill(root: string, folder: string, body: string) {
   writeFileSync(join(root, folder, "SKILL.md"), body);
 }
 
+it("excludes disabled copies before name resolution and canonicalizes host paths", () => {
+  const project = scratch("disabled-project"),
+    home = scratch("disabled-home");
+  skill(join(project, ".agents/skills"), "review", "# project");
+  skill(join(home, ".agents/skills"), "review", "# personal");
+  const projectPath = join(project, ".agents/skills/review/SKILL.md");
+  const personalPath = join(home, ".agents/skills/review/SKILL.md");
+  const selected = (disabled: string[]) =>
+    listHostSkills(project, home, disabled).find((skill) => skill.name === "review");
+  expect(selected([])?.scope).toBe("project");
+  expect(selected([projectPath])?.scope).toBe("user");
+  expect(selected([projectPath, personalPath])).toBeUndefined();
+  expect(selected([personalPath])?.scope).toBe("project");
+  expect(selected([projectPath.replace(/\\/g, "/")])?.scope).toBe("user");
+  if (process.platform === "win32")
+    expect(selected([projectPath.toUpperCase()])?.scope).toBe("user");
+});
+
 it("deletes only the listed skill folder including supporting files and reveals a same-name fallback", () => {
   const project = scratch("delete-project");
   const home = scratch("delete-home");
@@ -352,7 +370,7 @@ it("accepts an empty project for list and export but still checks a real one", a
   const { WorkspaceCommands } = await import("./workspace-commands");
   const outside = scratch("outside");
   const commands = new WorkspaceCommands(
-      { projects: () => [], attachmentDir: join(outside, "attachments") } as never,
+    { projects: () => [], attachmentDir: join(outside, "attachments") } as never,
     (async (_id: string, action: () => Promise<unknown>) => action()) as never,
   );
   const personal = (await commands.run("list_skills", { cwd: "" })) as { scope: string }[];

@@ -1280,9 +1280,15 @@ pub async fn git_stage_contents(
     cwd: String,
     relative: String,
     contents: String,
+    expected_original: Option<String>,
 ) -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(move || {
-        git_stage_contents_for(&expand_home(&cwd), &relative, contents.as_bytes())
+        git_stage_contents_for(
+            &expand_home(&cwd),
+            &relative,
+            contents.as_bytes(),
+            expected_original.as_deref().map(str::as_bytes),
+        )
     })
     .await
     .map_err(|e| e.to_string())?
@@ -1666,6 +1672,7 @@ pub async fn git_github_work_item(
 #[derive(Serialize, Clone, Debug, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct GitHubWorkItemDetails {
+    pub head_ref_oid: String,
     pub body: String,
     pub author: String,
     pub author_avatar_url: String,
@@ -1774,9 +1781,16 @@ pub async fn git_github_pr_action(
     repo: String,
     number: i64,
     action: String,
+    expected_head_oid: Option<String>,
 ) -> Result<GitHubWorkItem, String> {
     tauri::async_runtime::spawn_blocking(move || {
-        git_github_pr_action_for(&expand_home(&cwd), &repo, number, &action)
+        git_github_pr_action_for(
+            &expand_home(&cwd),
+            &repo,
+            number,
+            &action,
+            expected_head_oid.as_deref().unwrap_or(""),
+        )
     })
     .await
     .map_err(|e| e.to_string())?
@@ -1793,6 +1807,7 @@ pub struct GitHubPrFile {
 #[derive(Serialize, Clone, Debug, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct GitHubPrDiff {
+    pub head_oid: String,
     pub additions: i64,
     pub deletions: i64,
     pub files: Vec<GitHubPrFile>,
@@ -2330,9 +2345,14 @@ pub async fn git_stash_list(cwd: String) -> Result<Vec<GitStashEntry>, String> {
 
 /// Run `apply`, `pop`, or `drop` on one stash entry.
 #[tauri::command]
-pub async fn git_stash_action(cwd: String, action: String, index: u32) -> Result<(), String> {
+pub async fn git_stash_action(
+    cwd: String,
+    action: String,
+    index: u32,
+    expected_sha: String,
+) -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(move || {
-        git_stash_action_for(&expand_home(&cwd), &action, index)
+        git_stash_action_for(&expand_home(&cwd), &action, index, &expected_sha)
     })
     .await
     .map_err(|e| e.to_string())?
@@ -3360,24 +3380,95 @@ pub(crate) fn git_stage_file_for(root: &Path, relative: &str) -> Result<(), Stri
     git_checked(root, &["--literal-pathspecs", "add", "--", &relative])
 }
 
-fn git_stage_contents_for(root: &Path, relative: &str, contents: &[u8]) -> Result<(), String> {
+fn git_stage_contents_for(
+    root: &Path,
+    relative: &str,
+    contents: &[u8],
+    expected_original: Option<&[u8]>,
+) -> Result<(), String> {
     let relative = resolve_repo_path(root, relative)?;
     if contents.len() as u64 > MAX_TEXT_FILE_BYTES {
         return Err("File too large".into());
     }
-    let hash = git_hash_object(root, &relative, contents)?;
-    let mode = git_index_mode(root, &relative).unwrap_or_else(|| "100644".into());
-    git_checked(
-        root,
-        &[
+    let index_path = root.join(
+        git_run(root, &["rev-parse", "--git-path", "index"])
+            .ok_or("Cannot locate Git index")?
+            .trim(),
+    );
+    let lock_path = PathBuf::from(format!("{}.lock", index_path.display()));
+    let mut lock = std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&lock_path)
+        .map_err(|e| e.to_string())?;
+    let result = (|| {
+        let index = match std::fs::read(&index_path) {
+            Ok(bytes) => Some(bytes),
+            Err(e) if e.kind() == ErrorKind::NotFound => None,
+            Err(e) => return Err(e.to_string()),
+        };
+        if let Some(bytes) = &index {
+            lock.write_all(bytes).map_err(|e| e.to_string())?;
+        }
+        drop(lock);
+        let staged = git_run(
+            root,
+            &[
+                "--literal-pathspecs",
+                "ls-files",
+                "--stage",
+                "--",
+                &relative,
+            ],
+        )
+        .ok_or("Cannot read Git index")?;
+        let fields: Vec<_> = staged.split_whitespace().collect();
+        if let Some(expected_original) = expected_original {
+            let expected_hash = git_hash_object(root, &relative, expected_original)?;
+            if if staged.is_empty() {
+                !expected_original.is_empty()
+            } else {
+                fields.get(1).copied() != Some(expected_hash.as_str())
+                    || fields.get(2).copied() != Some("0")
+            } {
+                return Err(
+                    "The Git index changed. Refresh the diff before staging this hunk.".into(),
+                );
+            }
+        }
+        let hash = git_hash_object(root, &relative, contents)?;
+        let mode = git_index_mode(root, &relative).unwrap_or_else(|| "100644".into());
+        let run = |args: &[&str]| -> Result<(), String> {
+            let output = git_cmd()
+                .arg("-C")
+                .arg(root)
+                .args(args)
+                .env("GIT_INDEX_FILE", &lock_path)
+                .output()
+                .map_err(|e| e.to_string())?;
+            if output.status.success() {
+                Ok(())
+            } else {
+                Err(String::from_utf8_lossy(&output.stderr).trim().to_string())
+            }
+        };
+        if index.is_none() {
+            run(&["read-tree", "--empty"])?;
+        }
+        run(&[
             "update-index",
             "--add",
             "--cacheinfo",
             &mode,
             &hash,
             &relative,
-        ],
-    )
+        ])?;
+        std::fs::rename(&lock_path, &index_path).map_err(|e| e.to_string())
+    })();
+    if result.is_err() {
+        let _ = std::fs::remove_file(&lock_path);
+    }
+    result
 }
 
 fn git_index_mode(root: &Path, relative: &str) -> Option<String> {
@@ -3833,7 +3924,12 @@ fn git_github_work_item_for(
     parse_github_work_item(&json, kind, &repo)
 }
 
-fn github_pr_action_args(repo: &str, number: i64, action: &str) -> Result<Vec<String>, String> {
+fn github_pr_action_args(
+    repo: &str,
+    number: i64,
+    action: &str,
+    expected_head_oid: &str,
+) -> Result<Vec<String>, String> {
     if number <= 0 {
         return Err("GitHub pull request number must be positive".into());
     }
@@ -3850,7 +3946,22 @@ fn github_pr_action_args(repo: &str, number: i64, action: &str) -> Result<Vec<St
         "reopen" => vec!["pr", "reopen", &number, "--repo", &repo],
         _ => return Err("Unknown GitHub pull request action".into()),
     };
-    Ok(args.into_iter().map(str::to_string).collect())
+    let mut args: Vec<String> = args.into_iter().map(str::to_string).collect();
+    if matches!(action.trim(), "merge" | "squash" | "rebase") {
+        validate_reviewed_head(expected_head_oid)?;
+        args.extend(["--match-head-commit".into(), expected_head_oid.into()]);
+    }
+    Ok(args)
+}
+
+pub(crate) fn validate_reviewed_head(oid: &str) -> Result<(), String> {
+    if oid.len() != 40 || !oid.bytes().all(|ch| ch.is_ascii_hexdigit()) {
+        return Err(
+            "Refresh and review the pull request before merging: a reviewed head SHA is required"
+                .into(),
+        );
+    }
+    Ok(())
 }
 
 fn git_github_pr_action_for(
@@ -3858,8 +3969,9 @@ fn git_github_pr_action_for(
     repo: &str,
     number: i64,
     action: &str,
+    expected_head_oid: &str,
 ) -> Result<GitHubWorkItem, String> {
-    let args = github_pr_action_args(repo, number, action)?;
+    let args = github_pr_action_args(repo, number, action, expected_head_oid)?;
     let refs: Vec<&str> = args.iter().map(String::as_str).collect();
     // Successful mutation commands do not always write to stdout. Their exit
     // status confirms the action ran; the follow-up view fetches the new state.
@@ -3884,7 +3996,7 @@ fn git_github_work_item_details_for(
     let repo = format!("{owner}/{name}");
     let number = number.to_string();
     let fields = if kind == "pr" {
-        "body,author,baseRefName,headRefName,reviewDecision"
+        "body,author,baseRefName,headRefName,headRefOid,reviewDecision"
     } else {
         "body,author"
     };
@@ -3907,6 +4019,8 @@ fn parse_github_work_item_details(json: &str) -> Result<GitHubWorkItemDetails, S
         #[serde(default)]
         body: String,
         #[serde(default)]
+        head_ref_oid: String,
+        #[serde(default)]
         author: Option<Author>,
         #[serde(default)]
         base_ref_name: String,
@@ -3920,6 +4034,7 @@ fn parse_github_work_item_details(json: &str) -> Result<GitHubWorkItemDetails, S
     let author_avatar_url = github_avatar_url(&author);
     Ok(GitHubWorkItemDetails {
         body: row.body,
+        head_ref_oid: row.head_ref_oid,
         author,
         author_avatar_url,
         base_ref_name: row.base_ref_name,
@@ -4102,6 +4217,10 @@ fn git_github_work_item_comment_for(
     let repo = format!("{owner}/{name}");
     let reply = in_reply_to.trim();
     if !reply.is_empty() {
+        if kind != "pr" {
+            return Err("Review replies require a pull request".into());
+        }
+        github_review_reply_context(root, &repo, number, reply)?;
         return git_github_review_reply_for(root, reply, body);
     }
     let number = number.to_string();
@@ -4120,6 +4239,78 @@ fn git_github_work_item_comment_for(
         )?;
         github_url_from_output(&output, "GitHub did not return a comment URL")
     })
+}
+
+const GITHUB_REVIEW_THREAD_TARGET_QUERY: &str = r#"query InboxReviewThreadTarget($id: ID!) {
+  node(id: $id) { ... on PullRequestReviewThread {
+    path line pullRequest { number title url repository { nameWithOwner } }
+    comments(first: 1) { nodes { body author { login } } }
+  } }
+}"#;
+
+pub(crate) fn github_review_reply_context(
+    root: &Path,
+    repo: &str,
+    number: i64,
+    thread_id: &str,
+) -> Result<String, String> {
+    split_github_repo(repo)?;
+    if number <= 0 || !valid_github_node_id(thread_id) {
+        return Err("Invalid review thread target".into());
+    }
+    let json = gh_checked(
+        root,
+        &[
+            "api",
+            "graphql",
+            "-f",
+            &format!("query={GITHUB_REVIEW_THREAD_TARGET_QUERY}"),
+            "-F",
+            &format!("id={thread_id}"),
+        ],
+    )?;
+    parse_github_review_thread_target(&json, repo, number)
+}
+
+fn parse_github_review_thread_target(
+    json: &str,
+    repo: &str,
+    number: i64,
+) -> Result<String, String> {
+    let value: serde_json::Value = serde_json::from_str(json).map_err(|error| error.to_string())?;
+    if value
+        .get("errors")
+        .and_then(serde_json::Value::as_array)
+        .is_some_and(|errors| !errors.is_empty())
+    {
+        return Err("Could not verify review thread target".into());
+    }
+    let node = &value["data"]["node"];
+    let pr = &node["pullRequest"];
+    if pr["repository"]["nameWithOwner"].as_str() != Some(repo)
+        || pr["number"].as_i64() != Some(number)
+    {
+        return Err(
+            "Review thread does not belong to the approved repository and pull request".into(),
+        );
+    }
+    let comment = &node["comments"]["nodes"][0];
+    Ok(format!(
+        "{} #{}: {}\n{}\n{}:{}\n{}: {}",
+        repo,
+        number,
+        pr["title"].as_str().unwrap_or(""),
+        pr["url"].as_str().unwrap_or(""),
+        node["path"].as_str().unwrap_or(""),
+        node["line"],
+        comment["author"]["login"].as_str().unwrap_or(""),
+        comment["body"]
+            .as_str()
+            .unwrap_or("")
+            .chars()
+            .take(2000)
+            .collect::<String>()
+    ))
 }
 
 fn git_github_review_reply_for(root: &Path, thread_id: &str, body: &str) -> Result<String, String> {
@@ -4626,7 +4817,7 @@ pub(crate) fn git_github_pr_diff_for(
     let fields = if full_context {
         "files,additions,deletions,baseRefOid,headRefOid"
     } else {
-        "files,additions,deletions"
+        "files,additions,deletions,headRefOid"
     };
     let json = gh_run(
         root,
@@ -4634,6 +4825,12 @@ pub(crate) fn git_github_pr_diff_for(
         false,
     )?;
     let mut diff = parse_github_pr_diff_meta(&json)?;
+    diff.head_oid = serde_json::from_str::<serde_json::Value>(&json)
+        .map_err(|error| error.to_string())?["headRefOid"]
+        .as_str()
+        .unwrap_or("")
+        .to_string();
+    validate_reviewed_head(&diff.head_oid)?;
     let (patch, truncated) = if full_context {
         let (base, head) = parse_github_pr_oids(&json)?;
         git_diff_full_context(root, &base, &head)?
@@ -4643,6 +4840,27 @@ pub(crate) fn git_github_pr_diff_for(
             false,
         )
     };
+    if !full_context {
+        let current = gh_checked(
+            root,
+            &[
+                "pr",
+                "view",
+                &number,
+                "--repo",
+                &repo,
+                "--json",
+                "headRefOid",
+            ],
+        )?;
+        let current: serde_json::Value =
+            serde_json::from_str(&current).map_err(|error| error.to_string())?;
+        if current["headRefOid"].as_str() != Some(diff.head_oid.as_str()) {
+            return Err(
+                "Pull request head changed while loading the diff. Refresh and review again".into(),
+            );
+        }
+    }
     if truncated || patch.len() > MAX_PR_DIFF_BYTES {
         diff.truncated = true;
     } else {
@@ -4957,6 +5175,7 @@ fn parse_github_pr_diff_meta(json: &str) -> Result<GitHubPrDiff, String> {
     }
     let row: Row = serde_json::from_str(json).map_err(|error| error.to_string())?;
     Ok(GitHubPrDiff {
+        head_oid: String::new(),
         additions: row.additions,
         deletions: row.deletions,
         files: row
@@ -6176,12 +6395,42 @@ fn git_stash_list_checked(root: &Path) -> Result<Vec<GitStashEntry>, String> {
         .collect())
 }
 
-fn git_stash_action_for(root: &Path, action: &str, index: u32) -> Result<(), String> {
+fn git_stash_action_for(
+    root: &Path,
+    action: &str,
+    index: u32,
+    expected_sha: &str,
+) -> Result<(), String> {
     git_work_tree_checked(root)?;
     if !matches!(action, "apply" | "pop" | "drop") {
         return Err("Invalid stash action".into());
     }
-    git_checked(root, &["stash", action, &format!("stash@{{{index}}}")])
+    if !matches!(expected_sha.len(), 40 | 64)
+        || !expected_sha.bytes().all(|c| c.is_ascii_hexdigit())
+    {
+        return Err("Expected stash SHA is required".into());
+    }
+    let selector = format!("stash@{{{index}}}");
+    let check = || {
+        if git_run(root, &["rev-parse", "--verify", &selector])
+            .map(|s| s.trim().to_string())
+            .as_deref()
+            != Some(expected_sha)
+        {
+            Err("Stash list changed; refresh and select the stash again".to_string())
+        } else {
+            Ok(())
+        }
+    };
+    check()?;
+    if action != "drop" {
+        git_checked(root, &["stash", "apply", expected_sha])?;
+    }
+    if action != "apply" {
+        check()?;
+        git_checked(root, &["stash", "drop", &selector])?;
+    }
+    Ok(())
 }
 
 pub(crate) fn git_conflicts_for(root: &Path) -> Vec<String> {
@@ -9432,7 +9681,7 @@ mod tests {
             return;
         }
         std::fs::write(dir.0.join("a.txt"), "alpha\nBETA\ngamma\nDELTA\n").unwrap();
-        git_stage_contents_for(&dir.0, "a.txt", b"alpha\nBETA\ngamma\ndelta\n").unwrap();
+        git_stage_contents_for(&dir.0, "a.txt", b"alpha\nBETA\ngamma\ndelta\n", None).unwrap();
 
         let staged = git_file_diff_for(&dir.0, "a.txt", true).unwrap();
         assert_eq!(staged.original, "alpha\nbeta\ngamma\ndelta\n");
@@ -9860,7 +10109,7 @@ mod tests {
             return;
         }
         std::fs::write(dir.0.join("a.txt"), "alpha\nBETA\ngamma\nDELTA\n").unwrap();
-        git_stage_contents_for(&dir.0, "a.txt", b"alpha\nBETA\ngamma\ndelta\n").unwrap();
+        git_stage_contents_for(&dir.0, "a.txt", b"alpha\nBETA\ngamma\ndelta\n", None).unwrap();
 
         let file = git_diff_index_for(&dir.0)
             .files
@@ -9873,6 +10122,48 @@ mod tests {
         let diff = git_file_diff_for(&dir.0, "a.txt", false).unwrap();
         assert_eq!(diff.original, "alpha\nBETA\ngamma\ndelta\n");
         assert_eq!(diff.current, "alpha\nBETA\ngamma\nDELTA\n");
+    }
+
+    #[test]
+    fn git_stage_contents_rejects_stale_base_and_preserves_external_lock() {
+        let dir = tmp("git-stage-stale");
+        let base = b"first\ncontext\nsecond\n";
+        if !init_git_commit(&dir.0, &[("a.txt", "first\ncontext\nsecond\n")]) {
+            return;
+        }
+        let external = b"first\ncontext\nSECOND\n";
+        git_stage_contents_for(&dir.0, "a.txt", external, Some(base)).unwrap();
+        let index_path = dir.0.join(".git/index");
+        let before = std::fs::read(&index_path).unwrap();
+        assert!(
+            git_stage_contents_for(&dir.0, "a.txt", b"FIRST\ncontext\nsecond\n", Some(base))
+                .unwrap_err()
+                .contains("index changed")
+        );
+        assert_eq!(std::fs::read(&index_path).unwrap(), before);
+        let lock = dir.0.join(".git/index.lock");
+        std::fs::write(&lock, "another writer").unwrap();
+        assert!(git_stage_contents_for(&dir.0, "a.txt", external, Some(external)).is_err());
+        assert_eq!(std::fs::read(&lock).unwrap(), b"another writer");
+        std::fs::remove_file(lock).unwrap();
+        git_stage_contents_for(&dir.0, "a.txt", b"FIRST\ncontext\nSECOND\n", Some(external))
+            .unwrap();
+        assert_eq!(
+            git_run(&dir.0, &["show", ":a.txt"]).unwrap(),
+            "FIRST\ncontext\nSECOND\n"
+        );
+    }
+
+    #[test]
+    fn git_stage_contents_guards_untracked_before_first_commit() {
+        let dir = tmp("git-stage-first-hunk");
+        if !git(&dir.0, &["init"]) {
+            return;
+        }
+        git_checked(&dir.0, &["config", "core.autocrlf", "false"]).unwrap();
+        std::fs::write(dir.0.join("new.txt"), "first\nsecond\n").unwrap();
+        git_stage_contents_for(&dir.0, "new.txt", b"first\n", Some(b"")).unwrap();
+        assert_eq!(git_run(&dir.0, &["show", ":new.txt"]).unwrap(), "first\n");
     }
 
     #[test]
@@ -10425,22 +10716,57 @@ mod tests {
     }
 
     #[test]
+    fn github_merge_modes_atomically_bind_reviewed_head() {
+        for action in ["merge", "squash", "rebase"] {
+            let reviewed = "a".repeat(40);
+            let args = github_pr_action_args("acme/web", 42, action, &reviewed).unwrap();
+            assert_eq!(&args[args.len() - 2..], ["--match-head-commit", &reviewed]);
+            // A provider seeing head B receives expected A, and rejects instead of merging B.
+            assert_ne!(args.last().unwrap(), &"b".repeat(40));
+            assert!(github_pr_action_args("acme/web", 42, action, "").is_err());
+            assert!(github_pr_action_args("acme/web", 42, action, "malformed").is_err());
+        }
+    }
+
+    #[test]
+    fn github_review_thread_target_is_bound_before_mutation() {
+        let fixture = serde_json::json!({"data":{"node":{"pullRequest":{"repository":{"nameWithOwner":"acme/web"},"number":42,"title":"Reviewed fix","url":"https://github.com/acme/web/pull/42"},"path":"src/app.ts","line":7,"comments":{"nodes":[{"body":"Please fix this","author":{"login":"reviewer"}}]}}}}).to_string();
+        let context = parse_github_review_thread_target(&fixture, "acme/web", 42).unwrap();
+        assert!(context.contains("Reviewed fix"));
+        assert!(context.contains("Please fix this"));
+        assert!(parse_github_review_thread_target(&fixture, "acme/web", 43).is_err());
+        assert!(parse_github_review_thread_target(&fixture, "other/web", 42).is_err());
+        assert!(
+            parse_github_review_thread_target(r#"{"data":{"node":null}}"#, "acme/web", 42).is_err()
+        );
+    }
+
+    #[test]
     fn github_pr_actions_map_to_non_interactive_gh_commands() {
         assert_eq!(
-            github_pr_action_args("acme/web", 42, "squash").unwrap(),
-            ["pr", "merge", "42", "--repo", "acme/web", "--squash"]
+            github_pr_action_args("acme/web", 42, "squash", &"a".repeat(40)).unwrap(),
+            [
+                "pr",
+                "merge",
+                "42",
+                "--repo",
+                "acme/web",
+                "--squash",
+                "--match-head-commit",
+                &"a".repeat(40)
+            ]
         );
         assert_eq!(
-            github_pr_action_args("acme/web", 42, "draft").unwrap(),
+            github_pr_action_args("acme/web", 42, "draft", "").unwrap(),
             ["pr", "ready", "42", "--repo", "acme/web", "--undo"]
         );
         assert_eq!(
-            github_pr_action_args("acme/web", 42, "reopen").unwrap(),
+            github_pr_action_args("acme/web", 42, "reopen", "").unwrap(),
             ["pr", "reopen", "42", "--repo", "acme/web"]
         );
-        assert!(github_pr_action_args("acme/web", 42, "delete").is_err());
-        assert!(github_pr_action_args("acme/web", 0, "merge").is_err());
-        assert!(github_pr_action_args("invalid", 42, "merge").is_err());
+        assert!(github_pr_action_args("acme/web", 42, "delete", "").is_err());
+        assert!(github_pr_action_args("acme/web", 0, "merge", "").is_err());
+        assert!(github_pr_action_args("invalid", 42, "merge", "").is_err());
     }
 
     #[test]
@@ -11638,14 +11964,41 @@ mod tests {
         assert!(entries[0].message.ends_with("my work"));
         assert_eq!(entries[0].sha.len(), 40);
 
-        assert!(git_stash_action_for(&dir.0, "clear", 0).is_err());
-        git_stash_action_for(&dir.0, "apply", 0).unwrap();
+        assert!(git_stash_action_for(&dir.0, "clear", 0, &entries[0].sha).is_err());
+        git_stash_action_for(&dir.0, "apply", 0, &entries[0].sha).unwrap();
         assert_eq!(
             std::fs::read_to_string(dir.0.join("a.txt")).unwrap(),
             "changed\n"
         );
-        git_stash_action_for(&dir.0, "drop", 0).unwrap();
+        git_stash_action_for(&dir.0, "drop", 0, &entries[0].sha).unwrap();
         assert_eq!(git_stash_list_for(&dir.0), Vec::new());
+    }
+
+    #[test]
+    fn git_stash_rejects_shifted_selection() {
+        let dir = tmp("git-stash-stale");
+        if !init_git_commit(&dir.0, &[("a.txt", "base\n")]) {
+            return;
+        }
+        std::fs::write(dir.0.join("a.txt"), "A\n").unwrap();
+        git_stash_for(&dir.0, Some("A"), GitStashMode::Tracked).unwrap();
+        let selected = git_stash_list_for(&dir.0)[0].sha.clone();
+        std::fs::write(dir.0.join("a.txt"), "B\n").unwrap();
+        git_stash_for(&dir.0, Some("B"), GitStashMode::Tracked).unwrap();
+        let before = git_run(&dir.0, &["stash", "list", "--format=%H"]).unwrap();
+        for action in ["apply", "pop", "drop"] {
+            assert!(git_stash_action_for(&dir.0, action, 0, &selected)
+                .unwrap_err()
+                .contains("Stash list changed"));
+            assert_eq!(
+                git_run(&dir.0, &["stash", "list", "--format=%H"]).unwrap(),
+                before
+            );
+            assert_eq!(
+                std::fs::read_to_string(dir.0.join("a.txt")).unwrap(),
+                "base\n"
+            );
+        }
     }
 
     /// A repo with one commit on `main`, pushed to a fresh bare `origin`.

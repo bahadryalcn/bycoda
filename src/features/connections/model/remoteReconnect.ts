@@ -141,6 +141,7 @@ async function retry(environmentId: string, force: boolean) {
   // automatic reconnecting off, nothing here runs.
   const allowed =
     loadRemoteAutoReconnect() &&
+    status !== "identity-mismatch" &&
     (force ? blocksSending(status) : shouldAutoRetry(status, hiddenSince, Date.now()));
   if (!allowed || attempts.has(environmentId)) return;
   retryCounts.set(environmentId, (retryCounts.get(environmentId) ?? 0) + 1);

@@ -48,6 +48,9 @@ import { pathKey } from "../../../shared/lib/paths";
 import { socialClient } from "../model/socialClient";
 import {
   SOCIAL_PLATFORMS,
+  SOCIAL_ACCOUNT_TYPES,
+  PROFILE_ONLY_PLATFORMS,
+  TOKEN_PLATFORMS,
   type SocialAccount,
   type SocialSnapshot,
   type SocialOperation,
@@ -77,6 +80,7 @@ import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import { accountConnectionStatus } from "../model/accountConnection";
 import { SocialAuthority } from "./SocialAuthority";
 import { SocialPolicySettings } from "./SocialPolicySettings";
+import { SocialBrowserWorkspace } from "./SocialBrowserWorkspace";
 import { DEFAULT_SOCIAL_POLICIES } from "../model/socialPolicy";
 import {
   createRefreshScheduler,
@@ -1152,7 +1156,8 @@ function Accounts({
         };
       }
     },
-    enabled: active && visible && !!selected,
+    enabled:
+      active && visible && !!selected && !!account && !TOKEN_PLATFORMS.includes(account.platform),
     staleTime: 5_000,
     refetchInterval: (query) => (query.state.data?.status === "waiting" ? 5_000 : false),
   });
@@ -1234,16 +1239,13 @@ function Accounts({
         >
           <label>
             Platform
-            <NativeSelect
+            <SearchableSelect
+              label="Platform"
+              triggerProps={{ "aria-label": "Platform" }}
               value={platform}
-              onChange={(event) => setPlatform(event.target.value as SocialAccount["platform"])}
-            >
-              {SOCIAL_PLATFORMS.map((id) => (
-                <option key={id} value={id}>
-                  {names[id]}
-                </option>
-              ))}
-            </NativeSelect>
+              onChange={(value) => setPlatform(value as SocialAccount["platform"])}
+              options={SOCIAL_PLATFORMS.map((id) => ({ value: id, label: names[id] }))}
+            />
           </label>
           <label>
             Hesap adı
@@ -1252,21 +1254,20 @@ function Accounts({
           <label>
             Hesap türü
             <NativeSelect name="type" key={platform}>
-              {(platform === "x"
-                ? [["member", "Kullanıcı"]]
-                : platform === "instagram"
-                  ? [["professional", "Profesyonel"]]
-                  : platform === "facebook"
-                    ? [["page", "Sayfa"]]
-                    : platform === "youtube"
-                      ? [["channel", "Kanal"]]
-                      : [
-                          ["member", "Üye"],
-                          ["organization", "Organizasyon"],
-                        ]
-              ).map(([id, label]) => (
+              {SOCIAL_ACCOUNT_TYPES[platform].map((id) => (
                 <option key={id} value={id}>
-                  {label}
+                  {
+                    {
+                      member: "Üye",
+                      professional: "Profesyonel",
+                      page: "Sayfa",
+                      channel: "Kanal",
+                      organization: "Organizasyon",
+                      public_profile: "Herkese açık profil",
+                      business: "İşletme",
+                      bot: "Bot",
+                    }[id]
+                  }
                 </option>
               ))}
             </NativeSelect>
@@ -1377,12 +1378,13 @@ function Accounts({
                   </div>
                   {account.connection === "browser" ? (
                     <p className="social-muted">
-                      Paylaşım ve gönderiye yanıt desteklenir. Gelen kutusu ve özel mesajlar için
-                      resmi API bağlantısı gerekir.
+                      Paylaşım ve gönderiye yanıt desteklenir. Bahsetmeler ve eski web mesajlaşması
+                      tanınan yanıt biçimleriyle takip edilir; şifreli Sohbet desteklenmez.
                     </p>
                   ) : null}
                 </section>
               ) : null}
+              <SocialBrowserWorkspace key={account.id} account={account} client={client} />
               {account.platform === "x" ? (
                 <details className="social-connection" open={!account.connected || undefined}>
                   <summary>Tarayıcı bağlantısını yönet</summary>
@@ -1398,7 +1400,9 @@ function Accounts({
                       Seçili host'ta ayrı bir Edge/Chrome penceresi açılır; X'e orada kendiniz giriş
                       yapıp pencereyi kapatırsınız. Şifreniz bycoda'ya girilmez. Onaylanan
                       gönderiler bu oturumla arka planda paylaşılır. Yalnız gönderi/görsel paylaşımı
-                      ve gönderi ID'sine yanıt desteklenir; gelen kutusu ve DM okunmaz.
+                      ve gönderi ID'sine yanıt desteklenir. Bahsetmeler ve eski web mesajlaşması
+                      tanınan yanıt biçimleriyle okunur; şifreli Sohbet desteklenmez. Sürekli yayın
+                      ve yanıtlar, etkin yayın programı ve otomasyon kurallarına bağlıdır.
                     </p>
                   </details>
                   <Notice kind="warning" title="Tarayıcı bağlantısı için risk onayı">
@@ -1470,13 +1474,69 @@ function Accounts({
                   ) : null}
                 </details>
               ) : null}
-              {account.platform === "x" &&
-              account.connected &&
-              account.connection === "browser" ? null : (
+              {TOKEN_PLATFORMS.includes(account.platform) ? (
+                <div className="social-connection">
+                  <strong>
+                    {availabilityError ||
+                      accountConnectionStatus(account, availability[account.platform])}
+                  </strong>
+                  <p>
+                    {account.platform === "telegram"
+                      ? "Bot hesabıyla metin mesajlarını okuyup yanıtlayın. Mevcut webhook varsa okuma kapalıdır; bycoda başka uygulamaların webhook’unu silmez."
+                      : "WhatsApp Business hesabıyla gelen metin mesajlarını 24 saatlik yanıt penceresinde yanıtlayın. Kişisel hesap, şablon mesaj ve toplu ilk gönderim desteklenmez."}
+                  </p>
+                  <details>
+                    <summary>Host bağlantı ayarları</summary>
+                    <p>
+                      Anahtarları seçili host hizmetinin ortam ayarlarına ekleyin. Bağlantı düğmesi
+                      platformdaki hesap kimliğini doğrular.
+                    </p>
+                    <code>BYCODA_SOCIAL_{account.platform.toUpperCase()}_TOKEN</code>
+                    <br />
+                    <code>BYCODA_SOCIAL_{account.platform.toUpperCase()}_APPROVED=1</code>
+                    {account.platform === "whatsapp" ? (
+                      <>
+                        <br />
+                        <code>BYCODA_SOCIAL_WHATSAPP_PHONE_NUMBER_ID</code>
+                        <br />
+                        <code>BYCODA_SOCIAL_WHATSAPP_CLIENT_SECRET</code>
+                        <br />
+                        <code>BYCODA_SOCIAL_WHATSAPP_WEBHOOK_VERIFY_TOKEN</code>
+                        <p>
+                          Meta webhook adresi: /social/webhooks/whatsapp. İşletme hesabında messages
+                          alanına abone olun.
+                        </p>
+                      </>
+                    ) : null}
+                  </details>
+                  <div className="social-actions">
+                    <Button
+                      type="button"
+                      variant="primary"
+                      disabled={!availability[account.platform]?.configured || !!availabilityError}
+                      onClick={() =>
+                        void run(async () => {
+                          await client.tokenConnect(account.id);
+                        })
+                      }
+                    >
+                      {account.connected ? "Host hesabını yeniden bağla" : "Host hesabını bağla"}
+                    </Button>
+                  </div>
+                </div>
+              ) : account.platform === "x" &&
+                account.connected &&
+                account.connection === "browser" ? null : (
                 <Collapsible
                   collapsed={account.platform === "x"}
                   summary="Resmi X API ile bağla (ücretli geliştirici uygulaması gerekir)"
                 >
+                  {PROFILE_ONLY_PLATFORMS.includes(account.platform) ? (
+                    <p role="note">
+                      Bu bağlantı profil kimliğini doğrular ve taslak hazırlamanızı sağlar.
+                      Paylaşım, yorum ve gelen kutusu işlemleri henüz desteklenmiyor.
+                    </p>
+                  ) : null}
                   <div className="social-connection" role="status">
                     <strong>
                       {availabilityError
@@ -1546,30 +1606,34 @@ function Accounts({
                       </details>
                     ) : null}
                   </div>
-                  <fieldset className="social-checks">
-                    <legend>OAuth ile istenecek yetenekler</legend>
-                    {(snapshot.capabilities[account.id] ?? [])
-                      .filter((capability) => capability.status !== "unsupported")
-                      .map((capability) => (
-                        <label key={capability.operation}>
-                          <Checkbox
-                            checked={oauthOperations.includes(capability.operation)}
-                            onChange={(event) =>
-                              setOAuthOperations((current) =>
-                                event.target.checked
-                                  ? [...current, capability.operation]
-                                  : current.filter((item) => item !== capability.operation),
-                              )
-                            }
-                          />
-                          {operations[capability.operation]}
-                        </label>
-                      ))}
-                  </fieldset>
-                  <p>
-                    Yalnız seçilen API ürünlerinin izinleri istenir. Platform onayı ve webhook
-                    aboneliği ayrıca gerekir.
-                  </p>
+                  {PROFILE_ONLY_PLATFORMS.includes(account.platform) ? null : (
+                    <fieldset className="social-checks">
+                      <legend>OAuth ile istenecek yetenekler</legend>
+                      {(snapshot.capabilities[account.id] ?? [])
+                        .filter((capability) => capability.status !== "unsupported")
+                        .map((capability) => (
+                          <label key={capability.operation}>
+                            <Checkbox
+                              checked={oauthOperations.includes(capability.operation)}
+                              onChange={(event) =>
+                                setOAuthOperations((current) =>
+                                  event.target.checked
+                                    ? [...current, capability.operation]
+                                    : current.filter((item) => item !== capability.operation),
+                                )
+                              }
+                            />
+                            {operations[capability.operation]}
+                          </label>
+                        ))}
+                    </fieldset>
+                  )}
+                  {PROFILE_ONLY_PLATFORMS.includes(account.platform) ? null : (
+                    <p>
+                      Yalnız seçilen API ürünlerinin izinleri istenir. Platform onayı ve webhook
+                      aboneliği ayrıca gerekir.
+                    </p>
+                  )}
                   {account.accountType === "organization" ? (
                     <label>
                       LinkedIn organizasyon ID
@@ -1588,7 +1652,8 @@ function Accounts({
                       variant="primary"
 
                       disabled={
-                        !oauthOperations.length ||
+                        (!oauthOperations.length &&
+                          !PROFILE_ONLY_PLATFORMS.includes(account.platform)) ||
                         !!availabilityError ||
                         !availability[account.platform]?.configured ||
                         (account.accountType === "organization" && !/^\d+$/.test(resourceId))

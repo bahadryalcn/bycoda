@@ -17,6 +17,7 @@ export type HostNote = {
   slugPending: boolean;
   createdAt: number;
   updatedAt: number;
+  contentUpdatedAt?: number;
 };
 type Row = Record<string, unknown>;
 const noteFromRow = (row: Row): HostNote => ({
@@ -37,6 +38,7 @@ const noteFromRow = (row: Row): HostNote => ({
   slugPending: row.slug_pending === 1,
   createdAt: Number(row.created_at),
   updatedAt: Number(row.updated_at),
+  contentUpdatedAt: Number(row.content_updated_at ?? row.updated_at),
 });
 function identifier(value: unknown): string {
   if (typeof value !== "string" || !/^[A-Za-z0-9_-]{1,200}$/.test(value))
@@ -51,7 +53,7 @@ const words = (title: string) =>
 const placeholder = (title: string) => /^untitled(?:-\d+)?$/.test(words(title));
 const cut = (text: string, length: number) => Array.from(text).slice(0, length).join("");
 
-/** Uses the desktop's existing note table. No separate notebook or DB migration. */
+/** Uses the desktop's note table, including its shared content-order migration. */
 export class HostNotes {
   constructor(
     private readonly paths = desktopDatabasePaths,
@@ -87,26 +89,33 @@ export class HostNotes {
   }
 
   list(sourceCwd?: string) {
-    const results = this.databases((db) => ({
-      total: Number(
-        (sourceCwd
-          ? db.prepare("SELECT count(*) AS total FROM notes WHERE source_cwd=?").get(sourceCwd)
-          : db.prepare("SELECT count(*) AS total FROM notes").get()
-        )?.total ?? 0,
-      ),
-      notes: (sourceCwd
-        ? db
-            .prepare(
-              "SELECT id,slug,title,substr(body,1,500) AS body,tags_json,source_session_id,source_cwd,slug_pending,created_at,updated_at FROM notes WHERE source_cwd=? ORDER BY updated_at DESC,id ASC LIMIT 500",
-            )
-            .all(sourceCwd)
-        : db
-            .prepare(
-              "SELECT id,slug,title,substr(body,1,500) AS body,tags_json,source_session_id,source_cwd,slug_pending,created_at,updated_at FROM notes ORDER BY updated_at DESC,id ASC LIMIT 500",
-            )
-            .all()
-      ).map(noteFromRow),
-    }));
+    const results = this.databases((db) => {
+      const orderColumn = db
+        .prepare("SELECT 1 FROM pragma_table_info('notes') WHERE name='content_updated_at'")
+        .get()
+        ? "content_updated_at"
+        : "updated_at";
+      return {
+        total: Number(
+          (sourceCwd
+            ? db.prepare("SELECT count(*) AS total FROM notes WHERE source_cwd=?").get(sourceCwd)
+            : db.prepare("SELECT count(*) AS total FROM notes").get()
+          )?.total ?? 0,
+        ),
+        notes: (sourceCwd
+          ? db
+              .prepare(
+                `SELECT id,slug,title,substr(body,1,500) AS body,tags_json,source_session_id,source_cwd,slug_pending,created_at,updated_at,${orderColumn} AS content_updated_at FROM notes WHERE source_cwd=? ORDER BY ${orderColumn} DESC,id ASC LIMIT 500`,
+              )
+              .all(sourceCwd)
+          : db
+              .prepare(
+                `SELECT id,slug,title,substr(body,1,500) AS body,tags_json,source_session_id,source_cwd,slug_pending,created_at,updated_at,${orderColumn} AS content_updated_at FROM notes ORDER BY ${orderColumn} DESC,id ASC LIMIT 500`,
+              )
+              .all()
+        ).map(noteFromRow),
+      };
+    });
     const notes = results.flatMap((result) => result.notes);
     const seen = new Set<string>();
     for (const note of notes) {
@@ -118,7 +127,7 @@ export class HostNotes {
     }
     const filtered = notes
       .filter((note) => !sourceCwd || note.sourceCwd === sourceCwd)
-      .sort((a, b) => b.updatedAt - a.updatedAt);
+      .sort((a, b) => (b.contentUpdatedAt ?? b.updatedAt) - (a.contentUpdatedAt ?? a.updatedAt));
     return {
       notes: filtered
         .slice(0, 500)
@@ -157,6 +166,15 @@ export class HostNotes {
     const db = new DatabaseSync(location.path);
     try {
       db.exec("PRAGMA busy_timeout=2000; BEGIN IMMEDIATE");
+      if (
+        !db
+          .prepare("SELECT 1 FROM pragma_table_info('notes') WHERE name='content_updated_at'")
+          .get()
+      ) {
+        db.exec(
+          "ALTER TABLE notes ADD COLUMN content_updated_at INTEGER NOT NULL DEFAULT 0; UPDATE notes SET content_updated_at=updated_at; CREATE INDEX IF NOT EXISTS notes_content_updated_idx ON notes(content_updated_at DESC,id)",
+        );
+      }
       const row = db.prepare("SELECT * FROM notes WHERE id=?").get(id);
       const note = row ? noteFromRow(row) : null;
       if (note && sourceCwd !== undefined && note.sourceCwd !== sourceCwd)
@@ -228,11 +246,6 @@ export class HostNotes {
           for (let index = 1; db.prepare("SELECT 1 FROM notes WHERE slug=?").get(slug); index++)
             slug = index < 1000 ? `${base}-${index + 1}` : `${base}-${now}-${index}`;
         }
-        const changed =
-          !existing ||
-          title !== existing.title ||
-          body !== existing.body ||
-          JSON.stringify(tags) !== JSON.stringify(existing.tags);
         const sourceCwd =
           typeof v.sourceCwd === "string" && v.sourceCwd.trim()
             ? v.sourceCwd.trim()
@@ -242,6 +255,14 @@ export class HostNotes {
           : typeof v.sourceSessionId === "string" && v.sourceSessionId.trim()
             ? v.sourceSessionId.trim()
             : undefined;
+        const changed =
+          !existing ||
+          title !== existing.title ||
+          body !== existing.body ||
+          JSON.stringify(tags) !== JSON.stringify(existing.tags) ||
+          slug !== existing.slug ||
+          pending !== existing.slugPending ||
+          sourceCwd !== existing.sourceCwd;
         const note: HostNote = {
           id,
           slug,
@@ -252,6 +273,13 @@ export class HostNotes {
           ...(sourceSessionId ? { sourceSessionId } : {}),
           slugPending: pending,
           createdAt: existing?.createdAt ?? now,
+          contentUpdatedAt:
+            !existing ||
+            title !== existing.title ||
+            body !== existing.body ||
+            JSON.stringify(tags) !== JSON.stringify(existing.tags)
+              ? Math.max(now, (existing?.contentUpdatedAt ?? 0) + 1)
+              : existing.contentUpdatedAt,
           updatedAt: changed ? Math.max(now, (existing?.updatedAt ?? 0) + 1) : existing!.updatedAt,
         };
         effectiveChange =
@@ -260,7 +288,7 @@ export class HostNotes {
           existing?.slugPending !== pending ||
           existing?.sourceCwd !== sourceCwd;
         db.prepare(
-          "INSERT INTO notes(id,slug,title,body,tags_json,source_session_id,source_cwd,slug_pending,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET slug=excluded.slug,title=excluded.title,body=excluded.body,tags_json=excluded.tags_json,source_cwd=excluded.source_cwd,slug_pending=excluded.slug_pending,updated_at=excluded.updated_at",
+          "INSERT INTO notes(id,slug,title,body,tags_json,source_session_id,source_cwd,slug_pending,created_at,updated_at,content_updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET slug=excluded.slug,title=excluded.title,body=excluded.body,tags_json=excluded.tags_json,source_cwd=excluded.source_cwd,slug_pending=excluded.slug_pending,updated_at=excluded.updated_at,content_updated_at=excluded.content_updated_at",
         ).run(
           id,
           slug,
@@ -272,6 +300,7 @@ export class HostNotes {
           pending ? 1 : 0,
           note.createdAt,
           note.updatedAt,
+          note.contentUpdatedAt!,
         );
         return note;
       },

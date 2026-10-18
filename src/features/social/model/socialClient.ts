@@ -1,5 +1,10 @@
 import { remoteRequest } from "../../connections/model/connections";
 import type {
+  SocialBrowserIntent,
+  SocialBrowserState,
+  SocialBrowserWorkflow,
+} from "./socialBrowser";
+import type {
   SocialOperation,
   SocialSnapshot,
   SocialWorkspaceQuery,
@@ -28,6 +33,34 @@ export function socialClient(machineId: string) {
     });
   return {
     request,
+    xProfileRead: (accountId: string) =>
+      remoteRequest<import("./socialBrowser").XProfileState>(
+        machineId,
+        "social.browser.profile.read",
+        { accountId },
+      ),
+    xProfileUpdate: (accountId: string, patch: import("./socialBrowser").XProfilePatch) =>
+      remoteRequest<import("./socialBrowser").XProfileState>(
+        machineId,
+        "social.browser.profile.update",
+        { accountId, patch, confirm: "UPDATE_X_PROFILE" },
+      ),
+    xProfileFollow: (accountId: string, handle: string) =>
+      remoteRequest<{ handle: string; platformId: string; following: boolean; changed: boolean }>(
+        machineId,
+        "social.browser.profile.follow",
+        { accountId, handle, confirm: "FOLLOW_X_ACCOUNT" },
+      ),
+    monitoringStatus: (accountId: string) =>
+      remoteRequest<import("./social").SocialMonitorStatus>(machineId, "social.monitoring.status", {
+        accountId,
+      }),
+    tokenConnect: (accountId: string) =>
+      remoteRequest(machineId, "social.token.connect", { accountId }),
+    tiktokCreator: (accountId: string) =>
+      remoteRequest<import("./social").TikTokCreatorInfo>(machineId, "social.tiktok.creator", {
+        accountId,
+      }),
     snapshot: () => request<SocialSnapshot>("snapshot"),
     workspaceSnapshot: (input: SocialWorkspaceQuery = {}) =>
       // Reads need no idempotency receipt containing another copy of the page.
@@ -64,6 +97,17 @@ export function socialClient(machineId: string) {
         "social.browser.availability",
         {},
       ),
+    browserWorkflowBegin: (accountId: string, intent: SocialBrowserIntent, targetUrl?: string) =>
+      remoteRequest<SocialBrowserWorkflow>(machineId, "social.browser.workflow.begin", {
+        accountId,
+        intent,
+        targetUrl,
+        acknowledgeRisk: true,
+      }),
+    browserWorkflowStatus: (accountId: string) =>
+      remoteRequest<SocialBrowserState>(machineId, "social.browser.workflow.status", { accountId }),
+    browserWorkflowCancel: (accountId: string) =>
+      remoteRequest<void>(machineId, "social.browser.workflow.cancel", { accountId }),
     browserBegin: (accountId: string) =>
       remoteRequest<{ status: string; expiresAt: number }>(machineId, "social.browser.begin", {
         accountId,

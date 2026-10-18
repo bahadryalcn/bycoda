@@ -1,6 +1,7 @@
 import { open } from "node:fs/promises";
 import { homedir } from "node:os";
 import { listHostSkills } from "./skills";
+import { skillInvocationTokens } from "../src/features/skills/model/skillTokens";
 import { SKILL_INVOCATION_GUIDANCE } from "../src/integrations/harness/core/skillGuidance";
 
 /** Resolve on the host at send time; never send client paths or cache skill bodies. */
@@ -9,11 +10,7 @@ export async function prepareHostSkillPrompt(
   cwd: string,
   home = homedir(),
 ): Promise<string> {
-  const names = new Set<string>();
-  for (const match of text.matchAll(/(^|\s)[/$]([A-Za-z0-9][A-Za-z0-9_.:-]*)(?=\s|$)/g)) {
-    const lineStart = text.lastIndexOf("\n", match.index) + 1;
-    if (!/^\s*>/.test(text.slice(lineStart, match.index + match[1].length))) names.add(match[2]);
-  }
+  const names = new Set(skillInvocationTokens(text).map((token) => token.name));
   if (!names.size) return text;
   const picked = listHostSkills(cwd, home).filter((skill) => names.has(skill.name));
   if (!picked.length) return text;

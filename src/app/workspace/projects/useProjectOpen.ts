@@ -36,6 +36,7 @@ export interface ProjectOpenDeps {
   setInboxViewOpen: Dispatch<SetStateAction<boolean>>;
   setNotesViewOpen: Dispatch<SetStateAction<boolean>>;
   setAutomationsViewOpen: Dispatch<SetStateAction<boolean>>;
+  setServersViewOpen?: Dispatch<SetStateAction<boolean>>;
   onCwdChange: (sessionId: string, cwd: string) => void;
   setSessions: typeof setSessions;
   setTabs: (update: WorkspaceTab[] | ((previous: WorkspaceTab[]) => WorkspaceTab[])) => void;
@@ -58,6 +59,7 @@ export function useProjectOpen({
   setInboxViewOpen,
   setNotesViewOpen,
   setAutomationsViewOpen,
+  setServersViewOpen,
   onCwdChange,
   setSessions,
   setTabs,
@@ -117,6 +119,7 @@ export function useProjectOpen({
       setInboxViewOpen(false);
       setNotesViewOpen(false);
       setAutomationsViewOpen(false);
+      setServersViewOpen?.(false);
 
       // At most one folder can take the blank session, and it keeps the
       // retargeting rules `onCwdChange` already owns.

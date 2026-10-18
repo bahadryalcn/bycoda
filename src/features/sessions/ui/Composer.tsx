@@ -241,6 +241,8 @@ import {
 import {
   getComposerAttachments,
   getComposerMcpTags,
+  getComposerDraftMode,
+  setComposerDraftMode,
   setComposerAttachments,
   setComposerMcpTags,
   takeComposerNotice,
@@ -538,7 +540,7 @@ function MessageQueue({
               variant="ghost"
               type="button"
               disabled={!canSend(messages[0])}
-              onClick={() => onSteer?.(messages[0].id)}
+              onClick={onResume ?? (() => onSteer?.(messages[0].id))}
               className="shrink-0"
             >
               <Play className="size-3.5" />
@@ -546,94 +548,105 @@ function MessageQueue({
             </Button>
           </div>
         ) : null}
-        {messages.map((message, index) => {
-          const attachmentGone = hasMissingAttachment(message);
-          const label =
-            message.text.trim() ||
-            `${message.attachments.length} attachment${message.attachments.length === 1 ? "" : "s"}`;
-          return (
-            <div
-              key={message.id}
-              ref={(node) => sortable.setItemRef(message.id, node)}
-              className={`reorder-item flex min-h-7 items-center gap-2 text-[12px] data-[dragging]:rounded-md data-[dragging]:bg-(--ui-surface) data-[dragging]:shadow-lg ${
-                index > 0 ? "border-t border-(--ui-tone-neutral-border)" : ""
-              }`}
-            >
-              {messages.length > 1 ? (
-                <Button
-                  iconOnly
-                  label={t("Reorder queued message")}
-                  variant="ghost"
-                  type="button"
-                  data-queue-handle={message.id}
-                  title={t("Drag to reorder")}
-                  shortcut="Alt+↑ / Alt+↓"
-                  aria-label={t("Reorder queued message")}
-                  aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown"
-                  onPointerDown={(event) => sortable.onItemPointerDown(message.id, event)}
-                  onKeyDown={(event) => moveByKey(event, message.id, index)}
-                  className="shrink-0"
-                >
-                  <ListEnd className="size-3.5" />
-                </Button>
-              ) : (
-                <ListEnd className="size-3.5 shrink-0" />
-              )}
-              <span className="min-w-0 flex-1 truncate text-(--ui-text-secondary)">{label}</span>
-              {attachmentGone ? (
-                <span
-                  className="shrink-0 text-(--ui-tone-warning-fg)"
-                  title={t(
-                    "An attached file is gone. Edit this message to drop it, or remove the message.",
+        <div
+          className="max-h-[min(30dvh,15rem)] min-h-0 overflow-y-auto overscroll-contain"
+          data-message-queue-rows
+        >
+          {messages.map((message, index) => {
+            const attachmentGone = hasMissingAttachment(message);
+            const label =
+              message.text.trim() ||
+              `${message.attachments.length} attachment${message.attachments.length === 1 ? "" : "s"}`;
+            return (
+              <div
+                key={message.id}
+                ref={(node) => sortable.setItemRef(message.id, node)}
+                className={`reorder-item grid min-h-7 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 text-[12px] data-[dragging]:rounded-md data-[dragging]:bg-(--ui-surface) data-[dragging]:shadow-lg ${
+                  index > 0 ? "border-t border-(--ui-tone-neutral-border)" : ""
+                }`}
+              >
+                {messages.length > 1 ? (
+                  <Button
+                    iconOnly
+                    label={t("Reorder queued message")}
+                    variant="ghost"
+                    type="button"
+                    data-queue-handle={message.id}
+                    title={t("Drag to reorder")}
+                    shortcut="Alt+↑ / Alt+↓"
+                    aria-label={t("Reorder queued message")}
+                    aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown"
+                    onPointerDown={(event) => sortable.onItemPointerDown(message.id, event)}
+                    onKeyDown={(event) => moveByKey(event, message.id, index)}
+                    className="shrink-0"
+                  >
+                    <ListEnd className="size-3.5" />
+                  </Button>
+                ) : (
+                  <ListEnd className="size-3.5 shrink-0" />
+                )}
+                <div className="min-w-0 py-1">
+                  <div className="truncate text-(--ui-text-secondary)" title={label}>
+                    {label}
+                  </div>
+                  {attachmentGone ? (
+                    <span
+                      className="block [overflow-wrap:anywhere] text-(--ui-tone-warning-fg)"
+                      title={t(
+                        "An attached file is gone. Edit this message to drop it, or remove the message.",
+                      )}
+                    >
+                      {t("Attachment missing")}
+                    </span>
+                  ) : null}
+                </div>
+                <div className="flex shrink-0 items-center gap-1">
+                  {remote ? null : (
+                    <Button
+                      variant="ghost"
+                      type="button"
+                      disabled={!canSend(message)}
+                      title={
+                        busy && (message.intent === "plan" || message.intent === "orchestrate")
+                          ? t("New messages wait until this turn finishes. Stop pauses the queue.")
+                          : undefined
+                      }
+                      onClick={() => onSteer?.(message.id)}
+                      className="shrink-0"
+                    >
+                      <CornerDownRight className="size-3.5" />
+                      {t("Steer")}
+                    </Button>
                   )}
-                >
-                  {t("Attachment missing")}
-                </span>
-              ) : null}
-              {remote ? null : (
-                <Button
-                  variant="ghost"
-                  type="button"
-                  disabled={!canSend(message)}
-                  title={
-                    busy && (message.intent === "plan" || message.intent === "orchestrate")
-                      ? t("New messages wait until this turn finishes. Stop pauses the queue.")
-                      : undefined
-                  }
-                  onClick={() => onSteer?.(message.id)}
-                  className="shrink-0"
-                >
-                  <CornerDownRight className="size-3.5" />
-                  {t("Steer")}
-                </Button>
-              )}
-              <Button
-                iconOnly
-                label={t("Edit queued message")}
-                variant="ghost"
-                type="button"
-                title={t("Edit queued message")}
-                aria-label={t("Edit queued message")}
-                onClick={() => startEdit(message)}
-                className="shrink-0"
-              >
-                <Pencil className="size-3.5" />
-              </Button>
-              <Button
-                iconOnly
-                label={t("Remove queued message")}
-                variant="ghost"
-                type="button"
-                title={t("Remove queued message")}
-                aria-label={t("Remove queued message")}
-                onClick={() => onDelete?.(message.id)}
-                className="shrink-0"
-              >
-                <Trash2 className="size-3.5" />
-              </Button>
-            </div>
-          );
-        })}
+                  <Button
+                    iconOnly
+                    label={t("Edit queued message")}
+                    variant="ghost"
+                    type="button"
+                    title={t("Edit queued message")}
+                    aria-label={t("Edit queued message")}
+                    onClick={() => startEdit(message)}
+                    className="shrink-0"
+                  >
+                    <Pencil className="size-3.5" />
+                  </Button>
+                  <Button
+                    iconOnly
+                    label={t("Remove queued message")}
+                    variant="ghost"
+                    type="button"
+                    title={t("Remove queued message")}
+                    aria-label={t("Remove queued message")}
+                    onClick={() => onDelete?.(message.id)}
+                    className="shrink-0"
+                  >
+                    <Trash2 className="size-3.5" />
+                  </Button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
         {remote ? (
           <div className="border-t border-(--ui-tone-neutral-border) py-1 text-[11px] text-(--ui-text-secondary)">
             {t("Sent one at a time when the host finishes this turn, while {p0} is open.", {
@@ -800,9 +813,20 @@ export const Composer = memo(function Composer({
   const draftResetTokenRef = useRef(draftResetToken);
   /** Bumped when the draft is cleared, so a late paste cannot land on the next one. */
   const pasteGenerationRef = useRef(0);
+  const sendIntentRef = useRef(0);
   /** Pasted and dropped files still reading when Send is pressed. */
   const pasteFlightRef = useRef<Promise<void> | null>(null);
   const submitLockRef = useRef(false);
+  const previousBusyRef = useRef(busy);
+  useEffect(() => {
+    if (previousBusyRef.current && !busy) sendIntentRef.current += 1;
+    previousBusyRef.current = busy;
+  }, [busy]);
+  const stopPendingSend = () => {
+    // Retire submission intent without discarding a clipboard read or its result.
+    sendIntentRef.current += 1;
+    onStop?.();
+  };
   const positionedInitialDraft = useRef(false);
   const slashRef = useRef<SlashToken | null>(null);
   const mentionRef = useRef<MentionToken | null>(null);
@@ -849,7 +873,12 @@ export const Composer = memo(function Composer({
   const [planSelected, setPlanSelected] = useState(false);
   const [operatorSelected, setOperatorSelected] = useState(false);
   const [orchestrationSelected, setOrchestrationSelected] = useState(false);
-  const [draftSelected, setDraftSelected] = useState(false);
+  const [draftSelected, setDraftSelected] = useState(() =>
+    sessionId ? getComposerDraftMode(sessionId) === "save" : false,
+  );
+  useEffect(() => {
+    if (sessionId) setComposerDraftMode(sessionId, draftSelected ? "save" : undefined);
+  }, [sessionId, draftSelected]);
   const [slash, setSlash] = useState<SlashToken | null>(null);
   const [skillActive, setSkillActive] = useState(0);
   const [creatingSkill, setCreatingSkill] = useState(false);
@@ -1252,9 +1281,15 @@ export const Composer = memo(function Composer({
   }, [attachmentsSupported, remote, addAttachments]);
 
   const rememberAttachmentRead = useCallback((work: Promise<void>) => {
+    const generation = pasteGenerationRef.current;
     const flight = work.then(
       () => undefined,
-      () => undefined,
+      (reason: unknown) => {
+        if (pasteGenerationRef.current !== generation) return;
+        // Abort a Send already waiting on this failed read, retaining its text.
+        pasteGenerationRef.current += 1;
+        setPasteError(reason instanceof Error ? reason.message : String(reason));
+      },
     );
     const previous = pasteFlightRef.current;
     const joined = previous ? previous.then(() => flight) : flight;
@@ -1943,12 +1978,13 @@ export const Composer = memo(function Composer({
     });
   };
   const completeSubmit = async (submittedValue: string, queue = false) => {
+    const intent = sendIntentRef.current;
     let pending = pasteFlightRef.current;
     const generation = pasteGenerationRef.current;
     while (pending) {
       await pending;
       // A reset or an earlier send retired this draft while the read was out.
-      if (pasteGenerationRef.current !== generation) return;
+      if (pasteGenerationRef.current !== generation || sendIntentRef.current !== intent) return;
       pending = pasteFlightRef.current;
     }
     const value = ref.current?.value ?? submittedValue;
@@ -2014,6 +2050,12 @@ export const Composer = memo(function Composer({
     const draftCommand = canSaveDraft
       ? consumeDraftCommand(value)
       : { text: value, matched: false };
+    if (draftSelected && (!canSaveDraft || !onSaveDraft)) {
+      setPasteError(
+        "Saving drafts is unavailable here. Choose another mode explicitly to send this message.",
+      );
+      return;
+    }
     if ((draftSelected || draftCommand.matched) && onSaveDraft) {
       const files = attachmentsRef.current;
       const text = draftCommand.text;
@@ -2350,7 +2392,7 @@ export const Composer = memo(function Composer({
           isInterruptChord(e, el.selectionStart !== el.selectionEnd))
       ) {
         e.preventDefault();
-        onStop();
+        stopPendingSend();
         return;
       }
       if (!busy && isDefaultStopChord(e)) {
@@ -2521,12 +2563,21 @@ export const Composer = memo(function Composer({
 
   const attachFromPicker = () => {
     if (!attachmentsSupported) return;
-    void pickAttachments()
-      .then((files) => {
-        addAttachments(files);
+    const generation = pasteGenerationRef.current;
+    setPasteError(null);
+    rememberAttachmentRead(
+      pickAttachments().then((files) => {
+        if (
+          pasteGenerationRef.current !== generation ||
+          !fileDropStateRef.current.attachmentsSupported
+        ) {
+          files.forEach(revokeAttachment);
+          return;
+        }
+        fileDropStateRef.current.addAttachments(files);
         ref.current?.focus();
-      })
-      .catch((error) => console.warn("Picking attachments failed", error));
+      }),
+    );
   };
 
   const focusFromComposerSpace = (event: PointerEvent<HTMLDivElement>) => {
@@ -3346,7 +3397,7 @@ export const Composer = memo(function Composer({
                 }
                 queueShortcut={queueShortcut}
                 stopShortcut={stopShortcut ? `${stopShortcut} / Ctrl+C` : "Ctrl+C"}
-                onStop={() => onStop?.()}
+                onStop={stopPendingSend}
               />
             </div>
           </div>

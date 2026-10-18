@@ -13,13 +13,50 @@ const agent: Block = {
   tool: { callId: "spawn-1", kind: "agent", status: "in_progress" },
   agentRun: { name: "Reviewer", prompt: "Review the requested changes", steps: [] },
 };
+const layoutAgent: Block = {
+  ...agent,
+  agentRun: {
+    name: "Ssh Security subagent with a very long descriptive name",
+    prompt: "Review " + "G:/Projects/very-long-directory/".repeat(12),
+    steps: [
+      {
+        id: "message",
+        kind: "message",
+        text:
+          "Evidence\n\n" + "Visible remote suggestions require verified integration. ".repeat(18),
+      },
+      {
+        id: "nested",
+        kind: "tool",
+        toolKind: "agent",
+        text: "Root subagent",
+        status: "in_progress",
+      },
+      {
+        id: "nested-2",
+        kind: "tool",
+        toolKind: "agent",
+        text: "Ssh Engine subagent",
+        status: "completed",
+      },
+      ...Array.from({ length: 12 }, (_, index) => ({
+        id: `read-${index}`,
+        kind: "tool" as const,
+        toolKind: "read",
+        text: "src/features/" + "long-directory/".repeat(12) + "terminal.ts",
+        status: "completed",
+      })),
+    ],
+  },
+};
 function Fixture() {
+  const params = new URLSearchParams(location.search);
+  const reviewer = params.has("layout") ? layoutAgent : agent;
   const sheet = useSubagentSheet(
-    [agent, { ...agent, id: "agent-2", agentRun: { name: "Explorer", steps: [] } }],
+    [reviewer, { ...agent, id: "agent-2", agentRun: { name: "Explorer", steps: [] } }],
     true,
   );
   const [submitted, setSubmitted] = useState<string[]>([]);
-  const params = new URLSearchParams(location.search);
   const blockedReason = params.has("blocked")
     ? "Messaging is unavailable in this conversation."
     : undefined;

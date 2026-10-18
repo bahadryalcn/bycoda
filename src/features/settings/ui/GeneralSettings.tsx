@@ -2,7 +2,7 @@ import { useEffect, useState, useSyncExternalStore } from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
 import { Button } from "../../../shared/ui/Button";
-import { Alert } from "../../../shared/ui/Alert";
+import { SettingsFeedback } from "./settingsControls";
 import {
   installPendingUpdate,
   isUpdaterEnabled,
@@ -256,9 +256,9 @@ function ProductDetails() {
       </Row>
       {error && (
         <div className="general-link-error">
-          <Alert tone="danger" role="alert">
+          <SettingsFeedback state="error">
             {t("Could not open the link. Copy the address and open it manually.")}
-          </Alert>
+          </SettingsFeedback>
         </div>
       )}
     </>
@@ -334,7 +334,24 @@ export function UpdateRow({ onOpenWhatsNew }: { onOpenWhatsNew: (version: string
           <span className="general-version">{snapshot.currentVersion}</span>
         </span>
       }
-      description={status}
+      description={snapshot.phase === "idle" && updatesEnabled === true ? status : undefined}
+      feedback={
+        snapshot.phase !== "idle" || updatesEnabled !== true ? (
+          <SettingsFeedback
+            state={
+              snapshot.phase === "error"
+                ? "error"
+                : updatesEnabled === false || hasUpdate
+                  ? "warning"
+                  : snapshot.phase === "current"
+                    ? "success"
+                    : "loading"
+            }
+          >
+            {status}
+          </SettingsFeedback>
+        ) : null
+      }
     >
       <div className="general-update-actions">
         <SecondaryButton

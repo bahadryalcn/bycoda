@@ -119,6 +119,56 @@ async function run(
 }
 
 describe("runSessionImport", () => {
+  it.each(["claude", "codex"] as const)(
+    "imports a valid bounded %s tail without a user record",
+    async (provider) => {
+      const h = harness({
+        readClaude: async () => ({
+          text: JSON.stringify({
+            type: "assistant",
+            message: { role: "assistant", content: [{ type: "text", text: "Retained answer" }] },
+          }),
+          truncated: true,
+          totalRecords: 99,
+          keptRecords: 1,
+          oversizeSkipped: 0,
+        }),
+        readCodex: async () => ({
+          entries: [{ kind: "assistant", text: "Retained answer", at: 6 }],
+          truncated: true,
+          dropped: 98,
+          oversizeSkipped: 0,
+        }),
+      });
+      expect(await run(h, [candidate({ provider })])).toMatchObject({ imported: 1 });
+      expect(h.persisted[0].session.blocks[0].text).toContain("most recent part");
+      expect(h.persisted[0].session.blocks[1]).toMatchObject({
+        role: "system",
+        text: expect.stringContaining("starts inside a turn"),
+      });
+      expect(h.persisted[0].session.blocks.some((block) => block.text === "Retained answer")).toBe(
+        true,
+      );
+    },
+  );
+
+  it.each(["claude", "codex"] as const)(
+    "rejects an empty truncated %s source",
+    async (provider) => {
+      const h = harness({
+        readClaude: async () => ({
+          text: "invalid json",
+          truncated: true,
+          totalRecords: 99,
+          keptRecords: 1,
+          oversizeSkipped: 0,
+        }),
+        readCodex: async () => ({ entries: [], truncated: true, dropped: 99, oversizeSkipped: 0 }),
+      });
+      expect(await run(h, [candidate({ provider })])).toMatchObject({ imported: 0 });
+      expect(h.persisted).toHaveLength(0);
+    },
+  );
   it("imports a Claude conversation resumable, with its original timestamps", async () => {
     const h = harness();
     const summary = await run(h, [candidate()]);

@@ -82,16 +82,30 @@ export function addDraftAttachments(
   incoming: Attachment[],
   selection: TextSelection | null,
 ): { draft: QueuedEditDraft; caret: number } {
-  const merged = mergeAttachments(draft.attachments, incoming);
+  // Remove overwritten tokens before merging, so they also free capacity and
+  // the incoming tokens use the surviving attachments' numbering.
+  const start = Math.min(selection?.start ?? draft.text.length, draft.text.length);
+  const end = Math.min(selection?.end ?? draft.text.length, draft.text.length);
+  const replacement = editDraftText(
+    draft,
+    draft.text.slice(0, start) + draft.text.slice(end),
+    start,
+  );
+  const base = replacement.draft;
+  const merged = mergeAttachments(base.attachments, incoming);
   // Skipped duplicates are not in `merged`, so they get no token either.
-  const tokens = tokensForIncoming(draft.attachments, merged.slice(draft.attachments.length));
+  const tokens = tokensForIncoming(base.attachments, merged.slice(base.attachments.length));
   if (!tokens) {
     return {
       draft,
       caret: selection?.end ?? draft.text.length,
     };
   }
-  const inserted = insertAtSelection(draft.text, selection, tokens);
+  const inserted = insertAtSelection(
+    base.text,
+    { start: replacement.caret, end: replacement.caret },
+    tokens,
+  );
   return {
     draft: { text: inserted.text, attachments: merged },
     caret: inserted.caret,
@@ -106,10 +120,10 @@ export function applyQueuedEdit(message: QueuedMessage, draft: QueuedEditDraft):
   return withoutMissingAttachments({ ...message, attachments: draft.attachments }, draft.text);
 }
 
-/** Nothing would be left to send: no words and no attachment that still exists. */
+/** Nothing would be left to send after attachment cleanup, including retained cards. */
 export function isQueuedEditEmpty(message: QueuedMessage, draft: QueuedEditDraft): boolean {
   const next = applyQueuedEdit(message, draft);
-  return !next.text.trim() && next.attachments.length === 0;
+  return !next.text.trim() && next.attachments.length === 0 && !next.noteCard && !next.handoffCard;
 }
 
 /** True when saving would change the row. */

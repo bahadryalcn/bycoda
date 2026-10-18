@@ -1,4 +1,4 @@
-import { Alert } from "../../../shared/ui/Alert";
+import { SettingsFeedback } from "./settingsControls";
 import { Checkbox } from "../../../shared/ui/Checkbox";
 import { t, useLocale } from "../../../shared/i18n";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -351,9 +351,7 @@ export function JiraSettings() {
                 {t("Only checked boards from selected projects appear in the inbox.")}
               </p>
               {boardsError ? (
-                <Alert tone="danger" role="alert">
-                  {boardsError}
-                </Alert>
+                <SettingsFeedback state="error">{boardsError}</SettingsFeedback>
               ) : null}
               {boards.map((board) => (
                 <label key={board.id} className="inbox-scope-option">

@@ -16,6 +16,30 @@ afterEach(async () => {
 const at = (value: string) => new Date(value).getTime();
 const MINUTE = 60_000;
 
+it.each(["UTC", "Europe/Istanbul", "America/New_York", "Europe/Berlin"])(
+  "previews the same instant save schedules in host timezone %s across DST dates",
+  (zone) => {
+    const priorZone = process.env.TZ;
+    process.env.TZ = zone;
+    try {
+      for (const instant of [
+        "2026-03-08T06:00:00Z",
+        "2026-03-29T00:00:00Z",
+        "2026-11-01T05:00:00Z",
+      ]) {
+        const s = setup(at(instant));
+        const input = s.input({ time: "02:30" });
+        const preview = s.automations.preview(input);
+        expect(preview.timeZone).toBe(zone);
+        expect(preview.nextRunAt).toBe(s.automations.save(input).nextRunAt);
+      }
+    } finally {
+      if (priorZone === undefined) delete process.env.TZ;
+      else process.env.TZ = priorZone;
+    }
+  },
+);
+
 function setup(start = at("2026-10-05T08:00:00")) {
   const directory = mkdtempSync(join(tmpdir(), "bycoda-automations-test-"));
   const store = new HostStore(join(directory, "host.db"));

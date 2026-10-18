@@ -49,6 +49,18 @@ afterEach(() => {
 });
 
 describe("automatic recovery", () => {
+  it("does not retry a refused host identity on timers, focus or network recovery", async () => {
+    recordRemoteConnection(
+      "env",
+      "Host identity changed. Add this machine again before continuing.",
+    );
+    window.dispatchEvent(new Event("focus"));
+    window.dispatchEvent(new Event("online"));
+    await vi.advanceTimersByTimeAsync(5 * 60_000);
+    expect(request).not.toHaveBeenCalled();
+    expect(requestReconnect).not.toHaveBeenCalled();
+    expect(readRemoteConnection("env").status).toBe("identity-mismatch");
+  });
   it("retries a dropped machine after 2, 5 and 15 seconds, then reconnects it", async () => {
     request.mockRejectedValue(down);
     recordRemoteConnection("env", down);

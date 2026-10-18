@@ -16,6 +16,13 @@ import {
 
 const principal = { kind: "session" as const, projectId: "p", sessionId: "s", provider: "codex" };
 describe("Conversation Tools boundary", () => {
+  it("accepts a bounded log stream generation so cursors can recover across host restarts", () => {
+    expect(() =>
+      validateConversationTool("logs.read", { after: 10, streamId: "previous-host" }),
+    ).not.toThrow();
+    expect(() => validateConversationTool("logs.read", { streamId: "x".repeat(301) })).toThrow();
+    expect(() => validateConversationTool("logs.read", { streamId: 42 })).toThrow();
+  });
   it("exposes bounded skill discovery as reads without accepting paths or identity overrides", () => {
     for (const action of ["skills.search", "skills.read"]) {
       expect(

@@ -1,4 +1,10 @@
-import { useCallback, useEffect, type Dispatch, type MutableRefObject, type SetStateAction } from "react";
+import {
+  useCallback,
+  useEffect,
+  type Dispatch,
+  type MutableRefObject,
+  type SetStateAction,
+} from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { message } from "@tauri-apps/plugin-dialog";
 import { flushSync } from "react-dom";
@@ -20,6 +26,7 @@ import {
 import type { WindowTransferPayload } from "../../model/windowTransfer";
 import type { EditorFileClose } from "../files/useEditorFileClose";
 import type { MoveTabsOptions } from "./useMoveTabsToNewWindow";
+import { cancelWindowMoveTiming } from "../../model/windowMoveTiming";
 
 export interface WindowMoveActionDeps {
   pendingWindowMoves: PendingWindowMoves;
@@ -41,7 +48,11 @@ export interface WindowMoveActionDeps {
 /** Queued window moves, cancel, and opening a single file in a new window. */
 export function useWindowMoveActions(deps: WindowMoveActionDeps): {
   onCancelMoveToNewWindow: (tabId: string) => void;
-  onOpenFileInNewWindow: (paneId: string, fileId: string, position?: WindowMovePosition) => Promise<void>;
+  onOpenFileInNewWindow: (
+    paneId: string,
+    fileId: string,
+    position?: WindowMovePosition,
+  ) => Promise<void>;
 } {
   const {
     pendingWindowMoves,
@@ -63,6 +74,7 @@ export function useWindowMoveActions(deps: WindowMoveActionDeps): {
   useEffect(() => {
     const { ready, gone } = settlePendingWindowMoves(pendingWindowMoves, tabs, sessions);
     if (ready.length === 0 && gone.length === 0) return;
+    for (const id of gone) cancelWindowMoveTiming([id]);
     setPendingWindowMoves((prev) => dropWindowMoves(prev, [...ready, ...gone]));
     for (const id of ready) {
       void onMoveTabsToNewWindow([id], {
@@ -81,6 +93,7 @@ export function useWindowMoveActions(deps: WindowMoveActionDeps): {
   }, [pendingWindowMoves, tabs, sessions, onMoveTabsToNewWindow]);
 
   const onCancelMoveToNewWindow = useCallback((tabId: string) => {
+    cancelWindowMoveTiming([tabId]);
     setPendingWindowMoves((prev) => dropWindowMoves(prev, [tabId]));
   }, []);
 

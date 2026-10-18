@@ -1,4 +1,5 @@
 import { useEffect, useSyncExternalStore } from "react";
+import { isUpdatePromptSnoozed } from "./updatePrompt";
 import {
   installPendingUpdate,
   probeForUpdate,
@@ -9,6 +10,15 @@ import {
 // All update entry points share one probe, download and progress snapshot.
 let snapshot: UpdaterSnapshot = { phase: "idle", currentVersion: "…" };
 let notes = "";
+let startupChecked = false;
+let startupPromptVersion: string | null = null;
+
+export function claimStartupUpdatePrompt(): boolean {
+  if (!startupPromptVersion || snapshot.availableVersion !== startupPromptVersion) return false;
+  startupPromptVersion = null;
+  return !isUpdatePromptSnoozed();
+}
+
 let checking = false;
 let installing = false;
 let consumers = 0;
@@ -37,6 +47,10 @@ async function probe() {
     if (request !== generation) return;
     const update = await probeForUpdate();
     if (request !== generation || installing) return;
+    if (!startupChecked) {
+      startupChecked = true;
+      startupPromptVersion = update?.version ?? null;
+    }
     if (update) {
       notes = update.body?.trim() ?? "";
       setAppUpdateSnapshot({

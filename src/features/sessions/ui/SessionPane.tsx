@@ -139,6 +139,7 @@ import { isRemoteProjectPath } from "../../projects/model/recents";
 import type { HostSession } from "../../connections/model/protocol";
 import { ADOPTED_RUNNING_REASON } from "../../connections/model/adoptedSessions";
 import { AdoptedSessionNotice } from "../../connections/ui/AdoptedSessionNotice";
+import { SharedQueueRecoveryNotice } from "../../connections/ui/SharedQueueRecoveryNotice";
 import type { RefreshAdoptedSession } from "../../connections/model/useAdoptedSessions";
 
 export type SessionPaneProps = {
@@ -1328,6 +1329,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
         </div>
       ) : null}
       <div data-session-body className="relative flex min-h-0 min-w-0 flex-1 flex-col">
+        <SharedQueueRecoveryNotice key={`queue:${session.id}`} sessionId={session.id} />
         <AdoptedSessionNotice
           key={session.id}
           session={session}

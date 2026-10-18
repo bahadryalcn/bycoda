@@ -31,7 +31,10 @@ const COMMANDS = [
   "cd ",
 ];
 
-export function terminalSuggestions(query: string): string[] {
+export function terminalSuggestions(query: string, scope: "local" | "ssh" = "local"): string[] {
+  // A remote raw PTY has no verified prompt/cursor/echo capability. Never use
+  // local templates as remote history, infer passwords, or capture keystrokes.
+  if (scope === "ssh") return [];
   const prefix = query.trimStart().toLowerCase();
   return COMMANDS.filter((command) => command.toLowerCase().startsWith(prefix))
     .filter((command) => command !== query)

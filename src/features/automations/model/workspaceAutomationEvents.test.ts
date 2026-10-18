@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { newAutomationDraft, createAutomationTrigger, type Automation } from "./automations";
 import {
   taskAutomationEvents,
@@ -33,6 +33,7 @@ const automation: Automation = {
 };
 
 describe("workspace automation events", () => {
+  beforeEach(() => invoke.mockReset());
   it("does not replay old statuses on startup or fire again when a task is merely edited", () => {
     expect(taskAutomationEvents([task]).map((event) => event.event)).toEqual(["task_created"]);
     expect(
@@ -106,5 +107,65 @@ describe("workspace automation events", () => {
     expect(calls[0]![1].claim.eventKey).not.toBe(calls[1]![1].claim.eventKey);
     expect(calls[0]![1].claim.eventKind).toBe("tasks");
     expect(calls[0]![1].claim.prompt).toContain("untrusted event metadata");
+  });
+
+  it("delivers A when B rejects and retries B without relaunching A", async () => {
+    const event = taskAutomationEvents([task], new Map())[1]!;
+    const events = [event, { ...event, key: `${event.key}:b` }];
+    const launched = new Set<string>();
+    const durable = new Map<
+      string,
+      { automation: Automation; run: { id: string; status: string; prompt: string } }
+    >();
+    let failB = true;
+    invoke.mockImplementation(async (_command, args) => {
+      if (_command !== "automations_claim_event") return null;
+      const key = args.claim.eventKey;
+      if (durable.size === 1 && !durable.has(key) && failB) {
+        failB = false;
+        throw new Error("IPC unavailable");
+      }
+      let result = durable.get(key);
+      if (!result) {
+        result = {
+          automation,
+          run: { id: `run-${durable.size}`, status: "pending", prompt: args.claim.prompt },
+        };
+        durable.set(key, result);
+      }
+      return result.run.status === "pending" ? result : null;
+    });
+    const failed = vi.fn();
+    for (const item of await claimWorkspaceAutomationRuns([automation], events, failed)) {
+      launched.add(item.run.id);
+      item.run.status = "running";
+    }
+    expect(launched.size).toBe(1);
+    expect(failed).toHaveBeenCalledWith(events[1], expect.any(Error));
+    for (const item of await claimWorkspaceAutomationRuns([automation], events, failed)) {
+      expect(launched.has(item.run.id)).toBe(false);
+      launched.add(item.run.id);
+      item.run.status = "running";
+    }
+    expect(launched.size).toBe(2);
+    expect(durable.size).toBe(2);
+  });
+
+  it("recovers an ambiguous committed IPC response with its original prompt", async () => {
+    const event = taskAutomationEvents([task], new Map())[1]!;
+    const committed = {
+      automation,
+      run: { id: "committed", status: "pending", prompt: "original captured metadata" },
+    };
+    invoke.mockRejectedValueOnce(new Error("reply lost")).mockResolvedValue(committed);
+    const failed = vi.fn();
+    expect(await claimWorkspaceAutomationRuns([automation], [event], failed)).toEqual([]);
+    const retry = await claimWorkspaceAutomationRuns(
+      [{ ...automation, prompt: "edited after claim" }],
+      [event],
+      failed,
+    );
+    expect(retry).toHaveLength(1);
+    expect(retry[0]).toMatchObject({ run: { id: "committed" }, prompt: committed.run.prompt });
   });
 });

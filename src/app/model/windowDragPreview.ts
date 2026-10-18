@@ -16,6 +16,14 @@ export function beginWindowTabDrag(sourceId: string, sourceIds: string[] = [sour
   let ended = false;
   let pending = false;
   let dirty = false;
+  let frame: number | undefined;
+  const schedule = () => {
+    if (ended || frame !== undefined) return;
+    frame = window.requestAnimationFrame(() => {
+      frame = undefined;
+      publish();
+    });
+  };
   const publish = () => {
     if (ended || !point) return;
     if (pending) {
@@ -36,19 +44,21 @@ export function beginWindowTabDrag(sourceId: string, sourceIds: string[] = [sour
       })
       .finally(() => {
         pending = false;
-        if (dirty) publish();
+        if (dirty) schedule();
       });
   };
   const heartbeat = window.setInterval(publish, 350);
   return {
     move(next: { clientX: number; clientY: number }) {
+      if (ended) return;
       point = { clientX: next.clientX, clientY: next.clientY, pixelRatio: window.devicePixelRatio };
-      publish();
+      schedule();
     },
     finish() {
       if (ended) return;
       ended = true;
       window.clearInterval(heartbeat);
+      if (frame !== undefined) window.cancelAnimationFrame(frame);
       // Native revision tombstones reject older in-flight hover commands.
       void invoke("clear_window_tab_drag", { dragId, revision: revision() }).catch(() => {});
     },

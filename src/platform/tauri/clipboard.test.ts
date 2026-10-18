@@ -4,6 +4,7 @@ import { copyMessage, copyText, messageFilesFromClipboard } from "./clipboard";
 import { invoke } from "@tauri-apps/api/core";
 import {
   MAX_EMBED_BYTES,
+  MAX_ATTACHMENTS,
   attachmentsFromFiles,
   displayAttachments,
   persistableAttachment,
@@ -12,6 +13,118 @@ import {
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
 
 afterEach(() => vi.restoreAllMocks());
+
+it("copies lazy remote images and documents through their authorized readers", async () => {
+  vi.mocked(invoke).mockClear();
+  const write = vi.spyOn(navigator.clipboard, "write").mockResolvedValue();
+  const imageReader = vi.fn(async () => btoa("remote image"));
+  const documentReader = vi.fn(async () => btoa("remote document"));
+  await copyMessage("Remote files", [
+    {
+      id: "remote-image",
+      name: "image.png",
+      mimeType: "image/png",
+      kind: "image",
+      size: 12,
+      path: "/remote/image.png",
+      loadPreview: imageReader,
+    },
+    {
+      id: "remote-file",
+      name: "report.pdf",
+      mimeType: "application/pdf",
+      kind: "file",
+      size: 15,
+      path: "/remote/report.pdf",
+      loadPreview: documentReader,
+    },
+  ]);
+  expect(imageReader).toHaveBeenCalledOnce();
+  expect(documentReader).toHaveBeenCalledOnce();
+  expect(invoke).not.toHaveBeenCalled();
+  const html = await (await write.mock.calls[0][0][0].getType("text/html")).text();
+  const pasted = messageFilesFromClipboard({ getData: () => html });
+  expect(await Promise.all(pasted!.map((file) => file.text()))).toEqual([
+    "remote image",
+    "remote document",
+  ]);
+});
+
+it.each(["image", "file"] as const)(
+  "preserves the clipboard and exposes a failed lazy %s read without a local fallback",
+  async (kind) => {
+    await navigator.clipboard.writeText("Previous clipboard");
+    vi.mocked(invoke).mockClear();
+    const write = vi.spyOn(navigator.clipboard, "write").mockResolvedValue();
+    const reader = vi.fn(async () => {
+      throw new Error("Remote owner disconnected");
+    });
+    await expect(
+      copyMessage("New content", [
+        {
+          id: "remote",
+          name: "remote.bin",
+          mimeType: "application/octet-stream",
+          kind,
+          size: 3,
+          path: "/remote/file",
+          loadPreview: reader,
+        },
+      ]),
+    ).rejects.toThrow("Could not copy remote.bin: Remote owner disconnected");
+    expect(reader).toHaveBeenCalledOnce();
+    expect(invoke).not.toHaveBeenCalled();
+    expect(write).not.toHaveBeenCalled();
+    expect(await navigator.clipboard.readText()).toBe("Previous clipboard");
+  },
+);
+
+function zeroFile(size: number, id: string) {
+  const padding = (3 - (size % 3)) % 3;
+  return {
+    id,
+    name: `${id}.bin`,
+    mimeType: "application/octet-stream",
+    kind: "file" as const,
+    size,
+    data: "A".repeat(Math.ceil(size / 3) * 4 - padding) + "=".repeat(padding),
+  };
+}
+
+it("rejects valid individual files above the combined 20 MiB budget before replacing the clipboard", async () => {
+  await navigator.clipboard.writeText("Previous clipboard");
+  const write = vi.spyOn(navigator.clipboard, "write").mockResolvedValue();
+  await expect(
+    copyMessage("Large pair", [
+      zeroFile(MAX_EMBED_BYTES / 2 + 1, "first"),
+      zeroFile(MAX_EMBED_BYTES / 2 + 1, "second"),
+    ]),
+  ).rejects.toThrow("combined 20 MB clipboard limit");
+  expect(write).not.toHaveBeenCalled();
+  expect(await navigator.clipboard.readText()).toBe("Previous clipboard");
+});
+
+it("round trips multiple files exactly at the combined 20 MiB budget", async () => {
+  const write = vi.spyOn(navigator.clipboard, "write").mockResolvedValue();
+  await copyMessage("Boundary", [
+    zeroFile(MAX_EMBED_BYTES / 2, "first"),
+    zeroFile(MAX_EMBED_BYTES / 2, "second"),
+  ]);
+  const html = await (await write.mock.calls[0][0][0].getType("text/html")).text();
+  const pasted = messageFilesFromClipboard({ getData: () => html });
+  expect(pasted?.map((file) => file.size)).toEqual([MAX_EMBED_BYTES / 2, MAX_EMBED_BYTES / 2]);
+});
+
+it("rejects too many copied files before touching the clipboard", async () => {
+  const write = vi.spyOn(navigator.clipboard, "write").mockResolvedValue();
+  await expect(
+    copyMessage(
+      "Files",
+      Array.from({ length: MAX_ATTACHMENTS + 1 }, (_, i) => zeroFile(0, `${i}`)),
+    ),
+  ).rejects.toThrow(`up to ${MAX_ATTACHMENTS} files`);
+  expect(write).not.toHaveBeenCalled();
+});
 
 it("uses the native text clipboard if WebView permissions reject a long copy", async () => {
   const text = "bycoda — ortak üretim\n".repeat(1000);

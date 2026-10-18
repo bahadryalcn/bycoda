@@ -1,4 +1,5 @@
-import { Badge } from "../../../shared/ui/Badge";
+import { SettingsFeedback } from "./settingsControls";
+
 import { TextField } from "../../../shared/ui/TextField";
 import { Button } from "../../../shared/ui/Button";
 import { t, useLocale } from "../../../shared/i18n";
@@ -269,11 +270,7 @@ export function ProviderBinaryControl({
                 )}
                 {PRODUCT_IDENTITY.displayName}.
               </p>
-              {error ? (
-                <Badge tone="danger" role="alert">
-                  {error}
-                </Badge>
-              ) : null}
+              {error ? <SettingsFeedback state="error">{error}</SettingsFeedback> : null}
               <div className="mt-3 flex justify-end gap-2">
                 <SecondaryButton
                   disabled={working}
@@ -307,16 +304,12 @@ export function ProviderBinaryControl({
                     (error ? t("Retry to check this CLI") : t("Checking version…"))}
                 </span>
               </div>
-              {error ? (
-                <Badge tone="danger" role="alert" title={error}>
-                  {error}
-                </Badge>
-              ) : null}
+              {error ? <SettingsFeedback state="error">{error}</SettingsFeedback> : null}
               {revealError ? (
-                <Badge tone="danger" role="alert">
+                <SettingsFeedback state="error">
                   {t("Could not open the CLI location: ")}
                   {revealError}
-                </Badge>
+                </SettingsFeedback>
               ) : null}
               <div className="mt-3 flex justify-end gap-2">
                 {error ? (

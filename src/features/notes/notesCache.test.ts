@@ -44,7 +44,7 @@ it("updates the cached list after edits, links and deletions without a full relo
   await linkNoteToSession(note.id, "session-1");
   expect(await loadNotes()).toEqual([linked]);
   invoke.mockResolvedValueOnce(undefined);
-  await deleteNote(note.id);
+  await deleteNote(note.id, linked.updatedAt);
   expect(await loadNotes()).toEqual([]);
   expect(invoke.mock.calls.filter(([command]) => command === "notes_list")).toHaveLength(1);
 });

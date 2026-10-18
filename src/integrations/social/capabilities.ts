@@ -12,21 +12,106 @@ export const SOCIAL_DOCUMENTS = {
   facebook: "https://developers.facebook.com/docs/pages-api/",
   linkedin: "https://learn.microsoft.com/en-us/linkedin/marketing/community-management/overview",
   linkedinAI: "https://learn.microsoft.com/en-us/linkedin/marketing/developer-ai-policy",
+  tiktok: "https://developers.tiktok.com/docs/en/overview",
+  snapchat: "https://developers.snap.com/marketing-api/Public-Profile-API/Introduction",
+  whatsapp: "https://developers.facebook.com/documentation/business-messaging/whatsapp/overview",
+  telegram: "https://core.telegram.org/bots/api",
 };
 /** Operations the X browser-session adapter implements, and the scopes recorded for it. */
-export const X_BROWSER_OPERATIONS: SocialOperation[] = ["publish", "media", "reply", "comment"];
-export const X_BROWSER_SCOPES = ["tweet.write", "tweet.read", "users.read", "media.write"];
+export const X_BROWSER_OPERATIONS: SocialOperation[] = [
+  "publish",
+  "media",
+  "reply",
+  "comment",
+  "comments.read",
+  "inbox.read",
+  "message.reply",
+  "message.start",
+  "poll",
+];
+export const X_BROWSER_SCOPES = [
+  "tweet.write",
+  "tweet.read",
+  "users.read",
+  "media.write",
+  "dm.read",
+  "dm.write",
+];
 type Requirement = { scopes: string[]; reason: string; unsupported?: boolean };
 const r = (scopes: string[], reason: string, unsupported = false): Requirement => ({
   scopes,
   reason,
   unsupported,
 });
-export function platformRequirements(
+function requirementsForPlatform(
   platform: SocialPlatform,
   type: SocialAccount["accountType"],
 ): Record<SocialOperation, Requirement> {
   switch (platform) {
+    case "tiktok":
+    case "snapchat":
+    case "whatsapp":
+    case "telegram": {
+      const unsupported = r(
+        [],
+        platform === "tiktok" || platform === "snapchat"
+          ? platform === "tiktok"
+            ? "Personal-account video posting is implemented separately. Comment and DM management require eligible TikTok for Business/Organic API products; these communication adapters are not implemented."
+            : "Profile connection and local drafts only. Publishing, comments and messaging adapters are not implemented."
+          : "Text messaging only; public publishing, media, comments and discovery are not implemented.",
+        true,
+      );
+      const requirements: Record<SocialOperation, Requirement> = {
+        publish: unsupported,
+        media: unsupported,
+        "comments.read": unsupported,
+        reply: unsupported,
+        comment: unsupported,
+        "inbox.read": unsupported,
+        "message.reply": unsupported,
+        "message.start": unsupported,
+        search: unsupported,
+        webhook: unsupported,
+        poll: unsupported,
+      };
+      if (platform === "tiktok") {
+        requirements.publish = r(
+          ["user.info.basic", "video.publish"],
+          "Direct Post video publishing from a TikTok-verified HTTPS URL. Current creator settings, explicit visibility, video preview, music consent and app audit/access are required. Processing is tracked until PUBLISH_COMPLETE.",
+        );
+        requirements.media = r(
+          ["video.publish"],
+          "One video URL from a domain or URL prefix verified in the TikTok developer app. Local uploads and photos are not implemented.",
+        );
+      }
+      if (platform === "telegram") {
+        requirements["inbox.read"] = r(
+          ["bot.poll"],
+          "Incoming bot text messages via getUpdates. An existing webhook must be removed by its owner before polling.",
+        );
+        requirements.poll = requirements["inbox.read"];
+        requirements["message.reply"] = r(
+          ["bot.send"],
+          "Reply in a chat accessible to the bot; group privacy and chat permissions apply.",
+        );
+        requirements["message.start"] = r(
+          ["bot.send"],
+          "Existing bot chats with recorded consent only. Bots cannot initiate conversations with arbitrary users.",
+        );
+      }
+      if (platform === "whatsapp") {
+        requirements["inbox.read"] = r(
+          ["whatsapp_business_messaging", "bycoda.webhook"],
+          "Signed WhatsApp Business Account webhooks; no historical inbox API.",
+        );
+        requirements.webhook = requirements["inbox.read"];
+        requirements["message.reply"] = r(
+          ["whatsapp_business_messaging", "bycoda.webhook"],
+          "Text replies within 24 hours of an inbound customer message. Templates and cold outreach are not implemented.",
+        );
+      }
+      return requirements;
+    }
     case "youtube": {
       const read = "https://www.googleapis.com/auth/youtube.readonly";
       const upload = "https://www.googleapis.com/auth/youtube.upload";
@@ -99,11 +184,11 @@ export function platformRequirements(
           "Direct-message endpoint access is required; encrypted X Chat is a separate product.",
         ),
         "message.reply": r(
-          ["dm.write", "dm.read"],
+          ["dm.write", "dm.read", "tweet.read", "users.read"],
           "Recipient privacy/settings and API access apply.",
         ),
         "message.start": r(
-          ["dm.write"],
+          ["dm.write", "dm.read", "tweet.read", "users.read"],
           "Recipient must permit this sender; storing a contact does not establish consent.",
         ),
         search: r(
@@ -247,67 +332,108 @@ export function platformRequirements(
     }
   }
 }
+const MIXED_INBOX_PLATFORMS: readonly SocialPlatform[] = ["x", "instagram", "facebook"];
+/** Selecting polling requests both read products. Existing grants may enable either channel independently. */
+export function platformRequirements(
+  platform: SocialPlatform,
+  type: SocialAccount["accountType"],
+): Record<SocialOperation, Requirement> {
+  const requirements = requirementsForPlatform(platform, type);
+  if (MIXED_INBOX_PLATFORMS.includes(platform)) {
+    requirements.poll = {
+      ...requirements.poll,
+      scopes: [
+        ...new Set(
+          [requirements["comments.read"], requirements["inbox.read"]].flatMap(
+            (item) => item.scopes,
+          ),
+        ),
+      ],
+      reason:
+        "Read permitted comments and/or private messages. Each channel requires its own API permissions; unavailable channels are skipped.",
+    };
+  }
+  return requirements;
+}
 export function accountCapabilities(account: SocialAccount, now = Date.now()): Capability[] {
-  return Object.entries(platformRequirements(account.platform, account.accountType)).map(
-    ([operation, requirement]) => {
-      let status: Capability["status"] = "available";
-      let reason = requirement.reason;
-      if (requirement.unsupported) status = "unsupported";
-      else if (account.expiresAt !== undefined && account.expiresAt <= now) {
-        status = "expired";
-        reason = "OAuth token expired. Reconnect this account.";
-      } else if (
-        !account.connected ||
-        !account.accessApproved ||
-        requirement.scopes.some((scope) => !account.scopes.includes(scope))
-      ) {
-        status = "pending";
-        reason = `Waiting for OAuth scopes/API access: ${requirement.scopes.join(", ") || "platform subscription"}. ${reason}`;
-      }
-      if (
-        account.platform === "linkedin" &&
-        operation === "media" &&
-        account.accountType === "member"
-      ) {
-        status = "unsupported";
+  const requirements = platformRequirements(account.platform, account.accountType);
+  return Object.entries(requirements).map(([operation, requirement]) => {
+    let status: Capability["status"] = "available";
+    let reason = requirement.reason;
+    if (account.connection === "browser" && account.platform === "x") {
+      if (operation === "media")
         reason =
-          "This adapter supports organization image upload only. Member write-only tokens cannot verify Images API readiness; video is not implemented.";
-      }
-      if (
-        account.connection === "browser" &&
-        !X_BROWSER_OPERATIONS.includes(operation as SocialOperation)
-      ) {
-        return {
-          operation: operation as SocialOperation,
-          status: "unsupported" as const,
-          reason:
-            "Browser-session mode only publishes posts/images and replies to a given post ID. Inbox, DM, search and polling are not automated in this mode.",
-          scopes: requirement.scopes,
-          source: SOCIAL_DOCUMENTS[account.platform],
-        };
-      }
-      if (account.platform === "x" && operation === "webhook") {
-        status = "pending";
+          "Up to four host-uploaded JPEG/PNG images (5 MiB each) or one MP4 video (64 MiB). Video processing and platform limits must pass before publishing. Documents are shared as links.";
+      if (["poll", "comments.read", "inbox.read"].includes(operation))
         reason =
-          "Account Activity webhook product/subscription must be configured separately; use permitted polling.";
-      }
-      if (account.platform === "x" && operation === "search") {
-        status = "unsupported";
+          "Bounded recent web snapshots from recognized X response formats. Encrypted Chat and historical backfill are unavailable; inspect per-channel monitoring status for partial reads.";
+      if (["message.reply", "message.start"].includes(operation))
         reason =
-          "Search exists in approved X API products, but external discovery is not implemented by this adapter. Local contacts.search is available.";
-      }
-      if (["instagram", "facebook"].includes(account.platform) && operation === "webhook") {
-        status = "pending";
-        reason =
-          "A signed receiver is implemented. App callback verification, review and account subscription still need external configuration; use permitted polling.";
-      }
+          "Legacy X web DM only, with a verified numeric conversation and explicit message acknowledgement. Encrypted Chat is unavailable. Project permissions, consent and automatic-rule authorization still apply.";
+    }
+    if (requirement.unsupported) status = "unsupported";
+    else if (account.expiresAt !== undefined && account.expiresAt <= now) {
+      status = "expired";
+      reason = "OAuth token expired. Reconnect this account.";
+    } else if (
+      !account.connected ||
+      !account.accessApproved ||
+      (operation === "poll" && MIXED_INBOX_PLATFORMS.includes(account.platform)
+        ? ![requirements["comments.read"], requirements["inbox.read"]].some(
+            (read) =>
+              !read.unsupported && read.scopes.every((scope) => account.scopes.includes(scope)),
+          )
+        : requirement.scopes.some((scope) => !account.scopes.includes(scope)))
+    ) {
+      status = "pending";
+      reason =
+        account.connection === "browser"
+          ? `Reconnect this browser account to grant the required capabilities: ${requirement.scopes.join(", ")}. ${reason}`
+          : `Waiting for OAuth scopes/API access: ${requirement.scopes.join(", ") || "platform subscription"}. ${reason}`;
+    }
+    if (
+      account.platform === "linkedin" &&
+      operation === "media" &&
+      account.accountType === "member"
+    ) {
+      status = "unsupported";
+      reason =
+        "This adapter supports organization image upload only. Member write-only tokens cannot verify Images API readiness; video is not implemented.";
+    }
+    if (
+      account.connection === "browser" &&
+      (account.platform !== "x" || !X_BROWSER_OPERATIONS.includes(operation as SocialOperation))
+    ) {
       return {
         operation: operation as SocialOperation,
-        status,
-        reason,
+        status: "unsupported" as const,
+        reason:
+          "No automated browser adapter is enabled for this platform/operation. Owner-assisted navigation is available separately. X encrypted Chat and arbitrary discovery are unavailable.",
         scopes: requirement.scopes,
         source: SOCIAL_DOCUMENTS[account.platform],
       };
-    },
-  );
+    }
+    if (account.platform === "x" && operation === "webhook") {
+      status = "pending";
+      reason =
+        "Account Activity webhook product/subscription must be configured separately; use permitted polling.";
+    }
+    if (account.platform === "x" && operation === "search") {
+      status = "unsupported";
+      reason =
+        "Search exists in approved X API products, but external discovery is not implemented by this adapter. Local contacts.search is available.";
+    }
+    if (["instagram", "facebook"].includes(account.platform) && operation === "webhook") {
+      status = "pending";
+      reason =
+        "A signed receiver is implemented. App callback verification, review and account subscription still need external configuration; use permitted polling.";
+    }
+    return {
+      operation: operation as SocialOperation,
+      status,
+      reason,
+      scopes: requirement.scopes,
+      source: SOCIAL_DOCUMENTS[account.platform],
+    };
+  });
 }

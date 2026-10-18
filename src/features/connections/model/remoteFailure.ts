@@ -2,6 +2,8 @@
 export type RemoteFailureKind =
   /** The machine or its SSH tunnel is down, or this computer is not connected to it. */
   | "unreachable"
+  /** The saved host identity was refused; the owner must pair this machine again. */
+  | "identity"
   /** The host is too old to know this command. */
   | "outdated"
   /** This app does not offer the command for projects on another machine. */
@@ -28,6 +30,8 @@ export function remoteErrorText(error: unknown): string {
 export function classifyRemoteError(error: unknown): RemoteFailure {
   const text = remoteErrorText(error);
   const message = text.replace(/^Host rejected request:\s*/i, "").trim() || text;
+  if (/Host identity changed\. Add this machine again before continuing\./i.test(text))
+    return { kind: "identity", message };
   if (UNREACHABLE.test(text)) return { kind: "unreachable", message };
   if (OUTDATED.test(text)) return { kind: "outdated", message };
   if (UNSUPPORTED.test(text)) return { kind: "unsupported", message };
@@ -36,7 +40,7 @@ export function classifyRemoteError(error: unknown): RemoteFailure {
 
 /** The machine itself cannot be asked right now, as opposed to one command failing. */
 export const isConnectionFailure = (failure: RemoteFailure) =>
-  failure.kind === "unreachable" || failure.kind === "outdated";
+  failure.kind === "unreachable" || failure.kind === "outdated" || failure.kind === "identity";
 
 /** How long to wait before asking an unreachable machine again, given how
  * many requests in a row have failed. Each ask can cost an SSH attempt. */

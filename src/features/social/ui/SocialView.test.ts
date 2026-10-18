@@ -21,6 +21,7 @@ const mocks = vi.hoisted(() => ({
   browserAvailability: vi.fn(),
   browserBegin: vi.fn(),
   browserStatus: vi.fn(),
+  tokenConnect: vi.fn(),
 }));
 vi.mock("../../../app/shell/WindowControls", () => ({
   WindowControls: () => null,
@@ -40,6 +41,7 @@ vi.mock("../model/socialClient", () => ({
     oauthBegin: mocks.oauthBegin,
     oauthStatus: mocks.oauthStatus,
     oauthSelect: vi.fn(),
+    tokenConnect: mocks.tokenConnect,
     browserAvailability: mocks.browserAvailability,
     browserBegin: mocks.browserBegin,
     browserStatus: mocks.browserStatus,
@@ -81,6 +83,7 @@ beforeEach(() => {
   }));
   mocks.projects.mockReset();
   mocks.openUrl.mockReset();
+  mocks.tokenConnect.mockReset().mockResolvedValue({});
   mocks.availability
     .mockReset()
     .mockResolvedValue({ x: { configured: false, reason: "Missing setup" } });
@@ -156,6 +159,50 @@ async function click(text: string) {
   await act(async () => button!.click());
 }
 describe("Sosyal Medya ürün ekranı", () => {
+  it("connects a configured bot only on explicit action and does not start OAuth", async () => {
+    const snapshot = empty();
+    snapshot.accounts = [
+      {
+        id: "bot",
+        platform: "telegram",
+        platformId: "",
+        name: "Bot",
+        accountType: "bot",
+        scopes: [],
+        accessApproved: false,
+        connected: false,
+        paused: false,
+        executorId: "host",
+        grants: {},
+        createdAt: 1,
+      },
+    ];
+    mocks.snapshot.mockResolvedValue(snapshot);
+    mocks.availability.mockResolvedValue({ telegram: { configured: true, reason: "Configured" } });
+    await mount();
+    expect(mocks.tokenConnect).not.toHaveBeenCalled();
+    expect(mocks.oauthStatus).not.toHaveBeenCalled();
+    await click("Host hesabını bağla");
+    expect(mocks.tokenConnect).toHaveBeenCalledExactlyOnceWith("bot");
+    expect(mocks.oauthBegin).not.toHaveBeenCalled();
+    expect(mocks.openUrl).not.toHaveBeenCalled();
+  });
+  it("offers the four new platforms with their correct account types", async () => {
+    await mount();
+    const platform = container.querySelector<HTMLButtonElement>('button[aria-label="Platform"]')!;
+    expect(platform).toBeTruthy();
+    for (const [id, type] of [
+      ["tiktok", "member"],
+      ["snapchat", "public_profile"],
+      ["whatsapp", "business"],
+      ["telegram", "bot"],
+    ]) {
+      await chooseSocialValue(platform, id);
+      expect(container.querySelector(`select[name="type"] option[value="${type}"]`)).toBeTruthy();
+    }
+    expect(mocks.request).not.toHaveBeenCalledWith("accounts.create", expect.anything());
+    expect(mocks.tokenConnect).not.toHaveBeenCalled();
+  });
   it("geçmiş sol menüde yer almaz; sosyal medya içinden açılır ve filtreleri korunur", async () => {
     await mount();
     const nav = container.querySelector('nav[aria-label="Sosyal Medya bölümleri"]')!;
@@ -366,14 +413,9 @@ describe("Sosyal Medya ürün ekranı", () => {
     ];
     mocks.snapshot.mockResolvedValue(snapshot);
     await mount();
-    const platform = Array.from(container.querySelectorAll("select")).find((select) =>
-      Array.from(select.options).some((option) => option.value === "youtube"),
-    )!;
+    const platform = container.querySelector<HTMLButtonElement>('button[aria-label="Platform"]')!;
     expect(platform).toBeTruthy();
-    await act(async () => {
-      platform.value = "youtube";
-      platform.dispatchEvent(new Event("change", { bubbles: true }));
-    });
+    await chooseSocialValue(platform, "youtube");
     expect(container.querySelector('option[value="channel"]')?.textContent).toBe("Kanal");
     await click("Kampanyalar");
     const picker = container.querySelector<HTMLButtonElement>('[aria-label="Sosyal hesaplar"]')!;

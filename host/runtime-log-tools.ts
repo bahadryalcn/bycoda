@@ -99,6 +99,7 @@ export const RUNTIME_LOG_TOOL_SCHEMAS: Record<RuntimeLogTool, Record<string, unk
     properties: {
       ...sourceProperties,
       after: { type: "integer", minimum: 0, maximum: Number.MAX_SAFE_INTEGER },
+      streamId: { type: "string", minLength: 1, maxLength: 128 },
       limit: { type: "integer", minimum: 1, maximum: 500, default: 100 },
       levels: {
         type: "array",
@@ -130,7 +131,7 @@ function validateInput(action: string, input: Record<string, unknown>): RuntimeL
     throw new Error("Runtime log input must be an object.");
   const allowed =
     tool === "read"
-      ? ["source", "sourceId", "after", "limit", "levels", "search"]
+      ? ["source", "sourceId", "after", "streamId", "limit", "levels", "search"]
       : ["source", "sourceId"];
   if (Object.keys(input).some((key) => !allowed.includes(key)))
     throw new Error("Unknown or protected runtime log field. Identity is assigned by the host.");
@@ -151,6 +152,11 @@ function validateInput(action: string, input: Record<string, unknown>): RuntimeL
     query.sourceId = input.sourceId;
   }
   if (tool === "read") {
+    if (input.streamId !== undefined) {
+      if (typeof input.streamId !== "string" || !/^[a-zA-Z0-9_-]{1,128}$/.test(input.streamId))
+        throw new Error("Invalid log stream ID.");
+      query.streamId = input.streamId;
+    }
     query.limit = input.limit === undefined ? 100 : (input.limit as number);
     if (!Number.isSafeInteger(query.limit) || query.limit < 1 || query.limit > 500)
       throw new Error("Log limit must be an integer from 1 to 500.");

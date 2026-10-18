@@ -5,6 +5,12 @@ function windowsPath(path: string): boolean {
 }
 
 export function slash(path: string): string {
+  const remote = /^(remote:\/\/[^/]+\/)(.*)$/.exec(path);
+  if (remote) {
+    // The connected machine's path determines separator semantics, not the
+    // operating system running this client. Machine IDs remain opaque.
+    return remote[1] + (windowsPath(remote[2]) ? remote[2].replace(/\\/g, "/") : remote[2]);
+  }
   return windowsPath(path) || (IS_WIN && !path.startsWith("/")) ? path.replace(/\\/g, "/") : path;
 }
 
@@ -15,6 +21,16 @@ function trimSlash(path: string): string {
 /** Stable comparison key for Windows paths without changing their display case. */
 export function pathKey(path: string): string {
   const normalized = trimSlash(path);
+  const remote = /^(remote:\/\/[^/]+\/)(.*)$/.exec(normalized);
+  if (remote) {
+    const hostPath = remote[2];
+    return (
+      remote[1] +
+      (/^[A-Za-z]:(?:\/|$)/.test(hostPath) || hostPath.startsWith("//")
+        ? hostPath.toLowerCase()
+        : hostPath)
+    );
+  }
   return /^[A-Za-z]:(?:\/|$)/.test(normalized) || normalized.startsWith("//")
     ? normalized.toLowerCase()
     : normalized;
@@ -228,10 +244,17 @@ function parseWorkspaceFileReference(href: string, cwd: string | undefined, deco
       : undefined;
   if (location) value = value.slice(0, location.index);
 
-  const fileUrl = value.startsWith("file://");
+  const fileUrl = /^file:/i.test(value);
   if (fileUrl) {
-    value = value.slice("file://".length);
-    if (value.startsWith("localhost/")) value = value.slice("localhost".length);
+    try {
+      const url = new URL(value);
+      // Network authorities must never become project-relative directories.
+      // URL canonicalization treats localhost as the empty local authority.
+      if (url.hostname && url.hostname.toLowerCase() !== "localhost") return undefined;
+      value = url.pathname;
+    } catch {
+      return undefined;
+    }
   }
   if (decodeUrl || fileUrl) {
     try {

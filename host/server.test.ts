@@ -31,6 +31,20 @@ const binaries: { codex?: string } = {};
 configureChildBackend(new HostChildBackend(binaries));
 
 const cleanups: Array<() => Promise<void>> = [];
+
+it("previews automation schedules over authenticated RPC without saving or running work", async () => {
+  const s = await setup();
+  const schedule = { scheduleKind: "daily", time: "09:00", minute: 0, dayOfWeek: 1 };
+  const response = await s.call("automations.preview", { schedule });
+  expect(response.value.result).toEqual({
+    timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+    nextRunAt: expect.any(Number),
+  });
+  expect((await s.call("automations.list")).value.result).toEqual([]);
+  expect(
+    (await s.call("automations.preview", { schedule: { ...schedule, time: "25:00" } })).value.error,
+  ).toBeTruthy();
+});
 afterEach(async () => {
   for (const cleanup of cleanups.splice(0)) await cleanup();
 });
@@ -646,6 +660,49 @@ describe("shared queued messages", () => {
     expect(s.store.session(created.sessionId).session.blocks.map((block) => block.id)).toEqual([
       "keep",
     ]);
+  });
+
+  it("dispatches an explicitly selected idle row while retaining a paused queue", async () => {
+    const s = await setup();
+    const created = s.engine.command({
+      type: "create",
+      commandId: "selected-create",
+      projectId: s.project.id,
+      harness: "codex",
+      model: "gpt",
+      runtimeMode: "supervised",
+    });
+    const sessionId = created.sessionId;
+    const clientId = "remote:pc1";
+    const messages = [
+      { id: "a", text: "retain a", attachments: [] },
+      { id: "b", text: "selected b", attachments: [] },
+    ];
+    const published = await s.call("sessions.queue.change", {
+      sessionId,
+      clientId,
+      before: { messages: [] },
+      after: { messages, status: "paused" },
+      takeOwnership: true,
+    });
+    const command = {
+      type: "send",
+      commandId: "selected-send",
+      sessionId,
+      text: "selected b",
+      queued: { id: "b", clientId, revision: published.value.result.revision, selected: true },
+    };
+    const rejected = await s.call("commands.dispatch", {
+      ...command,
+      commandId: "head-only",
+      queued: { ...command.queued, selected: false },
+    });
+    expect(rejected.value.error).toMatch(/queue changed/i);
+    expect((await s.call("commands.dispatch", command)).value.error).toBeUndefined();
+    const queue = (await s.call("sessions.queue.get", { sessionId, clientId })).value.result;
+    expect(queue.messages.map((row: { id: string }) => row.id)).toEqual(["a"]);
+    expect(queue.status).toBe("paused");
+    await vi.waitFor(() => expect(s.send).toHaveBeenCalledOnce());
   });
 
   it("shares unsent rows between paired computers and consumes them with a durable receipt once", async () => {

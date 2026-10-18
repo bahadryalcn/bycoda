@@ -32,7 +32,7 @@ export type MentionTextPart = {
 
 const MENTION_TOKEN_RE = /(^|\s)@(\S+)/g;
 const LINE_LOCATION_RE = /^ \((?:line \d+|lines \d+[-–]\d+)\)/;
-const TRAILING_PUNCTUATION = new Set([",", ";", ":", "!", "?", ")", "]", "}", '"', "'", "/"]);
+const TRAILING_PUNCTUATION = new Set([".", ",", ";", ":", "!", "?", ")", "]", "}", '"', "'", "/"]);
 const MAX_QUERY = 120;
 const MAX_PICKER = 30;
 

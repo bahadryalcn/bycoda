@@ -165,6 +165,9 @@ export function buildTurnStartParams(input: {
   /** Skill name to SKILL.md path, as Codex listed them for this thread. */
   skills?: ReadonlyMap<string, string>;
 }): Record<string, unknown> {
+  if (input.intent === "plan" && !input.model?.trim()) {
+    throw new Error("Codex did not report its active model. Select a model before starting plan mode.");
+  }
   const runtimeConfig = withWritableRoots(
     runtimeModeToCodexConfig(input.runtimeMode, input.controlsAgents),
     input.additionalDirs,

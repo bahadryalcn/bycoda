@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { fuzzyMatch } from "../../shared/lib/fuzzy";
 import type { ProjectFile } from "../../platform/tauri/fs";
 import type { RankedFile } from "../files/model/fileIndex";
+import { isMarkdownBlockquotePosition } from "../sessions/model/quoteDraft";
 
 import { looksLikeProject } from "../projects/model/recents";
 
@@ -21,6 +22,8 @@ export type Note = {
   slugPending?: boolean;
   createdAt: number;
   updatedAt: number;
+  /** Content ordering is independent of the mutation token above. */
+  contentUpdatedAt?: number;
 };
 
 /** Browsing and mention pickers never need an entire note body. */
@@ -34,6 +37,8 @@ export function summarizeNote(note: Note | NoteSummary): NoteSummary {
 
 export type NoteUpsert = {
   id: string;
+  /** Zero explicitly creates; updates must carry the version the writer read. */
+  expectedUpdatedAt?: number;
   title: string;
   body: string;
   tags: string[];
@@ -218,8 +223,9 @@ export async function upsertNote(note: NoteUpsert): Promise<Note> {
   return saved;
 }
 
-export async function deleteNote(id: string): Promise<void> {
-  await invoke("notes_delete", { id });
+export async function deleteNote(id: string, expectedUpdatedAt?: number): Promise<void> {
+  if (expectedUpdatedAt === undefined) throw new Error("Refresh this note before deleting it.");
+  await invoke("notes_delete", { id, expectedUpdatedAt });
   const previous = cache;
   const previousSummaries = summaryCache;
   invalidateNotes();
@@ -250,6 +256,7 @@ export async function createNote(input: {
   const body = (input.body ?? "").replace(/\r\n?/g, "\n");
   return upsertNote({
     id: crypto.randomUUID(),
+    expectedUpdatedAt: 0,
     title: (input.title ?? noteTitle(body)).slice(0, MAX_TITLE),
     body,
     tags: normalizeNoteTags(input.tags ?? []),
@@ -302,7 +309,7 @@ export function rankNoteFiles(
   const needle = query.replace(/\/+$/, "").trim().toLowerCase();
   if (!needle) {
     return [...notes]
-      .sort((a, b) => b.updatedAt - a.updatedAt)
+      .sort((a, b) => (b.contentUpdatedAt ?? b.updatedAt) - (a.contentUpdatedAt ?? a.updatedAt))
       .slice(0, limit)
       .map((note) => ({
         ...notesAsProjectFiles([note])[0]!,
@@ -329,7 +336,9 @@ export function rankNoteFiles(
   }
   scored.sort((a, b) => {
     if (b.score !== a.score) return b.score - a.score;
-    return b.note.updatedAt - a.note.updatedAt;
+    return (
+      (b.note.contentUpdatedAt ?? b.note.updatedAt) - (a.note.contentUpdatedAt ?? a.note.updatedAt)
+    );
   });
   return scored.slice(0, limit).map((row) => ({
     ...notesAsProjectFiles([row.note])[0]!,
@@ -404,6 +413,7 @@ export function noteSlugsInText(text: string): string[] {
   NOTE_SLUG_RE.lastIndex = 0;
   let match: RegExpExecArray | null;
   while ((match = NOTE_SLUG_RE.exec(text))) {
+    if (isMarkdownBlockquotePosition(text, match.index + match[1].length)) continue;
     const slug = match[2];
     if (!slug || seen.has(slug)) continue;
     seen.add(slug);

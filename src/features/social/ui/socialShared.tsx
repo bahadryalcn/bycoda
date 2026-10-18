@@ -17,13 +17,7 @@ import { SocialMultiSelect } from "./SocialMultiSelect";
 import type { HostProject } from "../../connections/model/protocol";
 import type { SocialSnapshot, SocialCollection, SocialCollectionFilter } from "../model/social";
 import type { SocialClient } from "../model/socialClient";
-export const names = {
-  x: "X",
-  instagram: "Instagram",
-  facebook: "Facebook",
-  linkedin: "LinkedIn",
-  youtube: "YouTube",
-};
+export { SOCIAL_PLATFORM_NAMES as names } from "../model/social";
 export const youtubeDefaults = {
   title: "",
   privacy: "private" as const,
@@ -169,11 +163,13 @@ export function Composer({
   children,
   editing = false,
   description,
+  onOpen,
 }: {
   title: string;
   children: ReactNode;
   editing?: boolean | number;
   description?: string;
+  onOpen?: () => void;
 }) {
   const details = useRef<HTMLDetailsElement>(null);
   const summary = useRef<HTMLElement>(null);
@@ -182,8 +178,10 @@ export function Composer({
   const titleId = useId();
   const sync = () => {
     if (!dialog.current) return;
-    if (details.current?.open && !dialog.current.open) dialog.current.showModal();
-    else if (!details.current?.open && dialog.current.open) dialog.current.close();
+    if (details.current?.open && !dialog.current.open) {
+      dialog.current.showModal();
+      onOpen?.();
+    } else if (!details.current?.open && dialog.current.open) dialog.current.close();
   };
   useEffect(() => {
     if (editing && details.current) {

@@ -32,6 +32,7 @@ export function useSurfaceViewFlags({ toolWindow }: SurfaceViewStateDeps) {
 
 /** Notes, automations and the task/social board flags. */
 export function useSurfaceBoardFlags({ toolWindow }: SurfaceViewStateDeps) {
+  const [serversViewOpen, setServersViewOpen] = useState(false);
   const [notesViewOpen, setNotesViewOpen] = useState(
     toolWindow?.active === "notes" && loadNotesEnabled(),
   );
@@ -46,6 +47,8 @@ export function useSurfaceBoardFlags({ toolWindow }: SurfaceViewStateDeps) {
   const [socialBoardShown, setSocialBoardShown] = useState(toolWindow?.active === "social");
   const [socialPanelCwd, setSocialPanelCwd] = useState("");
   return {
+    serversViewOpen,
+    setServersViewOpen,
     notesViewOpen,
     setNotesViewOpen,
     automationsViewOpen,

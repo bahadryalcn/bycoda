@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { resolveDocumentImage } from "./paths";
 
 it("contains and rebases Unix root descendants", () => {
@@ -49,11 +49,42 @@ import {
   setHomeDir,
   setPathEnvironment,
   slash,
+  pathKey,
   resolveWorkspaceFileReference,
   resolveWorkspacePath,
 } from "./paths";
 
 describe("workspace file references", () => {
+  it.each([
+    "file://otherhost/share/readme.md",
+    "FILE://OTHERHOST/share/readme.md",
+    "file://%6ftherhost/share/readme.md",
+    "file://localhost.otherhost/share/readme.md",
+    "file://user@localhost/readme.md",
+    "file://localhost:123/readme.md",
+    "file://%zz/readme.md",
+  ])("rejects unsupported file URL authorities through both resolvers: %s", (href) => {
+    for (const cwd of ["C:/work/repo", "/repo", "remote://pc/C:/Work/Repo"]) {
+      expect(resolveWorkspaceFileReference(href, cwd)).toBeUndefined();
+      expect(resolveWorkspacePath(href, cwd)).toBeUndefined();
+    }
+  });
+
+  it("uses URL authority/path semantics for local file URLs", () => {
+    expect(
+      resolveWorkspaceFileReference("FILE://LOCALHOST/C:/Work/My%20File.ts#L3", "C:/repo"),
+    ).toEqual({
+      path: "C:/Work/My File.ts",
+      navigation: { line: 3 },
+    });
+    expect(resolveWorkspacePath("file:///tmp/a.md?download=1", "/repo")).toBe("/tmp/a.md");
+    expect(resolveWorkspacePath("file:///C:/Work/a.ts", "remote://pc/C:/repo")).toBe(
+      "remote://pc/C:/Work/a.ts",
+    );
+    expect(resolveWorkspaceFileReference("file:///tmp/a%23b.md", "/repo")?.path).toBe(
+      "/tmp/a#b.md",
+    );
+  });
   it("resolves directory variables from the actual Windows environment", () => {
     setPathEnvironment({
       LOCALAPPDATA: "D:/User Data/Local",
@@ -219,6 +250,48 @@ describe("workspace file references", () => {
     setHomeDir(undefined);
     expect(resolveWorkspacePath("~/.codex/skills/zuse/SKILL.md", "/data/project")).toBeUndefined();
   });
+});
+
+it("normalizes remote Windows path identity without folding the machine ID or Unix path", () => {
+  const first = "remote://PC/C:/Work/Repo/a.ts";
+  const second = "remote://PC/c:/work/repo/A.ts";
+  expect(pathKey(first)).toBe(pathKey(second));
+  expect(pathKey("remote://PC/C:\\Work\\Repo\\a.ts")).toBe(pathKey(first));
+  expect(pathKey(first)).not.toBe(pathKey("remote://pc/C:/Work/Repo/a.ts"));
+  expect(pathKey(first)).not.toBe(pathKey("remote://Other/C:/Work/Repo/a.ts"));
+  expect(isEqualOrInside(second, "remote://PC/C:/WORK/REPO/")).toBe(true);
+  expect(isEqualOrInside(second, "remote://Other/C:/WORK/REPO/")).toBe(false);
+  expect(isEqualOrInside("remote://PC/C:/Work/Repository/a.ts", "remote://PC/c:/work/repo")).toBe(
+    false,
+  );
+  expect(displayPath(second, "remote://PC/C:/WORK/REPO")).toBe("A.ts");
+  expect(rebasePath(first, "remote://PC/c:/work/repo", "remote://PC/D:/New")).toBe(
+    "remote://PC/D:/New/a.ts",
+  );
+  expect(pathKey("remote://mac/home/Dev/A.ts")).not.toBe(pathKey("remote://mac/home/dev/a.ts"));
+  expect(slash("remote://mac/home/dev/literal\\name.ts")).toBe(
+    "remote://mac/home/dev/literal\\name.ts",
+  );
+  expect(pathKey("remote://mac/home/dev/literal\\name.ts")).toBe(
+    "remote://mac/home/dev/literal\\name.ts",
+  );
+});
+
+it("keeps a connected Unix path literal even on a Windows client", async () => {
+  vi.resetModules();
+  vi.doMock("../../platform/tauri/platform", () => ({ IS_WIN: true }));
+  try {
+    const windowsClient = await import("./paths");
+    expect(windowsClient.pathKey("remote://mac/home/Dev/literal\\name.ts")).toBe(
+      "remote://mac/home/Dev/literal\\name.ts",
+    );
+    expect(windowsClient.pathKey("remote://PC/C:\\Work\\Repo\\A.ts")).toBe(
+      "remote://PC/c:/work/repo/a.ts",
+    );
+  } finally {
+    vi.doUnmock("../../platform/tauri/platform");
+    vi.resetModules();
+  }
 });
 
 describe("slash", () => {

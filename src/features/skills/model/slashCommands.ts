@@ -1,7 +1,7 @@
 import { isSpace } from "../../../shared/lib/text";
 import { clamp } from "../../../shared/lib/numbers";
 import { fuzzyMatch } from "../../../shared/lib/fuzzy";
-import { isMarkdownBlockquotePosition } from "../../sessions/model/quoteDraft";
+import { isSkillInvocationPosition } from "./skillTokens";
 import type { Skill } from "./skills";
 
 // Keep picker helpers independent of skill discovery for the floating composer.
@@ -69,7 +69,7 @@ export function slashTokenAt(text: string, cursor: number, native = false): Slas
   while (start > 0 && !isSpace(text[start - 1]!)) start -= 1;
   if (text[start] !== "/") return null;
   if (start > 0 && text[start - 1] === ":") return null;
-  if (isMarkdownBlockquotePosition(text, start)) return null;
+  if (!isSkillInvocationPosition(text, start)) return null;
 
   let end = start + 1;
   while (end < text.length && !isSpace(text[end]!)) end += 1;
@@ -97,19 +97,11 @@ export function dollarTokenAt(text: string, cursor: number): SlashToken | null {
   if (text[start] !== "$") return null;
   const typed = text.slice(start + 1, i);
   if (!/^[A-Za-z0-9_.:-]*$/.test(typed)) return null;
-  if (isMarkdownBlockquotePosition(text, start)) return null;
-  if (isInCode(text, start)) return null;
+  if (!isSkillInvocationPosition(text, start)) return null;
 
   let end = start + 1;
   while (end < text.length && !isSpace(text[end]!)) end += 1;
   return { start, end, query: typed, trigger: "$" };
-}
-
-function isInCode(text: string, at: number): boolean {
-  const before = text.slice(0, at);
-  if ((before.match(/```/g)?.length ?? 0) % 2 === 1) return true;
-  const line = before.slice(before.lastIndexOf("\n") + 1);
-  return (line.match(/`/g)?.length ?? 0) % 2 === 1;
 }
 
 export function replaceSlashToken(text: string, token: SlashToken, name: string): string {

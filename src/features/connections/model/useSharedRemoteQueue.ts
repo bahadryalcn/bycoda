@@ -62,8 +62,11 @@ export function useSharedRemoteQueue(
     return {
       ...fallback,
       canDrain: true,
-      dispatch: (_id: string) => undefined,
-      prepareSend: async () => true,
+      dispatch: (_id: string, _selected = false) => undefined,
+      prepareSend: async (selected = false) => {
+        if (selected) fallback.pause();
+        return true;
+      },
     };
   return {
     queue: state.queue,
@@ -93,13 +96,21 @@ export function useSharedRemoteQueue(
       void client.sync().catch(() => {});
     },
     canDrain: client.canDrain(),
-    dispatch: (id: string) => client.dispatch(id),
-    prepareSend: async () => {
+    dispatch: (id: string, selected = false) => client.dispatch(id, selected),
+    prepareSend: async (selected = false) => {
       if (client.snapshot().error) {
         await client.retry();
         return false;
       }
-      if (!client.update((queue) => ({ ...releaseRemoteQueue(queue), editingId: undefined }), true))
+      if (
+        !client.update(
+          (queue) => ({
+            ...(selected ? pauseRemoteQueue(queue) : releaseRemoteQueue(queue)),
+            editingId: undefined,
+          }),
+          true,
+        )
+      )
         return false;
       await client.sync();
       return client.canDrain();

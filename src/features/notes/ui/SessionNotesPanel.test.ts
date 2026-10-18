@@ -347,6 +347,137 @@ it("refreshes a clean editor when the same note changes externally", async () =>
   expect(container.querySelector('button[aria-label="Note title: Updated title"]')).not.toBeNull();
 });
 
+it.each(["copy", "create"])(
+  "preserves the draft after a recovery %s failure and retries as a distinct note",
+  async (failure) => {
+    await render();
+    const own = stored.find((note) => note.sourceSessionId === sessionId)!;
+    const original = invoke.getMockImplementation()!;
+    let failRecovery = true;
+    invoke.mockImplementation((command, args) => {
+      if (command === "notes_image_path")
+        return Promise.resolve("C:/app/note-assets/original/image.png");
+      if (command === "notes_save_image") {
+        if (failRecovery && failure === "copy")
+          return Promise.reject(new Error("Image copy failed"));
+        return Promise.resolve({
+          name: "image.png",
+          markdownPath: `/note-assets/${args.noteId}/copy.png`,
+        });
+      }
+      if (
+        command === "notes_upsert" &&
+        args.note.expectedUpdatedAt === 0 &&
+        failRecovery &&
+        failure === "create"
+      )
+        return Promise.reject(new Error("Recovery creation failed"));
+      if (
+        command === "notes_upsert" &&
+        args.note.expectedUpdatedAt !== 0 &&
+        !stored.some((note) => note.id === args.note.id)
+      )
+        return Promise.reject(new Error("This note was deleted. Your draft is preserved."));
+      return original(command, args);
+    });
+    stored = stored.filter((note) => note.id !== own.id);
+    const draft = "Deleted note draft\n\n![image](/note-assets/original/image.png)";
+    await input(body(), draft);
+    await act(async () => {
+      body().focus();
+      body().blur();
+    });
+    expect(stored.some((note) => note.id === own.id)).toBe(false);
+    expect(body().value).toBe(draft);
+    expect(container.textContent).toContain("Your draft is preserved");
+    await click("Save as new note");
+    expect(body().value).toBe(draft);
+    expect(stored.some((note) => note.sourceSessionId === sessionId)).toBe(false);
+    expect(container.textContent).toContain(
+      failure === "copy" ? "Image copy failed" : "Recovery creation failed",
+    );
+    failRecovery = false;
+    await click("Save as new note");
+    const recovered = stored.find((note) => note.body.startsWith("Deleted note draft"));
+    expect(recovered?.id).not.toBe(own.id);
+    expect(recovered?.sourceSessionId).toBe(sessionId);
+    expect(recovered?.body).toBe(
+      `Deleted note draft\n\n![image](/note-assets/${recovered?.id}/copy.png)`,
+    );
+  },
+);
+
+it.each([false, true])(
+  "retains metadata-only refreshes before saving a %s dirty draft",
+  async (dirty) => {
+    await render();
+    const own = stored.find((note) => note.sourceSessionId === sessionId)!;
+    if (dirty) await input(body(), "Local draft");
+    stored = stored.map((note) =>
+      note.id === own.id ? { ...note, tags: ["new"], updatedAt: 901 } : note,
+    );
+    invalidateNotes();
+    await act(async () => window.dispatchEvent(new Event("bycoda:notes-changed")));
+    if (!dirty) await input(body(), "Local draft");
+    expect(body().value).toBe("Local draft");
+    await act(async () => {
+      body().focus();
+      body().blur();
+    });
+    expect(stored.find((note) => note.id === own.id)?.tags).toEqual(["new"]);
+    const calls = invoke.mock.calls.filter(
+      ([command, args]) => command === "notes_upsert" && args.note.id === own.id,
+    );
+    expect(calls.at(-1)?.[1].note).toMatchObject({ tags: ["new"], expectedUpdatedAt: 901 });
+  },
+);
+
+it("retains metadata received while a previous save response is pending", async () => {
+  await render();
+  const own = stored.find((note) => note.sourceSessionId === sessionId)!;
+  const original = invoke.getMockImplementation()!;
+  let release!: () => void;
+  const pending = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  let started = false;
+  invoke.mockImplementation(async (command, args) => {
+    const result = await original(command, args);
+    if (command === "notes_upsert" && args.note.id === own.id && !started) {
+      started = true;
+      await pending;
+    }
+    return result;
+  });
+  await input(body(), "First draft");
+  await act(async () => {
+    body().focus();
+    body().blur();
+  });
+  expect(started).toBe(true);
+  stored = stored.map((note) =>
+    note.id === own.id ? { ...note, tags: ["new"], updatedAt: 902 } : note,
+  );
+  invalidateNotes();
+  await act(async () => {
+    window.dispatchEvent(new Event("bycoda:notes-changed"));
+    release();
+  });
+  await input(body(), "Second draft");
+  await act(async () => {
+    body().focus();
+    body().blur();
+  });
+  expect(stored.find((note) => note.id === own.id)).toMatchObject({
+    body: "Second draft",
+    tags: ["new"],
+  });
+  expect(
+    invoke.mock.calls.filter(([command]) => command === "notes_upsert").at(-1)?.[1].note
+      .expectedUpdatedAt,
+  ).toBe(902);
+});
+
 it("preserves a dirty draft and requires explicit resolution of external updates", async () => {
   await render();
   await input(body(), "Local unsaved draft");

@@ -71,6 +71,7 @@ describe("Codex sandbox policy", () => {
         threadId: "t",
         runtimeMode: "auto",
         intent: "plan",
+        model: "codex:test",
         additionalDirs: dirs,
       }).sandboxPolicy,
     ).toEqual({ type: "readOnly" });

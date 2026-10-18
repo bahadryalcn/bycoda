@@ -2,10 +2,11 @@ import { t, useLocale } from "../../shared/i18n";
 import { Button } from "../../shared/ui/Button";
 import { Modal } from "../../shared/ui/Modal";
 import { ArrowDownCircle, Loader } from "../../shared/ui/icons";
-import { useCallback, useRef, useState } from "react";
-import { installAppUpdate, useAppUpdater } from "../model/useAppUpdater";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { claimStartupUpdatePrompt, installAppUpdate, useAppUpdater } from "../model/useAppUpdater";
 import { type UpdaterSnapshot } from "../model/updater";
 import type { InstalledUpdate } from "../model/updateNotice";
+import { snoozeUpdatePrompt } from "../model/updatePrompt";
 import { UpdateRailCard } from "./UpdateRailCard";
 
 // The update entry point only earns its space when there is something to act on: an
@@ -33,6 +34,21 @@ export function SidebarUpdateFooter({
   useLocale();
   const [promptOpen, setPromptOpen] = useState(false);
   const { snapshot, notes, setSnapshot } = useAppUpdater();
+  const dismissPrompt = () => {
+    snoozeUpdatePrompt();
+    setPromptOpen(false);
+  };
+
+  useEffect(() => {
+    if (noticesOnly || snapshot.phase !== "available") return;
+    let active = true;
+    queueMicrotask(() => {
+      if (active && claimStartupUpdatePrompt()) setPromptOpen(true);
+    });
+    return () => {
+      active = false;
+    };
+  }, [noticesOnly, snapshot]);
 
   const card =
     update && onOpenWhatsNew && onDismissUpdate ? (
@@ -49,7 +65,7 @@ export function SidebarUpdateFooter({
         <Modal
           title={snapshot.phase === "error" ? t("Retry") : t("Update available")}
           size="sm"
-          onClose={() => setPromptOpen(false)}
+          onClose={dismissPrompt}
         >
           <div className="flex flex-col gap-3 p-4">
             <p className="text-sm text-content">
@@ -69,7 +85,7 @@ export function SidebarUpdateFooter({
               </details>
             ) : null}
             <div className="flex flex-wrap justify-end gap-2">
-              <Button onClick={() => setPromptOpen(false)}>{t("Later")}</Button>
+              <Button onClick={dismissPrompt}>{`${t("Later")} (${t("24 hours")})`}</Button>
               <SidebarUpdate snapshot={snapshot} onSnapshot={setSnapshot} compact />
             </div>
           </div>
@@ -163,6 +179,8 @@ export function SidebarUpdate({
       variant="secondary"
       fullWidth={!compact}
       motion="none"
+      label={label}
+      tooltip={label}
     >
       <span className="grid size-[18px] shrink-0 place-items-center">
         {busy ? (
@@ -171,10 +189,10 @@ export function SidebarUpdate({
           <ArrowDownCircle className="size-4 text-accent" aria-hidden />
         )}
       </span>
-      <span className="min-w-0 flex-1 flex items-center">
+      <span className="flex min-w-0 flex-1 items-center gap-3">
         <span className="block truncate text-[12px] font-medium leading-tight">{label}</span>
         {!compact ? (
-          <span className="ml-auto block text-[11px] text-content/40">
+          <span className="ms-auto block shrink-0 text-[11px] text-muted">
             v{snapshot.currentVersion}
           </span>
         ) : null}

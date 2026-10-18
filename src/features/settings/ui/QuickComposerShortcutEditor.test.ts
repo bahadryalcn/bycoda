@@ -3,8 +3,8 @@ import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
-import { QuickComposerShortcutEditor } from "./ShortcutSettings";
-import { saveKeybindingOverride } from "../model/settings";
+import { QuickComposerShortcutEditor, KeybindingsPage } from "./ShortcutSettings";
+import { saveKeybindingOverride, loadKeybindingOverrides } from "../model/settings";
 
 vi.mock("../../../platform/tauri/platform", () => ({
   IS_MAC: true,
@@ -59,6 +59,36 @@ afterEach(async () => {
 async function render() {
   await act(async () => root.render(createElement(QuickComposerShortcutEditor)));
 }
+
+it("preserves an app binding when the native menu rejects a recorded shortcut", async () => {
+  await act(async () => root.render(createElement(KeybindingsPage)));
+  vi.mocked(invoke).mockRejectedValueOnce(new Error("Native shortcut rejected"));
+  const input = container.querySelector<HTMLButtonElement>(
+    '[aria-label="Change Settings: General shortcut"]',
+  )!;
+  await act(async () => input.click());
+  await act(async () =>
+    document.body.dispatchEvent(
+      new KeyboardEvent("keydown", {
+        code: "KeyQ",
+        key: "q",
+        altKey: true,
+        bubbles: true,
+        cancelable: true,
+      }),
+    ),
+  );
+  expect(invoke).toHaveBeenCalledWith("keybindings_set_overrides", {
+    overrides: { "Settings: General": { shortcut: "Option+KeyQ" } },
+  });
+  expect(loadKeybindingOverrides()["Settings: General"]).toBeUndefined();
+  expect(input.textContent).toContain("Unassigned");
+  expect(container.querySelector('[role="alert"]')?.textContent).toContain(
+    "Native shortcut rejected",
+  );
+  expect(container.querySelector('.settings-row-control [role="alert"]')).toBeNull();
+  expect(container.querySelector('.settings-row-feedback [role="alert"]')).not.toBeNull();
+});
 
 it("records a global shortcut, persists it, and restores the default", async () => {
   await render();

@@ -1,4 +1,11 @@
-import { useCallback, useRef, useState, type Dispatch, type MutableRefObject, type SetStateAction } from "react";
+import {
+  useCallback,
+  useRef,
+  useState,
+  type Dispatch,
+  type MutableRefObject,
+  type SetStateAction,
+} from "react";
 import type { LinkedWorkItem, Session } from "../../../features/sessions/model/session";
 import type { SessionSummary } from "../../../features/sessions/data/sessionStore";
 import {
@@ -123,6 +130,7 @@ export interface OpenLinkedWorkItemDeps {
   setSearchViewOpen: Dispatch<SetStateAction<boolean>>;
   setNotesViewOpen: Dispatch<SetStateAction<boolean>>;
   setAutomationsViewOpen: Dispatch<SetStateAction<boolean>>;
+  setServersViewOpen?: Dispatch<SetStateAction<boolean>>;
   setInboxViewOpen: Dispatch<SetStateAction<boolean>>;
   setLinkedWorkItemPanels: Dispatch<SetStateAction<ReadonlyMap<string, LinkedWorkItemPanelState>>>;
   sessionsRef: MutableRefObject<Session[]>;
@@ -140,6 +148,7 @@ export function useOpenLinkedWorkItem(deps: OpenLinkedWorkItemDeps) {
     setSearchViewOpen,
     setNotesViewOpen,
     setAutomationsViewOpen,
+    setServersViewOpen,
     setInboxViewOpen,
     setLinkedWorkItemPanels,
     sessionsRef,
@@ -156,6 +165,7 @@ export function useOpenLinkedWorkItem(deps: OpenLinkedWorkItemDeps) {
       setSearchViewOpen(false);
       setNotesViewOpen(false);
       setAutomationsViewOpen(false);
+      setServersViewOpen?.(false);
       setInboxViewOpen(false);
       const cwd =
         sessionsRef.current.find((session) => session.id === sessionId)?.cwd ??

@@ -906,7 +906,7 @@ describe("sidebar new session rows", () => {
     const base = props.sessions[0];
     props.sessions = [
       { ...base, id: "history", updatedAt: 100 },
-      { ...base, id: "done", updatedAt: 90 },
+      { ...base, id: "done", updatedAt: 110 },
       { ...base, id: "working", updatedAt: 80 },
       { ...base, id: "failed", issue: "failed", updatedAt: 70 },
       { ...base, id: "input", updatedAt: 60 },
@@ -926,6 +926,28 @@ describe("sidebar new session rows", () => {
     props.unseenFinishedIds = new Set(["done", "input"]);
     act(() => render());
     expect(order()).toEqual(["history", "failed", "working", "done", "input"]);
+    expect(props.onSessionNavigationOrder).toHaveBeenLastCalledWith(order());
+  });
+
+  it("keeps a recently completed row in place when opening clears its Done badge", () => {
+    const base = props.sessions[0];
+    props.sessions = [
+      { ...base, id: "history", updatedAt: 100 },
+      { ...base, id: "done", updatedAt: 200 },
+      { ...base, id: "older-done", updatedAt: 50 },
+    ];
+    props.unseenFinishedIds = new Set(["done", "older-done"]);
+    props.onSessionNavigationOrder = vi.fn();
+    const order = () =>
+      [...container.querySelectorAll<HTMLElement>("[data-session-card]")].map(
+        (element) => element.dataset.sessionCard,
+      );
+    act(() => render());
+    expect(order()).toEqual(["done", "history", "older-done"]);
+    act(() => container.querySelector<HTMLElement>('[data-session-card="done"]')!.click());
+    props = { ...props, activeSessionId: "done", unseenFinishedIds: new Set(["older-done"]) };
+    act(() => render());
+    expect(order()).toEqual(["done", "history", "older-done"]);
     expect(props.onSessionNavigationOrder).toHaveBeenLastCalledWith(order());
   });
 

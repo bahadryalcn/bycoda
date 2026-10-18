@@ -16,11 +16,12 @@ export class SharedQueueClient {
   private takeOwnership = false;
   private conflict = false;
   private hasBaseline = false;
-  private state: { queue: SharedQueue; loaded: boolean; error?: string } = {
+  private state: { queue: SharedQueue; loaded: boolean; error?: string; recovery?: string } = {
     queue: this.base,
     loaded: false,
   };
   private readonly storageKey: string;
+  private recovery?: string;
   constructor(
     readonly machineId: string,
     readonly environmentId: string,
@@ -66,7 +67,12 @@ export class SharedQueueClient {
     this.emit(false, String(error).replace(/^Error: /, ""));
   }
   private emit(loaded = this.state.loaded, error?: string) {
-    this.state = { queue: { ...this.base, ...this.desired }, loaded, ...(error ? { error } : {}) };
+    this.state = {
+      queue: { ...this.base, ...this.desired },
+      loaded,
+      ...(error ? { error } : {}),
+      recovery: this.recovery,
+    };
     this.listeners.forEach((listener) => listener());
   }
   private dirty() {
@@ -162,22 +168,9 @@ export class SharedQueueClient {
       return true;
     }
   }
-  async initialize(legacy: RemoteQueue = { messages: [] }): Promise<void> {
+  async initialize(legacy?: RemoteQueue): Promise<void> {
     try {
-      const journal = localStorage.getItem(`${this.storageKey}:send`);
-      if (journal) {
-        const pending = JSON.parse(journal) as {
-          token: string;
-          clientId: string;
-          id: string;
-          accepted: boolean | null;
-        };
-        if (pending.accepted === null) {
-          pending.accepted = !legacy.messages.some((row) => row.id === pending.id);
-          localStorage.setItem(`${this.storageKey}:send`, JSON.stringify(pending));
-        }
-        await this.recoverAcknowledgement();
-      }
+      await this.recoverAcknowledgement();
       if (!this.dirty()) {
         const previous = this.hasBaseline ? this.base : undefined;
         const value = await this.call<SharedQueue>("get");
@@ -185,11 +178,11 @@ export class SharedQueueClient {
         this.desired = value;
         // A nonzero revision includes an empty, previously consumed queue.
         // Old device backups must never resurrect those messages.
-        if (!value.revision && legacy.messages.length) {
+        if (!value.revision && legacy?.messages.length) {
           this.desired = { ...legacy, status: legacy.status ?? "restored" };
           this.takeOwnership = true;
           this.persist();
-        } else if (previous && this.clientId.startsWith("desktop:")) {
+        } else if (previous && legacy && this.clientId.startsWith("desktop:")) {
           this.emit(true);
           this.mergeLocal(
             { ...previous, status: value.status, editingId: value.editingId },
@@ -204,7 +197,7 @@ export class SharedQueueClient {
       this.emit(true);
       await this.sync();
     } catch (error) {
-      this.emit(false, String(error).replace(/^Error: /, ""));
+      this.emit(this.state.loaded, String(error).replace(/^Error: /, ""));
     }
   }
   private call<T>(action: string, params: Record<string, unknown> = {}) {
@@ -321,12 +314,23 @@ export class SharedQueueClient {
       this.base.consumer === this.clientId
     );
   }
-  dispatch(id: string) {
-    return { id, clientId: this.clientId, revision: this.base.revision };
+  dispatch(id: string, selected = false) {
+    return {
+      id,
+      clientId: this.clientId,
+      revision: this.base.revision,
+      ...(selected ? { selected: true } : {}),
+    };
   }
   async claim(id: string, steer: boolean): Promise<string | undefined> {
     await this.sync();
     if (!this.canDrain()) return undefined;
+    // Write before the RPC: a committed claim with a lost reply must be recoverable.
+    // No provider callback can run until this method returns its token.
+    localStorage.setItem(
+      `${this.storageKey}:send`,
+      JSON.stringify({ id, clientId: this.clientId, accepted: false }),
+    );
     const value = await this.call<SharedQueue>("claim", {
       id,
       revision: this.base.revision,
@@ -346,21 +350,69 @@ export class SharedQueueClient {
       `${this.storageKey}:send`,
       JSON.stringify({ token, clientId: this.clientId, accepted }),
     );
-    await this.recoverAcknowledgement();
+    await this.recoverAcknowledgement(false);
   }
-  private async recoverAcknowledgement() {
+  private async recoverAcknowledgement(pause = true) {
     const journal = localStorage.getItem(`${this.storageKey}:send`);
     if (!journal) return;
     const pending = JSON.parse(journal) as {
-      token: string;
+      token?: string;
+      id?: string;
       clientId: string;
       accepted: boolean | null;
     };
-    if (pending.accepted === null) return;
+    if (!pending.token || pending.accepted === null) {
+      const value = await this.call<SharedQueue>("get");
+      this.base = value;
+      this.desired = value;
+      this.persist();
+      this.emit(true);
+      if (!pending.token) {
+        if (value.claim?.clientId === pending.clientId && value.claim.id === pending.id) {
+          pending.token = value.claim.token;
+          localStorage.setItem(`${this.storageKey}:send`, JSON.stringify(pending));
+        } else if (!value.claim) {
+          localStorage.removeItem(`${this.storageKey}:send`);
+          return;
+        } else
+          throw new Error("A queued send belongs to another reservation. Refresh before recovery.");
+      }
+      if (pending.accepted === null) {
+        this.recovery =
+          value.messages.find((row) => row.id === (pending.id ?? value.claim?.id))?.text ||
+          "Queued message";
+        throw new Error(
+          "Delivery of a queued message is unknown. Review the conversation and resolve the held send.",
+        );
+      }
+    }
     const value = await this.call<SharedQueue>("finish", pending);
     this.base = value;
     this.desired = value;
     localStorage.removeItem(`${this.storageKey}:send`);
+    this.recovery = undefined;
+    // A recovered send must never resume retained work automatically.
+    if (pause) {
+      this.desired = {
+        ...value,
+        status: value.messages.length ? "paused" : undefined,
+        editingId: undefined,
+      };
+      this.takeOwnership = true;
+    }
+    this.persist();
     this.emit(true);
+  }
+  /** Explicit owner reconciliation. Keeping a row pauses it; this never sends it. */
+  async resolveRecovery(accepted: boolean) {
+    if (this.running) await this.running.catch(() => {});
+    if (!this.recovery) return;
+    const pending = JSON.parse(localStorage.getItem(`${this.storageKey}:send`)!);
+    localStorage.setItem(
+      `${this.storageKey}:send`,
+      JSON.stringify({ ...pending, accepted: pending.accepted ?? accepted }),
+    );
+    await this.recoverAcknowledgement();
+    await this.sync();
   }
 }

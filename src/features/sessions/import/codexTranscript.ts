@@ -35,9 +35,10 @@ export function parseShellOutput(raw: string | null | undefined): {
       const record = parsed as Record<string, unknown>;
       const meta = record.metadata as Record<string, unknown> | undefined;
       if (typeof record.output === "string") {
+        const exitCode = typeof record.exit_code === "number" ? record.exit_code : meta?.exit_code;
         return {
           output: record.output,
-          failed: typeof meta?.exit_code === "number" && meta.exit_code !== 0,
+          failed: typeof exitCode === "number" && exitCode !== 0,
         };
       }
     }
@@ -73,10 +74,43 @@ export function parseApplyPatch(patch: string): PatchChange[] {
       changes.push(current);
       continue;
     }
+    const move = /^\*\*\* Move to: (.+)$/.exec(line);
+    if (current?.kind.type === "update" && move) {
+      const destination = move[1].trim();
+      current.diff = `rename from ${current.path}\nrename to ${destination}\n${current.diff}`;
+      current.path = destination;
+      continue;
+    }
     if (!current || line.startsWith("*** ")) continue;
     current.diff += `${line}\n`;
   }
   return changes;
+}
+
+function patchFailed(raw: string | null | undefined): boolean {
+  const result = parseShellOutput(raw);
+  if (result.failed) return true;
+  try {
+    const record: unknown = JSON.parse(raw ?? "");
+    if (record && typeof record === "object" && !Array.isArray(record)) {
+      const envelope = record as Record<string, unknown>;
+      if (
+        envelope.isError === true ||
+        envelope.is_error === true ||
+        envelope.status === "failed" ||
+        envelope.status === "error" ||
+        (typeof envelope.error === "string" && envelope.error.length > 0) ||
+        (envelope.error !== null && typeof envelope.error === "object")
+      ) {
+        return true;
+      }
+    }
+  } catch {
+    // Plain-text patch results report failure in their leading diagnostic.
+  }
+  return /^(?:error\s*:|(?:apply_patch\s+)?verification failed\b|apply_patch\s+error\s*:|failed to\b)/i.test(
+    result.output.trimStart(),
+  );
 }
 
 function humanize(name: string): string {
@@ -104,7 +138,7 @@ export function codexToolEvents(entry: CodexEntry, id: string): HarnessEvent[] {
   if (name === "apply_patch") {
     const changes = parseApplyPatch(input);
     if (changes.length > 0) {
-      const failed = /verification failed|error/i.test(entry.output ?? "");
+      const failed = patchFailed(entry.output);
       return mapped({
         type: "fileChange",
         status: failed ? "failed" : "completed",

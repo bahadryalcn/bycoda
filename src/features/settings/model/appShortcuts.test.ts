@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { resolveAppShortcut } from "./appShortcuts";
+import { resolveAppShortcut, SETTINGS_SHORTCUTS } from "./appShortcuts";
 import { saveKeybindingOverride } from "./settings";
 
 function key(partial: Partial<Parameters<typeof resolveAppShortcut>[0]>) {
@@ -38,6 +38,21 @@ describe("resolveAppShortcut", () => {
       "App: Toggle Session Sidebar",
     );
   });
+
+  it.each(Object.keys(SETTINGS_SHORTCUTS))(
+    "supports optional destination %s with disable, reset and IME",
+    (command) => {
+      const chord = key({ key: "q", code: "KeyQ", altKey: true });
+      expect(resolveAppShortcut(chord)).toBeNull();
+      saveKeybindingOverride(command, { shortcut: "Option+KeyQ" });
+      expect(resolveAppShortcut(chord)).toBe(command);
+      expect(resolveAppShortcut({ ...chord, isComposing: true })).toBeNull();
+      saveKeybindingOverride(command, { disabled: true });
+      expect(resolveAppShortcut(chord)).toBeNull();
+      saveKeybindingOverride(command, {});
+      expect(resolveAppShortcut(chord)).toBeNull();
+    },
+  );
 
   it("ignores a chord while an IME is composing", () => {
     // The maintainer's blocker: these used to fire mid-composition.

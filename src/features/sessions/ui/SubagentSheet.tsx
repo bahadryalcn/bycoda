@@ -23,6 +23,7 @@ import { VIEW_SUBAGENT_EVENT } from "./subagentFocus";
 import { useStopRequests } from "./useStopRequests";
 import { Button } from "../../../shared/ui/Button";
 import { TextareaField } from "../../../shared/ui/TextareaField";
+import styles from "./SubagentSheet.module.css";
 
 export type SubagentRelay = {
   draft: string;
@@ -195,7 +196,9 @@ export function SubagentSheet({
         className="subagent-sheet absolute inset-y-0 right-0 isolate w-[min(34rem,94%)] outline-none"
       >
         <GlassBackdrop className="subagent-sheet-glass popover-backdrop" />
-        <div className="relative z-[1] flex h-full min-h-0 flex-col font-sans text-sm text-(--ui-tone-neutral-fg)">
+        <div
+          className={`${styles.layout} relative z-[1] flex h-full min-h-0 flex-col font-sans text-sm text-(--ui-tone-neutral-fg)`}
+        >
           <header className="flex shrink-0 flex-col gap-1 border-b border-(--ui-tone-neutral-border) py-2.5 pr-2 pl-4">
             <div className="flex min-w-0 items-center gap-2">
               <h2 className="min-w-0 flex-1 truncate text-sm font-medium" title={name}>
@@ -220,6 +223,8 @@ export function SubagentSheet({
                 </Button>
               ) : null}
               <Button
+                iconOnly
+                label={t("Show in transcript")}
                 variant="ghost"
                 type="button"
                 onClick={() => onShowInTranscript(block.id)}
@@ -229,7 +234,6 @@ export function SubagentSheet({
                 className="shrink-0"
               >
                 <CornerDownRight className="size-3.5" strokeWidth={1.75} />
-                {t("Show in transcript")}
               </Button>
               <Button
                 iconOnly
@@ -244,7 +248,7 @@ export function SubagentSheet({
                 <X className="size-4" strokeWidth={1.75} />
               </Button>
             </div>
-            <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-(--ui-text-secondary)">
+            <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5 text-xs wrap-anywhere text-(--ui-text-secondary)">
               <span
                 className={
                   state === "rejected"
@@ -277,13 +281,14 @@ export function SubagentSheet({
           )}
           {!command && relay ? (
             <form
-              className="flex shrink-0 flex-col gap-2 border-t border-(--ui-tone-neutral-border) bg-[var(--ui-surface)] px-4 py-3"
+              className={`${styles.composer} flex shrink-0 flex-col gap-2 border-t border-(--ui-tone-neutral-border) bg-[var(--ui-surface)] px-4 py-3`}
               onSubmit={(event) => {
                 event.preventDefault();
                 if (!relay.blockedReason && relay.draft.trim()) relay.send();
               }}
             >
               <TextareaField
+                className={styles.message}
                 label={t("Message for {p0}", { p0: name })}
                 description={t(
                   "Via the main agent. Delivery depends on provider support; replies appear in the main conversation.",
@@ -531,7 +536,11 @@ function SubagentTrail({
   const following = useFollowBottom(scroller, true, steps, 32, false, report);
 
   return (
-    <div ref={scroller} className="min-h-0 flex-1 overflow-y-auto overscroll-none">
+    <div
+      ref={scroller}
+      data-subagent-trail
+      className="min-h-0 flex-1 overflow-y-auto overscroll-none [scrollbar-gutter:stable]"
+    >
       <div className="flex min-w-0 flex-col gap-1 px-4 py-3">
         {prompt ? <PromptCard prompt={prompt} /> : null}
         {visible.length === 0 && !report ? (

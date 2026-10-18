@@ -11,7 +11,11 @@ import {
   zoomOutUiScale,
 } from "../../../features/settings/model/uiScale";
 import { resolveZoomKeybinding } from "../../../features/settings/model/zoomKeybinding";
-import { LAYOUT_SHORTCUTS, resolveAppShortcut } from "../../../features/settings/model/appShortcuts";
+import {
+  LAYOUT_SHORTCUTS,
+  SETTINGS_SHORTCUTS,
+  resolveAppShortcut,
+} from "../../../features/settings/model/appShortcuts";
 import {
   keybindingPressed,
   matchCustomKeybinding,
@@ -24,6 +28,7 @@ import {
 } from "../../../features/workspace/model/tabKeys";
 import { handleEditorFindKey } from "../../../features/files/editor/editorFindBridge";
 import { terminalToolShortcut } from "../../../features/terminal/model/terminalKeys";
+import { hasActiveModalOverlay } from "../../../shared/ui/overlay";
 import type { WorkspaceActions, WorkspaceRun } from "./useWorkspaceActions";
 
 export interface WorkspaceKeyboardShortcutDeps {
@@ -35,6 +40,7 @@ export interface WorkspaceKeyboardShortcutDeps {
   inboxViewOpenRef: MutableRefObject<boolean>;
   notesViewOpenRef: MutableRefObject<boolean>;
   automationsViewOpenRef: MutableRefObject<boolean>;
+  serversViewOpenRef?: MutableRefObject<boolean>;
   filePickerOpenRef: MutableRefObject<boolean>;
   whatsNewVersionRef: MutableRefObject<string | null>;
   onToggleMaximizePane: (paneId?: string) => void;
@@ -50,6 +56,7 @@ export function useWorkspaceKeyboardShortcuts({
   inboxViewOpenRef,
   notesViewOpenRef,
   automationsViewOpenRef,
+  serversViewOpenRef,
   filePickerOpenRef,
   whatsNewVersionRef,
   onToggleMaximizePane,
@@ -73,13 +80,28 @@ export function useWorkspaceKeyboardShortcuts({
       const customCommand = matchCustomKeybinding(e);
       const pressed = (command: string, defaultMatch: boolean) =>
         keybindingPressed(command, e, defaultMatch);
+      // Dialogs own editing/navigation chords. Window presentation shortcuts
+      // remain available; native menu dispatch has its own independent route.
+      if (
+        hasActiveModalOverlay() &&
+        !resolveZoomKeybinding(e) &&
+        !pressed("App: Toggle Full Screen", isFullscreenShortcut(e))
+      )
+        return;
       const layout = customCommand ? LAYOUT_SHORTCUTS[customCommand] : undefined;
       if (layout) {
         if (
-          searchViewOpenRef.current || settingsOpenRef.current || inboxViewOpenRef.current ||
-          notesViewOpenRef.current || automationsViewOpenRef.current || filePickerOpenRef.current ||
-          whatsNewVersionRef.current || document.querySelector('[role="dialog"], [role="menu"], [data-model-picker]')
-        ) return;
+          searchViewOpenRef.current ||
+          settingsOpenRef.current ||
+          inboxViewOpenRef.current ||
+          notesViewOpenRef.current ||
+          automationsViewOpenRef.current ||
+          serversViewOpenRef?.current ||
+          filePickerOpenRef.current ||
+          whatsNewVersionRef.current ||
+          document.querySelector('[role="dialog"], [role="menu"], [data-model-picker]')
+        )
+          return;
         e.preventDefault();
         e.stopPropagation();
         if (!e.repeat) run(`arrange-${layout}`, () => actions.current.onArrangeActiveTab(layout));
@@ -95,7 +117,9 @@ export function useWorkspaceKeyboardShortcuts({
         e.preventDefault();
         e.stopPropagation();
         void setNativeFullscreen(false)
-          .then((full) => { nativeFullscreenRef.current = full; })
+          .then((full) => {
+            nativeFullscreenRef.current = full;
+          })
           .catch(console.warn);
         return;
       }
@@ -111,6 +135,7 @@ export function useWorkspaceKeyboardShortcuts({
           !inboxViewOpenRef.current &&
           !notesViewOpenRef.current &&
           !automationsViewOpenRef.current &&
+          !serversViewOpenRef?.current &&
           !filePickerOpenRef.current
         ) {
           e.preventDefault();
@@ -124,7 +149,9 @@ export function useWorkspaceKeyboardShortcuts({
         e.stopPropagation();
         if (!e.repeat) {
           void setNativeFullscreen()
-            .then((full) => { nativeFullscreenRef.current = full; })
+            .then((full) => {
+              nativeFullscreenRef.current = full;
+            })
             .catch(console.warn);
         }
         return;
@@ -181,6 +208,7 @@ export function useWorkspaceKeyboardShortcuts({
             inboxViewOpenRef.current ||
             notesViewOpenRef.current ||
             automationsViewOpenRef.current ||
+            serversViewOpenRef?.current ||
             settingsOpenRef.current ||
             filePickerOpenRef.current ||
             Boolean(whatsNewVersionRef.current);
@@ -250,6 +278,7 @@ export function useWorkspaceKeyboardShortcuts({
         !inboxViewOpenRef.current &&
         !notesViewOpenRef.current &&
         !automationsViewOpenRef.current &&
+        !serversViewOpenRef?.current &&
         !(
           e.target instanceof Element && e.target.closest("[data-session-drop], [data-agent-tab]")
         ) &&
@@ -281,6 +310,11 @@ export function useWorkspaceKeyboardShortcuts({
         e.preventDefault();
         e.stopPropagation();
         const a = actions.current;
+        const settingsSection = SETTINGS_SHORTCUTS[shortcut];
+        if (settingsSection) {
+          run(`open_settings_${settingsSection}`, () => a.openSettings(settingsSection));
+          return;
+        }
         if (shortcut === "App: New Window") run("new_window", () => void invoke("open_new_window"));
         else if (shortcut === "App: Open Project") run("open_project", () => void a.pickProject());
         else if (shortcut === "App: Toggle Sidebar") run("toggle_sidebar", a.onToggleSidebar);
@@ -296,7 +330,8 @@ export function useWorkspaceKeyboardShortcuts({
         else if (shortcut === "App: Open Inbox") run("open_inbox", () => a.onOpenInbox());
         else if (shortcut === "App: Open Notes") run("open_notes", () => a.onOpenNotes());
         else if (shortcut === "App: Open Tasks") run("open_tasks", () => a.onOpenTasks());
-        else if (shortcut === "App: Open Automations") run("open_automations", () => a.onOpenAutomations());
+        else if (shortcut === "App: Open Automations")
+          run("open_automations", () => a.onOpenAutomations());
         return;
       }
     };

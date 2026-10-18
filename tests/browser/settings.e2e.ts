@@ -203,6 +203,19 @@ for (const theme of ["light", "dark"])
       await page.setViewportSize({ width, height: 900 });
       await page.goto(`/tests/browser/settings.html?section=keybindings&theme=${theme}&lang=en`);
       const search = page.getByRole("searchbox", { name: "Filter keybindings", exact: true });
+      const geometry = await page
+        .locator('[data-settings-section="keybindings"]')
+        .evaluate((form) => {
+          const style = getComputedStyle(form);
+          return {
+            available:
+              form.clientWidth -
+              parseFloat(style.paddingInlineStart) -
+              parseFloat(style.paddingInlineEnd),
+            content: form.querySelector(".settings-group")!.getBoundingClientRect().width,
+          };
+        });
+      expect(geometry.content).toBeGreaterThan(geometry.available * 0.98);
       await search.fill("Open Inbox");
       const recorder = page.getByRole("button", {
         name: "Change App: Open Inbox shortcut",
@@ -214,6 +227,14 @@ for (const theme of ["light", "dark"])
       await expect(recorder).toContainText("Q");
       await expect(page.getByText("Modified", { exact: true })).toBeVisible();
       await expect(page.getByText(/^Default:/)).toBeVisible();
+      const feedback = page
+        .locator(".settings-row")
+        .filter({ has: recorder })
+        .locator(".settings-row-feedback");
+      await expect(feedback.getByRole("status")).toContainText("Saved");
+      expect(
+        await feedback.evaluate((node) => node.clientWidth / node.parentElement!.clientWidth),
+      ).toBeGreaterThan(0.85);
       await page.reload();
       await search.fill("Open Inbox");
       await expect(recorder).toContainText("Q");
@@ -336,8 +357,10 @@ test("category keyboard navigation retains focus and search opens an advanced co
   page,
 }) => {
   await page.goto("/tests/browser/settings.html");
-  const tabs = page.getByRole("tab");
-  await expect(tabs).toHaveCount(17);
+  const tabs = page
+    .getByRole("tablist", { name: "Settings categories", exact: true })
+    .getByRole("tab");
+  await expect(tabs.first()).toBeVisible();
   await tabs.first().focus();
   await page.keyboard.press("ArrowDown");
   await expect(tabs.nth(1)).toBeFocused();

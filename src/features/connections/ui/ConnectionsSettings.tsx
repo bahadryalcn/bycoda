@@ -39,6 +39,7 @@ import {
   parseMachineDraft,
 } from "../model/machineEdit";
 import { isLocalSyncMachine } from "../model/localSync";
+import { subscribeMachineAddRequests, takeMachineAddRequest } from "../model/machineAdd";
 import { syncNow } from "../../sync/model/syncClient";
 import { describeSyncStatus } from "../../sync/model/syncStatusText";
 import { useSyncStatus } from "../../sync/model/useSyncStatus";
@@ -361,12 +362,22 @@ ${t("The new address is saved. Edit it again, or choose Reconnect to retry.")}`
   };
   const startAdd = () => {
     closeForm();
+    setView("machines");
     setAdding(true);
     setJob(undefined);
     setError("");
     setNotice("");
     setRemoving(undefined);
   };
+  useEffect(() => {
+    const start = () => {
+      if (!busy && takeMachineAddRequest()) startAdd();
+    };
+    start();
+    return subscribeMachineAddRequests(start);
+    // `startAdd` only resets the existing editor's state.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [busy]);
   // Saving is the user's own action, so it connects even when automatic
   // reconnecting is off. The connection runs as a setup job, the same one
   // Reconnect uses, which is where a new host key or password is answered.

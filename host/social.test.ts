@@ -27,6 +27,7 @@ import type {
   SocialWorkspaceResponse,
 } from "../src/features/social/model/social";
 import { REMOTE_PROVIDERS } from "../src/features/connections/model/protocol";
+import { SOCIAL_ACCOUNT_TYPES, SOCIAL_PLATFORMS } from "../src/features/social/model/social";
 
 const cleanups: (() => void | Promise<void>)[] = [];
 afterEach(async () => {
@@ -84,10 +85,7 @@ function fixture(generateText?: import("./social-generation").SocialTextGenerato
   }));
   const poll = vi.fn<SocialAdapter["poll"]>(async () => ({ events: [] }));
   const adapters = Object.fromEntries(
-    ["x", "instagram", "facebook", "linkedin", "youtube"].map((platform) => [
-      platform,
-      { send, poll },
-    ]),
+    SOCIAL_PLATFORMS.map((platform) => [platform, { send, poll }]),
   ) as SocialAdapters;
   const clock = { value: Date.parse("2026-10-10T09:00:00Z") };
   let social = new SocialService(
@@ -135,14 +133,7 @@ function fixture(generateText?: import("./social-generation").SocialTextGenerato
     const created = await call<SocialAccount>("accounts.create", {
       platform,
       name,
-      accountType:
-        platform === "x" || platform === "linkedin"
-          ? "member"
-          : platform === "instagram"
-            ? "professional"
-            : platform === "youtube"
-              ? "channel"
-              : "page",
+      accountType: SOCIAL_ACCOUNT_TYPES[platform][0],
       projectIds,
     });
     const scopes = [
@@ -224,6 +215,11 @@ function fixture(generateText?: import("./social-generation").SocialTextGenerato
     call,
     session,
     account,
+    approveDraft: (id: string) =>
+      call("drafts.approve", {
+        id,
+        reviewedDraft: social.snapshot(owner).drafts.find((draft) => draft.id === id),
+      }),
     campaign,
     thread,
     enable,
@@ -250,6 +246,222 @@ function fixture(generateText?: import("./social-generation").SocialTextGenerato
     },
   };
 }
+
+describe("campaign dispatch fairness", () => {
+  it.each(["account", "campaign", "executor", "cooldown"] as const)(
+    "skips twenty held %s jobs and resumes them without duplicate dispatches",
+    async (heldBy) => {
+      const s = fixture();
+      const blocked = await s.account();
+      const campaigns: SocialCampaign[] = [];
+      const jobs: SocialJob[] = [];
+      for (let index = 0; index < 20; index++) {
+        const campaign = await s.campaign([blocked]);
+        campaigns.push(campaign);
+        jobs.push(...(await s.call<SocialJob[]>("campaigns.schedule", { id: campaign.id })));
+        s.clock.value++;
+      }
+      if (heldBy === "account")
+        await s.call("accounts.pause", { accountId: blocked.id, paused: true });
+      if (heldBy === "campaign")
+        for (const campaign of campaigns)
+          await s.call("campaigns.pause", { id: campaign.id, paused: true });
+      if (heldBy === "executor") {
+        await s.call("accounts.executor", { accountId: blocked.id, executorId: "another-host" });
+        await s.call("accounts.pause", { accountId: blocked.id, paused: false });
+      }
+      if (heldBy === "cooldown")
+        s.store.db
+          .prepare("INSERT INTO social_settings VALUES (?,?)")
+          .run(`rate:${blocked.id}`, String(s.clock.value + 60_000));
+      const active = await s.account();
+      const campaign = await s.campaign([active]);
+      const [runnable] = await s.call<SocialJob[]>("campaigns.schedule", { id: campaign.id });
+      await s.call("execution.enable", { confirm: "ENABLE_EXTERNAL_SENDS" });
+      for (let index = 0; index < 3; index++) await s.social.tick();
+      expect(s.send).toHaveBeenCalledTimes(1);
+      expect(s.send.mock.calls[0][1].id).toBe(runnable.id);
+      expect(
+        s.social.snapshot(owner).jobs.filter((job) => jobs.some((held) => held.id === job.id)),
+      ).toEqual(
+        expect.arrayContaining(
+          jobs.map((job) => expect.objectContaining({ id: job.id, status: "queued", attempts: 0 })),
+        ),
+      );
+
+      if (heldBy === "campaign")
+        for (const held of campaigns)
+          await s.call("campaigns.pause", { id: held.id, paused: false });
+      if (heldBy === "executor")
+        await s.call("accounts.executor", {
+          accountId: blocked.id,
+          executorId: s.store.environmentId,
+        });
+      await s.call("accounts.pause", { accountId: blocked.id, paused: false });
+      s.clock.value += 60_001;
+      for (let index = 0; index < 21; index++) {
+        await s.social.tick();
+        s.clock.value += 2_001;
+      }
+      expect(s.send).toHaveBeenCalledTimes(21);
+      expect(new Set(s.send.mock.calls.map(([, job]) => job.id)).size).toBe(21);
+      expect(
+        s.social
+          .snapshot(owner)
+          .jobs.filter((job) => [...jobs, runnable].some((sent) => sent.id === job.id))
+          .every((job) => job.status === "succeeded" && job.attempts === 1),
+      ).toBe(true);
+    },
+  );
+
+  it("bounds claimed dispatch attempts to twenty while retaining later runnable work", async () => {
+    const s = fixture();
+    const accounts = [];
+    for (let index = 0; index < 23; index++) accounts.push(await s.account());
+    const campaign = await s.campaign(accounts);
+    const jobs = await s.call<SocialJob[]>("campaigns.schedule", { id: campaign.id });
+    await s.call("execution.enable", { confirm: "ENABLE_EXTERNAL_SENDS" });
+    await s.social.tick();
+    expect(s.send).toHaveBeenCalledTimes(20);
+    expect(s.social.snapshot(owner).jobs.filter((job) => job.status === "queued")).toHaveLength(3);
+    await s.social.tick();
+    expect(s.send).toHaveBeenCalledTimes(23);
+    expect(new Set(s.send.mock.calls.map(([, job]) => job.id)).size).toBe(jobs.length);
+  });
+});
+
+describe("campaign dispatch publication grants", () => {
+  it.each([
+    ["owner", "primary", false],
+    ["owner", "secondary", false],
+    ["session", "primary", false],
+    ["session", "secondary", false],
+    ["owner", "primary", true],
+    ["owner", "secondary", true],
+    ["session", "primary", true],
+    ["session", "secondary", true],
+  ] as const)(
+    "rejects %s jobs when the %s grant is revoked (during credentials: %s)",
+    async (actor, project, duringLookup) => {
+      const s = fixture();
+      const account = await s.account("x", [s.a.id, s.b.id]);
+      const campaign = await s.campaign([account], [s.a.id, s.b.id]);
+      await s.call(
+        "campaigns.schedule",
+        { id: campaign.id },
+        actor === "owner" ? owner : s.session().principal,
+      );
+      const revoke = () =>
+        s.call("accounts.grants", {
+          accountId: account.id,
+          projectId: project === "primary" ? s.a.id : s.b.id,
+          permissions: ["read", "draft"],
+        });
+      if (duringLookup) {
+        const original = s.credentials.get;
+        s.credentials.get = async (id) => {
+          await revoke();
+          return original(id);
+        };
+      } else await revoke();
+      await s.enable();
+      await s.social.tick();
+      expect(s.send).not.toHaveBeenCalled();
+      expect(s.social.snapshot(owner).jobs[0]).toMatchObject({ status: "cancelled" });
+    },
+  );
+  it.each(["owner", "session"] as const)(
+    "dispatches an unchanged %s campaign with all grants",
+    async (actor) => {
+      const s = fixture();
+      const account = await s.account("x", [s.a.id, s.b.id]);
+      const campaign = await s.campaign([account], [s.a.id, s.b.id]);
+      await s.call(
+        "campaigns.schedule",
+        { id: campaign.id },
+        actor === "owner" ? owner : s.session().principal,
+      );
+      await s.enable();
+      await s.social.tick();
+      expect(s.send).toHaveBeenCalledTimes(1);
+      expect(s.social.snapshot(owner).jobs[0].status).toBe("succeeded");
+    },
+  );
+});
+
+describe("reviewed draft approval", () => {
+  it("rejects replacement while a reviewing client awaits policy lookup", async () => {
+    const s = fixture();
+    const account = await s.account();
+    const thread = await s.thread(account);
+    const reviewedDraft = await s.call<SocialDraft>("replies.draft", {
+      threadId: thread.id,
+      text: "Visible preview A",
+    });
+    const approving = (async () => {
+      await s.call("policy.get", { accountId: account.id });
+      await s.call("drafts.approve", { id: reviewedDraft.id, reviewedDraft });
+      await s.call("replies.send", { id: reviewedDraft.id });
+    })();
+    await s.call("drafts.update", { id: reviewedDraft.id, text: "Unseen replacement B" });
+    await expect(approving).rejects.toThrow("preview changed");
+    await s.enable();
+    await s.social.tick();
+    expect(s.send).not.toHaveBeenCalled();
+    expect(s.social.snapshot(owner).jobs).toEqual([]);
+  });
+  it("rejects ID-only legacy approvals and a stale second client's preview", async () => {
+    const s = fixture();
+    const account = await s.account();
+    const thread = await s.thread(account);
+    const reviewedDraft = await s.call<SocialDraft>("replies.draft", {
+      threadId: thread.id,
+      text: "Visible preview A",
+    });
+    await expect(s.call("drafts.approve", { id: reviewedDraft.id })).rejects.toThrow("preview");
+    const replacement = await s.call<SocialDraft>("drafts.update", {
+      id: reviewedDraft.id,
+      text: "Unseen replacement B",
+    });
+    await expect(s.call("drafts.approve", { id: reviewedDraft.id, reviewedDraft })).rejects.toThrow(
+      "preview changed",
+    );
+    await expect(s.call("replies.send", { id: reviewedDraft.id })).rejects.toThrow("approval");
+    await s.call("drafts.approve", { id: replacement.id, reviewedDraft: replacement });
+    await s.call("replies.send", { id: replacement.id });
+    await s.enable();
+    await s.social.tick();
+    expect(s.send).toHaveBeenCalledTimes(1);
+    expect(s.send.mock.calls[0][1].payload.text).toBe("Unseen replacement B");
+  });
+  it.each([
+    "accountId",
+    "projectId",
+    "kind",
+    "threadId",
+    "contactId",
+    "postId",
+    "inboundEventId",
+    "factIds",
+  ] as const)("binds approval to reviewed %s context", async (field) => {
+    const s = fixture();
+    const account = await s.account();
+    const thread = await s.thread(account);
+    const draft = await s.call<SocialDraft>("replies.draft", {
+      threadId: thread.id,
+      text: "Same text",
+    });
+    const reviewedDraft = {
+      ...draft,
+      [field]: field === "factIds" ? ["other-fact"] : "other-context",
+    };
+    await expect(s.call("drafts.approve", { id: draft.id, reviewedDraft })).rejects.toThrow(
+      "preview changed",
+    );
+    await expect(s.call("replies.send", { id: draft.id })).rejects.toThrow("approval");
+    expect(s.send).not.toHaveBeenCalled();
+  });
+});
 
 describe("durable owner-approved publishing plans", () => {
   const createPlan = async (
@@ -1037,14 +1249,14 @@ describe("Merkezi sosyal servis", () => {
       threadId: thread.id,
       text: "First reply.",
     });
-    await s.call("drafts.approve", { id: first.id });
+    await s.approveDraft(first.id);
     const oldJob = await s.call<SocialJob>("replies.send", { id: first.id });
     await s.call("jobs.cancel", { id: oldJob.id });
     const replacement = await s.call<SocialDraft>("replies.draft", {
       threadId: thread.id,
       text: "Reviewed replacement.",
     });
-    await s.call("drafts.approve", { id: replacement.id });
+    await s.approveDraft(replacement.id);
     const job = await s.call<SocialJob>("replies.send", { id: replacement.id });
     expect(job.id).not.toBe(oldJob.id);
     expect(job.status).toBe("queued");
@@ -1068,7 +1280,7 @@ describe("Merkezi sosyal servis", () => {
       threadId: thread.id,
       text: "Original.",
     });
-    expect(await s.call("drafts.approve", { id: draft.id })).toMatchObject({
+    expect(await s.approveDraft(draft.id)).toMatchObject({
       approvedAt: s.clock.value,
     });
     await expect(
@@ -1087,14 +1299,14 @@ describe("Merkezi sosyal servis", () => {
     });
     expect(edited.approvedAt).toBeUndefined();
     await expect(s.call("replies.send", { id: draft.id })).rejects.toThrow("approval");
-    await s.call("drafts.approve", { id: draft.id });
+    await s.approveDraft(draft.id);
     const job = await s.call<SocialJob>("replies.send", { id: draft.id });
     await expect(s.call("drafts.update", { id: draft.id, text: "Another." })).rejects.toThrow(
       "queued",
     );
     await s.call("jobs.cancel", { id: job.id });
     await s.call("drafts.update", { id: draft.id, text: "Final review." });
-    await s.call("drafts.approve", { id: draft.id });
+    await s.approveDraft(draft.id);
     await s.call("replies.send", { id: draft.id });
     await s.enable();
     await s.social.tick();
@@ -1102,6 +1314,31 @@ describe("Merkezi sosyal servis", () => {
     await expect(
       s.call("drafts.update", { id: draft.id, text: "After dispatch." }),
     ).rejects.toThrow("dispatched");
+  });
+  it("draft attachment changes revoke exact approval and reach the authorized queued send", async () => {
+    const s = fixture();
+    const account = await s.account("x");
+    const thread = await s.thread(account);
+    const draft = await s.call<SocialDraft>("replies.draft", {
+      threadId: thread.id,
+      text: "Image reply.",
+    });
+    await s.approveDraft(draft.id);
+    const media = [{ kind: "image", uploadId: "00000000-0000-4000-8000-000000000001" }];
+    const edited = await s.call<SocialDraft>("drafts.update", {
+      id: draft.id,
+      text: draft.text,
+      media,
+    });
+    expect(edited.media).toEqual(media);
+    expect(edited.approvedAt).toBeUndefined();
+    await expect(s.call("replies.send", { id: draft.id })).rejects.toThrow("approval");
+    await s.approveDraft(draft.id);
+    const queued = await s.call<SocialJob>("replies.send", { id: draft.id });
+    expect(queued.payload.media).toEqual(media);
+    await s.enable();
+    await s.social.tick();
+    expect(s.send.mock.calls[0][1].payload.media).toEqual(media);
   });
   it("a manual edit retains conversation review and newer inbound guards", async () => {
     const s = fixture();
@@ -1114,7 +1351,7 @@ describe("Merkezi sosyal servis", () => {
     s.clock.value++;
     await s.thread(account, "new-inbound", "Another question");
     await s.call("drafts.update", { id: draft.id, text: "Manual review." });
-    await s.call("drafts.approve", { id: draft.id });
+    await s.approveDraft(draft.id);
     await expect(s.call("replies.send", { id: draft.id })).rejects.toThrow("newer inbound");
     s.social.ingest(account.id, [
       {
@@ -1252,7 +1489,7 @@ describe("Merkezi sosyal servis", () => {
       postId: "post",
       text: "Comment.",
     });
-    await s.call("drafts.approve", { id: draft.id });
+    await s.approveDraft(draft.id);
     await s.call("comments.send", { id: draft.id });
     await s.call("contacts.upsert", {
       accountId: account.id,
@@ -1520,7 +1757,7 @@ describe("Merkezi sosyal servis", () => {
     expect(edited.ruleId).toBeUndefined();
     expect(edited.reviewReason).toBeUndefined();
     await expect(s.call("replies.send", { id: draftId })).rejects.toThrow("approval");
-    await s.call("drafts.approve", { id: draftId });
+    await s.approveDraft(draftId);
     await s.call("replies.send", { id: draftId });
     await s.social.tick();
     expect(s.send).toHaveBeenCalledTimes(1);
@@ -1699,7 +1936,7 @@ describe("Merkezi sosyal servis", () => {
       postId: "target-video",
       text: "Owner-authored comment",
     });
-    await s.call("drafts.approve", { id: draft.id });
+    await s.approveDraft(draft.id);
     const result = await s.call<SocialJob>("comments.send", { id: draft.id });
     expect(result.payload).toMatchObject({
       recipientId: "UCtarget",
@@ -1803,7 +2040,7 @@ describe("Merkezi sosyal servis", () => {
       threadId: thread.id,
       text: "Verified reply",
     });
-    await s.call("drafts.approve", { id: draft.id });
+    await s.approveDraft(draft.id);
     await expect(s.call("replies.send", { id: draft.id })).rejects.toThrow("permit replies");
     expect(s.send).not.toHaveBeenCalled();
   });
@@ -1905,7 +2142,7 @@ describe("Merkezi sosyal servis", () => {
       threadId: thread.id,
       text: "Old answer",
     });
-    await s.call("drafts.approve", { id: draft.id });
+    await s.approveDraft(draft.id);
     const job = await s.call<SocialJob>("replies.send", { id: draft.id });
     s.clock.value += 1;
     await s.thread(account, "new-event", "A different question");
@@ -2006,7 +2243,7 @@ describe("Merkezi sosyal servis", () => {
         ),
       ),
     );
-    for (const draft of drafts) await s.call("drafts.approve", { id: draft.id });
+    for (const draft of drafts) await s.approveDraft(draft.id);
     const jobs = await Promise.all(
       drafts.map((draft, index) =>
         s.call<SocialJob>("replies.send", { id: draft.id }, sessions[index].principal),
@@ -2016,6 +2253,128 @@ describe("Merkezi sosyal servis", () => {
     await s.enable();
     await Promise.all([s.social.tick(), s.social.tick()]);
     expect(s.send).toHaveBeenCalledTimes(1);
+  });
+  it("tracks accepted TikTok processing durably without allowing cancellation and duplicate publication", async () => {
+    const s = fixture();
+    const account = await s.account("tiktok");
+    const campaign = await s.call<SocialCampaign>("campaigns.create", {
+      name: "Video",
+      projectIds: [s.a.id],
+      variants: [
+        {
+          accountId: account.id,
+          text: "Caption",
+          media: [{ kind: "video", url: "https://verified.example/video.mp4" }],
+          scheduledAt: s.clock.value,
+          factIds: [],
+          tiktok: {
+            privacy: "SELF_ONLY",
+            durationSeconds: 30,
+            allowComment: false,
+            allowDuet: false,
+            allowStitch: false,
+            brandContent: false,
+            brandOrganic: false,
+            isAigc: false,
+            consent: true,
+          },
+        },
+      ],
+    });
+    await s.call("campaigns.approve", { id: campaign.id });
+    await s.call("campaigns.schedule", { id: campaign.id });
+    let initializations = 0;
+    s.send.mockImplementation(async (_account, job, _token, _media, checkpoint) => {
+      expect(job.payload.tiktok?.consent).toBe(true);
+      if (!job.preparation?.tiktokPublishId) {
+        initializations++;
+        checkpoint?.({ tiktokPublishId: "publish-1" });
+        throw new SocialPlatformError("processing", s.clock.value + 30_000);
+      }
+      return { platformId: "publish-1", visibility: "private" };
+    });
+    await s.enable();
+    await s.social.tick();
+    let pending = s.social.snapshot(owner).jobs[0];
+    expect(pending).toMatchObject({
+      status: "queued",
+      preparation: { tiktokPublishId: "publish-1" },
+      dispatchedAt: s.clock.value,
+    });
+    await expect(s.call("jobs.cancel", { id: pending.id })).rejects.toThrow("cannot be recalled");
+    s.clock.value += 31_000;
+    await s.social.tick();
+    pending = s.social.snapshot(owner).jobs[0];
+    expect(pending).toMatchObject({ status: "succeeded", platformId: "publish-1" });
+    expect(initializations).toBe(1);
+  });
+  it("WhatsApp signed messages deduplicate and an expired response window blocks queued dispatch", async () => {
+    const s = fixture();
+    const account = await s.account("whatsapp");
+    const current = (await s.call<SocialAccount[]>("accounts.list"))[0];
+    await s.social.connectAccount(current.id, current, {
+      accessToken: "synthetic-private-token",
+      expiresAt: s.clock.value + 48 * 60 * 60_000,
+    });
+    const raw = Buffer.from(
+      JSON.stringify({
+        object: "whatsapp_business_account",
+        entry: [
+          {
+            changes: [
+              {
+                field: "messages",
+                value: {
+                  messaging_product: "whatsapp",
+                  metadata: { phone_number_id: current.platformId },
+                  contacts: [{ wa_id: "905551234567", profile: { name: "Customer" } }],
+                  messages: [
+                    {
+                      id: "wamid.incoming",
+                      from: "905551234567",
+                      timestamp: String(Math.floor(s.clock.value / 1000)),
+                      type: "text",
+                      text: { body: "Hello" },
+                    },
+                  ],
+                },
+              },
+            ],
+          },
+        ],
+      }),
+    );
+    const secret = "synthetic-app-secret";
+    const signature = `sha256=${createHmac("sha256", secret).update(raw).digest("hex")}`;
+    expect(() => s.social.webhook("whatsapp", raw, `sha256=${"0".repeat(64)}`, secret)).toThrow(
+      "signature",
+    );
+    expect(s.social.webhook("whatsapp", raw, signature, secret).ingested).toBe(1);
+    expect(s.social.webhook("whatsapp", raw, signature, secret).ingested).toBe(0);
+    const thread = (await s.call<SocialThread[]>("inbox.list"))[0];
+    expect(thread).toMatchObject({
+      replyUntil: s.clock.value + 24 * 60 * 60_000,
+      contactId: expect.any(String),
+    });
+    await s.call("thread.assign", { id: thread.id, projectId: s.a.id });
+    await expect(
+      s.call("replies.draft", { threadId: thread.id, text: "x".repeat(4097) }),
+    ).rejects.toThrow("4096");
+    const draft = await s.call<SocialDraft>("replies.draft", {
+      threadId: thread.id,
+      text: "Reply",
+    });
+    await s.approveDraft(draft.id);
+    await s.call("replies.send", { id: draft.id });
+    await s.enable();
+    s.clock.value += 24 * 60 * 60_000 + 1;
+    await s.social.tick();
+    expect(s.send).not.toHaveBeenCalled();
+    expect(s.social.snapshot(owner).jobs[0]).toMatchObject({
+      status: "cancelled",
+      error: "Platform response window expired.",
+    });
+    expect(s.social.snapshot(owner).accounts.find((a) => a.id === account.id)).toBeTruthy();
   });
   it("imzası doğrulanan tekrar webhook tek olay oluşturur; bozuk imza reddedilir", async () => {
     const s = fixture();
@@ -2145,7 +2504,7 @@ describe("Merkezi sosyal servis", () => {
       contactId: contact.id,
       text: "Hello",
     });
-    await s.call("drafts.approve", { id: draft.id });
+    await s.approveDraft(draft.id);
     await expect(s.call("messages.send", { id: draft.id })).rejects.toThrow("consent");
     contact = await s.call("contacts.upsert", {
       accountId: account.id,
@@ -2160,7 +2519,7 @@ describe("Merkezi sosyal servis", () => {
       contactId: contact.id,
       text: "Hello",
     });
-    await s.call("drafts.approve", { id: draft.id });
+    await s.approveDraft(draft.id);
     await s.call("messages.send", { id: draft.id });
     await s.call("contacts.optout", { id: contact.id });
     await s.enable();
@@ -2176,7 +2535,7 @@ describe("Merkezi sosyal servis", () => {
       threadId: thread.id,
       text: "Reply",
     });
-    await s.call("drafts.approve", { id: draft.id });
+    await s.approveDraft(draft.id);
     await s.call("replies.send", { id: draft.id });
     const original = s.credentials.get;
     s.credentials.get = async (id) => {

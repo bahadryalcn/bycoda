@@ -229,6 +229,69 @@ describe("usage analysis contracts", () => {
       )[0],
     ).toMatchObject({ unpricedTurns: 1, cacheWrite: 20 });
   });
+  it.each([
+    ["America/New_York", 2026, 2, 8, 23],
+    ["America/New_York", 2026, 10, 1, 25],
+    ["Australia/Lord_Howe", 2026, 9, 4, 23.5],
+    ["Australia/Lord_Howe", 2026, 3, 5, 24.5],
+  ] as const)(
+    "conserves every sample across %s %s/%s/%s (%s hours)",
+    (zone, year, month, day, hours) => {
+      const original = process.env.TZ;
+      process.env.TZ = zone;
+      try {
+        const window = {
+          start: new Date(year, month, day).getTime(),
+          end: new Date(year, month, day + 1).getTime(),
+        };
+        expect(window.end - window.start).toBe(hours * 3_600_000);
+        const template = { ...usageSamples(accounts(), pricing, groupFor)[0], cost: 1 };
+        const samples = Array.from({ length: hours * 60 }, (_, n) => ({
+          ...template,
+          at: window.start + n * 60_000 + 123,
+        }));
+        const { buckets } = usageBuckets(samples, window, "hour", "provider", "tokens");
+        expect(usageTotals(buckets)).toEqual(usageTotals(samples));
+        expect(buckets[0].start).toBe(window.start);
+        expect(buckets.at(-1)?.end).toBe(window.end);
+        for (const [index, bucket] of buckets.entries()) {
+          expect(bucket.end).toBeGreaterThan(bucket.start);
+          if (index) expect(bucket.start).toBe(buckets[index - 1].end);
+          expect(usageTotals(Object.values(bucket.series))).toEqual(usageTotals([bucket]));
+          const contained = samples.filter((s) => s.at >= bucket.start && s.at < bucket.end);
+          expect(usageTotals(contained)).toEqual(usageTotals([bucket]));
+          expect(contained.every((s) => bucketStart(s.at, "hour") === bucket.start)).toBe(true);
+        }
+      } finally {
+        if (original === undefined) delete process.env.TZ;
+        else process.env.TZ = original;
+      }
+    },
+  );
+  it("retains the reported 123-token Lord Howe sample in a partial chart window", () => {
+    const original = process.env.TZ;
+    process.env.TZ = "Australia/Lord_Howe";
+    try {
+      const window = {
+        start: Date.parse("2026-04-04T13:00:00Z"),
+        end: Date.parse("2026-04-04T18:00:00Z"),
+      };
+      const sample = {
+        ...usageSamples(accounts(), pricing, groupFor)[0],
+        at: Date.parse("2026-04-04T15:15:00Z"),
+        tokens: 123,
+      };
+      const chart = usageBuckets([sample], window, "hour", "provider", "tokens");
+      expect(usageTotals(chart.buckets).tokens).toBe(123);
+      const row = chart.buckets.find((bucket) => bucket.tokens > 0)!;
+      expect(row.start).toBe(Date.parse("2026-04-04T15:00:00Z"));
+      expect(row.end).toBe(Date.parse("2026-04-04T15:30:00Z"));
+      expect(usageTotals(chart.series).tokens).toBe(123);
+    } finally {
+      if (original === undefined) delete process.env.TZ;
+      else process.env.TZ = original;
+    }
+  });
   it("quotes CSV names and prevents spreadsheet formula evaluation", () => {
     const rows = usageBreakdown(usageSamples(accounts(), pricing, groupFor), "model", "tokens");
     rows[0].label = '=HYPERLINK("private")';

@@ -1,9 +1,12 @@
 type TerminalKeyEvent = Pick<KeyboardEvent, "key" | "altKey" | "ctrlKey" | "metaKey" | "shiftKey">;
 
-export function terminalToolShortcut(event: TerminalKeyEvent): "search" | "command" | null {
+export function terminalToolShortcut(
+  event: TerminalKeyEvent,
+  suggestionsAllowed = true,
+): "search" | "command" | null {
   if (event.altKey || event.shiftKey || (event.ctrlKey && event.metaKey)) return null;
   if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "f") return "search";
-  if (event.ctrlKey && !event.metaKey && event.key === " ") return "command";
+  if (suggestionsAllowed && event.ctrlKey && !event.metaKey && event.key === " ") return "command";
   return null;
 }
 

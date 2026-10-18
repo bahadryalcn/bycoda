@@ -323,7 +323,7 @@ function indexedFile(
     (file) =>
       file.relative === relHint ||
       file.relative.endsWith(`/${relHint}`) ||
-      relHint.endsWith(file.relative),
+      relHint.endsWith(`/${file.relative}`),
   );
   if (suffixMatches.length === 1) return suffixMatches[0].path;
 

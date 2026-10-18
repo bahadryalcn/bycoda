@@ -7,7 +7,11 @@ export interface WorkspaceStateRefDeps {
 }
 
 /** Render-time mirrors of dirty files, the active tab id and the project folder. */
-export function useWorkspaceStateRefs({ dirtyFiles, activeTabId, projectCwd }: WorkspaceStateRefDeps) {
+export function useWorkspaceStateRefs({
+  dirtyFiles,
+  activeTabId,
+  projectCwd,
+}: WorkspaceStateRefDeps) {
   const dirtyFilesRef = useRef(dirtyFiles);
   dirtyFilesRef.current = dirtyFiles;
   const activeTabIdRef = useRef(activeTabId);
@@ -22,6 +26,7 @@ export interface SurfaceFlagRefDeps {
   inboxViewOpen: boolean;
   notesViewOpen: boolean;
   automationsViewOpen: boolean;
+  serversViewOpen?: boolean;
   filePickerOpen: boolean;
 }
 
@@ -31,6 +36,7 @@ export function useSurfaceFlagRefs({
   inboxViewOpen,
   notesViewOpen,
   automationsViewOpen,
+  serversViewOpen = false,
   filePickerOpen,
 }: SurfaceFlagRefDeps) {
   const searchViewOpenRef = useRef(searchViewOpen);
@@ -41,6 +47,8 @@ export function useSurfaceFlagRefs({
   notesViewOpenRef.current = notesViewOpen;
   const automationsViewOpenRef = useRef(automationsViewOpen);
   automationsViewOpenRef.current = automationsViewOpen;
+  const serversViewOpenRef = useRef(serversViewOpen);
+  serversViewOpenRef.current = serversViewOpen;
   const filePickerOpenRef = useRef(filePickerOpen);
   filePickerOpenRef.current = filePickerOpen;
   return {
@@ -48,6 +56,7 @@ export function useSurfaceFlagRefs({
     inboxViewOpenRef,
     notesViewOpenRef,
     automationsViewOpenRef,
+    serversViewOpenRef,
     filePickerOpenRef,
   };
 }

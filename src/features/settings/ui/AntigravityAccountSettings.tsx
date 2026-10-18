@@ -1,4 +1,4 @@
-import { Alert } from "../../../shared/ui/Alert";
+import { SettingsFeedback } from "./settingsControls";
 import { Button } from "../../../shared/ui/Button";
 import { t, useLocale } from "../../../shared/i18n";
 import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
@@ -104,12 +104,12 @@ export function AntigravityAccountSettings({ embedded = false }: { embedded?: bo
       <SecondaryButton disabled={checking} onClick={() => void checkInstallation()}>
         {checking ? t("Checking…") : t("Check installation and models")}
       </SecondaryButton>
-      {status && <p role="status">{t(status)}</p>}
-      {error && (
-        <Alert tone="danger" role="alert">
-          {t(error)}
-        </Alert>
-      )}
+      {checking ? (
+        <SettingsFeedback state="loading">{t("Checking…")}</SettingsFeedback>
+      ) : status ? (
+        <SettingsFeedback state={available ? "success" : "warning"}>{t(status)}</SettingsFeedback>
+      ) : null}
+      {error && <SettingsFeedback state="error">{t(error)}</SettingsFeedback>}
     </div>
   );
   if (embedded)

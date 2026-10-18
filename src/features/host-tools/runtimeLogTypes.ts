@@ -27,6 +27,7 @@ export type RuntimeLogEntry = {
 };
 
 export type RuntimeLogQuery = {
+  streamId?: string;
   after?: number;
   limit?: number;
   sourceId?: string;
@@ -38,6 +39,8 @@ export type RuntimeLogQuery = {
 };
 
 export type RuntimeLogSnapshot = {
+  /** Optional for older hosts; new hosts always return a generation. */
+  streamId?: string;
   entries: RuntimeLogEntry[];
   sources: RuntimeLogSource[];
   cursor: number;

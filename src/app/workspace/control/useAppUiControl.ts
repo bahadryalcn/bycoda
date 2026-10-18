@@ -24,6 +24,7 @@ export interface AppUiControlDeps {
     searchViewOpen: boolean;
     inboxViewOpen: boolean;
     notesViewOpen: boolean;
+    serversViewOpen: boolean;
     automationsViewOpen: boolean;
     socialBoardShown: boolean;
     taskBoardShown: boolean;
@@ -41,6 +42,7 @@ export interface AppUiControlDeps {
     setInboxViewOpen: Dispatch<SetStateAction<boolean>>;
     setNotesViewOpen: Dispatch<SetStateAction<boolean>>;
     setAutomationsViewOpen: Dispatch<SetStateAction<boolean>>;
+    setServersViewOpen?: Dispatch<SetStateAction<boolean>>;
     setSessionSidebarOpen: Dispatch<SetStateAction<boolean>>;
     setSidebarTab: (tab: SidebarTabId, project?: string) => void;
     onShowProjectTerminal: () => void;
@@ -64,6 +66,7 @@ export function useAppUiControl({ surface, actions, focusOpenSession, isDetached
     searchViewOpen,
     inboxViewOpen,
     notesViewOpen,
+    serversViewOpen,
     automationsViewOpen,
     socialBoardShown,
     taskBoardShown,
@@ -80,6 +83,7 @@ export function useAppUiControl({ surface, actions, focusOpenSession, isDetached
     setInboxViewOpen,
     setNotesViewOpen,
     setAutomationsViewOpen,
+    setServersViewOpen,
     setSessionSidebarOpen,
     setSidebarTab,
     onShowProjectTerminal,
@@ -99,7 +103,7 @@ export function useAppUiControl({ surface, actions, focusOpenSession, isDetached
     if (!source || pathKey(source.cwd) !== pathKey(context.cwd) || isProjectLockedIn(getGroupLockView().lock, source.cwd))
       throw new Error("Conversation workspace is unavailable or locked.");
     const visible = (marker: string) => Array.from(document.querySelectorAll<HTMLElement>(marker)).some(element => element.getClientRects().length > 0);
-    const view = settingsOpen ? "settings" : searchViewOpen ? "search" : inboxViewOpen ? "inbox" : notesViewOpen ? "notes" : automationsViewOpen ? socialBoardShown ? "social" : taskBoardShown ? "tasks" : "automations" : "conversation";
+    const view = settingsOpen ? "settings" : searchViewOpen ? "search" : inboxViewOpen ? "inbox" : serversViewOpen ? "servers" : notesViewOpen ? "notes" : automationsViewOpen ? socialBoardShown ? "social" : taskBoardShown ? "tasks" : "automations" : "conversation";
     const ownProject = pathKey(projectCwd) === pathKey(source.cwd);
     const state = () => ({ view, cwd: projectCwd, sessionId: activeTab?.kind === "session" ? activeTab.focusedId : null,
       section: settingsOpen ? settingsSection : null,
@@ -107,8 +111,8 @@ export function useAppUiControl({ surface, actions, focusOpenSession, isDetached
       filesOpen: ownProject && !isDetachedSessionWindow() && sessionSidebarOpen && sidebarTab === "files" && visible('[data-side-pane="workspace"]'),
       terminalOpen: ownProject && dockVisible && visible('[data-project-terminal-dock]') });
     if (action === "ui.workspace.list") return { views: APP_UI_VIEWS.map(id => ({ id,
-      available: id === "notes" ? loadNotesEnabled() : id === "terminal" ? canOpenTerminalIn(source.cwd) : id === "files" ? !isDetachedSessionWindow() : true,
-      operations: id === "conversation" ? ["open", "status"] : ["open", "close", "status"] })), settingsSections: APP_UI_SETTINGS };
+      available: id === "servers" ? !isDetachedSessionWindow() : id === "notes" ? loadNotesEnabled() : id === "terminal" ? canOpenTerminalIn(source.cwd) : id === "files" ? !isDetachedSessionWindow() : true,
+      operations: id === "servers" ? ["status"] : id === "conversation" ? ["open", "status"] : ["open", "close", "status"] })), settingsSections: APP_UI_SETTINGS };
     if (action === "ui.workspace.status") return state();
     if (action === "ui.workspace.close") {
       if (!ownProject) throw new Error("This conversation's project is not displayed; refusing to close another project's surface.");
@@ -117,6 +121,7 @@ export function useAppUiControl({ surface, actions, focusOpenSession, isDetached
       else if (input.view === "terminal") onHideProjectTerminal();
       else if (view === input.view) {
         setSettingsOpen(false); setSearchViewOpen(false); setInboxViewOpen(false); setNotesViewOpen(false); setAutomationsViewOpen(false);
+        setServersViewOpen?.(false);
       }
     } else {
       if (input.view === "notes" && !loadNotesEnabled()) throw new Error("Notes is disabled; enable it in settings first.");
@@ -146,6 +151,7 @@ export function useAppUiControl({ surface, actions, focusOpenSession, isDetached
         case "social": window.dispatchEvent(new CustomEvent(SOCIAL_PANEL_EVENT, { detail: { cwd: source.cwd, local: true } })); break;
         default:
           setSettingsOpen(false); setSearchViewOpen(false); setInboxViewOpen(false); setNotesViewOpen(false); setAutomationsViewOpen(false);
+          setServersViewOpen?.(false);
           if (input.view === "files") { setSidebarTab("files", source.cwd); setSessionSidebarOpen(true); }
           if (input.view === "terminal") onShowProjectTerminal();
       }

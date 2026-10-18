@@ -5,9 +5,9 @@ const SAMPLE = `diff --git a/next.config.ts b/next.config.ts
 index 1111111..2222222 100644
 --- a/next.config.ts
 +++ b/next.config.ts
-@@ -1,6 +1,10 @@
+@@ -1,5 +1,7 @@
  import type { NextConfig } from "next";
-
+${" "}
  const nextConfig: NextConfig = {
 +  cacheComponents: true,
 +  partialPrefetching: true,
@@ -16,6 +16,110 @@ index 1111111..2222222 100644
 `;
 
 describe("parsePrPatch", () => {
+  it("keeps header-shaped source records inside their hunk", () => {
+    const [file] = parsePrPatch(`diff --git a/a.txt b/a.txt
+--- a/a.txt
++++ b/a.txt
+@@ -1,2 +1,2 @@
+--- /dev/null
++++ hello
+ keep
+`);
+    expect(file).toMatchObject({
+      path: "a.txt",
+      previousPath: null,
+      status: "modified",
+      additions: 1,
+      deletions: 1,
+    });
+    expect(file.lines.slice(1)).toEqual([
+      { kind: "del", text: "-- /dev/null", oldNumber: 1, newNumber: null },
+      { kind: "add", text: "++ hello", oldNumber: null, newNumber: 1 },
+      { kind: "context", text: "keep", oldNumber: 2, newNumber: 2 },
+    ]);
+  });
+
+  it.each(["", "\n", "\r\n"])("does not invent source rows from a patch separator %j", (ending) => {
+    const [file] = parsePrPatch(`diff --git a/a.txt b/a.txt
+--- a/a.txt
++++ b/a.txt
+@@ -1 +1 @@
+-old
++new${ending}`);
+    expect(file.lines).toHaveLength(3);
+    expect(file.lines.at(-1)).toEqual({ kind: "add", text: "new", oldNumber: null, newNumber: 1 });
+  });
+
+  it("enforces each side's hunk counts and resumes numbering at the next hunk", () => {
+    const [file] = parsePrPatch(`diff --git a/a.txt b/a.txt
+--- a/a.txt
++++ b/a.txt
+@@ -1,0 +1 @@
+-outside old range
++first
++outside new range
+ ignored context
++++ false-path
+@@ -4,2 +8,2 @@
+${" "}
+-old
+\\ No newline at end of file
++new
+\\ No newline at end of file
+unprefixed trailer
+`);
+    expect(file).toMatchObject({ path: "a.txt", additions: 2, deletions: 1 });
+    expect(file.lines.filter((line) => line.kind !== "hunk")).toEqual([
+      { kind: "add", text: "first", oldNumber: null, newNumber: 1 },
+      { kind: "context", text: "", oldNumber: 4, newNumber: 8 },
+      { kind: "del", text: "old", oldNumber: 5, newNumber: null },
+      { kind: "add", text: "new", oldNumber: null, newNumber: 9 },
+    ]);
+  });
+
+  it("decodes Git octal UTF-8 paths and matches API metadata", () => {
+    const parsed = parsePrPatch(String.raw`diff --git "a/\305\237.txt" "b/\305\237.txt"
+--- "a/\305\237.txt"
++++ "b/\305\237.txt"
+@@ -1 +1 @@
+-old
++new
+`);
+    expect(parsed[0].path).toBe("ş.txt");
+    const merged = mergePrDiff([{ path: "ş.txt", additions: 1, deletions: 1 }], parsed);
+    expect(merged).toHaveLength(1);
+    expect(merged[0].lines).toHaveLength(3);
+  });
+
+  it("decodes C-quoted rename paths, mixed quoting, and escaped punctuation once", () => {
+    const [file] = parsePrPatch(String.raw`diff --git a/plain.txt "b/\305\237\t\"\\new.txt"
+similarity index 100%
+rename from plain.txt
+rename to "\305\237\t\"\\new.txt"
+`);
+    expect(file).toMatchObject({
+      path: 'ş\t"\\new.txt',
+      previousPath: "plain.txt",
+      status: "renamed",
+    });
+    const [binary] = parsePrPatch(String.raw`diff --git "a/\305\237.txt" b/plain.txt
+Binary files differ
+`);
+    expect(binary.path).toBe("plain.txt");
+    const [quoted] = parsePrPatch(String.raw`diff --git "a/a\" b/old" "b/a\" b/new"
+Binary files differ
+`);
+    expect(quoted.path).toBe('a" b/new');
+  });
+
+  it("preserves literal backslashes and apostrophes in unquoted rename paths", () => {
+    const [file] = parsePrPatch(String.raw`diff --git a/old b/new
+rename from old\name
+rename to 'new'\name
+`);
+    expect(file).toMatchObject({ path: "'new'\\name", previousPath: "old\\name" });
+  });
+
   it("reads added lines and line numbers", () => {
     const files = parsePrPatch(SAMPLE);
     expect(files).toHaveLength(1);

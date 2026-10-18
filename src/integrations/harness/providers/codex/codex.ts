@@ -94,6 +94,7 @@ type Live = {
   sessionId: string;
   rpc: JsonRpcClient;
   threadId: string;
+  model?: string;
   cwd: string;
   providerAccountId?: string;
   /** Thread-level network policy used when this app-server opened the thread. */
@@ -619,11 +620,12 @@ async function ensureLive(input: HarnessSessionInput): Promise<Live> {
     const serviceTier = input.modelSettings?.serviceTier;
 
     let threadId: string | undefined;
+    let threadModel = model;
     let didResume = false;
 
     if (canResume && resume) {
       try {
-        const opened = await rpc.request<{ thread?: { id?: string } }>(
+        const opened = await rpc.request<{ thread?: { id?: string }; model?: string }>(
           "thread/resume",
           {
             threadId: resume.threadId,
@@ -642,6 +644,7 @@ async function ensureLive(input: HarnessSessionInput): Promise<Live> {
           120_000,
         );
         threadId = opened.thread?.id ?? resume.threadId;
+        threadModel = opened.model?.trim() || model;
         didResume = true;
       } catch (error) {
         if (!isRecoverableThreadResumeError(error)) throw error;
@@ -650,7 +653,7 @@ async function ensureLive(input: HarnessSessionInput): Promise<Live> {
     }
 
     if (!threadId) {
-      const opened = await rpc.request<{ thread?: { id?: string } }>(
+      const opened = await rpc.request<{ thread?: { id?: string }; model?: string }>(
         "thread/start",
         buildThreadStartParams({
           cwd: input.cwd,
@@ -662,6 +665,7 @@ async function ensureLive(input: HarnessSessionInput): Promise<Live> {
         }),
       );
       threadId = opened.thread?.id?.trim();
+      threadModel = opened.model?.trim() || model;
     }
 
     if (!threadId) throw new Error("Codex did not return a thread id");
@@ -670,6 +674,7 @@ async function ensureLive(input: HarnessSessionInput): Promise<Live> {
       sessionId: input.sessionId,
       rpc,
       threadId,
+      model: threadModel,
       cwd: input.cwd,
       providerAccountId: input.providerAccountId,
       controlsAgents,
@@ -758,7 +763,7 @@ async function runTurn(live: Live, input: SendTurnInput): Promise<void> {
   // so skills created or edited in this session are available immediately.
   if (/(?:^|\s)\$[A-Za-z0-9]/.test(input.text)) await loadCodexSkills(live, input.sessionId);
   if (live.cancelled) return;
-  const model = nativeModelId(input.model);
+  const model = nativeModelId(input.model) || live.model;
   const effort = input.modelSettings?.reasoningEffort;
   const serviceTier = input.modelSettings?.serviceTier;
 

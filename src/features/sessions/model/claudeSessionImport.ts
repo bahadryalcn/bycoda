@@ -1,6 +1,6 @@
 import { applyHarnessEvent } from "../../../integrations/harness/core/apply";
 import { replayClaudeSession } from "../../../integrations/harness/providers/claude/claude";
-import { sessionWorkCwd, type Block, type Session } from "./session";
+import { sessionWorkCwd, type Attachment, type Block, type Session } from "./session";
 
 /** The thread a conversation was picked for, as it looked when the picker opened. */
 export type ClaudeImportTarget = {
@@ -81,8 +81,8 @@ export function buildImportedSession(input: {
     onEvent: (event) => {
       session = applyHarnessEvent(session, event);
     },
-    onPrompt: (text, at) => {
-      session = appendPrompt(session, text, at);
+    onPrompt: (text, at, attachments) => {
+      session = appendPrompt(session, text, at, attachments);
     },
   });
   return {
@@ -94,11 +94,17 @@ export function buildImportedSession(input: {
   };
 }
 
-function appendPrompt(session: Session, text: string, at: number | undefined): Session {
+function appendPrompt(
+  session: Session,
+  text: string,
+  at: number | undefined,
+  attachments: Attachment[] = [],
+): Session {
   const block: Block = {
     id: crypto.randomUUID(),
     role: "user",
     text,
+    ...(attachments.length ? { attachments } : {}),
     ...(at ? { startedAt: at } : {}),
   };
   return {

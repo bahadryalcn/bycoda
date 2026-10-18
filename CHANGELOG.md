@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.35]
+
+### Reliability and recovery
+
+- Preserve queued messages, attachment readers, drafts and partial provider responses across limits, cancellation and recovery.
+- Correct remote file identity, content search, Git history, submodule discovery and filesystem collision handling.
+- Keep automation schedules and usage totals correct through daylight-saving transitions, including half-hour changes.
+- Report PDF page failures with page-specific retry and keep nested Agent App sessions addressable.
+- Bound runtime diagnostic capture without enumerating arbitrary objects; identify omitted fields and support explicit field/value arrays.
+
+### Workspace and shared controls
+
+- Improve keyboard navigation, focus handling, responsive recovery actions and large message queues.
+- Respect date picker bounds and preserve literal Markdown code during attachment edits.
+- Include accumulated host, provider, workspace, settings and shared UI fixes with expanded regression coverage.
+- Include SSH connection, reviewed execution, proxy, runbook and file-transfer improvements.
+
 ## [0.6.25]
 
 ### Workspace, sessions and automation

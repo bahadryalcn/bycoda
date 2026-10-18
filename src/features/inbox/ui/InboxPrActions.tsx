@@ -127,11 +127,13 @@ export function GithubPrActions({
   item,
   baseRef,
   headRef,
+  reviewedHeadOid,
   onChange,
 }: {
   item: InboxItem;
   baseRef: string;
   headRef: string;
+  reviewedHeadOid?: string;
   onChange?: (item: InboxItem) => void;
 }) {
   useLocale();
@@ -140,6 +142,7 @@ export function GithubPrActions({
   const [mergeMenuOpen, setMergeMenuOpen] = useState(false);
   const [confirmation, setConfirmation] = useState<{
     action: GithubPrAction;
+    expectedHeadOid?: string;
     anchor: HTMLElement;
   } | null>(null);
   const [busy, setBusy] = useState(false);
@@ -154,7 +157,14 @@ export function GithubPrActions({
     setMergeMenuOpen(false);
     setActionError(null);
     setNotice(null);
-    setConfirmation({ action, anchor });
+    if (
+      ["merge", "squash", "rebase"].includes(action) &&
+      !/^[a-f0-9]{40}$/i.test(reviewedHeadOid ?? "")
+    ) {
+      setActionError("Refresh and review the pull request before merging.");
+      return;
+    }
+    setConfirmation({ action, anchor, expectedHeadOid: reviewedHeadOid });
   };
 
   const dismissConfirmation = () => {
@@ -169,7 +179,13 @@ export function GithubPrActions({
     setBusy(true);
     setActionError(null);
     try {
-      const next = await githubPrAction(item.projectPath, item.repo, item.number, action);
+      const next = await githubPrAction(
+        item.projectPath,
+        item.repo,
+        item.number,
+        action,
+        confirmation.expectedHeadOid,
+      );
       setConfirmation(null);
       setNotice(
         (action === "merge" || action === "squash" || action === "rebase") &&
@@ -184,6 +200,7 @@ export function GithubPrActions({
         provider: "github",
       });
     } catch (error: unknown) {
+      setConfirmation(null);
       setActionError(error instanceof Error ? error.message : String(error));
     } finally {
       setBusy(false);
@@ -271,6 +288,11 @@ export function GithubPrActions({
           {notice}
         </span>
       ) : null}
+      {!confirmation && actionError ? (
+        <Alert tone="danger" role="alert">
+          {actionError}
+        </Alert>
+      ) : null}
       {confirmation && confirmCopy ? (
         <Popover
           anchor={confirmation.anchor}
@@ -289,6 +311,9 @@ export function GithubPrActions({
             </h2>
             <p className="text-[12px] leading-snug text-(--ui-text-secondary)">
               {confirmCopy.detail}
+              {confirmation.expectedHeadOid
+                ? ` Reviewed head: ${confirmation.expectedHeadOid}`
+                : ""}
             </p>
           </div>
           {actionError ? (

@@ -98,17 +98,6 @@ function PdfPages({ doc }: { doc: PDFDocumentProxy }) {
   const [sizes, setSizes] = useState<Record<number, Size>>({});
 
   useEffect(() => {
-    let cancelled = false;
-    void doc.getPage(1).then((page) => {
-      const view = page.getViewport({ scale: 1 });
-      if (!cancelled) setSizes((prev) => ({ ...prev, 1: [view.width, view.height] }));
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [doc]);
-
-  useEffect(() => {
     const element = scrollRef.current;
     if (!element) return;
     const observer = new ResizeObserver(() => setWidth(element.clientWidth));
@@ -305,6 +294,8 @@ function PdfPage({
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const textRef = useRef<HTMLDivElement>(null);
   const [near, setNear] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [attempt, setAttempt] = useState(0);
 
   // Only pages within a screen or so of the viewport are rasterized; the rest
   // stay as empty frames, so a 300-page file costs a handful of canvases.
@@ -365,8 +356,14 @@ function PdfPage({
     // Rendered off-screen and copied over in one step, so the visible canvas
     // never goes blank while a page re-rasterises at a new scale.
     const buffer = document.createElement("canvas");
+    const releaseBuffer = () => {
+      buffer.width = 0;
+      buffer.height = 0;
+    };
+    setError(null);
 
-    void doc.getPage(number).then((page) => {
+    void (async () => {
+      const page = await doc.getPage(number);
       if (cancelled) return;
       const natural = page.getViewport({ scale: 1 });
       onSize(number, [natural.width, natural.height]);
@@ -380,38 +377,41 @@ function PdfPage({
         transform: ratio === 1 ? undefined : [ratio, 0, 0, ratio, 0, 0],
       });
       renderTask = task;
-      task.promise.then(
-        () => {
-          if (cancelled) return;
-          canvas.width = buffer.width;
-          canvas.height = buffer.height;
-          canvas.getContext("2d")?.drawImage(buffer, 0, 0);
-          buffer.width = 0;
-          buffer.height = 0;
-          text.replaceChildren();
-          textLayer = new TextLayer({
-            textContentSource: page.streamTextContent(),
-            container: text,
-            viewport,
-          });
-          textLayer.render().catch(() => {});
-        },
-        () => {
-          // A cancelled render rejects; a real failure leaves the page blank.
-        },
-      );
-    });
+      await task.promise;
+      if (cancelled) return;
+      canvas.width = buffer.width;
+      canvas.height = buffer.height;
+      canvas.getContext("2d")?.drawImage(buffer, 0, 0);
+      releaseBuffer();
+      text.replaceChildren();
+      textLayer = new TextLayer({
+        textContentSource: page.streamTextContent(),
+        container: text,
+        viewport,
+      });
+      await textLayer.render();
+    })()
+      .catch((cause: unknown) => {
+        if (cancelled || (cause instanceof Error && cause.name === "RenderingCancelledException"))
+          return;
+        canvas.width = 0;
+        canvas.height = 0;
+        text.replaceChildren();
+        setError(documentErrorMessage(cause));
+      })
+      .finally(releaseBuffer);
 
     return () => {
       cancelled = true;
       renderTask?.cancel();
       textLayer?.cancel();
-      buffer.width = 0;
-      buffer.height = 0;
+      releaseBuffer();
     };
-  }, [doc, number, scale, near, onSize]);
+  }, [doc, number, scale, near, onSize, attempt]);
 
-  const width = size ? Math.floor(size[0] * scale) : undefined;
+  // Keep unmeasured frames visible to IntersectionObserver so their page load
+  // (and any page-specific failure) does not depend on eager getPage(1).
+  const width = Math.floor((size?.[0] ?? 600) * scale);
   const height = size ? Math.floor(size[1] * scale) : undefined;
 
   // `--zoom-ratio` is set on the scroll container while the wheel is zooming;
@@ -432,6 +432,24 @@ function PdfPage({
     >
       <canvas ref={canvasRef} className="block h-full w-full" />
       <div ref={textRef} className="pdf-text-layer" />
+      {error && (
+        <div className="absolute inset-0">
+          <DocumentMessage title={t("Couldn’t render page {p0}", { p0: number })} error>
+            <p>{error}</p>
+            <Button
+              type="button"
+              size="sm"
+              variant="secondary"
+              onClick={() => {
+                setError(null);
+                setAttempt((value) => value + 1);
+              }}
+            >
+              {t("Retry page {p0}", { p0: number })}
+            </Button>
+          </DocumentMessage>
+        </div>
+      )}
     </div>
   );
 }

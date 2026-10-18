@@ -1,3 +1,4 @@
+// @vitest-environment happy-dom
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import {
   notifyRemoteRecovered,
@@ -9,6 +10,14 @@ import {
   subscribeRemoteRecovered,
 } from "./remoteHealth";
 import { remotePath } from "./remoteProjects";
+import { act, createElement } from "react";
+import { createRoot } from "react-dom/client";
+import {
+  useRemoteLoadFailure,
+  recordRemoteConnection,
+  reportRemoteConnection,
+} from "./remoteHealth";
+import { blocksSending, connectionIndicator, shouldAutoRetry } from "./remoteConnection";
 
 const project = remotePath("env", "/Users/me/repo");
 const down = "Machine is unreachable. Check the host and SSH tunnel, then reconnect.";
@@ -98,4 +107,51 @@ it("starts a machine's connection over when its address is edited", () => {
   expect(remotePollDue(project)).toBe(true);
   expect(recovered).not.toHaveBeenCalled();
   unsubscribe();
+});
+
+it("keeps another machine's subscribed banner and backoff after a scoped reconnect", async () => {
+  const other = remotePath("env-other", "/repo");
+  reportRemoteLoad(project, "files", down);
+  reportRemoteLoad(other, "files", down);
+  let visible: ReturnType<typeof useRemoteLoadFailure>;
+  const element = document.createElement("div");
+  const root = createRoot(element);
+  function View() {
+    visible = useRemoteLoadFailure(other, "files");
+    return null;
+  }
+  try {
+    await act(async () => root.render(createElement(View)));
+    const original = visible;
+    await act(async () => notifyRemoteRecovered("env"));
+    expect(visible).toBe(original);
+    expect(visible?.kind).toBe("unreachable");
+    expect(remotePollDue(project)).toBe(true);
+    expect(remotePollDue(other)).toBe(false);
+    expect(readRemoteConnection("env-other").status).toBe("unreachable");
+    await act(async () => notifyRemoteRecovered());
+    expect(visible).toBeUndefined();
+    expect(remotePollDue(other)).toBe(true);
+  } finally {
+    await act(async () => root.unmount());
+  }
+});
+
+it("keeps a refused host identity actionable and blocks sends until verified recovery", () => {
+  const refusal = "Host identity changed. Add this machine again before continuing.";
+  recordRemoteConnection("env", down);
+  reportRemoteConnection(project, "files", new Error(refusal));
+  const state = readRemoteConnection("env");
+  expect(state).toMatchObject({ status: "identity-mismatch", error: refusal });
+  expect(connectionIndicator(state, false)).toEqual({
+    tone: "down",
+    label: `Not connected. ${refusal}`,
+  });
+  expect(blocksSending(state.status)).toBe(true);
+  expect(shouldAutoRetry(state.status, undefined, Date.now())).toBe(false);
+  recordRemoteConnection("env");
+  recordRemoteConnection("env", down);
+  expect(readRemoteConnection("env")).toBe(state);
+  notifyRemoteRecovered("env");
+  expect(readRemoteConnection("env").status).toBe("connected");
 });

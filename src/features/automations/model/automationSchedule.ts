@@ -15,34 +15,35 @@ export function isScheduleKind(value: string): value is AutomationScheduleKind {
 
 export function nextAutomationRunAt(schedule: AutomationSchedule, after = Date.now()): number {
   const start = new Date(after);
-  start.setSeconds(0, 0);
+  if (!Number.isFinite(start.getTime())) return NaN;
   const [hour, minute] = parseTime(schedule.time);
   if (schedule.scheduleKind === "hourly") {
-    const candidate = new Date(start);
-    candidate.setMinutes(clamp(schedule.minute, 0, 59), 0, 0);
-    if (candidate.getTime() <= after) candidate.setHours(candidate.getHours() + 1);
-    return candidate.getTime();
-  }
-
-  const candidate = new Date(start);
-  candidate.setHours(hour, minute, 0, 0);
-  if (schedule.scheduleKind === "daily") {
-    if (candidate.getTime() <= after) candidate.setDate(candidate.getDate() + 1);
-    return candidate.getTime();
-  }
-  if (schedule.scheduleKind === "weekdays") {
-    if (candidate.getTime() <= after) candidate.setDate(candidate.getDate() + 1);
-    while (candidate.getDay() === 0 || candidate.getDay() === 6) {
-      candidate.setDate(candidate.getDate() + 1);
+    // Walk actual minutes so both occurrences of a folded hour remain eligible.
+    const minute = clamp(schedule.minute, 0, 59);
+    let candidate = Math.floor(after / 60_000) * 60_000 + 60_000;
+    while (new Date(candidate).getMinutes() !== minute) {
+      if (!Number.isFinite(new Date(candidate).getTime())) return NaN;
+      candidate += 60_000;
     }
-    return candidate.getTime();
+    return candidate;
   }
 
-  const day = clamp(schedule.dayOfWeek, 0, 6);
-  let days = (day - candidate.getDay() + 7) % 7;
-  if (days === 0 && candidate.getTime() <= after) days = 7;
-  candidate.setDate(candidate.getDate() + days);
-  return candidate.getTime();
+  // Reconstruct each calendar date with the configured time. A missing time may
+  // normalize forward on its own date, but must not shift later dates as well.
+  for (let days = 0; ; days++) {
+    const candidate = new Date(
+      start.getFullYear(),
+      start.getMonth(),
+      start.getDate() + days,
+      hour,
+      minute,
+    );
+    if (!Number.isFinite(candidate.getTime())) return NaN;
+    const day = candidate.getDay();
+    if (schedule.scheduleKind === "weekdays" && (day === 0 || day === 6)) continue;
+    if (schedule.scheduleKind === "weekly" && day !== clamp(schedule.dayOfWeek, 0, 6)) continue;
+    if (candidate.getTime() > after) return candidate.getTime();
+  }
 }
 
 export function parseTime(value: string): [number, number] {

@@ -198,3 +198,54 @@ it("güncel politika sınırını aşan taslak gönderim onayı alamaz", async (
     request.mock.calls.some((call) => call[0] === "drafts.approve" || call[0] === "messages.send"),
   ).toBe(false);
 });
+
+it.each([false, true])(
+  "binds the pre-policy reviewed preview and stops sending if it changed: %s",
+  async (replaceDuringPolicy) => {
+    const preview = { ...draft, factIds: [...draft.factIds] };
+    let finishPolicy!: (value: unknown) => void;
+    let currentDraft = { ...preview };
+    request.mockImplementation(async (action, input) => {
+      if (action === "policy.get")
+        return new Promise((resolve) => {
+          finishPolicy = resolve;
+        });
+      if (
+        action === "drafts.approve" &&
+        JSON.stringify(input.reviewedDraft) !== JSON.stringify(currentDraft)
+      )
+        throw new Error("Draft preview changed. Refresh and review.");
+      return currentDraft;
+    });
+    const snapshot = {
+      sendingEnabled: true,
+      accounts: [
+        {
+          id: "account",
+          name: "Owner",
+          platform: "x",
+          connected: true,
+          paused: false,
+        } as SocialSnapshot["accounts"][number],
+      ],
+    };
+    await mount(preview, snapshot);
+    const button = Array.from(container.querySelectorAll("button")).find((item) =>
+      item.textContent?.startsWith("Onayla"),
+    )!;
+    await act(async () => button.click());
+    expect(request).toHaveBeenCalledWith("policy.get", { accountId: "account" });
+    if (replaceDuringPolicy) {
+      currentDraft = { ...preview, text: "Unseen replacement B", contactId: "different-recipient" };
+      await mount(currentDraft, snapshot);
+    }
+    await act(async () => finishPolicy({ effective: {} }));
+    expect(request).toHaveBeenCalledWith("drafts.approve", {
+      id: preview.id,
+      reviewedDraft: preview,
+    });
+    expect(request.mock.calls.some((call) => call[0] === "messages.send")).toBe(
+      !replaceDuringPolicy,
+    );
+  },
+);

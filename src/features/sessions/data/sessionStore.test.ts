@@ -20,12 +20,14 @@ it("keeps host-owned transcripts out of local session storage", () => {
 
 it("persists an empty active transcript when rewound history remains", () => {
   const session = newSession("codex", "/repo");
-  session.rewindHistory = [{
-    id: "rewind-1",
-    createdAt: 123,
-    fromBlockId: "removed-user",
-    blocks: [{ id: "removed-user", role: "user", text: "archived prompt" }],
-  }];
+  session.rewindHistory = [
+    {
+      id: "rewind-1",
+      createdAt: 123,
+      fromBlockId: "removed-user",
+      blocks: [{ id: "removed-user", role: "user", text: "archived prompt" }],
+    },
+  ];
   expect(session.blocks).toEqual([]);
   expect(shouldPersistSession(session)).toBe(true);
   expect(sanitizeSessionForPersist(session)).toMatchObject({
@@ -73,20 +75,40 @@ describe("Claude Shell row recovery", () => {
 describe("conversation rewind persistence", () => {
   it("persists sanitized archived blocks and stop markers outside the active transcript", () => {
     const session = newSession("codex", "/repo");
-    session.blocks = [{ id: "kept", role: "user", text: "retained", turnOutcome: "stopped", turnStoppedAt: 321 }];
-    session.rewindHistory = [{
-      id: "rewind-1",
-      createdAt: 456,
-      fromBlockId: "removed",
-      blocks: [{
-        id: "removed", role: "user", text: "archived prompt",
-        attachments: [{ id: "file-1", name: "notes.txt", mimeType: "text/plain", kind: "file", size: 12, path: "/repo/notes.txt", data: "ephemeral" }],
-      }],
-    }];
+    session.blocks = [
+      { id: "kept", role: "user", text: "retained", turnOutcome: "stopped", turnStoppedAt: 321 },
+    ];
+    session.rewindHistory = [
+      {
+        id: "rewind-1",
+        createdAt: 456,
+        fromBlockId: "removed",
+        blocks: [
+          {
+            id: "removed",
+            role: "user",
+            text: "archived prompt",
+            attachments: [
+              {
+                id: "file-1",
+                name: "notes.txt",
+                mimeType: "text/plain",
+                kind: "file",
+                size: 12,
+                path: "/repo/notes.txt",
+                data: "ephemeral",
+              },
+            ],
+          },
+        ],
+      },
+    ];
     session.pendingContextReplay = "retained transcript context";
 
     const payload = sanitizeSessionForPersist(session);
-    expect(payload.blocks).toEqual([{ id: "kept", role: "user", text: "retained", turnOutcome: "stopped", turnStoppedAt: 321 }]);
+    expect(payload.blocks).toEqual([
+      { id: "kept", role: "user", text: "retained", turnOutcome: "stopped", turnStoppedAt: 321 },
+    ]);
     expect(payload.rewindHistory?.[0].blocks[0]).toMatchObject({
       id: "removed",
       text: "archived prompt",
@@ -612,6 +634,8 @@ describe("sanitizeSessionForPersist", () => {
         { id: "m2", role: "assistant", text: "Because.", createdAt: 2 },
       ],
       model: "codex:gpt-5.4",
+      providerThreadId: "side-provider-thread",
+      providerAccountId: "account-a",
       modelSettings: {
         reasoningEffort: "high",
         serviceTier: "fast",
@@ -950,22 +974,26 @@ describe("persistFingerprint", () => {
     const before = base([user]);
     const archive: Session = {
       ...before,
-      rewindHistory: [{
-        id: "rewind-1",
-        createdAt: 1,
-        fromBlockId: "u1",
-        blocks: [{ id: "removed", role: "user", text: "archived" }],
-      }],
+      rewindHistory: [
+        {
+          id: "rewind-1",
+          createdAt: 1,
+          fromBlockId: "u1",
+          blocks: [{ id: "removed", role: "user", text: "archived" }],
+        },
+      ],
       pendingContextReplay: "retained context",
     };
     expect(persistFingerprint(archive)).not.toBe(persistFingerprint(before));
     expect(persistFingerprint({ ...archive, pendingContextReplay: undefined })).not.toBe(
       persistFingerprint(archive),
     );
-    expect(persistFingerprint({
-      ...before,
-      blocks: [{ ...user, turnOutcome: "stopped", turnStoppedAt: 10 }],
-    })).not.toBe(persistFingerprint(before));
+    expect(
+      persistFingerprint({
+        ...before,
+        blocks: [{ ...user, turnOutcome: "stopped", turnStoppedAt: 10 }],
+      }),
+    ).not.toBe(persistFingerprint(before));
   });
 
   it("changes when a block in the middle is replaced", () => {

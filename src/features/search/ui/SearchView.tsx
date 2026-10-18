@@ -50,6 +50,7 @@ import {
   peekProjectFiles,
   rankProjectFiles,
   recentOpenedFiles,
+  subscribeProjectFiles,
 } from "../../files/model/fileIndex";
 import { pathKey, prettyCwd } from "../../../shared/lib/paths";
 import { useRetainedState } from "../../../shared/hooks/useRetainedState";
@@ -196,14 +197,24 @@ export function SearchView({
       setFileIndex({ cwd, files: [] });
       return;
     }
-    const cached = peekProjectFiles(cwd);
-    setFileIndex({ cwd, files: cached ?? [] });
     let cancelled = false;
-    void loadProjectFiles(cwd).then((next) => {
-      if (!cancelled) setFileIndex({ cwd, files: next });
-    });
+    let revision = 0;
+    const refresh = (activate = false) => {
+      const requestedRevision = ++revision;
+      const cached = peekProjectFiles(cwd);
+      setFileIndex({ cwd, files: cached ?? [] });
+      if (cached && !activate) return;
+      void loadProjectFiles(cwd)
+        .then((next) => {
+          if (!cancelled && revision === requestedRevision) setFileIndex({ cwd, files: next });
+        })
+        .catch(() => undefined);
+    };
+    const unsubscribe = subscribeProjectFiles(() => refresh());
+    refresh(true);
     return () => {
       cancelled = true;
+      unsubscribe();
     };
   }, [cwd, open]);
 

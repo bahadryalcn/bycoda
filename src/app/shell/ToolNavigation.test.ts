@@ -4,7 +4,7 @@ import { createRoot } from "react-dom/client";
 import { afterEach, expect, it, vi } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
 import { ToolHeader, ToolNavigationContext, ToolPanel } from "./ToolNavigation";
-import type { ToolId } from "../model/toolWindows";
+import type { ToolId, WorkspaceToolId } from "../model/toolWindows";
 import { routeWindowDestination } from "../model/windowNavigation";
 
 vi.mock("../model/windowNavigation", () => ({
@@ -22,7 +22,12 @@ afterEach(async () => {
   vi.mocked(routeWindowDestination).mockResolvedValue(false);
 });
 
-async function mount(notesEnabled = true, grouped = true) {
+async function mount(
+  notesEnabled = true,
+  grouped = true,
+  active: WorkspaceToolId = "tasks",
+  includeServers = false,
+) {
   const container = document.createElement("div");
   document.body.append(container);
   const root = createRoot(container);
@@ -32,13 +37,57 @@ async function mount(notesEnabled = true, grouped = true) {
     root.render(
       h(
         ToolNavigationContext.Provider,
-        { value: { active: "tasks", cwd: "/repo", notesEnabled, grouped, onSelect } },
+        { value: { active, cwd: "/repo", notesEnabled, grouped, onSelect, includeServers } },
         h(ToolHeader, null, "Title"),
       ),
     ),
   );
   return { container, onSelect };
 }
+
+it("includes Servers in the main workspace and keeps its header local", async () => {
+  const { container, onSelect } = await mount(true, true, "servers", true);
+  expect(container.querySelectorAll('[role="tab"]')).toHaveLength(6);
+  const selected = container.querySelector<HTMLButtonElement>('[aria-selected="true"]')!;
+  expect(selected.textContent).toBe("Servers");
+  expect(container.querySelector('[aria-label="Open in new window"]')).toBeNull();
+  expect(container.querySelector('[aria-label="Open all tools in one window"]')).toBeNull();
+  await act(() =>
+    selected.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true })),
+  );
+  expect(onSelect).toHaveBeenCalledWith("social");
+  expect(invoke).not.toHaveBeenCalled();
+});
+
+it("hands keyboard focus to the header of the newly visible retained tool", async () => {
+  function Workspace() {
+    const [active, onSelect] = useState<WorkspaceToolId>("servers");
+    return h(
+      ToolNavigationContext.Provider,
+      { value: { active, cwd: "", notesEnabled: true, includeServers: true, onSelect } },
+      ...(["servers", "social"] as const).map((tool) =>
+        h(ToolPanel, { key: tool, active: active === tool }, h(ToolHeader, null, tool)),
+      ),
+    );
+  }
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  roots.push(root);
+  await act(() => root.render(h(Workspace)));
+  const selected = container.querySelector<HTMLButtonElement>('[aria-selected="true"]')!;
+  selected.focus();
+  await act(() =>
+    selected.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true })),
+  );
+  expect(document.activeElement?.textContent).toBe("Social Media");
+  await act(() =>
+    document.activeElement!.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Home", bubbles: true }),
+    ),
+  );
+  expect(document.activeElement?.textContent).toBe("Servers");
+});
 
 it("shows only the selected tool in an individual window and offers the combined window", async () => {
   const { container } = await mount(true, false);

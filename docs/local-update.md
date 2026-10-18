@@ -102,6 +102,16 @@ closes after its active turn ends. Verify the macOS bundle signature/version,
 Windows installer checksum, and installed binary against the built artifact.
 Keep rollback files. This local pipeline does not notarize macOS bundles.
 
+Windows app updates snapshot the complete installation directory under the package's
+`rollback-app/installation/`, with file hashes in `windows-installation-hashes.json`.
+If setup or executable verification fails, the helper stops the replacement,
+restores and verifies that directory, and restarts the old app only if it was running
+before the update. The update remains failed. The failed installation is retained
+on the installation volume; `rollback-app/windows-recovery.json` records its path.
+App databases are preserved, not rolled back. Installer registry metadata, shortcuts
+and system dependencies are outside this file rollback and may require installer
+repair; neither a file rollback nor the synthetic tests prove a real installer repair.
+
 macOS staging and rollback bundles stay on the Applications volume under
 `/Applications/.bycoda-update.noindex/<package-id>/` as `staged.bundle` and
 `previous.bundle`. Only the active `/Applications/bycoda.app` has an `.app`

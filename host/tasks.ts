@@ -400,10 +400,9 @@ function reviewerReply(blocks: ReturnType<HostStore["session"]>["session"]["bloc
   return "";
 }
 
-/** Works through this machine's task backlog with no desktop open. Each task
- * runs as an ordinary host session, on a branch of its own when its project
- * is a git repository, is verified, and then waits in review. Nothing reaches
- * the project checkout until the task is approved. */
+/** Works through this machine's task backlog with no desktop open. Explicit
+ * direct tasks share the selected checkout; other tasks require an isolated
+ * Git worktree and wait for approval before delivery to the project checkout. */
 export class HostTasks {
   private timer?: ReturnType<typeof setInterval>;
   private ticking?: Promise<void>;
@@ -565,6 +564,13 @@ export class HostTasks {
    * that is not running or finished. An edit keeps the task's status. */
   save(raw: unknown): HostTask {
     const input = parseHostTask(raw);
+    const graph = new Map(this.list().map((task) => [task.id, task]));
+    graph.set(input.id, input as HostTask);
+    const cycle = this.dependencyCycle(input.id, graph);
+    if (cycle)
+      throw new Error(
+        `Task dependency cycle: ${cycle.join(" -> ")}. Remove a dependency to continue.`,
+      );
     const requested = (raw as { status?: unknown }).status;
     if (requested !== undefined && !isNewTaskStatus(requested))
       throw new Error("A new task starts as to do or queued.");
@@ -1051,7 +1057,14 @@ export class HostTasks {
     );
     for (const task of initial) {
       try {
-        if (
+        const cycle = task.status === "queued" ? this.dependencyCycle(task.id, byId) : undefined;
+        if (cycle)
+          this.block(
+            task,
+            `Task dependency cycle: ${cycle.join(" -> ")}. Edit the dependencies before requeuing.`,
+            now,
+          );
+        else if (
           task.status === "blocked" &&
           task.error === HOST_INTERRUPTED &&
           this.canResumeAfterHostStop(task)
@@ -1136,6 +1149,28 @@ export class HostTasks {
   private find(id: string): HostTask | undefined {
     const row = this.store.db.prepare("SELECT value FROM tasks WHERE id=?").get(id);
     return row ? this.withReviewNotes(JSON.parse(String(row.value)) as HostTask) : undefined;
+  }
+
+  /** Missing forward references are valid; only a closed dependency path blocks. */
+  private dependencyCycle(
+    id: string,
+    graph: ReadonlyMap<string, Pick<HostTask, "dependsOn">>,
+  ): string[] | undefined {
+    const visited = new Set<string>();
+    const path: string[] = [];
+    const visit = (current: string): string[] | undefined => {
+      const index = path.indexOf(current);
+      if (index !== -1) return [...path.slice(index), current];
+      if (visited.has(current)) return;
+      path.push(current);
+      for (const dependency of graph.get(current)?.dependsOn ?? []) {
+        const cycle = visit(dependency);
+        if (cycle) return cycle;
+      }
+      path.pop();
+      visited.add(current);
+    };
+    return visit(id);
   }
 
   private owningGoal(id: string): HostGoal | undefined {
@@ -1435,7 +1470,11 @@ export class HostTasks {
     if (task.isolate === false)
       return { ...task, worktreeCwd: targetCwd !== project.cwd ? targetCwd : undefined };
     const base = await checkoutBase(targetCwd);
-    if (!base) return task;
+    if (!base) {
+      throw new Error(
+        "Cannot create an isolated task workspace here. Open the Git repository root and verify Git can read it, or turn off “Run on its own branch”.",
+      );
+    }
     const branch = task.workspace?.branchName ?? `mc/${randomUUID().replace(/-/g, "").slice(0, 8)}`;
     const tree = await createHostWorktree(targetCwd, branch, "HEAD", false);
     return {

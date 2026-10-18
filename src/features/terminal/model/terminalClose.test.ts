@@ -39,6 +39,21 @@ describe("confirmCloseTerminal", () => {
       dialogOptions,
     );
   });
+
+  it.each([false, true])(
+    "asks conservatively for unsupported or failed status (failed=%s)",
+    async (failed) => {
+      const file = newTerminalFile("/repo", "work");
+      if (failed) getPtyStatus.mockRejectedValue(new Error("connection lost"));
+      else getPtyStatus.mockResolvedValue({ foreground: null, supported: false });
+      ask.mockResolvedValue(false);
+      await expect(confirmCloseTerminal(file)).resolves.toBe(false);
+      expect(ask).toHaveBeenCalledWith(
+        expect.stringContaining("Closing may stop running work"),
+        dialogOptions,
+      );
+    },
+  );
 });
 
 describe("confirmCloseTerminals", () => {
@@ -59,6 +74,24 @@ describe("confirmCloseTerminals", () => {
     await expect(confirmCloseTerminals([first, second])).resolves.toBe(true);
     expect(ask).toHaveBeenCalledWith(
       "These terminals are still running:\n• dev (vite)\n• test (jest)\n\nClose them anyway?",
+      dialogOptions,
+    );
+  });
+
+  it("includes unknown status in a group while excluding confirmed idle shells", async () => {
+    const files = [
+      newTerminalFile("/repo", "unknown"),
+      newTerminalFile("/repo", "idle"),
+      newTerminalFile("/repo", "build"),
+    ];
+    getPtyStatus
+      .mockResolvedValueOnce({ foreground: null, supported: false })
+      .mockResolvedValueOnce({ foreground: null, supported: true })
+      .mockResolvedValueOnce({ foreground: "cargo", supported: true });
+    ask.mockResolvedValue(false);
+    await expect(confirmCloseTerminals(files)).resolves.toBe(false);
+    expect(ask).toHaveBeenCalledWith(
+      "These terminals may still have running processes:\n• unknown (process status unknown)\n• build (cargo)\n\nClose them anyway?",
       dialogOptions,
     );
   });

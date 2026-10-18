@@ -1888,7 +1888,7 @@ function ConnectedRemoteSession({
       options?.draftBlockId,
       planBlockId,
     );
-    if (queuedId) turn.queued = queue.dispatch(queuedId);
+    if (queuedId) turn.queued = queue.dispatch(queuedId, options?.followUpBehavior === "steer");
     const generation = ++submissionGeneration.current;
     preparingRef.current = true;
     preparingTurn.current = turn;
@@ -2725,14 +2725,10 @@ function ConnectedRemoteSession({
     onQueuedMessageEditingChange: (_, id) => queue.setEditing(id),
     onReorderQueuedMessages: (_, ids) => queue.reorder(ids),
     onSteerQueuedMessage: (_, id) => {
-      if (!busy) {
-        queue.release();
-        return;
-      }
-      if (!remoteCanSteer) return;
+      if (!remoteCanSteer || sending || pending || preparingRef.current) return;
       const generation = followUpGeneration.current;
       void (async () => {
-        if (!(await queue.prepareSend())) return;
+        if (!(await queue.prepareSend(true))) return;
         if (generation !== followUpGeneration.current || !alive.current) return;
         const message = queue.current().messages.find((entry) => entry.id === id);
         if (!message) return;

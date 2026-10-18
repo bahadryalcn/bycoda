@@ -49,7 +49,12 @@ export function mergeQueueChange(current: SharedQueue, change: QueueChange): Sha
       messages.push(rows.get(row.id)!);
   const oldOrder = before.messages.filter((row) => next.has(row.id)).map((row) => row.id);
   const newOrder = after.messages.filter((row) => old.has(row.id)).map((row) => row.id);
-  if (!sameQueueValue(oldOrder, newOrder)) {
+  const appendedOrder = [
+    ...oldOrder,
+    ...after.messages.filter((row) => !old.has(row.id)).map((row) => row.id),
+  ];
+  const requestedOrder = after.messages.map((row) => row.id);
+  if (!sameQueueValue(appendedOrder, requestedOrder)) {
     if (current.claim) throw new Error("Wait for the queued send before changing its order.");
     const currentOrder = current.messages
       .filter((row) => old.has(row.id) && next.has(row.id))

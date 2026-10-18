@@ -7,7 +7,8 @@ import { homedir } from "node:os";
 import { HandoffHistoryStore } from "./handoff-history";
 import { buildBudgetedHandoff, handoffHistory } from "../src/features/sessions/model/handoffBudget";
 import { renameHostWorktreeBranch, resolveHostWorktree } from "./git-worktrees";
-import { applyHarnessEvent, stopStreaming } from "../src/integrations/harness/core/apply";
+import { applyHarnessEvent, promoteLastAssistantToPlan, stopStreaming } from "../src/integrations/harness/core/apply";
+import { approvedPlanForMessage, buildPlanPrompt, isBuildablePlan, planTurnPrompt } from "../src/features/sessions/model/plan";
 import { changedBlocks, type BlockChanges } from "../src/features/sessions/model/blockChanges";
 import { resolveModel } from "../src/features/sessions/model/models";
 import {
@@ -883,15 +884,15 @@ export class HostEngine {
               ? value.session.blocks.find(
                   (block) => block.id === command.planBlockId && block.role === "plan",
                 )
-              : undefined;
+              : command.type === "send" && (command.intent ?? "default") === "default" &&
+                  !command.draftBlockId && !command.attachments?.length
+                ? approvedPlanForMessage(value.session, command.text)
+                : undefined;
+          const turnIntent = plan ? "build" : command.type === "send" ? command.intent : undefined;
           if (
             command.type === "send" &&
-            command.planBlockId &&
-            (!plan ||
-              !plan.text.trim() ||
-              plan.streaming ||
-              plan.plan?.status === "building" ||
-              plan.plan?.status === "built")
+            (command.planBlockId || command.intent === "build") &&
+            (!plan || !isBuildablePlan(plan))
           )
             throw new Error("Plan is not ready to build");
           const attachments =
@@ -997,6 +998,10 @@ export class HostEngine {
             },
           };
           effect = (saved) => {
+            const turnText = command.type === "send"
+              ? plan ? buildPlanPrompt(plan.text)
+                : turnIntent === "plan" ? planTurnPrompt(command.text) : command.text
+              : "";
             const handoffBlock = handoffText
               ? `<previous_agent_context>\n${handoffText}\n</previous_agent_context>\n\n`
               : "";
@@ -1011,8 +1016,8 @@ export class HostEngine {
                 ? null
                 : codexGoal
                   ? command.text
-                  : withShellContext(shellRuns, `${handoffBlock}${command.text}`),
-              command.type === "send" ? command.intent : undefined,
+                  : withShellContext(shellRuns, `${handoffBlock}${turnText}`),
+              turnIntent,
               attachments,
               command.resumeAtReset,
               handoffText ? handoffFrom : undefined,
@@ -1670,8 +1675,11 @@ export class HostEngine {
               : active.cancelled
                 ? "Stopped by you."
                 : error;
+          const finalized = intent === "plan" && !message
+            ? { ...latest, session: promoteLastAssistantToPlan(stopStreaming(latest.session), `plan:${runId}`) }
+            : latest;
           const settled = this.settled(
-            latest,
+            finalized,
             this.closing || active.persistenceFailed ? "interrupted" : "idle",
             message,
             Date.now(),

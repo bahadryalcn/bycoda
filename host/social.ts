@@ -1,6 +1,7 @@
 import { randomUUID, createHash, randomBytes, timingSafeEqual, createHmac } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { isDeepStrictEqual } from "node:util";
 import type { HostStore } from "./store";
 import type { HostSession } from "../src/features/connections/model/protocol";
 import type {
@@ -28,6 +29,7 @@ import type {
 import {
   SOCIAL_COLLECTIONS,
   SOCIAL_PLATFORMS,
+  SOCIAL_ACCOUNT_TYPES,
   SOCIAL_TOOLS,
 } from "../src/features/social/model/social";
 import { accountCapabilities } from "../src/integrations/social/capabilities";
@@ -39,6 +41,7 @@ import {
 } from "../src/integrations/social/adapter";
 import { contentSupport } from "../src/integrations/social/platformAdapters";
 import { validatePublishingText } from "../src/integrations/social/publishingFormats";
+import { parseTikTokOptions } from "../src/integrations/social/tiktok";
 import type { SocialCredentialStore, SocialCredential } from "./social-credentials";
 import { SocialVideoUploads } from "./social-media";
 import {
@@ -235,6 +238,7 @@ export class SocialService {
             "scheduledAt",
             "factIds",
             "youtube",
+            "tiktok",
           ]);
           const account = this.get<SocialAccount>("account", variant.accountId);
           this.assertLength(
@@ -396,6 +400,14 @@ export class SocialService {
     kind: "content" | "comment" | "message",
     text: string,
   ) {
+    if (
+      kind === "message" &&
+      (account.platform === "whatsapp" || account.platform === "telegram") &&
+      text.length > 4096
+    )
+      throw new Error(
+        "Platform message limit exceeded: 4096 UTF-16 characters. Shorten the message.",
+      );
     const maximum = socialLimit(this.policy(account), kind);
     if (maximum !== undefined && socialCharacterCount(text) > maximum)
       throw new Error(
@@ -517,6 +529,7 @@ export class SocialService {
   }
   /** Removes the persistent browser profile of a browser-session account. */
   forgetBrowserSession?: (accountId: string) => Promise<void>;
+  cancelBrowserWorkflow?: (accountId: string) => Promise<void>;
   private adapterFor(account: SocialAccount): SocialAdapter {
     if (account.connection !== "browser") return this.adapters[account.platform];
     if (account.platform !== "x" || !this.browserAdapter)
@@ -898,19 +911,7 @@ export class SocialService {
           throw new Error("Unsupported social platform.");
         const platform = input.platform as SocialAccount["platform"];
         const accountType = input.accountType as SocialAccount["accountType"];
-        if (
-          !(
-            platform === "x"
-              ? ["member"]
-              : platform === "instagram"
-                ? ["professional"]
-                : platform === "facebook"
-                  ? ["page"]
-                  : platform === "youtube"
-                    ? ["channel"]
-                    : ["member", "organization"]
-          ).includes(accountType)
-        )
+        if (!(SOCIAL_ACCOUNT_TYPES[platform] as readonly string[]).includes(accountType))
           throw new Error("Unsupported social account type.");
         const projects = array(input.projectIds ?? [], "projects");
         projects.forEach((id) => this.store.project(id));
@@ -954,9 +955,10 @@ export class SocialService {
         account.paused = true;
         this.put("account", account.id, account);
         this.setSetting(`connectionEpoch:${account.id}`, randomUUID());
+        await this.cancelBrowserWorkflow?.(account.id);
         await this.changeCredentials(account.id, async () => {
           await this.credentials.delete(account.id);
-          if (account.connection === "browser") await this.forgetBrowserSession?.(account.id);
+          await this.forgetBrowserSession?.(account.id);
         });
         return account;
       }
@@ -965,6 +967,7 @@ export class SocialService {
         const account = this.access(p, str(input.accountId, "account"), "read");
         if (this.jobs().some((job) => job.accountId === account.id && job.status === "running"))
           throw new Error("Wait for the active send before changing executor ownership.");
+        await this.cancelBrowserWorkflow?.(account.id);
         account.executorId = str(input.executorId, "executor", 200);
         account.paused = true;
         return this.put("account", account.id, account);
@@ -1134,16 +1137,25 @@ export class SocialService {
         return this.createDraft(p, action, input);
       case "drafts.approve": {
         this.owner(p);
-        const draft = this.get<SocialDraft>("draft", str(input.id, "draft"));
-        this.access(p, draft.accountId, "read");
-        if (draft.reviewReason)
-          throw new Error("Review and replace this draft before approving it.");
-        if (draft.generation && draft.generation.status !== "completed")
-          throw new Error("Wait for AI generation or replace this draft before approving it.");
-        draft.approvedAt = this.now();
-        this.put("draft", draft.id, draft);
-        this.approve(p, draft.id, draft);
-        return draft;
+        exact(input, ["id", "reviewedDraft"]);
+        return this.transaction(() => {
+          const draft = this.get<SocialDraft>("draft", str(input.id, "draft"));
+          this.access(p, draft.accountId, "read");
+          // Compare the entire preview, including recipient and conversation context.
+          // This synchronous check and approval have no await at which an edit can interleave.
+          if (!input.reviewedDraft || !isDeepStrictEqual(input.reviewedDraft, draft))
+            throw new Error(
+              "Draft preview changed or is missing. Refresh and review the full draft before approving.",
+            );
+          if (draft.reviewReason)
+            throw new Error("Review and replace this draft before approving it.");
+          if (draft.generation && draft.generation.status !== "completed")
+            throw new Error("Wait for AI generation or replace this draft before approving it.");
+          draft.approvedAt = this.now();
+          this.put("draft", draft.id, draft);
+          this.approve(p, draft.id, draft);
+          return draft;
+        });
       }
       case "drafts.update":
         return this.updateDraft(p, input);
@@ -1257,7 +1269,7 @@ export class SocialService {
       case "jobs.cancel": {
         const job = this.job(str(input.id, "job"));
         this.jobAccess(p, job);
-        if (job.status === "running")
+        if (job.status === "running" || job.preparation?.tiktokPublishId)
           throw new Error(
             "A dispatched send cannot be recalled. Stop the account to prevent later sends.",
           );
@@ -2248,6 +2260,7 @@ export class SocialService {
             media: variant.media,
             link: variant.link,
             youtube: variant.youtube,
+            tiktok: variant.tiktok,
           },
           status: "queued",
           scheduledAt: this.now(),
@@ -2280,7 +2293,16 @@ export class SocialService {
     const variants: CampaignVariant[] = input.variants.map((raw) => {
       if (!raw || typeof raw !== "object") throw new Error("Invalid campaign variant.");
       const value = raw as Record<string, unknown>;
-      exact(value, ["accountId", "text", "media", "link", "scheduledAt", "factIds", "youtube"]);
+      exact(value, [
+        "accountId",
+        "text",
+        "media",
+        "link",
+        "scheduledAt",
+        "factIds",
+        "youtube",
+        "tiktok",
+      ]);
       const accountId = str(value.accountId, "account");
       const account = this.access(p, accountId, "draft");
       for (const projectId of projectIds)
@@ -2290,6 +2312,12 @@ export class SocialService {
       this.facts(projectIds, factIds);
       this.assertLength(account, "content", [value.text, value.link].filter(Boolean).join("\n"));
       let youtube: CampaignVariant["youtube"];
+      let tiktok: CampaignVariant["tiktok"];
+      if (value.tiktok !== undefined) {
+        if (account.platform !== "tiktok")
+          throw new Error("TikTok metadata requires a TikTok account.");
+        tiktok = parseTikTokOptions(value.tiktok);
+      }
       if (value.youtube !== undefined) {
         if (
           account.platform !== "youtube" ||
@@ -2323,6 +2351,7 @@ export class SocialService {
         scheduledAt: finite(value.scheduledAt ?? this.now(), "publish time"),
         factIds,
         ...(youtube ? { youtube } : {}),
+        ...(tiktok ? { tiktok } : {}),
       };
     });
     if (new Set(variants.map((variant) => variant.accountId)).size !== variants.length)
@@ -2441,6 +2470,7 @@ export class SocialService {
             media: variant.media,
             link: variant.link,
             youtube: variant.youtube,
+            tiktok: variant.tiktok,
           },
           status: "queued",
           scheduledAt: variant.scheduledAt,
@@ -2510,7 +2540,7 @@ export class SocialService {
   }
   private updateDraft(p: SocialPrincipal, input: Record<string, unknown>): SocialDraft {
     this.owner(p);
-    exact(input, ["id", "text", "factIds"]);
+    exact(input, ["id", "text", "factIds", "media"]);
     const draft = this.get<SocialDraft>("draft", str(input.id, "draft"));
     const account = this.access(p, draft.accountId, "draft");
     this.project(p, draft.projectId);
@@ -2546,6 +2576,24 @@ export class SocialService {
       text,
     );
     draft.text = text;
+    if (input.media !== undefined) {
+      const media = this.parseMedia(input.media);
+      if (media.length && account.platform !== "x")
+        throw new Error("Draft media is supported for X only.");
+      if (media.length) this.capability(account, "media");
+      const issue = contentSupport(account, {
+        kind: draft.kind,
+        payload: {
+          text,
+          media,
+          recipientId:
+            thread?.kind === "message" || draft.kind === "message" ? contact.platformId : undefined,
+          postId: thread?.kind === "comment" ? thread.platformThreadId : draft.postId,
+        },
+      });
+      if (issue) throw new Error(issue);
+      draft.media = media;
+    }
     draft.factIds = factIds;
     delete draft.generation;
     delete draft.ruleId;
@@ -2612,7 +2660,7 @@ export class SocialService {
         kind,
         payload: {
           text: draft.text,
-          media: [],
+          media: draft.media ?? [],
           recipientId:
             thread?.kind === "comment" || (kind === "comment" && account.platform !== "youtube")
               ? undefined
@@ -2648,7 +2696,9 @@ export class SocialService {
       this.capability(account, thread.kind === "message" ? "message.reply" : "reply");
       if (
         thread.kind === "message" &&
-        (account.platform === "instagram" || account.platform === "facebook") &&
+        (account.platform === "instagram" ||
+          account.platform === "facebook" ||
+          account.platform === "whatsapp") &&
         (!thread.replyUntil || thread.replyUntil <= this.now())
       )
         throw new Error("Platform response window expired.");
@@ -3254,6 +3304,24 @@ export class SocialService {
     this.owner(p);
     return this.access(p, accountId, "read");
   }
+  accountForBrowserManagement(p: SocialPrincipal, accountId: string, writing: boolean) {
+    const account = this.accountForOAuth(p, accountId);
+    if (writing && this.setting("stopped") === "true")
+      throw new Error("Social automation is stopped.");
+    return account;
+  }
+  async tiktokCreator(p: SocialPrincipal, accountId: string) {
+    const account = this.accountForOAuth(p, accountId);
+    if (account.platform !== "tiktok") throw new Error("Choose a TikTok account.");
+    this.capability(account, "publish");
+    const credential = await this.credentialFor(account.id);
+    if (!credential || (credential.expiresAt !== undefined && credential.expiresAt <= this.now()))
+      throw new SocialPlatformError("expired");
+    const adapter = this.adapterFor(account);
+    if (!adapter.creatorInfo)
+      throw new Error("TikTok creator settings are unavailable on this host.");
+    return adapter.creatorInfo(account, credential.accessToken);
+  }
   async uploadImage(p: SocialPrincipal, base64: string): Promise<{ uploadId: string }> {
     this.owner(p);
     const bytes = Buffer.from(base64, "base64");
@@ -3276,6 +3344,10 @@ export class SocialService {
       mode: 0o600,
     });
     return { uploadId };
+  }
+  async readOwnerMedia(p: SocialPrincipal, id: string) {
+    this.owner(p);
+    return this.readMedia(id);
   }
   async uploadVideo(p: SocialPrincipal, input: Record<string, unknown>) {
     this.owner(p);
@@ -3404,6 +3476,7 @@ export class SocialService {
               (account) =>
                 account.connected &&
                 !account.paused &&
+                account.connection !== "browser" &&
                 account.executorId === this.store.environmentId &&
                 account.expiresAt !== undefined &&
                 account.expiresAt <= this.now() + 60000 &&
@@ -3419,7 +3492,10 @@ export class SocialService {
           if (
             account.connected &&
             !account.paused &&
-            account.connection !== "browser" &&
+            (account.connection !== "browser" ||
+              accountCapabilities(account, this.now()).some(
+                (item) => item.operation === "poll" && item.status === "available",
+              )) &&
             account.executorId === this.store.environmentId &&
             Number(this.setting(`pollRate:${account.id}`) ?? 0) <= this.now()
           ) {
@@ -3439,16 +3515,26 @@ export class SocialService {
           }
         }
       if (this.setting("sending") !== "true") return;
-      for (const candidate of this.jobs()
-        .filter((job) => job.status === "queued" && job.scheduledAt <= this.now())
-        .slice(0, 20))
-        await this.execute(candidate.id);
+      let attempts = 0;
+      for (const candidate of this.jobs().filter(
+        (job) => job.status === "queued" && job.scheduledAt <= this.now(),
+      )) {
+        if (
+          attempts >= 20 ||
+          this.setting("stopped") === "true" ||
+          this.setting("sending") !== "true"
+        )
+          break;
+        // Held work retains its place, but consumes no dispatch capacity. The
+        // execution owner checks eligibility and counts only claimed attempts.
+        if (await this.execute(candidate.id)) attempts++;
+      }
       this.processPublishingPlans();
     } finally {
       this.busy = false;
     }
   }
-  private async execute(id: string): Promise<void> {
+  private async execute(id: string): Promise<boolean> {
     let job = this.job(id);
     const account = this.get<SocialAccount>("account", job.accountId);
     if (
@@ -3458,28 +3544,28 @@ export class SocialService {
       this.setting("stopped") === "true" ||
       this.setting("sending") !== "true"
     )
-      return;
-    if (job.campaignId && this.get<SocialCampaign>("campaign", job.campaignId).paused) return;
+      return false;
+    if (job.campaignId && this.get<SocialCampaign>("campaign", job.campaignId).paused) return false;
     if (job.programId && job.occurrenceId) {
       try {
         this.programs.canDispatch(job.programId, job.occurrenceId, job.accountId);
       } catch {
-        return;
+        return false;
       }
     }
     if (job.publishingPlanId) {
       const plan = this.get<PublishingPlanRecord>("publishing-plan", job.publishingPlanId);
-      if (!plan.enabled || plan.pendingJobId !== job.id) return;
+      if (!plan.enabled || plan.pendingJobId !== job.id) return false;
       if (!inPublishingWindow(plan.schedule, this.now())) {
         job.scheduledAt = nextPublishingWindow(plan.schedule, this.now());
         this.writeJob(job);
         plan.nextRunAt = job.scheduledAt;
         this.put("publishing-plan", plan.id, plan);
-        return;
+        return false;
       }
     }
     const cooldown = Number(this.setting(`rate:${account.id}`) ?? 0);
-    if (cooldown > this.now()) return;
+    if (cooldown > this.now()) return false;
     const claimed = this.transaction(() => {
       const current = this.job(id);
       if (current.status !== "queued") return false;
@@ -3497,10 +3583,13 @@ export class SocialService {
       job = current;
       return true;
     });
-    if (!claimed) return;
+    if (!claimed) return false;
     try {
       const check = () => {
         const currentAccount = this.get<SocialAccount>("account", account.id);
+        if (job.payload.media.length) this.capability(currentAccount, "media");
+        const mediaIssue = contentSupport(currentAccount, job);
+        if (mediaIssue) throw new Error(mediaIssue);
         const replyThread = job.draftId
           ? this.get<SocialDraft>("draft", job.draftId).threadId
           : undefined;
@@ -3542,6 +3631,13 @@ export class SocialService {
             this.programs.canDispatch(job.programId, job.occurrenceId, job.accountId);
           const campaign = this.get<SocialCampaign>("campaign", job.campaignId);
           if (campaign.paused) throw new Error("Campaign was paused before dispatch.");
+          for (const projectId of new Set([...job.projectIds, ...campaign.projectIds])) {
+            this.store.project(projectId);
+            if (!currentAccount.grants[projectId]?.includes("publish"))
+              throw new Error(
+                "Every campaign project needs publication permission for this account.",
+              );
+          }
           if (
             !this.approved(campaign.id, campaign) ||
             job.dedupeKey !== `campaign:${campaign.id}:${campaign.revision}:${job.accountId}`
@@ -3677,10 +3773,10 @@ export class SocialService {
         job.error = "Published; local interaction-history update requires review.";
       } else if (error instanceof SocialPlatformError) {
         job.error = error.message;
-        if (error.code === "rate_limit") {
+        if (error.code === "rate_limit" || error.code === "processing") {
           job.status = "queued";
           job.scheduledAt = error.retryAt ?? this.now() + 60_000;
-          delete job.dispatchedAt;
+          if (!job.preparation?.tiktokPublishId) delete job.dispatchedAt;
           this.setSetting(`rate:${account.id}`, String(job.scheduledAt));
         } else if (error.code === "unknown" && job.dispatchedAt) {
           const result = await this.adapterFor(account)
@@ -3714,6 +3810,7 @@ export class SocialService {
         .prepare("DELETE FROM social_locks WHERE account_id=? AND job_id=?")
         .run(account.id, id);
     }
+    return true;
   }
   async pollAccount(accountId: string): Promise<{ ingested: number }> {
     const account = this.get<SocialAccount>("account", accountId);
@@ -3742,10 +3839,28 @@ export class SocialService {
         this.setting(`cursor:${account.id}`),
       );
       const ingested = this.ingest(accountId, result.events);
+      this.setSetting(
+        `monitor:${account.id}`,
+        JSON.stringify({
+          checkedAt: this.now(),
+          status: result.coverage?.some((channel) => channel.status === "unavailable")
+            ? "partial"
+            : "healthy",
+          coverage: result.coverage ?? [],
+        }),
+      );
       if (result.cursor) this.setSetting(`cursor:${account.id}`, result.cursor);
       this.setSetting(`pollRate:${account.id}`, String(this.now() + 60_000));
       return { ingested };
     } catch (error) {
+      this.setSetting(
+        `monitor:${account.id}`,
+        JSON.stringify({
+          checkedAt: this.now(),
+          status: "blocked",
+          error: error instanceof SocialPlatformError ? error.code : "unknown",
+        }),
+      );
       if (error instanceof SocialPlatformError && error.code === "rate_limit")
         this.setSetting(`pollRate:${account.id}`, String(error.retryAt));
       if (error instanceof SocialPlatformError && error.code === "expired") {
@@ -3756,10 +3871,26 @@ export class SocialService {
       throw error;
     }
   }
+  monitoringStatus(
+    p: SocialPrincipal,
+    accountId: string,
+  ): import("../src/features/social/model/social").SocialMonitorStatus {
+    const account = this.access(p, accountId, "read");
+    const saved = this.setting(`monitor:${accountId}`);
+    return {
+      ...(saved ? JSON.parse(saved) : { status: "idle" }),
+      pollingEnabled: this.setting("polling") === "true" && this.setting("stopped") !== "true",
+      accountActive:
+        account.connected &&
+        !account.paused &&
+        account.executorId === this.store.environmentId &&
+        (account.expiresAt === undefined || account.expiresAt > this.now()),
+    };
+  }
   /** HMAC verifies the raw body before JSON parsing. Meta receiver routes by signed entry.id,
    * never by user-supplied social IDs. Only documented message/comment shapes are accepted. */
   webhook(
-    platform: "instagram" | "facebook",
+    platform: "instagram" | "facebook" | "whatsapp",
     raw: Buffer,
     signature: string,
     appSecret: string,
@@ -3769,6 +3900,57 @@ export class SocialService {
     const supplied = Buffer.from(signature.slice(7), "hex");
     if (supplied.length !== expected.length || !timingSafeEqual(expected, supplied))
       throw new Error("Invalid webhook signature.");
+    if (platform === "whatsapp") {
+      const payload = JSON.parse(raw.toString("utf8"));
+      if (payload.object !== "whatsapp_business_account" || !Array.isArray(payload.entry))
+        throw new Error("Unsupported webhook object.");
+      let ingested = 0;
+      for (const entry of payload.entry) {
+        for (const change of entry.changes ?? []) {
+          if (change.field !== "messages" || change.value?.messaging_product !== "whatsapp")
+            continue;
+          const value = change.value;
+          const account = this.list<SocialAccount>("account").find(
+            (item) =>
+              item.platform === "whatsapp" &&
+              item.platformId === value.metadata?.phone_number_id &&
+              item.connected &&
+              item.executorId === this.store.environmentId,
+          );
+          if (!account) continue;
+          const events: SocialInbound[] = [];
+          for (const message of value.messages ?? []) {
+            const at = Number(message.timestamp) * 1000;
+            if (
+              message.type !== "text" ||
+              typeof message.text?.body !== "string" ||
+              typeof message.id !== "string" ||
+              typeof message.from !== "string" ||
+              !/^\d{5,20}$/.test(message.from) ||
+              !Number.isSafeInteger(at) ||
+              at <= 0 ||
+              at > this.now() + 60_000
+            )
+              continue;
+            const contact = (value.contacts ?? []).find(
+              (item: { wa_id?: string }) => item.wa_id === message.from,
+            );
+            events.push({
+              eventId: message.id,
+              threadId: `participant:${message.from}`,
+              contactId: message.from,
+              contactName: String(contact?.profile?.name ?? message.from),
+              kind: "message",
+              text: message.text.body,
+              at,
+              replyUntil: at + 24 * 60 * 60_000,
+            });
+          }
+          ingested += this.ingest(account.id, events);
+        }
+      }
+      return { ingested };
+    }
     const payload = JSON.parse(raw.toString("utf8")) as {
       object?: string;
       entry?: {

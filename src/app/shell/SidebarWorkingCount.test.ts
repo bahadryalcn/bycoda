@@ -85,6 +85,20 @@ async function render() {
   await act(async () => {});
 }
 
+it("keeps Servers reachable in the compact rail before opening a project", async () => {
+  props.cwd = "";
+  props.projectRailOpen = false;
+  props.compactProjectRail = true;
+  props.onOpenServers = vi.fn();
+  props.serversActive = true;
+  await render();
+  const button = container.querySelector<HTMLButtonElement>('button[aria-label="Servers"]')!;
+  expect(button).not.toBeNull();
+  await act(async () => button.click());
+  expect(props.onOpenServers).toHaveBeenCalledOnce();
+  expect(props.onSelectProject).not.toHaveBeenCalled();
+});
+
 it("keeps Explorer and Changes reachable from the workspace beside a compact rail", async () => {
   props.projectRailOpen = false;
   props.compactProjectRail = true;

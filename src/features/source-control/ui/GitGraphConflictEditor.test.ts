@@ -121,6 +121,28 @@ it("stage hatasından sonra sonucu korur ve aynı dosyaya güvenle tekrar dener"
   expect(onResolved).toHaveBeenCalledOnce();
 });
 
+it.each(["\r\n", "\n"])(
+  "preserves %j context line endings and retries against the serialized disk",
+  async (eol) => {
+    const initial = `before\n${markers}after\n`.replace(/\n/g, eol);
+    let disk = initial;
+    vi.mocked(readTextFile).mockImplementation(async () => disk);
+    vi.mocked(writeTextFile).mockImplementation(async (_path, text) => {
+      disk = text;
+    });
+    vi.mocked(gitStageFile).mockRejectedValueOnce(new Error("Index temporarily locked"));
+    await mount();
+    await click("Accept Incoming");
+    await click("Save and stage");
+    expect(disk).toBe(`before${eol}theirs${eol}after${eol}`);
+    expect(onResolved).not.toHaveBeenCalled();
+    await click("Save and stage");
+    expect(writeTextFile).toHaveBeenCalledTimes(2);
+    expect(gitStageFile).toHaveBeenCalledTimes(2);
+    expect(onResolved).toHaveBeenCalledOnce();
+  },
+);
+
 it("binary conflict için metin okumadan tüm dosya tarafını çözer", async () => {
   vi.mocked(gitConflictStages).mockResolvedValue({ ...stages, binary: true });
   await mount();

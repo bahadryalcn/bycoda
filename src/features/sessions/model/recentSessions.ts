@@ -1,4 +1,5 @@
 import { sessionIssue } from "./sessionIssue";
+import { sessionActivityAt } from "./sessionActivity";
 import { pathKey } from "../../../shared/lib/paths";
 import { isRemoteProjectPath } from "../../projects/model/recents";
 import { sessionDisplayTitle, sessionNeedsInput, type HarnessId, type Session } from "./session";
@@ -91,16 +92,6 @@ function hasSentTurn(session: Session): boolean {
   return session.blocks.some((block) => block.role === "user" && !block.draft);
 }
 
-function lastTurnAt(session: Session): number {
-  for (let i = session.blocks.length - 1; i >= 0; i--) {
-    const block = session.blocks[i];
-    if (block.role === "user" && !block.draft) {
-      return (block.startedAt ?? 0) + (block.durationMs ?? 0);
-    }
-  }
-  return 0;
-}
-
 export function liveSessionInfos(
   sessions: readonly Session[],
   unseenFinishedIds: ReadonlySet<string> = new Set(),
@@ -126,7 +117,7 @@ export function liveSessionInfos(
             : unseenFinishedIds.has(session.id)
               ? "done"
               : undefined),
-      activityAt: lastTurnAt(session),
+      activityAt: sessionActivityAt(session),
     });
   }
   return infos;
@@ -189,7 +180,7 @@ export function buildRecentSessions({
       title: sessionDisplayTitle(info?.title ?? row.title, row.harness),
       harness: row.harness,
       model: info?.model || row.model,
-      updatedAt: active ? Math.max(row.updatedAt, now) : row.updatedAt,
+      updatedAt: Math.max(row.updatedAt, info?.activityAt ?? 0, active ? now : 0),
       pinned: !!row.pinned,
       pinnable: true,
       remote: isRemoteProjectPath(row.cwd),

@@ -53,6 +53,36 @@ it("shares one check and one download across both entry points and retains insta
       ),
     );
     expect(mocks.probe).toHaveBeenCalledOnce();
+    expect(document.querySelectorAll('[role="dialog"]')).toHaveLength(1);
+    expect(document.querySelector("details")?.textContent).toContain("Release details");
+    const later = Array.from(document.querySelectorAll("button")).find(
+      (button) => button.textContent === "Later (24 hours)",
+    )!;
+    await act(async () => later.click());
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
+    // Ctrl+B hides and restores the sidebar: remounting must not reopen the prompt.
+    await act(async () => root.render(null));
+    await act(async () => root.render(createElement(SidebarUpdateFooter)));
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
+    const manualTrigger = container.querySelector<HTMLButtonElement>(
+      '[aria-label="Update to 0.8.34"]',
+    )!;
+    await act(async () => manualTrigger.click());
+    expect(document.querySelector('[role="dialog"]')).not.toBeNull();
+    const dismiss = Array.from(document.querySelectorAll("button")).find(
+      (button) => button.textContent === "Later (24 hours)",
+    )!;
+    await act(async () => dismiss.click());
+    await act(async () =>
+      root.render(
+        createElement(
+          Fragment,
+          null,
+          createElement(SidebarUpdateFooter),
+          createElement(SidebarUpdateFooter),
+        ),
+      ),
+    );
     expect(container.querySelectorAll('[aria-label="Update to 0.8.34"]')).toHaveLength(2);
     let download!: Promise<void>;
     await act(async () => {
@@ -87,8 +117,10 @@ it("checks periodically, preserves available updates, and clears its timer on un
     expect(mocks.probe).toHaveBeenCalledTimes(2);
     expect(container.querySelector('[aria-label="Update to 0.8.34"]')).not.toBeNull();
     expect(document.querySelector('[role="dialog"]')).toBeNull();
+    mocks.probe.mockResolvedValue({ version: "0.8.40" });
     await act(async () => vi.advanceTimersByTimeAsync(30 * 60 * 1000));
     expect(mocks.probe).toHaveBeenCalledTimes(3);
+    expect(container.querySelector('[aria-label="Update to 0.8.40"]')).not.toBeNull();
   } finally {
     await act(async () => root.unmount());
   }

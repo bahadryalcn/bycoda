@@ -1,4 +1,4 @@
-import { Alert } from "../../../shared/ui/Alert";
+import { SettingsFeedback } from "./settingsControls";
 import { themePalette } from "../../../shared/theme/palette";
 import { t, useLocale } from "../../../shared/i18n";
 import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
@@ -538,9 +538,7 @@ export function ChatBackgroundCard({ appearance }: { appearance: AppearanceSetti
           </div>
         ) : null}
         {appearance.chatBackgroundError ? (
-          <Alert tone="danger" role="alert">
-            {appearance.chatBackgroundError}
-          </Alert>
+          <SettingsFeedback state="error">{appearance.chatBackgroundError}</SettingsFeedback>
         ) : null}
       </div>
       {hasImage ? (

@@ -13,7 +13,12 @@ import type { SidebarTabId } from "../../../features/settings/model/appearance";
 export interface QuickSessionLaunchDeps {
   appendTab: (tab: WorkspaceTab, cwd: string) => void;
   submitSession: Submit;
-  onSaveDraft: (id: string, prompt: string, attachments: Attachment[], requestId: string) => boolean;
+  onSaveDraft: (
+    id: string,
+    prompt: string,
+    attachments: Attachment[],
+    requestId: string,
+  ) => boolean;
   tabsRef: MutableRefObject<WorkspaceTab[]>;
   setTabs: (tabs: WorkspaceTab[]) => void;
   setActiveTabId: (id: string) => void;
@@ -22,6 +27,7 @@ export interface QuickSessionLaunchDeps {
   setInboxViewOpen: (open: boolean) => void;
   setNotesViewOpen: (open: boolean) => void;
   setAutomationsViewOpen: (open: boolean) => void;
+  setServersViewOpen?: (open: boolean) => void;
   setSidebarTab: (tab: SidebarTabId, project?: string) => void;
   setProjectCwd: Dispatch<SetStateAction<string>>;
   setRecents: Dispatch<SetStateAction<ReturnType<typeof loadRecents>>>;
@@ -40,6 +46,7 @@ export function useQuickSessionLaunch({
   setInboxViewOpen,
   setNotesViewOpen,
   setAutomationsViewOpen,
+  setServersViewOpen,
   setSidebarTab,
   setProjectCwd,
   setRecents,
@@ -94,6 +101,7 @@ export function useQuickSessionLaunch({
             setInboxViewOpen(false);
             setNotesViewOpen(false);
             setAutomationsViewOpen(false);
+            setServersViewOpen?.(false);
             setSidebarTab("sessions", cwd);
           },
           submit: submitSession,

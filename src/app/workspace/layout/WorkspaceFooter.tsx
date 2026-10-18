@@ -17,6 +17,7 @@ export interface WorkspaceFooterProps {
   searchViewOpen: boolean;
   inboxViewOpen: boolean;
   notesViewOpen: boolean;
+  serversViewOpen?: boolean;
   automationsViewOpen: boolean;
   settingsOpen: boolean;
   settingsSection: SettingsSectionId;
@@ -53,6 +54,7 @@ export function WorkspaceFooter({
   searchViewOpen,
   inboxViewOpen,
   notesViewOpen,
+  serversViewOpen = false,
   automationsViewOpen,
   settingsOpen,
   settingsSection,
@@ -87,6 +89,7 @@ export function WorkspaceFooter({
       {searchViewOpen ||
       inboxViewOpen ||
       notesViewOpen ||
+      serversViewOpen ||
       automationsViewOpen ||
       settingsOpen ? null : (
         <UsageFooter
@@ -111,7 +114,7 @@ export function WorkspaceFooter({
           inboxViewOpen ||
           (settingsOpen
             ? settingsSection === "usage"
-            : !searchViewOpen && !notesViewOpen && !automationsViewOpen)
+            : !searchViewOpen && !notesViewOpen && !serversViewOpen && !automationsViewOpen)
         }
         onSettings={onOpenSettings}
         onPullRequests={() => {

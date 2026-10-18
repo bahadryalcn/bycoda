@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { SocialHttp, SocialPlatformError, retryAfter } from "./adapter";
 import { contentSupport, createSocialAdapters } from "./platformAdapters";
-import { accountCapabilities } from "./capabilities";
+import { accountCapabilities, platformRequirements } from "./capabilities";
 import type { SocialAccount, SocialJob } from "../../features/social/model/social";
 const account = (platform: SocialAccount["platform"]): SocialAccount => ({
   id: "account",
@@ -33,6 +33,75 @@ const job = (kind: SocialJob["kind"] = "publish"): SocialJob => ({
   createdAt: 1,
 });
 describe("Resmi sosyal API adaptör sözleşmeleri", () => {
+  it("X API messages attach one uploaded image using the DM media category", async () => {
+    const fetcher = vi.fn(async (raw: string | URL | Request) =>
+      Response.json(
+        String(raw).includes("media/upload")
+          ? { data: { id: "500" } }
+          : { data: { dm_event_id: "600" } },
+      ),
+    );
+    const adapter = createSocialAdapters(new SocialHttp(fetcher)).x;
+    const message = job("message");
+    message.payload.recipientId = "123";
+    message.payload.media = [{ kind: "image", uploadId: "local" }];
+    await adapter.send(
+      account("x"),
+      message,
+      "synthetic",
+      async () => new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]),
+    );
+    const upload = fetcher.mock.calls[0][1]?.body as FormData;
+    expect(upload.get("media_category")).toBe("dm_image");
+    expect(JSON.parse(String(fetcher.mock.calls[1][1]?.body))).toMatchObject({
+      attachments: [{ media_id: "500" }],
+    });
+  });
+  it("X API never creates a post while the uploaded video is processing", async () => {
+    const fetcher = vi.fn(async (raw: string | URL | Request) => {
+      const path = String(raw);
+      if (path.endsWith("initialize"))
+        return Response.json({ data: { id: "500", expires_after_secs: 3600 } });
+      if (path.endsWith("append")) return new Response(null, { status: 204 });
+      return Response.json({
+        data: { processing_info: { state: "pending", check_after_secs: 5 } },
+      });
+    });
+    const publish = job();
+    publish.payload.media = [{ kind: "video", uploadId: "local" }];
+    await expect(
+      createSocialAdapters(new SocialHttp(fetcher)).x.send(
+        account("x"),
+        publish,
+        "synthetic",
+        async () => new Uint8Array([0, 0, 0, 12, 102, 116, 121, 112, 105, 115, 111, 109]),
+      ),
+    ).rejects.toMatchObject({ code: "processing" });
+    expect(fetcher.mock.calls.some(([url]) => String(url).endsWith("/tweets"))).toBe(false);
+  });
+  it.each(["x", "instagram", "facebook"] as const)(
+    "%s polling works with either authorized read channel and stays pending with no read scope",
+    (platform) => {
+      const a = account(platform);
+      const requirements = platformRequirements(platform, a.accountType);
+      for (const operation of ["inbox.read", "comments.read"] as const) {
+        a.scopes = requirements[operation].scopes;
+        expect(accountCapabilities(a).find((c) => c.operation === "poll")?.status).toBe(
+          "available",
+        );
+      }
+      a.scopes = [];
+      expect(accountCapabilities(a).find((c) => c.operation === "poll")?.status).toBe("pending");
+    },
+  );
+  it("Facebook message-only polling does not call comment discovery requiring extra permissions", async () => {
+    const fetcher = vi.fn(async (_url: unknown) => Response.json({ data: [] }));
+    const a = account("facebook");
+    a.scopes = ["pages_messaging"];
+    await createSocialAdapters(new SocialHttp(fetcher)).facebook.poll(a, "secret", []);
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    expect(String(fetcher.mock.calls[0][0])).toContain("/conversations?");
+  });
   it("Meta yorum ve mesaj sayfalarını kalıcı cursor ile okur; next URL içindeki token'ı kullanmaz", async () => {
     const fetcher = vi.fn(async (raw: string | URL | Request) => {
       const url = new URL(String(raw));
@@ -91,7 +160,7 @@ describe("Resmi sosyal API adaptör sözleşmeleri", () => {
       });
     });
     const acct = account("facebook");
-    acct.scopes = ["pages_read_user_content", "pages_messaging"];
+    acct.scopes = ["pages_read_engagement", "pages_read_user_content", "pages_messaging"];
     const adapter = createSocialAdapters(new SocialHttp(fetcher)).facebook;
     const first = await adapter.poll(acct, "synthetic-token", []);
     expect(first.cursor).not.toContain("synthetic-secret");
@@ -264,7 +333,7 @@ describe("Resmi sosyal API adaptör sözleşmeleri", () => {
     const fetcher = vi.fn(async (raw: string | URL | Request) =>
       Response.json(
         String(raw).includes("media/upload")
-          ? { data: { id: "media123" } }
+          ? { data: { id: "12345" } }
           : { data: { id: "post123" } },
       ),
     );
@@ -278,12 +347,12 @@ describe("Resmi sosyal API adaptör sözleşmeleri", () => {
       account("x"),
       publish,
       "synthetic-token",
-      async () => new Uint8Array([0x89, 0x50]),
+      async () => new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]),
       save,
     );
     const body = fetcher.mock.calls[0][1]?.body as FormData;
     expect((body.get("media") as Blob).type).toBe("image/png");
-    expect(save).toHaveBeenCalledWith({ mediaIds: ["media123"] });
+    expect(save).toHaveBeenCalledWith({ mediaIds: ["12345"] });
     await adapters.x.send(
       account("x"),
       publish,
@@ -406,7 +475,9 @@ describe("Resmi sosyal API adaptör sözleşmeleri", () => {
   it("uygulanmamış video ve yanlış medya şekli önizlemede gerekçesiyle reddedilir", () => {
     const publish = job();
     publish.payload.media = [{ kind: "video", url: "https://cdn.test/video.mp4" }];
-    expect(contentSupport(account("x"), publish)).toContain("Video");
+    expect(contentSupport(account("x"), publish)).toContain("host-uploaded");
+    publish.payload.media = [{ kind: "video", uploadId: "local" }];
+    expect(contentSupport(account("x"), publish)).toBeUndefined();
     publish.payload.media = [];
     expect(contentSupport(account("instagram"), publish)).toContain("exactly one");
   });

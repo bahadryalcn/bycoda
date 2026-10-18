@@ -2,10 +2,14 @@ import { useEffect, useId, useRef, useState } from "react";
 import type { Terminal } from "@xterm/xterm";
 import { SearchAddon } from "@xterm/addon-search";
 import { Button } from "../../../shared/ui/Button";
+import { Switch } from "../../../shared/ui/Switch";
+import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
+import { SplitButton } from "../../../shared/ui/SplitButton";
 import { SearchInput } from "../../../shared/ui/SearchInput";
 import { TextField } from "../../../shared/ui/TextField";
 import {
   ChevronDown,
+  CheckList,
   ChevronUp,
   Search,
   Terminal as TerminalIcon,
@@ -14,19 +18,31 @@ import {
 import { t, useLocale } from "../../../shared/i18n";
 import { isSingleLineCommand, terminalSuggestions } from "../model/terminalSuggestions";
 import styles from "./TerminalTools.module.css";
+import type { SshShellController } from "../model/sshShellIntegration";
+import { RemoteShellSuggestions } from "./RemoteShellSuggestions";
 
-export type TerminalTool = "search" | "command" | null;
+export type TerminalTool = "search" | "command" | "remote" | null;
 
 export function TerminalTools({
   terminal,
   mode,
   onModeChange,
   ready,
+  suggestionsAllowed = true,
+  remoteShell,
+  onEnableShellIntegration,
+  onSavedCommands,
+  onStartupReview,
 }: {
   terminal: Terminal | null;
   mode: TerminalTool;
   onModeChange: (mode: TerminalTool) => void;
   ready: boolean;
+  suggestionsAllowed?: boolean;
+  remoteShell?: SshShellController;
+  onEnableShellIntegration?: (shell?: "bash" | "zsh" | "powershell") => void;
+  onSavedCommands?: () => void;
+  onStartupReview?: () => Promise<void>;
 }) {
   useLocale();
   const [query, setQuery] = useState("");
@@ -34,13 +50,15 @@ export function TerminalTools({
   const [selected, setSelected] = useState(0);
   const [found, setFound] = useState(true);
   const [alternate, setAlternate] = useState(false);
+  const [reviewingStartup, setReviewingStartup] = useState(false);
+  const startupPending = useRef(false);
   const searchRef = useRef<SearchAddon | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const commandRef = useRef<HTMLInputElement>(null);
   const listId = useId();
-  const suggestions = terminalSuggestions(command);
+  const suggestions = terminalSuggestions(command, suggestionsAllowed ? "local" : "ssh");
   const choice = Math.min(selected, Math.max(0, suggestions.length - 1));
-  const canInsert = ready && !alternate && isSingleLineCommand(command);
+  const canInsert = suggestionsAllowed && ready && !alternate && isSingleLineCommand(command);
 
   useEffect(() => {
     if (!terminal) return;
@@ -88,6 +106,7 @@ export function TerminalTools({
   }, [mode]);
 
   const close = () => {
+    if (mode === "remote") remoteShell?.dismiss();
     onModeChange(null);
     terminal?.focus();
   };
@@ -98,6 +117,7 @@ export function TerminalTools({
   const insert = () => {
     if (
       !ready ||
+      !suggestionsAllowed ||
       !terminal ||
       !isSingleLineCommand(command) ||
       terminal.buffer.active.type === "alternate"
@@ -175,20 +195,97 @@ export function TerminalTools({
             <Search size={14} />
           </Button>
         )}
-        <Button
-          variant="ghost"
-          size="sm"
-          title={`${t("Command suggestions")} (Ctrl+Space)`}
-          aria-label={t("Command suggestions")}
-          aria-pressed={mode === "command"}
-          disabled={!ready || alternate}
-          onClick={() => {
-            if (mode === "command") close();
-            else onModeChange("command");
-          }}
-        >
-          <TerminalIcon size={14} />
-        </Button>
+        {suggestionsAllowed && (
+          <Button
+            variant="ghost"
+            size="sm"
+            title={`${t("Command suggestions")} (Ctrl+Space)`}
+            aria-label={t("Command suggestions")}
+            aria-pressed={mode === "command"}
+            disabled={!ready || alternate}
+            onClick={() => {
+              if (mode === "command") close();
+              else onModeChange("command");
+            }}
+          >
+            <TerminalIcon size={14} />
+          </Button>
+        )}
+        {onEnableShellIntegration ? (
+          <SplitButton
+            variant="ghost"
+            size="sm"
+            disabled={!ready}
+            label={`${t("Bash suggestions")} (4.4+)`}
+            menuLabel={t("Shell suggestions")}
+            actions={[
+              {
+                id: "zsh",
+                label: `${t("Zsh suggestions")} (5.1+)`,
+                onSelect: () => onEnableShellIntegration("zsh"),
+              },
+              {
+                id: "powershell",
+                label: `${t("PowerShell suggestions")} (7+ · PSReadLine 2.4+)`,
+                onSelect: () => onEnableShellIntegration("powershell"),
+              },
+            ]}
+            title={`${t(
+              "Opens a new Bash terminal with session-only suggestions. No remote shell files are changed.",
+            )} (Bash 4.4+ · ls/cd/pwd/git)`}
+            onClick={() => onEnableShellIntegration("bash")}
+          />
+        ) : null}
+        {remoteShell ? (
+          <Button
+            variant="ghost"
+            size="sm"
+            disabled={!ready || alternate}
+            loading={remoteShell.waiting}
+            aria-label={t("Remote command suggestions")}
+            title={`${t("Remote command suggestions")} (Ctrl+Space)`}
+            aria-pressed={mode === "remote"}
+            onClick={() => {
+              onModeChange("remote");
+              void remoteShell.request(remoteShell.source);
+            }}
+          >
+            {t("Suggestions")}
+          </Button>
+        ) : null}
+        {onSavedCommands ? (
+          <Button
+            variant="ghost"
+            size="sm"
+            disabled={!ready || alternate}
+            onClick={onSavedCommands}
+          >
+            {t("Saved commands")}
+          </Button>
+        ) : null}
+        {onStartupReview ? (
+          <Button
+            variant="ghost"
+            size="sm"
+            iconOnly
+            label={t("Review startup scripts")}
+            tooltip={t("Review startup scripts")}
+            loading={reviewingStartup}
+            disabled={!ready}
+            onClick={() => {
+              if (startupPending.current) return;
+              startupPending.current = true;
+              setReviewingStartup(true);
+              const complete = () => {
+                startupPending.current = false;
+                setReviewingStartup(false);
+              };
+              void onStartupReview().then(complete, complete);
+            }}
+          >
+            <CheckList size={14} />
+          </Button>
+        ) : null}
         {mode && (
           <Button
             variant="ghost"
@@ -201,7 +298,72 @@ export function TerminalTools({
           </Button>
         )}
       </div>
-      {mode === "command" && (
+      {onEnableShellIntegration ? (
+        <details className="px-2 py-1 text-xs text-(--ui-text-muted)">
+          <summary className="cursor-pointer">{t("Shell suggestions")}</summary>
+          <p className="mbs-2">
+            {t(
+              "Windows PowerShell suggestions require PowerShell 7+ and PSReadLine 2.4+. A new session starts with -NoProfile; custom profile key bindings and history settings are not loaded.",
+            )}
+          </p>
+          <p className="mbs-2">
+            {t(
+              "Accepting an app suggestion inserts one line only; press Enter to run. Raw multiline paste follows PowerShell behavior and can execute commands.",
+            )}
+          </p>
+        </details>
+      ) : null}
+      {remoteShell ? (
+        <details className="px-2 py-1 text-xs text-(--ui-text-muted)">
+          <summary className="cursor-pointer">{t("Suggestion settings")}</summary>
+          <div className="flex flex-wrap items-center gap-2 py-1">
+            <Switch
+              checked={remoteShell.automatic}
+              onCheckedChange={remoteShell.setAutomatic}
+              aria-label={t("Show suggestions while typing")}
+            />
+            <span>{t("Show suggestions while typing")}</span>
+            <SegmentedControl
+              label={t("Suggestion source")}
+              value={remoteShell.source}
+              onValueChange={(value) =>
+                remoteShell.setSource(value as "commands" | "paths" | "history")
+              }
+              options={[
+                { value: "commands", label: t("Commands") },
+                { value: "paths", label: t("Remote paths") },
+                { value: "history", label: t("Reviewed history") },
+              ]}
+            />
+          </div>
+          <p>
+            {t(
+              "Session only. Remote command and path names may appear here. Reviewed history uses approved command forms; arbitrary shell completion stays on Tab.",
+            )}
+          </p>
+        </details>
+      ) : null}
+      {mode === null &&
+      remoteShell?.automatic &&
+      !alternate &&
+      remoteShell.state?.status === "suggestions" &&
+      remoteShell.state.suggestions?.length ? (
+        <RemoteShellSuggestions
+          shell={remoteShell}
+          terminal={terminal}
+          selectionMode={false}
+          onClose={() => onModeChange(null)}
+        />
+      ) : null}
+      {mode === "remote" && remoteShell ? (
+        <RemoteShellSuggestions
+          key={remoteShell.state?.requestId ?? "waiting"}
+          shell={remoteShell}
+          terminal={terminal}
+          onClose={() => onModeChange(null)}
+        />
+      ) : null}
+      {suggestionsAllowed && mode === "command" && (
         <div className={styles.command}>
           <div className={styles.row}>
             <TextField

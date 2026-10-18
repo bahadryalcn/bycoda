@@ -36,6 +36,34 @@ async function setup() {
   return { root, projects, commands };
 }
 
+it("passes disabled skill copies to host discovery before deduplication", async () => {
+  const { projects, commands } = await setup();
+  const cwd = projects[104].cwd;
+  const folder = join(cwd, ".agents/skills/round8-disabled-unique");
+  await mkdir(folder, { recursive: true });
+  const path = join(folder, "SKILL.md");
+  await writeFile(path, "# unique");
+  const name = "round8-disabled-unique";
+  expect(
+    ((await commands.run("list_skills", { cwd })) as { name: string }[]).some(
+      (skill) => skill.name === name,
+    ),
+  ).toBe(true);
+  expect(
+    ((await commands.run("list_skills", { cwd, disabledPaths: null })) as { name: string }[]).some(
+      (skill) => skill.name === name,
+    ),
+  ).toBe(true);
+  expect(
+    (
+      (await commands.run("list_skills", { cwd, disabledPaths: [path] })) as { name: string }[]
+    ).some((skill) => skill.name === name),
+  ).toBe(false);
+  await expect(commands.run("list_skills", { cwd, disabledPaths: [42] })).rejects.toThrow(
+    "Invalid disabled",
+  );
+});
+
 it("opens a file among 105 registered projects without querying Git", async () => {
   const { projects, commands } = await setup();
   const path = join(projects[104].cwd, "hello.txt");
@@ -103,10 +131,16 @@ it("blocks all working-tree stash mutations while project is busy", async () => 
     { projects: () => [{ id: "p", cwd }], attachmentDir: join(cwd, "attachments") } as never,
     gate,
   );
-  for (const command of ["git_stash", "git_stash_action", "git_resolve_conflict"]) {
+  for (const command of [
+    "git_stash",
+    "git_stash_action",
+    "git_resolve_conflict",
+    "git_pull",
+    "git_sync",
+  ]) {
     await expect(commands.run(command, { cwd })).rejects.toThrow("Project is busy");
   }
-  expect(gate).toHaveBeenCalledTimes(3);
+  expect(gate).toHaveBeenCalledTimes(5);
 });
 
 it("resolves worktrees, caches results, invalidates and still rejects outside paths", async () => {

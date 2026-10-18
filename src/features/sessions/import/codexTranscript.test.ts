@@ -1,7 +1,12 @@
 import { describe, expect, it } from "vitest";
 import type { CodexEntry } from "../../../platform/tauri/sessionImport";
 import { newSession } from "../model/session";
-import { buildCodexSession, parseApplyPatch, parseShellOutput } from "./codexTranscript";
+import {
+  buildCodexSession,
+  codexToolEvents,
+  parseApplyPatch,
+  parseShellOutput,
+} from "./codexTranscript";
 
 describe("parseShellOutput", () => {
   it("unwraps the exit-code header and reports failures", () => {
@@ -19,6 +24,28 @@ describe("parseShellOutput", () => {
     });
     expect(parseShellOutput("just text")).toEqual({ output: "just text", failed: false });
     expect(parseShellOutput(undefined)).toEqual({ output: "", failed: false });
+  });
+
+  it.each([0, 1, -1])("honors top-level exit_code %s over legacy metadata", (exitCode) => {
+    const output = JSON.stringify({
+      output: "command result",
+      exit_code: exitCode,
+      metadata: { exit_code: exitCode === 0 ? 1 : 0 },
+      wall_time_seconds: 0.2,
+    });
+    expect(parseShellOutput(output)).toEqual({
+      output: "command result",
+      failed: exitCode !== 0,
+    });
+    expect(
+      codexToolEvents({ kind: "tool", at: 1, text: "", name: "exec_command", output }, "shell"),
+    ).toEqual([
+      expect.objectContaining({
+        type: "tool.updated",
+        status: exitCode === 0 ? "completed" : "failed",
+        detail: "command result",
+      }),
+    ]);
   });
 });
 
@@ -45,9 +72,115 @@ describe("parseApplyPatch", () => {
     expect(changes[0].diff).toBe("@@\n-old\n+new\n");
     expect(changes[1].diff).toBe("+hello\n");
   });
+
+  it("navigates to the move destination and retains the source in the diff", () => {
+    const input = [
+      "*** Begin Patch",
+      "*** Update File: src/old.ts",
+      "*** Move to: src/new.ts",
+      "@@",
+      "-old",
+      "+new",
+      "*** Add File: src/other.ts",
+      "+other",
+      "*** End Patch",
+    ].join("\r\n");
+    expect(parseApplyPatch(input)[0]).toEqual({
+      path: "src/new.ts",
+      kind: { type: "update" },
+      diff: "rename from src/old.ts\nrename to src/new.ts\n@@\n-old\n+new\n",
+    });
+    const [event] = codexToolEvents(
+      { kind: "tool", at: 1, text: "", name: "apply_patch", input, output: "Success" },
+      "rename",
+    );
+    expect(event).toMatchObject({
+      type: "tool.updated",
+      paths: ["src/new.ts", "src/other.ts"],
+      preview: { path: "src/new.ts" },
+    });
+    expect(JSON.stringify(event)).toContain("rename from src/old.ts");
+  });
+});
+
+describe("imported patch status", () => {
+  const input = "*** Begin Patch\n*** Add File: error.ts\n+error message\n*** End Patch";
+
+  it.each([
+    "Success. Updated the following files:\nA error.ts\nM error-handler.ts",
+    "Success. Updated the following files:\nA verification failed.ts",
+    JSON.stringify({ output: "Success. Updated the following files:\nA error.ts", exit_code: 0 }),
+    JSON.stringify({ output: "Success", error: null, isError: false }),
+  ])("keeps successful file listings completed: %s", (output) => {
+    expect(
+      codexToolEvents(
+        { kind: "tool", at: 1, text: "", name: "apply_patch", input, output },
+        "patch",
+      ),
+    ).toEqual([expect.objectContaining({ status: "completed" })]);
+  });
+
+  it.each([
+    "Error: unable to write file",
+    "apply_patch verification failed: missing lines",
+    "verification failed: missing file",
+    "Failed to read file to update missing.ts",
+    "apply_patch error: invalid patch",
+    JSON.stringify({ error: { message: "invalid patch" } }),
+    JSON.stringify({ error: "invalid patch" }),
+    JSON.stringify({ isError: true, content: [{ text: "invalid patch" }] }),
+    JSON.stringify({ is_error: true }),
+    JSON.stringify({ status: "failed" }),
+    JSON.stringify({ output: "patch failed", exit_code: 1 }),
+    JSON.stringify({ output: "Error: unable to write file", metadata: { exit_code: 0 } }),
+  ])("retains actual patch failures: %s", (output) => {
+    expect(
+      codexToolEvents(
+        { kind: "tool", at: 1, text: "", name: "apply_patch", input, output },
+        "patch",
+      ),
+    ).toEqual([expect.objectContaining({ status: "failed" })]);
+  });
 });
 
 describe("buildCodexSession", () => {
+  it("preserves JSON shell failure and rename destination through session construction", () => {
+    const session = buildCodexSession({
+      base: newSession("codex", "/w"),
+      entries: [
+        {
+          kind: "tool",
+          at: 1,
+          text: "",
+          name: "exec_command",
+          input: "pnpm test",
+          output: JSON.stringify({
+            output: "command failed",
+            exit_code: 1,
+            wall_time_seconds: 0.2,
+          }),
+        },
+        {
+          kind: "tool",
+          at: 2,
+          text: "",
+          name: "apply_patch",
+          input:
+            "*** Begin Patch\n*** Update File: old.ts\n*** Move to: new.ts\n@@\n-x\n+y\n*** End Patch",
+          output: "Success",
+        },
+      ],
+    });
+    expect(session.blocks[0].tool).toMatchObject({ kind: "execute", status: "failed" });
+    expect(session.blocks[1].tool?.preview).toMatchObject({ path: "new.ts" });
+    expect(JSON.stringify(session.blocks[1].tool?.preview?.inspection)).toContain(
+      "rename from old.ts",
+    );
+    expect(JSON.stringify(session.blocks[1].tool?.preview?.inspection)).toContain(
+      "rename to new.ts",
+    );
+  });
+
   const entries: CodexEntry[] = [
     { kind: "user", at: 1_700_000_000_000, text: "run the tests" },
     {

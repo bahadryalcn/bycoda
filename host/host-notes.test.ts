@@ -38,6 +38,28 @@ function fixture() {
   };
 }
 describe("remote desktop notes", () => {
+  it("invalidates stale writers on project and slug-only changes without reordering content", () => {
+    const { notes } = fixture();
+    const original = notes.save(
+      { id: "moved", title: "Plan", body: "Body", tags: [], sourceCwd: "/a" },
+      0,
+    );
+    notes.save({ id: "newer", title: "New", body: "Body", tags: [] }, 0);
+    const moved = notes.save({ ...original, sourceCwd: "/b" }, original.updatedAt);
+    expect(moved.updatedAt).toBeGreaterThan(original.updatedAt);
+    expect(moved.contentUpdatedAt).toBe(original.contentUpdatedAt);
+    expect(notes.list().notes.map((note) => note.id)).toEqual(["newer", "moved"]);
+    expect(() => notes.save({ ...original, body: "Stale draft" }, original.updatedAt)).toThrow(
+      "changed",
+    );
+    expect(notes.get(original.id)?.sourceCwd).toBe("/b");
+    const pending = notes.save({ id: "pending", title: "", body: "", tags: [] }, 0);
+    const renamed = notes.save({ ...pending, title: "Plan" }, pending.updatedAt);
+    const finalized = notes.save({ ...renamed, finalizeSlug: true }, renamed.updatedAt);
+    expect(finalized.updatedAt).toBeGreaterThan(renamed.updatedAt);
+    expect(finalized.contentUpdatedAt).toBe(renamed.contentUpdatedAt);
+    expect(() => notes.save(renamed, renamed.updatedAt)).toThrow("changed");
+  });
   it("writes to the existing desktop table and preserves stable mentions and session association", () => {
     const { notes } = fixture();
     const created = notes.save(

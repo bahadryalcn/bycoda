@@ -89,6 +89,25 @@ export class HostAutomations {
     });
   }
 
+  /** Read-only preview evaluated by the same clock and scheduler as save. */
+  preview(raw: unknown) {
+    const schedule = raw as Record<string, unknown>;
+    const input = parseHostAutomation({
+      ...schedule,
+      id: "preview",
+      name: "Preview",
+      prompt: "Preview",
+      projectId: "preview",
+      harness: "claude",
+      model: "preview",
+      runtimeMode: "auto",
+    });
+    return {
+      timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+      nextRunAt: nextAutomationRunAt(input, this.now()),
+    };
+  }
+
   delete(id: string): void {
     if (this.runs(id).some((run) => run.status === "running")) {
       throw new Error("This automation is still running. Stop its session before deleting it.");

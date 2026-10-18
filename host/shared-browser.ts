@@ -3,7 +3,7 @@ import { inspectBrowserElement, type ElementInspection } from "./browser-annotat
 import type { BrowserAnnotationCapture } from "../src/shared/lib/browserAnnotation";
 import { browserShadowMasks, type BrowserDomNode } from "./browser-shadow-masks";
 import type { RuntimeLogSource, RuntimeLogLevel } from "../src/features/host-tools/runtimeLogTypes";
-import { runtimeLogDetails, type RuntimeLogsService } from "./runtime-logs";
+import { runtimeLogDetails, runtimeLogPreview, type RuntimeLogsService } from "./runtime-logs";
 
 type ConsoleMessage = {
   text(): string;
@@ -76,41 +76,7 @@ const fingerprint = (credential: string) => createHash("sha256").update(credenti
 
 // This self-contained function executes on a console argument handle in Chromium.
 // Bound the returned value before Playwright serializes/transfers it to the host.
-function browserArgumentValue(input: unknown): unknown {
-  let remaining = 8192;
-  const seen = new WeakSet<object>();
-  const visit = (value: unknown, depth: number): unknown => {
-    if (remaining <= 0) return "[truncated]";
-    remaining -= 16;
-    if (value === null || typeof value === "boolean" || typeof value === "number") return value;
-    if (typeof value === "string") {
-      const text = value.slice(0, Math.max(0, Math.min(2048, remaining)));
-      remaining -= text.length;
-      return text;
-    }
-    if (typeof value === "bigint") return `${value}n`;
-    if (typeof value !== "object") return `[${typeof value}]`;
-    if (seen.has(value)) return "[circular]";
-    if (depth >= 4) return "[max depth]";
-    seen.add(value);
-    if (value instanceof Error)
-      return visit({ name: value.name, message: value.message, stack: value.stack }, depth + 1);
-    if (Array.isArray(value)) return value.slice(0, 25).map((item) => visit(item, depth + 1));
-    const result: Record<string, unknown> = {};
-    for (const key of Object.keys(value).slice(0, 25)) {
-      if (remaining <= 0) break;
-      const descriptor = Object.getOwnPropertyDescriptor(value, key);
-      remaining -= key.length;
-      Object.defineProperty(result, key.slice(0, 128), {
-        enumerable: true,
-        value:
-          descriptor && "value" in descriptor ? visit(descriptor.value, depth + 1) : "[getter]",
-      });
-    }
-    return result;
-  };
-  return visit(input, 0);
-}
+const browserArgumentValue = runtimeLogPreview;
 
 export function sharedBrowserUrl(input: unknown) {
   if (typeof input !== "string" || input.length > 4096) throw new Error("Invalid browser URL");
@@ -611,7 +577,9 @@ export class SharedBrowser {
       const values = Promise.all(
         args.map(async (arg) => {
           try {
-            return arg.evaluate ? await arg.evaluate(browserArgumentValue) : await arg.jsonValue();
+            return arg.evaluate
+              ? await arg.evaluate(browserArgumentValue)
+              : "[bounded capture unavailable]";
           } catch {
             return "[unavailable]";
           }

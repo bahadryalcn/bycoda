@@ -108,7 +108,13 @@ export type RemoteInboxOperation =
   | { action: "comment"; item: RemoteInboxTarget; cwd: string; body: string; inReplyTo?: string }
   | { action: "review-context"; item: RemoteInboxTarget; cwd: string }
   | ({ action: "review"; item: RemoteInboxTarget; cwd: string } & RemoteInboxReview)
-  | { action: "pr-action"; item: RemoteInboxTarget; cwd: string; prAction: RemoteInboxPrAction };
+  | {
+      action: "pr-action";
+      item: RemoteInboxTarget;
+      cwd: string;
+      prAction: RemoteInboxPrAction;
+      expectedHeadOid?: string;
+    };
 export type DesktopInboxJob = { id: string; operation: RemoteInboxOperation };
 export type DesktopInboxReply = { id: string; result?: unknown; error?: string };
 export type DesktopInboxPayload = { version: number; replies?: DesktopInboxReply[] };
@@ -318,7 +324,17 @@ export function parseRemoteInboxOperation(
     )
   )
     throw new Error("Unsupported pull request action.");
-  return { action: "pr-action", item, cwd, prAction: input.prAction as RemoteInboxPrAction };
+  const merging = ["merge", "squash", "rebase"].includes(String(input.prAction));
+  const expectedHeadOid = input.expectedHeadOid;
+  if (merging && (typeof expectedHeadOid !== "string" || !/^[a-f0-9]{40}$/i.test(expectedHeadOid)))
+    throw new Error("Refresh and review the PR head before merging; expectedHeadOid is required.");
+  return {
+    action: "pr-action",
+    item,
+    cwd,
+    prAction: input.prAction as RemoteInboxPrAction,
+    ...(merging ? { expectedHeadOid: expectedHeadOid as string } : {}),
+  };
 }
 
 /** The host never chooses a native command. This finite mapping is desktop-owned. */
@@ -359,6 +375,7 @@ export function nativeInboxCommand(
         repo: item.repo,
         number: item.number,
         action: operation.prAction,
+        expectedHeadOid: operation.expectedHeadOid ?? "",
       },
     };
   }

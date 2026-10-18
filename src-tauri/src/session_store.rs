@@ -59,6 +59,7 @@ impl SessionStore {
         )
         .map_err(|e| e.to_string())?;
         migrate(&conn).map_err(|e| e.to_string())?;
+        crate::ssh_group_defaults::migrate(&conn)?;
         crate::worktrees::reconcile_removals(&conn)?;
         let open_reader = || -> Result<Connection, String> {
             let reader = Connection::open(&path).map_err(|e| e.to_string())?;
@@ -83,6 +84,7 @@ impl SessionStore {
         conn.execute_batch("PRAGMA foreign_keys = ON;")
             .map_err(|e| e.to_string())?;
         migrate(&conn).map_err(|e| e.to_string())?;
+        crate::ssh_group_defaults::migrate(&conn)?;
         Ok(Self {
             conn: Mutex::new(conn),
             read_conn: Mutex::new(None),
@@ -436,6 +438,50 @@ fn generated_image_paths(blocks: &Value) -> Vec<String> {
         .collect()
 }
 
+/// Keep a write reservation through the reference check and file cleanup. Other
+/// windows must not save a new reference between those two operations. A failed
+/// read skips cleanup entirely; leaking an asset is safer than deleting one in use.
+fn cleanup_unreferenced_generated_images(
+    conn: &Connection,
+    paths: &[String],
+    cleanup: impl FnOnce(&[String]) -> Result<(), String>,
+) -> Result<(), String> {
+    let tx = rusqlite::Transaction::new_unchecked(conn, rusqlite::TransactionBehavior::Immediate)
+        .map_err(|error| error.to_string())?;
+    let mut candidates: HashMap<PathBuf, String> = paths
+        .iter()
+        .map(|path| {
+            let path_buf = PathBuf::from(path);
+            (path_buf.canonicalize().unwrap_or(path_buf), path.clone())
+        })
+        .collect();
+    {
+        // The view includes authoritative incremental blocks. Retained rewind,
+        // side conversations, queues and composer drafts also own their assets.
+        let mut statement = tx.prepare(
+            "SELECT j.value FROM (
+               SELECT blocks_json AS payload FROM session_transcripts
+               UNION ALL SELECT rewind_history_json FROM sessions WHERE rewind_history_json IS NOT NULL
+               UNION ALL SELECT queue_json FROM session_queues
+               UNION ALL SELECT draft_json FROM composer_drafts
+             ) AS records, json_tree(records.payload) AS j
+             WHERE j.type = 'text' AND j.key = 'path'",
+        ).map_err(|error| error.to_string())?;
+        let references = statement
+            .query_map([], |row| row.get::<_, String>(0))
+            .map_err(|error| error.to_string())?;
+        for reference in references {
+            let path = PathBuf::from(reference.map_err(|error| error.to_string())?);
+            candidates.remove(&path.canonicalize().unwrap_or(path));
+        }
+    }
+    let unreferenced: Vec<String> = candidates.into_values().collect();
+    if !unreferenced.is_empty() {
+        cleanup(&unreferenced)?;
+    }
+    tx.commit().map_err(|error| error.to_string())
+}
+
 #[tauri::command(async)]
 pub fn session_list_by_project(
     store: State<'_, SessionStore>,
@@ -704,12 +750,14 @@ pub fn session_delete(
         .unwrap_or_default();
     image_paths.extend(persisted_paths);
     delete_session(&conn, &session_id).map_err(|e| e.to_string())?;
-    drop(conn);
     if !image_paths.is_empty() {
-        if let Err(error) = crate::fs::delete_generated_images_sync(&app, &image_paths) {
+        if let Err(error) = cleanup_unreferenced_generated_images(&conn, &image_paths, |paths| {
+            crate::fs::delete_generated_images_sync(&app, paths)
+        }) {
             eprintln!("Generated image cleanup will need a retry: {error}");
         }
     }
+    drop(conn);
     let _ = app.emit(crate::reminders::CHANGED, ());
     Ok(())
 }
@@ -939,19 +987,36 @@ pub fn session_take_in_flight(
 
 const WORKSPACE_SNAPSHOT_MAX_BYTES: usize = 2_000_000;
 
+#[path = "server_terminal_restore.rs"]
+mod server_terminal_restore;
+
 #[tauri::command(async)]
 pub fn workspace_set_snapshot(
+    window: tauri::Window,
     store: State<'_, SessionStore>,
-    snapshot: Value,
+    mut snapshot: Value,
 ) -> Result<(), String> {
     if !snapshot.is_object() {
         return Err("workspace snapshot must be an object".into());
     }
+    let conn = store.conn.lock().map_err(|_| "Session store is locked")?;
+    let owner = window.label() == "main";
+    let previous = if owner && snapshot.get("serversRestore").is_some() {
+        None
+    } else {
+        get_workspace_snapshot(&conn)
+            .map_err(|e| e.to_string())?
+            .map(|raw| {
+                serde_json::from_str::<Value>(&raw)
+                    .map_err(|_| "Invalid saved workspace snapshot".to_string())
+            })
+            .transpose()?
+    };
+    server_terminal_restore::merge(&mut snapshot, previous.as_ref(), owner)?;
     let json = serde_json::to_string(&snapshot).map_err(|e| e.to_string())?;
     if json.len() > WORKSPACE_SNAPSHOT_MAX_BYTES {
         return Err("workspace snapshot is too large".into());
     }
-    let conn = store.conn.lock().map_err(|_| "Session store is locked")?;
     set_workspace_snapshot(&conn, &json).map_err(|e| e.to_string())
 }
 
@@ -3391,6 +3456,119 @@ mod tests {
         delete_session(&conn, "s1").unwrap();
         assert!(get_session(&conn, "s1").unwrap().is_none());
         assert!(list_by_project(&conn, "/tmp/a").unwrap().is_empty());
+    }
+
+    #[test]
+    fn generated_image_cleanup_preserves_either_surviving_conflict_session() {
+        for (deleted, survivor) in [("original", "local-copy"), ("local-copy", "original")] {
+            let store = SessionStore::open_in_memory().unwrap();
+            let conn = store.conn.lock().unwrap();
+            let directory =
+                std::env::temp_dir().join(format!("bycoda-shared-image-{}", uuid::Uuid::new_v4()));
+            std::fs::create_dir(&directory).unwrap();
+            let image = directory.join("shared.png");
+            std::fs::write(&image, b"synthetic generated image").unwrap();
+            let path = image.to_string_lossy().to_string();
+            for id in [deleted, survivor] {
+                let mut session = sample(id, "/tmp/project", id);
+                session.blocks = json!([
+                    {"id":"u", "role":"user", "text":"Generate"},
+                    {"id":"image", "role":"image", "image":{"path":path}}
+                ]);
+                upsert_session(&conn, &session).unwrap();
+            }
+            delete_session(&conn, deleted).unwrap();
+            cleanup_unreferenced_generated_images(&conn, std::slice::from_ref(&path), |_| {
+                panic!("the surviving session still owns the image")
+            })
+            .unwrap();
+            let reopened = get_session(&conn, survivor).unwrap().unwrap();
+            assert_eq!(reopened.blocks[1]["image"]["path"], path);
+            assert_eq!(std::fs::read(&image).unwrap(), b"synthetic generated image");
+            delete_session(&conn, survivor).unwrap();
+            cleanup_unreferenced_generated_images(&conn, &[path.clone(), path], |paths| {
+                assert_eq!(paths.len(), 1);
+                std::fs::remove_file(&paths[0]).map_err(|error| error.to_string())
+            })
+            .unwrap();
+            assert!(!image.exists());
+            std::fs::remove_dir(&directory).unwrap();
+        }
+    }
+
+    #[test]
+    fn generated_image_cleanup_respects_nested_rewind_queue_and_draft_references() {
+        let store = SessionStore::open_in_memory().unwrap();
+        let conn = store.conn.lock().unwrap();
+        let mut survivor = sample("survivor", "/tmp/project", "Survivor");
+        survivor.blocks = json!([{"id":"u", "role":"user", "text":"Hi", "btwThreads":[{
+            "messages":[{"blocks":[{"image":{"path":"/images/side.png"}}]}]
+        }]}]);
+        survivor.rewind_history =
+            Some(json!([{"blocks":[{"image":{"path":"/images/rewind.png"}}]}]));
+        upsert_session(&conn, &survivor).unwrap();
+        set_session_queue(
+            &conn,
+            "survivor",
+            Some(&json!([{"attachments":[{"path":"/images/queue.png"}]}])),
+        )
+        .unwrap();
+        set_composer_draft(
+            &conn,
+            "blank",
+            Some(&json!({"text":"Draft", "attachments":[{"path":"/images/draft.png"}]})),
+        )
+        .unwrap();
+        let candidates = ["side", "rewind", "queue", "draft", "unused"]
+            .map(|name| format!("/images/{name}.png"));
+        cleanup_unreferenced_generated_images(&conn, &candidates, |paths| {
+            assert_eq!(paths, &["/images/unused.png"]);
+            Ok(())
+        })
+        .unwrap();
+    }
+
+    #[test]
+    fn generated_image_cleanup_skips_deletion_when_reference_data_is_unreadable() {
+        let store = SessionStore::open_in_memory().unwrap();
+        let conn = store.conn.lock().unwrap();
+        conn.execute("INSERT INTO composer_drafts (session_id,draft_json,updated_at) VALUES ('broken','invalid-json',0)", []).unwrap();
+        assert!(cleanup_unreferenced_generated_images(
+            &conn,
+            &["/images/shared.png".into()],
+            |_| { panic!("unreadable references must never allow cleanup") }
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn generated_image_cleanup_reserves_writes_until_files_are_checked() {
+        let directory = std::env::temp_dir().join(format!(
+            "bycoda-image-cleanup-lock-{}",
+            uuid::Uuid::new_v4()
+        ));
+        let database = directory.join("sessions.sqlite");
+        let store = SessionStore::open(database.clone()).unwrap();
+        let other_window = Connection::open(&database).unwrap();
+        other_window
+            .busy_timeout(std::time::Duration::ZERO)
+            .unwrap();
+        {
+            let conn = store.conn.lock().unwrap();
+            cleanup_unreferenced_generated_images(&conn, &["/images/unused.png".into()], |_| {
+                let error = other_window.execute(
+                    "INSERT INTO composer_drafts (session_id,draft_json,updated_at) VALUES ('other-window','{}',0)", []
+                ).unwrap_err();
+                assert_eq!(error.sqlite_error_code(), Some(rusqlite::ErrorCode::DatabaseBusy));
+                Ok(())
+            }).unwrap();
+        }
+        other_window.execute(
+            "INSERT INTO composer_drafts (session_id,draft_json,updated_at) VALUES ('other-window','{}',0)", []
+        ).unwrap();
+        drop(other_window);
+        drop(store);
+        std::fs::remove_dir_all(&directory).unwrap();
     }
 
     #[test]

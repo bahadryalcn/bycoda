@@ -1,10 +1,49 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
+  createRecoveredNote,
   insertNoteImagesMarkdown,
   isNoteImagePath,
   noteImageMarkdown,
   type NoteImageAsset,
 } from "./noteImages";
+
+const invoke = vi.hoisted(() => vi.fn());
+vi.mock("@tauri-apps/api/core", () => ({ invoke }));
+
+it("copies recovery note assets once, rewrites references and leaves generated and remote links intact", async () => {
+  invoke.mockReset();
+  invoke.mockImplementation(async (command, args) => {
+    if (command === "notes_image_path") return "C:/app/note-assets/original/image.png";
+    if (command === "notes_save_image")
+      return { name: "image.png", markdownPath: `/note-assets/${args.noteId}/copy.png` };
+    if (command === "notes_upsert") return { ...args.note, updatedAt: 1 };
+    throw new Error(command);
+  });
+  const saved = await createRecoveredNote({
+    title: "Recovered",
+    tags: [],
+    body: "![a](/note-assets/original/image.png) ![b](/note-assets/original/image.png) ![g](/generated-images/image.png) ![web](https://example.com/note-assets/original/image.png)",
+  });
+  expect(invoke.mock.calls.filter(([command]) => command === "notes_save_image")).toHaveLength(1);
+  expect(saved.body).toBe(
+    `![a](/note-assets/${saved.id}/copy.png) ![b](/note-assets/${saved.id}/copy.png) ![g](/generated-images/image.png) ![web](https://example.com/note-assets/original/image.png)`,
+  );
+  expect(saved.id).not.toBe("original");
+  expect(invoke.mock.calls.at(-1)?.[1].note.expectedUpdatedAt).toBe(0);
+});
+
+it("does not create a recovery note when copying an asset fails", async () => {
+  invoke.mockReset();
+  invoke.mockRejectedValue(new Error("Missing original image"));
+  await expect(
+    createRecoveredNote({
+      title: "Draft",
+      tags: [],
+      body: "![a](/note-assets/original/image.png)",
+    }),
+  ).rejects.toThrow("Missing original image");
+  expect(invoke.mock.calls.some(([command]) => command === "notes_upsert")).toBe(false);
+});
 
 const image: NoteImageAsset = {
   name: "Architecture [draft].png",

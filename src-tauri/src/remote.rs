@@ -26,7 +26,7 @@ const TUNNEL_EXIT_EVENT: &str = "remote://tunnel-exit";
 pub struct RemoteConnections {
     changes: changes::Changes,
     reads: changes::Reads,
-    store: Mutex<()>,
+    pub(crate) store: Mutex<()>,
     tunnels: Tunnels,
     jobs: Mutex<HashMap<String, Arc<Job>>>,
 }
@@ -97,6 +97,12 @@ impl StoredMachine {
     }
 }
 
+pub(crate) fn public_inventory_machine(record: &Value) -> Result<Machine, String> {
+    serde_json::from_value::<StoredMachine>(record.clone())
+        .map(|machine| machine.public())
+        .map_err(|_| "Remote connection store is invalid".into())
+}
+
 fn endpoint(value: &str) -> Result<String, String> {
     let url = url::Url::parse(value.trim()).map_err(|_| "Enter a valid host URL")?;
     let host = url.host_str().ok_or("Host URL has no hostname")?;
@@ -156,7 +162,7 @@ fn read(path: &Path) -> Result<Vec<StoredMachine>, String> {
     Ok(machines)
 }
 
-fn read_uncached(path: &Path) -> Result<Vec<StoredMachine>, String> {
+pub(crate) fn read_store_values(path: &Path) -> Result<Vec<Value>, String> {
     match std::fs::read(path) {
         Ok(bytes) => {
             serde_json::from_slice(&bytes).map_err(|_| "Remote connection store is invalid".into())
@@ -166,7 +172,38 @@ fn read_uncached(path: &Path) -> Result<Vec<StoredMachine>, String> {
     }
 }
 
+fn read_uncached(path: &Path) -> Result<Vec<StoredMachine>, String> {
+    read_store_values(path)?
+        .into_iter()
+        .filter(|record| record.get("kind").and_then(Value::as_str) != Some("ssh"))
+        .map(|record| {
+            serde_json::from_value(record).map_err(|_| "Remote connection store is invalid".into())
+        })
+        .collect()
+}
+
 fn write(path: &Path, machines: &[StoredMachine]) -> Result<(), String> {
+    let existing = read_store_values(path)?;
+    let mut records: Vec<Value> = existing
+        .iter()
+        .filter(|record| record.get("kind").and_then(Value::as_str) == Some("ssh"))
+        .cloned()
+        .collect();
+    for machine in machines {
+        let mut record = serde_json::to_value(machine).map_err(|e| e.to_string())?;
+        if let Some(metadata) = existing
+            .iter()
+            .find(|old| old.get("id").and_then(Value::as_str) == Some(machine.id.as_str()))
+            .and_then(|old| old.get("metadata"))
+        {
+            record["metadata"] = metadata.clone();
+        }
+        records.push(record);
+    }
+    write_store_values(path, &records)
+}
+
+pub(crate) fn write_store_values(path: &Path, records: &[Value]) -> Result<(), String> {
     let parent = path.parent().ok_or("Missing connection directory")?;
     std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
     let temporary = parent.join(format!("remote-machines-{}.tmp", uuid::Uuid::new_v4()));
@@ -179,7 +216,7 @@ fn write(path: &Path, machines: &[StoredMachine]) -> Result<(), String> {
             options.mode(0o600);
         }
         let mut file = options.open(&temporary).map_err(|e| e.to_string())?;
-        file.write_all(&serde_json::to_vec(machines).map_err(|e| e.to_string())?)
+        file.write_all(&serde_json::to_vec(records).map_err(|e| e.to_string())?)
             .map_err(|e| e.to_string())?;
         file.sync_all().map_err(|e| e.to_string())?;
         std::fs::rename(&temporary, path).map_err(|e| e.to_string())?;
@@ -520,7 +557,7 @@ fn machine_rpc(
     response
 }
 
-fn store_path(app: &AppHandle) -> Result<std::path::PathBuf, String> {
+pub(crate) fn store_path(app: &AppHandle) -> Result<std::path::PathBuf, String> {
     Ok(app
         .path()
         .app_data_dir()
@@ -1223,6 +1260,8 @@ fn supported_remote_method(method: &str) -> bool {
             | "social.oauth.begin"
             | "social.oauth.status"
             | "social.oauth.select"
+            | "social.token.connect"
+            | "social.tiktok.creator"
             | "social.browser.availability"
             | "social.browser.begin"
             | "social.browser.status"
@@ -1333,6 +1372,7 @@ fn supported_remote_method(method: &str) -> bool {
             | "shell.setProfile"
             | "sessions.get"
             | "automations.list"
+            | "automations.preview"
             | "automations.save"
             | "automations.delete"
             | "automations.runs"
@@ -1838,6 +1878,7 @@ mod tests {
             "browser.annotation.read",
             "browser.annotation.cancel",
             "devServers.list",
+            "automations.preview",
             "devServers.details",
             "devServers.start",
             "devServers.stop",
@@ -2104,6 +2145,8 @@ mod tests {
             "social.browser.availability",
             "social.browser.begin",
             "social.browser.status",
+            "social.token.connect",
+            "social.tiktok.creator",
         ] {
             assert!(supported_remote_method(method), "{method}");
         }
@@ -2420,6 +2463,35 @@ mod tests {
         )
         .is_err());
         assert_eq!(machines[0].ssh.as_ref().unwrap().remote_port, 3776);
+    }
+
+    #[test]
+    fn legacy_host_writes_preserve_ssh_only_records_and_organization() {
+        let path =
+            std::env::temp_dir().join(format!("bycoda-inventory-{}.json", uuid::Uuid::new_v4()));
+        let ssh = json!({"kind":"ssh","id":"ssh-only","name":"Standalone","sshEndpoint":{"host":"example.invalid","port":22},"metadata":{"tags":["a"],"favorite":true}});
+        let mut host = serde_json::to_value(saved("host", "owner@host")).unwrap();
+        host["metadata"] =
+            json!({"group":"Work","tags":[],"favorite":false,"forwards":[{"id":"rule"}]});
+        write_store_values(&path, &[host, ssh.clone()]).unwrap();
+        let mut hosts = read(&path).unwrap();
+        assert_eq!(hosts.len(), 1);
+        assert_eq!(hosts[0].id, "host");
+        hosts[0].name = "Renamed".into();
+        write(&path, &hosts).unwrap();
+        let records = read_store_values(&path).unwrap();
+        assert!(records.contains(&ssh));
+        let host = records
+            .iter()
+            .find(|record| record["id"] == "host")
+            .unwrap();
+        assert_eq!(host["metadata"]["group"], "Work");
+        assert_eq!(host["metadata"]["forwards"][0]["id"], "rule");
+        assert_eq!(host["environmentId"], "env-host");
+        assert_eq!(host["token"], "secret-token");
+        write(&path, &[]).unwrap();
+        assert_eq!(read_store_values(&path).unwrap(), vec![ssh]);
+        let _ = std::fs::remove_file(path);
     }
 
     #[test]

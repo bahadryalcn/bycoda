@@ -34,6 +34,8 @@ export type AccountSwitchDeps = {
   label(provider: ProviderAccountProvider, accountId: string): string;
   /** The session is being closed. */
   removing?(sessionId: string): boolean;
+  /** A newer account-selection request superseded this asynchronous switch. */
+  ownsRequest?(): boolean;
 };
 
 export type AccountSwitchResult =
@@ -63,6 +65,23 @@ export async function switchSessionAccount(
   if (target.busy || isPreparingHandoff(target) || deps.removing?.(sessionId)) {
     return { kind: "refused", status: SWITCH_BUSY_STATUS };
   }
+  const workCwd = sessionWorkCwd(target);
+  const { providerSessionId, cwd, worktreeRemoved, pendingSwitch, blocks } = target;
+  const ownsSnapshot = (session: Session | undefined): session is Session =>
+    !!session &&
+    session.id === target.id &&
+    !session.busy &&
+    !isPreparingHandoff(session) &&
+    !deps.removing?.(sessionId) &&
+    deps.ownsRequest?.() !== false &&
+    session.harness === provider &&
+    session.providerSessionId === providerSessionId &&
+    sessionProviderAccountId(provider, session) === fromId &&
+    sessionWorkCwd(session) === workCwd &&
+    session.cwd === cwd &&
+    session.worktreeRemoved === worktreeRemoved &&
+    session.pendingSwitch === pendingSwitch &&
+    session.blocks === blocks;
 
   // Nothing of this provider to carry: no turn yet, a harness switch that has
   // not been sent (its recap already travels with that send), or a recap that
@@ -73,14 +92,14 @@ export async function switchSessionAccount(
     (!target.providerSessionId && pendingHandoff(target))
   ) {
     await deps.forget(provider, sessionId);
+    if (!ownsSnapshot(deps.latest(sessionId))) return { kind: "stale" };
     return {
       kind: "switched",
       mode: "account",
-      update: (s) => ({ ...s, providerAccountId: accountId }),
+      update: (s) => (ownsSnapshot(s) ? { ...s, providerAccountId: accountId } : s),
     };
   }
 
-  const workCwd = sessionWorkCwd(target);
   let transferred = false;
   if (target.providerSessionId) {
     try {
@@ -97,28 +116,35 @@ export async function switchSessionAccount(
   }
   // The transfer is async; the session may have moved on meanwhile.
   const latest = deps.latest(sessionId);
-  if (
-    !latest ||
-    latest.busy ||
-    latest.harness !== provider ||
-    latest.providerSessionId !== target.providerSessionId ||
-    sessionProviderAccountId(provider, latest) !== fromId
-  ) {
+  if (!ownsSnapshot(latest)) {
     return { kind: "stale" };
   }
 
   // The live child holds the old account's environment: stop it so the next
   // send spawns under the new one, then rebind the thread to that account.
   await deps.forget(provider, sessionId);
-  if (transferred && latest.providerSessionId) {
-    deps.bind(provider, sessionId, latest.providerSessionId, workCwd, accountId, latest.blocks);
+  const afterForget = deps.latest(sessionId);
+  if (!ownsSnapshot(afterForget)) return { kind: "stale" };
+  if (transferred && afterForget.providerSessionId) {
+    deps.bind(
+      provider,
+      sessionId,
+      afterForget.providerSessionId,
+      workCwd,
+      accountId,
+      afterForget.blocks,
+    );
   }
   const label = deps.label(provider, accountId);
   return {
     kind: "switched",
     mode: transferred ? "transferred" : "handoff",
     update: (s) =>
-      transferred ? withTransferredAccount(s, accountId) : withAccountHandoff(s, accountId),
+      !ownsSnapshot(s)
+        ? s
+        : transferred
+          ? withTransferredAccount(s, accountId)
+          : withAccountHandoff(s, accountId),
     status: transferred
       ? `Continuing with ${label}`
       : `Continuing with ${label}. The conversation could not be moved over, so a summary goes with your next message.`,

@@ -35,8 +35,12 @@ export function validateFileName(raw: string, siblingNames: Iterable<string>): N
     return { severity: "error", kind: "slash" };
   }
 
-  const siblings = new Set([...siblingNames].map((n) => n.toLowerCase()));
-  if (siblings.has(name.toLowerCase())) {
+  // Only exact collisions are certain from a directory listing. Case folding
+  // depends on the owning volume (including per-directory Windows settings),
+  // so let create/rename on that filesystem validate case variants and report
+  // any collision through the explorer's existing inline submit error.
+  const siblings = new Set(siblingNames);
+  if (siblings.has(name)) {
     return { severity: "error", kind: "exists", name };
   }
 

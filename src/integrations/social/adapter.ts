@@ -1,4 +1,9 @@
-import type { SocialAccount, SocialJob, SocialPlatform } from "../../features/social/model/social";
+import type {
+  SocialAccount,
+  SocialJob,
+  SocialPlatform,
+  SocialMonitorChannel,
+} from "../../features/social/model/social";
 
 export class SocialPlatformError extends Error {
   constructor(
@@ -6,6 +11,7 @@ export class SocialPlatformError extends Error {
       | "expired"
       | "denied"
       | "rate_limit"
+      | "processing"
       | "unsupported"
       | "comments_disabled"
       | "unknown"
@@ -17,6 +23,8 @@ export class SocialPlatformError extends Error {
         expired: "OAuth token expired or revoked. Reconnect the account.",
         denied: "Platform permissions or account role do not allow this operation.",
         rate_limit: "Platform rate limit reached.",
+        processing:
+          "Platform accepted the video and is processing it. Awaiting publication confirmation.",
         unsupported: "This content or operation is unsupported by the platform adapter.",
         comments_disabled: "Comments are disabled on the target YouTube video.",
         unknown: "Platform outcome is uncertain. Review before another send.",
@@ -44,6 +52,10 @@ export type SocialInbound = {
   replyAllowed?: boolean;
 };
 export interface SocialAdapter {
+  creatorInfo?(
+    account: SocialAccount,
+    token: string,
+  ): Promise<import("../../features/social/model/social").TikTokCreatorInfo>;
   send(
     account: SocialAccount,
     job: SocialJob,
@@ -56,7 +68,11 @@ export interface SocialAdapter {
     token: string,
     posts: string[],
     cursor?: string,
-  ): Promise<{ events: SocialInbound[]; cursor?: string }>;
+  ): Promise<{
+    events: SocialInbound[];
+    cursor?: string;
+    coverage?: SocialMonitorChannel[];
+  }>;
   reconcile?(
     account: SocialAccount,
     job: SocialJob,
@@ -81,6 +97,41 @@ export class SocialHttp {
     private readonly fetcher: typeof fetch = fetch,
     private readonly now = Date.now,
   ) {}
+  /** Bot tokens occur in Telegram paths. Never expose fetch errors or response bodies. */
+  async telegram(
+    method: "getMe" | "getWebhookInfo" | "getUpdates" | "sendMessage",
+    token: string,
+    body: Record<string, unknown> = {},
+  ): Promise<Record<string, any>> {
+    if (!/^\d+:[A-Za-z0-9_-]+$/.test(token)) throw new SocialPlatformError("denied");
+    let response: Response;
+    try {
+      response = await this.fetcher(`https://api.telegram.org/bot${token}/${method}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+        redirect: "error",
+        signal: AbortSignal.timeout(30_000),
+      });
+    } catch {
+      throw new SocialPlatformError("unknown");
+    }
+    const value = await response.json().catch(() => {
+      throw new SocialPlatformError(response.ok ? "unknown" : "rejected");
+    });
+    if (response.status === 429 || value.error_code === 429)
+      throw new SocialPlatformError(
+        "rate_limit",
+        this.now() + Math.max(1, Number(value.parameters?.retry_after) || 60) * 1000,
+      );
+    if (response.status === 401 || value.error_code === 401)
+      throw new SocialPlatformError("expired");
+    if (response.status === 403 || value.error_code === 403)
+      throw new SocialPlatformError("denied");
+    if (response.status >= 500) throw new SocialPlatformError("unknown");
+    if (!response.ok || value.ok !== true) throw new SocialPlatformError("rejected");
+    return value.result;
+  }
   async request(
     url: string,
     token: string,
@@ -97,6 +148,8 @@ export class SocialHttp {
         "graph.facebook.com",
         "api.linkedin.com",
         "www.googleapis.com",
+        "open.tiktokapis.com",
+        "businessapi.snapchat.com",
       ].includes(parsed.hostname)
     )
       throw new SocialPlatformError("denied");
@@ -177,7 +230,12 @@ export class SocialHttp {
       if (response.status === 201) value = {};
       else throw new SocialPlatformError("unknown");
     }
-    if (value.error || value.errors?.length) throw new SocialPlatformError("rejected");
+    if (
+      (value.error && !(parsed.hostname === "open.tiktokapis.com" && value.error.code === "ok")) ||
+      value.errors?.length ||
+      value.request_status === "ERROR"
+    )
+      throw new SocialPlatformError("rejected");
     return { value, headers: response.headers };
   }
   json(url: string, token: string, value: unknown, headers: Record<string, string> = {}) {

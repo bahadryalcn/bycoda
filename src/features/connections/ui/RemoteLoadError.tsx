@@ -87,7 +87,9 @@ export function RemoteLoadError({
             {t("Edit address…")}
           </Button>
         ) : null}
-        {failure.kind === "unreachable" || failure.kind === "outdated" ? (
+        {failure.kind === "unreachable" ||
+        failure.kind === "outdated" ||
+        failure.kind === "identity" ? (
           <Button type="button" onClick={openConnections} variant="secondary">
             {t("Connection settings")}
           </Button>

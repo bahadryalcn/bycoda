@@ -9,6 +9,7 @@ import { REMOTE_PROVIDERS } from "../../connections/model/protocol";
 import { HARNESS_TITLE } from "../../sessions/model/session";
 import {
   SOCIAL_PLATFORMS,
+  SOCIAL_PLATFORM_NAMES,
   type SocialPolicies,
   type SocialPlatform,
   type SocialPolicy,
@@ -26,13 +27,7 @@ const labels = {
   maxCommentCharacters: "Yorum ve yanıt karakter sınırı",
   maxMessageCharacters: "Mesaj karakter sınırı",
 };
-const platforms = {
-  x: "X",
-  instagram: "Instagram",
-  facebook: "Facebook",
-  linkedin: "LinkedIn",
-  youtube: "YouTube",
-};
+const platforms = SOCIAL_PLATFORM_NAMES;
 type Scope = "global" | SocialPlatform;
 type Limits = Record<(typeof SOCIAL_LIMIT_FIELDS)[number], string>;
 type Draft = {

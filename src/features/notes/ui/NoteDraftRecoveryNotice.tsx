@@ -27,6 +27,7 @@ async function retryDraft(id: string, draft: Draft) {
       const body = changes.body ?? current.body;
       const saved = await upsertNote({
         id,
+        expectedUpdatedAt: current.updatedAt,
         title: (changes.title ?? current.title).trim() || noteTitle(body),
         body,
         tags: changes.tags ?? current.tags,

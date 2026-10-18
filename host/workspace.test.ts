@@ -63,6 +63,37 @@ function reviewGit(root: string, ...args: string[]) {
   }).trim();
 }
 
+it.each([false, true])(
+  "unstages both rename paths from a project subdirectory (folder: %s)",
+  async (folder) => {
+    const root = reviewRepo();
+    mkdirSync(join(root, "app"));
+    writeFileSync(join(root, "old[1].txt"), "original\n");
+    writeFileSync(join(root, "keep.txt"), "before\n");
+    reviewGit(root, "add", ".");
+    reviewGit(
+      root,
+      "-c",
+      "user.name=Test",
+      "-c",
+      "user.email=test@example.test",
+      "-c",
+      "commit.gpgsign=false",
+      "commit",
+      "-qm",
+      "base",
+    );
+    mkdirSync(join(root, "app", "nested"));
+    reviewGit(root, "mv", "old[1].txt", "app/nested/new[1].txt");
+    writeFileSync(join(root, "keep.txt"), "unrelated staged change\n");
+    reviewGit(root, "add", "keep.txt");
+    const child = join(root, "app");
+    await hostGitAction(child, "unstage", folder ? "nested" : "nested/new[1].txt");
+    expect(reviewGit(root, "diff", "--cached", "--name-status")).toBe("M\tkeep.txt");
+    expect(readFileSync(join(child, "nested/new[1].txt"), "utf8")).toBe("original\n");
+  },
+);
+
 it("searches untracked files while respecting ignore rules", async () => {
   const root = reviewRepo();
   writeFileSync(join(root, "new.txt"), "needle-untracked");
@@ -74,6 +105,60 @@ it("searches untracked files while respecting ignore rules", async () => {
     ),
   ).toEqual(["new.txt"]);
 });
+
+it.each([false, true])("preserves literal search whitespace (Git: %s)", async (gitRepo) => {
+  const root = gitRepo ? reviewRepo() : mkdtempSync(join(tmpdir(), "bycoda-search-spaces-"));
+  if (!gitRepo) roots.push(root);
+  writeFileSync(join(root, "sample.txt"), "foo\n  foo  \n   \n");
+  expect((await searchHostContent(root, { query: "  foo  " })).matches).toEqual([
+    expect.objectContaining({ line: 2, column: 1, preview: "  foo  " }),
+  ]);
+  expect((await searchHostContent(root, { query: "   " })).matches).toEqual([
+    expect.objectContaining({ line: 3, column: 1 }),
+  ]);
+});
+
+it("reports actual regex columns in editor code units and preserves Git ERE syntax", async () => {
+  const root = reviewRepo();
+  writeFileSync(join(root, "sample.txt"), "start needle end\né😀 needle end\nprefix 123 end\n");
+  expect((await searchHostContent(root, { query: "needle", regex: true })).matches).toEqual([
+    expect.objectContaining({ line: 1, column: 7 }),
+    expect.objectContaining({ line: 2, column: 5 }),
+  ]);
+  expect((await searchHostContent(root, { query: "[[:digit:]]+", regex: true })).matches).toEqual([
+    expect.objectContaining({ line: 3, column: 8 }),
+  ]);
+});
+
+it.each([false, true])("uses Unicode whole-word boundaries (Git: %s)", async (gitRepo) => {
+  const root = gitRepo ? reviewRepo() : mkdtempSync(join(tmpdir(), "bycoda-search-unicode-"));
+  if (!gitRepo) roots.push(root);
+  writeFileSync(join(root, "sample.txt"), "éfoo\nfooé\n𐐀foo\nfoo𐐀\néfoo foo\nfoo\n");
+  expect((await searchHostContent(root, { query: "foo", wholeWord: true })).matches).toEqual([
+    expect.objectContaining({ line: 5, column: 6 }),
+    expect.objectContaining({ line: 6, column: 1 }),
+  ]);
+});
+
+it.each([false, true])(
+  "retains complete Git results when output exceeds its byte budget (regex: %s)",
+  async (regex) => {
+    const root = reviewRepo();
+    for (let index = 0; index < 10; index++) {
+      writeFileSync(join(root, `${index}.txt`), `needle${"x".repeat(900 * 1024)}\n`);
+    }
+    const result = await searchHostContent(root, { query: "needle", regex });
+    expect(result.truncated).toBe(true);
+    expect(result.matches.length).toBeGreaterThan(0);
+    expect(result.matches.length).toBeLessThan(10);
+    expect(
+      result.matches.every(
+        (match) =>
+          match.line === 1 && match.column === 1 && match.preview.length === 900 * 1024 + 6,
+      ),
+    ).toBe(true);
+  },
+);
 
 it("handles zero-directory recursive globs and reports unsupported fallback regex", async () => {
   const root = mkdtempSync(join(tmpdir(), "bycoda-search-fallback-"));
@@ -475,6 +560,52 @@ it("stages selected host diff content without replacing the working file", async
   await expect(hostGitAction(root, "stageContents", "../escape", undefined, "x")).rejects.toThrow(
     "outside",
   );
+});
+
+it("rejects stale hunk bases and preserves other clients' index and lock files", async () => {
+  const root = reviewRepo();
+  const git = (...args: string[]) =>
+    execFileSync("git", args, { cwd: root, encoding: "utf8", windowsHide: true });
+  const base = "first\n" + "context\n".repeat(20) + "second\n";
+  writeFileSync(join(root, "a.txt"), base);
+  git("add", "a.txt");
+  git("commit", "-qm", "hunk base");
+  const external = base.replace("second", "SECOND");
+  writeFileSync(join(root, "a.txt"), external);
+  git("add", "a.txt");
+  const index = readFileSync(join(root, ".git/index"));
+  await expect(
+    hostGitAction(root, "stageContents", "a.txt", undefined, base.replace("first", "FIRST"), base),
+  ).rejects.toThrow("index changed");
+  expect(readFileSync(join(root, ".git/index"))).toEqual(index);
+  expect(git("show", ":a.txt")).toBe(external);
+  writeFileSync(join(root, ".git/index.lock"), "another writer");
+  await expect(
+    hostGitAction(root, "stageContents", "a.txt", undefined, external, external),
+  ).rejects.toThrow();
+  expect(readFileSync(join(root, ".git/index.lock"), "utf8")).toBe("another writer");
+  rmSync(join(root, ".git/index.lock"));
+  await hostGitAction(
+    root,
+    "stageContents",
+    "a.txt",
+    undefined,
+    external.replace("first", "FIRST"),
+    external,
+  );
+  expect(git("show", ":a.txt")).toBe(external.replace("first", "FIRST"));
+});
+
+it("stages a guarded untracked hunk before the first commit", async () => {
+  const root = realpathSync.native(mkdtempSync(join(tmpdir(), "bycoda-empty-index-")));
+  roots.push(root);
+  const git = (...args: string[]) =>
+    execFileSync("git", args, { cwd: root, encoding: "utf8", windowsHide: true });
+  git("init", "-q");
+  git("config", "core.autocrlf", "false");
+  writeFileSync(join(root, "new.txt"), "first\nsecond\n");
+  await hostGitAction(root, "stageContents", "new.txt", undefined, "first\n", "");
+  expect(git("show", ":new.txt")).toBe("first\n");
 });
 
 it("unstages a literal directory before the first commit without touching a matching sibling", async () => {

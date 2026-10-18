@@ -6,6 +6,11 @@ import type {
 } from "../src/features/social/model/social";
 import { platformRequirements } from "../src/integrations/social/capabilities";
 import { SocialHttp } from "../src/integrations/social/adapter";
+import {
+  SOCIAL_PLATFORMS,
+  PROFILE_ONLY_PLATFORMS,
+  TOKEN_PLATFORMS,
+} from "../src/features/social/model/social";
 import type { SocialCredential } from "./social-credentials";
 import type { SocialPrincipal, SocialService } from "./social";
 
@@ -34,7 +39,7 @@ export function socialOAuthConfigs(
   env: NodeJS.ProcessEnv = process.env,
 ): Partial<Record<SocialPlatform, SocialOAuthConfig>> {
   const configs: Partial<Record<SocialPlatform, SocialOAuthConfig>> = {};
-  for (const platform of ["x", "instagram", "facebook", "linkedin", "youtube"] as const) {
+  for (const platform of SOCIAL_PLATFORMS.filter((id) => !TOKEN_PLATFORMS.includes(id))) {
     const prefix = `BYCODA_SOCIAL_${platform.toUpperCase()}_`;
     const clientId = env[`${prefix}CLIENT_ID`];
     const redirectUri = env[`${prefix}REDIRECT_URI`];
@@ -74,20 +79,28 @@ export class SocialOAuth {
   }
   async refresh(account: SocialAccount, credential: SocialCredential): Promise<SocialCredential> {
     const config = this.configs[account.platform];
-    if (!config || !credential.refreshToken || !["x", "youtube"].includes(account.platform))
+    if (
+      !config ||
+      !credential.refreshToken ||
+      !["x", "youtube", "tiktok", "snapchat"].includes(account.platform)
+    )
       throw new Error("This connection requires owner reconnection.");
     const body = new URLSearchParams({
       grant_type: "refresh_token",
       refresh_token: credential.refreshToken,
-      client_id: config.clientId,
-      ...(account.platform === "youtube" && config.clientSecret
+      [account.platform === "tiktok" ? "client_key" : "client_id"]: config.clientId,
+      ...(account.platform !== "x" && config.clientSecret
         ? { client_secret: config.clientSecret }
         : {}),
     });
     const response = await this.fetcher(
       account.platform === "x"
         ? "https://api.x.com/2/oauth2/token"
-        : "https://oauth2.googleapis.com/token",
+        : account.platform === "tiktok"
+          ? "https://open.tiktokapis.com/v2/oauth/token/"
+          : account.platform === "snapchat"
+            ? "https://accounts.snapchat.com/login/oauth2/access_token"
+            : "https://oauth2.googleapis.com/token",
       {
         method: "POST",
         body,
@@ -117,7 +130,7 @@ export class SocialOAuth {
     )
       throw new Error("Account refresh returned invalid credentials.");
     if (result.scope) {
-      const scopes = [...new Set(result.scope.split(/\s+/).filter(Boolean))].sort();
+      const scopes = [...new Set(result.scope.split(/[ ,]+/).filter(Boolean))].sort();
       if (JSON.stringify(scopes) !== JSON.stringify([...account.scopes].sort()))
         throw new Error("Account scopes changed. Reconnect and review its permissions.");
     }
@@ -129,7 +142,7 @@ export class SocialOAuth {
   }
   availability() {
     return Object.fromEntries(
-      ["x", "instagram", "facebook", "linkedin", "youtube"].map((platform) => {
+      SOCIAL_PLATFORMS.filter((id) => !TOKEN_PLATFORMS.includes(id)).map((platform) => {
         const config = this.configs[platform as SocialPlatform];
         const configured = !!config && (platform === "x" || !!config.clientSecret);
         return [
@@ -151,6 +164,10 @@ export class SocialOAuth {
     operations: SocialOperation[] = ["publish"],
   ): { url: string; expiresAt: number } {
     const account = this.social.accountForOAuth(p, accountId);
+    if (TOKEN_PLATFORMS.includes(account.platform))
+      throw new Error("Use the host token connection for this account.");
+    const profileOnly = PROFILE_ONLY_PLATFORMS.includes(account.platform);
+    if (profileOnly) operations = [];
     const config = this.configs[account.platform];
     if (!config || (account.platform !== "x" && !config.clientSecret))
       throw new Error(
@@ -165,7 +182,7 @@ export class SocialOAuth {
     const requirements = platformRequirements(account.platform, account.accountType);
     if (
       !Array.isArray(operations) ||
-      !operations.length ||
+      (!operations.length && !profileOnly) ||
       operations.length > 11 ||
       operations.some(
         (operation) => !requirements[operation] || requirements[operation].unsupported,
@@ -174,6 +191,9 @@ export class SocialOAuth {
       throw new Error("Choose supported OAuth operations for this account.");
     // Closed read permissions must not prevent an otherwise permitted login.
     const scopes = [...new Set(operations.flatMap((operation) => requirements[operation].scopes))];
+    if (account.platform === "tiktok" && !scopes.includes("user.info.basic"))
+      scopes.push("user.info.basic");
+    if (account.platform === "snapchat") scopes.push("snapchat-profile-api");
     if (account.platform === "instagram") scopes.push("instagram_business_basic");
     if (account.platform === "x") scopes.push("offline.access");
     if (account.platform === "youtube")
@@ -206,14 +226,22 @@ export class SocialOAuth {
             ? `https://www.facebook.com/${config.graphVersion}/dialog/oauth`
             : account.platform === "youtube"
               ? "https://accounts.google.com/o/oauth2/v2/auth"
-              : "https://www.linkedin.com/oauth/v2/authorization";
+              : account.platform === "tiktok"
+                ? "https://www.tiktok.com/v2/auth/authorize/"
+                : account.platform === "snapchat"
+                  ? "https://accounts.snapchat.com/login/oauth2/authorize"
+                  : "https://www.linkedin.com/oauth/v2/authorization";
     const auth = new URL(endpoint);
     auth.search = new URLSearchParams({
-      client_id: config.clientId,
+      [account.platform === "tiktok" ? "client_key" : "client_id"]: config.clientId,
       redirect_uri: config.redirectUri,
       response_type: "code",
       scope: scopes.join(
-        account.platform === "instagram" || account.platform === "facebook" ? "," : " ",
+        account.platform === "instagram" ||
+          account.platform === "facebook" ||
+          account.platform === "tiktok"
+          ? ","
+          : " ",
       ),
       state,
       ...(account.platform === "youtube"
@@ -288,12 +316,16 @@ export class SocialOAuth {
               ? `https://graph.facebook.com/${config.graphVersion}/oauth/access_token`
               : platform === "youtube"
                 ? "https://oauth2.googleapis.com/token"
-                : "https://www.linkedin.com/oauth/v2/accessToken";
+                : platform === "tiktok"
+                  ? "https://open.tiktokapis.com/v2/oauth/token/"
+                  : platform === "snapchat"
+                    ? "https://accounts.snapchat.com/login/oauth2/access_token"
+                    : "https://www.linkedin.com/oauth/v2/accessToken";
       const body = new URLSearchParams({
         grant_type: "authorization_code",
         code,
         redirect_uri: config.redirectUri,
-        client_id: config.clientId,
+        [platform === "tiktok" ? "client_key" : "client_id"]: config.clientId,
         ...(platform === "x" ? { code_verifier: flow.verifier } : {}),
         ...(config.clientSecret && platform !== "x" ? { client_secret: config.clientSecret } : {}),
       });
@@ -354,6 +386,25 @@ export class SocialOAuth {
             credential,
           },
         ];
+      } else if (platform === "tiktok" || platform === "snapchat") {
+        const { value } = await http.request(
+          platform === "tiktok"
+            ? "https://open.tiktokapis.com/v2/user/info/?fields=open_id,display_name"
+            : "https://businessapi.snapchat.com/v1/public_profiles/my_profile",
+          credential.accessToken,
+        );
+        const profile = platform === "tiktok" ? value.data?.user : value.public_profile;
+        const scope = platform === "tiktok" ? "user.info.basic" : "snapchat-profile-api";
+        if (!flow.scopes.includes(scope))
+          throw new Error("OAuth did not grant the profile permission.");
+        flow.candidates = [
+          {
+            id: String(platform === "tiktok" ? (profile?.open_id ?? "") : (profile?.id ?? "")),
+            name: String(profile?.display_name ?? ""),
+            credential,
+          },
+        ];
+        credential.expiresAt ??= this.now() + 60 * 60_000;
       } else if (platform === "instagram") {
         const { value } = await http.request(
           `https://graph.instagram.com/${config.graphVersion}/me?fields=user_id,username,account_type`,

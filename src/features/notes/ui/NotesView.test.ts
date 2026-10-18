@@ -891,6 +891,36 @@ async function editTitle(value: string) {
   });
 }
 
+it("keeps a conflicting draft on its original version and offers creation as a new note", async () => {
+  vi.useFakeTimers();
+  const original = invoke.getMockImplementation()!;
+  invoke.mockImplementation((command, args) => {
+    if (
+      command === "notes_upsert" &&
+      args.note.expectedUpdatedAt !== 0 &&
+      args.note.expectedUpdatedAt !== stored.updatedAt
+    )
+      return Promise.reject(new Error("This note changed elsewhere. Your draft is preserved."));
+    return original(command, args);
+  });
+  await render();
+  await editTitle("My preserved title");
+  stored = { ...stored, body: "Other writer body", updatedAt: 90 };
+  invalidateNotes();
+  await act(async () => window.dispatchEvent(new Event(NOTES_CHANGED_EVENT)));
+  await act(async () => vi.advanceTimersByTime(450));
+  expect(stored.title).toBe("Plan");
+  expect(stored.body).toBe("Other writer body");
+  expect(container.querySelector<HTMLInputElement>('[aria-label="Note title"]')?.value).toBe(
+    "My preserved title",
+  );
+  expect(container.textContent).toContain("Your draft is preserved");
+  await act(async () => button("Save as new note").click());
+  expect(
+    invoke.mock.calls.filter(([command]) => command === "notes_upsert").at(-1)?.[1].note,
+  ).toMatchObject({ title: "My preserved title", expectedUpdatedAt: 0 });
+});
+
 it("keeps a focused empty title draft until blur", async () => {
   vi.useFakeTimers();
   await render();

@@ -11,6 +11,10 @@ import { useContext, useState } from "react";
 import { SocialPanelActiveContext } from "./socialContext";
 import { useSocialWorkspaceFilter } from "./useSocialWorkspaceFilter";
 import { SocialPrograms } from "./SocialPrograms";
+import { TikTokPublishingFields } from "./TikTokPublishingFields";
+import { XMediaFields } from "./XMediaFields";
+import { useQueryClient } from "@tanstack/react-query";
+import { socialQueryScope } from "../model/socialQuery";
 import type {
   CampaignVariant,
   SocialCampaign,
@@ -74,6 +78,7 @@ export function Campaigns({
   run,
   onFilterChange,
 }: Props) {
+  const queryClient = useQueryClient();
   const [view, setView] = useState<"manual" | "ai">("manual");
   const active = useContext(SocialPanelActiveContext);
   const [selectedProjects, setSelectedProjects] = useState<string[]>(
@@ -239,6 +244,11 @@ export function Campaigns({
         </div>
         <Composer
           title={editingId ? "Kampanya taslağını düzenle" : "Yeni kampanya"}
+          onOpen={() => {
+            void queryClient.invalidateQueries({
+              queryKey: [...socialQueryScope(client), "tiktok-creator"],
+            });
+          }}
           editing={editVersion}
           description="İçeriği kaydedin, kontrol edin ve yayın onayı verin. Kaydetmek gönderim başlatmaz."
         >
@@ -251,7 +261,13 @@ export function Campaigns({
               void (async () => {
                 if (
                   !(await run(async () => {
-                    if (!name.trim() || !validProjects || !variants.length || invalidVariants)
+                    if (
+                      !name.trim() ||
+                      !validProjects ||
+                      !variants.length ||
+                      invalidVariants ||
+                      Object.keys(videoProgress).length > 0
+                    )
                       throw new Error(
                         "Proje, hesap erişimi, içerik sınırları ve yayın zamanlarını kontrol edin.",
                       );
@@ -492,6 +508,14 @@ export function Campaigns({
                     <Notice kind="error">İçerik sınırını aşıyor. Kaydetmeden önce kısaltın.</Notice>
                   ) : null}
                 </label>
+                {snapshot.accounts.find((account) => account.id === variant.accountId)?.platform ===
+                "tiktok" ? (
+                  <TikTokPublishingFields
+                    variant={variant}
+                    client={client}
+                    onChange={(patch) => update(variant.accountId, patch)}
+                  />
+                ) : null}
                 <details className="social-settings">
                   <summary>Tek seferlik yayın zamanı, medya ve bağlantı</summary>
                   <label>
@@ -524,8 +548,11 @@ export function Campaigns({
                       }
                     />
                   </label>
-                  {snapshot.accounts.find((account) => account.id === variant.accountId)
-                    ?.platform !== "youtube" ? (
+                  {!snapshot.accounts.some(
+                    (account) =>
+                      account.id === variant.accountId &&
+                      ["youtube", "tiktok"].includes(account.platform),
+                  ) ? (
                     <label>
                       HTTPS görsel URL
                       <TextField
@@ -545,8 +572,22 @@ export function Campaigns({
                     </label>
                   ) : null}
                   {snapshot.accounts.find((account) => account.id === variant.accountId)
-                    ?.platform === "x" ||
-                  snapshot.accounts.some(
+                    ?.platform === "x" ? (
+                    <XMediaFields
+                      value={variant.media}
+                      client={client}
+                      onChange={(media) => update(variant.accountId, { media })}
+                      onBusyChange={(busy) =>
+                        setVideoProgress((current) => {
+                          const next = { ...current };
+                          if (busy) next[variant.accountId] = 0;
+                          else delete next[variant.accountId];
+                          return next;
+                        })
+                      }
+                    />
+                  ) : null}
+                  {snapshot.accounts.some(
                     (account) =>
                       account.id === variant.accountId &&
                       account.platform === "linkedin" &&

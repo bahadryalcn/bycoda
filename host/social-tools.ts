@@ -89,6 +89,37 @@ export const SOCIAL_TOOL_SCHEMAS: Record<SocialTool, Record<string, unknown>> = 
             link: string(),
             scheduledAt: { type: "number" },
             factIds: strings(),
+            tiktok: object(
+              {
+                privacy: {
+                  enum: [
+                    "PUBLIC_TO_EVERYONE",
+                    "MUTUAL_FOLLOW_FRIENDS",
+                    "FOLLOWER_OF_CREATOR",
+                    "SELF_ONLY",
+                  ],
+                },
+                durationSeconds: { type: "number" },
+                allowComment: { type: "boolean" },
+                allowDuet: { type: "boolean" },
+                allowStitch: { type: "boolean" },
+                brandContent: { type: "boolean" },
+                brandOrganic: { type: "boolean" },
+                isAigc: { type: "boolean" },
+                consent: { type: "boolean" },
+              },
+              [
+                "privacy",
+                "durationSeconds",
+                "allowComment",
+                "allowDuet",
+                "allowStitch",
+                "brandContent",
+                "brandOrganic",
+                "isAigc",
+                "consent",
+              ],
+            ),
             youtube: object(
               {
                 title: string(),

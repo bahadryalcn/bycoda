@@ -3,6 +3,7 @@ import { TurnLatch } from "../../../../shared/lib/turnLatch";
 import { nativeModelId } from "../../../../features/sessions/model/models";
 import { sameProviderAccountId } from "../../../../features/providers/model/providerAccounts";
 import type {
+  Attachment,
   RuntimeMode,
   TaskListItem,
   TaskListMeta,
@@ -334,9 +335,6 @@ export async function cancelClaudeTurn(sessionId: string): Promise<void> {
     cancelledThreads.add(sessionId);
     return;
   }
-  live.cancelled = true;
-  stopOutputWatches(live);
-  live.muteUpdates = true;
   for (const [, pending] of live.approvals) pending.resolve("deny");
   live.approvals.clear();
   for (const [, pending] of live.questions) pending.resolve({ kind: "skipped" });
@@ -350,12 +348,13 @@ export async function cancelClaudeTurn(sessionId: string): Promise<void> {
         subtype: "stop_task",
         task_id: taskId,
       }),
-    ).catch(() => undefined);
+    );
   }
-  await writeJson(
-    sessionId,
-    buildControlRequest(nextControlId(live), { subtype: "interrupt" }),
-  ).catch(() => undefined);
+  await writeJson(sessionId, buildControlRequest(nextControlId(live), { subtype: "interrupt" }));
+  // A failed write leaves the turn active and observable so Stop can retry.
+  live.cancelled = true;
+  stopOutputWatches(live);
+  live.muteUpdates = true;
   finishActiveTurn(live, [{ type: "message.completed" }, { type: "reasoning.completed" }]);
 }
 
@@ -470,19 +469,62 @@ function isReplayableRecord(rec: Record<string, unknown>): boolean {
  * wearing the user role — those are answers to the agent's own calls and are
  * replayed through `handleLine` onto their tool rows instead.
  */
-function userPromptText(rec: Record<string, unknown>): string | undefined {
+function userPromptText(
+  rec: Record<string, unknown>,
+): { text: string; attachments: Attachment[] } | undefined {
   const message = rec.message as Record<string, unknown> | undefined;
   const content = message?.content;
-  if (typeof content === "string") return content.trim() || undefined;
+  if (typeof content === "string")
+    return content.trim() ? { text: content.trim(), attachments: [] } : undefined;
   if (!Array.isArray(content)) return undefined;
   const blocks = content as Array<Record<string, unknown>>;
   if (blocks.some((block) => block?.type === "tool_result")) return undefined;
-  const text = blocks
-    .filter((block) => block?.type === "text")
-    .map((block) => (typeof block.text === "string" ? block.text : ""))
-    .join("\n")
-    .trim();
-  return text || undefined;
+  const attachments: Attachment[] = [];
+  const markers: string[] = [];
+  for (const block of blocks) {
+    if (block?.type === "text") continue;
+    const source = block?.source as Record<string, unknown> | undefined;
+    if (
+      block?.type === "image" &&
+      source?.type === "base64" &&
+      typeof source.data === "string" &&
+      source.data.length > 0 &&
+      typeof source.media_type === "string" &&
+      ["image/png", "image/jpeg", "image/gif", "image/webp"].includes(source.media_type)
+    ) {
+      attachments.push({
+        id: crypto.randomUUID(),
+        kind: "image",
+        name: `Imported image ${attachments.length + 1}`,
+        mimeType: source.media_type,
+        data: source.data,
+        size: Math.max(
+          0,
+          Math.floor((source.data.length * 3) / 4) - (source.data.match(/=+$/)?.[0].length ?? 0),
+        ),
+      });
+      // Saved transcript attachments intentionally omit inline payloads. Keep a
+      // permanent marker as well so reopening never silently loses the image.
+      markers.push(
+        `[Imported image ${attachments.length}: embedded image unavailable in saved history]`,
+      );
+    } else {
+      markers.push(
+        `[Imported ${typeof block?.type === "string" ? block.type : "unsupported"} content is unavailable]`,
+      );
+    }
+  }
+  const text = [
+    blocks
+      .filter((block) => block?.type === "text")
+      .map((block) => (typeof block.text === "string" ? block.text : ""))
+      .join("\n")
+      .trim(),
+    ...markers,
+  ]
+    .filter(Boolean)
+    .join("\n");
+  return text || attachments.length ? { text, attachments } : undefined;
 }
 
 /**
@@ -505,7 +547,7 @@ export function replayClaudeSession(input: {
   onEvent: (event: HarnessEvent) => void;
   /** A prompt someone typed. These are blocks, not events, so the caller adds
    * them to the transcript itself. */
-  onPrompt: (text: string, at?: number) => void;
+  onPrompt: (text: string, at?: number, attachments?: Attachment[]) => void;
 }): void {
   // Two things can leave a reply open. `handleLine` holds its own boundary for
   // a message carrying text, but a later tool-only record overwrites it; and
@@ -550,7 +592,7 @@ export function replayClaudeSession(input: {
     if (prompt) {
       // End the reply this prompt follows, so the turns stay separate blocks.
       finishReply();
-      input.onPrompt(prompt, timestampOf(rec));
+      input.onPrompt(prompt.text, timestampOf(rec), prompt.attachments);
       continue;
     }
 
@@ -1292,8 +1334,9 @@ async function handleControlRequest(
       sessionId,
       buildControlResponse(control.requestId, {
         behavior: "deny",
-        message:
-          "The client captured your proposed plan. Stop here and wait for the user's feedback or implementation request in a later turn.",
+        message: plan
+          ? "The client captured your proposed plan. Stop here and wait for the user's feedback or implementation request in a later turn."
+          : "The client has not received your plan text. Return the complete implementation plan as your final Markdown response with a heading and concrete steps, then stop. Do not implement it; the user can approve it with the client's Build action.",
       }),
     );
     return;

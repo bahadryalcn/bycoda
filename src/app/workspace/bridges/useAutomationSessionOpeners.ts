@@ -17,14 +17,8 @@ import {
   persistFingerprint,
   upsertSessionIfUnchanged,
 } from "../../../features/sessions/data/sessionStore";
-import {
-  loadRecents,
-  rememberProject,
-} from "../../../features/projects/model/recents";
-import {
-  sessionWorkCwd,
-  type Session,
-} from "../../../features/sessions/model/session";
+import { loadRecents, rememberProject } from "../../../features/projects/model/recents";
+import { sessionWorkCwd, type Session } from "../../../features/sessions/model/session";
 import { sessionsRef, setSessions } from "../../../features/sessions/model/sessionsStore";
 import type { SidebarTabId } from "../../../features/settings/model/appearance";
 
@@ -38,6 +32,7 @@ export interface AutomationSessionOpenersDeps {
   promptAddedProjectNames: (knownBefore: string[]) => void;
   lastPersisted: { current: Map<string, string> };
   setAutomationsViewOpen: (open: boolean) => void;
+  setServersViewOpen?: (open: boolean) => void;
   setSearchViewOpen: (open: boolean) => void;
   setInboxViewOpen: (open: boolean) => void;
   setNotesViewOpen: (open: boolean) => void;
@@ -59,6 +54,7 @@ export function useAutomationSessionOpeners({
   promptAddedProjectNames,
   lastPersisted,
   setAutomationsViewOpen,
+  setServersViewOpen,
   setSearchViewOpen,
   setInboxViewOpen,
   setNotesViewOpen,
@@ -70,10 +66,15 @@ export function useAutomationSessionOpeners({
 }: AutomationSessionOpenersDeps) {
   const onOpenAutomationSession = useCallback(
     async (sessionId: string, routed = false) => {
-      if (routed !== true && await routeWindowDestination({ kind: "session", sessionId }, !!toolWindow)) return;
+      if (
+        routed !== true &&
+        (await routeWindowDestination({ kind: "session", sessionId }, !!toolWindow))
+      )
+        return;
       const session = await ensureOpenSession(sessionId);
       if (!session) throw new Error("This conversation is no longer available.");
       setAutomationsViewOpen(false);
+      setServersViewOpen?.(false);
       setSearchViewOpen(false);
       setInboxViewOpen(false);
       setNotesViewOpen(false);
@@ -91,7 +92,14 @@ export function useAutomationSessionOpeners({
   // pane. Local copies keep following the host through the adopted-session mirror.
   const onOpenBackgroundSession = useCallback(
     async (target: BackgroundSessionTarget, routed = false) => {
-      if (routed !== true && await routeWindowDestination({ kind: "session", sessionId: target.sessionId, cwd: target.cwd, background: target }, !!toolWindow)) return;
+      if (
+        routed !== true &&
+        (await routeWindowDestination(
+          { kind: "session", sessionId: target.sessionId, cwd: target.cwd, background: target },
+          !!toolWindow,
+        ))
+      )
+        return;
       const remote = parseRemotePath(target.cwd);
       if (!remote) {
         const opened = await openLocalHostSession(target, {
@@ -126,6 +134,7 @@ export function useAutomationSessionOpeners({
           },
         });
         setAutomationsViewOpen(false);
+        setServersViewOpen?.(false);
         setSearchViewOpen(false);
         setInboxViewOpen(false);
         setNotesViewOpen(false);

@@ -57,7 +57,7 @@ const TOOLS = {
 export function deviceActionArgs(action: DeviceAction): string[] {
   const coordinate = (value: number) => {
     if (!Number.isInteger(value) || value < 0 || value > 20000)
-      throw new Error("Invalid device coordinate");
+      throw new Error("Invalid device coordinate: use an integer between 0 and 20000.");
     return String(value);
   };
   switch (action.type) {
@@ -86,7 +86,9 @@ export function deviceActionArgs(action: DeviceAction): string[] {
         action.text.includes("\0") ||
         action.text.startsWith("-")
       )
-        throw new Error("Invalid device text");
+        throw new Error(
+          "Invalid device text: use 1 to 4096 characters, without NUL or a leading hyphen.",
+        );
       return ["type", action.text];
     case "home":
       return ["home"];
@@ -415,6 +417,8 @@ export class DeviceHost {
     // Native discovery must still run when the optional hub API is unhealthy.
     const nativePlatform = this.platform === "darwin" ? "ios" : "android";
     const canDiscoverNative = this.platform === "darwin" || this.platform === "win32";
+    const canDiscoverMacAndroid =
+      this.platform === "darwin" && !!(this.env.ANDROID_HOME || this.env.ANDROID_SDK_ROOT);
     const [hub, native, macAndroid] = await Promise.allSettled([
       this.request("/api/devices").then((response) => response.json() as Promise<HubDevices>),
       canDiscoverNative
@@ -422,11 +426,13 @@ export class DeviceHost {
           ? this.listIos()
           : this.listWindowsAndroid()
         : Promise.resolve(undefined),
-      this.platform === "darwin" && (this.env.ANDROID_HOME || this.env.ANDROID_SDK_ROOT)
-        ? this.listMacAndroid()
-        : Promise.resolve([] as DeviceSummary[]),
+      canDiscoverMacAndroid ? this.listMacAndroid() : Promise.resolve([] as DeviceSummary[]),
     ]);
-    if (hub.status === "rejected" && (native.status === "rejected" || !native.value)) {
+    if (
+      hub.status === "rejected" &&
+      (native.status === "rejected" || !native.value) &&
+      (!canDiscoverMacAndroid || macAndroid.status === "rejected")
+    ) {
       throw hub.reason;
     }
     const result = hub.status === "fulfilled" ? hub.value : {};
@@ -449,15 +455,14 @@ export class DeviceHost {
           ...native.value,
         ].slice(0, 200);
         errors = errors.filter((error) => !error.toLowerCase().includes(nativePlatform));
-        // Windows' native implementation covers all supported devices. A Mac hub
-        // failure can still affect Android, so retain it as a partial warning.
-        if (hub.status === "rejected" && this.platform === "darwin")
-          errors.push(String(hub.reason).slice(0, 500));
       } else if (native.status === "rejected") {
         // Preserve working hub results and expose the actionable SDK failure.
         errors.push(String(native.reason).slice(0, 500));
       }
     }
+    // A Mac hub failure can still affect optional discovery capabilities.
+    if (hub.status === "rejected" && this.platform === "darwin")
+      errors.push(String(hub.reason).slice(0, 500));
     if (macAndroid.status === "fulfilled") {
       for (const item of macAndroid.value) {
         devices = devices.filter((device) => device.id !== item.id);
@@ -569,7 +574,11 @@ export class DeviceHost {
             .find((item) => item.startsWith("model:"))
             ?.slice(6)
             .replaceAll("_", " ") || serial;
-      const entry = devices.find((device) => device.name === name);
+      // Only an emulator can replace its stopped AVD placeholder. Display names
+      // are not identities: several physical phones may have the same model.
+      const entry = emulator
+        ? devices.find((device) => !device.physical && !device.booted && device.id === name)
+        : undefined;
       const online: DeviceSummary = {
         id: serial,
         name,

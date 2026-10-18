@@ -10,6 +10,13 @@ import {
 } from "../../../../features/sessions/model/messageQueue";
 import { getSessions, setSessions } from "../../../../features/sessions/model/sessionsStore";
 import { t } from "../../../../shared/i18n";
+import type { Session } from "../../../../features/sessions/model/session";
+
+function holdRejectedQueuedHead(session: Session, messageId: string | undefined): Session {
+  return messageId && session.queuedMessages?.[0]?.id === messageId
+    ? { ...session, queueStatus: "paused" }
+    : session;
+}
 
 const pendingChecks = new Map<string, number>();
 export function isUsageBudgetChecking(sessionId: string, generation: number | undefined): boolean {
@@ -26,6 +33,11 @@ export function gateUsageBudget(
   try {
     if (!blockingUsageBudgets(pre.current).length) return undefined;
   } catch (error) {
+    setSessions((all) =>
+      all.map((s) =>
+        s.id === input.sessionId ? holdRejectedQueuedHead(s, input.options?.queuedMessageId) : s,
+      ),
+    );
     ctx.enqueueHarnessEvent(input.sessionId, { type: "session.error", message: String(error) });
     ctx.flushHarnessEvents();
     input.options?.onSettled?.({ status: "failed", text: "", error: String(error) });
@@ -39,9 +51,18 @@ export function gateUsageBudget(
   const isCurrent = () => turnGen.current.get(sessionId) === gen;
   setSessions((all) => all.map((s) => (s.id === sessionId ? { ...s, busy: true } : s)));
   let accepted = false;
-  const release = () => {
+  const release = (rejected = false) => {
     if (isCurrent())
-      setSessions((all) => all.map((s) => (s.id === sessionId ? { ...s, busy: false } : s)));
+      setSessions((all) =>
+        all.map((s) =>
+          s.id === sessionId
+            ? {
+                ...(rejected ? holdRejectedQueuedHead(s, options?.queuedMessageId) : s),
+                busy: false,
+              }
+            : s,
+        ),
+      );
   };
   return (async () => {
     try {
@@ -73,7 +94,7 @@ export function gateUsageBudget(
     } finally {
       if (pendingChecks.get(sessionId) === gen) pendingChecks.delete(sessionId);
       if (!accepted) {
-        release();
+        release(true);
         pre.editedResend?.reject();
         if (
           !options?.queuedMessageId &&

@@ -104,6 +104,153 @@ function fixture() {
 }
 
 describe("agent app commands", () => {
+  it("keeps deeply nested sessions addressable and request correlations stable", async () => {
+    const { source, host } = fixture();
+    const sessions = new Map<string, typeof source>();
+    host.start = vi.fn(async (_launch, id) => {
+      if (!sessions.has(id)) sessions.set(id, { ...newSession("codex", source.cwd), id });
+    });
+    host.sessions = vi.fn(async () =>
+      [...sessions.values()].map((session) => ({
+        id: session.id,
+        title: session.title,
+        harness: session.harness,
+        model: session.model,
+        busy: false,
+        hasDraft: false,
+      })),
+    );
+    host.session = vi.fn(async (id) => sessions.get(id) ?? null);
+    const requestId = "r".repeat(128);
+    let parent = source;
+    for (let depth = 0; depth < 20; depth++) {
+      const launch = { prompt: "Review this project" };
+      const result = (await handleAgentApp(parent, requestId, "sessions.start", launch, host)) as {
+        id: string;
+      };
+      expect(result.id).toMatch(/^[A-Za-z0-9_-]{1,256}$/);
+      expect(await handleAgentApp(parent, requestId, "sessions.start", launch, host)).toMatchObject(
+        { id: result.id },
+      );
+      const child = sessions.get(result.id)!;
+      await expect(
+        handleAgentApp(parent, "read", "sessions.read", { sessionId: child.id }, host),
+      ).resolves.toMatchObject({ sessionId: child.id });
+      await handleAgentApp(
+        parent,
+        requestId,
+        "sessions.send",
+        { sessionId: child.id, prompt: "Continue" },
+        host,
+      );
+      const correlation = vi.mocked(host.send).mock.calls.at(-1)![2];
+      expect(correlation).toMatch(/^[A-Za-z0-9_-]{1,512}$/);
+      await handleAgentApp(
+        parent,
+        requestId,
+        "sessions.draft",
+        { sessionId: child.id, prompt: "Draft" },
+        host,
+      );
+      expect(vi.mocked(host.draft).mock.calls.at(-1)![2]).toBe(correlation);
+      child.blocks = [
+        { id: "user", role: "user", text: "Continue", appRequestId: correlation },
+        { id: "answer", role: "assistant", text: "Done" },
+      ];
+      await expect(
+        handleAgentApp(
+          parent,
+          "wait",
+          "sessions.wait",
+          { sessionId: child.id, sentRequestId: requestId },
+          host,
+        ),
+      ).resolves.toMatchObject({ settled: true, turn: { assistant: { text: "Done" } } });
+      await expect(
+        handleAgentApp(
+          parent,
+          "folder",
+          "folders.move",
+          { sessionId: child.id, newFolderName: `Depth ${depth}` },
+          host,
+        ),
+      ).resolves.toMatchObject({ sessionId: child.id });
+      parent = child;
+    }
+    expect(sessions.size).toBe(20);
+  });
+
+  it("separates long request keys while preserving valid persisted legacy keys", async () => {
+    const { source, host } = fixture();
+    const launch = { prompt: "Review" };
+    expect(await handleAgentApp(source, "request", "sessions.start", launch, host)).toMatchObject({
+      id: "app-lead-request",
+    });
+    source.id = "s".repeat(169);
+    const first = (await handleAgentApp(
+      source,
+      "r".repeat(128),
+      "sessions.start",
+      launch,
+      host,
+    )) as { id: string };
+    const otherRequest = (await handleAgentApp(
+      source,
+      "q".repeat(128),
+      "sessions.start",
+      launch,
+      host,
+    )) as { id: string };
+    source.id = "t".repeat(169);
+    const otherSource = (await handleAgentApp(
+      source,
+      "r".repeat(128),
+      "sessions.start",
+      launch,
+      host,
+    )) as { id: string };
+    expect(new Set([first.id, otherRequest.id, otherSource.id]).size).toBe(3);
+    expect(first.id.length).toBeLessThanOrEqual(256);
+  });
+
+  it("retains persisted long send and draft correlations when IDs require hashing", async () => {
+    const { source, host } = fixture();
+    source.id = "s".repeat(169);
+    const requestId = "r".repeat(128);
+    const legacy = `app-${source.id}-${requestId}`;
+    const target = { ...newSession("codex", source.cwd), id: "other" };
+    target.blocks = [
+      { id: "u", role: "user", text: "Existing", appRequestId: legacy },
+      { id: "a", role: "assistant", text: "Persisted answer" },
+    ];
+    host.session = vi.fn(async () => target);
+    await handleAgentApp(
+      source,
+      requestId,
+      "sessions.send",
+      { sessionId: "other", prompt: "Existing" },
+      host,
+    );
+    expect(host.send).toHaveBeenCalledWith("other", "Existing", legacy);
+    await handleAgentApp(
+      source,
+      requestId,
+      "sessions.draft",
+      { sessionId: "other", prompt: "Existing" },
+      host,
+    );
+    expect(host.draft).toHaveBeenCalledWith("other", "Existing", legacy);
+    await expect(
+      handleAgentApp(
+        source,
+        "wait",
+        "sessions.wait",
+        { sessionId: "other", sentRequestId: requestId },
+        host,
+      ),
+    ).resolves.toMatchObject({ settled: true, turn: { assistant: { text: "Persisted answer" } } });
+  });
+
   it("reads a listed project session in bounded pages", async () => {
     const { source, host } = fixture();
     const result = await handleAgentApp(
@@ -794,6 +941,7 @@ describe("agent app commands", () => {
     });
     expect(host.saveNote).toHaveBeenCalledWith({
       id: "n1",
+      expectedUpdatedAt: note.updatedAt,
       title: note.title,
       body: "Updated body",
       tags: note.tags,

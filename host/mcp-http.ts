@@ -10,6 +10,7 @@ import {
   CONVERSATION_MCP_INSTRUCTIONS,
   validateConversationTool,
   runConversationMcp,
+  type ConversationTool,
 } from "./conversation-tools";
 import {
   RUNTIME_LOG_TOOLS,
@@ -83,6 +84,52 @@ export function mcpCatalog(group: McpGroup) {
       idempotentHint: socialReads.has(action),
     },
   }));
+}
+
+// These operations have project services in external(), without session-owned
+// runtime state or native owner approval. Keep discovery and dispatch together.
+const externalConversationActions = new Set<ConversationTool>([
+  "tools.list",
+  "sessions.list",
+  "sessions.read",
+  "logs.read",
+  "logs.sources",
+  "notes.list",
+  "notes.read",
+  "notes.create",
+  "notes.update",
+  "notes.delete",
+  "automations.list",
+  "automations.get",
+  "automations.update",
+  "automations.pause",
+  "automations.resume",
+  "automations.delete",
+  "automations.runs",
+  "automations.runNow",
+  "automations.stopRun",
+  "inbox.providers.status",
+  "inbox.providers.list",
+  "inbox.details",
+  "inbox.thread",
+  "inbox.reviewContext",
+  "inbox.result",
+]);
+const externalOwnerActions = new Set([
+  "replies.send",
+  "messages.send",
+  "comments.send",
+  "campaigns.schedule",
+]);
+
+export function externalMcpCatalog(group: McpGroup, grant: McpGrant) {
+  return mcpCatalog(group).filter(
+    (tool) =>
+      grant.scopes[group]?.includes(tool.annotations.readOnlyHint ? "read" : "write") &&
+      (group === "conversation"
+        ? externalConversationActions.has(tool.action as ConversationTool)
+        : group !== "social" || !externalOwnerActions.has(tool.action)),
+  );
 }
 
 /** Stateless Streamable HTTP: JSON responses, no SSE subscription or MCP session IDs.
@@ -280,17 +327,10 @@ export class McpHttp {
       else if (message.method === "tools/list")
         result = {
           tools: current.flatMap((group) =>
-            mcpCatalog(group)
-              .filter((tool) => {
-                const identity = identities.get(group)!;
-                return (
-                  !identity.grant ||
-                  identity.grant.scopes[group]?.includes(
-                    tool.annotations.readOnlyHint ? "read" : "write",
-                  )
-                );
-              })
-              .map(({ action: _action, ...tool }) => tool),
+            (identities.get(group)!.grant
+              ? externalMcpCatalog(group, identities.get(group)!.grant!)
+              : mcpCatalog(group)
+            ).map(({ action: _action, ...tool }) => tool),
           ),
         };
       else if (message.method === "tools/call") {
@@ -430,6 +470,12 @@ export class McpHttp {
     const o = this.options;
     const authorized = () => !!this.tokens.get(token);
     if (!authorized()) throw new Error("External credential revoked.");
+    if (!externalMcpCatalog(group, grant).some((tool) => tool.action === action))
+      throw new Error(
+        group === "social" && externalOwnerActions.has(action)
+          ? "Owner approval required. Submit the draft to the owner in bycoda."
+          : "This tool requires a bycoda session, owner approval, or additional token scope.",
+      );
     const project = o.store.project(grant.projectId);
     if (group === "social") {
       // External tokens never consume active-rule send authority. Exact owner
@@ -464,7 +510,7 @@ export class McpHttp {
       return {
         environmentId: o.store.environmentId,
         projectId: project.id,
-        tools: conversationToolCatalog(),
+        tools: externalMcpCatalog("conversation", grant),
       };
     if (action === "sessions.list")
       return { cwd: project.cwd, sessions: (await o.projectSessions(project.id)).list };

@@ -239,6 +239,7 @@ function FilePaneComponent({
                 <DocumentView path={file.path} cwd={file.cwd} />
               ) : (
                 <Editor
+                  documentId={file.id}
                   path={file.path}
                   cwd={file.cwd}
                   showDiff={!!file.review}

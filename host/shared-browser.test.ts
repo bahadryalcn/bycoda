@@ -153,6 +153,49 @@ function logsFixture() {
   return { logs, pages, browser, close };
 }
 
+it("bounds property inspection for large console objects before host transfer", async () => {
+  const { logs, pages, browser } = logsFixture();
+  const claim = await browser.dispatch("browser.claim", {}, "owner");
+  await browser.dispatch(
+    "browser.open",
+    { leaseId: claim.leaseId, url: "https://app.test", projectId: "project" },
+    "owner",
+  );
+  const input: Record<string, unknown> = {};
+  for (let i = 0; i < 500_000; i++) input[`field${i}`] = i;
+  input.status = 503;
+  let inspected = 0;
+  const proxy = new Proxy(input, {
+    ownKeys() {
+      throw new Error("must not enumerate console objects");
+    },
+    getOwnPropertyDescriptor(target, key) {
+      inspected++;
+      return Reflect.getOwnPropertyDescriptor(target, key);
+    },
+  });
+  let captured: unknown;
+  pages[0].emit("console", {
+    text: () => "large diagnostic",
+    type: () => "log",
+    args: () => [
+      {
+        evaluate: async (callback: (value: unknown) => unknown) => {
+          captured = callback(proxy);
+          return captured;
+        },
+      },
+    ],
+  });
+  await vi.waitFor(() => expect(logs.read().entries).toHaveLength(1));
+  expect(captured).toMatchObject({
+    status: 503,
+    $capture: expect.stringContaining("other properties omitted"),
+  });
+  expect(inspected).toBeLessThan(50);
+  await browser.close();
+});
+
 it("captures console objects, stack traces and network failures with bounded redacted values", async () => {
   const { logs, pages, browser } = logsFixture();
   const claim = await browser.dispatch("browser.claim", {}, "owner");
@@ -167,7 +210,7 @@ it("captures console objects, stack traces and network failures with bounded red
     "owner",
   );
   const page = pages[0];
-  const arg = { user: "Alice", token: "object-secret", large: "x".repeat(40_000) };
+  const arg = { message: "ready", token: "object-secret", large: "x".repeat(40_000) };
   page.emit("console", {
     text: () => "ready token=text-secret",
     type: () => "log",
@@ -205,7 +248,7 @@ it("captures console objects, stack traces and network failures with bounded red
   expect(snapshot.entries.find((entry) => entry.message.startsWith("ready"))).toMatchObject({
     level: "info",
     location: { file: "https://app.test/src/app.ts", line: 5, column: 3 },
-    details: [{ user: "Alice", token: "[REDACTED]" }],
+    details: [{ message: "ready", token: "[REDACTED]" }],
   });
   expect(snapshot.entries.find((entry) => entry.stack)).toMatchObject({
     level: "error",
@@ -247,7 +290,7 @@ it("fences late events and pending console values when a new conversation opens 
     type: () => "log",
     args: () => [
       {
-        jsonValue: () =>
+        evaluate: () =>
           new Promise((resolve) => {
             finishArgument = resolve;
           }),

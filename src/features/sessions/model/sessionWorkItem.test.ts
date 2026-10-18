@@ -177,6 +177,7 @@ describe("session work items", () => {
   });
 
   it("runs a pull request action and caches the refreshed result", async () => {
+    const reviewedHeadOid = "a".repeat(40);
     const merged: GithubWorkItem = {
       kind: "pr",
       repo: "openai/codex",
@@ -191,9 +192,9 @@ describe("session work items", () => {
     };
     vi.mocked(invoke).mockResolvedValue(merged);
 
-    await expect(githubPrAction("/tmp/codex", "openai/codex", 42, "squash")).resolves.toEqual(
-      merged,
-    );
+    await expect(
+      githubPrAction("/tmp/codex", "openai/codex", 42, "squash", reviewedHeadOid),
+    ).resolves.toEqual(merged);
     await expect(githubWorkItem("/tmp/codex", "openai/codex", "pr", 42)).resolves.toEqual(merged);
 
     expect(invoke).toHaveBeenCalledTimes(1);
@@ -202,6 +203,7 @@ describe("session work items", () => {
       repo: "openai/codex",
       number: 42,
       action: "squash",
+      expectedHeadOid: reviewedHeadOid,
     });
   });
 

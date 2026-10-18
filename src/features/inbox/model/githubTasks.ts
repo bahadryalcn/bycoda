@@ -93,6 +93,7 @@ export type InboxItem = Omit<GithubWorkItem, "kind"> & {
 };
 
 export type GithubWorkItemDetails = {
+  headRefOid?: string;
   body: string;
   author: string;
   authorAvatarUrl?: string;
@@ -141,6 +142,7 @@ export type GithubPrFile = {
 };
 
 export type GithubPrDiff = {
+  headOid?: string;
   additions: number;
   deletions: number;
   files: GithubPrFile[];
@@ -691,6 +693,7 @@ export async function githubPrAction(
   repo: string,
   number: number,
   action: GithubPrAction,
+  expectedHeadOid?: string,
 ): Promise<GithubWorkItem> {
   ensureItemScope(cwd, repo, "pr", number);
   const generation = inboxCacheGeneration;
@@ -700,6 +703,7 @@ export async function githubPrAction(
     repo,
     number,
     action,
+    expectedHeadOid: expectedHeadOid ?? "",
   });
   if (
     generation !== inboxCacheGeneration ||

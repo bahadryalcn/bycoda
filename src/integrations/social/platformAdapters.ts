@@ -1,5 +1,8 @@
 import type { SocialAccount, SocialJob } from "../../features/social/model/social";
 import { createYouTubeAdapter } from "./youtube";
+import { uploadXMedia, xMediaIssue } from "./xMedia";
+import { createTikTokAdapter, tiktokContentIssue } from "./tiktok";
+import { createTelegramAdapter, createWhatsAppAdapter, profileOnlyAdapter } from "./messaging";
 import {
   SocialHttp,
   SocialPlatformError,
@@ -55,6 +58,10 @@ export function createSocialAdapters(
     throw new Error("Invalid social API version.");
   const x: SocialAdapter = {
     async send(_account, job, token, media, checkpoint) {
+      const message =
+        job.kind === "message" ||
+        (job.kind === "reply" && !!job.payload.recipientId && !job.payload.postId);
+      const mediaIds = await uploadXMedia(http, job, token, media, message, checkpoint);
       if (
         job.kind === "message" ||
         (job.kind === "reply" && job.payload.recipientId && !job.payload.postId)
@@ -64,29 +71,9 @@ export function createSocialAdapters(
           : `dm_conversations/with/${id(job.payload.recipientId)}/messages`;
         const { value } = await http.json(`https://api.x.com/2/${path}`, token, {
           text: text(job),
+          ...(mediaIds.length ? { attachments: [{ media_id: mediaIds[0] }] } : {}),
         });
         return { platformId: requireId(value.data?.dm_event_id) };
-      }
-      const mediaIds: string[] = [...(job.preparation?.mediaIds ?? [])];
-      for (const item of job.payload.media.slice(mediaIds.length)) {
-        if (item.kind !== "image" || !item.uploadId) throw new SocialPlatformError("unsupported");
-        const bytes = await media(item.uploadId);
-        const png = bytes[0] === 0x89 && bytes[1] === 0x50;
-        const form = new FormData();
-        form.set(
-          "media",
-          new Blob([new Uint8Array(bytes)], {
-            type: png ? "image/png" : "image/jpeg",
-          }),
-          png ? "image.png" : "image.jpg",
-        );
-        form.set("media_category", "tweet_image");
-        const { value } = await http.request("https://api.x.com/2/media/upload", token, {
-          method: "POST",
-          body: form,
-        });
-        mediaIds.push(requireId(value.data?.id));
-        checkpoint?.({ mediaIds: [...mediaIds] });
       }
       const { value } = await http.json("https://api.x.com/2/tweets", token, {
         text: text(job),
@@ -262,7 +249,10 @@ export function createSocialAdapters(
           platform === "instagram"
             ? "instagram_business_manage_comments"
             : "pages_read_user_content";
-        if (account.scopes.includes(commentScope)) {
+        const canReadComments =
+          account.scopes.includes(commentScope) &&
+          (platform === "instagram" || account.scopes.includes("pages_read_engagement"));
+        if (canReadComments) {
           const { value: recent } = await http.request(
             endpoint(
               `${id(account.platformId)}/${platform === "instagram" ? "media" : "published_posts"}?fields=id&limit=25${scan.discovery ? `&after=${encodeURIComponent(scan.discovery)}` : ""}`,
@@ -273,7 +263,7 @@ export function createSocialAdapters(
           scan.discovery = graphNext(recent);
         }
         scan.posts = [...new Set(owned)];
-        if (account.scopes.includes(commentScope))
+        if (canReadComments)
           for (let read = 0; read < Math.min(4, scan.posts.length); read++) {
             scan.index %= scan.posts.length;
             const post = scan.posts[scan.index];
@@ -510,6 +500,10 @@ export function createSocialAdapters(
     facebook: meta("facebook"),
     linkedin,
     youtube: createYouTubeAdapter(http),
+    tiktok: createTikTokAdapter(http),
+    snapchat: profileOnlyAdapter,
+    whatsapp: createWhatsAppAdapter(http, graphVersion),
+    telegram: createTelegramAdapter(http),
   };
 }
 
@@ -517,6 +511,15 @@ export function contentSupport(
   account: SocialAccount,
   job: Pick<SocialJob, "payload" | "kind">,
 ): string | undefined {
+  if (account.platform === "tiktok") return tiktokContentIssue(job);
+  if (account.platform === "x") {
+    const message =
+      job.kind === "message" ||
+      (job.kind === "reply" && !!job.payload.recipientId && !job.payload.postId);
+    if (message && account.connection === "browser" && job.payload.media.length)
+      return "Browser DM media attachments are unavailable; use the X API connection.";
+    return xMediaIssue(job.payload.media, message);
+  }
   if (job.kind !== "publish" && job.payload.media.length)
     return "Reply/message media attachments are not supported yet.";
   if (account.platform === "youtube" && job.kind === "publish") {
@@ -565,10 +568,5 @@ export function contentSupport(
     (job.payload.media.length > 1 || job.payload.media.some((item) => !item.url))
   )
     return "Facebook adapter supports text or one HTTPS image.";
-  if (
-    account.platform === "x" &&
-    (job.payload.media.length > 4 || job.payload.media.some((item) => !item.uploadId))
-  )
-    return "X requires up to four uploaded images.";
   return undefined;
 }

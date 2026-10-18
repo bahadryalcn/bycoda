@@ -103,6 +103,8 @@ import {
   listHostAutomationResults,
   runHostAutomationNow,
   saveHostAutomation,
+  previewHostAutomation,
+  type HostSchedulePreview,
 } from "../model/hostAutomationClient";
 import { failedMachineNames } from "../model/machineResults";
 import type { RemoteMachine } from "../../connections/model/protocol";
@@ -703,6 +705,11 @@ function AutomationsContent({
                 ? selected.host.machineName
                 : backgroundMachineName(machines, editorDraft.cwd)
             }
+            backgroundMachineId={
+              selected?.host && editorDraft.id
+                ? selected.host.machineId
+                : backgroundMachineFor(machines, editorDraft.cwd)?.id
+            }
             onChange={setDraft}
             onClose={() => {
               setDraft(null);
@@ -1089,6 +1096,7 @@ function AutomationEditor({
   deleteDisabled,
   dirty,
   backgroundMachine,
+  backgroundMachineId,
   onChange,
   onClose,
   onSubmit,
@@ -1108,6 +1116,7 @@ function AutomationEditor({
   dirty: boolean;
   /** The machine whose host can run this draft's project in the background. */
   backgroundMachine?: string;
+  backgroundMachineId?: string;
   onChange: (draft: AutomationDraft) => void;
   onClose: () => void;
   onSubmit: (event: FormEvent) => void;
@@ -1399,6 +1408,8 @@ function AutomationEditor({
                         <TriggerRow
                           trigger={trigger}
                           cwd={draft.cwd}
+                          background={draft.runInBackground}
+                          machineId={backgroundMachineId}
                           onChange={updateTrigger}
                           onRemove={() =>
                             setTriggers(draft.triggers.filter((entry) => entry.id !== trigger.id))
@@ -2194,14 +2205,18 @@ function triggerLabel(automation: Automation): string {
   return triggers.length > 1 ? `${label} +${triggers.length - 1}` : label;
 }
 
-function TriggerRow({
+export function TriggerRow({
   trigger,
   cwd,
+  background = false,
+  machineId,
   onChange,
   onRemove,
 }: {
   trigger: AutomationTrigger;
   cwd: string;
+  background?: boolean;
+  machineId?: string;
   onChange: (trigger: AutomationTrigger) => void;
   onRemove: () => void;
 }) {
@@ -2231,14 +2246,42 @@ function TriggerRow({
   if (trigger.branch && !branchOptions.some((option) => option.value === trigger.branch)) {
     branchOptions.unshift({ value: trigger.branch, label: trigger.branch });
   }
-  const nextAt = trigger.kind === "time" ? nextAutomationRunAt(trigger) : 0;
+  const previewKey = `${machineId}:${trigger.scheduleKind}:${trigger.time}:${trigger.minute}:${trigger.dayOfWeek}`;
+  const [preview, setPreview] = useState<{ key: string; value: HostSchedulePreview } | null>(null);
+  useEffect(() => {
+    if (!background || !machineId || trigger.kind !== "time") return;
+    let cancelled = false;
+    void previewHostAutomation(machineId, trigger).then(
+      (value) => {
+        if (!cancelled) setPreview({ key: previewKey, value });
+      },
+      () => {
+        if (!cancelled) setPreview(null);
+      },
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [background, machineId, previewKey, trigger.kind]);
+  const hostPreview = preview?.key === previewKey ? preview.value : undefined;
+  const nextAt =
+    trigger.kind === "time"
+      ? background
+        ? (hostPreview?.nextRunAt ?? 0)
+        : nextAutomationRunAt(trigger)
+      : 0;
 
   return (
     <div className="group flex min-h-10 items-center gap-2.5 py-1">
       <TriggerMark kind={trigger.kind} className="size-3.5 shrink-0 text-(--ui-text-muted)" />
       <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-1.5 gap-y-1 text-[13px] text-(--ui-tone-neutral-fg)">
         {trigger.kind === "time" ? (
-          <TimeTriggerSentence trigger={trigger} nextAt={nextAt} onChange={onChange} />
+          <TimeTriggerSentence
+            trigger={trigger}
+            nextAt={nextAt}
+            onChange={onChange}
+            executionTimeZone={background ? (hostPreview?.timeZone ?? null) : undefined}
+          />
         ) : (
           <EventTriggerSentence
             trigger={trigger}
@@ -2266,10 +2309,12 @@ function TriggerRow({
 function TimeTriggerSentence({
   trigger,
   nextAt,
+  executionTimeZone,
   onChange,
 }: {
   trigger: AutomationTrigger;
   nextAt: number;
+  executionTimeZone?: string | null;
   onChange: (trigger: AutomationTrigger) => void;
 }) {
   useLocale();
@@ -2318,8 +2363,18 @@ function TimeTriggerSentence({
           onChange={(value) => onChange({ ...trigger, time: value })}
         />
       )}
-      <span className="text-(--ui-text-muted)">{gmtOffsetLabel()}</span>
-      <span className="ml-1 text-(--ui-text-muted)">{nextRunPreview(nextAt)}</span>
+      <span className="text-(--ui-text-muted)">
+        {executionTimeZone === undefined
+          ? gmtOffsetLabel()
+          : (executionTimeZone ?? t("Execution host timezone unavailable"))}
+      </span>
+      <span className="ml-1 text-(--ui-text-muted)">
+        {executionTimeZone === undefined
+          ? nextRunPreview(nextAt)
+          : executionTimeZone && nextAt
+            ? `${t("Next run")} ${new Date(nextAt).toLocaleString(undefined, { timeZone: executionTimeZone, timeZoneName: "short" })}`
+            : t("Host schedule preview unavailable")}
+      </span>
     </>
   );
 }

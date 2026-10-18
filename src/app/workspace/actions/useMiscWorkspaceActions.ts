@@ -1,9 +1,4 @@
-import {
-  useCallback,
-  type Dispatch,
-  type MutableRefObject,
-  type SetStateAction,
-} from "react";
+import { useCallback, type Dispatch, type MutableRefObject, type SetStateAction } from "react";
 import type { Session } from "../../../features/sessions/model/session";
 import type { WorkspaceTab } from "../../../features/workspace/model/layout";
 import {
@@ -133,6 +128,7 @@ export function useNotesPanelToggle(deps: {
   inboxViewOpenRef: MutableRefObject<boolean>;
   notesViewOpenRef: MutableRefObject<boolean>;
   automationsViewOpenRef: MutableRefObject<boolean>;
+  serversViewOpenRef?: MutableRefObject<boolean>;
   settingsOpenRef: MutableRefObject<boolean>;
   filePickerOpenRef: MutableRefObject<boolean>;
   whatsNewVersionRef: MutableRefObject<string | null>;
@@ -146,6 +142,7 @@ export function useNotesPanelToggle(deps: {
     inboxViewOpenRef,
     notesViewOpenRef,
     automationsViewOpenRef,
+    serversViewOpenRef,
     settingsOpenRef,
     filePickerOpenRef,
     whatsNewVersionRef,
@@ -165,6 +162,7 @@ export function useNotesPanelToggle(deps: {
           inboxViewOpenRef.current ||
           notesViewOpenRef.current ||
           automationsViewOpenRef.current ||
+          serversViewOpenRef?.current ||
           settingsOpenRef.current ||
           filePickerOpenRef.current ||
           whatsNewVersionRef.current,
@@ -254,9 +252,9 @@ export function useOpenArchivedSession(deps: {
 }
 
 /** Opens the worktrees settings section. */
-export function useManageWorktrees(deps: {
-  openSettings: (section?: SettingsSectionId) => void;
-}): { onManageWorktrees: () => void } {
+export function useManageWorktrees(deps: { openSettings: (section?: SettingsSectionId) => void }): {
+  onManageWorktrees: () => void;
+} {
   const { openSettings } = deps;
 
   const onManageWorktrees = useCallback(() => openSettings("worktrees"), [openSettings]);

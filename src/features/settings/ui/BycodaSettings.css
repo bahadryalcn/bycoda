@@ -252,6 +252,42 @@
 .bycoda-settings-workbench .settings-row-control:empty {
   display: none;
 }
+
+/* Feedback follows the operation and never competes with its input or card. */
+.bycoda-settings-workbench .settings-row:has(> .settings-row-feedback) {
+  flex-wrap: wrap;
+}
+.bycoda-settings-workbench .settings-row-feedback {
+  flex-basis: 100%;
+  grid-column: 1 / -1;
+  min-inline-size: 0;
+}
+.bycoda-settings-workbench .settings-feedback {
+  display: grid;
+  grid-column: 1 / -1;
+  flex-basis: 100%;
+  gap: 8px;
+  min-inline-size: 0;
+  inline-size: 100%;
+  overflow-wrap: anywhere;
+}
+.bycoda-settings-workbench .settings-feedback > button {
+  justify-self: start;
+}
+.bycoda-settings-workbench .settings-group-content > .settings-feedback {
+  padding: 12px 16px;
+}
+.bycoda-settings-workbench .settings-group-feedback {
+  padding: 12px 16px;
+  border-block-start: 1px solid var(--color-stroke);
+}
+.bycoda-settings-workbench .settings-group-content > [role="alert"],
+.bycoda-settings-workbench .settings-row-control > [role="alert"] {
+  flex-basis: 100%;
+  min-inline-size: 0;
+  max-inline-size: 100%;
+  overflow-wrap: anywhere;
+}
 .bycoda-settings-workbench .settings-templates > .settings-group-heading {
   display: flex;
   flex-wrap: wrap;
@@ -364,11 +400,8 @@
   inline-size: clamp(10rem, 20cqw, 12rem);
   flex: none;
 }
-/* Full-width group actions wrap before the title becomes an unreadable column. */
-.bycoda-settings-workbench
-  .settings-group[data-settings-layout="full"]
-  > .settings-group-heading
-  > .settings-group-title {
+/* Group actions wrap before descriptions become an unreadable column. */
+.bycoda-settings-workbench .settings-group > .settings-group-heading > .settings-group-title {
   flex-basis: min(100%, 20rem);
 }
 .bycoda-settings-workbench .settings-group-heading > :last-child {

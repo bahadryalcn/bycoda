@@ -30,6 +30,9 @@ it.each([undefined, "", "   "])(
 );
 
 describe("Codex skill mentions", () => {
+  it("does not silently start a plan without a resolved model", () => {
+    expect(() => buildTurnStartParams({ threadId: "t", runtimeMode: "full-access", intent: "plan" })).toThrow("active model");
+  });
   const skills = new Map([["imagegen", "/home/u/.codex/skills/.system/imagegen/SKILL.md"]]);
 
   it("sends a known $skill as a skill input and keeps the text as typed", () => {
@@ -151,6 +154,7 @@ describe("runtimeModeToCodexConfig", () => {
         runtimeMode: "auto",
         controlsAgents: true,
         intent: "plan",
+        model: "gpt-5.4",
       }).sandboxPolicy,
     ).toMatchObject({ type: "readOnly", networkAccess: true });
     expect(
@@ -251,6 +255,7 @@ describe("buildThreadStartParams / buildTurnStartParams", () => {
           threadId: "thr_1",
           runtimeMode,
           intent: "plan",
+          model: "gpt-5.4",
           prompt: "inspect",
         }),
       ).toMatchObject({

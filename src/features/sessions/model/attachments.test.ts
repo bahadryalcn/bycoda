@@ -38,6 +38,21 @@ function attachment(partial: Partial<Attachment> & Pick<Attachment, "id" | "name
 }
 
 describe("mergeAttachments", () => {
+  it.each([undefined, "other-host"])(
+    "keeps same-spelling paths from different hosts (%s)",
+    (hostEnvironmentId) => {
+      const first = attachment({
+        id: "remote",
+        name: "report.txt",
+        path: "/repo/report.txt",
+        hostEnvironmentId: "remote-host",
+      });
+      const second = { ...first, id: "incoming", hostEnvironmentId };
+      expect(mergeAttachments([first], [second])).toEqual([first, second]);
+      expect(mergeAttachments([first], [{ ...first, id: "duplicate" }])).toEqual([first]);
+      expect(mergeAttachments([first], [{ ...second, id: first.id }])).toEqual([first]);
+    },
+  );
   it("does not exceed capacity when the existing draft is already full", () => {
     const existing = Array.from({ length: MAX_ATTACHMENTS }, (_, index) =>
       attachment({ id: `existing-${index}`, name: `${index}.png` }),

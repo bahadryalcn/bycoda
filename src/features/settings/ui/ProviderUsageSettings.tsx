@@ -1,5 +1,5 @@
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
-import { Alert } from "../../../shared/ui/Alert";
+import { SettingsFeedback } from "./settingsControls";
 import { Button } from "../../../shared/ui/Button";
 import { t, useLocale, getLocale } from "../../../shared/i18n";
 import { RefreshCw, ListFilter } from "../../../shared/ui/icons";
@@ -276,20 +276,18 @@ export function ProviderUsageSettings({
     >
       <div aria-busy={refreshing}>
         {refreshing && load.status === "ready" ? (
-          <p role="status" className="px-4 py-2 text-[12px] text-content/60">
+          <SettingsFeedback state="loading">
             {t("Refreshing usage… Previous results remain visible.")}
-          </p>
+          </SettingsFeedback>
         ) : null}
         {load.status === "loading" ? (
-          <div role="status" className="px-4 py-6 text-[12px] text-content/45">
-            {t("Reading session logs…")}
-          </div>
+          <SettingsFeedback state="loading">{t("Reading session logs…")}</SettingsFeedback>
         ) : noReadableLogs ? (
-          <Alert tone="danger" role="alert">
+          <SettingsFeedback state="error">
             {t("Usage could not be read for the selected accounts. Reload usage to try again.")}
-          </Alert>
+          </SettingsFeedback>
         ) : summary.tokens === 0 ? (
-          <div className="px-4 py-6 text-[12px] leading-relaxed text-content/45">
+          <SettingsFeedback state="empty">
             {t("No usage in the last ")}
             {dayCount}
             {t(" days")}
@@ -297,7 +295,7 @@ export function ProviderUsageSettings({
             {t(
               ". Usage appears here once a Claude Code or Codex conversation has run on this computer.",
             )}
-          </div>
+          </SettingsFeedback>
         ) : (
           <>
             {showSummary ? (

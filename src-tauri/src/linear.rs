@@ -127,8 +127,9 @@ pub async fn linear_set_token(app: AppHandle, token: String) -> Result<LinearSta
 pub async fn linear_list_teams(app: AppHandle) -> Result<Vec<LinearTeam>, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let token = require_token(&app)?;
-        let data = graphql_with_token(&token, TEAMS_QUERY, json!({}))?;
-        parse_linear_teams(&data)
+        collect_linear_teams(|after| {
+            graphql_with_token(&token, TEAMS_QUERY, json!({ "after": after }))
+        })
     })
     .await
     .map_err(|error| error.to_string())?
@@ -232,9 +233,10 @@ pub async fn linear_issue_comment(
 
 const VIEWER_QUERY: &str = "query { viewer { id } }";
 const TEAMS_QUERY: &str = r#"
-query {
-  teams(first: 50) {
+query InboxTeams($after: String) {
+  teams(first: 50, after: $after) {
     nodes { id key name }
+    pageInfo { hasNextPage endCursor }
   }
 }
 "#;
@@ -393,6 +395,55 @@ fn graphql_error_message_from_value(parsed: &Value) -> Option<String> {
         .and_then(Value::as_str)
         .map(|message| message.trim().to_string())
         .filter(|message| !message.is_empty())
+}
+
+fn collect_linear_teams(
+    mut fetch: impl FnMut(Option<&str>) -> Result<Value, String>,
+) -> Result<Vec<LinearTeam>, String> {
+    let mut teams = Vec::new();
+    let mut cursor: Option<String> = None;
+    let mut cursors = std::collections::HashSet::new();
+    let mut ids = std::collections::HashSet::new();
+    for _ in 0..1000 {
+        let data = fetch(cursor.as_deref())?;
+        let page = parse_linear_teams(&data)?;
+        if data
+            .pointer("/teams/nodes")
+            .and_then(Value::as_array)
+            .map(Vec::len)
+            != Some(page.len())
+        {
+            return Err(
+                "Linear team discovery returned an invalid team. Retry loading teams.".into(),
+            );
+        }
+        for team in page {
+            if ids.insert(team.id.clone()) {
+                teams.push(team);
+            }
+        }
+        let has_next = data
+            .pointer("/teams/pageInfo/hasNextPage")
+            .and_then(Value::as_bool)
+            .ok_or_else(|| {
+                "Linear team discovery is incomplete. Retry loading teams.".to_string()
+            })?;
+        if !has_next {
+            return Ok(teams);
+        }
+        let next = data
+            .pointer("/teams/pageInfo/endCursor")
+            .and_then(Value::as_str)
+            .filter(|value| !value.trim().is_empty())
+            .ok_or_else(|| {
+                "Linear team discovery returned no next cursor. Retry loading teams.".to_string()
+            })?;
+        if !cursors.insert(next.to_string()) {
+            return Err("Linear team discovery repeated a page. Retry loading teams.".into());
+        }
+        cursor = Some(next.to_string());
+    }
+    Err("Linear team discovery exceeded its page limit. Retry loading teams.".into())
 }
 
 fn parse_linear_teams(data: &Value) -> Result<Vec<LinearTeam>, String> {
@@ -729,6 +780,59 @@ fn write_secret_file(path: &std::path::Path, token: &str) -> Result<(), String> 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn team_discovery_collects_pages_beyond_fifty() {
+        let mut requested = Vec::new();
+        let teams = collect_linear_teams(|after| {
+            requested.push(after.map(str::to_string));
+            let (start, end, next) = if after.is_none() { (0, 50, true) } else { (50, 53, false) };
+            Ok(json!({ "teams": {
+                "nodes": (start..end).map(|id| json!({ "id": format!("t{id}"), "key": format!("T{id}") })).collect::<Vec<_>>(),
+                "pageInfo": { "hasNextPage": next, "endCursor": if next { Some("page-2") } else { None } }
+            }}))
+        }).unwrap();
+        assert_eq!(requested, vec![None, Some("page-2".to_string())]);
+        assert_eq!(teams.len(), 53);
+        assert_eq!(teams[52].id, "t52");
+    }
+
+    #[test]
+    fn team_discovery_rejects_missing_metadata_and_repeated_cursors() {
+        assert!(collect_linear_teams(|_| Ok(json!({ "teams": { "nodes": [] } }))).is_err());
+        assert!(collect_linear_teams(|_| Ok(json!({ "teams": {
+            "nodes": [], "pageInfo": { "hasNextPage": true, "endCursor": null }
+        } })))
+        .is_err());
+        let mut requests = 0;
+        let result = collect_linear_teams(|_| {
+            requests += 1;
+            Ok(
+                json!({ "teams": { "nodes": [], "pageInfo": { "hasNextPage": true, "endCursor": "same" } } }),
+            )
+        });
+        assert!(result.unwrap_err().contains("repeated"));
+        assert_eq!(requests, 2);
+        assert!(collect_linear_teams(|_| Ok(json!({ "teams": {
+            "nodes": [{ "id": "" }], "pageInfo": { "hasNextPage": false }
+        } })))
+        .unwrap_err()
+        .contains("invalid team"));
+    }
+
+    #[test]
+    fn team_discovery_does_not_return_partial_success_after_page_failure() {
+        let result = collect_linear_teams(|after| {
+            if after.is_some() {
+                return Err("Synthetic page failure".into());
+            }
+            Ok(json!({ "teams": {
+                "nodes": [{ "id": "first", "key": "FIRST" }],
+                "pageInfo": { "hasNextPage": true, "endCursor": "next" }
+            } }))
+        });
+        assert_eq!(result.unwrap_err(), "Synthetic page failure");
+    }
 
     #[test]
     fn linear_authorization_sends_the_raw_api_key() {

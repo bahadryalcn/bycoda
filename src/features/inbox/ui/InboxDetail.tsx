@@ -508,6 +508,7 @@ export function InboxDetail({
                     item={item}
                     baseRef={baseRef}
                     headRef={headRef}
+                    reviewedHeadOid={prDiff?.headOid || details?.headRefOid}
                     onChange={onItemChange}
                   />
                 ) : null}

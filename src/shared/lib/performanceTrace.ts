@@ -1,5 +1,6 @@
 /** Local opt-in diagnostics. Never accepts content, paths or application IDs. */
 export type PerformanceStage =
+  | "window-move"
   | "startup"
   | "checkpoint"
   | "project-location"
@@ -38,7 +39,9 @@ export type PerformanceMetrics = Partial<
     | "correlationId"
     | "checkpointWaitMs"
     | "gitMs"
-    | "diskMs",
+    | "diskMs"
+    | "elapsedMs"
+    | "stageMs",
     number
   >
 >;
@@ -63,8 +66,11 @@ const metricKeys = new Set([
   "checkpointWaitMs",
   "gitMs",
   "diskMs",
+  "elapsedMs",
+  "stageMs",
 ]);
 const stages = new Set<string>([
+  "window-move",
   "startup",
   "checkpoint",
   "project-location",

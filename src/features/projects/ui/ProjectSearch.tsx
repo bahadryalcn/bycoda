@@ -78,10 +78,31 @@ function ProjectSearchContent({
   const [caseSensitive, setCaseSensitive] = useRetainedState(`${stateKey}:case`, false);
   const [wholeWord, setWholeWord] = useRetainedState(`${stateKey}:word`, false);
   const [regex, setRegex] = useRetainedState(`${stateKey}:regex`, false);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [matches, setMatches] = useState<ProjectSearchMatch[]>([]);
-  const [truncated, setTruncated] = useState(false);
+  const request = useMemo(
+    () => ({
+      cwd,
+      query: query.trim(),
+      caseSensitive,
+      wholeWord,
+      regex,
+      include: include.trim() || undefined,
+      exclude: exclude.trim() || undefined,
+    }),
+    [cwd, query, caseSensitive, wholeWord, regex, include, exclude],
+  );
+  const [result, setResult] = useState<{
+    request: typeof request;
+    matches: ProjectSearchMatch[];
+    truncated: boolean;
+    error: string | null;
+  } | null>(null);
+  // Gate during render: an effect-only clear leaves old rows actionable until
+  // that effect runs, and throughout the debounce when only loading is checked.
+  const currentResult = result?.request === request ? result : null;
+  const matches = currentResult?.matches ?? EMPTY_MATCHES;
+  const truncated = currentResult?.truncated ?? false;
+  const error = currentResult?.error ?? null;
+  const loading = !!request.query && !!cwd && cwd !== "~" && !currentResult;
   const activeSearchId = useRef<string | null>(null);
 
   useEffect(() => {
@@ -102,43 +123,28 @@ function ProjectSearchContent({
   }, []);
 
   useEffect(() => {
-    const trimmed = query.trim();
-    if (!trimmed || !cwd || cwd === "~") {
-      setMatches([]);
-      setTruncated(false);
-      setError(null);
-      setLoading(false);
-      return;
-    }
+    if (!request.query || !cwd || cwd === "~") return;
 
     let cancelled = false;
     const timer = window.setTimeout(() => {
       const searchId = crypto.randomUUID();
       activeSearchId.current = searchId;
-      setLoading(true);
-      setError(null);
       void search({
-        cwd,
-        query: trimmed,
+        ...request,
         searchId,
-        caseSensitive,
-        wholeWord,
-        regex,
-        include: include.trim() || undefined,
-        exclude: exclude.trim() || undefined,
       })
         .then((result) => {
           if (cancelled) return;
-          setMatches(result.matches);
-          setTruncated(result.truncated);
-          setLoading(false);
+          setResult({ request, matches: result.matches, truncated: result.truncated, error: null });
         })
         .catch((err: unknown) => {
           if (cancelled) return;
-          setMatches([]);
-          setTruncated(false);
-          setError(err instanceof Error ? err.message : String(err));
-          setLoading(false);
+          setResult({
+            request,
+            matches: [],
+            truncated: false,
+            error: err instanceof Error ? err.message : String(err),
+          });
         })
         .finally(() => {
           if (activeSearchId.current === searchId) activeSearchId.current = null;
@@ -154,13 +160,14 @@ function ProjectSearchContent({
         void cancelProjectSearch(cwd, searchId).catch(() => undefined);
       }
     };
-  }, [caseSensitive, cwd, exclude, include, query, regex, wholeWord, search]);
+  }, [cwd, request, search]);
 
   const groups = useMemo(() => groupMatches(matches), [matches]);
   const matchCount = matches.length;
   const fileCount = groups.length;
 
   const openMatch = (match: ProjectSearchMatch, pin = false) => {
+    if (!matches.includes(match)) return;
     if (onOpenMatch) onOpenMatch(match, pin);
     else onOpenFile?.(match.path, { line: match.line, column: match.column }, { exact: true, pin });
   };
@@ -372,6 +379,8 @@ function ProjectSearchContent({
     </div>
   );
 }
+
+const EMPTY_MATCHES: ProjectSearchMatch[] = [];
 
 function Toggle({
   label,

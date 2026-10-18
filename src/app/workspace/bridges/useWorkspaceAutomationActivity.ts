@@ -26,6 +26,7 @@ export function useWorkspaceAutomationActivity({
     let timer: ReturnType<typeof setTimeout>;
     let taskStates: Map<string, string> | undefined;
     const pending = new Map<string, WorkspaceAutomationEvent>();
+    const recoveryToken = crypto.randomUUID();
     const poll = async () => {
       try {
         const automations = (await listAutomations()).filter((automation) => automation.enabled);
@@ -77,10 +78,19 @@ export function useWorkspaceAutomationActivity({
         if (!pending.size) return;
         await ensureAutomationRecovery();
         if (disposed) return;
-        for (const item of await claimWorkspaceAutomationRuns(automations, [...pending.values()])) {
+        const failed = new Set<string>();
+        for (const item of await claimWorkspaceAutomationRuns(
+          automations,
+          [...pending.values()],
+          (event, error) => {
+            failed.add(event.key);
+            console.warn("Automation event claim failed", event.key, error);
+          },
+          recoveryToken,
+        )) {
           await launchAutomation(item.automation, item.run, false, item.prompt);
         }
-        pending.clear();
+        for (const key of pending.keys()) if (!failed.has(key)) pending.delete(key);
       } catch (error) {
         console.warn("Workspace automation activity failed", error);
       } finally {

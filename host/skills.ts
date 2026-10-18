@@ -53,10 +53,16 @@ const isFile = (path: string) => {
   }
 };
 
-export function listHostSkills(project: string | null, home = homedir()): DiscoveredSkill[] {
+export function listHostSkills(
+  project: string | null,
+  home = homedir(),
+  disabledPaths: string[] = [],
+): DiscoveredSkill[] {
   const byName = new Map<string, DiscoveredSkill>();
+  const disabled = new Set(disabledPaths.map((path) => canonical(path)).filter(Boolean));
   for (const skill of listSkillRootsInOrder(project, home)) {
     if (byName.size >= MAX_SKILLS) break;
+    if (disabled.has(canonical(skill.path))) continue;
     if (!byName.has(skill.name)) byName.set(skill.name, skill);
   }
   return [...byName.values()].sort((a, b) => a.name.localeCompare(b.name));

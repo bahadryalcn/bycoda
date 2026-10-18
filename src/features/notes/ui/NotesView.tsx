@@ -70,6 +70,7 @@ import {
   type NoteSummary,
 } from "../notes";
 import {
+  createRecoveredNote,
   insertNoteImagesMarkdown,
   saveNoteImagesFromFiles,
   saveNoteImagesFromPaths,
@@ -476,14 +477,18 @@ export function NotesView({
   const onSaved = (note: Note) => {
     setNotes((current) => {
       const next = current.map((item) => (item.id === note.id ? summarizeNote(note) : item));
-      next.sort((a, b) => b.updatedAt - a.updatedAt || a.id.localeCompare(b.id));
+      next.sort(
+        (a, b) =>
+          (b.contentUpdatedAt ?? b.updatedAt) - (a.contentUpdatedAt ?? a.updatedAt) ||
+          a.id.localeCompare(b.id),
+      );
       return next;
     });
   };
 
-  const onDelete = async (id: string) => {
+  const onDelete = async (id: string, expectedUpdatedAt?: number) => {
     try {
-      await deleteNote(id);
+      await deleteNote(id, expectedUpdatedAt);
       drafts.delete(id);
       notifyDrafts();
       setNotes((current) => current.filter((note) => note.id !== id));
@@ -1074,7 +1079,7 @@ function NoteDetail({
   recents: RecentProject[];
   activeCwd?: string;
   onSaved: (note: Note) => void;
-  onDelete: (id: string) => Promise<boolean>;
+  onDelete: (id: string, expectedUpdatedAt?: number) => Promise<boolean>;
   onAddToChat: (note: Note) => void;
 }) {
   useLocale();
@@ -1111,7 +1116,7 @@ function NoteEditor({
   recents: RecentProject[];
   activeCwd?: string;
   onSaved: (note: Note) => void;
-  onDelete: (id: string) => Promise<boolean>;
+  onDelete: (id: string, expectedUpdatedAt?: number) => Promise<boolean>;
   onAddToChat: (note: Note) => void;
 }) {
   useLocale();
@@ -1179,12 +1184,21 @@ function NoteEditor({
   const toolbarTargetRef = useRef(toolbarTarget);
   toolbarTargetRef.current = toolbarTarget;
   const [saving, setSaving] = useState(false);
+  const [recovering, setRecovering] = useState(false);
   const lastDropAt = useRef(0);
   const skipSave = draftState.skipSave;
   const saveTimer = useRef<number | null>(null);
   const onSavedRef = useRef(onSaved);
   bodyRef.current = body;
-  noteRef.current = note;
+  // A refreshed row must not silently rebase an existing draft onto another
+  // writer's mutation token. Only a clean editor may adopt it automatically.
+  if (!Object.keys(editsRef.current).length && !projectChangeRef.current) {
+    noteRef.current = note;
+    draftState.base = note;
+    draftState.saved = note;
+  } else {
+    noteRef.current = draftState.saved ?? draftState.base;
+  }
   onSavedRef.current = onSaved;
   const time = formatRelativeTime(new Date(note.updatedAt).toISOString());
   useEffect(() => {
@@ -1217,6 +1231,7 @@ function NoteEditor({
     const nextProject = projectChangeRef.current;
     const acceptSaved = (saved: Note) => {
       draftState.saved = saved;
+      draftState.base = saved;
       noteRef.current = saved;
       // A completed save only clears the edits included in that request.
       const remaining = { ...editsRef.current };
@@ -1253,6 +1268,7 @@ function NoteEditor({
     try {
       const saved = await upsertNote({
         id: current.id,
+        expectedUpdatedAt: current.updatedAt,
         title: nextTitle,
         body: nextBody,
         tags: nextTags,
@@ -1593,7 +1609,8 @@ function NoteEditor({
                 if (saveTimer.current != null) window.clearTimeout(saveTimer.current);
                 try {
                   await enqueueNoteSave(note.id, async () => {
-                    if (!(await onDelete(note.id))) throw new Error(t("Delete failed"));
+                    if (!(await onDelete(note.id, noteRef.current.updatedAt)))
+                      throw new Error(t("Delete failed"));
                   });
                 } catch (reason) {
                   skipSave.current = false;
@@ -1636,6 +1653,28 @@ function NoteEditor({
                 className="shrink-0 underline hover:no-underline"
               >
                 {t("Retry")}
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                disabled={recovering}
+                onClick={async () => {
+                  setRecovering(true);
+                  try {
+                    await createRecoveredNote({ title, body, tags, sourceCwd });
+                    editsRef.current = {};
+                    projectChangeRef.current = null;
+                    setEdits({});
+                    setSaveError(null);
+                    window.dispatchEvent(new Event(NOTES_CHANGED_EVENT));
+                  } catch (error) {
+                    setSaveError(error instanceof Error ? error.message : String(error));
+                  } finally {
+                    setRecovering(false);
+                  }
+                }}
+              >
+                {t("Save as new note")}
               </Button>
             </Alert>
           ) : null}

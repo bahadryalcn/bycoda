@@ -1,4 +1,4 @@
-import { Alert } from "../../../shared/ui/Alert";
+import { SettingsFeedback } from "./settingsControls";
 import { useContext, useId, useState } from "react";
 import { Button } from "../../../shared/ui/Button";
 import { openUrl } from "@tauri-apps/plugin-opener";
@@ -117,9 +117,9 @@ export function PoliciesSettings() {
         key={activePolicy.id}
       >
         {contactError ? (
-          <Alert tone="danger" role="alert">
+          <SettingsFeedback state="error">
             {t("Could not open your email app. Copy info@bahadrhllyalcn.com into your email app.")}
-          </Alert>
+          </SettingsFeedback>
         ) : null}
         <article
           className="policy-document"

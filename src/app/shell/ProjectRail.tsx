@@ -40,6 +40,7 @@ import {
   Settings,
   Zap,
   DashboardSquare,
+  Server,
 } from "../../shared/ui/icons";
 import {
   Fragment,
@@ -208,6 +209,8 @@ type Props = {
   automationsActive?: boolean;
   tasksActive?: boolean;
   socialActive?: boolean;
+  onOpenServers?: () => void;
+  serversActive?: boolean;
   onTogglePanel?: () => void;
   onSelectProject: (path: string) => void;
   onOpenProject: () => void | Promise<void>;
@@ -254,6 +257,8 @@ export function ProjectRail({
   automationsActive = false,
   tasksActive = false,
   socialActive = false,
+  onOpenServers,
+  serversActive = false,
   onTogglePanel,
   onSelectProject,
   onOpenProject,
@@ -597,7 +602,13 @@ export function ProjectRail({
       step,
     );
   const searchOrPageActive =
-    searchActive || inboxActive || notesActive || automationsActive || tasksActive || socialActive;
+    searchActive ||
+    inboxActive ||
+    notesActive ||
+    automationsActive ||
+    tasksActive ||
+    socialActive ||
+    serversActive;
   const renderProjectGroup = (
     { group, items, workspaceItems, locked }: (typeof groupedProjectSections.grouped)[number],
     sortableGroups: SortableHandle = groupSortable,
@@ -817,19 +828,29 @@ export function ProjectRail({
                 fit
                 fullWidth
                 defaultExpanded={
-                  inboxActive
-                    ? "inbox"
-                    : notesActive
-                      ? "notes"
-                      : automationsActive
-                        ? "automations"
-                        : socialActive
-                          ? "social"
-                          : tasksActive
-                            ? "tasks"
-                            : null
+                  serversActive
+                    ? "servers"
+                    : inboxActive
+                      ? "inbox"
+                      : notesActive
+                        ? "notes"
+                        : automationsActive
+                          ? "automations"
+                          : socialActive
+                            ? "social"
+                            : tasksActive
+                              ? "tasks"
+                              : null
                 }
                 items={[
+                  {
+                    id: "servers",
+                    label: t("Servers"),
+                    icon: <Server />,
+                    active: serversActive,
+                    onSelect: onOpenServers,
+                    disabled: !onOpenServers,
+                  },
                   ...(workspaceFeatures.inbox || inboxActive
                     ? [
                         {
@@ -923,6 +944,13 @@ export function ProjectRail({
               aria-label={t("Workspace tools")}
               className="bycoda-rail-tools bycoda-rail-tools--compact shrink-0"
             >
+              <RailAction
+                label={t("Servers")}
+                icon={Server}
+                onClick={onOpenServers}
+                active={serversActive}
+                ariaLabel={t("Servers")}
+              />
               <WorkspaceFeatureGate id="inbox" active={inboxActive}>
                 <RailAction
                   label={t("Inbox")}

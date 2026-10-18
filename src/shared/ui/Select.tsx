@@ -53,6 +53,7 @@ export function Select({
   ...triggerProps
 }: SelectProps) {
   const [open, setOpen] = useState(false);
+  const expanded = open && !disabled;
   const [active, setActive] = useState(() =>
     Math.max(
       0,
@@ -65,6 +66,10 @@ export function Select({
   const listId = useId();
   const selected = options.find((option) => option.value === value);
   const activeId = options[active] != null ? `${listId}-opt-${active}` : undefined;
+
+  useEffect(() => {
+    if (disabled) setOpen(false);
+  }, [disabled]);
 
   useEffect(() => {
     if (!open) return;
@@ -82,12 +87,17 @@ export function Select({
   }, [active, open]);
 
   const pick = (next: string) => {
+    if (disabled || trigger.current?.matches(":disabled")) return;
     onValueChange(next);
     setOpen(false);
     trigger.current?.focus();
   };
 
   const onMenuKey = (e: ReactKeyboardEvent<HTMLDivElement>) => {
+    if (disabled || trigger.current?.matches(":disabled")) {
+      setOpen(false);
+      return;
+    }
     if (e.key === "ArrowDown") {
       e.preventDefault();
       setActive((i) =>
@@ -138,14 +148,15 @@ export function Select({
           if (typeof ref === "function") return ref(node);
           if (ref) ref.current = node;
         }}
-        data-state={open ? "open" : "closed"}
+        data-state={expanded ? "open" : "closed"}
         data-disabled={disabled || undefined}
         disabled={disabled}
         aria-label={triggerProps["aria-label"] ?? `${label}: ${selected?.label ?? value}`}
-        aria-expanded={open}
+        aria-expanded={expanded}
         aria-haspopup="listbox"
-        aria-controls={open ? listId : undefined}
+        aria-controls={expanded ? listId : undefined}
         onKeyDown={(event) => {
+          if (disabled || trigger.current?.matches(":disabled")) return;
           onKeyDown?.(event);
           if (event.defaultPrevented) return;
           if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
@@ -154,6 +165,7 @@ export function Select({
           setOpen(true);
         }}
         onClick={(event) => {
+          if (disabled || trigger.current?.matches(":disabled")) return;
           onClick?.(event);
           if (event.defaultPrevented) return;
           if (!open) onOpen?.();
@@ -172,7 +184,7 @@ export function Select({
           strokeWidth={1.75}
         />
       </SelectTrigger>
-      {open ? (
+      {expanded ? (
         <Popover
           id={listId}
           anchor={root}

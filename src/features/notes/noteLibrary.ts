@@ -91,7 +91,7 @@ export function filterNoteLibrary<NoteItem extends NoteMetadata>(
           ? a.title.localeCompare(b.title)
           : sort === "created"
             ? b.createdAt - a.createdAt
-            : b.updatedAt - a.updatedAt;
+            : (b.contentUpdatedAt ?? b.updatedAt) - (a.contentUpdatedAt ?? a.updatedAt);
       return order || a.id.localeCompare(b.id);
     });
 }

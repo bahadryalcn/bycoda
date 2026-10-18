@@ -17,6 +17,10 @@ const MAX_RUNS_PER_AUTOMATION: i64 = 100;
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Automation {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    executor: Option<crate::ssh_runbooks::Executor>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    ssh_runbook: Option<crate::ssh_runbooks::SshRunbook>,
     id: String,
     name: String,
     prompt: String,
@@ -65,6 +69,10 @@ pub struct Automation {
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AutomationUpsert {
+    #[serde(default)]
+    executor: Option<crate::ssh_runbooks::Executor>,
+    #[serde(default)]
+    ssh_runbook: Option<crate::ssh_runbooks::SshRunbook>,
     id: String,
     name: String,
     prompt: String,
@@ -104,6 +112,10 @@ pub struct AutomationUpsert {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AutomationRun {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    executor: Option<crate::ssh_runbooks::Executor>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    ssh_execution: Option<crate::ssh_execution::RunStatus>,
     id: String,
     automation_id: String,
     trigger: String,
@@ -167,6 +179,8 @@ pub struct DueAutomationRun {
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AutomationEventClaim {
+    #[serde(default)]
+    recovery_token: Option<String>,
     event_key: String,
     event_kind: String,
     event: String,
@@ -222,8 +236,22 @@ pub(crate) fn ensure_tables(conn: &Connection) -> rusqlite::Result<()> {
            event_key TEXT NOT NULL,
            created_at INTEGER NOT NULL,
            PRIMARY KEY (automation_id, event_key)
-         );",
+         );
+         CREATE UNIQUE INDEX IF NOT EXISTS automation_ssh_run_claims_idx
+           ON automation_event_claims(event_key) WHERE event_key LIKE 'ssh-run:%';",
     )?;
+
+    let has_claim_owner: bool = conn.query_row(
+        "SELECT EXISTS(SELECT 1 FROM pragma_table_info('automation_event_claims') WHERE name = 'claim_owner')",
+        [], |row| row.get(0),
+    )?;
+    if !has_claim_owner {
+        // Unknown legacy ownership must never acquire retry authority.
+        conn.execute(
+            "ALTER TABLE automation_event_claims ADD COLUMN claim_owner TEXT",
+            [],
+        )?;
+    }
 
     // Backfill claims from pre-ledger run history. Invalid legacy rows should not
     // prevent the session store from opening.
@@ -257,6 +285,9 @@ pub(crate) fn ensure_tables(conn: &Connection) -> rusqlite::Result<()> {
 }
 
 fn validate_upsert(input: &AutomationUpsert, now: i64) -> Result<(), String> {
+    if input.executor == Some(crate::ssh_runbooks::Executor::Ssh) || input.ssh_runbook.is_some() {
+        return Err("Use the SSH runbook editor for reviewed remote execution".into());
+    }
     validate_id(&input.id, "automation")?;
     if input.name.trim().is_empty() || input.name.len() > MAX_NAME {
         return Err("Automation name is required and must be under 200 characters.".into());
@@ -459,6 +490,19 @@ fn parse_automation(value: String) -> Result<Automation, String> {
     Ok(automation)
 }
 
+fn is_ssh(automation: &Automation) -> bool {
+    automation.executor == Some(crate::ssh_runbooks::Executor::Ssh)
+        || automation.ssh_runbook.is_some()
+}
+
+fn require_agent(automation: &Automation) -> Result<(), String> {
+    if is_ssh(automation) {
+        Err("SSH runbooks require a fresh native execution review; automatic agent launch is disabled".into())
+    } else {
+        Ok(())
+    }
+}
+
 fn valid_time(value: &str) -> bool {
     let Some((hour, minute)) = value.split_once(':') else {
         return false;
@@ -537,6 +581,8 @@ fn new_run(
     prompt: &str,
 ) -> AutomationRun {
     AutomationRun {
+        executor: None,
+        ssh_execution: None,
         id: Uuid::new_v4().to_string(),
         automation_id: automation_id.to_string(),
         trigger: trigger.to_string(),
@@ -571,6 +617,9 @@ fn new_event_run(
 }
 
 fn validate_event_key(value: &str) -> Result<(), String> {
+    if value.starts_with("ssh-run:") {
+        return Err("Reserved native SSH run identifier".into());
+    }
     if value.is_empty()
         || value.len() > 400
         || !value.bytes().all(|byte| {
@@ -606,6 +655,47 @@ fn list_runs(conn: &Connection, automation_id: &str) -> Result<Vec<AutomationRun
         serde_json::from_str(&value).map_err(|error| error.to_string())
     })
     .collect()
+}
+
+/// Recover a committed claim whose IPC reply was lost, without replaying a run
+/// that already entered execution or reached a terminal state.
+fn pending_event_run(
+    conn: &Connection,
+    automation_id: &str,
+    event_key: &str,
+    claim_owner: &str,
+) -> Result<Option<AutomationRun>, String> {
+    let value: Option<String> = conn
+        .query_row(
+            "SELECT run_json FROM automation_runs AS runs
+         JOIN automation_event_claims AS claims ON claims.automation_id = runs.automation_id
+         AND claims.event_key = json_extract(run_json, '$.eventKey')
+         WHERE runs.automation_id = ?1 AND claims.event_key = ?2 AND claims.claim_owner = ?3
+         AND json_extract(run_json, '$.status') = 'pending' LIMIT 1",
+            params![automation_id, event_key, claim_owner],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(|error| error.to_string())?;
+    value
+        .map(|value| serde_json::from_str(&value).map_err(|error| error.to_string()))
+        .transpose()
+}
+
+fn claim_event_key(
+    conn: &Connection,
+    automation_id: &str,
+    event_key: &str,
+    now: i64,
+    claim_owner: Option<&str>,
+) -> Result<bool, String> {
+    conn.execute(
+        "INSERT OR IGNORE INTO automation_event_claims
+         (automation_id, event_key, created_at, claim_owner) VALUES (?1, ?2, ?3, ?4)",
+        params![automation_id, event_key, now, claim_owner],
+    )
+    .map(|count| count != 0)
+    .map_err(|error| error.to_string())
 }
 
 fn trim_history(conn: &Connection, automation_id: &str) -> Result<(), String> {
@@ -659,7 +749,10 @@ fn apply_run_summary(automation: &mut Automation, run: &AutomationRun) {
 #[tauri::command(async)]
 pub fn automations_list(store: State<'_, SessionStore>) -> Result<Vec<Automation>, String> {
     let conn = store.lock_conn()?;
-    list(&conn)
+    Ok(list(&conn)?
+        .into_iter()
+        .filter(|automation| !is_ssh(automation))
+        .collect())
 }
 
 #[tauri::command(async)]
@@ -673,6 +766,9 @@ pub fn automations_upsert(
     let triggers = Some(normalize_triggers(&automation));
     let conn = store.lock_conn()?;
     let previous = get(&conn, &automation.id)?;
+    if previous.as_ref().is_some_and(is_ssh) {
+        return Err("Use the SSH runbook editor; agent edits cannot convert a runbook".into());
+    }
     let created_at = previous
         .as_ref()
         .map(|value| value.created_at)
@@ -683,6 +779,8 @@ pub fn automations_upsert(
         String::new()
     };
     let saved = Automation {
+        executor: automation.executor,
+        ssh_runbook: None,
         id: automation.id,
         name: automation.name.trim().to_string(),
         prompt: automation.prompt,
@@ -732,6 +830,10 @@ pub fn automations_delete(
 ) -> Result<(), String> {
     validate_id(&id, "automation")?;
     let conn = store.lock_conn()?;
+    if get(&conn, &id)?.as_ref().is_some_and(is_ssh) {
+        return Err("Use the SSH runbook editor to remove this runbook".into());
+    }
+    crate::ssh_runbooks::ensure_not_active(&conn, &id)?;
     conn.execute("DELETE FROM automations WHERE id = ?1", [id])
         .map_err(|error| error.to_string())?;
     drop(conn);
@@ -790,6 +892,11 @@ pub fn automation_runs_recover(
         let Some(mut automation) = get(&tx, &run.automation_id)? else {
             continue;
         };
+        if is_ssh(&automation) || run.executor == Some(crate::ssh_runbooks::Executor::Ssh) {
+            crate::ssh_runbooks::recover_run(&tx, &run.id)?;
+            changed = true;
+            continue;
+        }
         if run.status == "running" {
             run.status = "cancelled".into();
             run.completed_at = Some(now);
@@ -844,6 +951,7 @@ pub fn automation_run_now(
     let tx = conn.transaction().map_err(|error| error.to_string())?;
     let mut automation =
         get(&tx, &automation_id)?.ok_or_else(|| "Automation not found.".to_string())?;
+    require_agent(&automation)?;
     let run = new_run(&automation_id, "manual", now, now, &automation.prompt);
     automation.last_run_at = Some(now);
     automation.last_run_status = Some(run.status.clone());
@@ -873,6 +981,7 @@ pub fn automations_claim_due(
     let mut conn = store.lock_conn()?;
     let tx = conn.transaction().map_err(|error| error.to_string())?;
     let current = get(&tx, &automation_id)?.ok_or_else(|| "Automation not found.".to_string())?;
+    require_agent(&current)?;
     if !has_time_trigger(&current) {
         tx.rollback().map_err(|error| error.to_string())?;
         return Ok(None);
@@ -921,6 +1030,7 @@ pub fn automations_claim_due(
 #[tauri::command(async)]
 pub fn automations_claim_event(
     app: AppHandle,
+    window: tauri::WebviewWindow,
     store: State<'_, SessionStore>,
     automation_id: String,
     claim: AutomationEventClaim,
@@ -949,20 +1059,36 @@ pub fn automations_claim_event(
     let tx = conn.transaction().map_err(|error| error.to_string())?;
     let mut automation =
         get(&tx, &automation_id)?.ok_or_else(|| "Automation not found.".to_string())?;
+    require_agent(&automation)?;
     if !automation.enabled || !has_event_trigger(&automation, &claim.event_kind, &claim.event) {
         tx.rollback().map_err(|error| error.to_string())?;
         return Ok(None);
     }
-    let claimed = tx
-        .execute(
-            "INSERT OR IGNORE INTO automation_event_claims
-             (automation_id, event_key, created_at) VALUES (?1, ?2, ?3)",
-            params![automation_id, claim.event_key, now],
-        )
-        .map_err(|error| error.to_string())?;
-    if claimed == 0 {
+    // Bind retry authority to both the native window and this mounted poller.
+    // Missing legacy tokens keep the original one-shot claim behavior.
+    let claim_owner = claim
+        .recovery_token
+        .as_deref()
+        .map(|token| {
+            Uuid::parse_str(token)
+                .map(|token| format!("{}:{token}", window.label()))
+                .map_err(|_| "Invalid automation claim recovery token.".to_string())
+        })
+        .transpose()?;
+    let claimed = claim_event_key(
+        &tx,
+        &automation_id,
+        &claim.event_key,
+        now,
+        claim_owner.as_deref(),
+    )?;
+    if !claimed {
+        let pending = match claim_owner.as_deref() {
+            Some(owner) => pending_event_run(&tx, &automation_id, &claim.event_key, owner)?,
+            None => None,
+        };
         tx.rollback().map_err(|error| error.to_string())?;
-        return Ok(None);
+        return Ok(pending.map(|run| DueAutomationRun { automation, run }));
     }
     let run = new_event_run(
         &automation_id,
@@ -1017,6 +1143,9 @@ pub fn automation_run_update(
         .map_err(|error| error.to_string())?
         .ok_or_else(|| "Automation run not found.".to_string())?;
     let mut run: AutomationRun = serde_json::from_str(&raw).map_err(|error| error.to_string())?;
+    if run.executor == Some(crate::ssh_runbooks::Executor::Ssh) || run.ssh_execution.is_some() {
+        return Err("SSH execution outcomes are owned by the native execution engine".into());
+    }
     run.status = status;
     if run.status == "running" && run.started_at.is_none() {
         run.started_at = Some(now);
@@ -1033,6 +1162,7 @@ pub fn automation_run_update(
     run.error = error.filter(|value| !value.trim().is_empty());
     let mut automation =
         get(&tx, &run.automation_id)?.ok_or_else(|| "Automation not found.".to_string())?;
+    require_agent(&automation)?;
     apply_run_summary(&mut automation, &run);
     write_run(&tx, &run)?;
     write_automation(&tx, &automation)?;
@@ -1046,6 +1176,29 @@ pub fn automation_run_update(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn typed_ssh_automations_never_enter_the_legacy_agent_launcher() {
+        let mut value = serde_json::json!({
+            "id":"ssh-book","name":"SSH book","prompt":"agent-shaped input","harness":"codex","model":"model",
+            "cwd":"/tmp","workspaceMode":"current","reuseSession":false,"runtimeMode":"supervised",
+            "scheduleKind":"daily","minute":0,"time":"09:00","dayOfWeek":1,"missedRunGraceMinutes":0,
+            "enabled":false,"nextRunAt":1000,"createdAt":1,"updatedAt":1,"executor":"ssh",
+            "sshRunbook":{"revision":1,"script":"pwd","shell":"posix","targetIds":["server-one"],"limits":{"concurrency":1,"timeoutSeconds":10}}
+        });
+        let ssh: Automation = serde_json::from_value(value.clone()).unwrap();
+        assert!(is_ssh(&ssh));
+        assert!(require_agent(&ssh).is_err());
+        let upsert: AutomationUpsert = serde_json::from_value(value.clone()).unwrap();
+        assert!(validate_upsert(&upsert, 1).is_err());
+        value.as_object_mut().unwrap().remove("executor");
+        let metadata_only: Automation = serde_json::from_value(value.clone()).unwrap();
+        assert!(require_agent(&metadata_only).is_err());
+        value.as_object_mut().unwrap().remove("sshRunbook");
+        let legacy: Automation = serde_json::from_value(value).unwrap();
+        require_agent(&legacy).unwrap();
+        assert!(validate_event_key("ssh-run:reserved-native-id").is_err());
+    }
 
     #[test]
     fn accepts_task_and_social_triggers_without_accepting_unknown_sources() {
@@ -1071,6 +1224,8 @@ mod tests {
     #[test]
     fn existing_automations_default_to_time_triggers() {
         let automation = Automation {
+            executor: None,
+            ssh_runbook: None,
             id: "automation-id".into(),
             name: "Audit".into(),
             prompt: "Review the repository".into(),
@@ -1122,6 +1277,8 @@ mod tests {
     #[test]
     fn missing_triggers_hydrate_from_legacy_fields() {
         let automation = Automation {
+            executor: None,
+            ssh_runbook: None,
             id: "automation-id".into(),
             name: "Audit".into(),
             prompt: "Review the repository".into(),
@@ -1206,6 +1363,8 @@ mod tests {
         .unwrap();
         for index in 0..=MAX_RUNS_PER_AUTOMATION {
             let run = AutomationRun {
+                executor: None,
+                ssh_execution: None,
                 id: format!("run-{index}"),
                 automation_id: "automation-id".into(),
                 trigger: "manual".into(),
@@ -1248,6 +1407,8 @@ mod tests {
         .unwrap();
         for index in 0..=MAX_RUNS_PER_AUTOMATION {
             let run = AutomationRun {
+                executor: None,
+                ssh_execution: None,
                 id: format!("run-{index}"),
                 automation_id: "automation-id".into(),
                 trigger: "manual".into(),
@@ -1337,6 +1498,96 @@ mod tests {
 
         assert_eq!(claim(), 1);
         assert_eq!(claim(), 0);
+    }
+
+    #[test]
+    fn pending_event_claim_retry_recovers_only_unstarted_committed_run() {
+        let conn = Connection::open_in_memory().unwrap();
+        ensure_tables(&conn).unwrap();
+        conn.execute(
+            "INSERT INTO automations VALUES ('automation-id', '{}', 1, 1, 1)",
+            [],
+        )
+        .unwrap();
+        let mut run = new_event_run(
+            "automation-id",
+            "tasks:event-a",
+            "tasks",
+            "task_blocked",
+            1,
+            2,
+            "original prompt",
+        );
+        let owner = "window-a:original-mounted-poller";
+        assert!(claim_event_key(&conn, "automation-id", "tasks:event-a", 2, Some(owner)).unwrap());
+        write_run(&conn, &run).unwrap();
+        // B receives neither a new claim nor A's pending run, even if A's reply
+        // was lost. Only the original native window can resume that claim.
+        for stranger in [
+            "window-b:original-mounted-poller",
+            "window-a:different-mounted-poller",
+        ] {
+            assert!(
+                !claim_event_key(&conn, "automation-id", "tasks:event-a", 3, Some(stranger))
+                    .unwrap()
+            );
+            assert!(
+                pending_event_run(&conn, "automation-id", "tasks:event-a", stranger)
+                    .unwrap()
+                    .is_none()
+            );
+        }
+        assert!(!claim_event_key(&conn, "automation-id", "tasks:event-a", 3, Some(owner)).unwrap());
+        let retry = pending_event_run(&conn, "automation-id", "tasks:event-a", owner)
+            .unwrap()
+            .unwrap();
+        assert_eq!(retry.id, run.id);
+        assert_eq!(retry.prompt.as_deref(), Some("original prompt"));
+        assert!(pending_event_run(&conn, "other", "tasks:event-a", owner)
+            .unwrap()
+            .is_none());
+        for status in ["running", "succeeded", "failed", "cancelled"] {
+            run.status = status.into();
+            write_run(&conn, &run).unwrap();
+            assert!(
+                pending_event_run(&conn, "automation-id", "tasks:event-a", owner)
+                    .unwrap()
+                    .is_none()
+            );
+        }
+    }
+
+    #[test]
+    fn pending_event_claim_retry_keeps_unknown_legacy_ownership_closed() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch("CREATE TABLE automation_event_claims (automation_id TEXT NOT NULL, event_key TEXT NOT NULL, created_at INTEGER NOT NULL, PRIMARY KEY (automation_id, event_key));").unwrap();
+        ensure_tables(&conn).unwrap();
+        conn.execute(
+            "INSERT INTO automations VALUES ('automation-id', '{}', 1, 1, 1)",
+            [],
+        )
+        .unwrap();
+        conn.execute("INSERT INTO automation_event_claims (automation_id, event_key, created_at) VALUES ('automation-id', 'tasks:legacy', 1)", []).unwrap();
+        let run = new_event_run(
+            "automation-id",
+            "tasks:legacy",
+            "tasks",
+            "task_blocked",
+            1,
+            2,
+            "legacy prompt",
+        );
+        write_run(&conn, &run).unwrap();
+        for owner in ["window-a", "window-b"] {
+            assert!(
+                !claim_event_key(&conn, "automation-id", "tasks:legacy", 3, Some(owner)).unwrap()
+            );
+            assert!(
+                pending_event_run(&conn, "automation-id", "tasks:legacy", owner)
+                    .unwrap()
+                    .is_none()
+            );
+        }
     }
 
     #[test]

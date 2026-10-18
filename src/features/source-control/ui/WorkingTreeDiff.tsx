@@ -464,7 +464,7 @@ export function WorkingTreeDiff({ cwd, focusPath, focusKind, focusRequest }: Pro
       const next = stageChunkText(loaded.original, loaded.current, pos, null, LINE_DIFF_CONFIG);
       if (next == null) return;
       await enqueueMutation(id, entry.file.path, () =>
-        gitStageContents(cwd, entry.file.relative, next),
+        gitStageContents(cwd, entry.file.relative, next, loaded.original),
       );
     },
     [cwd, entries, enqueueMutation],

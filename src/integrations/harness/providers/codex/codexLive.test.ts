@@ -104,6 +104,8 @@ async function startTurn(
     onAccepted?: () => void;
     controlsAgents?: boolean;
     text?: string;
+    model?: string;
+    resolvedModel?: string;
   } = {},
 ) {
   const events: HarnessEvent[] = [];
@@ -113,7 +115,7 @@ async function startTurn(
   const turn = sendCodexTurn({
     sessionId,
     cwd: "/repo",
-    model: "codex:gpt-5.4",
+    model: options.model ?? "codex:gpt-5.4",
     modelSettings: {},
     providerAccountId: options.providerAccountId,
     runtimeMode: options.runtimeMode ?? "supervised",
@@ -132,6 +134,7 @@ async function startTurn(
   await options.beforeThreadReply?.();
   reply(parse().find((m) => m.method === threadMethod)!.id as number, {
     thread: { id: "thr_1" },
+    model: options.resolvedModel,
   });
 
   if (options.text?.startsWith("/goal ")) {
@@ -166,6 +169,15 @@ async function startTurn(
 }
 
 describe("codex live turn sequence", () => {
+  it("uses the server-resolved model for native plan mode when selection is empty", async () => {
+    const { turn } = await startTurn("native-plan-model", { model: "", resolvedModel: "native-configured-model", intent: "plan" });
+    expect(parse().find((m) => m.method === "turn/start")?.params).toMatchObject({
+      collaborationMode: { mode: "plan", settings: { model: "native-configured-model" } },
+      sandboxPolicy: { type: "readOnly" },
+    });
+    notify("turn/completed", { threadId: "thr_1", turn: { id: "turn_1", status: "completed" } });
+    await turn;
+  });
   it("publishes aggregate parent turn metrics without including child usage", async () => {
     const { events, turn } = await startTurn("codex-usage", { resume: true });
     const usage = (threadId: string, input: number, cached: number, output: number) =>

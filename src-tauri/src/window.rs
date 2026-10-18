@@ -354,6 +354,7 @@ fn build_session_window_with_url(
         None
     };
 
+    crate::ssh_window_lifecycle::register(&label)?;
     let build = || {
         let builder =
             WebviewWindowBuilder::from_config(app, &config).map_err(|err| err.to_string())?;
@@ -368,6 +369,7 @@ fn build_session_window_with_url(
     #[cfg(not(target_os = "macos"))]
     let window = build();
     let window = window.inspect_err(|_| {
+        crate::ssh_window_lifecycle::close(&label);
         app.state::<crate::window_transfer::WindowTransferState>()
             .discard(&label);
     })?;

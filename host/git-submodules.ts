@@ -27,7 +27,7 @@ export async function hostGitSubmodules(cwd: string): Promise<string[]> {
     const entries = await git(parent, ["ls-files", "--stage", "-z", "--", "."]);
     for (const entry of entries.split("\0")) {
       const tab = entry.indexOf("\t");
-      if (tab < 0 || !/^160000 [a-f0-9]+ 0$/.test(entry.slice(0, tab))) continue;
+      if (tab < 0 || !/^160000 [a-f0-9]+ [0-3]$/.test(entry.slice(0, tab))) continue;
       const path = entry.slice(tab + 1);
       const child = await realpath(join(parent, path)).catch(() => null);
       if (!child || seen.has(child)) continue;

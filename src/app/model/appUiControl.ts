@@ -1,6 +1,7 @@
-/** Finite navigation contract shared with host discovery. No settings writes or arbitrary commands. */
+/** Finite workspace view contract shared with host discovery. No settings writes or arbitrary commands. */
 export const APP_UI_VIEWS = [
   "conversation",
+  "servers",
   "notes",
   "inbox",
   "automations",
@@ -11,6 +12,8 @@ export const APP_UI_VIEWS = [
   "files",
   "terminal",
 ] as const;
+/** Servers is observable here; its workspace-only navigation remains in the rail. */
+export const APP_UI_NAVIGATION_VIEWS = APP_UI_VIEWS.filter((view) => view !== "servers");
 export const APP_UI_SETTINGS = [
   "notifications",
   "workspace",
@@ -72,7 +75,7 @@ export function requestAppUi(
   if (
     Object.keys(input).some((key) => !allowed.includes(key)) ||
     ((action === "ui.workspace.open" || action === "ui.workspace.close") &&
-      !APP_UI_VIEWS.includes(input.view as AppUiView)) ||
+      !APP_UI_NAVIGATION_VIEWS.includes(input.view as (typeof APP_UI_NAVIGATION_VIEWS)[number])) ||
     (input.section !== undefined &&
       (input.view !== "settings" ||
         !APP_UI_SETTINGS.includes(input.section as AppUiInput["section"] & string)))

@@ -3,7 +3,11 @@ import { beforeEach, expect, it, vi } from "vitest";
 import { gateUsageBudget, isUsageBudgetChecking } from "./submitUsageBudget";
 import type { SubmitDeps, SubmitInput, SubmitPreflight } from "./submitTypes";
 import type { Session } from "../../../../features/sessions/model/session";
-import { getSessions, resetSessionsStore } from "../../../../features/sessions/model/sessionsStore";
+import {
+  getSessions,
+  resetSessionsStore,
+  setSessions,
+} from "../../../../features/sessions/model/sessionsStore";
 
 const mocks = vi.hoisted(() => ({ assert: vi.fn(), rules: vi.fn() }));
 vi.mock("../../../../features/usage/model/usageBudgetReadings", () => ({
@@ -99,4 +103,55 @@ it("does not duplicate a queued message or a draft on rejection", async () => {
   mocks.assert.mockRejectedValue(new Error("offline"));
   await gateUsageBudget(ctx, { ...input, options: { queuedMessageId: "q" } }, pre, () => true);
   expect(getSessions()[0].queuedMessages).toBeUndefined();
+});
+
+it.each([false, true])(
+  "pauses the existing queued head when budget lookup fails (synchronous=%s)",
+  async (synchronous) => {
+    const head = { id: "q", text: "Retained", attachments: [] };
+    resetSessionsStore([{ ...session, queueStatus: "active", queuedMessages: [head] }]);
+    if (synchronous)
+      mocks.rules.mockImplementation(() => {
+        throw new Error("Storage unavailable");
+      });
+    else {
+      mocks.rules.mockReturnValue([{}]);
+      mocks.assert.mockRejectedValue(new Error("Budget reached"));
+    }
+    const dispatch = vi.fn(() => true);
+    expect(
+      await gateUsageBudget(ctx, { ...input, options: { queuedMessageId: "q" } }, pre, dispatch),
+    ).toBe(false);
+    expect(dispatch).not.toHaveBeenCalled();
+    expect(getSessions()[0]).toMatchObject({ queueStatus: "paused", queuedMessages: [head] });
+  },
+);
+
+it("does not pause a replacement head after a rejected check settles", async () => {
+  mocks.rules.mockReturnValue([{}]);
+  let reject!: (error: Error) => void;
+  mocks.assert.mockReturnValue(
+    new Promise<void>((_resolve, rejectPromise) => {
+      reject = rejectPromise;
+    }),
+  );
+  resetSessionsStore([
+    {
+      ...session,
+      queueStatus: "active",
+      queuedMessages: [{ id: "q", text: "Old", attachments: [] }],
+    },
+  ]);
+  const checking = gateUsageBudget(
+    ctx,
+    { ...input, options: { queuedMessageId: "q" } },
+    pre,
+    () => true,
+  );
+  setSessions((all) =>
+    all.map((s) => ({ ...s, queuedMessages: [{ id: "new", text: "New", attachments: [] }] })),
+  );
+  reject(new Error("Budget reached"));
+  expect(await checking).toBe(false);
+  expect(getSessions()[0].queueStatus).toBe("active");
 });

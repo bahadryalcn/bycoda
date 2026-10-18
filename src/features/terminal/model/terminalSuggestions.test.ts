@@ -2,6 +2,11 @@ import { describe, expect, it } from "vitest";
 import { isSingleLineCommand, terminalSuggestions } from "./terminalSuggestions";
 
 describe("terminal command assistance", () => {
+  it("never substitutes local templates for remote host or OS-user history", () => {
+    for (const prefix of ["", "git", "pnpm b", "sudo ", "秘密"]) {
+      expect(terminalSuggestions(prefix, "ssh")).toEqual([]);
+    }
+  });
   it("completes command prefixes without changing custom arguments", () => {
     expect(terminalSuggestions("PNPM b")).toEqual(["pnpm build"]);
     expect(terminalSuggestions("git diff")).toEqual(["git diff --staged"]);

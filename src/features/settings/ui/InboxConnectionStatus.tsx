@@ -1,4 +1,4 @@
-import { Alert } from "../../../shared/ui/Alert";
+import { SettingsFeedback } from "./settingsControls";
 import { Badge } from "../../../shared/ui/Badge";
 import { t, useLocale } from "../../../shared/i18n";
 import { SecondaryButton } from "../../../shared/ui/SecondaryButton";
@@ -59,9 +59,5 @@ export function InboxConnectionStatus({
 }
 
 export function InboxConnectionError({ error }: { error: string | null }) {
-  return error ? (
-    <Alert tone="danger" role="alert">
-      {error}
-    </Alert>
-  ) : null;
+  return error ? <SettingsFeedback state="error">{error}</SettingsFeedback> : null;
 }

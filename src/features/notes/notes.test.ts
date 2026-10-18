@@ -68,6 +68,14 @@ describe("noteSourceProject", () => {
 });
 
 describe("note mentions", () => {
+  it("leaves quoted note references literal while collecting active mentions", () => {
+    expect(
+      noteSlugsInText(
+        "> Example @note/private\r\n   >> @note/nested\r\n> @note/auth\r\nUse @note/auth and @note/plan.",
+      ),
+    ).toEqual(["auth", "plan"]);
+    expect(noteSlugsInText("> @note/private")).toEqual([]);
+  });
   it("collects unique @note/slug tokens", () => {
     expect(noteSlugsInText("See @note/auth and @note/auth plus @note/plan-2.")).toEqual([
       "auth",

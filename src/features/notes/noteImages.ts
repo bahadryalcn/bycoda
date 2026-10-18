@@ -5,6 +5,7 @@ import {
   revokeAttachment,
 } from "../sessions/model/attachments";
 import type { Attachment } from "../sessions/model/session";
+import { upsertNote, type Note, type NoteUpsert } from "./notes";
 
 export const NOTE_IMAGE_PREFIX = "/note-assets/";
 
@@ -17,6 +18,24 @@ export type MarkdownInsertion = {
   value: string;
   cursor: number;
 };
+
+/** Recovery copies own their note assets so either note can later be deleted. */
+export async function createRecoveredNote(
+  input: Omit<NoteUpsert, "id" | "expectedUpdatedAt">,
+): Promise<Note> {
+  const id = crypto.randomUUID();
+  const assetPattern = /(?<![\w:/])\/note-assets\/[A-Za-z0-9_-]{1,200}\/[A-Za-z0-9_.-]+/g;
+  const assets = new Set(input.body.match(assetPattern) ?? []);
+  const replacements = new Map<string, string>();
+  for (const asset of assets) {
+    const sourcePath = await invoke<string>("notes_image_path", { asset });
+    const saved = await invoke<NoteImageAsset>("notes_save_image", { noteId: id, sourcePath });
+    replacements.set(asset, saved.markdownPath);
+  }
+  // Never create the replacement until every referenced note image is copied.
+  const body = input.body.replace(assetPattern, (asset) => replacements.get(asset)!);
+  return upsertNote({ ...input, id, body, expectedUpdatedAt: 0 });
+}
 
 export async function saveNoteImagesFromFiles(
   noteId: string,

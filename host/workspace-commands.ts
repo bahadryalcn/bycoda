@@ -23,7 +23,9 @@ import {
   GIT_ACTION_COMMANDS,
   GIT_ACTIONS_NEEDING_IDLE,
   HISTORY_FORMAT,
+  HISTORY_REFS_FORMAT,
   parseHistoryLog,
+  parseHistoryRefs,
   runGitAction,
   type GitActionCommand,
 } from "./git-actions";
@@ -221,6 +223,7 @@ export class WorkspaceCommands {
           input.relative,
           undefined,
           input.contents,
+          input.expectedOriginal,
         );
       case "git_stage_file":
         return this.gitAction(input.cwd, "stage", input.relative);
@@ -241,12 +244,17 @@ export class WorkspaceCommands {
       case "git_push":
         return this.gitAction(input.cwd, "push");
       case "git_pull":
-        return this.gitCommand(input.cwd, [
-          "pull",
-          input.rebase === true ? "--rebase" : "--ff-only",
-        ]).then(() => undefined);
+        return this.gitRoot(input.cwd).then((root) =>
+          this.withIdleGitProject(root, () =>
+            this.gitCommand(root, ["pull", input.rebase === true ? "--rebase" : "--ff-only"]).then(
+              () => undefined,
+            ),
+          ),
+        );
       case "git_sync":
-        return this.gitSync(input.cwd);
+        return this.gitRoot(input.cwd).then((root) =>
+          this.withIdleGitProject(root, () => this.gitSync(root)),
+        );
       case "git_pr_status":
         return this.gitPrStatus(input.cwd);
       case "git_pr_create":
@@ -274,7 +282,7 @@ export class WorkspaceCommands {
       case "search_project":
         return this.searchProject(input.options);
       case "list_skills":
-        return this.listSkills(input.cwd);
+        return this.listSkills(input.cwd, input.disabledPaths);
       case "list_claude_commands":
         return this.existing(input.cwd, true).then(({ path }) => listHostClaudeCommands(path));
       case "skill_export":
@@ -733,11 +741,19 @@ export class WorkspaceCommands {
 
   /** This machine's skills for a project folder here; the desktop drops
    * the ones it hides, as it does for its own. */
-  private async listSkills(input: unknown) {
+  private async listSkills(input: unknown, disabled: unknown) {
+    if (
+      disabled != null &&
+      (!Array.isArray(disabled) ||
+        disabled.length > 10000 ||
+        disabled.some((path) => typeof path !== "string" || path.length > 4096))
+    )
+      throw new Error("Invalid disabled skill paths.");
+    const disabledPaths = (disabled ?? []) as string[];
     // An empty `cwd` is "no project": this machine's personal skills only.
-    if (input === "") return listHostSkills(null);
+    if (input === "") return listHostSkills(null, undefined, disabledPaths);
     const { path } = await this.existing(input, true);
-    return listHostSkills(path);
+    return listHostSkills(path, undefined, disabledPaths);
   }
 
   /** A listed skill's files. The skill may live in the home folder, outside
@@ -775,8 +791,16 @@ export class WorkspaceCommands {
     relative?: unknown,
     message?: unknown,
     contents?: unknown,
+    expectedOriginal?: unknown,
   ) {
-    return hostGitAction(await this.gitRoot(cwd), action, relative, message, contents);
+    return hostGitAction(
+      await this.gitRoot(cwd),
+      action,
+      relative,
+      message,
+      contents,
+      expectedOriginal,
+    );
   }
 
   private async gitCommand(cwd: unknown, args: string[]): Promise<string> {
@@ -888,11 +912,17 @@ export class WorkspaceCommands {
 
   private async gitHistory(cwd: unknown, limit: unknown, all: boolean) {
     const count = Number.isSafeInteger(limit) ? Math.min(500, Math.max(1, Number(limit))) : 200;
-    const [head, upstream, index, remoteNames] = await Promise.all([
+    const [head, upstream, index, refs] = await Promise.all([
       this.gitCommand(cwd, ["rev-parse", "--verify", "HEAD"]).catch(() => ""),
       this.gitCommand(cwd, ["rev-parse", "--abbrev-ref", "@{upstream}"]).catch(() => ""),
       this.gitIndex(cwd),
-      this.gitCommand(cwd, ["remote"]).catch(() => ""),
+      this.gitCommand(cwd, [
+        "for-each-ref",
+        HISTORY_REFS_FORMAT,
+        "refs/heads",
+        "refs/tags",
+        "refs/remotes",
+      ]),
     ]);
     const headSha = head.trim() || null;
     if (!headSha) return { head: null, commits: [] };
@@ -910,16 +940,11 @@ export class WorkspaceCommands {
     const output = await this.gitCommand(cwd, [
       "log",
       "--topo-order",
-      "--decorate=short",
       `--max-count=${count}`,
       HISTORY_FORMAT,
       ...tips,
     ]);
-    const remotes = remoteNames
-      .split("\n")
-      .map((name) => name.trim())
-      .filter(Boolean);
-    const commits = parseHistoryLog(output, headSha, remotes);
+    const commits = parseHistoryLog(output, headSha, parseHistoryRefs(refs));
     return { head: headSha, commits };
   }
 

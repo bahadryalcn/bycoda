@@ -20,6 +20,7 @@ import {
 import { beginWindowTabDrag } from "../../../app/model/windowDragPreview";
 import {
   paneDropFromPoint,
+  samePaneDrop,
   setExternalTitleTabDrop,
   titleTabDropFromPoint,
   useExternalPaneDrop,
@@ -295,7 +296,10 @@ function PaneTreeComponent({
   const layoutRef = useRef(layout);
   layoutRef.current = layout;
   const [draft, setDraft] = useState<LayoutNode | null>(null);
-  const [paneDrag, setPaneDrag] = useState<PaneDrag | null>(null);
+  const [paneDrag, setPaneDragState] = useState<PaneDrag | null>(null);
+  const setPaneDrag = useCallback((next: PaneDrag | null) => {
+    setPaneDragState((current) => (samePaneDrop(current, next) ? current : next));
+  }, []);
   const [localMaximizedId, setLocalMaximizedId] = useState<string | null>(null);
   const externalDrop = useExternalPaneDrop(visible);
   const drop = paneDrag ?? externalDrop;

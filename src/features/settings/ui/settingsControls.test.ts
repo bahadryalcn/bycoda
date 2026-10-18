@@ -2,7 +2,15 @@
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { Group, Row, Segmented, Select, Slider, Toggle } from "./settingsControls";
+import {
+  Group,
+  Row,
+  Segmented,
+  Select,
+  Slider,
+  Toggle,
+  SettingsFeedback,
+} from "./settingsControls";
 import { playCue } from "../model/sounds";
 
 vi.mock("../model/sounds", () => ({ playCue: vi.fn() }));
@@ -44,6 +52,30 @@ async function key(target: Element, key: string) {
 }
 
 describe("settings keyboard controls", () => {
+  it("keeps operation feedback below controls and announces errors separately from progress", async () => {
+    const render = (state: "loading" | "error") =>
+      root.render(
+        createElement(Row, {
+          label: "Shell",
+          children: createElement("input", { "aria-label": "Shell path" }),
+          feedback: createElement(SettingsFeedback, {
+            state,
+            children: state === "error" ? "Try again" : "Loading",
+          }),
+        }),
+      );
+    await act(async () => render("loading"));
+    expect(container.querySelector('.settings-row-control [role="status"]')).toBeNull();
+    expect(
+      container.querySelector('.settings-row-feedback [role="status"]')?.textContent,
+    ).toContain("Loading");
+    await act(async () => render("error"));
+    expect(container.querySelector('[role="status"]')).toBeNull();
+    expect(container.querySelector('.settings-row-feedback [role="alert"]')?.textContent).toContain(
+      "Try again",
+    );
+    expect(container.querySelector("input")?.getAttribute("aria-label")).toBe("Shell path");
+  });
   it("associates native form labels and inherited scope without replacing caller descriptions", async () => {
     await act(async () =>
       root.render(

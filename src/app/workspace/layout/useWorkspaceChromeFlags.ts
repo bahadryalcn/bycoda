@@ -12,6 +12,7 @@ export interface WorkspaceChromeFlagsDeps {
   settingsOpen: boolean;
   inboxViewOpen: boolean;
   notesViewOpen: boolean;
+  serversViewOpen?: boolean;
   automationsViewOpen: boolean;
   collapsedProjectRailMode: ReturnType<typeof useSettingsBackedFlags>["collapsedProjectRailMode"];
   projectRailOpen: boolean;
@@ -25,13 +26,19 @@ export function useWorkspaceChromeFlags({
   settingsOpen,
   inboxViewOpen,
   notesViewOpen,
+  serversViewOpen = false,
   automationsViewOpen,
   collapsedProjectRailMode,
   projectRailOpen,
   visibleRecents,
 }: WorkspaceChromeFlagsDeps) {
   const chromeSurfaceOpen =
-    searchViewOpen || settingsOpen || inboxViewOpen || notesViewOpen || automationsViewOpen;
+    searchViewOpen ||
+    settingsOpen ||
+    inboxViewOpen ||
+    notesViewOpen ||
+    serversViewOpen ||
+    automationsViewOpen;
   const compactProjectRail = collapsedProjectRailMode === "compact";
   const detachedSessionWindow = Boolean(windowTransfer || toolWindow);
   const compactRailActive = !detachedSessionWindow && compactProjectRail && !projectRailOpen;
@@ -40,5 +47,11 @@ export function useWorkspaceChromeFlags({
     [visibleRecents],
   );
 
-  return { chromeSurfaceOpen, compactProjectRail, detachedSessionWindow, compactRailActive, trayProjectKeys };
+  return {
+    chromeSurfaceOpen,
+    compactProjectRail,
+    detachedSessionWindow,
+    compactRailActive,
+    trayProjectKeys,
+  };
 }

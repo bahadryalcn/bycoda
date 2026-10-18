@@ -88,6 +88,31 @@ describe("resolveOpenablePath", () => {
     expect(resolved).toBe(files[2].path);
   });
 
+  it.each([
+    ["src/foobar.ts", "bar.ts"],
+    ["bar.ts", "foobar.ts"],
+  ])("does not resolve %s through the partial segment %s", async (hint, relative) => {
+    list.mockResolvedValue([
+      { name: relative.split("/").pop()!, relative, path: `${cwd}/${relative}` },
+    ]);
+    expect(await resolveOpenablePath(cwd, hint)).toBe(`${cwd}/${hint}`);
+  });
+
+  it("does not give a partial directory suffix precedence over basename candidates", async () => {
+    const preferred = { name: "bar.ts", relative: "x/bar.ts", path: `${cwd}/x/bar.ts` };
+    list.mockResolvedValue([
+      { name: "bar.ts", relative: "bar/bar.ts", path: `${cwd}/bar/bar.ts` },
+      preferred,
+    ]);
+    rememberOpenedFile(cwd, preferred.path);
+    expect(await resolveOpenablePath(cwd, "src/foobar/bar.ts")).toBe(preferred.path);
+  });
+
+  it("retains a complete basename suffix for shortened references", async () => {
+    list.mockResolvedValue([{ name: "bar.ts", relative: "bar.ts", path: `${cwd}/bar.ts` }]);
+    expect(await resolveOpenablePath(cwd, "nested/bar.ts")).toBe(`${cwd}/bar.ts`);
+  });
+
   it("still opens a direct file when the optional project index is unavailable", async () => {
     list.mockRejectedValue(new Error("Project scan unavailable"));
     await expect(resolveOpenablePath(cwd, "apps/desktop/src/main.tsx")).resolves.toBe(

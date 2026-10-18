@@ -2,6 +2,7 @@ import { dateTimeFormat } from "../../../shared/lib/intl";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import type { HarnessId, RuntimeMode } from "../../sessions/model/session";
+import type { SshRunStatus } from "../../connections/model/sshRunbooks";
 import {
   isScheduleKind,
   nextAutomationRunAt,
@@ -56,6 +57,15 @@ export type AutomationRunStatus =
 const YEAR_MS = 365 * 24 * 60 * 60 * 1000;
 
 export type Automation = {
+  /** Absent on legacy agent automations. SSH runbooks require native review. */
+  executor?: "agent" | "ssh";
+  sshRunbook?: {
+    revision: number;
+    script: string;
+    shell: "posix" | "powershell";
+    targetIds: string[];
+    limits: { concurrency: number; timeoutSeconds: number };
+  };
   id: string;
   name: string;
   prompt: string;
@@ -117,6 +127,9 @@ export type AutomationUpsert = Omit<
 export type AutomationRunTrigger = "scheduled" | "manual" | "event";
 
 export type AutomationRun = {
+  executor?: "agent" | "ssh";
+  /** Metadata only; scripts, output and credentials are not run history. */
+  sshExecution?: SshRunStatus;
   id: string;
   automationId: string;
   trigger: AutomationRunTrigger;

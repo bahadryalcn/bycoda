@@ -149,6 +149,46 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+it("shows failed audio paste writes, cancels a waiting Send, and retains text for retry", async () => {
+  const field = render("keep this draft");
+  let fail!: (error: Error) => void;
+  invoke.mockImplementation((command: string) => {
+    if (command === "write_attachment")
+      return new Promise((_resolve, reject) => {
+        fail = reject;
+      });
+    return Promise.resolve([]);
+  });
+  const pasteFile = () => {
+    const event = new Event("paste", { bubbles: true, cancelable: true });
+    Object.defineProperty(event, "clipboardData", {
+      value: {
+        getData: () => "",
+        files: [new File(["audio"], "recording.wav", { type: "audio/wav" })],
+        items: [],
+      },
+    });
+    act(() => field.dispatchEvent(event));
+  };
+  pasteFile();
+  await settleUntil(() => Boolean(fail), "audio write");
+  await send();
+  await act(async () => fail(new Error("disk full")));
+  await waitForAlert();
+  expect(alert()).toContain("recording.wav");
+  expect(alert()).toContain("disk full");
+  expect(field.value).toBe("keep this draft");
+  expect(submit).not.toHaveBeenCalled();
+  invoke.mockResolvedValue("/tmp/recording.wav");
+  pasteFile();
+  await waitForAttachments(1);
+  await send();
+  expect(submit).toHaveBeenCalledTimes(1);
+  expect(submit.mock.calls[0][1]).toMatchObject([
+    { name: "recording.wav", path: "/tmp/recording.wav" },
+  ]);
+});
+
 it("attaches an image the paste event reports as neither file nor text", async () => {
   const event = paste(render());
   await waitForAttachments(1);
@@ -247,6 +287,44 @@ it("sends a screenshot that is still being read when the turn is sent", async ()
   // The chip went with the turn, not onto the cleared composer.
   expect(chipCount()).toBe(0);
 });
+
+it.each(["button", "keyboard", "parent"])(
+  "retires a pending Send on %s Stop while keeping the draft and late image",
+  async (route) => {
+    let release!: () => void;
+    invoke.mockImplementation(async (command: string) => {
+      if (command === "clipboard_file_paths") return [];
+      if (command === "clipboard_image") {
+        await new Promise<void>((resolve) => {
+          release = resolve;
+        });
+        return PNG_BYTES.buffer;
+      }
+      return [];
+    });
+    const onStop = vi.fn(() => draw({ busy: false, onStop }));
+    draw({ initialDraft: "keep for review", busy: true, onStop });
+    const field = container.querySelector("textarea")!;
+    paste(field);
+    await settleUntil(() => Boolean(release), "clipboard read");
+    await send();
+    expect(submit).not.toHaveBeenCalled();
+    act(() => {
+      if (route === "button")
+        container.querySelector<HTMLButtonElement>('button[aria-label="Stop"]')!.click();
+      else if (route === "keyboard")
+        field.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+      else draw({ busy: false, onStop });
+    });
+    release();
+    await waitForAttachments(1);
+    expect(submit).not.toHaveBeenCalled();
+    expect(field.value).toBe("keep for review [image1]");
+    await send();
+    expect(submit).toHaveBeenCalledOnce();
+    expect(submit.mock.calls[0][1]).toHaveLength(1);
+  },
+);
 
 it("does not attach a file that finishes reading after the draft was reset", async () => {
   let release: (() => void) | undefined;

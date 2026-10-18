@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { readToolWindow } from "../../../app/model/toolWindows";
+import { serverTerminalRestoreState } from "../../connections/model/serverTerminalRestoreState";
 import { buildSessionBlockDelta, type PersistedBlock } from "./sessionDelta";
 import { PersistenceBaselines } from "./persistenceBaselines";
 import {
@@ -332,9 +333,16 @@ export function upsertSession(session: Session): Promise<SessionSummary | null> 
 
 /** Explicit /clear must overwrite an existing transcript even though it is empty. */
 export function upsertClearedSession(session: Session): Promise<SessionSummary | null> {
-  if (session.blocks.length || session.providerSessionId || session.pendingContextReplay ||
-      session.historyPartial || session.historyLoading || session.inboxAsk ||
-      isRemoteProjectPath(session.cwd) || session.cwd === "~")
+  if (
+    session.blocks.length ||
+    session.providerSessionId ||
+    session.pendingContextReplay ||
+    session.historyPartial ||
+    session.historyLoading ||
+    session.inboxAsk ||
+    isRemoteProjectPath(session.cwd) ||
+    session.cwd === "~"
+  )
     throw new Error("Invalid cleared conversation");
   return persistSession(session, undefined, true);
 }
@@ -1095,6 +1103,9 @@ export async function saveWorkspaceSnapshot(snapshot: unknown): Promise<void> {
       ? {
           ...snapshot,
           ...(hasInitializedSessionRecovery() ? { sessionRecovery: getSessionRecovery() } : {}),
+          ...(serverTerminalRestoreState.getSnapshot().initialized
+            ? { serversRestore: serverTerminalRestoreState.getSnapshot().restore ?? null }
+            : {}),
         }
       : snapshot;
   const run = workspaceWrite
@@ -1344,6 +1355,7 @@ function sanitizeBtwThreads(value: unknown, hydrate: boolean): BtwThread[] | und
         : undefined;
     const modelSettings = sanitizeStringRecord(record.modelSettings);
     const providerThreadId = sanitizeNestedId(record.providerThreadId);
+    const providerAccountId = sanitizeNestedId(record.providerAccountId);
     const interrupted = hydrate && status === "running";
     return [
       {
@@ -1357,6 +1369,7 @@ function sanitizeBtwThreads(value: unknown, hydrate: boolean): BtwThread[] | und
         ...(model ? { model } : {}),
         ...(modelSettings ? { modelSettings } : {}),
         ...(providerThreadId ? { providerThreadId } : {}),
+        ...(providerAccountId ? { providerAccountId } : {}),
         ...(interrupted
           ? {
               error: error || "This by-the-way request was interrupted before reload.",

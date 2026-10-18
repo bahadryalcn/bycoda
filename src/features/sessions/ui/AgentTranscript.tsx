@@ -1,5 +1,5 @@
 import { Alert } from "../../../shared/ui/Alert";
-import { dateTimeFormat } from "../../../shared/lib/intl";
+import { Timestamp } from "../../../shared/ui/Timestamp";
 import { useStableValue } from "../../../shared/hooks/useStableValue";
 import { shallowArrayEqual } from "../model/stableBlocks";
 import { useFollowBottom } from "../hooks/useFollowBottom";
@@ -14,7 +14,7 @@ import type { TranscriptSelection } from "../model/transcriptSelection";
 import { useTransientFlag } from "../../../shared/hooks/useTransientFlag";
 import { INTERRUPT_MESSAGE, isTurnInterruptMessage } from "../model/inFlight";
 import { isSessionErrorBlock } from "../model/sessionIssue";
-import { t, useLocale, getLocale } from "../../../shared/i18n";
+import { t, useLocale } from "../../../shared/i18n";
 import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
 import {
   ArrowUp,
@@ -1848,9 +1848,7 @@ function TurnDuration({
       {completedAt != null ? (
         <span className="flex shrink-0 items-center gap-2.5">
           {dot}
-          <span className="shrink-0 text-(--ui-text-secondary)">
-            {formatClockTime(completedAt)}
-          </span>
+          <Timestamp value={completedAt} className="shrink-0 text-(--ui-text-secondary)" />
         </span>
       ) : null}
     </div>
@@ -1966,14 +1964,6 @@ function formatMetricCount(value: number): string {
     notation: "compact",
     maximumFractionDigits: value >= 1000 ? 1 : 0,
   }).format(Math.max(0, Math.round(value)));
-}
-
-/** Wall-clock stamp for a finished turn, in the reader's own locale. */
-function formatClockTime(epochMs: number): string {
-  return dateTimeFormat(getLocale(), {
-    hour: "numeric",
-    minute: "2-digit",
-  }).format(new Date(epochMs));
 }
 
 /** One action group; model menus and metric details retain their own state and overlays. */
@@ -2679,20 +2669,10 @@ function UserMessageBlock({
         </>
       ) : null}
       {block.startedAt != null ? (
-        <time
-          dateTime={new Date(block.startedAt).toISOString()}
-          title={dateTimeFormat(getLocale(), {
-            year: "numeric",
-            month: "numeric",
-            day: "numeric",
-            hour: "numeric",
-            minute: "numeric",
-            second: "numeric",
-          }).format(new Date(block.startedAt))}
-          className="ml-1 font-sans text-xs text-(--ui-text-secondary)"
-        >
-          {formatClockTime(block.startedAt)}
-        </time>
+        <Timestamp
+          value={block.startedAt}
+          className="ms-1 whitespace-nowrap font-sans text-xs text-(--ui-text-secondary)"
+        />
       ) : null}
     </>
   );
@@ -2858,7 +2838,7 @@ function UserMessageBlock({
         block.startedAt != null ||
         onEdit ||
         (onRewind && canRewind) ? (
-          <div className="user-message-actions flex items-center gap-1 px-3 pt-1">
+          <div className="user-message-actions flex max-w-full flex-wrap items-center justify-end gap-1 px-3 pt-1">
             {renderMessageActions()}
           </div>
         ) : null}
@@ -3595,7 +3575,7 @@ function SubagentPanel({
     return (
       <Button
         motion="none"
-        variant="ghost"
+        variant="item"
         type="button"
         aria-label={t("Open {p0} in its own panel", { p0: name })}
         title={brief}
@@ -3615,7 +3595,7 @@ function SubagentPanel({
         <Button
           motion="none"
           className="min-w-0 flex-1 text-left"
-          variant="ghost"
+          variant="item"
           type="button"
           selected={open}
           aria-expanded={open}

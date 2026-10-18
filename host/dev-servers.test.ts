@@ -574,6 +574,41 @@ it("discovers and manages only a real test-owned server listening on two random 
 }, 60_000);
 
 describe("unified managed-server log capture", () => {
+  it("masks multiline PEM independently per process stream before log retention and output", async () => {
+    const runtimeLogs = new RuntimeLogsService();
+    const { service, children } = fixture({ runtimeLogs });
+    await service.handle(
+      "devServers.start",
+      { projectId: "project", command: "node server.js", name: "Web" },
+      projects,
+    );
+    const child = children[0];
+    for (const text of [
+      "-----BEGIN PRI",
+      "VATE KEY-----\n",
+      "SYNTHETIC_PEM_A\n",
+      "SYNTHETIC_PEM_B\n",
+      "-----END PRIVATE KEY-----\n",
+      "healthy\n",
+    ]) {
+      child.stdout!.emit("data", Buffer.from(text));
+    }
+    child.stderr!.emit(
+      "data",
+      Buffer.from("stderr diagnostic\n-----BEGIN PRIVATE KEY-----\nSYNTHETIC_UNCLOSED"),
+    );
+    child.emit("close", 0);
+    const snapshot = runtimeLogs.read();
+    expect(JSON.stringify(snapshot)).not.toContain("SYNTHETIC");
+    expect(snapshot.entries.map((entry) => entry.message)).toContain("healthy");
+    expect(snapshot.entries.map((entry) => entry.message)).toContain("stderr diagnostic");
+    const legacy = (await service.handle(
+      "devServers.logs",
+      { id: (await service.list(projects)).servers[0].id },
+      projects,
+    )) as { output: string };
+    expect(legacy.output).not.toContain("SYNTHETIC");
+  });
   it("decodes split UTF-8, keeps streams line-safe, redacts secrets and infers stderr severity conservatively", async () => {
     const runtimeLogs = new RuntimeLogsService();
     const { service, children } = fixture({ runtimeLogs });

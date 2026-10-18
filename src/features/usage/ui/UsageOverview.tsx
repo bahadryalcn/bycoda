@@ -135,6 +135,13 @@ export function UsageOverview({
   }
   const [preset, setPreset] = useState<Preset>("30d");
   const [interval, setInterval] = useState<UsageWindow>(() => presetWindow("30d", Date.now()));
+  const [appliedRefresh, setAppliedRefresh] = useState(refresh);
+  // Update before committing effects, so a workspace refresh never queries the
+  // expired interval before moving a relative preset forward.
+  if (appliedRefresh !== refresh) {
+    setAppliedRefresh(refresh);
+    if (preset !== "custom") setInterval(presetWindow(preset, Date.now()));
+  }
   const [filters, setFilters] = useState<UsageFilters>(emptyUsageFilters);
   const [metric, setMetric] = useState<UsageMetric>("cost");
   const [dimension, setDimension] = useState<UsageDimension>("provider");

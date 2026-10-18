@@ -1,5 +1,11 @@
 // @vitest-environment happy-dom
-import { act, createElement, type ComponentProps } from "react";
+import {
+  act,
+  createElement,
+  Profiler,
+  type ProfilerOnRenderCallback,
+  type ComponentProps,
+} from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { newSession } from "../../sessions/model/session";
@@ -69,6 +75,7 @@ function render(
   onFocus = vi.fn(),
   onMovePane = vi.fn(),
   overrides: Partial<ComponentProps<typeof PaneTree>> = {},
+  onRender?: ProfilerOnRenderCallback,
 ) {
   const noop = vi.fn();
   const props = {
@@ -124,7 +131,10 @@ function render(
     ),
   } as ComponentProps<typeof PaneTree>;
   props.onMovePane = onMovePane;
-  act(() => root.render(createElement(PaneTree, { ...props, ...overrides })));
+  const tree = createElement(PaneTree, { ...props, ...overrides });
+  act(() =>
+    root.render(onRender ? createElement(Profiler, { id: "panes", onRender }, tree) : tree),
+  );
 }
 
 describe("pane docking UI", () => {
@@ -203,6 +213,22 @@ describe("pane docking UI", () => {
     expect(layoutLeaves(tree).map((pane) => pane.id)).toEqual(["a", "empty"]);
     expect(document.querySelector(".pointer-drop-hint")).toBeNull();
     expect(document.documentElement.classList.contains("is-grabbing")).toBe(false);
+  });
+
+  it("does not commit workspace renders for repeated movement inside the same drop region", () => {
+    const commits = vi.fn();
+    render(leaf("a"), vi.fn(), vi.fn(), {}, commits);
+    dragStart();
+    pointer(window, "pointermove", 20, 150);
+    // React may attempt one eager-bailout render after the state first changes.
+    pointer(window, "pointermove", 21, 150);
+    commits.mockClear();
+    for (let index = 0; index < 100; index++)
+      pointer(window, "pointermove", 20 + (index % 10), 150);
+    expect(commits).not.toHaveBeenCalled();
+    pointer(window, "pointermove", 390, 150);
+    expect(commits).toHaveBeenCalled();
+    pointer(window, "pointerup", 390, 150);
   });
 
   it("blocks the self-center target and resets feedback when cancelled", () => {

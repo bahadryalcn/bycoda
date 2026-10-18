@@ -48,6 +48,7 @@ import {
   type NoteSummary,
 } from "../notes";
 import { useNoteDetail } from "../useNoteDetail";
+import { createRecoveredNote } from "../noteImages";
 import {
   loadNotesPanelWidth,
   NOTES_PANEL_COMMAND,
@@ -242,9 +243,9 @@ function SessionNotesContent({ sessionId, cwd }: Props) {
     );
   }, []);
 
-  const onDelete = useCallback(async (id: string) => {
+  const onDelete = useCallback(async (id: string, expectedUpdatedAt?: number) => {
     try {
-      await deleteNote(id);
+      await deleteNote(id, expectedUpdatedAt);
       setNotes((current) => current.filter((item) => item.id !== id));
       setError(null);
       return true;
@@ -517,7 +518,7 @@ const PanelNoteEditor = memo(function PanelNoteEditor({
   autoFocus: boolean;
   onFocused: () => void;
   onSaved: (note: Note) => void;
-  onDelete: (id: string) => Promise<boolean>;
+  onDelete: (id: string, expectedUpdatedAt?: number) => Promise<boolean>;
   sessionId: string;
   onLink: (id: string) => Promise<boolean>;
 }) {
@@ -527,6 +528,7 @@ const PanelNoteEditor = memo(function PanelNoteEditor({
   const [title, setTitle] = useState(restored?.title ?? note.title);
   const [body, setBody] = useState(restored?.body ?? note.body);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [recovering, setRecovering] = useState(false);
   const [linking, setLinking] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const field = useRef<HTMLTextAreaElement>(null);
@@ -546,7 +548,12 @@ const PanelNoteEditor = memo(function PanelNoteEditor({
   );
   useEffect(() => {
     const previous = savedRef.current;
-    if (note.title === previous.title && note.body === previous.body) return;
+    if (note.updatedAt < previous.updatedAt) return;
+    if (note.title === previous.title && note.body === previous.body) {
+      savedRef.current = note;
+      retainDraft();
+      return;
+    }
     const dirty = bodyRef.current !== previous.body || titleRef.current !== previous.title;
     if (dirty) {
       conflictRef.current = true;
@@ -587,11 +594,17 @@ const PanelNoteEditor = memo(function PanelNoteEditor({
     try {
       const saved = await upsertNote({
         id: current.id,
+        expectedUpdatedAt: current.updatedAt,
         title: nextTitle,
         body: nextBody,
         tags: current.tags,
         ...(finalizeSlug ? { finalizeSlug: true } : {}),
       });
+      // A metadata refresh may overtake an in-flight response.
+      if (savedRef.current.updatedAt > saved.updatedAt) {
+        retainDraft();
+        return;
+      }
       savedRef.current = saved;
       const retained = editorDrafts.get(draftKey);
       if (retained?.body === nextBody && retained.title.trim() === typed)
@@ -610,9 +623,10 @@ const PanelNoteEditor = memo(function PanelNoteEditor({
         setTitle(saved.title);
       }
     } catch (err: unknown) {
+      retainDraft();
       setSaveError(errorText(err));
     }
-  }, [draftKey]);
+  }, [draftKey, retainDraft]);
 
   const saveNow = useCallback(
     (finalize = false) => {
@@ -758,6 +772,33 @@ const PanelNoteEditor = memo(function PanelNoteEditor({
           >
             {t("Retry")}
           </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            disabled={recovering}
+            onClick={async () => {
+              setRecovering(true);
+              try {
+                await createRecoveredNote({
+                  title: titleRef.current,
+                  body: bodyRef.current,
+                  tags: savedRef.current.tags,
+                  sourceCwd: savedRef.current.sourceCwd,
+                  sourceSessionId: sessionId,
+                });
+                skipSave.current = true;
+                editorDrafts.delete(draftKey);
+                setSaveError(null);
+                window.dispatchEvent(new Event(NOTES_CHANGED_EVENT));
+              } catch (error) {
+                setSaveError(errorText(error));
+              } finally {
+                setRecovering(false);
+              }
+            }}
+          >
+            {t("Save as new note")}
+          </Button>
         </Alert>
       ) : null}
       <div className="flex min-h-9 shrink-0 flex-wrap items-center gap-1 border-t border-stroke px-2 py-1">
@@ -813,7 +854,7 @@ const PanelNoteEditor = memo(function PanelNoteEditor({
             setDeleting(true);
             if (saveTimer.current != null) window.clearTimeout(saveTimer.current);
             void enqueueSave(note.id, async () => {
-              const deleted = await onDelete(note.id);
+              const deleted = await onDelete(note.id, savedRef.current.updatedAt);
               if (deleted) editorDrafts.delete(draftKey);
               if (!deleted) {
                 skipSave.current = false;

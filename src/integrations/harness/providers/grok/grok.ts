@@ -3,6 +3,8 @@ import { nativeModelId } from "../../../../features/sessions/model/models";
 import { AcpSubagents } from "../../core/acpSubagents";
 import type { RuntimeMode } from "../../../../features/sessions/model/session";
 import { AcpClient, type AcpHandlers } from "../../core/acp";
+import { reportAcpStopReason } from "../../core/acpStopReason";
+import { JsonRpcResponseError } from "../../core/jsonRpc";
 import {
   killChild,
   resolveGrokBinary,
@@ -334,7 +336,10 @@ async function ensureLive(input: HarnessSessionInput): Promise<Live> {
         );
         acpSessionId = sessionIdFromResult(setup) ?? resume.acpSessionId;
         didLoad = true;
-      } catch {
+      } catch (error) {
+        // A timeout may still complete remotely. Only an answered failure can
+        // safely try the alternate restoration method.
+        if (!(error instanceof JsonRpcResponseError)) throw error;
         muteGate.current = true;
         try {
           setup = await acp.request(
@@ -348,10 +353,6 @@ async function ensureLive(input: HarnessSessionInput): Promise<Live> {
           );
           acpSessionId = sessionIdFromResult(setup) ?? resume.acpSessionId;
           didLoad = true;
-        } catch {
-          setup = undefined;
-          acpSessionId = undefined;
-          didLoad = false;
         } finally {
           muteGate.current = false;
         }
@@ -442,7 +443,7 @@ async function prompt(live: Live, input: SendTurnInput): Promise<void> {
   try {
     const blocks = grokPromptBlocks(input.text, input.attachments);
     if (blocks.length === 0) return;
-    await live.acp.request(
+    const result = await live.acp.request(
       "session/prompt",
       {
         sessionId: live.acpSessionId,
@@ -453,6 +454,7 @@ async function prompt(live: Live, input: SendTurnInput): Promise<void> {
     if (live.cancelled) return;
     live.onEvent({ type: "message.completed" });
     live.onEvent({ type: "reasoning.completed" });
+    reportAcpStopReason(result, live.onEvent);
   } catch (error) {
     if (live.cancelled) return;
     const detail = error instanceof Error ? error.message : String(error);

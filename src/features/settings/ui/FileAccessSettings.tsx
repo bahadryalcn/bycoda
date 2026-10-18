@@ -1,4 +1,4 @@
-import { Alert } from "../../../shared/ui/Alert";
+import { SettingsFeedback } from "./settingsControls";
 import { useEffect, useState } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import {
@@ -29,6 +29,7 @@ export function FileAccessSettings({ embedded = false }: { embedded?: boolean })
     };
   }, []);
   const review = async () => {
+    if (busy) return;
     setBusy(true);
     setError("");
     try {
@@ -41,7 +42,17 @@ export function FileAccessSettings({ embedded = false }: { embedded?: boolean })
   };
   const content = (
     <>
-      <Row id="file-access" label={t("File access")}>
+      <Row
+        id="file-access"
+        label={t("File access")}
+        feedback={
+          error ? (
+            <SettingsFeedback state="error">{error}</SettingsFeedback>
+          ) : busy ? (
+            <SettingsFeedback state="loading">{t("Waiting for approval…")}</SettingsFeedback>
+          ) : null
+        }
+      >
         <span role="status" aria-live="polite">
           {mode === null
             ? error
@@ -53,15 +64,10 @@ export function FileAccessSettings({ embedded = false }: { embedded?: boolean })
                 ? t("Selected folders only")
                 : t("Not configured")}
         </span>
-        <Button loading={busy} onClick={() => void review()}>
+        <Button loading={busy} disabled={mode === null && !error} onClick={() => void review()}>
           {busy ? t("Waiting for approval…") : t("Change file access")}
         </Button>
       </Row>
-      {error ? (
-        <Alert tone="danger" role="alert">
-          {error}
-        </Alert>
-      ) : null}
       <AdvancedSettings
         id="file-access-permissions"
         settingIds={["file-access-permissions"]}

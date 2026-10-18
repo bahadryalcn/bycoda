@@ -81,7 +81,8 @@ Connect another computer using an SSH forward to the loopback port.`);
   }
   if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error("Invalid port");
   const { protectWindowsDirectory } = await import("./windows");
-  const { connectionInfo, installService, uninstallService } = await import("./service");
+  const { connectionInfo, installService, uninstallService, stopHostWithServicePolicy } =
+    await import("./service");
   mkdirSync(directory, { recursive: true, mode: 0o700 });
   if (process.platform === "win32") await protectWindowsDirectory(directory);
   else chmodSync(directory, 0o700);
@@ -134,7 +135,20 @@ Connect another computer using an SSH forward to the loopback port.`);
       console.log("Host is stopped");
       return;
     }
-    await lifecycle(state, command);
+    if (command === "stop")
+      await stopHostWithServicePolicy(state.pid, async () => {
+        await lifecycle(state, "stop");
+        if (process.platform !== "darwin") return;
+        // cleanup removes this state only after all provider work has drained.
+        for (let i = 0; i < 200; i++) {
+          if (readRunning()?.pid !== state.pid) return;
+          await new Promise((resolve) => setTimeout(resolve, 100));
+        }
+        throw new Error(
+          "The host is still draining work; its service was not unloaded. Retry stop shortly.",
+        );
+      });
+    else await lifecycle(state, command);
     console.log(
       command === "stop"
         ? "Host is stopping"

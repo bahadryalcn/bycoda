@@ -451,8 +451,13 @@ export function gitCommitFileDiff(
   return invoke<GitFileDiff>("git_commit_file_diff", { cwd, sha, relative });
 }
 
-export function gitStageContents(cwd: string, relative: string, contents: string): Promise<void> {
-  return invoke<void>("git_stage_contents", { cwd, relative, contents });
+export function gitStageContents(
+  cwd: string,
+  relative: string,
+  contents: string,
+  expectedOriginal?: string,
+): Promise<void> {
+  return invoke<void>("git_stage_contents", { cwd, relative, contents, expectedOriginal });
 }
 
 export function gitStageFile(cwd: string, relative: string): Promise<void> {
@@ -719,8 +724,9 @@ export function gitStashAction(
   cwd: string,
   action: "apply" | "pop" | "drop",
   index: number,
+  expectedSha: string,
 ): Promise<void> {
-  return invoke<void>("git_stash_action", { cwd, action, index });
+  return invoke<void>("git_stash_action", { cwd, action, index, expectedSha });
 }
 
 /** Repo-relative paths with unresolved merge conflicts. */

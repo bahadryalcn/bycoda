@@ -18,7 +18,7 @@ export const InterruptedNotice = memo(function InterruptedNotice({
   interruptedTurn,
   blockedReason,
   onContinue,
-  message = `This turn was cut off when ${PRODUCT_IDENTITY.displayName} quit.`,
+  message,
 }: {
   session: Session;
   interruptedTurn?: boolean;
@@ -42,7 +42,18 @@ export const InterruptedNotice = memo(function InterruptedNotice({
       <div className="relative z-0 flex h-8 items-center gap-2 rounded-t-[10px] border border-b-0 border-(--ui-tone-warning-border) bg-(--ui-tone-warning-subtle) px-2 text-[12px]">
         <Pause className="size-3.5 shrink-0 text-(--ui-tone-warning-fg)" />
         <span className="shrink-0 text-(--ui-text-secondary)">{t("Interrupted")}</span>
-        <span className="min-w-0 flex-1 truncate">{message}</span>
+        <span
+          className="min-w-0 flex-1 truncate"
+          title={
+            message
+              ? t(message)
+              : t("This turn was cut off when {p0} quit.", { p0: PRODUCT_IDENTITY.displayName })
+          }
+        >
+          {message
+            ? t(message)
+            : t("This turn was cut off when {p0} quit.", { p0: PRODUCT_IDENTITY.displayName })}
+        </span>
         <Button
           variant="ghost"
           disabled={!!blockedReason}

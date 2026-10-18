@@ -235,9 +235,16 @@ it("forwards exactly the commands the host answers", () => {
 });
 
 it("returns checkpoint paths from the owning machine without duplicating the checkout prefix", async () => {
-  remoteRequest.mockResolvedValueOnce({ files: [{ path: "/home/me/repo/a.txt", relative: "a.txt", undoable: false }] });
-  const status = await runRemoteCommand("session_checkpoint_status", { cwd: "remote://env/home/me/repo", sessionId: "host-session" });
-  expect(status).toEqual({ files: [{ path: "remote://env/home/me/repo/a.txt", relative: "a.txt", undoable: false }] });
+  remoteRequest.mockResolvedValueOnce({
+    files: [{ path: "/home/me/repo/a.txt", relative: "a.txt", undoable: false }],
+  });
+  const status = await runRemoteCommand("session_checkpoint_status", {
+    cwd: "remote://env/home/me/repo",
+    sessionId: "host-session",
+  });
+  expect(status).toEqual({
+    files: [{ path: "remote://env/home/me/repo/a.txt", relative: "a.txt", undoable: false }],
+  });
 });
 
 it("sends git actions with the project translated and files left relative", async () => {
@@ -366,6 +373,22 @@ it("routes skill deletion by its remote path and preserves the project context",
   await expect(
     deleteSkill("remote://env/home/me/.agents/skills/tool/SKILL.md", ""),
   ).rejects.toThrow("needs updating to delete skills");
+});
+
+it("translates disabled skill paths only for the addressed machine", async () => {
+  remoteRequest.mockResolvedValueOnce([]);
+  await runRemoteCommand("list_skills", {
+    cwd: "remote://env/home/me/repo",
+    disabledPaths: [
+      "remote://env/home/me/repo/.agents/skills/review/SKILL.md",
+      "remote://other/home/me/skills/review/SKILL.md",
+      "C:/local/skills/review/SKILL.md",
+    ],
+  });
+  expect(remoteRequest).toHaveBeenLastCalledWith("machine", "workspace.run", {
+    command: "list_skills",
+    args: { cwd: "/home/me/repo", disabledPaths: ["/home/me/repo/.agents/skills/review/SKILL.md"] },
+  });
 });
 
 it("addresses a machine without a project path for skill commands", async () => {

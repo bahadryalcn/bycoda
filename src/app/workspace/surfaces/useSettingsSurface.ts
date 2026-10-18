@@ -59,11 +59,13 @@ export interface SettingsSurfaceActionsDeps {
   setInboxViewOpen: Dispatch<SetStateAction<boolean>>;
   setNotesViewOpen: Dispatch<SetStateAction<boolean>>;
   setAutomationsViewOpen: Dispatch<SetStateAction<boolean>>;
+  setServersViewOpen?: Dispatch<SetStateAction<boolean>>;
   settingsOpenRef: MutableRefObject<boolean>;
   searchViewOpenRef: MutableRefObject<boolean>;
   inboxViewOpenRef: MutableRefObject<boolean>;
   notesViewOpenRef: MutableRefObject<boolean>;
   automationsViewOpenRef: MutableRefObject<boolean>;
+  serversViewOpenRef?: MutableRefObject<boolean>;
 }
 
 // Open/return half of the settings surface. Called where the surface openers
@@ -79,17 +81,20 @@ export function useSettingsSurfaceActions({
   setInboxViewOpen,
   setNotesViewOpen,
   setAutomationsViewOpen,
+  setServersViewOpen,
   settingsOpenRef,
   searchViewOpenRef,
   inboxViewOpenRef,
   notesViewOpenRef,
   automationsViewOpenRef,
+  serversViewOpenRef,
 }: SettingsSurfaceActionsDeps) {
   const settingsReturnViewRef = useRef({
     search: false,
     inbox: false,
     notes: false,
     automations: false,
+    servers: false,
   });
 
   const openSettings = useCallback((section?: SettingsSectionId, anchor?: SettingsAnchor) => {
@@ -99,6 +104,7 @@ export function useSettingsSurfaceActions({
         inbox: inboxViewOpenRef.current,
         notes: notesViewOpenRef.current,
         automations: automationsViewOpenRef.current,
+        servers: Boolean(serversViewOpenRef?.current),
       };
     }
     startTransition(() => {
@@ -107,6 +113,7 @@ export function useSettingsSurfaceActions({
       setInboxViewOpen(false);
       setNotesViewOpen(false);
       setAutomationsViewOpen(false);
+      setServersViewOpen?.(false);
       const targetSection = settingsSectionForAnchor(section, anchor);
       if (targetSection) {
         setSettingsSection(targetSection);
@@ -152,6 +159,7 @@ export function useSettingsSurfaceActions({
     setInboxViewOpen(returnView.inbox);
     setNotesViewOpen(returnView.notes && loadNotesEnabled());
     setAutomationsViewOpen(returnView.automations);
+    setServersViewOpen?.(returnView.servers);
     setSettingsOpen(false);
   }, []);
 

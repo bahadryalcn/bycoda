@@ -6,6 +6,7 @@ import { Slider as SharedSlider } from "../../../shared/ui/Slider";
 import { ElasticSlider } from "../../../shared/ui/ElasticSlider";
 import { Switch } from "../../../shared/ui/Switch";
 import { Badge } from "../../../shared/ui/Badge";
+import { Alert } from "../../../shared/ui/Alert";
 
 import { playCue } from "../model/sounds";
 import { useDecorativeMotionPreference } from "../model/decorativeMotion";
@@ -28,7 +29,41 @@ type SettingDetails = {
   scope?: ReactNode;
   dependency?: ReactNode;
   persistence?: SettingsPersistence;
+  /** Operation feedback occupies its own line below the associated controls. */
+  feedback?: ReactNode;
 };
+
+export function SettingsFeedback({
+  state,
+  children,
+  action,
+}: {
+  state: "loading" | "success" | "error" | "empty" | "warning";
+  children: ReactNode;
+  action?: ReactNode;
+}) {
+  return (
+    <div className="settings-feedback" data-state={state}>
+      <Alert
+        tone={
+          state === "error"
+            ? "danger"
+            : state === "warning"
+              ? "warning"
+              : state === "success"
+                ? "success"
+                : "info"
+        }
+        role={state === "error" ? "alert" : "status"}
+        aria-live={state === "error" ? "assertive" : "polite"}
+        aria-atomic="true"
+      >
+        {children}
+      </Alert>
+      {action}
+    </div>
+  );
+}
 
 function SettingHints({ scope, dependency, persistence }: SettingDetails) {
   useLocale();
@@ -179,6 +214,7 @@ export function Group({
   scope,
   dependency,
   persistence,
+  feedback,
   children,
 }: {
   /** Matches a `SETTINGS_INDEX` id when the whole card is the search target. */
@@ -230,6 +266,7 @@ export function Group({
         }`}
       >
         {children}
+        {feedback ? <div className="settings-group-feedback">{feedback}</div> : null}
       </div>
     </section>
   );
@@ -242,6 +279,7 @@ export function Row({
   scope,
   dependency,
   persistence,
+  feedback,
   controlId,
   children,
 }: {
@@ -298,6 +336,7 @@ export function Row({
       >
         {children}
       </div>
+      {feedback ? <div className="settings-row-feedback">{feedback}</div> : null}
     </div>
   );
 }

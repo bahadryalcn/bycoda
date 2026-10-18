@@ -10,7 +10,7 @@ describe("tool window boot routing", () => {
       grouped: true,
     });
   });
-  it.each(["", "?tool=settings", "?tool=__proto__", "?hostTools=x"])(
+  it.each(["", "?tool=settings", "?tool=servers", "?tool=__proto__", "?hostTools=x"])(
     "ignores unrelated window URLs: %s",
     (search) => {
       expect(readToolWindow(search)).toBeNull();

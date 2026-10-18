@@ -1,8 +1,9 @@
 import { StringDecoder } from "node:string_decoder";
-import { RuntimeLogsService } from "./runtime-logs";
+import { RuntimeLogLineRedactor, RuntimeLogsService } from "./runtime-logs";
 import type { RuntimeLogSource } from "../src/features/host-tools/runtimeLogTypes";
 
 type Stream = {
+  redactor: RuntimeLogLineRedactor;
   source: RuntimeLogSource;
   decoder: StringDecoder;
   sequence: number;
@@ -44,6 +45,7 @@ export class RuntimeTerminalLogs {
         this.streams.delete(oldest);
       }
       stream = {
+        redactor: new RuntimeLogLineRedactor(),
         source: {
           id: `server:terminal:${id}`,
           kind: "server",
@@ -62,7 +64,20 @@ export class RuntimeTerminalLogs {
     }
     if (Number(sequence) <= stream.sequence) return { accepted: false };
     if (params.interrupted || Number(sequence) !== stream.sequence + 1) {
+      this.logs.add(stream.source, {
+        timestamp: Date.now(),
+        level: "warn",
+        message: "Terminal log capture was interrupted; some output is unavailable.",
+        details: {
+          stream: "pty",
+          captureGap: true,
+          expectedSequence: stream.sequence + 1,
+          receivedSequence: Number(sequence),
+          interrupted: !!params.interrupted,
+        },
+      });
       // Never concatenate a secret fragment across dropped queue chunks.
+      stream.redactor.interrupt(stream.line);
       stream.decoder = new StringDecoder("utf8");
       stream.line = "";
       stream.skipLine = true;
@@ -85,7 +100,7 @@ export class RuntimeTerminalLogs {
   }
 
   private emit(stream: Stream) {
-    const message = stream.line;
+    const message = stream.redactor.redact(stream.line);
     if (!stream.skipLine && message.trim()) {
       const level =
         /\b(?:error|fatal|exception|EADDRINUSE)\b|^\s*(?:TypeError|ReferenceError|SyntaxError):/i.test(
@@ -138,7 +153,10 @@ export class RuntimeTerminalLogs {
       }
       if (char < " " && char !== "\t") continue;
       if (stream.line.length < 8192) stream.line += char;
-      else stream.truncated = true;
+      else {
+        stream.redactor.observeOverflow(char, stream.line);
+        stream.truncated = true;
+      }
     }
   }
 }

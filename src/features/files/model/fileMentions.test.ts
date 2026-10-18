@@ -179,6 +179,35 @@ describe("buildMentionIndex", () => {
 });
 
 describe("fileMentionParts", () => {
+  it("resolves sentence-ending punctuation and leaves it outside the highlight", () => {
+    const parts = fileMentionParts("Review @Composer.tsx.", index.labels);
+    expect(parts).toEqual([
+      { text: "Review " },
+      { text: "@Composer.tsx", file: files[2] },
+      { text: "." },
+    ]);
+    expect(fileMentionsInText("Review @Composer.tsx...!", index.labels)).toEqual([
+      expect.objectContaining({ start: 7, end: 20, label: "Composer.tsx", file: files[2] }),
+    ]);
+  });
+
+  it("prefers an exact filename containing punctuation before peeling punctuation", () => {
+    const dotted = {
+      name: "Composer.tsx.",
+      path: "/p/src/Composer.tsx.",
+      relative: "src/Composer.tsx.",
+    };
+    const labels = buildMentionIndex([...files, dotted]).labels;
+    expect(fileMentionsInText("Review @Composer.tsx.", labels)[0]).toMatchObject({
+      label: "Composer.tsx.",
+      file: dotted,
+    });
+    expect(fileMentionParts("Review @Composer.tsx.!", labels)).toEqual([
+      { text: "Review " },
+      { text: "@Composer.tsx.", file: dotted },
+      { text: "!" },
+    ]);
+  });
   it("splits known mentions out of the surrounding text", () => {
     expect(fileMentionParts("fix @Composer.tsx now", index.labels)).toEqual([
       { text: "fix " },
@@ -377,6 +406,13 @@ describe("applyFileMentionsToTurn", () => {
     const out = await applyFileMentionsToTurn("look at @docs/read-me.md", "/p");
     expect(out).toContain("look at @docs/read-me.md");
     expect(out).toContain("- @docs/read-me.md → docs/read me.md");
+  });
+
+  it("adds the project path annotation for a mention ending a sentence", async () => {
+    const text = "Review @Composer.tsx.";
+    const out = await applyFileMentionsToTurn(text, "/p");
+    expect(out).toContain(text);
+    expect(out).toContain("- @Composer.tsx → src/chrome/Composer.tsx");
   });
 
   it("does not invent a path from a token that is not in the index", async () => {

@@ -164,7 +164,11 @@ function ScopedRuntimeLogsPanel({
           cwd,
           "runtime.logs",
           "runtimeLogs.read",
-          { ...(current.cursor ? { after: current.cursor } : {}), limit: 1_000 },
+          {
+            ...(current.cursor ? { after: current.cursor } : {}),
+            ...(current.streamId ? { streamId: current.streamId } : {}),
+            limit: 1_000,
+          },
           targetRef.current,
         );
         if (!alive.current || revision !== generation.current) return;
