@@ -6,7 +6,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { InboxView as RawInboxView } from "./InboxView";
 import { withQueryClient } from "../../../../tests/browser/queryTest";
 const InboxView = withQueryClient(RawInboxView);
-import { inboxItemKey, type InboxItem } from "../model/githubTasks";
+import { clearInboxCache, inboxItemKey, type InboxItem } from "../model/githubTasks";
 import { isInboxEntryUnseen, seedInboxSeenIfNeeded } from "../model/inboxSeen";
 import { saveInboxConnections, saveInboxSource } from "../model/inboxFilters";
 import { updateNotificationPreferences } from "../../notifications/model/notificationPreferences";
@@ -33,6 +33,7 @@ vi.mock("@tauri-apps/api/window", () => ({
 let root: Root;
 let container: HTMLDivElement;
 beforeEach(() => {
+  clearInboxCache();
   resetRetainedState();
   vi.mocked(invoke).mockRejectedValue(new Error("No native bridge"));
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
@@ -69,10 +70,21 @@ it("filters the cached Inbox locally and reuses fresh data when reopened", async
     draft: false,
     projectPath: "/tmp/app",
   };
-  listInboxItems.mockResolvedValue({
-    items: [base, { ...base, number: 2, title: "Beta issue" }],
-    errors: {},
+  const actual =
+    await vi.importActual<typeof import("../model/githubTasks")>("../model/githubTasks");
+  listInboxItems.mockImplementation(actual.listInboxItems);
+  vi.mocked(invoke).mockImplementation(async (command, args) => {
+    if (command === "git_github_status") return { connected: true };
+    if (command === "git_github_repositories") return ["acme/app"];
+    if (command === "git_github_work_items")
+      return (args as { kind: string }).kind === "issue"
+        ? [base, { ...base, number: 2, title: "Beta issue" }]
+        : [];
+    if (String(command).endsWith("_status")) return { connected: false };
+    throw new Error("No native bridge");
   });
+  const providerReads = () =>
+    vi.mocked(invoke).mock.calls.filter(([command]) => command === "git_github_work_items");
   const render = () =>
     act(async () =>
       root.render(
@@ -89,6 +101,8 @@ it("filters the cached Inbox locally and reuses fresh data when reopened", async
   await render();
   expect(container.querySelector('button[title="Beta issue"]')).not.toBeNull();
   const reads = listInboxItems.mock.calls.length;
+  const nativeReads = providerReads().length;
+  expect(nativeReads).toBeGreaterThan(0);
   const input = container.querySelector<HTMLInputElement>('input[aria-label="Filter inbox"]')!;
   await act(async () => {
     Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, "Alpha");
@@ -97,10 +111,13 @@ it("filters the cached Inbox locally and reuses fresh data when reopened", async
   expect(container.querySelector('button[title="Alpha issue"]')).not.toBeNull();
   expect(container.querySelector('button[title="Beta issue"]')).toBeNull();
   expect(listInboxItems.mock.calls).toHaveLength(reads);
+  expect(providerReads()).toHaveLength(nativeReads);
   await act(async () => root.unmount());
   root = createRoot(container);
   await render();
-  expect(listInboxItems.mock.calls).toHaveLength(reads);
+  // Mount rechecks the shared cache's real age; its fresh result avoids native
+  // provider work even though the query facade is called again.
+  expect(providerReads()).toHaveLength(nativeReads);
   expect(container.querySelector<HTMLInputElement>('input[aria-label="Filter inbox"]')?.value).toBe(
     "Alpha",
   );
