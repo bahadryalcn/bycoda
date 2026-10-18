@@ -23,6 +23,9 @@ export interface ProgressProps extends Omit<React.HTMLAttributes<HTMLDivElement>
   max?: number;
   label?: string;
   showValue?: boolean;
+  /** Quota meters can keep their value inside the track without completion decoration. */
+  valuePlacement?: "above" | "inside";
+  valueLabel?: string;
   tone?: "neutral" | "accent" | "info" | "success" | "warning" | "danger";
   compact?: boolean;
 }
@@ -64,6 +67,8 @@ export function Progress({
   max = 100,
   label,
   showValue = false,
+  valuePlacement = "above",
+  valueLabel,
   className,
   tone = "accent",
   compact = false,
@@ -83,6 +88,11 @@ export function Progress({
     progress,
     (latest) => `${Math.round(Math.min(Math.max(latest, 0), 100))}%`,
   );
+  const labelClip = useTransform(
+    progress,
+    (latest) => `inset(0 ${100 - Math.min(Math.max(latest, 0), 100)}% 0 0)`,
+  );
+  const inside = showValue && determinate && valuePlacement === "inside";
   useEffect(() => {
     if (reduce) {
       progress.jump(percentage);
@@ -103,14 +113,17 @@ export function Progress({
       data-tone={tone}
       data-compact={compact || undefined}
       data-indeterminate={!determinate || undefined}
+      data-value-inside={inside || undefined}
       role="progressbar"
       aria-label={props["aria-label"] ?? label ?? "Progress"}
       aria-valuemin={0}
       aria-valuemax={safeMax}
       aria-valuenow={safeValue}
-      aria-valuetext={props["aria-valuetext"] ?? (determinate ? `${percentage}%` : undefined)}
+      aria-valuetext={
+        props["aria-valuetext"] ?? (determinate ? (valueLabel ?? `${percentage}%`) : undefined)
+      }
     >
-      {label || (showValue && determinate) ? (
+      {label || (showValue && determinate && !inside) ? (
         <div className={styles.meta}>
           {label ? (
             <span className={styles.label}>
@@ -130,7 +143,7 @@ export function Progress({
           ) : (
             <span />
           )}
-          {showValue && determinate ? (
+          {showValue && determinate && !inside ? (
             <span className={styles.value}>
               {/* Completion lands as the fill arrives: a check settles in beside the final count. */}
               <AnimatePresence initial={false}>
@@ -154,6 +167,20 @@ export function Progress({
       ) : null}
       <div className={styles.track}>
         <motion.span className={styles.fill} style={{ x }} />
+        {inside ? (
+          <>
+            <span className={styles.insideValue} aria-hidden="true">
+              {valueLabel ?? <motion.span>{counted}</motion.span>}
+            </span>
+            <motion.span
+              className={styles.insideFilledValue}
+              style={{ clipPath: labelClip }}
+              aria-hidden="true"
+            >
+              {valueLabel ?? <motion.span>{counted}</motion.span>}
+            </motion.span>
+          </>
+        ) : null}
       </div>
     </div>
   );

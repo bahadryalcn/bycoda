@@ -47,6 +47,21 @@ afterEach(() => {
 });
 
 describe("LiveAgentsPreview", () => {
+  it("names questions separately from action approvals", () => {
+    render({
+      agents: [
+        agent("question", "/repo/a", { needsApproval: true, inputKind: "question" }),
+        agent("approval", "/repo/b", { needsApproval: true, inputKind: "approval" }),
+      ],
+    });
+    const question = container.querySelector('[data-live-agent-card="question"]')!;
+    const approval = container.querySelector('[data-live-agent-card="approval"]')!;
+    expect(question.textContent).toContain("Question");
+    expect(question.getAttribute("aria-label")).toContain("Question");
+    expect(question.textContent).not.toContain("Need approval");
+    expect(approval.textContent).toContain("Need approval");
+  });
+
   it("collapses the working list while retaining its count and session selection", () => {
     const onSelect = vi.fn();
     render({
@@ -171,4 +186,13 @@ describe("LiveAgentsPreview", () => {
     expect(liveRegion.textContent).not.toMatch(/\d+s/);
     expect(container.querySelector("[role=status]")).toBeNull();
   });
+});
+
+it("shows the provider beside the title and keeps unknown start times empty", () => {
+  render({ agents: [agent("unknown", "/repo/a", { startedAt: undefined })] });
+  const card = container.querySelector('[data-live-agent-card="unknown"]')!;
+  expect(card.querySelector("[data-live-agent-title] img")).not.toBeNull();
+  const status = card.querySelector("[data-session-working-status]")!;
+  expect(status.getAttribute("aria-label")).toBe("Working");
+  expect(status.querySelector(".tabular-nums")).toBeNull();
 });

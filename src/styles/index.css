@@ -2,6 +2,7 @@
 @import "./palette.css";
 @import "./bycoda.css";
 @import "./arc.css";
+@import "./theme-transition.css";
 
 /* Desktop UI classes come from product code; explicit Streamdown sources remain below. */
 @source not "../../host";
@@ -295,6 +296,9 @@ html.theme-light {
   --ui-text-muted: color-mix(in oklab, var(--ui-text-secondary) 72%, var(--color-background-base));
   /* Cartesian mixing preserves the cool theme hue across light/dark surfaces. */
   --ui-surface: color-mix(in oklab, var(--color-content) 3%, var(--color-background-base));
+  /* Startup brand canvas stays dark so the white loading mark is legible in every theme. */
+  --ui-startup-surface: var(--palette-scrim);
+  --ui-startup-text: var(--palette-solidInk);
   --ui-surface-raised: color-mix(in oklab, var(--color-content) 6%, var(--color-background-base));
   --ui-conflict-current-surface: color-mix(
     in oklab,

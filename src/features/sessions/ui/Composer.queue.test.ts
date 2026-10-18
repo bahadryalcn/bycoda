@@ -487,7 +487,7 @@ describe("reordering queued messages", () => {
   it("labels the handle and moves a row with Alt+Arrow", async () => {
     const onReorder = await renderReorder();
     expect(handle("q2").getAttribute("aria-label")).toBe("Reorder queued message");
-    expect(handle("q2").title).toBe("Drag to reorder");
+    expect(handle("q2").title).toBe("Drag to reorder (Alt+↑ / Alt+↓)");
 
     expect(key("q2", { key: "ArrowUp", altKey: true }).defaultPrevented).toBe(true);
     expect(onReorder).toHaveBeenLastCalledWith(["q2", "q1", "q3"]);

@@ -4,6 +4,7 @@ import { Suspense, useEffect, useState, type ReactNode } from "react";
 import { LoaderCircle } from "../../shared/ui/icons";
 import { IS_MAC } from "../../platform/tauri/platform";
 import { WindowControls } from "./WindowControls";
+import { RecoveryBoundary } from "../../shared/ui/RecoveryBoundary";
 
 /** A pending page must not hide the workspace's navigation and session tree. */
 export function NavigationBoundary({
@@ -17,7 +18,9 @@ export function NavigationBoundary({
 }) {
   useLocale();
   return (
-    <Suspense fallback={<NavigationLoading name={name} onBack={onBack} />}>{children}</Suspense>
+    <RecoveryBoundary key={name} onBack={onBack}>
+      <Suspense fallback={<NavigationLoading name={name} onBack={onBack} />}>{children}</Suspense>
+    </RecoveryBoundary>
   );
 }
 

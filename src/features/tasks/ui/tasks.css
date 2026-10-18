@@ -59,3 +59,122 @@
 .bycoda-tasks [draggable="true"]:active {
   cursor: grabbing;
 }
+
+.task-board-status {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  margin-inline-start: auto;
+  min-inline-size: 0;
+}
+.task-board-columns {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(16rem, 1fr));
+  gap: 0.75rem;
+  block-size: 100%;
+  min-block-size: 0;
+}
+.task-board-card {
+  display: grid;
+  gap: 0.25rem;
+  min-inline-size: 0;
+}
+.task-board-card h3 {
+  font-weight: 500;
+}
+.task-board-card [data-task-description] {
+  -webkit-line-clamp: 1;
+}
+.task-board-card [data-task-goal] {
+  margin-block-end: 0;
+}
+.task-status-details {
+  display: grid;
+  gap: 0.75rem;
+  padding: 1rem;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+  color: var(--ui-text-secondary);
+  font-size: var(--ui-font-secondary);
+}
+.task-advanced-options {
+  margin-block: 0.75rem;
+}
+.task-advanced-options > summary {
+  cursor: pointer;
+  color: var(--ui-text-secondary);
+  font-size: var(--ui-font-secondary);
+}
+.task-session-preview {
+  display: grid;
+  gap: 1rem;
+  padding: 1rem;
+  min-inline-size: 0;
+}
+.task-session-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  color: var(--ui-text-secondary);
+  font-size: var(--ui-font-secondary);
+}
+.task-session-message {
+  min-inline-size: 0;
+  overflow-wrap: anywhere;
+  padding-block-start: 1rem;
+  border-block-start: 1px solid var(--ui-tone-neutral-border);
+}
+.task-session-message > h3 {
+  margin-block-end: 0.5rem;
+  color: var(--ui-text-secondary);
+  font-size: var(--ui-font-secondary);
+  font-weight: 500;
+}
+
+.task-drag-grip {
+  display: none;
+}
+[draggable="true"] .task-drag-grip {
+  display: inline;
+  margin-inline-end: 0.25rem;
+  color: var(--ui-text-muted);
+  vertical-align: middle;
+}
+.task-recovery-status {
+  font-size: var(--ui-font-secondary);
+  color: var(--ui-tone-warning-fg);
+}
+
+.task-board-card > * {
+  min-inline-size: 0;
+}
+.task-form-footer {
+  position: sticky;
+  inset-block-end: 0;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: end;
+  gap: 0.5rem;
+  padding-block: 0.75rem 0;
+  margin-block-start: 0.75rem;
+  background: var(--ui-surface);
+  border-block-start: 1px solid var(--ui-tone-neutral-border);
+}
+
+.task-board-toolbar {
+  display: flex;
+  flex: none;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  padding-block: 0.5rem;
+  padding-inline: 0.75rem;
+  border-block-end: 1px solid var(--ui-tone-neutral-border);
+}
+
+[data-task-prompt] textarea {
+  max-block-size: clamp(10rem, 28dvh, 20rem);
+  overflow-y: auto;
+}

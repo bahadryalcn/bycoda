@@ -97,7 +97,7 @@ export function OnboardingAppearance() {
   const motion = useDecorativeMotionPreference();
   const changeTheme = (next: ThemePreference) => {
     saveThemePreference(next);
-    applyThemePreference(next);
+    applyThemePreference(next, { animate: true });
     setTheme(next);
   };
   return (

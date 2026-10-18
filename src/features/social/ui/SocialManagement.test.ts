@@ -270,7 +270,8 @@ describe("Social management workflows", () => {
       tags: [],
     });
     await render(Audience, value);
-    await change(control("Segment"), "vip");
+    await click("Filtreler");
+    await change(control("Segment", document), "vip");
     expect(container.textContent).not.toContain("Other contact");
     expect(request.mock.calls.some((call) => call[0] !== "policy.get")).toBe(false);
     await click("Test contact");
@@ -360,7 +361,7 @@ describe("Social management workflows", () => {
     await click("Test campaign");
     const schedule = () =>
       Array.from(container.querySelectorAll("button")).find(
-        (item) => item.textContent === "3. Tek seferlik yayınları planla",
+        (item) => item.textContent === "Yayını planla",
       )!;
     expect(schedule().disabled).toBe(true);
     request.mockResolvedValueOnce({
@@ -373,11 +374,11 @@ describe("Social management workflows", () => {
         },
       ],
     });
-    await click("1. Hesap ve içeriği kontrol et");
+    await click("Hesap ve içeriği kontrol et");
     expect(schedule().disabled).toBe(true);
     expect(
       Array.from(container.querySelectorAll("button")).find(
-        (item) => item.textContent === "2. İçeriğe yayın onayı ver",
+        (item) => item.textContent === "Yayın onayı ver",
       )?.disabled,
     ).toBe(true);
     await act(async () =>
@@ -393,11 +394,11 @@ describe("Social management workflows", () => {
         },
       ],
     });
-    await click("2. İçeriğe yayın onayı ver");
+    await click("Yayın onayı ver");
     expect(request).toHaveBeenCalledWith("campaigns.approve", { id: campaign.id });
     expect(request).not.toHaveBeenCalledWith("campaigns.schedule", expect.anything());
     expect(schedule().disabled).toBe(false);
-    await click("3. Tek seferlik yayınları planla");
+    await click("Yayını planla");
     expect(request).toHaveBeenCalledWith("campaigns.schedule", { id: campaign.id });
     await render(Campaigns, {
       ...value,

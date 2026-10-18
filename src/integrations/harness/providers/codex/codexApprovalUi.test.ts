@@ -11,6 +11,7 @@ import { newSession, type Session } from "../../../../features/sessions/model/se
 import {
   probeNotificationPermission,
   saveNotificationsEnabled,
+  setNotificationBatchDelay,
   setWindowFocused,
 } from "../../../../features/notifications/model/notifications";
 import { applyHarnessEvent } from "../../core/apply";
@@ -88,6 +89,7 @@ describe("Codex requests reach the chat and notifications", () => {
   }
 
   beforeEach(async () => {
+    setNotificationBatchDelay(0);
     vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
     const storage = new Map<string, string>();
     vi.stubGlobal("localStorage", {
@@ -138,16 +140,16 @@ describe("Codex requests reach the chat and notifications", () => {
 
   afterEach(async () => {
     await act(async () => {
-      onLine(
-        JSON.stringify({
-          method: "turn/completed",
-          params: { turn: { id: "turn_ui", status: "completed" } },
-        }),
-      );
-      await turn;
+      // A successful completion preserves unanswered async questions. Explicit
+      // teardown must stop the run, including tests that leave a question open.
       await codexAdapter.stopSession(session.id);
+      await turn;
       root.unmount();
     });
+    // Drain notification delivery before the next test clears the shared mock.
+    if (vi.isFakeTimers()) await vi.advanceTimersByTimeAsync(0);
+    else await new Promise((resolve) => setTimeout(resolve, 5));
+    setNotificationBatchDelay(800);
     container.remove();
     localStorage.clear();
     __codexTestReset();
@@ -188,7 +190,7 @@ describe("Codex requests reach the chat and notifications", () => {
       const form = () => container.querySelector("[data-question-form]");
       expect(form()?.textContent).toContain(title);
       expect(form()?.textContent).toContain("Other");
-      expect(form()?.textContent).toContain("Optional question");
+      expect(form()?.textContent).not.toContain("Continues without an answer");
       expect(document.querySelector(".approval-toast")?.textContent).toContain(title);
       expect(sent.some((message) => message.method === "turn/steer")).toBe(false);
       const button = (label: string) =>
@@ -207,10 +209,14 @@ describe("Codex requests reach the chat and notifications", () => {
         action === "custom"
           ? "Only when dragging quickly"
           : "It also happens when making it smaller";
-      await act(async () => button(action === "custom" ? "Other" : answer).click());
+      await act(async () =>
+        Array.from(form()!.querySelectorAll("label"))
+          .find((el) => el.textContent?.trim() === (action === "custom" ? "Other" : answer))!
+          .click(),
+      );
       if (action === "custom") {
         await act(async () => {
-          const input = form()!.querySelector("input")!;
+          const input = form()!.querySelector('input:not([type="radio"]):not([type="checkbox"])')!;
           Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
             input,
             answer,
@@ -270,7 +276,7 @@ describe("Codex requests reach the chat and notifications", () => {
     );
     const buttons = () => Array.from(container.querySelectorAll("button"));
     await act(async () =>
-      buttons()
+      Array.from(container.querySelectorAll("label"))
         .find((b) => b.textContent?.trim() === "Decline")!
         .click(),
     );
@@ -371,7 +377,80 @@ describe("Codex requests reach the chat and notifications", () => {
     },
   );
 
-  it.each(["timeout", "click", "keydown", "paste"])(
+  it.each(["answer", "skip"])(
+    "keeps an async question visible after immediate completion, then handles %s",
+    async (action) => {
+      await act(async () => {
+        onLine(
+          JSON.stringify({
+            method: "item/completed",
+            params: {
+              turnId: "turn_ui",
+              item: {
+                type: "agentMessage",
+                id: "question_after_finish",
+                delivery: "async",
+                text: "Choose a source",
+                questions: [{ title: "Choose a source", options: ["Local", "Remote"] }],
+              },
+            },
+          }),
+        );
+        onLine(
+          JSON.stringify({
+            method: "turn/completed",
+            params: { turn: { id: "turn_ui", status: "completed" } },
+          }),
+        );
+      });
+      const form = () => container.querySelector("[data-question-form]");
+      expect(form()?.textContent).toContain("Choose a source");
+      expect(session.pendingQuestion).toBeDefined();
+      expect(sent.filter((message) => message.method === "turn/start")).toHaveLength(1);
+      if (action === "skip") {
+        await act(async () => {
+          Array.from(form()!.querySelectorAll("button"))
+            .find((button) => button.textContent?.trim() === "Skip")!
+            .click();
+          await turn;
+        });
+        expect(form()).toBeNull();
+        expect(sent.filter((message) => message.method === "turn/start")).toHaveLength(1);
+        return;
+      }
+      await act(async () => {
+        Array.from(form()!.querySelectorAll("label"))
+          .find((label) => label.textContent?.trim() === "Remote")!
+          .click();
+      });
+      expect(form()).not.toBeNull();
+      expect(sent.filter((message) => message.method === "turn/start")).toHaveLength(1);
+      await act(async () => {
+        Array.from(form()!.querySelectorAll("button"))
+          .find((button) => button.textContent?.trim() === "Continue")!
+          .click();
+      });
+      const continuation = sent.filter((message) => message.method === "turn/start")[1];
+      expect(continuation.params).toMatchObject({
+        threadId: "thr_ui",
+        input: [{ type: "text", text: "Choose a source\nRemote" }],
+      });
+      expect(sent.some((message) => message.method === "turn/steer")).toBe(false);
+      expect(form()).toBeNull();
+      await act(async () => {
+        onLine(JSON.stringify({ id: continuation.id, result: { turn: { id: "turn_2" } } }));
+        onLine(
+          JSON.stringify({
+            method: "turn/completed",
+            params: { turn: { id: "turn_2", status: "completed" } },
+          }),
+        );
+        await turn;
+      });
+    },
+  );
+
+  it.each(["idle", "click", "keydown", "paste"])(
     "handles optional question %s in the real form",
     async (action) => {
       vi.useFakeTimers();
@@ -393,34 +472,39 @@ describe("Codex requests reach the chat and notifications", () => {
           }),
         ),
       );
-      expect(container.textContent).toContain("Optional question");
+      expect(session.pendingQuestion?.autoResolveAt).toBeUndefined();
       await act(async () => vi.advanceTimersByTimeAsync(60_000));
-      expect(container.textContent).toContain("Continues without an answer in 60s");
-      if (action !== "timeout") {
-        const option = Array.from(container.querySelectorAll("button")).find(
-          (b) => b.textContent?.trim() === "Local",
-        )!;
+      expect(container.textContent).not.toContain("Continues without an answer");
+      if (action !== "idle") {
+        const option = container.querySelector<HTMLInputElement>('input[type="radio"]')!;
         await act(async () => {
-          option.dispatchEvent(
-            action === "keydown"
-              ? new KeyboardEvent("keydown", {
-                  key: "ArrowDown",
-                  bubbles: true,
-                })
-              : new Event(action, { bubbles: true }),
-          );
+          if (action === "click") option.click();
+          else
+            option.dispatchEvent(
+              action === "keydown"
+                ? new KeyboardEvent("keydown", {
+                    key: "ArrowDown",
+                    bubbles: true,
+                  })
+                : new Event(action, { bubbles: true }),
+            );
         });
         expect(session.pendingQuestion?.autoResolveAt).toBeUndefined();
         expect(container.textContent).not.toContain("Continues without an answer");
       }
       await act(async () => vi.advanceTimersByTimeAsync(120_000));
-      if (action === "timeout") {
+      expect(sent.some((m) => m.id === 91)).toBe(false);
+      expect(document.querySelector("[data-question-form]")).not.toBeNull();
+      if (action === "idle") {
+        await act(async () => {
+          Array.from(container.querySelectorAll("button"))
+            .find((b) => b.textContent?.trim() === "Skip")!
+            .click();
+        });
         expect(sent.find((m) => m.id === 91)?.result).toEqual({ answers: {} });
         expect(document.querySelector("[data-question-form]")).toBeNull();
         expect(document.querySelector(".approval-toast")).toBeNull();
       } else {
-        expect(sent.some((m) => m.id === 91)).toBe(false);
-        expect(document.querySelector("[data-question-form]")).not.toBeNull();
         if (action === "click") {
           await act(async () => {
             Array.from(container.querySelectorAll("button"))

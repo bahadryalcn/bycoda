@@ -10,8 +10,9 @@ import type { WorkspaceActions } from "./useWorkspaceActions";
 import { LAYOUT_SHORTCUTS } from "../../../features/settings/model/appShortcuts";
 import { saveKeybindingOverride } from "../../../features/settings/model/settings";
 
+const editorFind = vi.hoisted(() => vi.fn(() => false));
 vi.mock("../../../features/files/editor/editorFindBridge", () => ({
-  handleEditorFindKey: () => false,
+  handleEditorFindKey: editorFind,
 }));
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn(async () => undefined) }));
 
@@ -29,6 +30,30 @@ function press(init: KeyboardEventInit) {
   window.dispatchEvent(event);
   return event;
 }
+
+it("lets terminal find and command assistance receive their shortcuts before the editor", () => {
+  const terminal = document.createElement("div");
+  terminal.className = "bycoda-terminal";
+  const input = document.createElement("textarea");
+  terminal.append(input);
+  container.append(terminal);
+  editorFind.mockClear();
+  for (const init of [
+    { key: "f", ctrlKey: true },
+    { key: "f", metaKey: true },
+    { key: " ", ctrlKey: true },
+  ]) {
+    const event = new KeyboardEvent("keydown", { ...init, bubbles: true, cancelable: true });
+    input.dispatchEvent(event);
+    expect(event.defaultPrevented).toBe(false);
+  }
+  expect(editorFind).not.toHaveBeenCalled();
+  terminal.dataset.terminalTools = "";
+  deps.nativeFullscreenRef.current = true;
+  const escape = new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true });
+  input.dispatchEvent(escape);
+  expect(escape.defaultPrevented).toBe(false);
+});
 
 beforeEach(async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);

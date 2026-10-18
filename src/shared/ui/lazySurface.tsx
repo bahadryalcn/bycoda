@@ -1,4 +1,5 @@
 import { lazy, Suspense, type ComponentType } from "react";
+import { RecoveryBoundary } from "./RecoveryBoundary";
 
 /** Keep optional surfaces out of the composer's startup dependency graph. */
 export function lazySurface<Props extends object>(
@@ -19,9 +20,11 @@ export function lazySurface<Props extends object>(
     // current screen visible until the destination has loaded.
     if (!suspense) return <Surface {...props} />;
     return (
-      <Suspense fallback={null}>
-        <Surface {...props} />
-      </Suspense>
+      <RecoveryBoundary>
+        <Suspense fallback={null}>
+          <Surface {...props} />
+        </Suspense>
+      </RecoveryBoundary>
     );
   }
   return Object.assign(LazySurface, { preload });

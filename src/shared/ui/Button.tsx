@@ -23,6 +23,8 @@ type CommonButtonProps = ComponentPropsWithRef<"button"> & {
   loading?: boolean;
   loadingLabel?: string;
   tooltip?: string;
+  /** Display only: the owner resolves the current binding and handles the keys. */
+  shortcut?: string | null;
   startIcon?: ReactNode;
   endIcon?: ReactNode;
   fullWidth?: boolean;
@@ -50,6 +52,7 @@ export function Button({
   iconOnly = false,
   label,
   tooltip,
+  shortcut,
   startIcon,
   endIcon,
   fullWidth = false,
@@ -129,11 +132,12 @@ export function Button({
     }
     handler?.(event);
   };
+  const tooltipText = props.title ?? tooltip ?? (iconOnly || shortcut ? label : undefined);
   const attributes = {
     ...props,
     type,
     disabled,
-    title: props.title ?? tooltip ?? (iconOnly ? label : undefined),
+    title: shortcut && tooltipText ? `${tooltipText} (${shortcut})` : tooltipText,
     "aria-label": loading && loadingLabel ? loadingLabel : (props["aria-label"] ?? label),
     "aria-busy": loading || props["aria-busy"] || undefined,
     "aria-disabled": blocked || props["aria-disabled"] || undefined,

@@ -1,5 +1,18 @@
 import { describe, expect, it } from "vitest";
-import { isMacTerminalClearShortcut, macTerminalShortcutData } from "./terminalKeys";
+import {
+  isMacTerminalClearShortcut,
+  macTerminalShortcutData,
+  terminalToolShortcut,
+} from "./terminalKeys";
+
+it("reserves terminal tools while preserving find-in-files and macOS fullscreen", () => {
+  expect(terminalToolShortcut(key("f", { ctrlKey: true }))).toBe("search");
+  expect(terminalToolShortcut(key("f", { metaKey: true }))).toBe("search");
+  expect(terminalToolShortcut(key(" ", { ctrlKey: true }))).toBe("command");
+  expect(terminalToolShortcut(key("f", { ctrlKey: true, shiftKey: true }))).toBeNull();
+  expect(terminalToolShortcut(key("f", { ctrlKey: true, metaKey: true }))).toBeNull();
+  expect(terminalToolShortcut(key("Tab"))).toBeNull();
+});
 
 function key(
   key: string,

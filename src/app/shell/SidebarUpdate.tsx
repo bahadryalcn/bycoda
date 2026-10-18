@@ -2,95 +2,37 @@ import { t, useLocale } from "../../shared/i18n";
 import { Button } from "../../shared/ui/Button";
 import { Modal } from "../../shared/ui/Modal";
 import { ArrowDownCircle, Loader } from "../../shared/ui/icons";
-import { useCallback, useEffect, useRef, useState } from "react";
-import {
-  installPendingUpdate,
-  probeForUpdate,
-  readAppVersion,
-  type UpdaterSnapshot,
-} from "../model/updater";
+import { useCallback, useRef, useState } from "react";
+import { installAppUpdate, useAppUpdater } from "../model/useAppUpdater";
+import { type UpdaterSnapshot } from "../model/updater";
 import type { InstalledUpdate } from "../model/updateNotice";
 import { UpdateRailCard } from "./UpdateRailCard";
 
-// The sidebar row only earns its space when there is something to act on: an
-// update waiting to be installed, or one already downloading. Every other phase
-// — including a probe that failed — stays silent, because manual "Check for
-// updates" already lives in Settings and the app menu.
+// The update entry point only earns its space when there is something to act on: an
+// update waiting to be installed, one downloading, or an install error to retry.
+// Background checks stay silent; manual checks live in Settings and the app menu.
 export function isSidebarUpdateActionable(snapshot: UpdaterSnapshot): boolean {
-  return snapshot.phase === "available" || snapshot.phase === "downloading";
+  return (
+    snapshot.phase === "available" ||
+    snapshot.phase === "downloading" ||
+    (snapshot.phase === "error" && !!snapshot.availableVersion)
+  );
 }
 
 export function SidebarUpdateFooter({
   update,
   onOpenWhatsNew,
   onDismissUpdate,
+  noticesOnly = false,
 }: {
   update?: InstalledUpdate | null;
   onOpenWhatsNew?: (version: string) => void;
   onDismissUpdate?: () => void;
+  noticesOnly?: boolean;
 }) {
   useLocale();
   const [promptOpen, setPromptOpen] = useState(false);
-  const [notes, setNotes] = useState("");
-  const prompted = useRef(false);
-  const [snapshot, setSnapshot] = useState<UpdaterSnapshot>({
-    phase: "idle",
-    currentVersion: "…",
-  });
-  const phaseRef = useRef(snapshot.phase);
-  phaseRef.current = snapshot.phase;
-
-  // The automatic probe runs on mount whether or not it ends up rendering
-  // anything, so a newly published version still surfaces on its own. The
-  // snapshot lives here rather than in SidebarUpdate so the footer can drop its
-  // padding entirely when neither child has anything to show.
-  useEffect(() => {
-    let cancelled = false;
-    let checking = false;
-
-    const probe = async () => {
-      if (checking || phaseRef.current === "downloading") return;
-      checking = true;
-      try {
-        const currentVersion = await readAppVersion();
-        if (cancelled) return;
-        if (phaseRef.current !== "available") setSnapshot({ phase: "checking", currentVersion });
-
-        try {
-          const update = await probeForUpdate();
-          if (cancelled) return;
-          if (update) {
-            setNotes(update.body?.trim() ?? "");
-            if (!prompted.current) {
-              prompted.current = true;
-              setPromptOpen(true);
-            }
-            setSnapshot({
-              phase: "available",
-              currentVersion,
-              availableVersion: update.version,
-            });
-            return;
-          }
-          setSnapshot({ phase: "current", currentVersion });
-        } catch {
-          if (cancelled) return;
-          setSnapshot((previous) =>
-            previous.phase === "available" ? previous : { phase: "idle", currentVersion },
-          );
-        }
-      } finally {
-        checking = false;
-      }
-    };
-    void probe();
-    const interval = window.setInterval(() => void probe(), 30 * 60 * 1000);
-
-    return () => {
-      cancelled = true;
-      window.clearInterval(interval);
-    };
-  }, []);
+  const { snapshot, notes, setSnapshot } = useAppUpdater();
 
   const card =
     update && onOpenWhatsNew && onDismissUpdate ? (
@@ -98,19 +40,26 @@ export function SidebarUpdateFooter({
     ) : null;
   const actionable = isSidebarUpdateActionable(snapshot);
 
+  if (noticesOnly) return card;
   if (!card && !actionable) return null;
 
-  // The gap down to the Settings block belongs to that block's own padding, so
-  // the footer can disappear without leaving the sidebar's bottom row flush
-  // against the scrolling list above it.
   return (
-    <div className="flex flex-col gap-1.5 p-2 pb-0">
+    <div className="flex min-w-0 flex-col items-end gap-1.5">
       {promptOpen && actionable ? (
-        <Modal title={t("Update available")} size="sm" onClose={() => setPromptOpen(false)}>
+        <Modal
+          title={snapshot.phase === "error" ? t("Retry") : t("Update available")}
+          size="sm"
+          onClose={() => setPromptOpen(false)}
+        >
           <div className="flex flex-col gap-3 p-4">
             <p className="text-sm text-content">
               v{snapshot.currentVersion} → v{snapshot.availableVersion}
             </p>
+            {snapshot.error ? (
+              <p role="alert" className="text-sm text-content">
+                {snapshot.error}
+              </p>
+            ) : null}
             {notes ? (
               <details className="text-sm text-content">
                 <summary className="cursor-pointer">{t("Release notes")}</summary>
@@ -127,7 +76,53 @@ export function SidebarUpdateFooter({
         </Modal>
       ) : null}
       {card}
-      {actionable ? <SidebarUpdate snapshot={snapshot} onSnapshot={setSnapshot} /> : null}
+      {actionable ? (
+        <Button
+          iconOnly
+          shape="pill"
+          variant="secondary"
+          tone={snapshot.phase === "error" ? "warning" : "neutral"}
+          label={
+            snapshot.phase === "downloading"
+              ? `${t("Downloading")}${snapshot.progress != null ? ` ${snapshot.progress}%` : "…"}`
+              : t("Update to {p0}", { p0: snapshot.availableVersion })
+          }
+          tooltip={
+            snapshot.phase === "downloading"
+              ? `${t("Downloading")}${snapshot.progress != null ? ` ${snapshot.progress}%` : "…"}`
+              : t("Update to {p0}", { p0: snapshot.availableVersion })
+          }
+          aria-haspopup="dialog"
+          aria-expanded={promptOpen}
+          onClick={() => setPromptOpen(true)}
+        >
+          {snapshot.phase === "downloading" && snapshot.progress != null ? (
+            <svg
+              className="size-5"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.5"
+              aria-hidden="true"
+            >
+              <circle cx="12" cy="12" r="10" stroke="var(--color-stroke)" />
+              <circle
+                cx="12"
+                cy="12"
+                r="10"
+                pathLength="100"
+                strokeDasharray={`${snapshot.progress} 100`}
+                transform="rotate(-90 12 12)"
+              />
+              <path d="M12 6v10m-4-4 4 4 4-4" />
+            </svg>
+          ) : snapshot.phase === "downloading" ? (
+            <Loader className="size-4 motion-safe:animate-spin" aria-hidden />
+          ) : (
+            <ArrowDownCircle className="size-4" aria-hidden />
+          )}
+        </Button>
+      ) : null}
     </div>
   );
 }
@@ -151,7 +146,7 @@ export function SidebarUpdate({
     if (busy || installing.current) return;
     installing.current = true;
     try {
-      await installPendingUpdate(onSnapshot);
+      await installAppUpdate(onSnapshot);
     } finally {
       installing.current = false;
     }

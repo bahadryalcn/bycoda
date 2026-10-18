@@ -1,4 +1,5 @@
 import { SplitButton } from "../../../shared/ui/SplitButton";
+import { Badge } from "../../../shared/ui/Badge";
 import { SearchInput } from "../../../shared/ui/SearchInput";
 import { Popover } from "../../../shared/ui/Popover";
 import { useRetainedState } from "../../../shared/hooks/useRetainedState";
@@ -11,6 +12,8 @@ import { t, useLocale } from "../../../shared/i18n/git";
 import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import {
+  ArrowDown,
+  ArrowUp,
   Check,
   ChevronDown,
   ChevronRight,
@@ -1807,10 +1810,28 @@ function GitSyncActions({
           />
           <span className="min-w-0 truncate">{t("Sync Changes")}</span>
           {behind > 0 ? (
-            <span className="shrink-0 tabular-nums text-[var(--ui-text-secondary)]">↓{behind}</span>
+            <Badge
+              size="sm"
+              className="shrink-0 tabular-nums"
+              icon={<ArrowDown strokeWidth={2} />}
+              aria-label={t(behind === 1 ? "{p0} incoming commit" : "{p0} incoming commits", {
+                p0: behind,
+              })}
+            >
+              {behind}
+            </Badge>
           ) : null}
           {ahead > 0 ? (
-            <span className="shrink-0 tabular-nums text-[var(--ui-text-secondary)]">↑{ahead}</span>
+            <Badge
+              size="sm"
+              className="shrink-0 tabular-nums"
+              icon={<ArrowUp strokeWidth={2} />}
+              aria-label={t(ahead === 1 ? "{p0} unpushed commit" : "{p0} unpushed commits", {
+                p0: ahead,
+              })}
+            >
+              {ahead}
+            </Badge>
           ) : null}
         </Button>
       ) : null}

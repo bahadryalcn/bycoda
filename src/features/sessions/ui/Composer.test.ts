@@ -490,6 +490,8 @@ describe("Composer question focus", () => {
   });
 
   it("recalls earlier messages with Up and Down in an empty composer", async () => {
+    const onRecallLastTurn = vi.fn();
+    const lastTurnRecall = { text: "second", attachments: [] as Attachment[] };
     await act(async () =>
       root.render(
         createElement(Composer, {
@@ -501,6 +503,9 @@ describe("Composer question focus", () => {
           hideProjectPicker: true,
           hideBranchPicker: true,
           promptHistory: () => ["second", "first"],
+          editLastTurnSupported: true,
+          lastTurnRecall,
+          onRecallLastTurn,
           onFocus: () => {},
           onCwdChange: () => {},
           onModelChange: () => {},
@@ -529,6 +534,12 @@ describe("Composer question focus", () => {
     expect(textarea.value).toBe("second");
     await press("ArrowDown");
     expect(textarea.value).toBe("");
+    expect(onRecallLastTurn).not.toHaveBeenCalled();
+
+    await press("Escape");
+    expect(onRecallLastTurn).not.toHaveBeenCalled();
+    await press("Escape");
+    expect(onRecallLastTurn).toHaveBeenCalledExactlyOnceWith(lastTurnRecall);
 
     await press("ArrowUp");
     await typeInto(textarea, "second!");
@@ -2140,7 +2151,9 @@ describe("Composer question focus", () => {
     await renderComposer(question, onQuestionReply);
 
     await act(async () =>
-      (document.querySelector("button[aria-pressed]") as HTMLButtonElement).click(),
+      (
+        document.querySelector('[data-question-form] input[type="radio"]') as HTMLInputElement
+      ).click(),
     );
     await act(async () =>
       (document.querySelector('button[type="submit"]') as HTMLButtonElement).click(),

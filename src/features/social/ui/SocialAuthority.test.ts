@@ -221,7 +221,7 @@ it("resets to the local host through an explicit action and does not enable send
   }));
   await mount("local");
   const reset = Array.from(container.querySelectorAll("button")).find((button) =>
-    button.textContent?.startsWith("Yerel host'a dön"),
+    button.textContent?.startsWith("Bu bilgisayara dön"),
   )!;
   await act(async () => reset.click());
   expect(mocks.invoke).toHaveBeenCalledWith("social_authority_connect", {

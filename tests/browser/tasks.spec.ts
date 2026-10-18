@@ -28,16 +28,11 @@ test("compact goal filters retain scope, reset and keyboard menu focus", async (
   await expect(page.getByRole("article", { name: "Independent task", exact: true })).toBeVisible();
   await page.keyboard.press("Escape");
   await expect(filters).toBeFocused();
-  const more = page
+  const delivery = page
     .getByRole("article", { name: "Completed task", exact: true })
-    .getByRole("button", { name: "More actions", exact: true });
-  await more.click();
-  await page.keyboard.press("Home");
-  await expect(
-    page.getByRole("menuitem", { name: "Choose delivery target", exact: true }),
-  ).toBeFocused();
-  await page.keyboard.press("Escape");
-  await expect(more).toBeFocused();
+    .getByRole("button", { name: "Choose delivery target", exact: true });
+  await delivery.focus();
+  await expect(delivery).toBeFocused();
 });
 
 for (const width of [390, 768, 1440]) {
@@ -98,6 +93,8 @@ test("execution mode is selectable in task and goal dialogs", async ({ page }, t
   await page.emulateMedia({ reducedMotion: "reduce" });
   for (const kind of ["task", "goal"] as const) {
     const form = await start(page, kind);
+    if (kind === "task")
+      await form.locator("summary").filter({ hasText: "Working branch and worktree" }).click();
     expect(
       await form
         .getByRole("radiogroup", { name: "Execution mode", exact: true })
@@ -210,9 +207,8 @@ test("board cards support reorder, explicit start and reviewed delivery choices"
   ).toBeVisible();
   await page
     .getByRole("article", { name: "Completed task", exact: true })
-    .getByRole("button", { name: "More actions", exact: true })
+    .getByRole("button", { name: "Choose delivery target", exact: true })
     .click();
-  await page.getByRole("menuitem", { name: "Choose delivery target", exact: true }).click();
   const dialog = page.getByRole("dialog", { name: "Choose delivery target", exact: true });
   await dialog
     .getByRole("textbox", { name: "New integration branch", exact: true })
@@ -238,6 +234,7 @@ test("a goal lists its created session links", async ({ page }) => {
   const dialog = page.getByRole("dialog", { name: "Task sessions", exact: true });
   await expect(dialog).toContainText("Session will appear when this task starts.");
   await dialog.getByRole("button", { name: "Open worker session", exact: true }).click();
+  await page.getByRole("button", { name: "Open in Sessions", exact: true }).click();
   await expect
     .poll(() =>
       page.evaluate(
@@ -274,10 +271,16 @@ async function mutations(page: Page) {
     ),
   );
 }
+async function openCreate(page: Page, kind: "task" | "goal") {
+  if (kind === "goal") {
+    await page.getByRole("button", { name: "More actions", exact: true }).first().click();
+    await page.getByRole("menuitem", { name: "New goal", exact: true }).click();
+  } else await page.getByRole("button", { name: "New task", exact: true }).click();
+}
 async function start(page: Page, kind: "task" | "goal", query = "") {
   await page.goto(fixture + query);
   await expect(page.getByRole("region", { name: "Tasks", exact: true })).toBeVisible();
-  await page.getByRole("button", { name: `New ${kind}`, exact: true }).click();
+  await openCreate(page, kind);
   return page.getByRole("form", { name: `New ${kind}`, exact: true });
 }
 async function fillTask(form: Locator) {
@@ -442,7 +445,7 @@ test("task and goal controls stay inside a narrow viewport", async ({ page }, te
       await page.goto(fixture);
       await expect(page.getByText("Up to date", { exact: true })).toBeVisible();
       await expect(page.getByText("No task board", { exact: true })).toHaveCount(0);
-      for (const label of ["Summary", "Limits", "New goal", "New task"]) {
+      for (const label of ["More actions", "New task"]) {
         const control = page.getByRole("button", { name: label, exact: true });
         await expect(control).toBeVisible();
         const bounds = await control.boundingBox();
@@ -450,7 +453,7 @@ test("task and goal controls stay inside a narrow viewport", async ({ page }, te
         expect(bounds!.x).toBeGreaterThanOrEqual(0);
         expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(width);
       }
-      await page.getByRole("button", { name: `New ${kind}`, exact: true }).click();
+      await openCreate(page, kind);
       const form = page.getByRole("form", { name: `New ${kind}`, exact: true });
       await expect(machine(form)).toBeVisible();
       const title = form.getByRole("textbox", {
@@ -595,8 +598,7 @@ for (const method of ["environment.describe", "goals.list"]) {
       exact: true,
     });
     await expect(localCard).toBeVisible();
-    await localCard.getByRole("button", { name: "More actions", exact: true }).click();
-    await page.getByRole("menuitem", { name: "Delete", exact: true }).click();
+    await localCard.getByRole("button", { name: "Delete", exact: true }).click();
     await expect(localCard).toHaveCount(0);
     await page.getByRole("button", { name: "New task", exact: true }).click();
     await expect(form.getByRole("button", { name: "Add to To do", exact: true })).toBeDisabled();
@@ -647,7 +649,9 @@ test("task worker, running reviewer and retained attempts navigate to their own 
     });
     await expect(taskCard).toBeVisible();
     await taskCard.getByRole("button", { name: "Open worker session", exact: true }).click();
+    await page.getByRole("button", { name: "Open in Sessions", exact: true }).click();
     await taskCard.getByRole("button", { name: "Open review session", exact: true }).click();
+    await page.getByRole("button", { name: "Open in Sessions", exact: true }).click();
     await expect(
       page.getByRole("complementary", { name: "Task details", exact: true }),
     ).toHaveCount(0);
@@ -671,7 +675,9 @@ test("task worker, running reviewer and retained attempts navigate to their own 
       history.getByRole("button", { name: "Open review session", exact: true }),
     ).toBeVisible();
     await history.getByRole("button", { name: "Open worker session", exact: true }).click();
+    await page.getByRole("button", { name: "Open in Sessions", exact: true }).click();
     await history.getByRole("button", { name: "Open review session", exact: true }).click();
+    await page.getByRole("button", { name: "Open in Sessions", exact: true }).click();
     const targets = await page.evaluate(
       () =>
         (window as unknown as { taskFixtureOpenedSessions: OpenedSession[] })
@@ -700,4 +706,86 @@ test("task worker, running reviewer and retained attempts navigate to their own 
         path: resolve(screenshots, `tasks-${testInfo.project.name}-sessions-320.png`),
       });
   }
+});
+
+for (const width of [390, 768, 1440]) {
+  for (const theme of ["light", "dark"]) {
+    test(`redesigned task board previews and direct actions at ${width}px ${theme}`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ width, height: 900 });
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      await page.goto(`${fixture}?boardControls&uiFilters`);
+      await page.evaluate(
+        (theme) => document.documentElement.classList.toggle("theme-light", theme === "light"),
+        theme,
+      );
+      const complete = page.getByRole("article", { name: "Completed task", exact: true });
+      await complete.scrollIntoViewIfNeeded();
+      await expect(complete.getByRole("button", { name: "Delete", exact: true })).toBeVisible();
+      await expect(complete.getByRole("button", { name: "More actions", exact: true })).toHaveCount(
+        0,
+      );
+      await complete.getByRole("button", { name: "Delivery is blocked", exact: true }).click();
+      const error = page.getByRole("dialog", { name: "Task details", exact: true });
+      await expect(error).toContainText("The project has uncommitted changes.");
+      await page.keyboard.press("Escape");
+      await complete.getByRole("button", { name: "Open worker session", exact: true }).click();
+      const sheet = page.getByRole("dialog", { name: "Preview completed-worker", exact: true });
+      await expect(sheet).toContainText("Task transcript preview on its original host.");
+      await expect(
+        sheet.getByRole("button", { name: "Open in Sessions", exact: true }),
+      ).toBeVisible();
+      expect(await page.evaluate(() => (window as any).taskFixtureOpenedSessions)).toEqual([]);
+      const box = (await sheet.boundingBox())!;
+      expect(box.x + box.width).toBeLessThanOrEqual(width + 1);
+      await page.screenshot({
+        animations: "disabled",
+        path: resolve("temp/verification/2026-10-18-tasks-redesign", `sheet-${width}-${theme}.png`),
+      });
+      await page.keyboard.press("Escape");
+      await expect(
+        complete.getByRole("button", { name: "Open worker session", exact: true }),
+      ).toBeFocused();
+      await page.screenshot({
+        animations: "disabled",
+        path: resolve("temp/verification/2026-10-18-tasks-redesign", `board-${width}-${theme}.png`),
+      });
+    });
+  }
+}
+
+test("compact task form keeps advanced choices and long instructions manageable", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 800 });
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  const form = await start(page, "task");
+  const advanced = form.locator("details.task-advanced-options");
+  await expect(advanced).not.toHaveAttribute("open", "");
+  await expect(form.getByRole("button", { name: "Agent settings", exact: true })).toHaveAttribute(
+    "aria-expanded",
+    "false",
+  );
+  await machine(form).click();
+  await expect(page.getByRole("option", { name: "Demo MacBook", exact: true })).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(machine(form)).toBeFocused();
+  await fillTask(form);
+  await form
+    .getByRole("textbox", { name: "Description", exact: true })
+    .fill("Detailed instructions and acceptance criteria.\n".repeat(80));
+  const prompt = (await form
+    .getByRole("textbox", { name: "Description", exact: true })
+    .boundingBox())!;
+  expect(prompt.height).toBeLessThanOrEqual(225);
+  await expect(form.getByRole("button", { name: "Add to To do", exact: true })).toBeVisible();
+  await page.screenshot({
+    path: resolve("temp/verification/2026-10-18-tasks-redesign/form-390-dark.png"),
+    animations: "disabled",
+  });
+  await advanced.locator("summary").click();
+  await expect(form.getByRole("radio", { name: "Shared checkout", exact: true })).toBeVisible();
+  await choose(page, form.getByRole("button", { name: /^Base branch:/ }), "main");
+  await expect(form.getByRole("button", { name: /^Base branch:/ })).toContainText("main");
 });

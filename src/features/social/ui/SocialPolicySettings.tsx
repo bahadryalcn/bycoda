@@ -1,3 +1,4 @@
+import { t, useLocale } from "../../../shared/i18n";
 import { Alert } from "../../../shared/ui/Alert";
 import { NativeSelect } from "../../../shared/ui/Select";
 import { TextField } from "../../../shared/ui/TextField";
@@ -76,6 +77,7 @@ export function SocialPolicySettings({
   policies?: SocialPolicies;
   run: (action: () => Promise<unknown>) => Promise<boolean>;
 }) {
+  useLocale();
   const [scope, setScope] = useState<Scope>("global");
   const [drafts, setDrafts] = useState<Partial<Record<Scope, Draft>>>({});
   const [saving, setSaving] = useState(false);
@@ -123,10 +125,9 @@ export function SocialPolicySettings({
 
   return (
     <section className="social-policy-panel" aria-label="Sosyal medya ajan ve içerik ayarları">
-      <h2>AI ajanı ve içerik sınırları</h2>
+      <h2>{t("AI ve içerik")}</h2>
       <p className="social-muted">
-        Yanıtları hazırlayan ajanı ve içerik uzunluğunu belirleyin. Platforma özel alanları boş
-        bırakırsanız ortak ayarlar kullanılır.
+        {t("Ajanı ve içerik sınırlarını seçin. Boş platform ayarları ortak ayarı kullanır.")}
       </p>
       <label className="social-policy-scope">
         Ayar kapsamı
@@ -148,10 +149,10 @@ export function SocialPolicySettings({
         </NativeSelect>
       </label>
       <p className="social-policy-effective">
-        Kayıtlı ajan:{" "}
+        {t("Etkin ajan")}:{" "}
         {effective.agent
           ? `${HARNESS_TITLE[effective.agent.provider]} · ${effective.agent.model || "varsayılan model"}`
-          : "Ajan kullanılmıyor · doğrulanmış sabit yanıt"}
+          : t("AI kapalı · doğrulanmış sabit yanıt")}
         {scope !== "global" && !policies.platforms[scope]?.agent ? " · ortak ayar" : ""}
       </p>
       {conflict ? (
@@ -241,9 +242,7 @@ export function SocialPolicySettings({
               onChange={(event) => update({ provider: event.target.value, model: "" })}
             >
               <option value="">
-                {scope === "global"
-                  ? "Ajan kullanma · doğrulanmış sabit yanıt"
-                  : "Ortak ajan ayarını kullan"}
+                {scope === "global" ? t("AI kullanma") : "Ortak ajan ayarını kullan"}
               </option>
               {REMOTE_PROVIDERS.map((id) => (
                 <option key={id} value={id}>
@@ -253,7 +252,7 @@ export function SocialPolicySettings({
             </NativeSelect>
           </label>
           <details className="social-settings">
-            <summary>Model seçimi (isteğe bağlı)</summary>
+            <summary>{t("Modeli özelleştir")}</summary>
             <label>
               AI modeli
               <TextField
@@ -267,39 +266,42 @@ export function SocialPolicySettings({
               />
             </label>
           </details>
-          <div className="social-field-grid">
-            {SOCIAL_LIMIT_FIELDS.map((field) => (
-              <label key={field}>
-                {labels[field]}
-                <TextField
-                  hideLabel
-                  label=""
-                  name={field}
-                  type="number"
-                  min={1}
-                  max={20000}
-                  step={1}
-                  value={draft.limits[field]}
-                  onChange={(event) =>
-                    update({
-                      limits: { ...draft.limits, [field]: event.target.value },
-                    })
-                  }
-                  placeholder={
-                    scope !== "global" && policies.global[field]
-                      ? `Ortak sınır: ${policies.global[field]}`
-                      : "Boş: ek sınır koyma"
-                  }
-                />
-                <small>
-                  Kayıtlı sınır: {effective[field] ?? "ek sınır yok"}
-                  {scope !== "global" && policies.platforms[scope]?.[field] === undefined
-                    ? " · ortak ayar"
-                    : ""}
-                </small>
-              </label>
-            ))}
-          </div>
+          <section className="social-policy-limits">
+            <h3>{t("Karakter sınırları")}</h3>
+            <div className="social-field-grid">
+              {SOCIAL_LIMIT_FIELDS.map((field) => (
+                <label key={field}>
+                  {labels[field]}
+                  <TextField
+                    hideLabel
+                    label=""
+                    name={field}
+                    type="number"
+                    min={1}
+                    max={20000}
+                    step={1}
+                    value={draft.limits[field]}
+                    onChange={(event) =>
+                      update({
+                        limits: { ...draft.limits, [field]: event.target.value },
+                      })
+                    }
+                    placeholder={
+                      scope !== "global" && policies.global[field]
+                        ? `Ortak sınır: ${policies.global[field]}`
+                        : t("Sınır yok")
+                    }
+                  />
+                  <small>
+                    Kayıtlı sınır: {effective[field] ?? "ek sınır yok"}
+                    {scope !== "global" && policies.platforms[scope]?.[field] === undefined
+                      ? " · ortak ayar"
+                      : ""}
+                  </small>
+                </label>
+              ))}
+            </div>
+          </section>
           <div className="social-actions">
             <Button variant="primary" type="submit" disabled={conflict} loading={saving}>
               {saving ? "Kaydediliyor…" : "Ayarları kaydet"}
@@ -313,10 +315,14 @@ export function SocialPolicySettings({
         </fieldset>
         {error ? <Alert tone="danger">{error}</Alert> : null}
         {notice ? <Notice kind="success" title={notice} /> : null}
-        <p className="social-muted">
-          Platformun kendi sınırları ve gönderim onayı geçerliliğini korur. Ajan kullanılamadığında
-          başka bir ajana otomatik geçilmez.
-        </p>
+        <details className="social-settings">
+          <summary>{t("Bu ayarlar nasıl uygulanır?")}</summary>
+          <p className="social-muted">
+            {t(
+              "Platform sınırları ve gönderim onayı geçerlidir. Seçili ajan kullanılamazsa başka ajana geçilmez.",
+            )}
+          </p>
+        </details>
       </form>
     </section>
   );

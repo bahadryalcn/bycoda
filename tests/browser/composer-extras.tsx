@@ -181,6 +181,12 @@ function Fixture() {
           return true;
         }}
         initialDraft="Keep this chat draft"
+        editLastTurnSupported={new URLSearchParams(location.search).has("shortcuts")}
+        lastTurnRecall={
+          new URLSearchParams(location.search).has("shortcuts")
+            ? { text: "Earlier message", attachments: [] }
+            : null
+        }
         inputAriaLabel="Message"
         busy={busy}
         disabled={disabled}

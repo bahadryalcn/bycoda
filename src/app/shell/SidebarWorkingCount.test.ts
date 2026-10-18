@@ -267,3 +267,53 @@ it("counts host work without opening its sessions and updates when it finishes",
   await act(async () => {});
   expect(badge()).toBeNull();
 });
+
+it("shows the same turn clock in Working and Sessions, then removes it when work ends", async () => {
+  vi.useFakeTimers();
+  vi.setSystemTime(200_000);
+  try {
+    props.projectRailOpen = false;
+    props.sessions = [
+      {
+        id: "timed",
+        cwd: props.cwd,
+        harness: "codex",
+        model: "",
+        runtimeMode: "supervised",
+        title: "Timed work",
+        createdAt: 1,
+        updatedAt: 199_000,
+      },
+    ];
+    props.busySessionIds = new Set(["timed"]);
+    props.liveAgents = [
+      {
+        id: "timed",
+        cwd: props.cwd,
+        title: "Timed work",
+        harness: "codex",
+        activity: "Working",
+        needsApproval: false,
+        done: false,
+        startedAt: 10_000,
+      },
+    ];
+    await render();
+    const rail = () =>
+      container.querySelector('[data-live-agent-card="timed"] [data-session-working-status]');
+    const card = () =>
+      container.querySelector('[data-session-card="timed"] [data-session-working-status]');
+    expect(rail()?.textContent).toContain("3m 10s");
+    expect(card()?.textContent).toBe(rail()?.textContent);
+    act(() => vi.advanceTimersByTime(1000));
+    expect(card()?.textContent).toContain("3m 11s");
+    expect(card()?.textContent).toBe(rail()?.textContent);
+    props.busySessionIds = new Set();
+    props.liveAgents = [];
+    await render();
+    expect(card()).toBeNull();
+  } finally {
+    act(() => root.render(null));
+    vi.useRealTimers();
+  }
+});

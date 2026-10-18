@@ -242,15 +242,18 @@ it("explains unavailable browser X inbox next to the disabled refresh action", a
   );
   expect(container.textContent).toContain("X tarayıcı bağlantısı paylaşım yapabilir");
   expect(container.textContent).toContain("Gelen kutusu erişimi gerekli");
-  const refresh = Array.from(container.querySelectorAll("button")).find((button) =>
-    button.textContent?.includes("Konuşmaları yenile"),
+  const refresh = Array.from(container.querySelectorAll("button")).find(
+    (button) => button.getAttribute("aria-label") === "Konuşmaları yenile",
   )!;
   expect(refresh.disabled).toBe(true);
   expect(request.mock.calls.some((call) => call[0] === "inbox.sync")).toBe(false);
 });
 it("selects only filtered conversations and keeps the bulk target count explicit", async () => {
   await mount(snapshot());
-  const kind = Array.from(container.querySelectorAll("label"))
+  await act(async () =>
+    container.querySelector<HTMLButtonElement>('button[aria-label="Filtreler"]')!.click(),
+  );
+  const kind = Array.from(document.querySelectorAll("label"))
     .find((label) => label.textContent?.startsWith("İleti türü"))!
     .querySelector("select")!;
   await act(async () => {
@@ -280,8 +283,8 @@ it("shows refresh failures per account while preserving other accounts' success"
     return {};
   });
   await mount(value);
-  const refresh = Array.from(container.querySelectorAll("button")).find((button) =>
-    button.textContent?.includes("Konuşmaları yenile"),
+  const refresh = Array.from(container.querySelectorAll("button")).find(
+    (button) => button.getAttribute("aria-label") === "Konuşmaları yenile",
   )!;
   await act(async () => refresh.click());
   expect(container.textContent).toContain("Güncel iletiler alındı.");
@@ -294,8 +297,8 @@ it("does not report success when every inbox refresh failed", async () => {
     throw new Error("Disconnected");
   });
   await mount(snapshot());
-  const refresh = Array.from(container.querySelectorAll("button")).find((button) =>
-    button.textContent?.includes("Konuşmaları yenile"),
+  const refresh = Array.from(container.querySelectorAll("button")).find(
+    (button) => button.getAttribute("aria-label") === "Konuşmaları yenile",
   )!;
   await act(async () => refresh.click());
   expect(runResults).toEqual([false]);

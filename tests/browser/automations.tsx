@@ -34,6 +34,7 @@ Object.assign(window, {
     unregisterCallback: () => {},
     invoke: async (command: string, args: Record<string, unknown> = {}) => {
       calls.push({ command, args: structuredClone(args) });
+      if (command === "default_cwd") return "C:/fixture/home";
       if (command === "plugin:event|listen") return 1;
       if (command === "automations_list") return [structuredClone(automation)];
       if (command === "automations_upsert") {
@@ -72,6 +73,9 @@ void languageReady
               recents={[]}
               onClose={() => {}}
               onLaunch={() => {}}
+              onLaunchAssistant={async (launch) => {
+                (window as unknown as { assistantLaunch: unknown }).assistantLaunch = launch;
+              }}
               onOpenSession={() => {}}
               onOpenBackgroundSession={() => {}}
             />

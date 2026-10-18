@@ -153,6 +153,7 @@ export function useSessionPaneProps({
     recents: visibleRecents,
     hideProjectPicker: true,
     onFocus: onFocusPane,
+    onSessionInteraction: onKeepSession,
     onClose: onClosePane,
     onCwdChange: useKeepSessionAction(onCwdChange, onKeepSession)!,
     onBranchChange: useKeepSessionAction(onBranchChange, onKeepSession)!,

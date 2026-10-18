@@ -49,6 +49,23 @@ async function frame() {
   await act(async () => pending.forEach((callback) => callback(performance.now())));
 }
 
+it("autofocuses after the measuring frame becomes visible", async () => {
+  const hiddenFrames: boolean[] = [];
+  const nativeFocus = HTMLElement.prototype.focus;
+  vi.spyOn(HTMLElement.prototype, "focus").mockImplementation(function (
+    this: HTMLElement,
+    options,
+  ) {
+    hiddenFrames.push(this.parentElement?.style.visibility === "hidden");
+    nativeFocus.call(this, options);
+  });
+  await act(async () =>
+    root.render(createElement(Popover, { anchor, autoFocus: true, tabIndex: -1 }, "Menu")),
+  );
+  expect(hiddenFrames).toEqual([false]);
+  expect(document.activeElement?.textContent).toBe("Menu");
+});
+
 it("places before first paint, coalesces scroll/resize bursts and cancels queued placement on close", async () => {
   const measure = vi
     .spyOn(anchor, "getBoundingClientRect")

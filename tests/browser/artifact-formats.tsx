@@ -333,8 +333,37 @@ function LocalImageFixture() {
   ) : null;
 }
 
+function AttachmentActionsFixture() {
+  const [file] = useState(() =>
+    attachment(
+      "15-terminus-inventory-and-configuration-notes.txt",
+      "text/plain",
+      new TextEncoder().encode("Attachment contents\n" + "long-content-".repeat(60)),
+    ),
+  );
+  const [draft, setDraft] = useState("");
+  const [removed, setRemoved] = useState(false);
+  return (
+    <main className="min-h-dvh bg-background-base p-3 text-content">
+      <div className="flex min-w-0 flex-wrap gap-1.5">
+        {!removed && (
+          <AttachmentChip
+            attachment={file}
+            token="[file1]"
+            onInsertToken={() => setDraft((value) => value + "[file1]")}
+            onRemove={() => setRemoved(true)}
+          />
+        )}
+      </div>
+      <output aria-label="Draft">{draft}</output>
+    </main>
+  );
+}
+
 createRoot(document.getElementById("root")!).render(
-  new URLSearchParams(location.search).has("chat-overflow") ? (
+  new URLSearchParams(location.search).has("attachment-actions") ? (
+    <AttachmentActionsFixture />
+  ) : new URLSearchParams(location.search).has("chat-overflow") ? (
     <ChatOverflowFixture />
   ) : new URLSearchParams(location.search).has("local-image") ? (
     <LocalImageFixture />

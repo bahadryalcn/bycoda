@@ -1,5 +1,51 @@
 import { expect, test } from "@playwright/test";
 
+test("AI question choices stay readable and support native selection", async ({
+  page,
+}, testInfo) => {
+  await page.goto("/tests/browser/arc-controls.html");
+  const region = page.getByRole("region", { name: "AI question fixture" });
+  const radios = region.getByRole("radio");
+  for (const reducedMotion of ["reduce", "no-preference"] as const) {
+    await page.emulateMedia({ reducedMotion });
+    for (const width of [320, 768, 1440]) {
+      await page.setViewportSize({ width, height: 900 });
+      for (const light of [false, true]) {
+        await page.evaluate(
+          (enabled) => document.documentElement.classList.toggle("theme-light", enabled),
+          light,
+        );
+        await expect(radios).toHaveCount(4);
+        expect(await region.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
+        if (width === 768 && reducedMotion === "reduce") {
+          await region.screenshot({
+            path: testInfo.outputPath(light ? "question-light.png" : "question-dark.png"),
+          });
+        }
+        const copy = await radios.first().evaluate((el) => {
+          const label = el.closest("label")!.querySelector("strong")!;
+          const style = getComputedStyle(label);
+          return { size: parseFloat(style.fontSize), color: style.color, width: label.clientWidth };
+        });
+        expect(copy.size).toBeGreaterThanOrEqual(13);
+        expect(copy.width).toBeGreaterThan(100);
+        await radios.first().locator("..").click();
+        await expect(radios.first()).toBeChecked();
+        await radios.first().focus();
+        await page.keyboard.press("ArrowDown");
+        await expect(radios.nth(1)).toBeChecked();
+        await expect(radios.nth(1)).toBeFocused();
+        await expect(region.getByRole("button", { name: "Continue", exact: true })).toBeEnabled();
+      }
+    }
+  }
+  await radios.last().locator("..").click();
+  await expect(region.getByRole("textbox", { name: "Type your answer" })).toBeFocused();
+  await expect(region.getByRole("button", { name: "Continue", exact: true })).toBeDisabled();
+  await region.getByRole("textbox").fill("Yalnızca animasyon duruyor");
+  await expect(region.getByRole("button", { name: "Continue", exact: true })).toBeEnabled();
+});
+
 test("password reveal stays inside the input independently of its label and helper text", async ({
   page,
 }) => {

@@ -1,106 +1,134 @@
 import { Checkbox } from "../../../shared/ui/Checkbox";
 import { Button } from "../../../shared/ui/Button";
+import { t, useLocale } from "../../../shared/i18n";
 import { useState } from "react";
 import { Notice, StatusBadge, type Props } from "./socialShared";
 
 export function SocialSendingControls({ snapshot, client, run }: Props) {
+  useLocale();
   const [confirmed, setConfirmed] = useState(false);
+  const [pending, setPending] = useState<string | null>(null);
+  const execute = async (key: string, action: () => Promise<unknown>, message: string) => {
+    if (pending) return;
+    setPending(key);
+    try {
+      await run(action, message);
+    } finally {
+      setPending(null);
+    }
+  };
   return (
-    <section className="social-sending-controls" aria-label="Gönderim kontrolleri">
+    <section className="social-sending-controls" aria-label={t("Gönderim kontrolleri")}>
       <header className="social-section-heading">
-        <h2>Gönderim kontrolleri</h2>
+        <h2>{t("Gönderim kontrolleri")}</h2>
         <StatusBadge
           status={snapshot.stopped ? "paused" : snapshot.sendingEnabled ? "active" : "draft"}
           label={
             snapshot.stopped
-              ? "Tüm gönderimler durduruldu"
+              ? t("Durduruldu")
               : snapshot.sendingEnabled
-                ? "Onaylı gönderimler açık"
-                : "Gönderim kapalı"
+                ? t("Onaylı gönderimler açık")
+                : t("Gönderim kapalı")
           }
         />
       </header>
       <Notice
         kind={snapshot.stopped || !snapshot.sendingEnabled ? "warning" : "success"}
-        title={
-          snapshot.stopped
-            ? "Bekleyen işler korunuyor"
-            : snapshot.sendingEnabled
-              ? "Yalnız onaylı işler gönderilebilir"
-              : "Taslak hazırlayabilirsiniz"
-        }
+        title={snapshot.stopped ? t("Bekleyen işler korunuyor") : t("Gönderim için onay gerekir")}
       >
         {snapshot.stopped
-          ? "Planları ve içerikleri inceleyip hazır olduğunuzda gönderimleri devam ettirin."
-          : "Bir taslak oluşturmak gönderim yapmaz. Gönderilecek içerik için onay veya etkin bir kural gerekir."}
+          ? t("Hazır olduğunuzda gönderimleri devam ettirin.")
+          : t(
+              "Taslaklar gönderilmez. Yalnız onayladığınız içerikler ve etkin kurallar gönderim yapabilir.",
+            )}
       </Notice>
+      {!snapshot.hostOnline ? (
+        <Notice kind="warning" title={t("Gönderim hizmetine bağlanılamıyor")}>
+          {t("İşlemleri yönetmek için seçili bilgisayarın bağlantısını kontrol edin.")}
+        </Notice>
+      ) : null}
       {!snapshot.sendingEnabled ? (
         <div className="social-confirm">
           <label className="social-inline-check">
             <Checkbox
               checked={confirmed}
+              disabled={!!pending}
               onChange={(event) => setConfirmed(event.target.checked)}
             />
-            Onayladığım işler ve etkin kurallar gerçek hesaplarda gönderim yapabilir.
+            {t("Onayladığım içerikler ve etkin kurallar gerçek hesaplarımdan gönderilebilir.")}
           </label>
           <Button
             variant="primary"
             type="button"
-
-            disabled={!confirmed || !snapshot.hostOnline}
+            loading={pending === "enable"}
+            disabled={!confirmed || !snapshot.hostOnline || !!pending}
             onClick={() =>
-              void run(
+              void execute(
+                "enable",
                 () => client.request("execution.enable", { confirm: "ENABLE_EXTERNAL_SENDS" }),
-                "Onaylı gönderimler açıldı. Taslaklar ayrıca onay gerektirir.",
+                t("Onaylı gönderimler açıldı. Taslaklar ayrıca onay gerektirir."),
               )
             }
           >
-            Onaylı gönderimleri aç
+            {t("Onaylı gönderimleri aç")}
           </Button>
         </div>
       ) : null}
-      <div className="social-actions">
+      <div className="social-setting-row">
+        <div>
+          <h3>{t("Tüm gönderimler")}</h3>
+          <p className="social-muted">
+            {t("Planları ve içerikleri silmeden gönderimi duraklatın.")}
+          </p>
+        </div>
         <Button
           variant="secondary"
           type="button"
-          disabled={!snapshot.hostOnline}
+          tone={snapshot.stopped ? "neutral" : "danger"}
+          loading={pending === "stop"}
+          disabled={!snapshot.hostOnline || !!pending}
           onClick={() =>
-            void run(
+            void execute(
+              "stop",
               () => client.request("execution.stop", { stopped: !snapshot.stopped }),
-              snapshot.stopped ? "Gönderimler devam ediyor." : "Tüm gönderimler durduruldu.",
+              snapshot.stopped ? t("Gönderimler devam ediyor.") : t("Tüm gönderimler durduruldu."),
             )
           }
         >
-          {snapshot.stopped ? "Tüm gönderimleri devam ettir" : "Tüm gönderimleri durdur"}
+          {snapshot.stopped ? t("Gönderimleri devam ettir") : t("Tüm gönderimleri durdur")}
         </Button>
       </div>
-      <details className="social-settings">
-        <summary>Gelen kutusunu otomatik yenile</summary>
-        <p className="social-muted">
-          Yalnız platformun okuma erişimi bulunan hesaplar yenilenir. Tarayıcı bağlantısının
-          desteklemediği mesaj ve yorumlar alınamaz.
-        </p>
-        <StatusBadge
-          status={snapshot.pollingEnabled ? "active" : "paused"}
-          label={snapshot.pollingEnabled ? "Otomatik yenileme açık" : "Otomatik yenileme kapalı"}
-        />
-        <div className="social-actions">
-          <Button
-            variant="secondary"
-            type="button"
-            onClick={() =>
-              void run(
-                () => client.request("inbox.polling", { enabled: !snapshot.pollingEnabled }),
-                snapshot.pollingEnabled
-                  ? "Gelen kutusu otomatik yenilemesi kapatıldı."
-                  : "İzinli hesaplarda otomatik yenileme açıldı.",
-              )
+      <div className="social-setting-row">
+        <div>
+          <h3>{t("Gelen kutusunu otomatik yenile")}</h3>
+          <p className="social-muted">
+            {t("Yalnız mesaj ve yorum okuma erişimi olan hesaplar yenilenir.")}
+          </p>
+          <StatusBadge
+            status={snapshot.pollingEnabled ? "active" : "paused"}
+            label={
+              snapshot.pollingEnabled ? t("Otomatik yenileme açık") : t("Otomatik yenileme kapalı")
             }
-          >
-            {snapshot.pollingEnabled ? "Otomatik yenilemeyi kapat" : "Otomatik yenilemeyi aç"}
-          </Button>
+          />
         </div>
-      </details>
+        <Button
+          variant="secondary"
+          type="button"
+          loading={pending === "polling"}
+          disabled={!!pending}
+          onClick={() =>
+            void execute(
+              "polling",
+              () => client.request("inbox.polling", { enabled: !snapshot.pollingEnabled }),
+              snapshot.pollingEnabled
+                ? t("Gelen kutusu otomatik yenilemesi kapatıldı.")
+                : t("İzinli hesaplarda otomatik yenileme açıldı."),
+            )
+          }
+        >
+          {snapshot.pollingEnabled ? t("Otomatik yenilemeyi kapat") : t("Otomatik yenilemeyi aç")}
+        </Button>
+      </div>
     </section>
   );
 }

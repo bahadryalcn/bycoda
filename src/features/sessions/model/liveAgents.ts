@@ -20,6 +20,8 @@ export type LiveAgent = {
   startedAt?: number;
   durationMs?: number;
   needsApproval: boolean;
+  /** Distinguishes a clarifying question from permission to run an action. */
+  inputKind?: "approval" | "question";
   done: boolean;
   issue?: "retrying" | "failed";
 };
@@ -101,6 +103,7 @@ function toLiveAgent(session: Session, unseenFinished: boolean): LiveAgent {
     startedAt: turnStartedAt(session.blocks),
     durationMs: done ? turnDurationMs(session.blocks) : undefined,
     needsApproval: Boolean(pending) || Boolean(pendingQuestion),
+    inputKind: pendingQuestion ? "question" : pending ? "approval" : undefined,
     done,
   };
 }

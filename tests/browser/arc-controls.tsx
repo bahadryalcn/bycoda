@@ -1,3 +1,4 @@
+import { QuestionForm } from "../../src/features/sessions/ui/QuestionForm";
 import { useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { Button } from "../../src/shared/ui/Button";
@@ -357,6 +358,31 @@ function Fixture() {
           <Button onClick={() => applyAccentColor(themePalette.hex3b82f6)}>Saturated accent</Button>
           <Button onClick={() => applyAccentColor(null)}>Reset accent</Button>
         </div>
+        <section aria-label="AI question fixture">
+          <QuestionForm
+            prompt={{
+              requestId: 404,
+              questions: [
+                {
+                  id: "stops",
+                  prompt: "Başka pencereye tıklayınca duran şey hangisi?",
+                  multiSelect: false,
+                  allowCustom: true,
+                  options: [
+                    {
+                      id: "animation",
+                      label: "Arka plan animasyonu ve çalışma göstergesi",
+                      description: "Mesaj akışı devam ediyor; yalnızca görsel hareket duruyor.",
+                    },
+                    { id: "messages", label: "Mesaj akışı / ajanın yaptığı iş" },
+                    { id: "app", label: "Uygulamanın tamamı; geri dönünce de tepki vermiyor" },
+                  ],
+                },
+              ],
+            }}
+            onReply={() => {}}
+          />
+        </section>
         <ControlSpecimen expanded />
         <NativeSelectionFormFixture />
         <FeedbackFixture />

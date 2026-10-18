@@ -223,6 +223,7 @@ import {
   useInboxAskRestart,
   useOpenInboxSession,
 } from "./workspace/bridges/useInboxAsk";
+import { useWorkspaceAutomationActivity } from "./workspace/bridges/useWorkspaceAutomationActivity";
 import { useInboxAutomationActivity } from "./workspace/bridges/useInboxAutomationActivity";
 import { useAutomationLaunch } from "./workspace/bridges/useAutomationLaunch";
 import { useAutomationRecovery } from "./workspace/bridges/useAutomationRecovery";
@@ -1843,6 +1844,8 @@ function Workspace({
 
   const { ensureAutomationRecovery } = useAutomationRecovery({ launchAutomation });
 
+  useWorkspaceAutomationActivity({ ensureAutomationRecovery, launchAutomation });
+
   const onInboxActivity = useInboxAutomationActivity({
     ensureAutomationRecovery,
     launchAutomation,
@@ -2952,6 +2955,7 @@ function Workspace({
                 sessionPaneProps={sessionPaneProps}
               />
               <WorkspaceToolPanels
+                onLaunchAutomationAssistant={launchQuickSession}
                 inboxViewOpen={inboxViewOpen}
                 notesViewOpen={notesViewOpen}
                 automationsViewOpen={automationsViewOpen}

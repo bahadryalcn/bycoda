@@ -89,19 +89,20 @@ hover, pressed, border and disabled roles live in the shared theme; info remains
 independent of the user's accent. Structural state and native props remain owned
 by their existing interactions.
 
-| Prop                       | Contract                                                                                                                                                        |
-| -------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `variant`                  | `primary`, `secondary` (default), `ghost`, `danger`, `link`, `item`, `tab`.                                                                                     |
-| `size`                     | Existing Arc `sm` (default), `md`, `lg`; bycoda's shared control-height tokens remain authoritative.                                                            |
-| `iconOnly` / `label`       | `iconOnly: true` requires a translated `label` at the type level. It creates a square control and supplies its accessible name and fallback native tooltip.     |
-| `tooltip`                  | Translated native tooltip. Explicit native `title` takes precedence. No new floating tooltip owner is created.                                                  |
-| `shape`                    | `default` (existing control radius) or `pill`.                                                                                                                  |
-| `selected`                 | Optional visual state; otherwise derived from the caller's `aria-selected`, `aria-pressed` or `aria-checked`. It does not invent or change ARIA roles/states.   |
-| `loading` / `loadingLabel` | Controlled pending state and optional translated busy accessible name. Remains focusable and blocks duplicate activation and form submission.                   |
-| `startIcon` / `endIcon`    | Decorative React nodes; their wrappers are hidden from assistive technology. Existing icon children continue to work.                                           |
-| `fullWidth`                | Fill the available inline size. `item` is full width by default.                                                                                                |
-| `motion`                   | `auto` (default) or `none`. Structural/text actions and native drag/animation handlers use the native renderer with the same Arc classes and tokens.            |
-| Native props / `ref`       | Existing button props, form name/value, data attributes, keyboard/context/drag events and `HTMLButtonElement` ref remain supported. Default `type` is `button`. |
+| Prop                       | Contract                                                                                                                                                                       |
+| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `variant`                  | `primary`, `secondary` (default), `ghost`, `danger`, `link`, `item`, `tab`.                                                                                                    |
+| `size`                     | Existing Arc `sm` (default), `md`, `lg`; bycoda's shared control-height tokens remain authoritative.                                                                           |
+| `iconOnly` / `label`       | `iconOnly: true` requires a translated `label` at the type level. It creates a square control and supplies its accessible name and fallback native tooltip.                    |
+| `tooltip`                  | Translated native tooltip. Explicit native `title` takes precedence. No new floating tooltip owner is created.                                                                 |
+| `shortcut`                 | Optional display hint appended to the tooltip. Resolve configurable bindings with `useKeybindingShortcut`; disabled bindings return null. Does not register keyboard handlers. |
+| `shape`                    | `default` (existing control radius) or `pill`.                                                                                                                                 |
+| `selected`                 | Optional visual state; otherwise derived from the caller's `aria-selected`, `aria-pressed` or `aria-checked`. It does not invent or change ARIA roles/states.                  |
+| `loading` / `loadingLabel` | Controlled pending state and optional translated busy accessible name. Remains focusable and blocks duplicate activation and form submission.                                  |
+| `startIcon` / `endIcon`    | Decorative React nodes; their wrappers are hidden from assistive technology. Existing icon children continue to work.                                                          |
+| `fullWidth`                | Fill the available inline size. `item` is full width by default.                                                                                                               |
+| `motion`                   | `auto` (default) or `none`. Structural/text actions and native drag/animation handlers use the native renderer with the same Arc classes and tokens.                           |
+| Native props / `ref`       | Existing button props, form name/value, data attributes, keyboard/context/drag events and `HTMLButtonElement` ref remain supported. Default `type` is `button`.                |
 
 `disabled`, boolean/string `aria-disabled`, and `loading` block click, popup activation,
 Enter/Space activation and drop actions in both renderers. Tab/navigation keys remain

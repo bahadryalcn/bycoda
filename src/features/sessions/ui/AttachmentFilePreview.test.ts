@@ -80,6 +80,60 @@ function closePreview() {
 }
 
 describe("document attachment integration", () => {
+  it("keeps reference insertion, opening and removal as separate actions", async () => {
+    const onInsertToken = vi.fn();
+    const onRemove = vi.fn();
+    const loadPreview = vi.fn(async () => btoa("file contents"));
+    act(() =>
+      root.render(
+        createElement(AttachmentChip, {
+          attachment: file({ name: "notes.txt", mimeType: "text/plain", loadPreview }),
+          token: "[file1]",
+          onInsertToken,
+          onRemove,
+        }),
+      ),
+    );
+    expect(container.querySelector("button")?.textContent).toContain("notes.txt");
+    expect(container.querySelector('[aria-label^="Insert "]')?.textContent).toBe("");
+    act(() => container.querySelector<HTMLButtonElement>('[aria-label^="Insert "]')!.click());
+    expect(onInsertToken).toHaveBeenCalledOnce();
+    expect(loadPreview).not.toHaveBeenCalled();
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
+    await clickPreview();
+    expect(document.querySelector('[role="dialog"] pre')?.textContent).toBe("file contents");
+    expect(onInsertToken).toHaveBeenCalledOnce();
+    closePreview();
+    act(() =>
+      container.querySelector<HTMLButtonElement>('[aria-label="Remove notes.txt"]')!.click(),
+    );
+    expect(onRemove).toHaveBeenCalledOnce();
+    expect(loadPreview).toHaveBeenCalledOnce();
+  });
+
+  it("renders HTML as inert text and retries failed text reads", async () => {
+    const source = "<script>window.untrusted = true</script><h1>Attached HTML</h1>";
+    const loadPreview = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("offline"))
+      .mockResolvedValue(btoa(source));
+    act(() =>
+      root.render(
+        createElement(AttachmentChip, {
+          attachment: file({ name: "page.html", mimeType: "text/html", loadPreview }),
+        }),
+      ),
+    );
+    await clickPreview();
+    expect(document.querySelector('[role="alert"]')?.textContent).toContain("Try again");
+    await act(async () =>
+      document.querySelector<HTMLButtonElement>('[role="alert"] button')!.click(),
+    );
+    expect(document.querySelector('[role="dialog"] pre')?.textContent).toBe(source);
+    expect(document.querySelector('[role="dialog"] script')).toBeNull();
+    expect(mocks.read).not.toHaveBeenCalled();
+  });
+
   it.each([
     ["report.pdf", "application/pdf", "pdf"],
     ["report.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "excel"],

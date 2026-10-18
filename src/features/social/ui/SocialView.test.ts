@@ -168,7 +168,9 @@ describe("Sosyal Medya ürün ekranı", () => {
     );
     const history = container.querySelector(".social-history-page")!;
     expect(history.closest("[hidden]")).toBeNull();
-    const status = Array.from(history.querySelectorAll("label"))
+    const filters = history.querySelector<HTMLButtonElement>('button[aria-haspopup="dialog"]')!;
+    await act(async () => filters.click());
+    const status = Array.from(document.body.querySelectorAll(".social-filter-panel label"))
       .find((label) => label.textContent?.startsWith("Gönderim durumu"))!
       .querySelector("select")!;
     await act(async () => {
@@ -178,7 +180,11 @@ describe("Sosyal Medya ürün ekranı", () => {
     await click("Hesaplar");
     await click("İşlem geçmişi");
     expect(history.closest("[hidden]")).toBeNull();
-    expect(status.value).toBe("failed");
+    await act(async () => filters.click());
+    const retainedStatus = Array.from(document.body.querySelectorAll(".social-filter-panel label"))
+      .find((label) => label.textContent?.startsWith("Gönderim durumu"))!
+      .querySelector("select")!;
+    expect(retainedStatus.value).toBe("failed");
   });
   it("başka araca geçip dönünce bölüm, yazılmış form ve son veriler korunur", async () => {
     const renderPanel = (active: boolean) =>
@@ -403,7 +409,9 @@ describe("Sosyal Medya ürün ekranı", () => {
         tab,
       );
     }
-    expect(container.textContent).toContain("Host kapalıyken işler yürütülmez");
+    await click("Zamanlama nasıl çalışır?");
+    expect(document.body.textContent).toContain("Bilgisayar çevrimdışıyken işler bekler");
+    await click("Zamanlama nasıl çalışır?");
     expect(container.textContent).toContain("Taslak modu · gönderim kapalı");
     await click("Gönderim kontrolleri");
     expect(container.querySelector('[aria-current="page"] .social-nav-label')?.textContent).toBe(

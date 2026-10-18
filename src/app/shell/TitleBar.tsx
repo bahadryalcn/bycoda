@@ -54,7 +54,7 @@ import {
 } from "../model/windowTransferPopout";
 import { beginWindowTabDrag } from "../model/windowDragPreview";
 import { WindowControls } from "./WindowControls";
-import { IS_MAC, MOD, SHIFT } from "../../platform/tauri/platform";
+import { IS_MAC } from "../../platform/tauri/platform";
 import type { RecentProject } from "../../features/projects/model/recents";
 import { ExplorerMenu, type ExplorerMenuItem } from "../../features/files/ui/ExplorerMenu";
 import {
@@ -68,7 +68,7 @@ import type {
   SplitDir,
 } from "../../features/workspace/model/layout";
 import type { LayoutPreset } from "../../features/workspace/model/layoutPresets";
-import { keybindingShortcutLabel } from "../../features/settings/model/settings";
+import { useKeybindingShortcut } from "../../features/settings/model/useKeybindingShortcut";
 import {
   SPLIT_DOWN_ID,
   SPLIT_RIGHT_ID,
@@ -521,6 +521,7 @@ function TabStripChevron({ side, onClick }: { side: "left" | "right"; onClick: (
 
 export function IconButton({
   label,
+  command,
   active,
   accent,
   disabled,
@@ -529,6 +530,7 @@ export function IconButton({
   children,
 }: {
   label: string;
+  command?: string;
   active?: boolean;
   accent?: boolean;
   disabled?: boolean;
@@ -537,10 +539,12 @@ export function IconButton({
   children: ReactNode;
 }) {
   useLocale();
+  const shortcut = useKeybindingShortcut(command ?? "");
   return (
     <Button
       iconOnly
       label={label}
+      shortcut={shortcut}
       variant="ghost"
       motion="none"
       type="button"
@@ -626,18 +630,24 @@ export function TabVisitNav({
   useLocale();
   return (
     <div className="flex shrink-0 items-center">
-      <IconButton label={t("Back ({p0}[)", { p0: MOD })} disabled={!canGoBack} onClick={onGoBack}>
+      <IconButton label={t("Back")} command="Tab: Back" disabled={!canGoBack} onClick={onGoBack}>
         <ChevronLeft className="size-3.5" strokeWidth={1.75} />
       </IconButton>
       <IconButton
-        label={t("Forward ({p0}])", { p0: MOD })}
+        label={t("Forward")}
+        command="Tab: Forward"
         disabled={!canGoForward}
         onClick={onGoForward}
       >
         <ChevronRight className="size-3.5" strokeWidth={1.75} />
       </IconButton>
       {onTogglePanel ? (
-        <IconButton label={panelLabel} active={panelActive} onClick={onTogglePanel}>
+        <IconButton
+          label={t(panelLabel)}
+          command="App: Toggle Sidebar"
+          active={panelActive}
+          onClick={onTogglePanel}
+        >
           <PanelLeft className="size-3.5" strokeWidth={1.75} />
         </IconButton>
       ) : null}
@@ -658,12 +668,16 @@ export function OverlayNav({
   return (
     <div className="flex shrink-0 items-center px-1.5">
       {onBack ? (
-        <IconButton label={t("Back ({p0}[)", { p0: MOD })} onClick={onBack}>
+        <IconButton label={t("Back")} command="Tab: Back" onClick={onBack}>
           <ChevronLeft className="size-3.5" strokeWidth={1.75} />
         </IconButton>
       ) : null}
       {onToggleSidebar ? (
-        <IconButton label={t("Toggle Sidebar ({p0}B)", { p0: MOD })} onClick={onToggleSidebar}>
+        <IconButton
+          label={t("Toggle Sidebar")}
+          command="App: Toggle Sidebar"
+          onClick={onToggleSidebar}
+        >
           <PanelLeft className="size-3.5" strokeWidth={1.75} />
         </IconButton>
       ) : null}
@@ -710,6 +724,10 @@ function TitleBarComponent({
 }: Props) {
   useLocale();
   const [layoutMenu, setLayoutMenu] = useState<{ x: number; y: number } | null>(null);
+  const splitRightShortcut = useKeybindingShortcut("Pane: Split Right");
+  const splitDownShortcut = useKeybindingShortcut("Pane: Split Down");
+  const maximizeShortcut = useKeybindingShortcut("Pane: Toggle Maximized");
+  const closeShortcut = useKeybindingShortcut("Pane: Close");
   const layoutAnchorRef = useRef<HTMLDivElement | null>(null);
   const layoutMenuItems = useMemo(
     () =>
@@ -718,10 +736,8 @@ function TitleBarComponent({
             ...buildLayoutMenuItems({
               current: layout.current,
               canArrange: layout.canArrange,
-              splitRightShortcut:
-                keybindingShortcutLabel("Pane: Split Right", `${MOD}D`) ?? undefined,
-              splitDownShortcut:
-                keybindingShortcutLabel("Pane: Split Down", `${MOD}${SHIFT}D`) ?? undefined,
+              splitRightShortcut: splitRightShortcut ?? undefined,
+              splitDownShortcut: splitDownShortcut ?? undefined,
             }),
             ...(layout.onToggleMaximize
               ? [
@@ -730,15 +746,13 @@ function TitleBarComponent({
                     kind: "item" as const,
                     id: "toggle-maximize",
                     label: t(layout.maximized ? "Restore panel layout" : "Maximize panel"),
-                    shortcut:
-                      keybindingShortcutLabel("Pane: Toggle Maximized", `${MOD}${SHIFT}Enter`) ??
-                      undefined,
+                    shortcut: maximizeShortcut ?? undefined,
                   },
                 ]
               : []),
           ]
         : [],
-    [layout],
+    [layout, splitRightShortcut, splitDownShortcut, maximizeShortcut],
   );
   const onPickLayoutMenu = (id: string) => {
     setLayoutMenu(null);
@@ -1026,7 +1040,7 @@ function TitleBarComponent({
           get label() {
             return t("Close Tab");
           },
-          shortcut: `${MOD}W`,
+          shortcut: closeShortcut ?? undefined,
           disabled: !titleTabClosable(contextTab, tabs.length),
         },
         ...(onMoveToNewWindow
@@ -1207,28 +1221,28 @@ function TitleBarComponent({
           <div className="flex items-center gap-0.5 px-2">
             {projectless && railClosed && onOpenInbox ? (
               <WorkspaceFeatureGate id="inbox">
-                <IconButton label={t("Inbox")} onClick={onOpenInbox}>
+                <IconButton label={t("Inbox")} command="App: Open Inbox" onClick={onOpenInbox}>
                   <Inbox className="size-3.5" strokeWidth={1.75} />
                 </IconButton>
               </WorkspaceFeatureGate>
             ) : null}
             {projectless && railClosed && onOpenNotes ? (
-              <IconButton label={t("Notes")} onClick={onOpenNotes}>
+              <IconButton label={t("Notes")} command="App: Open Notes" onClick={onOpenNotes}>
                 <StickyNote className="size-3.5" strokeWidth={1.75} />
               </IconButton>
             ) : null}
             {!sessionSidebarOpen && !projectless ? (
               <>
-                <IconButton label={t("Go to File ({p0}P)", { p0: MOD })} onClick={onGoToFile}>
+                <IconButton label={t("Go to File")} command="App: Go to File" onClick={onGoToFile}>
                   <Search className="size-3.5" strokeWidth={1.75} />
                 </IconButton>
-                <IconButton label={t("New session ({p0}T)", { p0: MOD })} onClick={onNew}>
+                <IconButton label={t("New session")} command="Tab: New" onClick={onNew}>
                   <Plus className="size-3.5" strokeWidth={1.75} />
                 </IconButton>
               </>
             ) : null}
             {!projectRailOpen && !showCurrentProject && onOpenSettings ? (
-              <IconButton label={t("Settings ({p0},)", { p0: MOD })} onClick={onOpenSettings}>
+              <IconButton label={t("Settings")} command="App: Settings" onClick={onOpenSettings}>
                 <Settings className="size-3.5" strokeWidth={1.75} />
               </IconButton>
             ) : null}
@@ -1264,7 +1278,11 @@ function TitleBarComponent({
         <>
           <div className="w-[78px] shrink-0" />
           <div className="flex shrink-0 items-center px-1.5">
-            <IconButton label={t("Toggle Sidebar ({p0}B)", { p0: MOD })} onClick={onToggleSidebar}>
+            <IconButton
+              label={t("Toggle Sidebar")}
+              command="App: Toggle Sidebar"
+              onClick={onToggleSidebar}
+            >
               <PanelLeft className="size-3.5" strokeWidth={1.75} />
             </IconButton>
           </div>
@@ -1274,7 +1292,8 @@ function TitleBarComponent({
         <div className="flex shrink-0 items-center px-1.5">
           {IS_MAC && railClosed && !compactRail ? <div className="w-[70px] shrink-0" /> : null}
           <IconButton
-            label={t("Toggle Session Sidebar ({p0}{p1}B)", { p0: MOD, p1: SHIFT })}
+            label={t("Toggle Session Sidebar")}
+            command="App: Toggle Session Sidebar"
             onClick={onToggleSessionSidebar}
           >
             <DashboardSquare className="size-3.5" strokeWidth={1.75} />

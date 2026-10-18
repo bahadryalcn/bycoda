@@ -90,10 +90,6 @@ type PendingQuestion = {
   resolve: (reply: UserQuestionReply | "cancelled") => void;
 };
 
-// Match Codex's non-blocking question policy: a minute of grace, then a
-// minute of countdown. Interaction keeps the question open for the user.
-const QUESTION_AUTO_RESOLVE_MS = 120_000;
-
 type Live = {
   sessionId: string;
   rpc: JsonRpcClient;
@@ -112,6 +108,9 @@ type Live = {
   cancelled: boolean;
   muteUpdates: boolean;
   activeTurnId: string | null;
+  /** A successful provider turn ended, but its async questions still need replies. */
+  awaitingAsyncAnswers: boolean;
+  asyncAnswerTexts: string[];
   turnUsage: CodexTurnUsageState;
   /** A written turn/start still needs its response/notification turn identity. */
   pendingTurnStart: boolean;
@@ -334,6 +333,15 @@ export function respondCodexQuestion(
     pending.resolve({ kind: "skipped" });
     return;
   }
+  if (live.awaitingAsyncAnswers) {
+    // The provider turn has ended, so turn/steer would target a stale turn.
+    // Collect explicit answers and continue under the same host run once all
+    // queued questions have been answered or skipped.
+    pending.sending = true;
+    live.asyncAnswerTexts.push(text);
+    pending.resolve(reply);
+    return;
+  }
   const turnId = pending.turnId;
   if (!turnId || live.activeTurnId !== turnId) {
     pending.resolve("cancelled");
@@ -372,15 +380,21 @@ export function keepCodexQuestionOpen(sessionId: string, requestId: number): voi
   live.onEvent({ type: "question.updated", requestId });
 }
 
-function clearServerRequests(live: Live): void {
+function clearServerRequests(live: Live, preserveAsyncQuestions = false): void {
   for (const pending of live.approvals.values()) pending.resolve("cancelled");
-  for (const pending of live.questions.values()) {
+  for (const [id, pending] of live.questions) {
+    if (preserveAsyncQuestions && pending.rpcId === null) continue;
     clearTimeout(pending.timer);
     pending.resolve("cancelled");
+    live.questions.delete(id);
   }
   live.approvals.clear();
-  live.questions.clear();
-  live.visibleQuestionId = null;
+  if (live.visibleQuestionId !== null && !live.questions.has(live.visibleQuestionId))
+    live.visibleQuestionId = null;
+}
+
+function settleAsyncAnswers(live: Live): void {
+  if (live.awaitingAsyncAnswers && !live.questions.size) finishActiveTurn(live);
 }
 
 function showNextQuestion(live: Live): void {
@@ -388,15 +402,9 @@ function showNextQuestion(live: Live): void {
   const next = live.questions.entries().next().value;
   live.visibleQuestionId = next?.[0] ?? null;
   if (next) {
-    const pending = next[1];
-    if (!pending.isBlocking) {
-      pending.event.autoResolveAt = Date.now() + QUESTION_AUTO_RESOLVE_MS;
-      pending.timer = setTimeout(
-        () => pending.resolve({ kind: "skipped" }),
-        QUESTION_AUTO_RESOLVE_MS,
-      );
-    }
-    live.onEvent(pending.event);
+    // Non-blocking means the agent can keep working, not that silence is a
+    // request to skip. Wait for an explicit reply or provider cancellation.
+    live.onEvent(next[1].event);
   }
 }
 
@@ -675,6 +683,8 @@ async function ensureLive(input: HarnessSessionInput): Promise<Live> {
       cancelled: false,
       muteUpdates: didResume,
       activeTurnId: null,
+      awaitingAsyncAnswers: false,
+      asyncAnswerTexts: [],
       turnUsage: {},
       pendingTurnStart: false,
       turns: Promise.resolve(),
@@ -772,6 +782,7 @@ async function runTurn(live: Live, input: SendTurnInput): Promise<void> {
   }
 
   live.emittedAssistantByItem.clear();
+  live.asyncAnswerTexts = [];
   live.turnUsage = {};
   live.emittedReasoningByItem.clear();
   live.emittedGeneratedImages.clear();
@@ -796,7 +807,7 @@ async function runTurn(live: Live, input: SendTurnInput): Promise<void> {
     const turnId = response.turn?.id ?? live.activeTurnId;
     // turn/completed can arrive before turn/start returns; don't resurrect a
     // finished turn's id after finishActiveTurn cleared activeTurnId.
-    if (turnId && live.turnDone) {
+    if (turnId && live.turnDone && !live.awaitingAsyncAnswers) {
       live.activeTurnId = live.activeTurnId ?? turnId;
       live.onEvent({ type: "turn.started", providerTurnId: turnId });
     }
@@ -813,6 +824,16 @@ async function runTurn(live: Live, input: SendTurnInput): Promise<void> {
     live.pendingTurnStart = false;
     live.turnDone = null;
     live.turnFailed = null;
+  }
+  if (!live.cancelled && !live.muteUpdates && live.asyncAnswerTexts.length) {
+    const text = live.asyncAnswerTexts.join("\n\n");
+    await runTurn(live, {
+      ...input,
+      text,
+      attachments: [],
+      runtimeInstructions: undefined,
+      onAccepted: undefined,
+    });
   }
 }
 
@@ -939,7 +960,18 @@ function handleNotification(live: Live, method: string, params: unknown): void |
           ...(resetsAt != null ? { resetsAt } : {}),
         });
       }
+      const keepQuestions =
+        mapped.turnCompleted.status === "completed" &&
+        !live.usageLimited &&
+        Array.from(live.questions.values()).some((question) => question.rpcId === null);
       live.usageLimited = false;
+      if (keepQuestions) {
+        live.awaitingAsyncAnswers = true;
+        live.activeTurnId = null;
+        clearServerRequests(live, true);
+        closeOpenAgentRows(live);
+        return;
+      }
       finishActiveTurn(live);
     }
   };
@@ -1001,6 +1033,7 @@ function showCodexAsyncQuestion(live: Live, rec: Record<string, unknown> | null)
       ...(reply !== "cancelled" && reply.kind === "answered" ? { reply } : {}),
     });
     showNextQuestion(live);
+    settleAsyncAnswers(live);
   });
 }
 
@@ -1256,6 +1289,7 @@ function publishCodexText(
 }
 
 function finishActiveTurn(live: Live, extraEvents: HarnessEvent[] = []): void {
+  live.awaitingAsyncAnswers = false;
   clearServerRequests(live);
   closeOpenAgentRows(live);
   live.turnEndPending = false;

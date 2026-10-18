@@ -18,7 +18,12 @@ export default defineConfig(async ({ mode }) => {
     // These are only reached through lazily loaded modules, so the startup scan
     // misses them; finding them later reloads the page mid-IPC on first run.
     optimizeDeps: {
-      include: ["@tauri-apps/api/webviewWindow", "zustand/vanilla"],
+      include: [
+        "@tauri-apps/api/webviewWindow",
+        "@tauri-apps/plugin-process",
+        "@tauri-apps/plugin-updater",
+        "zustand/vanilla",
+      ],
     },
     build: {
       // Preserve the browser targets used before the Vite 8 upgrade.

@@ -1,11 +1,12 @@
 name: Feature request
 description: Suggest an improvement to bycoda
-labels: [enhancement]
+labels: [enhancement, "status: needs-triage"]
 body:
   - type: markdown
     attributes:
       value: |
         Share an idea, a use case, or a limitation you would like to address. You do not need a complete design or implementation plan.
+        Write in the language you are comfortable with.
 
   - type: textarea
     id: idea
@@ -14,6 +15,31 @@ body:
       description: What would you like to improve, and how would it help?
     validations:
       required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Affected area
+      options:
+        - Unsure / other
+        - Chat, composer, drafts, and attachments
+        - Queue, Stop, and recovery
+        - Providers, transcripts, and history import
+        - Remote hosts and connections
+        - Git, branches, diffs, and pull requests
+        - Files, editor, and search
+        - Tasks, goals, and automations
+        - Notes
+        - Settings, usage, and notifications
+        - Installation, updates, and startup
+        - Accessibility, layout, and translations
+      default: 0
+
+  - type: textarea
+    id: impact
+    attributes:
+      label: Current workflow and impact (optional)
+      description: Who would benefit? How do you handle this today, and what is difficult or missing?
 
   - type: textarea
     id: solution

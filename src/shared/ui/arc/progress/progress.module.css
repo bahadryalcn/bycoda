@@ -49,6 +49,7 @@
   color: var(--ui-tone-success-fg);
 }
 .track {
+  position: relative;
   block-size: 8px;
   overflow: hidden;
   border: 1px solid var(--border);
@@ -64,18 +65,48 @@
 }
 .progress[data-tone="neutral"] {
   --progress-fill: var(--ui-tone-neutral-solid);
+  --progress-ink: var(--ui-tone-neutral-on-solid);
 }
 .progress[data-tone="info"] {
   --progress-fill: var(--ui-tone-info-solid);
+  --progress-ink: var(--ui-tone-info-on-solid);
 }
 .progress[data-tone="success"] {
   --progress-fill: var(--ui-tone-success-solid);
+  --progress-ink: var(--ui-tone-success-on-solid);
 }
 .progress[data-tone="warning"] {
   --progress-fill: var(--ui-tone-warning-solid);
+  --progress-ink: var(--ui-tone-warning-on-solid);
 }
 .progress[data-tone="danger"] {
   --progress-fill: var(--ui-tone-danger-solid);
+  --progress-ink: var(--ui-tone-danger-on-solid);
+}
+.progress[data-value-inside] .track {
+  block-size: 22px;
+  border: 0;
+  border-radius: var(--radius-control);
+}
+.progress[data-value-inside][data-compact] .track {
+  block-size: 16px;
+}
+.insideValue,
+.insideFilledValue {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding-inline: var(--space-1);
+  color: var(--foreground);
+  font-size: var(--text-xs);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  white-space: nowrap;
+}
+.insideFilledValue {
+  color: var(--progress-ink, var(--ui-tone-accent-on-solid));
 }
 .progress[data-compact] .track {
   block-size: 4px;

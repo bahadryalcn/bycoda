@@ -54,18 +54,20 @@ function subscribe(listener = vi.fn()) {
 }
 
 describe("decorative motion", () => {
-  it("pauses on blur while WebView visibility stays visible, then resumes on focus", () => {
+  it("keeps visible motion running when another application takes focus", () => {
+    vi.spyOn(document, "hasFocus").mockReturnValue(false);
+    expect(decorativeMotionEnabled()).toBe(true);
     subscribe();
     window.dispatchEvent(new Event("blur"));
     expect(document.hidden).toBe(false);
-    expect(decorativeMotionEnabled()).toBe(false);
-    expect(document.documentElement.dataset.decorativeMotion).toBe("off");
+    expect(decorativeMotionEnabled()).toBe(true);
+    expect(document.documentElement.dataset.decorativeMotion).toBe("on");
     expect(loadDecorativeMotionEnabled()).toBe(true);
     window.dispatchEvent(new Event("focus"));
     expect(decorativeMotionEnabled()).toBe(true);
   });
 
-  it("requires visibility and focus together without changing the saved choice", () => {
+  it("requires visibility without changing the saved choice", () => {
     const hidden = vi.spyOn(document, "hidden", "get");
     subscribe();
     hidden.mockReturnValue(true);

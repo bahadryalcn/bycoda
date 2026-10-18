@@ -43,18 +43,24 @@ const flush = async () => {
   await Promise.resolve();
 };
 
-it("native blur overrides stale WebView visibility and invalidates an older initial query", async () => {
+it("keeps visible motion running through native and DOM blur", async () => {
+  native.isFocused.mockResolvedValue(false);
+  vi.spyOn(document, "hasFocus").mockReturnValue(false);
   stop = subscribeDecorativeMotion(vi.fn());
   focus({ payload: false });
+  window.dispatchEvent(new Event("blur"));
   await flush();
   expect(document.hidden).toBe(false);
-  expect(decorativeMotionEnabled()).toBe(false);
+  expect(decorativeMotionEnabled()).toBe(true);
+  expect(document.documentElement.dataset.decorativeMotion).toBe("on");
   focus({ payload: true });
   await flush();
   expect(decorativeMotionEnabled()).toBe(true);
 });
 
-it("pauses for native hide/minimize and resumes only when shown and focused", async () => {
+it("pauses for native hide/minimize and resumes while still unfocused", async () => {
+  native.isFocused.mockResolvedValue(false);
+  vi.spyOn(document, "hasFocus").mockReturnValue(false);
   stop = subscribeDecorativeMotion(vi.fn());
   await flush();
   native.isMinimized.mockResolvedValue(true);

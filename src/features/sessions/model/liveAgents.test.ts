@@ -124,9 +124,10 @@ describe("liveAgentsFromSessions", () => {
       working.id,
     ]);
     expect(liveAgentsFromSessions([working, waiting])[0]?.needsApproval).toBe(true);
+    expect(liveAgentsFromSessions([working, waiting])[0]?.inputKind).toBe("approval");
   });
 
-  it("treats a parked clarifying question as needing approval", () => {
+  it("keeps parked clarifying questions distinct from action approvals", () => {
     const waiting = chat("/tmp/ask", {
       busy: true,
       pendingQuestion: {
@@ -147,6 +148,7 @@ describe("liveAgentsFromSessions", () => {
       id: waiting.id,
       activity: "Which file?",
       needsApproval: true,
+      inputKind: "question",
       done: false,
     });
   });

@@ -1,0 +1,50 @@
+.tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  padding: 4px;
+  min-inline-size: 0;
+  background: var(--ui-surface);
+  border-block-end: 1px solid var(--color-stroke);
+  color: var(--color-content);
+}
+.field {
+  flex: 1 1 120px;
+  min-inline-size: 0;
+}
+.command {
+  min-inline-size: 0;
+  padding: 4px;
+  background: var(--ui-surface);
+}
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
+}
+.list {
+  display: grid;
+  max-block-size: 160px;
+  overflow: auto;
+}
+.option {
+  min-inline-size: 0;
+  justify-content: start;
+  text-align: start;
+}
+.option[aria-selected="true"] {
+  background: var(--ui-surface-selected);
+}
+.text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+}
+.hint {
+  color: var(--ui-text-muted);
+  font-size: 11px;
+  padding: 4px;
+}

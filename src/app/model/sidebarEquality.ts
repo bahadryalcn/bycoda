@@ -76,6 +76,7 @@ export function liveAgentsEqual(a: readonly LiveAgent[], b: readonly LiveAgent[]
         agent.startedAt === other.startedAt &&
         agent.durationMs === other.durationMs &&
         agent.needsApproval === other.needsApproval &&
+        agent.inputKind === other.inputKind &&
         agent.done === other.done &&
         agent.issue === other.issue &&
         agent.ownerWindowLabel === other.ownerWindowLabel

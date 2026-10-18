@@ -85,7 +85,7 @@
   block-size: var(--ui-control-checkbox-size);
   flex: none;
   place-items: center;
-  border: 1px solid var(--ui-tone-neutral-border);
+  border: 1px solid var(--ui-text-secondary);
   border-radius: 50%;
 }
 .dot {
@@ -110,9 +110,10 @@
   display: block;
 }
 .option strong {
-  color: var(--ui-text-secondary);
-  font-size: var(--ui-font-caption);
+  color: var(--ui-tone-neutral-fg);
+  font-size: var(--ui-font-secondary);
   font-weight: 500;
+  line-height: 1.5;
 }
 .option:has(input:checked) strong {
   color: var(--ui-tone-neutral-fg);
@@ -124,4 +125,7 @@
 }
 .option:has(input:disabled) :is(strong, small) {
   color: var(--ui-control-disabled-fg);
+}
+.option:has(input:disabled) .mark {
+  border-color: var(--ui-control-disabled-border);
 }

@@ -290,7 +290,7 @@ fn validate_upsert(input: &AutomationUpsert, now: i64) -> Result<(), String> {
     }
     if !matches!(
         input.trigger_kind.as_str(),
-        "time" | "github" | "linear" | "jira" | "gitlab" | "azuredevops"
+        "time" | "github" | "linear" | "jira" | "gitlab" | "azuredevops" | "tasks" | "social"
     ) {
         return Err("Invalid automation trigger.".into());
     }
@@ -334,7 +334,7 @@ fn validate_upsert(input: &AutomationUpsert, now: i64) -> Result<(), String> {
 fn validate_trigger(trigger: &AutomationTrigger) -> Result<(), String> {
     if !matches!(
         trigger.kind.as_str(),
-        "time" | "github" | "linear" | "jira" | "gitlab" | "azuredevops"
+        "time" | "github" | "linear" | "jira" | "gitlab" | "azuredevops" | "tasks" | "social"
     ) {
         return Err("Invalid automation trigger.".into());
     }
@@ -930,7 +930,7 @@ pub fn automations_claim_event(
     validate_event_key(&claim.event_key)?;
     if !matches!(
         claim.event_kind.as_str(),
-        "github" | "linear" | "jira" | "gitlab" | "azuredevops"
+        "github" | "linear" | "jira" | "gitlab" | "azuredevops" | "tasks" | "social"
     ) {
         return Err("Invalid automation trigger.".into());
     }
@@ -1046,6 +1046,19 @@ pub fn automation_run_update(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn accepts_task_and_social_triggers_without_accepting_unknown_sources() {
+        for (kind, event) in [("tasks", "task_blocked"), ("social", "message_received")] {
+            let mut trigger: AutomationTrigger = serde_json::from_value(serde_json::json!({
+                "id": "event-trigger", "kind": kind, "event": event
+            }))
+            .unwrap();
+            assert!(validate_trigger(&trigger).is_ok());
+            trigger.kind = "unknown-source".into();
+            assert!(validate_trigger(&trigger).is_err());
+        }
+    }
 
     #[test]
     fn validates_time_fields() {

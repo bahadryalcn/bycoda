@@ -23,6 +23,7 @@ import {
   tabCommandKeybinding,
 } from "../../../features/workspace/model/tabKeys";
 import { handleEditorFindKey } from "../../../features/files/editor/editorFindBridge";
+import { terminalToolShortcut } from "../../../features/terminal/model/terminalKeys";
 import type { WorkspaceActions, WorkspaceRun } from "./useWorkspaceActions";
 
 export interface WorkspaceKeyboardShortcutDeps {
@@ -64,6 +65,11 @@ export function useWorkspaceKeyboardShortcuts({
       // editor guards already do, and the app shortcut resolver does too, so
       // this keeps the whole handler consistent for whatever is added next.
       if (e.isComposing) return;
+      // Terminal tools own their input and scoped chords. This handler runs on
+      // window capture, before the terminal can prevent editor/global shortcuts.
+      const terminalTarget = e.target instanceof Element ? e.target : null;
+      if (terminalTarget?.closest("[data-terminal-tools]")) return;
+      if (terminalTarget?.closest(".bycoda-terminal") && terminalToolShortcut(e)) return;
       const customCommand = matchCustomKeybinding(e);
       const pressed = (command: string, defaultMatch: boolean) =>
         keybindingPressed(command, e, defaultMatch);

@@ -17,7 +17,11 @@ import {
 } from "../../../platform/tauri/pty";
 import { isOscColorQuery, oscColorReply } from "../model/terminalChrome";
 import { shouldPollTerminalMeta } from "../model/terminalMetaPolling";
-import { isMacTerminalClearShortcut, macTerminalShortcutData } from "../model/terminalKeys";
+import {
+  isMacTerminalClearShortcut,
+  macTerminalShortcutData,
+  terminalToolShortcut,
+} from "../model/terminalKeys";
 import { defaultTerminalTitle, parseOsc7Cwd, type TerminalMetaPatch } from "../model/terminalTab";
 import { isLightScheme, SCHEME_CHANGE_EVENT } from "../../settings/model/appearance";
 import {
@@ -32,6 +36,7 @@ import "@xterm/xterm/css/xterm.css";
 import { takeTerminalCommand } from "../model/terminalLaunchCommand";
 import { activateTerminalLink } from "../model/terminalLinks";
 import { TerminalSelectionMenu } from "./TerminalSelectionMenu";
+import { TerminalTools, type TerminalTool } from "./TerminalTools";
 
 type Props = {
   id: string;
@@ -201,6 +206,8 @@ export function TerminalView({ id, cwd, profile, active, onMetaChange }: Props) 
   const hostRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<Terminal | null>(null);
   const [terminal, setTerminal] = useState<Terminal | null>(null);
+  const [tool, setTool] = useState<TerminalTool>(null);
+  const [shellReady, setShellReady] = useState(false);
   const spawned = useRef(false);
   const applySizeRef = useRef<() => void>(() => {});
   const onMetaChangeRef = useRef(onMetaChange);
@@ -230,6 +237,8 @@ export function TerminalView({ id, cwd, profile, active, onMetaChange }: Props) 
     term.loadAddon(new WebLinksAddon(activateTerminalLink));
     termRef.current = term;
     setTerminal(term);
+    setShellReady(false);
+    setTool(null);
     let closed = false;
 
     const onCopy = (event: ClipboardEvent) => {
@@ -335,6 +344,7 @@ export function TerminalView({ id, cwd, profile, active, onMetaChange }: Props) 
         (code) => {
           if (closed) return;
           spawned.current = false;
+          setShellReady(false);
           runningProcessRef.current = null;
           onMetaChangeRef.current?.({
             title: defaultTerminalTitle(cwdRef.current),
@@ -354,6 +364,7 @@ export function TerminalView({ id, cwd, profile, active, onMetaChange }: Props) 
       .then(() => {
         if (!closed) {
           spawned.current = true;
+          setShellReady(true);
           const command = takeTerminalCommand(id);
           if (command) return writePty(id, `${command}\r`);
         }
@@ -584,12 +595,35 @@ export function TerminalView({ id, cwd, profile, active, onMetaChange }: Props) 
       ref={outerRef}
       className="bycoda-terminal flex h-full w-full min-h-0 min-w-0 flex-col"
       onMouseDown={() => termRef.current?.focus()}
+      onKeyDownCapture={(event) => {
+        if (event.nativeEvent.isComposing) return;
+        const next = terminalToolShortcut(event);
+        if (!next) return;
+        // Scope shortcuts to this terminal (including split panes), before xterm
+        // or workspace search handlers consume them.
+        event.preventDefault();
+        event.stopPropagation();
+        if (
+          next === "command" &&
+          (!spawned.current || termRef.current?.buffer.active.type === "alternate")
+        )
+          return;
+        if (tool === next) {
+          const input = outerRef.current?.querySelector<HTMLInputElement>(
+            "[data-terminal-tools] input",
+          );
+          input?.focus();
+          input?.select();
+        }
+        setTool(next);
+      }}
     >
+      <TerminalTools terminal={terminal} mode={tool} onModeChange={setTool} ready={shellReady} />
       <div ref={hostRef} className="bycoda-terminal-host min-h-0 min-w-0 flex-1 overflow-hidden" />
       <TerminalSelectionMenu
         terminal={terminal}
         host={hostRef}
-        active={active && onScreen}
+        active={active && onScreen && tool !== "search"}
         cwd={cwd}
       />
     </div>

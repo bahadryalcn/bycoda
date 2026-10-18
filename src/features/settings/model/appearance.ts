@@ -6,6 +6,7 @@ import { hslToRgb, isHexColor, type Rgb } from "../../../shared/lib/colorUtils";
 import { IS_LINUX, IS_MAC } from "../../../platform/tauri/platform";
 import { readFlag, writeFlag } from "./storageFlags";
 import { applyUiScale, loadUiScale } from "./uiScale";
+import { runThemeTransition } from "./themeTransition";
 import {
   applyPreparedNewThreadBackground,
   clearPreparedNewThreadBackground,
@@ -410,8 +411,15 @@ export function isLightScheme(): boolean {
   return document.documentElement.classList.contains("theme-light");
 }
 
-export function applyThemePreference(value: ThemePreference): ColorScheme {
+export function applyThemePreference(
+  value: ThemePreference,
+  { animate = false }: { animate?: boolean } = {},
+): ColorScheme {
   const next = resolveColorScheme(value);
+  if (animate) {
+    runThemeTransition(() => applyThemePreference(value), isLightScheme() !== (next === "light"));
+    return next;
+  }
   document.documentElement.classList.toggle("theme-light", next === "light");
   if (nativeGlassReady) syncNativeGlass(next);
   window.dispatchEvent(new CustomEvent<ColorScheme>(SCHEME_CHANGE_EVENT, { detail: next }));
@@ -499,7 +507,7 @@ export function watchSystemColorScheme() {
   systemColorSchemeWatching = true;
   query.addEventListener("change", () => {
     const preference = loadThemePreference();
-    if (preference === "system") applyThemePreference(preference);
+    if (preference === "system") applyThemePreference(preference, { animate: true });
   });
 }
 

@@ -42,6 +42,27 @@ function card(): HTMLElement {
   return container.querySelector('[data-session-card="session-1"]')!;
 }
 
+it("updates the session badge when a question replaces an action approval", async () => {
+  props.approvalSessionIds = new Set(["session-1"]);
+  const agent = {
+    id: "session-1",
+    cwd: props.cwd,
+    title: "Waiting session",
+    harness: "codex" as const,
+    activity: "Choose an option",
+    needsApproval: true,
+    done: false,
+  };
+  props.liveAgents = [{ ...agent, inputKind: "approval" }];
+  await act(async () => render());
+  expect(card().textContent).toContain("Need approval");
+
+  props.liveAgents = [{ ...agent, inputKind: "question" }];
+  await act(async () => render());
+  expect(card().textContent).toContain("Question");
+  expect(card().textContent).not.toContain("Need approval");
+});
+
 function renameInput(): HTMLInputElement {
   return container.querySelector("input:not([placeholder])")!;
 }

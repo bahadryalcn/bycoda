@@ -1,5 +1,4 @@
 import { Progress } from "../../shared/ui/Progress";
-import { EmptyState } from "../../shared/ui/EmptyState";
 import { TextField } from "../../shared/ui/TextField";
 import { useDismissPopover } from "../../shared/hooks/useDismissPopover";
 import { t, useLocale, getLocale } from "../../shared/i18n";
@@ -144,12 +143,6 @@ export function UsageProviderChip({
     detailWindows.length === 0 &&
     (needsProviderLogin(detailLimits) || reconnectState !== "idle"),
   );
-  const tightest = windows.reduce<RateLimitWindow | null>((best, entry) => {
-    if (!best || entry.window.usedPercent > best.usedPercent) {
-      return entry.window;
-    }
-    return best;
-  }, null);
   const tooltip = windows
     .map((entry) => rateLimitWindowTooltip(entry.window, now, showRemaining))
     .join(" · ");
@@ -254,30 +247,26 @@ export function UsageProviderChip({
           </span>
         ) : null}
         {loading ? (
-          <span className="animate-pulse text-(--ui-text-secondary)">···</span>
+          <UnknownUsageBar label={t("Loading usage…")} loading />
         ) : disconnected ? (
           <span className="text-(--ui-text-secondary)">{t("not connected")}</span>
         ) : windows.length === 0 ? (
-          <span className="text-(--ui-text-secondary)">{emptyUsageLabel(limits)}</span>
+          <UnknownUsageBar label={limits.error ?? t("Usage unavailable")} />
         ) : (
-          <>
-            {tightest ? <MiniBar usedPct={tightest.usedPercent} /> : null}
-            <span className="flex min-w-0 items-center gap-1 tabular-nums">
-              {windows.map((entry, index) => (
-                <span key={entry.key} className="inline-flex items-center gap-1">
-                  {index > 0 ? <span className="text-(--ui-text-secondary)">·</span> : null}
-                  <span>
-                    {formatUsagePercent(
-                      showRemaining
-                        ? 100 - clampUsedPercent(entry.window.usedPercent)
-                        : entry.window.usedPercent,
-                    )}{" "}
-                    {formatRateLimitWindowChipLabel(entry.window, now)}
-                  </span>
+          <span className="flex min-w-0 items-center gap-2 tabular-nums">
+            {windows.map((entry, index) => (
+              <span key={entry.key} className="inline-flex items-center gap-1">
+                {index > 0 ? <span className="text-(--ui-text-secondary)">·</span> : null}
+                <MiniBar
+                  usedPct={entry.window.usedPercent}
+                  label={rateLimitWindowTooltip(entry.window, now, showRemaining)}
+                />
+                <span className="text-(--ui-text-secondary)">
+                  {formatRateLimitWindowChipLabel(entry.window, now)}
                 </span>
-              ))}
-            </span>
-          </>
+              </span>
+            ))}
+          </span>
         )}
       </Button>
       {open ? (
@@ -821,21 +810,20 @@ function UsageWindowCard({
           ? "Monthly limit"
           : `${formatWindowLabel(window.windowMinutes)} limit`;
   return (
-    <section className="rounded-lg bg-content/[0.045] px-3 py-2.5 ring-1 ring-inset ring-content/[0.06]">
+    <section className="rounded-lg border border-(--color-stroke) bg-(--ui-surface) px-3 py-2.5">
       <div className="flex items-baseline justify-between gap-3">
-        <h3 className="text-[11px] font-medium text-content/65">{title}</h3>
-        <span className="shrink-0 text-[11px] font-medium tabular-nums">
-          {formatUsagePercent(shown)} {showRemaining ? t("remaining") : t("used")}
-        </span>
+        <h3 className="text-[11px] font-medium text-(--ui-text-secondary)">{t(title)}</h3>
       </div>
       <Progress
-        compact
-        className="mt-2"
+        showValue
+        valuePlacement="inside"
+        valueLabel={`${formatUsagePercent(shown)} ${showRemaining ? t("remaining") : t("used")}`}
+        className="mbs-2"
         aria-label={`${title} ${showRemaining ? "remaining" : "used"}`}
         value={Math.round(shown)}
         tone={pct >= 90 ? "danger" : pct >= 80 ? "warning" : "neutral"}
       />
-      <div className="mt-1.5 flex items-center justify-between gap-3 text-[10px] leading-4 text-content/40">
+      <div className="mbs-1.5 flex items-center justify-between gap-3 text-[10px] leading-4 text-(--ui-text-secondary)">
         <span className="tabular-nums">
           {formatUsagePercent(showRemaining ? pct : remaining)}{" "}
           {showRemaining ? t("used") : t("remaining")}
@@ -897,16 +885,16 @@ function BankedResets({
     ...Array.from({ length: unlistedCount }, () => null),
   ];
   return (
-    <section className="mt-2.5 border-t border-content/[0.08] pt-2.5">
-      <div className="relative min-h-[78px] overflow-hidden rounded-lg bg-content/[0.04] px-3 py-3 pr-[84px] ring-1 ring-inset ring-content/[0.06]">
-        <div className="relative z-10 min-w-0">
+    <section className="mbs-2.5 border-t border-(--color-stroke) pbs-2.5">
+      <div className="flex items-center justify-between gap-3 px-1 py-1">
+        <div className="min-w-0">
           <div className="flex items-center gap-1.5">
             <h3 className="text-[11px] font-medium">{t("Banked resets")}</h3>
-            <span className="rounded-full bg-content/[0.07] px-1.5 py-px text-[9px] font-medium tabular-nums text-content/65 ring-1 ring-inset ring-content/[0.07]">
+            <span className="rounded-full bg-(--ui-surface-muted) px-1.5 py-px text-[9px] font-medium tabular-nums text-(--ui-text-secondary)">
               {count}
             </span>
           </div>
-          <p className="mt-0.5 text-[10px] leading-4 text-content/40">
+          <p className="mbs-0.5 text-[10px] leading-4 text-(--ui-text-secondary)">
             {count} {count === 1 ? t("reset") : t("resets")}
             {t(" available")}
           </p>
@@ -957,13 +945,13 @@ function BankedResetMascot({
   const mascot = projectMascot(project, name);
   return (
     <div
-      className="grid size-14 shrink-0 place-items-center rounded-xl border border-current/20 bg-current/5"
+      className="grid size-9 shrink-0 place-items-center"
       data-reset-mascot-mood="happy"
       data-mascot-name={mascot.name}
       style={{ color }}
       aria-hidden
     >
-      <ProjectMascot project={project} name={name} color={color} className="size-8" />
+      <ProjectMascot project={project} name={name} color={color} className="size-7" />
     </div>
   );
 }
@@ -992,7 +980,7 @@ function BankedResetRow({
 }) {
   useLocale();
   return (
-    <article className="rounded-lg bg-content/[0.04] px-2.5 py-2 ring-1 ring-inset ring-content/[0.06]">
+    <article className="rounded-lg border border-(--color-stroke) bg-(--ui-surface) px-2.5 py-2">
       <h4 className="text-[10px] font-medium leading-4 text-content/70">
         {credit?.title ?? t("Banked reset {p0}", { p0: index + 1 })}
       </h4>
@@ -1061,16 +1049,25 @@ function BankedResetRow({
 function EmptyUsageState({ limits, loading }: { limits: ProviderRateLimits; loading: boolean }) {
   useLocale();
   return (
-    <EmptyState
-      title={
-        loading
+    <div
+      className="flex flex-col gap-2 rounded-lg border border-dashed border-(--color-stroke) bg-(--ui-surface) px-3 py-3"
+      role="status"
+    >
+      <span className="text-[11px] font-medium">
+        {loading
           ? t("Loading usage…")
           : limits.status === "unavailable"
             ? t("Not connected")
-            : t("Usage unavailable")
-      }
-      description={limits.error ?? ""}
-    />
+            : t("Usage unavailable")}
+      </span>
+      <UnknownUsageBar
+        label={loading ? t("Loading usage…") : t("Usage unavailable")}
+        loading={loading}
+      />
+      {limits.error ? (
+        <p className="text-[11px] leading-relaxed text-(--ui-text-secondary)">{limits.error}</p>
+      ) : null}
+    </div>
   );
 }
 
@@ -1098,21 +1095,31 @@ function isResetOutcome(value: ResetActionState): value is CodexRateLimitResetOu
   );
 }
 
-function emptyUsageLabel(limits: ProviderRateLimits): string {
-  if (limits.status !== "error") return "—";
-  const text = limits.error?.toLowerCase() ?? "";
-  if (text.includes("expired") || text.includes("sign-in")) return "expired";
-  return "—";
+function UnknownUsageBar({ label, loading = false }: { label: string; loading?: boolean }) {
+  return (
+    <span
+      title={label}
+      aria-label={label}
+      className="inline-flex h-4 min-w-12 items-center justify-center rounded-sm border border-dashed border-(--color-stroke) bg-(--ui-surface-muted) px-1 text-[10px] text-(--ui-text-secondary)"
+    >
+      {loading ? "···" : "?"}
+    </span>
+  );
 }
 
-function MiniBar({ usedPct }: { usedPct: number }) {
+function MiniBar({ usedPct, label }: { usedPct: number; label: string }) {
   const showRemaining = useShowRemainingUsage();
   const pct = clampUsedPercent(usedPct);
   return (
     <Progress
       compact
-      aria-hidden="true"
-      className="w-8 shrink-0"
+      showValue
+      valuePlacement="inside"
+      valueLabel={formatUsagePercent(showRemaining ? 100 - pct : pct)}
+      aria-label={label}
+      aria-valuetext={label}
+      title={label}
+      className="w-12 shrink-0"
       value={showRemaining ? 100 - pct : pct}
       tone={pct >= 90 ? "danger" : pct >= 80 ? "warning" : "neutral"}
     />

@@ -15,6 +15,7 @@ import type { Block } from "../model/session";
 import { findTranscriptBlocks } from "../model/transcriptFind";
 import { peekTranscriptJump, subscribeTranscriptJump } from "../model/transcriptJump";
 import { keybindingPressed } from "../../settings/model/settings";
+import { useKeybindingShortcut } from "../../settings/model/useKeybindingShortcut";
 
 type Props = {
   blocks: Block[];
@@ -38,6 +39,7 @@ export const TranscriptFind = memo(function TranscriptFind({
   onSearchingChange,
 }: Props) {
   useLocale();
+  const findShortcut = useKeybindingShortcut("Editor: Find");
   const input = useRef<HTMLInputElement>(null);
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -132,7 +134,26 @@ export const TranscriptFind = memo(function TranscriptFind({
     return () => window.removeEventListener("keydown", onKey, true);
   });
 
-  if (!visible || !open) return null;
+  if (!visible) return null;
+
+  if (!open)
+    return (
+      <div
+        className={`pointer-events-none absolute top-2 z-40 ${side === "left" ? "left-3" : "right-3"}`}
+      >
+        <Button
+          className="pointer-events-auto"
+          variant="ghost"
+          motion="none"
+          iconOnly
+          label={t("Find in conversation")}
+          shortcut={findShortcut}
+          onClick={openFind}
+        >
+          <Search className="size-3.5" strokeWidth={1.75} />
+        </Button>
+      </div>
+    );
 
   return (
     <div
@@ -179,13 +200,23 @@ export const TranscriptFind = memo(function TranscriptFind({
               : t("No results")
             : ""}
         </span>
-        <FindButton label={t("Previous match")} onClick={() => step(-1)} disabled={!matches.length}>
+        <FindButton
+          label={t("Previous match")}
+          shortcut="Shift+Enter / Shift+F3"
+          onClick={() => step(-1)}
+          disabled={!matches.length}
+        >
           <ChevronUp className="size-3.5" strokeWidth={1.75} />
         </FindButton>
-        <FindButton label={t("Next match")} onClick={() => step(1)} disabled={!matches.length}>
+        <FindButton
+          label={t("Next match")}
+          shortcut="Enter / F3"
+          onClick={() => step(1)}
+          disabled={!matches.length}
+        >
           <ChevronDown className="size-3.5" strokeWidth={1.75} />
         </FindButton>
-        <FindButton label={t("Close find")} onClick={closeFind}>
+        <FindButton label={t("Close find")} shortcut="Esc" onClick={closeFind}>
           <X className="size-3.5" strokeWidth={1.75} />
         </FindButton>
       </div>
@@ -195,11 +226,13 @@ export const TranscriptFind = memo(function TranscriptFind({
 
 function FindButton({
   label,
+  shortcut,
   onClick,
   disabled,
   children,
 }: {
   label: string;
+  shortcut: string;
   onClick: () => void;
   disabled?: boolean;
   children: React.ReactNode;
@@ -210,6 +243,7 @@ function FindButton({
       variant="ghost"
       type="button"
       title={label}
+      shortcut={shortcut}
       aria-label={label}
       disabled={disabled}
       onClick={onClick}

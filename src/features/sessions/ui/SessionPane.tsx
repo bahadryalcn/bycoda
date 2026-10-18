@@ -81,6 +81,7 @@ import { isBackgroundOnly, type DockAgent } from "../model/activityDock";
 import { requestOpenSubagent, requestViewSubagent } from "./subagentFocus";
 import { AgentTranscript } from "./AgentTranscript";
 import { Modal } from "../../../shared/ui/Modal";
+import { useKeybindingShortcut } from "../../settings/model/useKeybindingShortcut";
 import { Button } from "../../../shared/ui/Button";
 import { PooledTranscript, type TranscriptPool } from "./TranscriptPool";
 import { TranscriptFind } from "./TranscriptFind";
@@ -92,7 +93,6 @@ import {
 import { EmptySession } from "./EmptySession";
 import { CrewBackdrop } from "./CrewBackdrop";
 import { useComposerDockMotion } from "./useComposerDockMotion";
-import { ALT, MOD } from "../../../platform/tauri/platform";
 import {
   acknowledgeQuoteRequest,
   ADD_TO_CHAT_EVENT,
@@ -107,11 +107,7 @@ import {
   toggleNotesPanel,
 } from "../../notes/notesPanel";
 import { SessionNotesPanel } from "../../notes/ui/SessionNotesPanel";
-import {
-  keybindingShortcutLabel,
-  loadNotesEnabled,
-  subscribeNotesEnabled,
-} from "../../settings/model/settings";
+import { loadNotesEnabled, subscribeNotesEnabled } from "../../settings/model/settings";
 import { getComposerDraft, setComposerDraft } from "../model/draftCache";
 import { BycodaWelcome } from "./BycodaWelcome";
 import { projectKey } from "../../../shared/lib/paths";
@@ -1211,7 +1207,8 @@ const LocalSessionPane = memo(function LocalSessionPane({
       }
     />
   ) : null;
-  const notesShortcut = keybindingShortcutLabel(NOTES_PANEL_COMMAND, `${MOD}${ALT}N`);
+  const notesShortcut = useKeybindingShortcut(NOTES_PANEL_COMMAND);
+  const closeShortcut = useKeybindingShortcut("Pane: Close");
   const notesButton =
     notesEnabled && visible && focused && !showNotesPanel ? (
       <Button
@@ -1220,7 +1217,8 @@ const LocalSessionPane = memo(function LocalSessionPane({
         iconOnly
         label={t("Open notes panel")}
         motion="none"
-        title={t("Notes{p0}", { p0: notesShortcut ? ` (${notesShortcut})` : "" })}
+        tooltip={t("Open notes panel")}
+        shortcut={notesShortcut}
         aria-label={t("Open notes panel")}
         data-no-drag
         onPointerDown={(event) => event.stopPropagation()}
@@ -1300,7 +1298,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
               iconOnly
               label={t("Close pane")}
               motion="none"
-              title={t("Close Pane ({p0}W)", { p0: MOD })}
+              shortcut={closeShortcut}
               aria-label={t("Close pane")}
               data-no-drag
               onPointerDown={(e) => e.stopPropagation()}

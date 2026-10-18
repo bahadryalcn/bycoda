@@ -126,17 +126,18 @@ function animatedMark(color = fullBlack) {
 const teaStyle = `<style>.tea-drop{animation:tea-red .85s cubic-bezier(.4,0,.2,1) forwards}@keyframes tea-red{from{fill:#000000}to{fill:${teaRed}}}@media(prefers-reduced-motion:reduce){.tea-drop{animation:none;fill:${teaRed}}}</style>`;
 assets["mark-tea-red-animated"] = svg(80, 80, teaStyle + animatedMark());
 assets["mark-tea-red-animated-dark"] = svg(80, 80, teaStyle + animatedMark(silver));
-// Startup uses a continuous clockwise color pulse, never a completed red mark.
-// Opacity-only motion keeps the loading cue without rotation or scaling.
-const teaLoadingStyle = `<style>.tea-drop{fill:${teaRed};opacity:.12;animation:tea-loading 1.2s linear infinite}@keyframes tea-loading{0%,50%,100%{opacity:.12}15%,25%{opacity:1}}</style>`;
+// White logo with exactly one red drop advancing clockwise every 240ms.
+// The previous drop returns to white, and reduced motion retains the white mark.
+const loadingWhite = "#FFFFFF";
+const teaLoadingStyle = `<style>.tea-drop{fill:${loadingWhite};animation:tea-loading 1.44s steps(1,end) infinite}@keyframes tea-loading{0%{fill:${teaRed}}16.6666667%,100%{fill:${loadingWhite}}}@media(prefers-reduced-motion:reduce){.tea-drop{animation:none;fill:${loadingWhite}}}</style>`;
 let loadingDrop = 0;
 assets["mark-tea-red-loading"] = svg(
   80,
   80,
   teaLoadingStyle +
-    animatedMark(silver).replace(
+    animatedMark(loadingWhite).replace(
       /animation-delay:[\d.]+s/g,
-      () => `animation-delay:${(-1.2 + loadingDrop++ * 0.2).toFixed(2)}s`,
+      () => `animation-delay:${(-1.44 + loadingDrop++ * 0.24).toFixed(2)}s`,
     ),
 );
 assets["logo-horizontal-tea-red-animated"] = svg(
@@ -176,6 +177,11 @@ assets.favicon = svg(
 );
 // Rename lettering without regenerating the existing marks or platform icons.
 const letteringOnly = process.argv.includes("--wordmarks-only");
+// Updating the startup loop must not regenerate unrelated marks or native icons.
+if (process.argv.includes("--loading-only")) {
+  await writeFile(`${root}/mark-tea-red-loading.svg`, assets["mark-tea-red-loading"]);
+  process.exit(0);
+}
 const isLettering = (name) => /^(wordmark|logo-horizontal|logo-stacked)(-|$)/.test(name);
 for (const [name, content] of Object.entries(assets)) {
   if (!letteringOnly || isLettering(name)) await writeFile(`${root}/${name}.svg`, content);

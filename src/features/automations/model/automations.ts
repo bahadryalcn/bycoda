@@ -25,7 +25,9 @@ export type AutomationTriggerKind =
   | "linear"
   | "jira"
   | "gitlab"
-  | "azuredevops";
+  | "azuredevops"
+  | "tasks"
+  | "social";
 
 export type AutomationTrigger = {
   id: string;

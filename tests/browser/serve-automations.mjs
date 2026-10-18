@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process";
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
+
 const require = createRequire(import.meta.url);
 const vite = join(dirname(require.resolve("vite/package.json")), "bin/vite.js");
 const config = "tests/browser/vite.automations.config.ts";

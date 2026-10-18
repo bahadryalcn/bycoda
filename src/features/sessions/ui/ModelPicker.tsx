@@ -46,6 +46,7 @@ import { HarnessIcon } from "./HarnessIcon";
 import { Popover } from "../../../shared/ui/Popover";
 import { MOD } from "../../../platform/tauri/platform";
 import { keybindingPressed } from "../../settings/model/settings";
+import { useKeybindingShortcut } from "../../settings/model/useKeybindingShortcut";
 import "./ModelPicker.css";
 
 import { ModelFlyout } from "./ModelFlyout";
@@ -128,6 +129,7 @@ export function ModelPicker({
 }: Props) {
   useLocale();
   const source = useModelSource();
+  const switchShortcut = useKeybindingShortcut("App: Switch Model");
   const refreshSource = useStableCallback(source.refresh);
   const accountsSnapshot = useSyncExternalStore(
     subscribeProviderAccounts,
@@ -582,6 +584,7 @@ export function ModelPicker({
         variant="item"
         ref={button}
         type="button"
+        shortcut={hotkeys ? switchShortcut : null}
         title={t("{p0} · Recent models: right-click or {p1}.", {
           p0: triggerTitle,
           p1: MOD,
@@ -589,7 +592,6 @@ export function ModelPicker({
         aria-label={`${HARNESS_TITLE[current.harness]}${
           current.provider ? `, ${current.provider.name},` : ""
         } ${currentLabel}${triggerEffortLabel ? `, effort ${triggerEffortLabel}` : ""}`}
-        aria-keyshortcuts={`${MOD}.`}
         aria-expanded={open || recentMenu != null}
         aria-haspopup={hideSettings ? "dialog" : "menu"}
         onMouseDown={(event) => event.preventDefault()}

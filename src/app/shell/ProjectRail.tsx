@@ -72,7 +72,8 @@ import {
   saveProjectRailWidth,
 } from "../../features/settings/model/appearance";
 import { basename, type GitDiffStats } from "../../platform/tauri/fs";
-import { IS_MAC, MOD } from "../../platform/tauri/platform";
+import { IS_MAC } from "../../platform/tauri/platform";
+import { useKeybindingShortcut } from "../../features/settings/model/useKeybindingShortcut";
 import { formatInteger } from "../../shared/lib/numbers";
 import { pathKey, projectKey, projectName } from "../../shared/lib/paths";
 import {
@@ -274,6 +275,10 @@ export function ProjectRail({
 }: Props) {
   useLocale();
   const workspaceFeatures = useWorkspaceFeatures();
+  const inboxShortcut = useKeybindingShortcut("App: Open Inbox");
+  const notesShortcut = useKeybindingShortcut("App: Open Notes");
+  const automationsShortcut = useKeybindingShortcut("App: Open Automations");
+  const tasksShortcut = useKeybindingShortcut("App: Open Tasks");
   const resize = useDragResize({
     min: railMin,
     max: () => sidePaneMaxWidth("rail", PROJECT_RAIL_WIDTH_MAX, 0.35, railMin),
@@ -784,8 +789,7 @@ export function ProjectRail({
                 icon={Search}
                 onClick={onSearch}
                 active={searchActive}
-                shortcut={`${MOD}K`}
-                ariaLabel={`Search (${MOD}K)`}
+                command="App: Search"
               />
             </div>
           )}
@@ -832,6 +836,7 @@ export function ProjectRail({
                           id: "inbox",
                           label: t("Inbox"),
                           active: inboxActive,
+                          shortcut: inboxShortcut,
                           ariaLabel: inboxUnseen ? `${t("Inbox")}, ${t("New items")}` : t("Inbox"),
                           icon: (
                             <span className="relative">
@@ -864,6 +869,7 @@ export function ProjectRail({
                           label: t("Notes"),
                           icon: <File />,
                           active: notesActive,
+                          shortcut: notesShortcut,
                           onSelect: onOpenNotes,
                           disabled: !onOpenNotes,
                         },
@@ -876,6 +882,7 @@ export function ProjectRail({
                           label: t("Automations"),
                           icon: <Zap />,
                           active: automationsActive,
+                          shortcut: automationsShortcut,
                           onSelect: onOpenAutomations,
                           disabled: !onOpenAutomations,
                         },
@@ -903,6 +910,7 @@ export function ProjectRail({
                           label: t("Tasks"),
                           icon: <DashboardSquare />,
                           active: tasksActive,
+                          shortcut: tasksShortcut,
                           onSelect: onOpenTasks,
                           disabled: !onOpenTasks,
                         },
@@ -1031,8 +1039,9 @@ export function ProjectRail({
                 ))}
               </div>
             </ProjectMultiSelect>
-            <div className="shrink-0 @max-[140px]/rail:hidden">
+            <div className="shrink-0 px-2 @max-[140px]/rail:hidden">
               <SidebarUpdateFooter
+                noticesOnly
                 update={updateNotice}
                 onOpenWhatsNew={onOpenWhatsNew}
                 onDismissUpdate={onDismissUpdate}
@@ -1047,9 +1056,9 @@ export function ProjectRail({
                   label={t("Settings")}
                   icon={Settings}
                   onClick={onOpenSettings}
-                  shortcut={`${MOD},`}
-                  ariaLabel={`Settings (${MOD},)`}
+                  command="App: Settings"
                 />
+                <SidebarUpdateFooter />
                 <Button
                   iconOnly
                   label={t("Manage hidden groups")}
@@ -2191,7 +2200,7 @@ function CompactLiveAgents({
           const project = resolveTabGroupLabel(key, groupLabels, seed);
           const color = resolveTabGroupColor(key, groupColors, groupCustomColors, seed);
           const activity = agent.needsApproval
-            ? "Need approval"
+            ? t(agent.inputKind === "question" ? "Question" : "Need approval")
             : agent.done
               ? "Done"
               : agent.activity;

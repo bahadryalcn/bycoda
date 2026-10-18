@@ -1,7 +1,13 @@
 import { Button } from "../../../shared/ui/Button";
 import { t, useLocale } from "../../../shared/i18n";
-import { ChevronDown, Lock, Pencil, Shield, Sparkles } from "../../../shared/ui/icons";
-import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
+import { Check, ChevronDown, Lock, Pencil, Shield, Sparkles } from "../../../shared/ui/icons";
+import {
+  useEffect,
+  useId,
+  useRef,
+  useState,
+  type KeyboardEvent as ReactKeyboardEvent,
+} from "react";
 import {
   RUNTIME_MODE_HINT,
   RUNTIME_MODE_LABEL,
@@ -31,6 +37,7 @@ const ICONS: Record<RuntimeMode, typeof Lock> = {
 export function AccessPicker({ value, onChange, onClose, busy = false, unavailable }: Props) {
   useLocale();
   const [open, setOpen] = useState(false);
+  const id = useId();
   const [active, setActive] = useState(() => Math.max(0, RUNTIME_MODES.indexOf(value)));
   const root = useRef<HTMLDivElement>(null);
   const onCloseRef = useRef(onClose);
@@ -119,6 +126,7 @@ export function AccessPicker({ value, onChange, onClose, busy = false, unavailab
           onDismiss={(reason) => dismiss(reason === "escape")}
           role="listbox"
           aria-label={t("Access")}
+          aria-activedescendant={`${id}-${RUNTIME_MODES[active]}`}
           data-access-picker
           tabIndex={-1}
           onKeyDown={onMenuKey}
@@ -131,14 +139,16 @@ export function AccessPicker({ value, onChange, onClose, busy = false, unavailab
             const highlighted = index === active && !reason;
             return (
               <Button
-                className="w-full text-left"
+                className="w-full items-start py-2 text-start"
                 fullWidth
-                layout="stacked"
-                selected={highlighted || selected}
+                layout="inline"
+                selected={highlighted}
                 variant="item"
                 key={mode}
                 type="button"
                 role="option"
+                id={`${id}-${mode}`}
+                tabIndex={-1}
                 aria-selected={selected}
                 aria-disabled={reason ? true : undefined}
                 title={reason}
@@ -149,14 +159,18 @@ export function AccessPicker({ value, onChange, onClose, busy = false, unavailab
                 onClick={() => pick(mode)}
               >
                 <ModeIcon
-                  className={`mt-0.5 size-3.5 shrink-0 ${mode === "full-access" ? "text-(--ui-tone-warning-fg)" : "text-(--ui-text-secondary)"}`}
+                  aria-hidden="true"
+                  className={`mbs-0.5 size-3.5 shrink-0 ${mode === "full-access" ? "text-(--ui-tone-warning-fg)" : "text-(--ui-text-secondary)"}`}
                   strokeWidth={1.75}
                 />
-                <span className="min-w-0">
-                  <span className="block text-[13px] font-medium leading-5">
-                    {RUNTIME_MODE_LABEL[mode]}
+                <span className="min-w-0 flex-1">
+                  <span className="flex items-center justify-between gap-2 text-[13px] font-medium leading-5">
+                    <span>{RUNTIME_MODE_LABEL[mode]}</span>
+                    {selected ? (
+                      <Check aria-hidden="true" className="size-3.5 shrink-0" strokeWidth={1.75} />
+                    ) : null}
                   </span>
-                  <span className="mt-0.5 block text-[11px] leading-4 text-(--ui-text-secondary)">
+                  <span className="block text-[11px] font-normal leading-4 text-(--ui-text-secondary)">
                     {reason ? t("Unavailable: {p0}", { p0: reason }) : RUNTIME_MODE_HINT[mode]}
                   </span>
                 </span>
@@ -164,7 +178,7 @@ export function AccessPicker({ value, onChange, onClose, busy = false, unavailab
             );
           })}
           {busy ? (
-            <p className="px-2 py-1.5 text-[11px] leading-4 text-(--ui-text-secondary)">
+            <p className="mbs-1 border-bs border-(--ui-tone-neutral-border) px-2 py-2 text-[11px] font-normal leading-4 text-(--ui-text-secondary)">
               {t("Access changes apply to the next turn. Stop and resend to apply them now.")}
             </p>
           ) : null}

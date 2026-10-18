@@ -218,11 +218,7 @@ function SearchableSelectMenu({
 
   const openMenu = () => {
     if (disabled || trigger.current?.matches(":disabled")) return;
-    setMenuWidth(
-      variant === "pill" || variant === "row"
-        ? Math.max(240, root.current?.getBoundingClientRect().width ?? 0)
-        : root.current?.getBoundingClientRect().width,
-    );
+    setMenuWidth(Math.max(240, root.current?.getBoundingClientRect().width ?? 0));
     setQuery("");
     setActive(
       Math.max(

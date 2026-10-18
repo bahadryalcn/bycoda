@@ -1,5 +1,12 @@
 type TerminalKeyEvent = Pick<KeyboardEvent, "key" | "altKey" | "ctrlKey" | "metaKey" | "shiftKey">;
 
+export function terminalToolShortcut(event: TerminalKeyEvent): "search" | "command" | null {
+  if (event.altKey || event.shiftKey || (event.ctrlKey && event.metaKey)) return null;
+  if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "f") return "search";
+  if (event.ctrlKey && !event.metaKey && event.key === " ") return "command";
+  return null;
+}
+
 /** Translate macOS editing shortcuts into sequences understood by common shells. */
 export function macTerminalShortcutData(event: TerminalKeyEvent): string | null {
   if (event.ctrlKey || event.shiftKey) return null;

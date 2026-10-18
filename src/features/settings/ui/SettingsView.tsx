@@ -11,6 +11,7 @@ import { GroupLockSettings } from "../../group-lock/ui/GroupLockSettings";
 
 import { WindowControls } from "../../../app/shell/WindowControls";
 import { SETTINGS_SECTION_ICONS } from "../../../app/shell/SettingsRail";
+import { SidebarUpdateFooter } from "../../../app/shell/SidebarUpdate";
 import { useLockOverscroll } from "../../../shared/hooks/useLockOverscroll";
 
 import { IS_MAC } from "../../../platform/tauri/platform";
@@ -273,6 +274,7 @@ export function SettingsView({
           <span>{section === "usage" ? t("Usage") : t("Settings")}</span>
         </div>
         <div className="bycoda-settings-toolbar-actions">
+          <SidebarUpdateFooter />
           <SettingsSearch onReveal={onReveal} />
           {section === "appearance" ? (
             <Button

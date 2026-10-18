@@ -32,11 +32,8 @@ import {
 import { GitPickerTrigger } from "../../source-control/ui/GitPickerTrigger";
 import { Popover } from "../../../shared/ui/Popover";
 import { LAYER } from "../../../shared/lib/layers";
-import {
-  keybindingPressed,
-  keybindingShortcutLabel,
-  keybindingShortcutTokens,
-} from "../../settings/model/settings";
+import { keybindingPressed, keybindingShortcutTokens } from "../../settings/model/settings";
+import { useKeybindingShortcut } from "../../settings/model/useKeybindingShortcut";
 
 export const WORKSPACE_MODE_SHORTCUT = `${MOD}${SHIFT}G`;
 const WORKSPACE_SURFACES = "[data-workspace-picker],[data-existing-worktrees-submenu]";
@@ -263,7 +260,7 @@ function WorkspaceModePicker({
     }, HOVER_CLOSE_MS);
   };
   const label = mode === "worktree" ? "New worktree" : "Current checkout";
-  const shortcut = keybindingShortcutLabel("Composer: Toggle Workspace", WORKSPACE_MODE_SHORTCUT);
+  const shortcut = useKeybindingShortcut("Composer: Toggle Workspace");
   const shortcutTokens = keybindingShortcutTokens(
     "Composer: Toggle Workspace",
     "Meta+Shift+G Control+Shift+G",
@@ -278,7 +275,8 @@ function WorkspaceModePicker({
           motion="none"
           type="button"
           disabled={!enabled}
-          title={shortcut ? t("Workspace: {p0} ({p1})", { p0: label, p1: shortcut }) : undefined}
+          title={t("Workspace: {p0}", { p0: label })}
+          shortcut={shortcut}
           aria-label={t("Workspace {p0}", { p0: label })}
           aria-keyshortcuts={shortcutTokens ?? undefined}
           aria-haspopup="dialog"

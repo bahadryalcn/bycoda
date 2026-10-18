@@ -30,7 +30,12 @@ describe("automation templates", () => {
 
   it("only uses inbox events that actually fire", () => {
     for (const template of AUTOMATION_TEMPLATES) {
-      if (template.trigger.kind === "time") continue;
+      if (
+        template.trigger.kind === "time" ||
+        template.trigger.kind === "tasks" ||
+        template.trigger.kind === "social"
+      )
+        continue;
       const supported =
         SUPPORTED_INBOX_TRIGGER_EVENTS[
           template.trigger.kind as keyof typeof SUPPORTED_INBOX_TRIGGER_EVENTS

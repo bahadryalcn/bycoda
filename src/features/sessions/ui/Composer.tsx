@@ -38,6 +38,7 @@ import {
   Square,
   StickyNote,
   Trash2,
+  Undo2,
   X,
 } from "../../../shared/ui/icons";
 import {
@@ -165,6 +166,7 @@ import { NoteMiniCard } from "../../notes/ui/NoteMiniCard";
 import { HandoffMiniCard } from "./HandoffMiniCard";
 import { ModelPicker } from "./ModelPicker";
 import { Button } from "../../../shared/ui/Button";
+import { useKeybindingShortcut } from "../../settings/model/useKeybindingShortcut";
 import { QuestionForm } from "./QuestionForm";
 import { ComposerSuggestions } from "./ComposerSuggestions";
 import { SkillPicker } from "../../skills/ui/SkillPicker";
@@ -174,7 +176,6 @@ import { useTabGroupLogos } from "../../projects/hooks/useTabGroupLogos";
 import { useProjectBranchesState } from "../../source-control/hooks/useProjectBranches";
 import {
   keybindingPressed,
-  keybindingShortcutLabel,
   loadNotesEnabled,
   subscribeNotesEnabled,
 } from "../../settings/model/settings";
@@ -271,7 +272,6 @@ import {
   templateTriggerAt,
 } from "../model/promptTemplates";
 import { SessionDirsPicker } from "./SessionDirsPicker";
-import { IS_MAC } from "../../../platform/tauri/platform";
 
 type Props = {
   enabled?: boolean;
@@ -567,6 +567,7 @@ function MessageQueue({
                   type="button"
                   data-queue-handle={message.id}
                   title={t("Drag to reorder")}
+                  shortcut="Alt+↑ / Alt+↓"
                   aria-label={t("Reorder queued message")}
                   aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown"
                   onPointerDown={(event) => sortable.onItemPointerDown(message.id, event)}
@@ -872,6 +873,8 @@ export const Composer = memo(function Composer({
   const [files, setFiles] = useState<ProjectFile[]>(() => peekProjectFiles(localCwd) ?? []);
   const notesEnabled = useSyncExternalStore(subscribeNotesEnabled, loadNotesEnabled, () => true);
   const spelling = useComposerSpelling();
+  const queueShortcut = useKeybindingShortcut(QUEUE_MESSAGE_COMMAND);
+  const stopShortcut = useKeybindingShortcut(STOP_TURN_COMMAND);
   const promptTemplates = useSyncExternalStore(
     subscribePromptTemplates,
     loadPromptTemplates,
@@ -2392,18 +2395,7 @@ export const Composer = memo(function Composer({
       return;
     }
 
-    if (
-      e.key === "ArrowUp" &&
-      editLastTurnSupported &&
-      navigationEmpty &&
-      e.currentTarget.selectionStart === 0 &&
-      e.currentTarget.selectionEnd === 0
-    ) {
-      e.preventDefault();
-      recallLastTurn();
-      return;
-    }
-
+    // Plain arrows browse prompt history; Esc Esc owns conversation rewind.
     if (e.key === "ArrowUp" || e.key === "ArrowDown") {
       const el = e.currentTarget;
       const result = historyKey({
@@ -3265,6 +3257,7 @@ export const Composer = memo(function Composer({
                 variant="ghost"
                 type="button"
                 title={t("Stop editing last message")}
+                shortcut="Esc"
                 aria-label={t("Stop editing last message")}
                 onMouseDown={(event) => event.preventDefault()}
                 onClick={exitEditMode}
@@ -3272,6 +3265,24 @@ export const Composer = memo(function Composer({
               >
                 <X className="size-3" strokeWidth={1.8} />
                 <span>{t("Cancel edit")}</span>
+              </Button>
+            ) : null}
+            {editLastTurnSupported &&
+            lastTurnRecall &&
+            !busy &&
+            !resendEdited &&
+            navigationEmpty ? (
+              <Button
+                variant="ghost"
+                motion="none"
+                iconOnly
+                label={t("Rewind and edit")}
+                shortcut="Esc Esc"
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={recallLastTurn}
+                disabled={disabled || worktreeRemoved}
+              >
+                <Undo2 className="size-3.5" />
               </Button>
             ) : null}
             <div
@@ -3333,11 +3344,8 @@ export const Composer = memo(function Composer({
                     ? () => submit(ref.current?.value ?? "", true)
                     : undefined
                 }
-                queueShortcut={keybindingShortcutLabel(
-                  QUEUE_MESSAGE_COMMAND,
-                  IS_MAC ? "⇧Tab" : "Shift+Tab",
-                )}
-                stopShortcut={keybindingShortcutLabel(STOP_TURN_COMMAND, "Esc")}
+                queueShortcut={queueShortcut}
+                stopShortcut={stopShortcut ? `${stopShortcut} / Ctrl+C` : "Ctrl+C"}
                 onStop={() => onStop?.()}
               />
             </div>
@@ -3548,14 +3556,7 @@ export function ComposerAction({
   useLocale();
   if (disabled && !busy) {
     return (
-      <Button
-        variant="primary"
-        motion="none"
-        iconOnly
-        label={label}
-        tooltip={`${label} (Enter)`}
-        disabled
-      >
+      <Button variant="primary" motion="none" iconOnly label={label} shortcut="Enter" disabled>
         <ArrowUp className="size-3.5" strokeWidth={2.25} />
       </Button>
     );
@@ -3570,11 +3571,8 @@ export function ComposerAction({
                 motion="none"
                 iconOnly
                 label={t("Queue message")}
-                tooltip={
-                  queueShortcut
-                    ? t("Queue message for when this turn finishes ({p0})", { p0: queueShortcut })
-                    : t("Queue message for when this turn finishes")
-                }
+                tooltip={t("Queue message for when this turn finishes")}
+                shortcut={queueShortcut}
                 data-usage-guide="queue-button"
                 onClick={onQueue}
               >
@@ -3586,7 +3584,8 @@ export function ComposerAction({
               motion="none"
               iconOnly={!busyLabel}
               label={label}
-              tooltip={`${busyLabel ?? label} (Enter)`}
+              tooltip={busyLabel ?? label}
+              shortcut="Enter"
               aria-description={busyLabel}
               onClick={onSend}
             >
@@ -3599,7 +3598,7 @@ export function ComposerAction({
           motion="none"
           iconOnly
           label={t("Stop")}
-          tooltip={stopShortcut ? `${t("Stop")} (${stopShortcut})` : t("Stop")}
+          shortcut={stopShortcut}
           data-usage-guide="stop-button"
           onClick={onStop}
         >
@@ -3615,7 +3614,8 @@ export function ComposerAction({
       motion="none"
       iconOnly
       label={blockedReason ? `${label}. ${blockedReason}` : label}
-      tooltip={blockedReason ?? `${label} (Enter)`}
+      tooltip={blockedReason ?? label}
+      shortcut={blockedReason ? null : "Enter"}
       disabled={!hasValue}
       onClick={onSend}
       aria-description={blockedReason}

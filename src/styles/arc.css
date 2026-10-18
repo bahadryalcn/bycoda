@@ -198,8 +198,10 @@ html[data-control-density="touch"] .bycoda-arc-switch {
   line-height: var(--leading-body);
 }
 
-.bycoda-arc-select-option:has(.bycoda-select-description) {
+.bycoda-arc-menu .bycoda-arc-select-option:has(.bycoda-select-description) {
   min-block-size: var(--ui-control-height-lg);
+  padding-block: var(--space-2);
+  line-height: var(--leading-body);
 }
 
 .bycoda-arc .bycoda-arc-select-option:is([data-highlighted], [aria-selected="true"]) {

@@ -61,6 +61,7 @@ jobs:
         with:
           node-version: 24
       - run: node scripts/checks/check-repository-hygiene.mjs
+      - run: node --test .github/scripts/issue-labels.test.cjs
 
   host:
     needs: changes

@@ -1,4 +1,5 @@
 import { Button } from "../../shared/ui/Button";
+import { useKeybindingShortcut } from "../../features/settings/model/useKeybindingShortcut";
 import type { IconComponent } from "../../shared/ui/icons";
 
 type Props = {
@@ -10,6 +11,7 @@ type Props = {
   badge?: number;
   dot?: boolean;
   shortcut?: string;
+  command?: string;
   ariaLabel?: string;
 };
 
@@ -21,9 +23,12 @@ export function RailAction({
   active = false,
   badge,
   dot = false,
-  shortcut,
+  shortcut: fallbackShortcut,
+  command,
   ariaLabel,
 }: Props) {
+  const currentShortcut = useKeybindingShortcut(command ?? "");
+  const shortcut = command ? currentShortcut : fallbackShortcut;
   return (
     <Button
       selected={active}
@@ -54,6 +59,7 @@ export function RailAction({
       disabled={!onClick}
       aria-label={ariaLabel ?? label}
       title={ariaLabel ?? label}
+      shortcut={shortcut}
       className={`relative flex w-full items-center gap-2 @max-[140px]/rail:justify-center`}
     >
       {badge != null ? (
@@ -90,7 +96,8 @@ export function RailSearch({
   icon: Icon,
   onClick,
   active = false,
-  shortcut,
+  shortcut: fallbackShortcut,
+  command,
   ariaLabel,
 }: {
   label: string;
@@ -98,8 +105,11 @@ export function RailSearch({
   onClick?: () => void;
   active?: boolean;
   shortcut?: string;
+  command?: string;
   ariaLabel?: string;
 }) {
+  const currentShortcut = useKeybindingShortcut(command ?? "");
+  const shortcut = command ? currentShortcut : fallbackShortcut;
   return (
     <Button
       selected={active}
@@ -110,6 +120,7 @@ export function RailSearch({
       disabled={!onClick}
       aria-label={ariaLabel ?? label}
       title={ariaLabel ?? label}
+      shortcut={shortcut}
       className={`relative flex w-full items-center gap-2 @max-[140px]/rail:justify-center`}
     >
       <Icon className="size-4 shrink-0 opacity-70" strokeWidth={1.75} />

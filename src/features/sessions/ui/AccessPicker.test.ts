@@ -61,4 +61,23 @@ describe("AccessPicker unavailable modes", () => {
     act(() => option("Full access")?.click());
     expect(onChange).toHaveBeenCalledWith("full-access");
   });
+
+  it("keeps the current selection distinct from keyboard navigation", () => {
+    const onChange = vi.fn();
+    open(onChange);
+    const menu = document.querySelector<HTMLElement>("[data-access-picker]")!;
+    act(() =>
+      menu.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true })),
+    );
+    expect(option("Auto-accept edits")?.getAttribute("aria-selected")).toBe("true");
+    expect(menu.getAttribute("aria-activedescendant")).toBe(option("An AI reviewer")?.id);
+    expect(option("An AI reviewer")?.getAttribute("data-button-selected")).toBe("true");
+    expect(option("Auto-accept edits")?.hasAttribute("data-button-selected")).toBe(false);
+    act(() => menu.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowUp", bubbles: true })));
+    act(() => menu.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowUp", bubbles: true })));
+    expect(menu.getAttribute("aria-activedescendant")).toBe(option("Auto-accept edits")?.id);
+    act(() => menu.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })));
+    expect(onChange).toHaveBeenCalledWith("auto-accept-edits");
+    expect(document.querySelector("[data-access-picker]")).toBeNull();
+  });
 });

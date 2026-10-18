@@ -260,6 +260,21 @@ Object.assign(window, {
           if (!project) throw new Error("Project belongs to a different fixture machine");
           return structuredClone(project);
         }
+        case "sessions.get":
+          return {
+            status: "idle",
+            session: {
+              title: `Preview ${params.sessionId}`,
+              blocks: [
+                { id: "owner", role: "user", text: "Please inspect the task" },
+                {
+                  id: "reply",
+                  role: "assistant",
+                  text: "Task transcript preview on its original host.",
+                },
+              ],
+            },
+          };
         case "tasks.list":
           return structuredClone(tasks[machineId]);
         case "goals.list":

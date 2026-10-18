@@ -18,6 +18,11 @@ afterEach(async () => {
   container.remove();
   vi.unstubAllGlobals();
 });
+async function openFilters() {
+  await act(async () =>
+    container.querySelector<HTMLButtonElement>('button[aria-haspopup="dialog"]')!.click(),
+  );
+}
 it("filters visible results and offers retries only for confirmed failures", async () => {
   const snapshot: SocialSnapshot = {
     executorId: "host",
@@ -72,7 +77,8 @@ it("filters visible results and offers retries only for confirmed failures", asy
   const uncertain = container.querySelector('[data-status="review"].social-history-record')!;
   expect(uncertain.textContent).toContain("aynı içeriği yeniden göndermeyin");
   expect(uncertain.querySelector("button")).toBeNull();
-  const status = Array.from(container.querySelectorAll("label"))
+  await openFilters();
+  const status = Array.from(document.querySelectorAll(".social-filter-panel label"))
     .find((label) => label.firstChild?.textContent === "Gönderim durumu")!
     .querySelector("select")!;
   await act(async () => {
@@ -122,7 +128,10 @@ it("clears a host date filter when the retained history controls are reset", asy
     );
   try {
     await act(async () => render());
-    const input = container.querySelector<HTMLInputElement>('input[type="date"]')!;
+    await openFilters();
+    const input = document.querySelector<HTMLInputElement>(
+      '.social-filter-panel input[type="date"]',
+    )!;
     await act(async () => {
       Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
         input,
@@ -201,7 +210,8 @@ it("keeps embedded job counts and local pages scoped to the selected conversatio
       }),
     ),
   );
-  const select = container.querySelector<HTMLSelectElement>("select")!;
+  await openFilters();
+  const select = document.querySelector<HTMLSelectElement>(".social-filter-panel select")!;
   expect(select.querySelector('option[value=""]')?.textContent).toBe("Tüm işler · 35");
   expect(select.querySelector('option[value="failed"]')?.textContent).toContain("35");
   expect(select.querySelector('option[value="succeeded"]')?.textContent).toContain("0");

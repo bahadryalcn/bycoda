@@ -1,9 +1,8 @@
 .social-programs {
   display: grid;
-  gap: 1rem;
+  gap: 0.75rem;
   min-inline-size: 0;
-  padding-block: 1rem;
-  border-block-end: 1px solid var(--color-stroke);
+  padding-block: 0;
 }
 .social-program-form {
   display: grid;
@@ -13,12 +12,12 @@
   display: grid;
   gap: 0.75rem;
   min-inline-size: 0;
-  border: 1px solid var(--color-stroke);
-  border-radius: 0.5rem;
-  padding: 1rem;
+  border: 0;
+  border-block-start: 1px solid var(--color-stroke);
+  padding: 0.75rem 0;
 }
 .social-program-form legend {
-  padding-inline: 0.5rem;
+  padding-inline: 0;
   font-weight: 600;
 }
 .social-program-grid,
@@ -49,11 +48,13 @@
   display: inline-flex;
   align-items: center;
   gap: 0.375rem;
-  min-block-size: 2.75rem;
+  min-block-size: 2rem;
 }
 .social-program-list {
   display: grid;
-  gap: 0.5rem;
+  align-content: start;
+  gap: 0.25rem;
+  min-inline-size: 0;
 }
 .social-program-list > button {
   display: flex;
@@ -62,10 +63,275 @@
   gap: 0.5rem;
 }
 .social-program-calendar > article {
-  border: 1px solid var(--color-stroke);
+  background: var(--ui-surface);
   border-radius: 0.5rem;
   padding: 0.75rem;
   min-inline-size: 0;
+}
+
+.social-campaign-page > [hidden],
+.social-campaign-manual[hidden] {
+  display: none;
+}
+.social-campaign-modes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  align-items: center;
+}
+.social-view .social-campaign-page {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: stretch;
+  inline-size: 100%;
+}
+.social-campaign-page > div {
+  min-inline-size: 0;
+}
+.social-campaign-manual {
+  display: grid;
+  gap: 0.75rem;
+  min-inline-size: 0;
+  inline-size: 100%;
+}
+.social-campaign-manual {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+}
+.social-campaign-manual > .social-columns {
+  grid-column: 1 / -1;
+  align-self: stretch;
+}
+.social-campaign-content {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: start;
+  gap: 1.25rem;
+}
+.social-campaign-previews {
+  flex: 2 1 24rem;
+  min-inline-size: 0;
+  display: grid;
+  gap: 1rem;
+}
+.social-campaign-controls {
+  flex: 1 1 17rem;
+  min-inline-size: 0;
+  background: var(--ui-surface);
+  border-radius: var(--radius-panel);
+  padding: 1rem;
+}
+.social-campaign-previews .social-preview {
+  padding: 1rem;
+  margin: 0;
+  background: var(--ui-surface);
+}
+.social-campaign-previews .social-message {
+  font-size: 0.9375rem;
+  line-height: 1.65;
+}
+.social-program-inline {
+  display: grid;
+  gap: 1rem;
+  min-inline-size: 0;
+}
+.social-program-inline > header {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1rem;
+  align-items: baseline;
+}
+.social-program-inline > header :is(h2, p) {
+  margin: 0;
+}
+.social-program-inline > header p {
+  color: var(--ui-text-secondary);
+}
+.social-program-steps,
+.social-program-setup-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+.social-program-setup-actions {
+  position: sticky;
+  inset-block-end: 0;
+  z-index: 1;
+  padding-block: 0.75rem;
+  background: var(--ui-surface);
+  border-block-start: 1px solid var(--color-stroke);
+}
+.social-program-content-options[open] {
+  display: grid;
+  gap: 0.875rem;
+}
+.social-program-step {
+  display: grid;
+  gap: 1rem;
+  min-inline-size: 0;
+}
+.social-program-review {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 15rem), 1fr));
+  gap: 1rem;
+  margin: 0;
+  padding: 1rem;
+  background: var(--ui-surface);
+  border-radius: var(--radius-panel);
+}
+.social-program-review dt {
+  color: var(--ui-text-secondary);
+}
+.social-program-review dd {
+  margin-block: 0.375rem 0;
+  margin-inline: 0;
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+.social-program-step[data-program-step="0"] {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: start;
+}
+.social-program-step[data-program-step="0"] > fieldset {
+  flex: 2 1 30rem;
+  order: 0;
+}
+.social-program-assistant {
+  flex: 1 1 18rem;
+  order: 1;
+  background: var(--ui-surface);
+  padding: 1rem;
+  border-radius: var(--radius-panel);
+}
+.social-program-step[data-program-step="0"]
+  > .social-program-advanced:not(.social-program-assistant) {
+  flex: 1 1 100%;
+  order: 2;
+}
+.social-program-step[hidden] {
+  display: none;
+}
+.social-plan-setup {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: start;
+  gap: 1.25rem;
+}
+.social-plan-content {
+  display: grid;
+  gap: 0.875rem;
+  flex: 1 1 24rem;
+  min-inline-size: 0;
+}
+.social-plan-setup > fieldset {
+  flex: 1 1 22rem;
+  min-inline-size: 0;
+  margin: 0;
+  display: grid;
+  align-content: start;
+  gap: 0.875rem;
+}
+.social-view .social-plan-setup :is(label, .social-actions, p, .social-form-grid) {
+  margin-block: 0;
+}
+.social-view .social-form.social-plan-setup label:not(.bycoda-arc):not(.bycoda-arc label) {
+  margin-block: 0;
+}
+.social-view .social-editor > .social-form.social-plan-setup {
+  display: flex;
+}
+.social-view .social-plan-setup {
+  margin-block-start: 0;
+  border-block-start: 0;
+  padding-block-start: 0;
+}
+.social-plan-setup .social-form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr));
+  gap: 0.875rem;
+}
+.social-campaign-manual > .social-stats {
+  justify-content: start;
+  gap: 1rem;
+  padding-block: 0.25rem;
+}
+.social-campaign-manual .social-workflow-steps {
+  display: grid;
+  gap: 0.75rem;
+  padding-block: 0.75rem;
+}
+.social-campaign-manual .social-workflow-steps :is(h3, p) {
+  margin-block: 0;
+}
+.social-campaign-manual .social-workflow-steps > .social-actions {
+  margin-block: 0;
+}
+.social-campaign-results {
+  padding-block: 0.75rem;
+}
+.social-campaign-results > summary,
+.social-program-advanced > summary {
+  cursor: pointer;
+  font-weight: 500;
+  padding-block: 0.5rem;
+}
+.social-campaign-results > summary:focus-visible,
+.social-program-advanced > summary:focus-visible {
+  outline: 2px solid var(--ui-focus-ring-color);
+  outline-offset: 2px;
+}
+.social-program-workspace {
+  display: grid;
+  grid-template-columns: minmax(13rem, 0.8fr) minmax(0, 3fr);
+  gap: 1rem;
+  align-items: start;
+}
+.social-program-detail {
+  display: grid;
+  gap: 0.75rem;
+  min-inline-size: 0;
+}
+.social-program-detail > :is(h3, p),
+.social-programs .social-section-heading :is(h2, p) {
+  margin-block: 0;
+}
+.social-program-advanced {
+  min-inline-size: 0;
+}
+.social-program-advanced[open] {
+  display: grid;
+  gap: 0.75rem;
+}
+.social-program-form > .social-program-advanced > fieldset {
+  border-block-start: 0;
+}
+.social-program-list > button {
+  overflow-wrap: anywhere;
+  text-align: start;
+}
+.social-program-calendar > article {
+  display: grid;
+  gap: 0.5rem;
+  align-content: start;
+}
+.social-publishing-plans[data-empty="true"] > .social-columns {
+  display: none;
+}
+.social-publishing-plans[data-empty="true"] > .social-section-heading {
+  display: none;
+}
+.social-publishing-plans[data-empty="true"] > .social-columns > section:first-child {
+  border-inline-end: 0;
+}
+.social-publishing-plans[data-empty="true"] > .social-columns > section:last-child,
+.social-publishing-plans[data-empty="true"] > .social-columns > section:first-child > h3 {
+  display: none;
+}
+@media (width < 720px) {
+  .social-program-workspace {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 .social-program-calendar header {
   display: flex;

@@ -12,7 +12,6 @@ const REDUCED_MOTION_QUERY = "(prefers-reduced-motion: reduce)";
 let unsaved: boolean | null = null;
 let media: MediaQueryList | null = null;
 const listeners = new Set<() => void>();
-let focused: boolean | null = null;
 let nativeVisible = true;
 let releaseLifecycle: (() => void) | undefined;
 
@@ -47,8 +46,7 @@ export function decorativeMotionEnabled(): boolean {
   return (
     loadDecorativeMotionEnabled() &&
     !prefersReducedMotion() &&
-    (typeof document === "undefined" ||
-      (!document.hidden && (focused ?? document.hasFocus()) && nativeVisible))
+    (typeof document === "undefined" || (!document.hidden && nativeVisible))
   );
 }
 
@@ -68,7 +66,7 @@ function onStorage(event: StorageEvent): void {
   notify();
 }
 
-/** Native focus covers occlusion by other windows even when WebView2 stays visible.
+/** Losing input focus does not mean the window is hidden.
  * Tauri has no public occlusion/visibility event: resize covers minimize/restore,
  * and visibilitychange covers WebViews that do expose hide/show to the DOM. */
 function installWindowLifecycle(): () => void {
@@ -76,50 +74,30 @@ function installWindowLifecycle(): () => void {
   let revision = 0;
   const releases: Array<() => void> = [];
   const native = isTauri() ? getCurrentWindow() : null;
-  focused = document.hasFocus();
   nativeVisible = true;
   const report = (error: unknown) =>
     console.warn("Decorative motion window lifecycle unavailable", error);
   const refreshNative = async () => {
     if (!native) return;
     const current = ++revision;
-    const [shown, minimized, hasFocus] = await Promise.all([
-      native.isVisible(),
-      native.isMinimized(),
-      native.isFocused(),
-    ]);
+    const [shown, minimized] = await Promise.all([native.isVisible(), native.isMinimized()]);
     if (disposed || current !== revision) return;
     nativeVisible = shown && !minimized;
-    focused = hasFocus;
     notify();
-  };
-  const blur = () => {
-    ++revision;
-    focused = false;
-    notify();
-  };
-  const focus = () => {
-    ++revision;
-    focused = true;
-    notify();
-    void refreshNative().catch(report);
   };
   const visibility = () => {
     ++revision;
-    if (!native) focused = document.hasFocus();
     notify();
     void refreshNative().catch(report);
   };
-  window.addEventListener("blur", blur);
-  window.addEventListener("focus", focus);
+  window.addEventListener("focus", visibility);
   document.addEventListener("visibilitychange", visibility);
   if (native) {
     releases.push(
       retainAsyncSubscription(
-        native.onFocusChanged(({ payload }) => {
+        native.onFocusChanged(() => {
           if (disposed) return;
-          if (!payload) blur();
-          else focus();
+          visibility();
         }),
         report,
       ),
@@ -137,11 +115,9 @@ function installWindowLifecycle(): () => void {
   return () => {
     disposed = true;
     ++revision;
-    window.removeEventListener("blur", blur);
-    window.removeEventListener("focus", focus);
+    window.removeEventListener("focus", visibility);
     document.removeEventListener("visibilitychange", visibility);
     releases.forEach((release) => release());
-    focused = null;
     nativeVisible = true;
   };
 }

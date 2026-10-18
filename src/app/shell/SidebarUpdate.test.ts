@@ -1,12 +1,15 @@
 import { createElement, type ReactElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { setAppUpdateSnapshot } from "../model/useAppUpdater";
 import type { UpdaterPhase, UpdaterSnapshot } from "../model/updater";
 import { SidebarUpdate, SidebarUpdateFooter, isSidebarUpdateActionable } from "./SidebarUpdate";
 
 const updaterMocks = vi.hoisted(() => ({
   installPendingUpdate: vi.fn(),
 }));
+
+beforeEach(() => setAppUpdateSnapshot({ phase: "idle", currentVersion: "…" }));
 
 // The updater module reaches for Tauri plugins at import time; stub them so the
 // component under test can be imported in the plain node environment.

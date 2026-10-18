@@ -4,6 +4,7 @@ import {
   AlertCircle as LucideAlertCircle,
   AppWindow as LucideAppWindow,
   Archive as LucideArchive,
+  ArrowDown as LucideArrowDown,
   ArrowDownCircle as LucideArrowDownCircle,
   ArrowLeft as LucideArrowLeft,
   ArrowUp as LucideArrowUp,
@@ -157,6 +158,7 @@ export const AlertCircle = wrap(LucideAlertCircle, "AlertCircle");
 export const AppWindow = wrap(LucideAppWindow, "AppWindow");
 export const Archive = wrap(LucideArchive, "Archive");
 export const ArrowDownCircle = wrap(LucideArrowDownCircle, "ArrowDownCircle");
+export const ArrowDown = wrap(LucideArrowDown, "ArrowDown");
 export const ArrowLeft = wrap(LucideArrowLeft, "ArrowLeft");
 export const ArrowUp = wrap(LucideArrowUp, "ArrowUp");
 export const BlockQuote = wrap(LucideBlockQuote, "BlockQuote");

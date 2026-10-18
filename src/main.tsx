@@ -34,6 +34,8 @@ const removeContextMenuGuard = installNativeContextMenuGuard();
 if (import.meta.hot) import.meta.hot.dispose(removeContextMenuGuard);
 import { bootstrap } from "./app/model/bootstrap";
 import { BootFailure } from "./app/shell/BootFailure";
+import { RecoveryBoundary } from "./shared/ui/RecoveryBoundary";
+import { Button } from "./shared/ui/Button";
 import { BootGate } from "./app/shell/BootGate";
 import { NoteDraftRecoveryNotice } from "./features/notes/ui/NoteDraftRecoveryNotice";
 import { PrivacyLaunchGate } from "./features/group-lock/ui/PrivacyLaunchGate";
@@ -127,8 +129,8 @@ appRoot.render(
         placeContent: "center",
         gap: 12,
         textAlign: "center",
-        background: "var(--ui-surface)",
-        color: "var(--color-content)",
+        background: "var(--ui-startup-surface)",
+        color: "var(--ui-startup-text)",
       }}
     >
       <img
@@ -141,9 +143,9 @@ appRoot.render(
       />
       <strong>{PRODUCT_IDENTITY.displayName}</strong>
       <span>{t("Restoring your workspace and saved drafts...")}</span>
-      <button type="button" onClick={() => window.location.reload()}>
+      <Button motion="none" onClick={() => window.location.reload()}>
         {t("Retry loading")}
-      </button>
+      </Button>
     </div>
   </BootGate>,
 );
@@ -174,32 +176,34 @@ void bootstrap(
     if (windowTransfer) restoreTransferredDrafts(windowTransfer);
     appRoot.render(
       <React.StrictMode>
-        <QueryProvider>
-          <BootGate transferred={!!windowTransfer} onMounted={dismissBootSplash}>
-            {(transferReady) => (
-              <PrivacyLaunchGate>
-                {surface.kind === "host-tools" && hostToolsWindow ? (
-                  <surface.HostToolsWindow {...hostToolsWindow} />
-                ) : (
-                  <>
-                    {surface.kind === "workspace" ? (
-                      <surface.App
-                        windowTransfer={windowTransfer}
-                        toolWindow={toolWindow}
-                        windowTransferPending={!transferReady}
-                        resumed={resumed}
-                        installedUpdate={installedUpdate}
-                        history={history}
-                        historyCwd={historyCwd}
-                      />
-                    ) : null}
-                  </>
-                )}
-                <NoteDraftRecoveryNotice />
-              </PrivacyLaunchGate>
-            )}
-          </BootGate>
-        </QueryProvider>
+        <RecoveryBoundary fullScreen>
+          <QueryProvider>
+            <BootGate transferred={!!windowTransfer} onMounted={dismissBootSplash}>
+              {(transferReady) => (
+                <PrivacyLaunchGate>
+                  {surface.kind === "host-tools" && hostToolsWindow ? (
+                    <surface.HostToolsWindow {...hostToolsWindow} />
+                  ) : (
+                    <>
+                      {surface.kind === "workspace" ? (
+                        <surface.App
+                          windowTransfer={windowTransfer}
+                          toolWindow={toolWindow}
+                          windowTransferPending={!transferReady}
+                          resumed={resumed}
+                          installedUpdate={installedUpdate}
+                          history={history}
+                          historyCwd={historyCwd}
+                        />
+                      ) : null}
+                    </>
+                  )}
+                  <NoteDraftRecoveryNotice />
+                </PrivacyLaunchGate>
+              )}
+            </BootGate>
+          </QueryProvider>
+        </RecoveryBoundary>
       </React.StrictMode>,
     );
   },

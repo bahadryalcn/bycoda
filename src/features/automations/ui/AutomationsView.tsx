@@ -1,9 +1,11 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import "./automations.css";
+import { AutomationAssistant } from "./AutomationAssistant";
+import type { QuickLaunch } from "../../quick-composer/model/quickComposer";
 import { useQueryVisible } from "../../../shared/hooks/useQueryVisible";
 import { Button } from "../../../shared/ui/Button";
 import { TextField } from "../../../shared/ui/TextField";
 import { Switch } from "../../../shared/ui/Switch";
-import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
 import { Badge, type BadgeTone } from "../../../shared/ui/Badge";
 import { Alert } from "../../../shared/ui/Alert";
 import { EmptyState } from "../../../shared/ui/EmptyState";
@@ -144,6 +146,7 @@ type Props = {
   recents: RecentProject[];
   onClose: () => void;
   onToggleSidebar?: () => void;
+  onLaunchAssistant?: (launch: QuickLaunch, deliveryId: string) => Promise<unknown>;
   onLaunch: (automation: Automation, run: AutomationRun) => void | Promise<void>;
   onOpenSession: (sessionId: string) => void | Promise<void>;
   /** Opens a session a machine's host ran for a background automation. */
@@ -159,6 +162,7 @@ export function AutomationsView({
   recents,
   onClose,
   onToggleSidebar,
+  onLaunchAssistant,
   onLaunch,
   onOpenSession,
   onOpenBackgroundSession,
@@ -192,6 +196,7 @@ export function AutomationsView({
         onLaunch={onLaunch}
         onOpenSession={onOpenSession}
         onOpenBackgroundSession={onOpenBackgroundSession}
+        onLaunchAssistant={onLaunchAssistant}
       />
     </div>
   );
@@ -203,7 +208,11 @@ function AutomationsContent({
   onLaunch,
   onOpenSession,
   onOpenBackgroundSession,
-}: Pick<Props, "cwd" | "recents" | "onLaunch" | "onOpenSession" | "onOpenBackgroundSession">) {
+  onLaunchAssistant,
+}: Pick<
+  Props,
+  "cwd" | "recents" | "onLaunch" | "onOpenSession" | "onOpenBackgroundSession" | "onLaunchAssistant"
+>) {
   useLocale();
   const queryClient = useQueryClient();
   const queryVisible = useQueryVisible();
@@ -256,7 +265,10 @@ function AutomationsContent({
   const [historyRevision, setHistoryRevision] = useState(0);
   const [selectedId, setSelectedId] = useState<string | null>(rememberedAutomationId);
   const [query, setQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState("all");
   const [filterOpen, setFilterOpen] = useState(false);
+  const [focusMode, setFocusMode] = useState(false);
+  const [assistantOpen, setAssistantOpen] = useState(false);
   const filterButton = useRef<HTMLButtonElement>(null);
   const deferredQuery = useDeferredValue(query);
   const [error, setError] = useState<string | null>(null);
@@ -357,6 +369,14 @@ function AutomationsContent({
   const visible = useMemo(() => {
     const needle = deferredQuery.trim().toLocaleLowerCase();
     return automations.filter((automation) => {
+      if (statusFilter === "active" && !automation.enabled) return false;
+      if (statusFilter === "paused" && automation.enabled) return false;
+      if (
+        statusFilter === "attention" &&
+        automation.lastRunStatus !== "failed" &&
+        !automation.host?.needsInput
+      )
+        return false;
       if (!needle) return true;
       const project = resolveTabGroupLabel(
         projectKey(automation.cwd),
@@ -367,7 +387,7 @@ function AutomationsContent({
         .toLocaleLowerCase()
         .includes(needle);
     });
-  }, [automations, groupLabels, deferredQuery]);
+  }, [automations, groupLabels, deferredQuery, statusFilter]);
   const selected = automations.find((entry) => entry.id === selectedId) ?? null;
 
   const defaultDraftTarget = () => {
@@ -396,7 +416,13 @@ function AutomationsContent({
   const beginFromTemplate = (template: AutomationTemplate) => {
     const { project, harness, model } = defaultDraftTarget();
     setPickerOpen(false);
-    setDraft(draftFromTemplate(project, harness, model, { ...template, name: t(template.name) }));
+    setDraft(
+      draftFromTemplate(project, harness, model, {
+        ...template,
+        name: t(template.name),
+        prompt: t(template.prompt),
+      }),
+    );
   };
 
   const onSave = async (event: FormEvent, nextDraft: AutomationDraft) => {
@@ -492,7 +518,14 @@ function AutomationsContent({
 
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col sm:flex-row text-(--ui-tone-neutral-fg)">
-      <aside className="flex w-full max-h-48 sm:max-h-none sm:w-[280px] shrink-0 flex-col border-r border-(--ui-tone-neutral-border)">
+      <aside
+        hidden={focusMode}
+        className={
+          focusMode
+            ? "hidden"
+            : "flex w-full max-h-48 sm:max-h-none sm:w-[250px] shrink-0 flex-col border-r border-(--ui-tone-neutral-border)"
+        }
+      >
         <div className="flex h-9 shrink-0 items-center gap-1 border-b border-(--ui-tone-neutral-border) px-2">
           <Button
             ref={filterButton}
@@ -501,7 +534,7 @@ function AutomationsContent({
             variant="ghost"
             iconOnly
             label={t("Filter automations")}
-            selected={!!query.trim()}
+            selected={!!query.trim() || statusFilter !== "all"}
             aria-haspopup="dialog"
             aria-expanded={filterOpen}
             onClick={() => setFilterOpen((open) => !open)}
@@ -526,7 +559,25 @@ function AutomationsContent({
                 spellCheck={false}
                 autoComplete="off"
               />
-              <Button onClick={() => setQuery("")} disabled={!query}>
+              <SearchableSelect
+                label={t("Status")}
+                value={statusFilter}
+                searchable={false}
+                options={[
+                  { value: "all", label: t("All") },
+                  { value: "active", label: t("Active") },
+                  { value: "paused", label: t("Paused") },
+                  { value: "attention", label: t("Needs attention") },
+                ]}
+                onChange={setStatusFilter}
+              />
+              <Button
+                onClick={() => {
+                  setQuery("");
+                  setStatusFilter("all");
+                }}
+                disabled={!query && statusFilter === "all"}
+              >
                 {t("Reset")}
               </Button>
             </Popover>
@@ -591,7 +642,33 @@ function AutomationsContent({
         </div>
       </aside>
 
-      <main className="flex min-h-0 min-w-0 flex-1 flex-col">
+      <main className="automation-workspace flex min-h-0 min-w-0 flex-1 flex-col">
+        <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-(--ui-tone-neutral-border) px-3 py-2">
+          <span className="mr-auto text-[12px] text-(--ui-text-muted)">
+            {t("Automations")} · {automations.length}
+          </span>
+          <Button variant="ghost" onClick={beginCreate}>
+            <Plus className="size-3.5" />
+            {t("New automation")}
+          </Button>
+          {onLaunchAssistant ? (
+            <Button
+              variant="secondary"
+              aria-expanded={assistantOpen}
+              onClick={() => setAssistantOpen(!assistantOpen)}
+            >
+              {t("AI assistant")}
+            </Button>
+          ) : null}
+          <Button variant="ghost" aria-pressed={focusMode} onClick={() => setFocusMode(!focusMode)}>
+            {t(focusMode ? "Show automation list" : "Focus mode")}
+          </Button>
+        </div>
+        {assistantOpen && onLaunchAssistant ? (
+          <div className="shrink-0 px-3 py-3">
+            <AutomationAssistant cwd={cwd} recents={recents} onLaunch={onLaunchAssistant} />
+          </div>
+        ) : null}
         {error ? (
           <Alert tone="danger" className="m-4 shrink-0">
             {error}
@@ -777,43 +854,62 @@ function AutomationPicker({
   onPick: (template: AutomationTemplate) => void;
 }) {
   useLocale();
-  const [category, setCategory] = useState<AutomationTemplateCategoryId>("popular");
+  const [category, setCategory] = useState<AutomationTemplateCategoryId>("all");
   const lockOverscroll = useLockOverscroll<HTMLDivElement>();
-  const templates = templatesForCategory(category);
+  const [templateQuery, setTemplateQuery] = useState("");
+  const templates = templatesForCategory(category).filter((template) =>
+    `${t(template.name)} ${t(template.description)}`
+      .toLocaleLowerCase()
+      .includes(templateQuery.trim().toLocaleLowerCase()),
+  );
 
   return (
     <div ref={lockOverscroll} className="min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-none">
-      <div className="mx-auto w-full max-w-5xl px-3 sm:px-6 pt-5 pb-10">
+      <div className="automation-content">
         <h1 className="text-[20px] font-semibold leading-tight text-(--ui-tone-neutral-fg)">
           {t("New automation")}
         </h1>
         <p className="mt-1.5 text-[13px] text-(--ui-text-muted)">
           {t("Pick an example or start from scratch.")}
         </p>
-        <SegmentedControl
-          className="mt-4 max-w-full"
-          label={t("Template category")}
-          options={AUTOMATION_TEMPLATE_CATEGORIES.map((option) => ({
-            value: option.id,
-            label: t(option.label),
-          }))}
-          value={category}
-          onValueChange={(value) => setCategory(value as AutomationTemplateCategoryId)}
-        />
-        <div className="mt-4 grid grid-cols-1 gap-3 min-[780px]:grid-cols-2">
+        <div className="mt-4 flex flex-wrap items-end gap-3">
+          <TextField
+            label={t("Search templates")}
+            hideLabel
+            placeholder={t("Search templates")}
+            value={templateQuery}
+            onChange={(event) => setTemplateQuery(event.target.value)}
+            fieldClassName="min-w-0 flex-1"
+          />
+          <SearchableSelect
+            label={t("Template category")}
+            value={category}
+            options={AUTOMATION_TEMPLATE_CATEGORIES.map((option) => ({
+              value: option.id,
+              label: t(option.label),
+            }))}
+            onChange={(value) => setCategory(value as AutomationTemplateCategoryId)}
+          />
+        </div>
+        {templates.length === 0 ? (
+          <p role="status" className="mt-4 text-[13px] text-(--ui-text-muted)">
+            {t("No matching options")}
+          </p>
+        ) : null}
+        <div className="automation-gallery mt-4">
           <Button
             type="button"
             onClick={onBlank}
             variant="item"
             layout="stacked"
-            className="flex h-full min-w-0 flex-col"
+            className="automation-template flex h-full min-w-0 flex-col"
           >
             <div className="flex gap-3">
-              <span className="grid size-9 shrink-0 place-items-center rounded-full bg-(--ui-surface-raised) text-(--ui-tone-neutral-fg)">
+              <span className="grid size-7 shrink-0 place-items-center text-(--ui-text-muted)">
                 <Plus className="size-4" strokeWidth={1.75} />
               </span>
               <span className="min-w-0">
-                <span className="line-clamp-2 min-h-[2.5em] text-[13px] font-medium text-(--ui-tone-neutral-fg)">
+                <span className="line-clamp-2 text-[13px] font-medium text-(--ui-tone-neutral-fg)">
                   {t("Start from scratch")}
                 </span>
                 <span className="mt-1 line-clamp-3 text-[12px] leading-snug text-(--ui-text-muted)">
@@ -831,15 +927,15 @@ function AutomationPicker({
                 onClick={() => onPick(template)}
                 variant="item"
                 layout="stacked"
-                className="flex h-full min-w-0 flex-col"
+                className="automation-template flex h-full min-w-0 flex-col"
                 title={t(template.description)}
               >
                 <div className="flex gap-3">
-                  <span className="grid size-9 shrink-0 place-items-center rounded-full bg-(--ui-surface-raised) text-(--ui-tone-neutral-fg)">
+                  <span className="grid size-7 shrink-0 place-items-center text-(--ui-text-muted)">
                     <Icon className="size-4" strokeWidth={1.75} />
                   </span>
                   <span className="min-w-0">
-                    <span className="line-clamp-2 min-h-[2.5em] text-[13px] font-medium text-(--ui-tone-neutral-fg)">
+                    <span className="line-clamp-2 text-[13px] font-medium text-(--ui-tone-neutral-fg)">
                       {t(template.name)}
                     </span>
                     <span className="mt-1 line-clamp-3 text-[12px] leading-snug text-(--ui-text-muted)">
@@ -1075,7 +1171,7 @@ function AutomationEditor({
     };
   }, []);
   const triggerReady = (kind: AutomationTriggerKind) => {
-    if (kind === "time") return true;
+    if (kind === "time" || kind === "tasks" || kind === "social") return true;
     return providerConnected[kind];
   };
   const valid =
@@ -1147,7 +1243,7 @@ function AutomationEditor({
   return (
     <form className="flex min-h-0 min-w-0 flex-1 flex-col" onSubmit={onSubmit}>
       <div className="relative w-full shrink-0 border-b border-(--ui-tone-neutral-border)">
-        <div className="mx-auto flex w-full max-w-5xl flex-col gap-2.5 px-3 sm:px-6 pt-5">
+        <div className="flex w-full flex-col gap-2.5 px-3 sm:px-6 pt-4">
           <header className="flex flex-col gap-2.5">
             <div className="flex flex-wrap items-start gap-3">
               <TextField
@@ -1283,9 +1379,18 @@ function AutomationEditor({
         className="min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-none"
       >
         {!showingHistory ? (
-          <div className="mx-auto w-full max-w-5xl space-y-5 px-3 sm:px-6 py-5 pb-10">
+          <div className="automation-content automation-editor-grid">
             <section>
               <SectionTitle>{t("Triggers")}</SectionTitle>
+              {draft.triggers.some(
+                (trigger) => trigger.kind === "tasks" || trigger.kind === "social",
+              ) ? (
+                <p className="mt-2 text-[12px] text-(--ui-text-muted)">
+                  {t(
+                    "Task and social events run while this app is open. Connect the source machine; social accounts must be linked to this project.",
+                  )}
+                </p>
+              ) : null}
               <div className="mt-3 rounded-md border border-(--ui-tone-neutral-border)">
                 {draft.triggers.length > 0 ? (
                   <ul className="px-3 py-1.5">
@@ -1322,7 +1427,7 @@ function AutomationEditor({
               <SectionTitle>{t("Instructions")}</SectionTitle>
               <div
                 data-ui-focus-group=""
-                className="relative mt-3 rounded-md border border-(--ui-tone-neutral-border) bg-(--ui-surface-raised) backdrop-blur-sm has-focus:border-(--ui-tone-neutral-border)"
+                className="relative mt-3 rounded-md border border-(--ui-tone-neutral-border) bg-(--ui-surface) has-focus:border-(--ui-tone-neutral-border)"
               >
                 <PromptField
                   value={draft.prompt}
@@ -1504,7 +1609,7 @@ function AutomationEditor({
             </details>
           </div>
         ) : (
-          <section className="mx-auto w-full max-w-5xl px-3 sm:px-6 py-5 pb-10">
+          <section className="automation-content">
             <SectionTitle>{t("Run history")}</SectionTitle>
             {historyLoading ? (
               <p role="status" className="p-3 text-[12px] text-(--ui-text-muted)">
@@ -1569,6 +1674,8 @@ function PromptField({
       cwd={cwd}
       onChange={onChange}
       focusOwner="group"
+      label={t("Instructions")}
+      placeholder={t("Tell the agent what to do when this automation runs…")}
     />
   );
 }
@@ -1823,6 +1930,18 @@ const TRIGGER_CATEGORIES: readonly {
   label: string;
 }[] = [
   {
+    value: "tasks",
+    get label() {
+      return t("Tasks");
+    },
+  },
+  {
+    value: "social",
+    get label() {
+      return t("Social Media");
+    },
+  },
+  {
     value: "time",
     get label() {
       return t("Scheduled");
@@ -1866,6 +1985,46 @@ type TriggerEvent = {
 };
 
 export const TRIGGER_EVENTS: Record<AutomationTriggerKind, readonly TriggerEvent[]> = {
+  tasks: [
+    {
+      value: "task_created",
+      get label() {
+        return t("Task created");
+      },
+    },
+    {
+      value: "task_completed",
+      get label() {
+        return t("Task completed");
+      },
+    },
+    {
+      value: "task_blocked",
+      get label() {
+        return t("Task blocked");
+      },
+    },
+    {
+      value: "task_review",
+      get label() {
+        return t("Task ready for review");
+      },
+    },
+  ],
+  social: [
+    {
+      value: "message_received",
+      get label() {
+        return t("Message received");
+      },
+    },
+    {
+      value: "comment_received",
+      get label() {
+        return t("Comment received");
+      },
+    },
+  ],
   time: [
     {
       value: "hourly",
@@ -2011,6 +2170,8 @@ function TriggerMark({ kind, className }: { kind: AutomationTriggerKind; classNa
   if (kind === "time") {
     return <Clock className={className} strokeWidth={1.75} />;
   }
+  if (kind === "tasks") return <CheckCircle className={className} strokeWidth={1.75} />;
+  if (kind === "social") return <Inbox className={className} strokeWidth={1.75} />;
   return <InboxProviderMark provider={kind} className={className} />;
 }
 
@@ -2130,7 +2291,7 @@ function TimeTriggerSentence({
           : "Every week on";
   return (
     <>
-      <span>{prefix}</span>
+      <span>{t(prefix)}</span>
       {trigger.scheduleKind === "weekly" ? (
         <>
           <TriggerPill
@@ -2175,6 +2336,8 @@ export function EventTriggerSentence({
   onChange: (trigger: AutomationTrigger) => void;
 }) {
   useLocale();
+  if (trigger.kind === "tasks" || trigger.kind === "social")
+    return <span>{findTriggerEvent(trigger.kind, trigger.event)?.label ?? trigger.event}</span>;
   const stem =
     trigger.event === "push_to_branch"
       ? "Push"

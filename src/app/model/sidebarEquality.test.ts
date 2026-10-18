@@ -95,6 +95,7 @@ describe("liveAgentsEqual", () => {
     ["startedAt", { startedAt: 2 }],
     ["durationMs", { durationMs: 5 }],
     ["needsApproval", { needsApproval: true }],
+    ["inputKind", { inputKind: "question" }],
     ["done", { done: true }],
   ])("is false when %s differs", (_name, over) => {
     expect(liveAgentsEqual([agent()], [agent(over)])).toBe(false);

@@ -237,6 +237,7 @@ import {
 import { ColorPickerPopover, ColorSwatchRow } from "../../shared/ui/ColorPickerPopover";
 import { ExplorerMenu, type ExplorerMenuItem } from "../../features/files/ui/ExplorerMenu";
 import { FileTree } from "../../features/files/ui/FileTree";
+import { SessionWorkingStatus } from "../../features/sessions/ui/SessionWorkingStatus";
 import { HarnessIcon } from "../../features/sessions/ui/HarnessIcon";
 import {
   LastSessionsRows,
@@ -248,6 +249,7 @@ import { ProjectRail } from "./ProjectRail";
 import { RailAction } from "./RailAction";
 import { TerminalSpinner } from "../../features/sessions/ui/TerminalSpinner";
 import { DevModeSlot, IconButton, TabVisitNav } from "./TitleBar";
+import { useKeybindingShortcut } from "../../features/settings/model/useKeybindingShortcut";
 import { Popover } from "../../shared/ui/Popover";
 import { useProjectMenu } from "./useProjectMenu";
 import { SessionFiltersMenu } from "../../features/sessions/ui/SessionFiltersMenu";
@@ -2117,6 +2119,11 @@ function SidebarComponent({
     }
   }, [cwd, listedSessions]);
 
+  const liveAgentsById = useMemo(
+    () => new Map(liveAgents.filter((agent) => !agent.done).map((agent) => [agent.id, agent])),
+    [liveAgents],
+  );
+
   const renderSessionCard = (session: SessionSummary) =>
     renamingSessionId === session.id && onRenameSession ? (
       <SessionRenameRow
@@ -2135,10 +2142,12 @@ function SidebarComponent({
         isSelected={selectedSessionIds.has(session.id)}
         selectionMode={showBulkBar}
         busy={listedBusySessionIds.has(session.id)}
+        startedAt={liveAgentsById.get(session.id)?.startedAt}
         opening={openingSessionId === session.id}
         done={unseenFinishedIds.has(session.id)}
         linkedUpdate={linkedSessionUpdateIds.has(session.id)}
         needsApproval={listedApprovalSessionIds.has(session.id)}
+        inputKind={liveAgentsById.get(session.id)?.inputKind}
         dropTarget={isSessionDrop("session", session.id)}
         dropInsert={
           sessionDrop?.kind === "insert" && sessionDrop.id === session.id
@@ -3064,6 +3073,7 @@ function SidebarComponent({
               />
             </div>
             <SidebarUpdateFooter
+              noticesOnly
               update={updateNotice}
               onOpenWhatsNew={onOpenWhatsNew}
               onDismissUpdate={onDismissUpdate}
@@ -3071,13 +3081,15 @@ function SidebarComponent({
             <div className="flex shrink-0 flex-col gap-px p-2 empty:hidden">
               <GithubStarPrompt />
               {!compactProjectRail ? (
-                <RailAction
-                  label={t("Settings")}
-                  icon={Settings}
-                  onClick={onOpenSettings}
-                  shortcut={`${MOD},`}
-                  ariaLabel={`Settings (${MOD},)`}
-                />
+                <div className="flex min-w-0 items-center gap-1">
+                  <RailAction
+                    label={t("Settings")}
+                    icon={Settings}
+                    onClick={onOpenSettings}
+                    command="App: Settings"
+                  />
+                  <SidebarUpdateFooter />
+                </div>
               ) : null}
             </div>
           </>
@@ -3365,13 +3377,14 @@ function SidebarProjectPicker({
       />
       <div className="ml-auto flex shrink-0 items-center">
         {onNew ? (
-          <IconButton label={t("New tab ({p0}T)", { p0: MOD })} onClick={onNew}>
+          <IconButton label={t("New tab")} command="Tab: New" onClick={onNew}>
             <Plus className="size-3.5" strokeWidth={1.75} />
           </IconButton>
         ) : null}
         {onSearch ? (
           <IconButton
-            label={t("Search ({p0}K)", { p0: MOD })}
+            label={t("Search")}
+            command="App: Search"
             active={searchActive}
             onClick={onSearch}
           >
@@ -3382,6 +3395,7 @@ function SidebarProjectPicker({
           <WorkspaceFeatureGate id="inbox" active={inboxActive}>
             <IconButton
               label={inboxUnseen ? t("Inbox, new items") : t("Inbox")}
+              command="App: Open Inbox"
               active={inboxActive}
               onClick={onOpenInbox}
               onOpenContextMenu={(x, y) => {
@@ -3404,7 +3418,12 @@ function SidebarProjectPicker({
         ) : null}
         {onOpenNotes ? (
           <span className="contents @max-[230px]/picker:hidden">
-            <IconButton label={t("Notes")} active={notesActive} onClick={onOpenNotes}>
+            <IconButton
+              label={t("Notes")}
+              command="App: Open Notes"
+              active={notesActive}
+              onClick={onOpenNotes}
+            >
               <StickyNote className="size-3.5" strokeWidth={1.75} />
             </IconButton>
           </span>
@@ -3414,6 +3433,7 @@ function SidebarProjectPicker({
             <WorkspaceFeatureGate id="automations" active={automationsActive}>
               <IconButton
                 label={t("Automations")}
+                command="App: Open Automations"
                 active={automationsActive}
                 onClick={onOpenAutomations}
               >
@@ -3426,7 +3446,12 @@ function SidebarProjectPicker({
         {onOpenTasks ? (
           <span className="contents @max-[290px]/picker:hidden">
             <WorkspaceFeatureGate id="tasks" active={tasksActive}>
-              <IconButton label={t("Tasks")} active={tasksActive} onClick={onOpenTasks}>
+              <IconButton
+                label={t("Tasks")}
+                command="App: Open Tasks"
+                active={tasksActive}
+                onClick={onOpenTasks}
+              >
                 <DashboardSquare className="size-3.5" strokeWidth={1.75} />
               </IconButton>
             </WorkspaceFeatureGate>
@@ -3562,7 +3587,12 @@ function CompactProjectRail({
         className="flex w-full shrink-0 flex-col items-center gap-1.5 py-1.5"
       >
         {recoveryControl}
-        <CompactRailAction label={t("Expand projects")} icon={PanelLeft} onClick={onTogglePanel} />
+        <CompactRailAction
+          label={t("Expand projects")}
+          command="App: Toggle Sidebar"
+          icon={PanelLeft}
+          onClick={onTogglePanel}
+        />
         {onSelectProject ? (
           <SearchableProjectPickerWithMenu
             cwd={cwd}
@@ -3608,7 +3638,8 @@ function CompactProjectRail({
           ))}
         </div>
         <CompactRailAction
-          label={t("Search ({p0}K)", { p0: MOD })}
+          label={t("Search")}
+          command="App: Search"
           icon={Search}
           active={searchActive}
           onClick={action(searchActive, onSearch)}
@@ -3616,6 +3647,7 @@ function CompactProjectRail({
         <WorkspaceFeatureGate id="inbox" active={inboxActive}>
           <CompactRailAction
             label={inboxUnseen ? t("Inbox, new items") : t("Inbox")}
+            command="App: Open Inbox"
             icon={Inbox}
             active={inboxActive}
             dot={inboxUnseen}
@@ -3630,6 +3662,7 @@ function CompactProjectRail({
         {onOpenNotes ? (
           <CompactRailAction
             label={t("Notes")}
+            command="App: Open Notes"
             icon={StickyNote}
             active={notesActive}
             onClick={action(notesActive, onOpenNotes)}
@@ -3638,6 +3671,7 @@ function CompactProjectRail({
         <WorkspaceFeatureGate id="automations" active={automationsActive}>
           <CompactRailAction
             label={t("Automations")}
+            command="App: Open Automations"
             icon={Zap}
             active={automationsActive}
             onClick={action(automationsActive, onOpenAutomations)}
@@ -3647,6 +3681,7 @@ function CompactProjectRail({
         <WorkspaceFeatureGate id="tasks" active={tasksActive}>
           <CompactRailAction
             label={t("Tasks")}
+            command="App: Open Tasks"
             icon={DashboardSquare}
             active={tasksActive}
             onClick={action(tasksActive, onOpenTasks)}
@@ -3656,7 +3691,8 @@ function CompactProjectRail({
       <div className="min-h-2 flex-1" />
       <div className="flex w-full flex-col items-center gap-1 py-1.5">
         <CompactRailAction
-          label={t("Settings ({p0},)", { p0: MOD })}
+          label={t("Settings")}
+          command="App: Settings"
           icon={Settings}
           onClick={onOpenSettings}
         />
@@ -3678,6 +3714,7 @@ function CompactProjectRail({
 
 function CompactRailAction({
   label,
+  command,
   usageGuideTarget,
   icon: Icon,
   tab = false,
@@ -3689,6 +3726,7 @@ function CompactRailAction({
   ref,
 }: {
   label: string;
+  command?: string;
   usageGuideTarget?: string;
   icon: typeof PanelLeft;
   tab?: boolean;
@@ -3700,6 +3738,7 @@ function CompactRailAction({
   ref?: Ref<HTMLButtonElement>;
 }) {
   useLocale();
+  const shortcut = useKeybindingShortcut(command ?? "");
   return (
     <Button
       variant="ghost"
@@ -3709,6 +3748,7 @@ function CompactRailAction({
       type="button"
       role={tab ? "tab" : undefined}
       title={label}
+      shortcut={shortcut}
       aria-label={label}
       aria-selected={tab ? active : undefined}
       aria-pressed={tab ? undefined : active}
@@ -3840,12 +3880,12 @@ function WorkspaceTitleActions({ onSearch, onNew }: { onSearch?: () => void; onN
   return (
     <div className="flex shrink-0 items-center gap-0.5" data-tauri-drag-region="false">
       {onSearch ? (
-        <IconButton label={t("Go to File ({p0}P)", { p0: MOD })} onClick={onSearch}>
+        <IconButton label={t("Go to File")} command="App: Go to File" onClick={onSearch}>
           <Search className="size-3.5" strokeWidth={1.75} />
         </IconButton>
       ) : null}
       {onNew ? (
-        <IconButton label={t("New session ({p0}T)", { p0: MOD })} onClick={onNew}>
+        <IconButton label={t("New session")} command="Tab: New" onClick={onNew}>
           <Plus className="size-3.5" strokeWidth={1.75} />
         </IconButton>
       ) : null}
@@ -4333,9 +4373,11 @@ const SessionCard = memo(function SessionCard({
   selectionMode = false,
   busy,
   opening = false,
+  startedAt,
   done,
   linkedUpdate,
   needsApproval,
+  inputKind,
   dropTarget,
   dropInsert,
   dropDwell = false,
@@ -4361,11 +4403,13 @@ const SessionCard = memo(function SessionCard({
   isSelected: boolean;
   selectionMode?: boolean;
   busy: boolean;
+  startedAt?: number;
   /** Clicked and still loading before it opens. */
   opening?: boolean;
   done: boolean;
   linkedUpdate: boolean;
   needsApproval: boolean;
+  inputKind?: LiveAgent["inputKind"];
   /** Ready to group with the dragged session. */
   dropTarget?: boolean;
   /** The dragged session would land on this side of the card. */
@@ -4444,14 +4488,7 @@ const SessionCard = memo(function SessionCard({
         <RelativeSessionTime at={session.updatedAt} />
       </span>
     ) : !issue && !needsApproval && busy ? (
-      <span
-        role="img"
-        aria-label={t("Working")}
-        title={t("Working")}
-        className="inline-flex size-4 shrink-0 items-center justify-center text-active"
-      >
-        <Loader className="size-3 motion-safe:animate-spin" strokeWidth={1.75} aria-hidden />
-      </span>
+      <SessionWorkingStatus startedAt={startedAt} />
     ) : (
       <Badge size="sm" tone={statusTone} className="shrink-0 whitespace-nowrap tabular-nums">
         {issue ? (
@@ -4462,7 +4499,11 @@ const SessionCard = memo(function SessionCard({
         ) : needsApproval ? (
           <>
             <CircleAlert className="size-3" strokeWidth={1.75} />
-            <span>{orchestration ? t("Needs input") : t("Need approval")}</span>
+            <span>
+              {orchestration
+                ? t("Needs input")
+                : t(inputKind === "question" ? "Question" : "Need approval")}
+            </span>
           </>
         ) : opening ? (
           <>

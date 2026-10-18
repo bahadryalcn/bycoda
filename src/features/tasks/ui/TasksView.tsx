@@ -49,6 +49,7 @@ import {
   ChevronRight,
   DashboardSquare,
   Gauge,
+  GripVertical,
   GitBranch,
   GitMerge,
   LoaderCircle,
@@ -84,7 +85,9 @@ import { useLockOverscroll } from "../../../shared/hooks/useLockOverscroll";
 import { backgroundMachineFor, hostProjectCwd } from "../../automations/model/hostAutomationClient";
 import { isLocalSyncMachine } from "../../connections/model/localSync";
 import type { RemoteMachine } from "../../connections/model/protocol";
-import { RemoteDataStatus } from "../../connections/ui/RemoteDataStatus";
+import { ExpandingButtonGroup } from "../../../shared/ui/ExpandingButtonGroup";
+import { LAYER } from "../../../shared/lib/layers";
+import { TaskSessionSheet } from "./TaskSessionSheet";
 import { LocalHostStartButton } from "../../connections/ui/LocalHostDownNotice";
 import { useLocalHostState } from "../../connections/model/localHostService";
 import type { RemoteDataState } from "../../connections/model/remoteDataState";
@@ -347,6 +350,8 @@ function TasksContent({
   // The ones whose host also keeps manual to-do items.
   const [todoCapable, setTodoCapable] = useState<RemoteMachine[]>([]);
   const [storedTasks, setTasks] = useState<BoardTask[]>([]);
+  const [sessionPreview, setSessionPreview] = useState<BackgroundSessionTarget | null>(null);
+  const [statusDetails, setStatusDetails] = useState(false);
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const [now, setNow] = useState(Date.now);
   const [loading, setLoading] = useState(true);
@@ -377,8 +382,6 @@ function TasksContent({
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [boardActionMenu, setBoardActionMenu] = useState<HTMLElement | null>(null);
   const filterTrigger = useRef<HTMLButtonElement>(null);
-  const [helpOpen, setHelpOpen] = useState(false);
-  const helpTrigger = useRef<HTMLButtonElement>(null);
   const [goalSessions, setGoalSessions] = useState<BoardGoal | null>(null);
   // Machines whose host runs project stewards, and their stewards.
   const [stewardCapable, setStewardCapable] = useState<RemoteMachine[]>([]);
@@ -644,7 +647,7 @@ function TasksContent({
     const lead = goal.projects.find((project) => project.id === goal.leadProjectId);
     if (!goal.plannerSessionId || !lead) return;
     try {
-      await onOpenBackgroundSession({
+      setSessionPreview({
         machineId: goal.machineId,
         cwd: lead.cwd,
         projectId: lead.id,
@@ -688,7 +691,7 @@ function TasksContent({
     openingSessionRequests.current.add(key);
     setOpeningSessions(new Set(openingSessionRequests.current));
     try {
-      await onOpenBackgroundSession(taskBackgroundSessionTarget(task, sessionId));
+      setSessionPreview(taskBackgroundSessionTarget(task, sessionId));
     } catch (reason: unknown) {
       setError(reason instanceof Error ? reason.message : String(reason));
     } finally {
@@ -922,38 +925,9 @@ function TasksContent({
 
   return (
     <div className="bycoda-tasks flex min-h-0 min-w-0 flex-1 flex-col text-(--ui-tone-neutral-fg)">
-      <header className="flex h-10 shrink-0 items-center gap-2 border-b border-(--ui-tone-neutral-border) px-3">
-        <h1 className="min-w-0 flex-1 text-[13px] font-medium">{t("Tasks")}</h1>
+      <header className="task-board-toolbar">
+        <h1 className="text-[13px] font-medium">{t("Tasks")}</h1>
         <Badge className="tabular-nums">{visibleTasks.length}</Badge>
-        <Button
-          ref={helpTrigger}
-          variant="ghost"
-          iconOnly
-          label={t("Help")}
-          tooltip={t("Help")}
-          aria-haspopup="dialog"
-          aria-expanded={helpOpen}
-          onClick={() => setHelpOpen((open) => !open)}
-        >
-          <CircleHelp className="size-3.5" />
-        </Button>
-        {helpOpen ? (
-          <Popover
-            anchor={helpTrigger}
-            align="end"
-            width={280}
-            onDismiss={(reason) => {
-              setHelpOpen(false);
-              if (reason === "escape") helpTrigger.current?.focus();
-            }}
-          >
-            <p className="task-filter-popover text-(--ui-text-secondary)">
-              {t("Each task runs on its project’s machine, with this app open or closed.")}
-            </p>
-          </Popover>
-        ) : null}
-      </header>
-      <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-(--ui-tone-neutral-border) px-3 py-2">
         {machines.length === 0 ? (
           <span className="min-w-[min(100%,14rem)] flex-1 text-[12px] text-(--ui-text-secondary)">
             {loading
@@ -1004,6 +978,7 @@ function TasksContent({
                     variant="pill"
                     align="end"
                     label={t("Show goal")}
+                    layer={LAYER.submenu}
                     value={goalFilter}
                     options={[
                       {
@@ -1102,59 +1077,72 @@ function TasksContent({
           <Plus className="size-3.5" strokeWidth={1.75} />
           {t("New task")}
         </Button>
-      </div>
-      <RemoteDataStatus
-        state={boardDataState}
-        onRefresh={retryBoard}
-        label={t("task board")}
-        connectionIssueHandled={!!missingNotice}
-      />
-      {error ? (
-        <Alert tone="danger" className="mx-4 mt-4 shrink-0">
-          {error}
-        </Alert>
-      ) : null}
-      {missingNotice ? (
-        <Alert
-          tone={boardDataState.error ? "warning" : "info"}
-          role="status"
-          aria-busy={board.pending}
-          className="mx-3 mbs-3 shrink-0"
-          data-remote-data-state={boardDataState.phase}
-        >
-          <div className="flex flex-wrap items-center gap-2">
-            <div className="min-w-0 flex-1">
-              <span>{missingNotice}</span>
-              {boardDataState.error ? (
-                <p className="mbs-1 break-words text-(--ui-text-muted)">{boardDataState.error}</p>
-              ) : null}
-              {boardDataState.updatedAt ? (
-                <span className="ms-1 text-(--ui-text-muted)">
-                  {t("Last verified {p0}", {
-                    p0: new Date(boardDataState.updatedAt).toLocaleString(getLocale()),
-                  })}
-                </span>
-              ) : null}
-            </div>
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={retryBoard}
-              loading={board.pending}
-              disabled={board.pending}
-            >
-              <RefreshCw className="size-3.5" />
-              {t("Retry")}
-            </Button>
+        <div className="task-board-status" data-remote-data-state={boardDataState.phase}>
+          <Button
+            variant="ghost"
+            onClick={() => setStatusDetails(true)}
+            tone={error || missingNotice || boardDataState.error ? "warning" : "neutral"}
+          >
+            {board.pending ? (
+              <LoaderCircle className="size-3 animate-spin" />
+            ) : error || missingNotice || boardDataState.error ? (
+              <CircleHelp className="size-3.5" />
+            ) : (
+              <Check className="size-3.5" />
+            )}
+            <span aria-live="polite">
+              {error
+                ? t("Task action failed")
+                : missingNotice || boardDataState.error
+                  ? t("Connection issue")
+                  : board.pending
+                    ? t("Refreshing…")
+                    : t("Up to date")}
+            </span>
+          </Button>
+          <Button
+            variant="ghost"
+            iconOnly
+            label={boardDataState.error ? t("Retry") : t("Refresh")}
+            loading={board.pending}
+            onClick={retryBoard}
+          >
+            <RefreshCw className="size-3.5" />
+          </Button>
+        </div>
+      </header>
+      {statusDetails ? (
+        <Modal title={t("Task board status")} onClose={() => setStatusDetails(false)}>
+          <div className="task-status-details">
+            {missingNotice ? <p>{missingNotice}</p> : null}
+            {error || boardDataState.error ? (
+              <p>{error || boardDataState.error}</p>
+            ) : (
+              <p>{t("Up to date")}</p>
+            )}
+            {boardDataState.updatedAt ? (
+              <p>
+                {t("Last verified {p0}", {
+                  p0: new Date(boardDataState.updatedAt).toLocaleString(getLocale()),
+                })}
+              </p>
+            ) : null}
             {localHost === "stopped" ? (
               <LocalHostStartButton
-                className="-my-1 shrink-0"
                 onStarted={retryBoard}
                 onError={(message) => setError(message ?? null)}
               />
             ) : null}
           </div>
-        </Alert>
+        </Modal>
+      ) : null}
+      {sessionPreview ? (
+        <TaskSessionSheet
+          key={`${sessionPreview.machineId}:${sessionPreview.sessionId}`}
+          target={sessionPreview}
+          onClose={() => setSessionPreview(null)}
+          onOpen={onOpenBackgroundSession}
+        />
       ) : null}
       {dailyNotice ? (
         <Alert tone="warning" role="status" className="mx-4 mt-4 shrink-0">
@@ -1447,7 +1435,7 @@ function TasksContent({
               <LoaderCircle className="size-4 animate-spin" />
             </div>
           ) : (
-            <div className="grid h-full grid-cols-[repeat(6,minmax(10rem,1fr))] gap-3">
+            <div className="task-board-columns">
               {TASK_COLUMNS.map((status) => {
                 const column = boardIndexes.columns.get(status)!;
                 return (
@@ -1493,7 +1481,13 @@ function TasksContent({
                       {column.map((task) => (
                         <li
                           key={`${task.machineId}:${task.id}`}
-                          draggable={!acting && !task.stale}
+                          draggable={
+                            !acting &&
+                            !task.stale &&
+                            (task.status === "todo" ||
+                              task.status === "queued" ||
+                              TASK_COLUMNS.some((column) => canMoveTask(task.status, column)))
+                          }
                           onDragStart={(event) => {
                             if ((event.target as Element).closest("button,input,textarea,select")) {
                               event.preventDefault();
@@ -1643,6 +1637,7 @@ function TaskCardBody({
   onOpen: () => void;
 } & TaskActionHandlers) {
   useLocale();
+  const [failureOpen, setFailureOpen] = useState(false);
   const model = resolveModel(task.harness, task.model);
   const description = taskInstructionsSummary(task.prompt);
   const unread = unreadReviewNotes(task.reviewNotes);
@@ -1656,7 +1651,7 @@ function TaskCardBody({
       onKeyDown={(event) => {
         if (event.target === event.currentTarget && event.key === "Enter") onOpen();
       }}
-      className={`cursor-pointer rounded-md border bg-(--ui-surface) px-2.5 py-2 hover:border-(--ui-tone-neutral-border) ${
+      className={`task-board-card cursor-pointer rounded-md border bg-(--ui-surface) px-2.5 py-2 hover:border-(--ui-tone-neutral-border) ${
         selected ? "border-(--ui-tone-neutral-border)" : "border-(--ui-tone-neutral-border)"
       }`}
     >
@@ -1685,6 +1680,7 @@ function TaskCardBody({
         title={description}
         className="line-clamp-2 text-[13px] font-semibold leading-snug text-(--ui-tone-neutral-fg)"
       >
+        <GripVertical aria-hidden="true" className="task-drag-grip size-3" />
         {task.title}
       </h3>
       {description ? (
@@ -1744,15 +1740,8 @@ function TaskCardBody({
           {t("Needs input")}
         </Badge>
       ) : null}
-      {task.repairAttempts ? (
-        <p title={task.repairNote} className="mt-1.5 text-[11px] text-(--ui-tone-warning-fg)">
-          {task.status === "blocked" ? t("Automatic corrections used") : t("Automatic correction")}
-          {t(" · attempt ")}
-          {task.repairAttempts}
-        </p>
-      ) : null}
       {repairStopLabel(task) ? (
-        <p className="mt-1.5 text-[11px] text-(--ui-tone-warning-fg)">{repairStopLabel(task)}</p>
+        <p className="task-recovery-status">{repairStopLabel(task)}</p>
       ) : null}
       {task.reviewNotes?.length ? (
         <p
@@ -1766,28 +1755,23 @@ function TaskCardBody({
               })}
         </p>
       ) : null}
-      {task.status === "blocked" && task.error ? (
-        <p className="mt-1.5 line-clamp-4 break-words text-[11px] leading-snug text-(--ui-tone-danger-fg)">
-          {task.error}
-        </p>
-      ) : null}
-      {task.verification && (task.status === "review" || task.status === "blocked") ? (
-        <VerificationSummary verification={task.verification} />
-      ) : null}
-      {task.status === "review" && task.diffStat ? (
-        <pre
-          aria-label={"Changes"}
-          className="mt-1.5 max-h-32 overflow-auto rounded bg-(--ui-surface-raised) px-1.5 py-1 font-mono text-[10px] leading-snug text-(--ui-text-secondary)"
+      {task.error || task.mergeError || task.verification?.review?.verdict === "fail" ? (
+        <Button
+          variant="link"
+          tone="danger"
+          onClick={(event) => {
+            event.stopPropagation();
+            setFailureOpen(true);
+          }}
         >
-          {task.diffStat}
-        </pre>
+          {task.mergeError
+            ? t("Delivery is blocked")
+            : task.verification?.review?.verdict === "fail"
+              ? t("Review failed")
+              : t("Task failed")}
+        </Button>
       ) : null}
-      {task.status === "review" && task.mergeError ? (
-        <Alert tone="danger" role="alert" className="mt-1.5 break-words">
-          {task.mergeError}
-        </Alert>
-      ) : null}
-      {task.status === "review" ? (
+      {task.status === "review" && !task.mergeError ? (
         <p className="mbs-1 text-[11px] text-(--ui-tone-warning-fg)">
           {hasUnmergedBranch(task)
             ? task.mergeError
@@ -1799,6 +1783,18 @@ function TaskCardBody({
         </p>
       ) : null}
       <TaskActions task={task} {...actions} />
+      {failureOpen ? (
+        <div onClick={(event) => event.stopPropagation()}>
+          <Modal title={t("Task details")} onClose={() => setFailureOpen(false)}>
+            <div className="task-status-details">
+              <h3>{task.title}</h3>
+              {task.error ? <p>{task.error}</p> : null}
+              {task.mergeError ? <p>{task.mergeError}</p> : null}
+              {task.verification ? <VerificationSummary verification={task.verification} /> : null}
+            </div>
+          </Modal>
+        </div>
+      ) : null}
     </article>
   );
 }
@@ -1848,8 +1844,6 @@ function TaskActions({
   onRecheckReview,
 }: { task: BoardTask } & TaskActionHandlers) {
   useLocale();
-  const [menu, setMenu] = useState(false);
-  const trigger = useRef<HTMLButtonElement>(null);
   const can = (to: TaskStatus) => canMoveTask(task.status, to);
   type Action = {
     id: string;
@@ -2009,55 +2003,33 @@ function TaskActions({
     });
   return (
     <div
-      className="mt-1.5 flex flex-wrap items-center gap-1"
+      className="mt-1.5 flex min-w-0 flex-wrap items-center gap-1"
       onClick={(event) => event.stopPropagation()}
       onKeyDown={(event) => event.stopPropagation()}
     >
-      {primary.map((action) => (
-        <Button
-          key={action.id}
-          variant="ghost"
-          disabled={action.disabled}
-          loading={action.loading}
-          onClick={action.run}
-        >
-          {action.icon}
-          {action.label}
-        </Button>
-      ))}
-      {secondary.length ? (
-        <Button
-          ref={trigger}
-          variant="ghost"
-          iconOnly
-          label={t("More actions")}
-          aria-haspopup="menu"
-          aria-expanded={menu}
-          disabled={busy}
-          onClick={() => setMenu((open) => !open)}
-        >
-          <MoreHorizontal className="size-3.5" />
-        </Button>
-      ) : null}
-      {menu ? (
-        <DropdownMenu
-          anchor={trigger}
-          label={t("More actions")}
-          items={secondary.map(({ id, label, icon, disabled, danger }) => ({
-            kind: "item" as const,
-            id,
-            label,
-            icon,
-            disabled,
-            danger,
-          }))}
-          onClose={() => setMenu(false)}
-          onPick={(id) => {
-            const action = secondary.find((item) => item.id === id);
-            if (action && !action.disabled) action.run();
-          }}
-        />
-      ) : null}
+      <ExpandingButtonGroup
+        label={t("Task actions")}
+        size="sm"
+        fit
+        fullWidth
+        defaultExpanded={primary.find((action) => !["earlier", "later"].includes(action.id))?.id}
+        items={[...primary, ...secondary].map((action) => ({
+          id: action.id,
+          label:
+            action.id === "worker"
+              ? t("Worker")
+              : action.id === "review"
+                ? t("Review")
+                : action.id === "delivery"
+                  ? t("Target")
+                  : action.label,
+          ariaLabel: action.label,
+          icon: action.loading ? <LoaderCircle className="size-3 animate-spin" /> : action.icon,
+          disabled: action.disabled,
+          tone: action.danger ? ("danger" as const) : ("neutral" as const),
+          onSelect: action.run,
+        }))}
+      />
     </div>
   );
 }
@@ -2572,7 +2544,7 @@ function TaskForm({
       entries.findIndex((other) => other.path === entry.path) === index,
   );
   // A to-do item is mostly title and description; the agent comes later.
-  const [agentOpen, setAgentOpen] = useState(draft.id ? draft.status !== "todo" : false);
+  const [agentOpen, setAgentOpen] = useState(false);
   const update = <K extends keyof TaskDraft>(key: K, value: TaskDraft[K]) =>
     onChange({ ...draft, [key]: value });
   const hasDescription = draft.prompt.trim().length > 0;
@@ -2609,35 +2581,6 @@ function TaskForm({
           placeholder={t("What should get done?")}
           fieldClassName="task-title-field"
         />
-        <div className="flex min-w-0 flex-wrap items-center gap-2 [max-inline-size:100%]">
-          <Button variant="secondary" type="button" onClick={onCancel}>
-            {t("Cancel")}
-          </Button>
-          {draft.id ? (
-            <Button variant="primary" type="submit" disabled={!canSave || saving}>
-              {saving ? <LoaderCircle className="size-3.5 animate-spin" /> : null}
-              {t("Save")}
-            </Button>
-          ) : (
-            <>
-              <Button
-                variant="secondary"
-                type="button"
-                disabled={!ready || !hasDescription || saving}
-                title={
-                  hasDescription ? undefined : t("Add a description to start this with an agent.")
-                }
-                onClick={() => onSubmit("queued")}
-              >
-                {t("Add and start")}
-              </Button>
-              <Button variant="primary" type="submit" disabled={!canTodo || saving}>
-                {saving ? <LoaderCircle className="size-3.5 animate-spin" /> : null}
-                {t("Add to To do")}
-              </Button>
-            </>
-          )}
-        </div>
       </div>
       <div className="mt-2 flex min-w-0 flex-wrap items-center gap-2 text-[12px] text-(--ui-text-secondary)">
         {!draft.id ? (
@@ -2704,6 +2647,7 @@ function TaskForm({
       </div>
       <div
         data-ui-focus-group=""
+        data-task-prompt=""
         className="relative mt-2 rounded-md border border-(--ui-tone-neutral-border) bg-(--ui-surface-raised) has-focus:border-(--ui-tone-neutral-border)"
       >
         <SkillPromptField
@@ -2716,22 +2660,25 @@ function TaskForm({
           focusOwner="group"
         />
       </div>
-      <TaskExecutionMode
-        isolate={draft.isolate}
-        disabled={saving || draft.workspaceLocked}
-        onChange={(isolate) => update("isolate", isolate)}
-      />
-      <TaskWorkspacePicker
-        machine={target}
-        cwd={draft.cwd}
-        value={draft.workspace}
-        onChange={(workspace) => update("workspace", workspace)}
-        disabled={saving || draft.workspaceLocked}
-        branchName={draft.isolate}
-        isolate={draft.isolate}
-        onBusyChange={setWorkspaceBusy}
-        onValidityChange={setWorkspaceValid}
-      />
+      <details className="task-advanced-options">
+        <summary>{t("Working branch and worktree")}</summary>
+        <TaskExecutionMode
+          isolate={draft.isolate}
+          disabled={saving || draft.workspaceLocked}
+          onChange={(isolate) => update("isolate", isolate)}
+        />
+        <TaskWorkspacePicker
+          machine={target}
+          cwd={draft.cwd}
+          value={draft.workspace}
+          onChange={(workspace) => update("workspace", workspace)}
+          disabled={saving || draft.workspaceLocked}
+          branchName={draft.isolate}
+          isolate={draft.isolate}
+          onBusyChange={setWorkspaceBusy}
+          onValidityChange={setWorkspaceValid}
+        />
+      </details>
       <MachineConcurrency machineId={targetId} limits={limits} onChange={onChangeLimits} />
       <Button
         variant="ghost"
@@ -2807,6 +2754,35 @@ function TaskForm({
           </div>
         </div>
       ) : null}
+      <div className="task-form-footer">
+        <Button variant="secondary" type="button" onClick={onCancel}>
+          {t("Cancel")}
+        </Button>
+        {draft.id ? (
+          <Button variant="primary" type="submit" disabled={!canSave || saving}>
+            {saving ? <LoaderCircle className="size-3.5 animate-spin" /> : null}
+            {t("Save")}
+          </Button>
+        ) : (
+          <>
+            <Button
+              variant="secondary"
+              type="button"
+              disabled={!ready || !hasDescription || saving}
+              title={
+                hasDescription ? undefined : t("Add a description to start this with an agent.")
+              }
+              onClick={() => onSubmit("queued")}
+            >
+              {t("Add and start")}
+            </Button>
+            <Button variant="primary" type="submit" disabled={!canTodo || saving}>
+              {saving ? <LoaderCircle className="size-3.5 animate-spin" /> : null}
+              {t("Add to To do")}
+            </Button>
+          </>
+        )}
+      </div>
     </form>
   );
 }

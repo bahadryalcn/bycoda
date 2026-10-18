@@ -1,0 +1,68 @@
+.form {
+  min-inline-size: 0;
+  border: 1px solid var(--ui-tone-neutral-border);
+  border-radius: var(--ui-control-radius);
+  background: var(--ui-surface);
+  color: var(--ui-tone-neutral-fg);
+  font-family: var(--font-sans);
+}
+.fields {
+  min-inline-size: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.fields > legend,
+.fields .radio > legend {
+  padding: 0;
+  margin-block-end: var(--space-3);
+  color: var(--ui-tone-neutral-fg);
+  font-size: var(--ui-font-secondary);
+  font-weight: 500;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.options {
+  max-block-size: 18rem;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  display: grid;
+  gap: var(--space-2);
+  min-inline-size: 0;
+  padding: var(--space-1);
+}
+.option {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  min-inline-size: 0;
+  min-block-size: var(--ui-control-height);
+  padding: var(--space-3);
+  border: 1px solid var(--ui-tone-neutral-border);
+  border-radius: var(--ui-control-radius);
+  background: var(--ui-surface);
+  cursor: pointer;
+}
+.option:has(input:checked) {
+  background: var(--ui-surface-selected);
+}
+@media (hover: hover) and (pointer: fine) {
+  .option:hover {
+    background: var(--ui-surface-hover);
+  }
+}
+.option:active {
+  background: var(--ui-surface-pressed);
+}
+.copy {
+  min-inline-size: 0;
+  overflow-wrap: anywhere;
+  font-size: var(--ui-font-secondary);
+  line-height: 1.5;
+}
+.copy small {
+  display: block;
+  margin-block-start: var(--space-1);
+  color: var(--ui-text-secondary);
+  font-size: var(--ui-font-caption);
+}

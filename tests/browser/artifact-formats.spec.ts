@@ -1,5 +1,43 @@
 import { expect, test } from "@playwright/test";
 
+test("attachment opening, reference and removal stay distinct at narrow widths", async ({
+  page,
+}, info) => {
+  await page.goto("/tests/browser/artifact-formats.html?attachment-actions");
+  const open = page.getByRole("button", { name: /^Open 15-terminus/ });
+  const insert = page.getByRole("button", { name: "Insert [file1] into the message", exact: true });
+  for (const light of [false, true]) {
+    await page.evaluate(
+      (value) => document.documentElement.classList.toggle("theme-light", value),
+      light,
+    );
+    for (const width of [320, 390, 1000]) {
+      await page.setViewportSize({ width, height: 700 });
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      await expect(open).toBeInViewport();
+      await expect(insert).toBeInViewport();
+      expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
+        width,
+      );
+      await open.focus();
+      await open.press("Enter");
+      const dialog = page.getByRole("dialog");
+      await expect(dialog.locator("pre")).toContainText("Attachment contents");
+      await expect(page.getByLabel("Draft", { exact: true })).toHaveText("");
+      await page.keyboard.press("Escape");
+      await expect(open).toBeFocused();
+    }
+  }
+  await insert.focus();
+  await insert.press("Space");
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(page.getByLabel("Draft", { exact: true })).toHaveText("[file1]");
+  await page.setViewportSize({ width: 320, height: 700 });
+  await page.screenshot({ path: info.outputPath("attachment-actions.png") });
+  await page.getByRole("button", { name: /^Remove 15-terminus/ }).click();
+  await expect(open).toHaveCount(0);
+});
+
 test("chat file changes and long content fit a narrow column", async ({ page }, info) => {
   await page.goto("/tests/browser/artifact-formats.html?chat-overflow");
   const row = page.getByRole("region", { name: "File change" });

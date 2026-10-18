@@ -55,7 +55,7 @@ export function HistoryPageControls({
   label: string;
   onPage: (offset: number) => void;
 }) {
-  if (!page || !page.total) return null;
+  if (!page || !page.total || (page.total <= page.limit && !page.offset)) return null;
   return (
     <nav aria-label={label} className="social-filter-tabs">
       <span>

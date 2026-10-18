@@ -62,6 +62,7 @@ export interface WorkspaceToolPanelsProps {
   onLeaveAutomations: AutomationsProps["onClose"];
   onOpenBackgroundSession: AutomationsProps["onOpenBackgroundSession"];
   onOpenAutomationSession: AutomationsProps["onOpenSession"];
+  onLaunchAutomationAssistant?: AutomationsProps["onLaunchAssistant"];
   launchAutomation: (
     automation: Parameters<AutomationsProps["onLaunch"]>[0],
     run: Parameters<AutomationsProps["onLaunch"]>[1],
@@ -112,6 +113,7 @@ export function WorkspaceToolPanels({
   onOpenBackgroundSession,
   onOpenAutomationSession,
   launchAutomation,
+  onLaunchAutomationAssistant,
 }: WorkspaceToolPanelsProps) {
   return (
     <ToolNavigationContext.Provider
@@ -215,6 +217,7 @@ export function WorkspaceToolPanels({
           recents={visibleRecents}
           onClose={onLeaveAutomations}
           onToggleSidebar={toolWindow ? undefined : onToggleSidebar}
+          onLaunchAssistant={onLaunchAutomationAssistant}
           onLaunch={(automation, run) => launchAutomation(automation, run, true)}
           onOpenSession={onOpenAutomationSession}
           onOpenBackgroundSession={onOpenBackgroundSession}

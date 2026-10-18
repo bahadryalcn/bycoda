@@ -839,7 +839,7 @@ describe("codex live turn sequence", () => {
       callId: "async_question",
       questions: [{ id: "q1", prompt: "Which source?", allowCustom: true }],
     });
-    expect(question.autoResolveAt).toBeGreaterThan(Date.now());
+    expect(question.autoResolveAt).toBeUndefined();
     notify("item/agentMessage/delta", {
       itemId: "next",
       delta: "Still working",
@@ -963,7 +963,7 @@ describe("codex live turn sequence", () => {
     await turn;
   });
 
-  it.each([false, true])("optional async questions honor interaction=%s", async (interact) => {
+  it.each([false, true])("keeps async questions open with interaction=%s", async (interact) => {
     const { events, turn } = await startTurn("codex-live");
     vi.useFakeTimers();
     notifyAsyncQuestion("async_question");
@@ -971,19 +971,109 @@ describe("codex live turn sequence", () => {
     await vi.advanceTimersByTimeAsync(60_000);
     if (interact) keepCodexQuestionOpen("codex-live", question.requestId);
     await vi.advanceTimersByTimeAsync(120_000);
-    expect(events.some((event) => event.type === "question.resolved")).toBe(!interact);
-    if (!interact)
-      expect(events).toContainEqual({
-        type: "question.resolved",
-        requestId: question.requestId,
-        decision: "skipped",
-      });
+    expect(events.some((event) => event.type === "question.resolved")).toBe(false);
     expect(parse().some((message) => message.method === "turn/steer")).toBe(false);
+    respondCodexQuestion("codex-live", question.requestId, { kind: "skipped" });
+    await vi.advanceTimersByTimeAsync(0);
     notify("turn/completed", { turn: { id: "turn_1", status: "completed" } });
     await turn;
   });
 
-  it.each(["complete", "cancel", "stop"])(
+  it("keeps an async question after immediate completion and resumes with the answer", async () => {
+    const onAccepted = vi.fn();
+    const { events, turn } = await startTurn("codex-live", { onAccepted });
+    let settled = false;
+    void turn.then(() => {
+      settled = true;
+    });
+    notifyAsyncQuestion("async_question");
+    const question = events.find((event) => event.type === "question.asked")!;
+    notify("turn/completed", { turn: { id: "turn_1", status: "completed" } });
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(events.some((event) => event.type === "question.resolved")).toBe(false);
+    expect(settled).toBe(false);
+    respondCodexQuestion("codex-live", question.requestId, {
+      kind: "answered",
+      answers: { q1: ["Remote"] },
+    });
+    await waitFor(
+      () => parse().filter((message) => message.method === "turn/start").length === 2,
+      "answer continuation",
+    );
+    const continuation = parse().filter((message) => message.method === "turn/start")[1];
+    expect(continuation.params).toMatchObject({
+      threadId: "thr_1",
+      input: [{ type: "text", text: "Which source?\nRemote" }],
+      model: "gpt-5.4",
+    });
+    expect(parse().some((message) => message.method === "turn/steer")).toBe(false);
+    reply(continuation.id as number, { turn: { id: "turn_2" } });
+    notify("turn/started", { turn: { id: "turn_2", status: "inProgress" } });
+    // Asking again in the continuation must survive its immediate completion too.
+    notifyAsyncQuestion("async_question", "turn_2");
+    notify("turn/completed", { turn: { id: "turn_2", status: "completed" } });
+    const questions = events.filter((event) => event.type === "question.asked");
+    expect(questions).toHaveLength(2);
+    expect(questions[1].requestId).not.toBe(question.requestId);
+    respondCodexQuestion("codex-live", questions[1].requestId, { kind: "skipped" });
+    await turn;
+    expect(onAccepted).toHaveBeenCalledTimes(1);
+    expect(events).toContainEqual({
+      type: "question.resolved",
+      requestId: question.requestId,
+      decision: "answered",
+      reply: { kind: "answered", answers: { q1: ["Remote"] } },
+    });
+  });
+
+  it("waits for all queued async replies after completion and sends each answer once", async () => {
+    const { events, turn } = await startTurn("codex-live");
+    notifyAsyncQuestion("first");
+    notifyAsyncQuestion("second");
+    notify("turn/completed", { turn: { id: "turn_1", status: "completed" } });
+    const asked = () => events.filter((event) => event.type === "question.asked");
+    respondCodexQuestion("codex-live", asked()[0].requestId, {
+      kind: "answered",
+      answers: { q1: ["Local"] },
+    });
+    respondCodexQuestion("codex-live", asked()[0].requestId, {
+      kind: "answered",
+      answers: { q1: ["Local"] },
+    });
+    await waitFor(() => asked().length === 2, "second async question");
+    expect(parse().filter((message) => message.method === "turn/start")).toHaveLength(1);
+    expect(events.filter((event) => event.type === "question.resolved")).toHaveLength(1);
+    respondCodexQuestion("codex-live", asked()[1].requestId, { kind: "skipped" });
+    await waitFor(
+      () => parse().filter((message) => message.method === "turn/start").length === 2,
+      "queued answer continuation",
+    );
+    const continuation = parse().filter((message) => message.method === "turn/start")[1];
+    expect(continuation.params).toMatchObject({
+      input: [{ type: "text", text: "Which source?\nLocal" }],
+    });
+    reply(continuation.id as number, { turn: { id: "turn_2" } });
+    notify("turn/completed", { turn: { id: "turn_2", status: "completed" } });
+    await turn;
+  });
+
+  it("stops a completed turn waiting for an async answer without starting another turn", async () => {
+    const { events, turn } = await startTurn("codex-live");
+    notifyAsyncQuestion("async_question");
+    const question = events.find((event) => event.type === "question.asked")!;
+    notify("turn/completed", { turn: { id: "turn_1", status: "completed" } });
+    await cancelCodexTurn("codex-live");
+    await turn;
+    respondCodexQuestion("codex-live", question.requestId, {
+      kind: "answered",
+      answers: { q1: ["Local"] },
+    });
+    expect(parse().filter((message) => message.method === "turn/start")).toHaveLength(1);
+    expect(parse().some((message) => message.method === "turn/interrupt")).toBe(false);
+  });
+
+  it.each(["cancel", "stop", "interrupted", "failed"])(
     "clears async questions on %s without sending a stale answer",
     async (action) => {
       const { events, turn } = await startTurn("codex-live");
@@ -997,7 +1087,7 @@ describe("codex live turn sequence", () => {
       } else if (action === "stop") await stopCodexSession("codex-live");
       else
         notify("turn/completed", {
-          turn: { id: "turn_1", status: "completed" },
+          turn: { id: "turn_1", status: action },
         });
       await turn;
       await waitFor(
@@ -1613,7 +1703,7 @@ describe("codex live turn sequence", () => {
   });
 
   it.each([false, true, undefined])(
-    "honors isBlocking=%s without relying on deprecated autoResolutionMs",
+    "waits for an explicit reply with isBlocking=%s despite autoResolutionMs",
     async (isBlocking) => {
       const { events, turn } = await startTurn("codex-live");
       vi.useFakeTimers();
@@ -1629,22 +1719,16 @@ describe("codex live turn sequence", () => {
         }),
       );
       const question = events.find((event) => event.type === "question.asked")!;
-      expect(question.autoResolveAt).toBe(isBlocking === false ? Date.now() + 120_000 : undefined);
+      expect(question.autoResolveAt).toBeUndefined();
       await vi.advanceTimersByTimeAsync(119_999);
       expect(parse().some((m) => m.id === 91)).toBe(false);
       await vi.advanceTimersByTimeAsync(1);
-      if (isBlocking === false) {
-        expect(parse().find((m) => m.id === 91)?.result).toEqual({
-          answers: {},
-        });
-        expect(events).toContainEqual({
-          type: "question.resolved",
-          requestId: question.requestId,
-          decision: "skipped",
-        });
-      } else {
-        expect(parse().some((m) => m.id === 91)).toBe(false);
-      }
+      await vi.advanceTimersByTimeAsync(480_000);
+      expect(parse().some((m) => m.id === 91)).toBe(false);
+      expect(events.some((event) => event.type === "question.resolved")).toBe(false);
+      respondCodexQuestion("codex-live", question.requestId, { kind: "skipped" });
+      await vi.advanceTimersByTimeAsync(0);
+      expect(parse().find((m) => m.id === 91)?.result).toEqual({ answers: {} });
       notify("turn/completed", { turn: { id: "turn_1", status: "completed" } });
       await turn;
     },
@@ -1686,7 +1770,7 @@ describe("codex live turn sequence", () => {
     await turn;
   });
 
-  it("starts each queued optional question's deadline when it is shown", async () => {
+  it("advances queued optional questions only after an explicit reply", async () => {
     const { events, turn } = await startTurn("codex-live");
     vi.useFakeTimers();
     for (const id of [91, 92])
@@ -1702,13 +1786,28 @@ describe("codex live turn sequence", () => {
       );
     expect(events.filter((event) => event.type === "question.asked")).toHaveLength(1);
     await vi.advanceTimersByTimeAsync(120_000);
+    expect(parse().some((m) => m.id === 91 || m.id === 92)).toBe(false);
+    expect(events.filter((event) => event.type === "question.asked")).toHaveLength(1);
+    const first = events.find((event) => event.type === "question.asked")!;
+    respondCodexQuestion("codex-live", first.requestId, { kind: "skipped" });
+    await vi.advanceTimersByTimeAsync(0);
     expect(parse().filter((m) => m.id === 91)).toHaveLength(1);
     expect(parse().some((m) => m.id === 92)).toBe(false);
     const questions = events.filter((event) => event.type === "question.asked");
     expect(questions).toHaveLength(2);
-    expect(questions[1].autoResolveAt).toBe(Date.now() + 120_000);
+    expect(questions[1].autoResolveAt).toBeUndefined();
     await vi.advanceTimersByTimeAsync(120_000);
+    expect(parse().some((m) => m.id === 92)).toBe(false);
+    respondCodexQuestion("codex-live", questions[1].requestId, {
+      kind: "answered",
+      answers: {},
+      custom: { q: "Remote" },
+    });
+    await vi.advanceTimersByTimeAsync(0);
     expect(parse().filter((m) => m.id === 92)).toHaveLength(1);
+    expect(parse().find((m) => m.id === 92)?.result).toEqual({
+      answers: { q: { answers: ["Remote"] } },
+    });
     expect(
       events.reduce(applyHarnessEvent, newSession("codex", "/repo", "codex:gpt-5.4", "supervised"))
         .pendingQuestion,

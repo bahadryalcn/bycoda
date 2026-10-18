@@ -128,6 +128,24 @@ function render(
 }
 
 describe("pane docking UI", () => {
+  it("keeps a session on user interaction but leaves automatic focus as preview", () => {
+    const keep = vi.fn();
+    render(leaf("a"), vi.fn(), vi.fn(), { onSessionInteraction: keep });
+    const input = container.querySelector<HTMLInputElement>('[data-draft="a"]')!;
+    act(() => input.focus());
+    expect(keep).not.toHaveBeenCalled();
+    for (const event of [
+      new Event("pointerdown", { bubbles: true }),
+      new KeyboardEvent("keydown", { key: "x", bubbles: true }),
+      new KeyboardEvent("keyup", { key: "Tab", bubbles: true }),
+      new Event("input", { bubbles: true }),
+    ]) {
+      keep.mockClear();
+      act(() => input.dispatchEvent(event));
+      expect(keep).toHaveBeenCalledExactlyOnceWith("a");
+    }
+  });
+
   it("offers host refresh for a conflicted conversation in the pane tree", () => {
     const refresh = vi.fn(async () => true);
     render(splitPane(leaf("a"), "a", "right", "b"), vi.fn(), vi.fn(), {

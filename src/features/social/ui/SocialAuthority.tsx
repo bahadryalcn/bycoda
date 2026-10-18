@@ -1,3 +1,4 @@
+import { t, useLocale } from "../../../shared/i18n";
 import { Alert } from "../../../shared/ui/Alert";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import { Button } from "../../../shared/ui/Button";
@@ -49,6 +50,7 @@ export function SocialAuthority({
   run: (work: () => Promise<unknown>) => Promise<boolean>;
   onSelect: (id: string) => void;
 }) {
+  useLocale();
   const [status, setStatus] = useState<Status>();
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -169,11 +171,10 @@ export function SocialAuthority({
   };
 
   return (
-    <details className="social-form" aria-busy={loading || busy}>
-      <summary>Birden fazla bilgisayar için merkezi host</summary>
+    <details className="social-form social-authority-settings" aria-busy={loading || busy}>
+      <summary>{t("Birden fazla bilgisayarda kullanım")}</summary>
       <p className="social-muted">
-        Aynı hesapları başka bilgisayarlardan yönetiyorsanız tek bir host kullanın. Tek bilgisayarda
-        bu ayarı değiştirmeniz gerekmez.
+        {t("Hesapları yönetecek ana bilgisayarı seçin. Tek bilgisayarda bu ayara gerek yok.")}
       </p>
       {loading ? <p role="status">Host ayarı yükleniyor…</p> : null}
       {error ? <Alert tone="danger">{error}</Alert> : null}
@@ -192,8 +193,8 @@ export function SocialAuthority({
         <>
           <p>
             {status.authority
-              ? `Kullanılan merkezi host: ${machines.find((item) => item.id === status.authorityMachineId)?.name ?? "Kayıtlı host (bağlantı listesinde yok)"}`
-              : "Ajan oturumları bu bilgisayarın host'unu kullanıyor."}
+              ? `Ana bilgisayar: ${machines.find((item) => item.id === status.authorityMachineId)?.name ?? "Kayıtlı host (bağlantı listesinde yok)"}`
+              : t("Sosyal medya işlemleri bu bilgisayarda çalışıyor.")}
           </p>
           {remote ? (
             <form
@@ -217,10 +218,10 @@ export function SocialAuthority({
             >
               <fieldset className="social-workspace" disabled={busy || loading}>
                 <p>
-                  <strong>Yeni merkezi host: {target.name}</strong>
+                  <strong>Yeni ana bilgisayar: {target.name}</strong>
                 </p>
                 <label>
-                  Bu bilgisayarın host HTTPS adresi
+                  Bu bilgisayarın HTTPS adresi
                   <TextField
                     hideLabel
                     label=""
@@ -279,7 +280,7 @@ export function SocialAuthority({
 
                   disabled={!Object.keys(validMapping).length || staleMappings}
                 >
-                  {busy ? "Kaydediliyor…" : `${target.name} host'unu kullan`}
+                  {busy ? "Kaydediliyor…" : `${target.name} bilgisayarını kullan`}
                 </Button>
               </fieldset>
             </form>
@@ -293,13 +294,14 @@ export function SocialAuthority({
                 disabled={busy || loading}
                 onClick={() => changeAuthority(null, {}, null)}
               >
-                Yerel host'a dön ve gönderimleri durdur
+                Bu bilgisayara dön ve gönderimleri durdur
               </Button>
             </div>
           ) : null}
           <p className="social-muted">
-            Merkezi host'ta proje ve hesap izinleri ayrıca geçerlidir. Host değişikliği gönderim
-            izni vermez.
+            {t(
+              "Proje ve hesap izinleri ana bilgisayarda da geçerlidir. Bilgisayar değiştirmek gönderim izni vermez.",
+            )}
           </p>
         </>
       ) : null}

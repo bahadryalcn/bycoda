@@ -72,3 +72,24 @@ it("reveals real content and clears busy state when loading completes", async ()
   await vi.waitFor(() => expect(node.querySelector("button")?.textContent).toBe("Retry records"));
   expect(node.querySelector('[aria-busy="true"]')).toBeNull();
 });
+
+it("keeps inline quota labels readable at zero and full capacity without a completion check", async () => {
+  for (const value of [0, 100]) {
+    await act(async () =>
+      root.render(
+        createElement(Progress, {
+          value,
+          showValue: true,
+          valuePlacement: "inside",
+          valueLabel: `${value}% remaining`,
+          "aria-label": "Weekly remaining",
+        }),
+      ),
+    );
+    const bar = node.querySelector('[role="progressbar"]')!;
+    expect(bar.getAttribute("aria-valuenow")).toBe(String(value));
+    expect(bar.getAttribute("data-value-inside")).toBe("true");
+    expect(bar.textContent).toContain(`${value}% remaining`);
+    expect(bar.querySelector("svg")).toBeNull();
+  }
+});

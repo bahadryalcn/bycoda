@@ -1,4 +1,7 @@
 import { Button } from "../../../shared/ui/Button";
+import { RadioGroup } from "../../../shared/ui/RadioGroup";
+import { Checkbox } from "../../../shared/ui/Checkbox";
+import styles from "./QuestionForm.module.css";
 import { TextField } from "../../../shared/ui/TextField";
 import { t, useLocale } from "../../../shared/i18n";
 import { usePresentationVisible } from "./presentationVisibility";
@@ -9,7 +12,7 @@ import {
   useState,
   type KeyboardEvent as ReactKeyboardEvent,
 } from "react";
-import { Check, MessageSquare } from "../../../shared/ui/icons";
+import { MessageSquare } from "../../../shared/ui/icons";
 import {
   CUSTOM_OPTION_ID,
   buildQuestionReply,
@@ -109,7 +112,7 @@ export function QuestionForm({ prompt, onReply, onInteraction }: Props) {
       onChangeCapture={interact}
     >
       <form
-        className="min-w-0 rounded-lg border border-(--ui-tone-neutral-border) bg-(--ui-surface)"
+        className={styles.form}
         onSubmit={(event) => {
           event.preventDefault();
           continueCurrent();
@@ -223,7 +226,13 @@ function QuestionFields({
     const selectedIndex = options.findIndex((option) => selected.includes(option.id));
     return selectedIndex >= 0 ? selectedIndex : 0;
   });
-  const optionButtons = useRef<Array<HTMLButtonElement | null>>([]);
+  const fields = useRef<HTMLFieldSetElement | null>(null);
+  const optionInputs = () =>
+    Array.from(
+      fields.current?.querySelectorAll<HTMLInputElement>(
+        'input[type="radio"], input[type="checkbox"]',
+      ) ?? [],
+    );
   const customInput = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
@@ -232,21 +241,25 @@ function QuestionFields({
 
   const highlight = (index: number) => {
     setHighlighted(index);
-    optionButtons.current[index]?.focus();
+    optionInputs()[index]?.focus();
   };
 
-  const onOptionKeyDown = (event: ReactKeyboardEvent<HTMLButtonElement>, index: number) => {
+  const onOptionKeyDown = (event: ReactKeyboardEvent<HTMLFieldSetElement>, index: number) => {
     if (event.altKey || event.ctrlKey || event.metaKey) return;
 
     if (event.key === "ArrowDown" || event.key === "ArrowUp") {
       event.preventDefault();
       const offset = event.key === "ArrowDown" ? 1 : -1;
-      highlight((index + offset + options.length) % options.length);
+      const next = (index + offset + options.length) % options.length;
+      highlight(next);
+      if (!question.multiSelect) onSelect(options[next].id);
       return;
     }
     if (event.key === "Home" || event.key === "End") {
       event.preventDefault();
-      highlight(event.key === "Home" ? 0 : options.length - 1);
+      const next = event.key === "Home" ? 0 : options.length - 1;
+      highlight(next);
+      if (!question.multiSelect) onSelect(options[next].id);
       return;
     }
     if (event.key === "Enter" || event.key === " ") {
@@ -265,10 +278,15 @@ function QuestionFields({
   };
 
   return (
-    <fieldset className="min-w-0">
-      <legend className="w-full text-sm font-medium leading-snug wrap-anywhere text-(--ui-tone-neutral-fg)">
-        {question.prompt}
-      </legend>
+    <fieldset
+      className={styles.fields}
+      ref={fields}
+      onKeyDownCapture={(event) => {
+        const index = optionInputs().indexOf(event.target as HTMLInputElement);
+        if (index >= 0) onOptionKeyDown(event, index);
+      }}
+    >
+      {question.multiSelect || options.length === 0 ? <legend>{question.prompt}</legend> : null}
       {question.multiSelect ? (
         <p className="[margin-block-start:0.5rem] text-xs text-(--ui-text-secondary)">
           {t("Select all that apply")}
@@ -284,57 +302,37 @@ function QuestionFields({
           fieldClassName="[margin-block-start:0.75rem] w-full"
         />
       ) : (
-        <div
-          className="[margin-block-start:0.75rem] flex max-h-52 flex-col gap-1 overflow-y-auto overscroll-contain"
-          role="group"
-          aria-label={question.prompt}
-        >
-          {options.map((option, optionIndex) => {
-            const active = selected.includes(option.id);
-            return (
-              <Button
-                key={option.id}
-                className="w-full text-start"
-                fullWidth
-                layout="stacked"
-                selected={active}
-                variant="item"
-                ref={(button) => {
-                  optionButtons.current[optionIndex] = button;
-                }}
-                type="button"
-                aria-pressed={active}
-                aria-keyshortcuts={optionIndex < 9 ? String(optionIndex + 1) : undefined}
-                data-highlighted={highlighted === optionIndex ? "true" : undefined}
-                tabIndex={highlighted === optionIndex ? 0 : -1}
-                onFocus={() => setHighlighted(optionIndex)}
-                onKeyDown={(event) => onOptionKeyDown(event, optionIndex)}
-                onClick={() => {
-                  setHighlighted(optionIndex);
-                  onSelect(option.id);
-                }}
-              >
-                <span className="flex min-w-0 items-start gap-2.5">
-                  <span
-                    aria-hidden
-                    className={`[margin-block-start:0.125rem] inline-flex size-4 shrink-0 items-center justify-center border border-(--ui-tone-neutral-border) ${question.multiSelect ? "rounded-sm" : "rounded-full"}`}
-                  >
-                    {active ? <Check className="size-3.5" /> : null}
-                  </span>
-                  <span className="min-w-0 flex-1">
-                    <span className="block text-sm leading-snug wrap-anywhere text-(--ui-tone-neutral-fg)">
-                      {option.label}
-                    </span>
-                    {option.description ? (
-                      <span className="[margin-block-start:0.25rem] block text-xs leading-snug wrap-anywhere text-(--ui-text-secondary)">
-                        {option.description}
-                      </span>
-                    ) : null}
-                  </span>
+        <div className={styles.options} role="group" aria-label={question.prompt}>
+          {!question.multiSelect ? (
+            <RadioGroup
+              className={styles.radio}
+              label={question.prompt}
+              name={question.id}
+              value={selected[0] ?? ""}
+              options={options.map((option) => ({
+                value: option.id,
+                label: option.label,
+                description: option.description,
+              }))}
+              onValueChange={onSelect}
+            />
+          ) : (
+            options.map((option, optionIndex) => (
+              <label key={option.id} className={styles.option}>
+                <Checkbox
+                  checked={selected.includes(option.id)}
+                  aria-keyshortcuts={optionIndex < 9 ? String(optionIndex + 1) : undefined}
+                  tabIndex={highlighted === optionIndex ? 0 : -1}
+                  onFocus={() => setHighlighted(optionIndex)}
+                  onChange={() => onSelect(option.id)}
+                />
+                <span className={styles.copy}>
+                  <span>{option.label}</span>
+                  {option.description ? <small>{option.description}</small> : null}
                 </span>
-              </Button>
-            );
-          })}
+              </label>
+            ))
+          )}
         </div>
       )}
       {options.length > 0 && customSelected ? (

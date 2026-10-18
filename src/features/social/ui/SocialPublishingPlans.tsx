@@ -15,8 +15,8 @@ import {
   type PublishingScheduleFields,
 } from "../model/publishingPlanForm";
 import { SocialMultiSelect } from "./SocialMultiSelect";
+import { SocialSetupEditor } from "./SocialSetupEditor";
 import {
-  Composer,
   Empty,
   Notice,
   StatusBadge,
@@ -124,13 +124,15 @@ export function PublishingPlans({ client, snapshot, projects, initialProject, ru
     setScheduleDraft((current) => ({ ...current, ...change }));
 
   return (
-    <section className="social-publishing-plans" aria-label="Otomatik yayın planları">
+    <section
+      className="social-publishing-plans"
+      aria-label="Otomatik yayın planları"
+      data-empty={!plans.length}
+    >
       <header className="social-section-heading">
         <div>
           <h2>Otomatik yayın planları</h2>
-          <p className="social-muted">
-            Onayladığınız içerikler, belirlediğiniz saatlerde ve aralıklarla sırayla paylaşılır.
-          </p>
+          <p className="social-muted">Onaylı kampanyaları belirlediğiniz saatlerde paylaşın.</p>
         </div>
         <StatusBadge
           status={plans.some((plan) => plan.enabled) ? "active" : "paused"}
@@ -143,13 +145,14 @@ export function PublishingPlans({ client, snapshot, projects, initialProject, ru
         </Notice>
       ) : (
         <>
-          <Composer
+          <SocialSetupEditor
+            inline={!plans.length}
             title={editingId ? "Yayın planını düzenle" : "Otomatik yayın planı oluştur"}
             editing={editVersion}
             description="Hesap, içerik havuzu ve saatleri belirleyin. Plan durdurulmuş kaydedilir; yayın için ayrıca etkinleştirin."
           >
             <form
-              className="social-form"
+              className="social-form social-plan-setup"
               onSubmit={(event) => {
                 const form = event.currentTarget;
                 field(event);
@@ -182,61 +185,152 @@ export function PublishingPlans({ client, snapshot, projects, initialProject, ru
                 })();
               }}
             >
-              <label>
-                Plan adı
-                <TextField
-                  hideLabel
-                  label=""
-                  required
-                  maxLength={200}
-                  value={name}
-                  onChange={(event) => setName(event.target.value)}
-                  placeholder="Örn. X günlük ürün paylaşımları"
+              <div className="social-plan-content">
+                <label>
+                  Plan adı
+                  <TextField
+                    hideLabel
+                    label=""
+                    required
+                    maxLength={200}
+                    value={name}
+                    onChange={(event) => setName(event.target.value)}
+                    placeholder="Örn. X günlük ürün paylaşımları"
+                  />
+                </label>
+                <div className="social-form-grid">
+                  <label>
+                    Paylaşım hesabı
+                    <NativeSearchableSelect
+                      label="Paylaşım hesabı"
+                      options={
+                        snapshot.accounts.length
+                          ? snapshot.accounts.map((item) => ({
+                              value: item.id,
+                              label: `${item.name} · ${names[item.platform]}`,
+                            }))
+                          : [{ value: "", label: "Önce bir hesap bağlayın" }]
+                      }
+                      value={accountId}
+                      disabled={completedCampaignIds.length > 0}
+                      onChange={(event) => {
+                        setAccountId(event.target.value);
+                        setCampaignIds([]);
+                      }}
+                      required
+                    />
+                  </label>
+                  <label>
+                    Proje
+                    <NativeSearchableSelect
+                      label="Proje"
+                      options={
+                        projects.length
+                          ? projects.map((project) => ({
+                              value: project.id,
+                              label: project.name || project.cwd,
+                            }))
+                          : [{ value: "", label: "Proje bulunamadı" }]
+                      }
+                      value={projectId}
+                      disabled={completedCampaignIds.length > 0}
+                      onChange={(event) => {
+                        setProjectId(event.target.value);
+                        setCampaignIds([]);
+                      }}
+                      required
+                    />
+                  </label>
+                </div>
+
+                <SocialMultiSelect
+                  label="Paylaşılacak kampanyalar · seçtiğiniz sırayla"
+                  placeholder="İçerik havuzunu seçin"
+                  searchPlaceholder="Kampanya ara"
+                  options={availableCampaigns
+                    .filter((campaign) => !completedCampaignIds.includes(campaign.id))
+                    .map((campaign) => ({
+                      value: campaign.id,
+                      label: campaign.name,
+                      description: snapshot.approvedCampaignIds?.includes(campaign.id)
+                        ? "Yayın onaylı"
+                        : "Kampanyalar bölümünden yayın onayı gerekli",
+                    }))}
+                  selected={campaignIds.filter((id) => !completedCampaignIds.includes(id))}
+                  onChange={(ids) => setCampaignIds([...completedCampaignIds, ...ids])}
                 />
-              </label>
-              <div className="social-form-grid">
-                <label>
-                  Paylaşım hesabı
-                  <NativeSearchableSelect
-                    label="Paylaşım hesabı"
-                    options={
-                      snapshot.accounts.length
-                        ? snapshot.accounts.map((item) => ({
-                            value: item.id,
-                            label: `${item.name} · ${names[item.platform]}`,
-                          }))
-                        : [{ value: "", label: "Önce bir hesap bağlayın" }]
-                    }
-                    value={accountId}
-                    disabled={completedCampaignIds.length > 0}
-                    onChange={(event) => {
-                      setAccountId(event.target.value);
-                      setCampaignIds([]);
-                    }}
-                    required
-                  />
-                </label>
-                <label>
-                  Proje
-                  <NativeSearchableSelect
-                    label="Proje"
-                    options={
-                      projects.length
-                        ? projects.map((project) => ({
-                            value: project.id,
-                            label: project.name || project.cwd,
-                          }))
-                        : [{ value: "", label: "Proje bulunamadı" }]
-                    }
-                    value={projectId}
-                    disabled={completedCampaignIds.length > 0}
-                    onChange={(event) => {
-                      setProjectId(event.target.value);
-                      setCampaignIds([]);
-                    }}
-                    required
-                  />
-                </label>
+                {completedCampaignIds.length ? (
+                  <Notice kind="info">
+                    Bu planda {completedCampaignIds.length} kampanya tamamlandı. Gönderilen
+                    içeriklerin sırası, hesap ve proje korunur; kalan içerikleri değiştirebilir veya
+                    havuza yeni kampanyalar ekleyebilirsiniz.
+                  </Notice>
+                ) : null}
+                {campaignIds.length > 1 ? (
+                  <ol className="social-pool-editor" aria-label="Paylaşım sırası">
+                    {campaignIds.map((id, index) => (
+                      <li key={id}>
+                        <span>
+                          {campaigns.find((campaign) => campaign.id === id)?.name ??
+                            "Kampanya bulunamadı"}
+                        </span>
+                        <div className="social-actions">
+                          <Button
+                            variant="secondary"
+                            type="button"
+                            disabled={index <= completedCampaignIds.length}
+                            aria-label={`${index + 1}. kampanyayı yukarı taşı`}
+                            onClick={() =>
+                              setCampaignIds((current) => {
+                                const next = [...current];
+                                [next[index - 1], next[index]] = [next[index], next[index - 1]];
+                                return next;
+                              })
+                            }
+                          >
+                            Yukarı
+                          </Button>
+                          <Button
+                            variant="secondary"
+                            type="button"
+                            disabled={
+                              index < completedCampaignIds.length ||
+                              index === campaignIds.length - 1
+                            }
+                            aria-label={`${index + 1}. kampanyayı aşağı taşı`}
+                            onClick={() =>
+                              setCampaignIds((current) => {
+                                const next = [...current];
+                                [next[index + 1], next[index]] = [next[index], next[index + 1]];
+                                return next;
+                              })
+                            }
+                          >
+                            Aşağı
+                          </Button>
+                        </div>
+                      </li>
+                    ))}
+                  </ol>
+                ) : null}
+                {!availableCampaigns.length ? (
+                  <Notice kind="info">
+                    Bu hesap ve proje için kampanya yok. Kampanyalar bölümünde içerik hazırlayıp
+                    yayın onayı verin.
+                  </Notice>
+                ) : null}
+                <p className="social-muted">
+                  Her kampanya bir kez paylaşılır. İçerik havuzu bitince plan durur; devam etmek
+                  için yeni onaylı kampanyalar ekleyin.
+                </p>
+                <Button type="submit" variant="secondary" disabled={!canSave}>
+                  {editingId ? "Değişiklikleri durdurulmuş kaydet" : "Planı durdurulmuş kaydet"}
+                </Button>
+                {!name.trim() || !account || !projectId || invalidPool ? (
+                  <small className="social-muted">
+                    Kaydetmek için plan adı, hesap, proje ve en az bir kampanya seçin.
+                  </small>
+                ) : null}
               </div>
               <fieldset>
                 <legend>Ne zaman paylaşsın?</legend>
@@ -357,95 +451,8 @@ export function PublishingPlans({ client, snapshot, projects, initialProject, ru
                   </Notice>
                 )}
               </fieldset>
-              <SocialMultiSelect
-                label="Paylaşılacak kampanyalar · seçtiğiniz sırayla"
-                placeholder="İçerik havuzunu seçin"
-                searchPlaceholder="Kampanya ara"
-                options={availableCampaigns
-                  .filter((campaign) => !completedCampaignIds.includes(campaign.id))
-                  .map((campaign) => ({
-                    value: campaign.id,
-                    label: campaign.name,
-                    description: snapshot.approvedCampaignIds?.includes(campaign.id)
-                      ? "Yayın onaylı"
-                      : "Kampanyalar bölümünden yayın onayı gerekli",
-                  }))}
-                selected={campaignIds.filter((id) => !completedCampaignIds.includes(id))}
-                onChange={(ids) => setCampaignIds([...completedCampaignIds, ...ids])}
-              />
-              {completedCampaignIds.length ? (
-                <Notice kind="info">
-                  Bu planda {completedCampaignIds.length} kampanya tamamlandı. Gönderilen
-                  içeriklerin sırası, hesap ve proje korunur; kalan içerikleri değiştirebilir veya
-                  havuza yeni kampanyalar ekleyebilirsiniz.
-                </Notice>
-              ) : null}
-              {campaignIds.length > 1 ? (
-                <ol className="social-pool-editor" aria-label="Paylaşım sırası">
-                  {campaignIds.map((id, index) => (
-                    <li key={id}>
-                      <span>
-                        {campaigns.find((campaign) => campaign.id === id)?.name ??
-                          "Kampanya bulunamadı"}
-                      </span>
-                      <div className="social-actions">
-                        <Button
-                          variant="secondary"
-                          type="button"
-                          disabled={index <= completedCampaignIds.length}
-                          aria-label={`${index + 1}. kampanyayı yukarı taşı`}
-                          onClick={() =>
-                            setCampaignIds((current) => {
-                              const next = [...current];
-                              [next[index - 1], next[index]] = [next[index], next[index - 1]];
-                              return next;
-                            })
-                          }
-                        >
-                          Yukarı
-                        </Button>
-                        <Button
-                          variant="secondary"
-                          type="button"
-                          disabled={
-                            index < completedCampaignIds.length || index === campaignIds.length - 1
-                          }
-                          aria-label={`${index + 1}. kampanyayı aşağı taşı`}
-                          onClick={() =>
-                            setCampaignIds((current) => {
-                              const next = [...current];
-                              [next[index + 1], next[index]] = [next[index], next[index + 1]];
-                              return next;
-                            })
-                          }
-                        >
-                          Aşağı
-                        </Button>
-                      </div>
-                    </li>
-                  ))}
-                </ol>
-              ) : null}
-              {!availableCampaigns.length ? (
-                <Notice kind="info">
-                  Bu hesap ve proje için kampanya yok. Kampanyalar bölümünde içerik hazırlayıp yayın
-                  onayı verin.
-                </Notice>
-              ) : null}
-              <Notice kind="warning" title="İçerik havuzu bitince plan durur">
-                Her kampanya bu hesapta bir kez paylaşılır. Sürekli yeni paylaşım için yeni onaylı
-                kampanyalar ekleyin. Plan kendi kendine yeni içerik üretmez.
-              </Notice>
-              <Button type="submit" variant="secondary" disabled={!canSave}>
-                {editingId ? "Değişiklikleri durdurulmuş kaydet" : "Planı durdurulmuş kaydet"}
-              </Button>
-              {!name.trim() || !account || !projectId || invalidPool ? (
-                <small className="social-muted">
-                  Kaydetmek için plan adı, hesap, proje ve en az bir kampanya seçin.
-                </small>
-              ) : null}
             </form>
-          </Composer>
+          </SocialSetupEditor>
           <div className="social-columns">
             <section>
               <h3>
@@ -479,9 +486,8 @@ export function PublishingPlans({ client, snapshot, projects, initialProject, ru
                   </Button>
                 ))
               ) : (
-                <Empty title="İlk otomatik yayın planınızı oluşturun">
-                  Hesabınızı seçin, örneğin her gün 09:00–18:00 arasında 2–5 saat arayla paylaşım
-                  ayarlayın.
+                <Empty title="Henüz yayın planı yok">
+                  Hesabınızı, onaylı kampanyaları ve paylaşım saatlerini seçerek bir plan oluşturun.
                 </Empty>
               )}
             </section>

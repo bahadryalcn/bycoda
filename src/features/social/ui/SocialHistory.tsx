@@ -1,3 +1,5 @@
+import { SocialFilters } from "./SocialFilters";
+import { t, useLocale } from "../../../shared/i18n";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import { NativeSelect } from "../../../shared/ui/Select";
 import { TextField } from "../../../shared/ui/TextField";
@@ -46,6 +48,7 @@ function resultUrl(value?: string) {
 }
 
 export function SocialHistory({ snapshot, client, run, onFilterChange }: Props) {
+  useLocale();
   const waiting = snapshot.jobCounts
     ? (snapshot.jobCounts.queued ?? 0) + (snapshot.jobCounts.running ?? 0)
     : snapshot.jobs.filter((job) => job.status === "queued" || job.status === "running").length;
@@ -56,8 +59,7 @@ export function SocialHistory({ snapshot, client, run, onFilterChange }: Props) 
     <div className="social-history-page">
       <div className="social-section-heading">
         <div>
-          <h2>İşlem geçmişi ve kuyruk</h2>
-          <p className="social-muted">Planlanan gönderimler ve tamamlanan işlem sonuçları.</p>
+          <h2>{t("Gönderim geçmişi")}</h2>
         </div>
       </div>
       <div className="social-stats social-history-summary" aria-label="Gönderim özeti">
@@ -116,6 +118,7 @@ export function JobHistory({
   jobs?: SocialJob[];
   onFilterChange?: Props["onFilterChange"];
 }) {
+  useLocale();
   const campaigns = socialRows(snapshot.campaigns, snapshot.related?.campaigns);
   const contacts = socialRows(snapshot.contacts, snapshot.related?.contacts);
   const [status, setStatus] = useState("");
@@ -164,9 +167,9 @@ export function JobHistory({
   };
   return (
     <div className="social-job-list">
-      <div className="social-toolbar social-history-filters">
-        <label>
-          İşlem ara
+      <div className="social-list-tools social-history-filters">
+        <label className="social-history-search">
+          {t("İşlem ara")}
           <SearchInput
             appearance="field"
             type="search"
@@ -178,82 +181,88 @@ export function JobHistory({
             }}
           />
         </label>
-        <label>
-          Gönderim durumu
-          <NativeSelect
-            value={status}
-            onChange={(event) => {
-              setStatus(event.target.value);
-              setPage(0);
-            }}
-          >
-            <option value="">
-              Tüm işler ·{" "}
-              {onFilterChange && snapshot.jobCounts
-                ? Object.values(snapshot.jobCounts).reduce(
-                    (total, count) => total + (count ?? 0),
-                    0,
-                  )
-                : jobs.length}
-            </option>
-            {["queued", "running", "succeeded", "failed", "review", "cancelled"].map((item) => (
-              <option key={item} value={item}>
-                {statuses[item]} ·{" "}
-                {(onFilterChange ? snapshot.jobCounts?.[item as SocialJob["status"]] : undefined) ??
-                  jobs.filter((job) => job.status === item).length}
+        <SocialFilters
+          activeCount={[status, accountId, kind, since].filter(Boolean).length}
+          onReset={reset}
+        >
+          <label>
+            Gönderim durumu
+            <NativeSelect
+              value={status}
+              onChange={(event) => {
+                setStatus(event.target.value);
+                setPage(0);
+              }}
+            >
+              <option value="">
+                Tüm işler ·{" "}
+                {onFilterChange && snapshot.jobCounts
+                  ? Object.values(snapshot.jobCounts).reduce(
+                      (total, count) => total + (count ?? 0),
+                      0,
+                    )
+                  : jobs.length}
               </option>
-            ))}
-          </NativeSelect>
-        </label>
-        <label>
-          Hesap
-          <SearchableSelect
-            value={accountId}
-            label={"Hesap"}
-            options={[
-              { value: "", label: "Tüm hesaplar" },
-              ...snapshot.accounts.map((item) => ({
-                value: item.id,
-                label: [item.name, "·", names[item.platform]].join(" "),
-              })),
-            ]}
-            onChange={(nextValue) => {
-              setAccountId(nextValue);
-              setPage(0);
-            }}
-            searchLocale="tr"
-          />
-        </label>
-        <label>
-          İşlem türü
-          <NativeSelect
-            value={kind}
-            onChange={(event) => {
-              setKind(event.target.value);
-              setPage(0);
-            }}
-          >
-            <option value="">Tüm işlemler</option>
-            {Object.entries(jobKinds).map(([id, title]) => (
-              <option key={id} value={id}>
-                {title}
-              </option>
-            ))}
-          </NativeSelect>
-        </label>
-        <label>
-          Başlangıç tarihi
-          <TextField
-            hideLabel
-            label=""
-            type="date"
-            value={since}
-            onChange={(event) => {
-              setSince(event.target.value);
-              setPage(0);
-            }}
-          />
-        </label>
+              {["queued", "running", "succeeded", "failed", "review", "cancelled"].map((item) => (
+                <option key={item} value={item}>
+                  {statuses[item]} ·{" "}
+                  {(onFilterChange
+                    ? snapshot.jobCounts?.[item as SocialJob["status"]]
+                    : undefined) ?? jobs.filter((job) => job.status === item).length}
+                </option>
+              ))}
+            </NativeSelect>
+          </label>
+          <label>
+            Hesap
+            <SearchableSelect
+              value={accountId}
+              label={"Hesap"}
+              options={[
+                { value: "", label: "Tüm hesaplar" },
+                ...snapshot.accounts.map((item) => ({
+                  value: item.id,
+                  label: [item.name, "·", names[item.platform]].join(" "),
+                })),
+              ]}
+              onChange={(nextValue) => {
+                setAccountId(nextValue);
+                setPage(0);
+              }}
+              searchLocale="tr"
+            />
+          </label>
+          <label>
+            İşlem türü
+            <NativeSelect
+              value={kind}
+              onChange={(event) => {
+                setKind(event.target.value);
+                setPage(0);
+              }}
+            >
+              <option value="">Tüm işlemler</option>
+              {Object.entries(jobKinds).map(([id, title]) => (
+                <option key={id} value={id}>
+                  {title}
+                </option>
+              ))}
+            </NativeSelect>
+          </label>
+          <label>
+            Başlangıç tarihi
+            <TextField
+              hideLabel
+              label=""
+              type="date"
+              value={since}
+              onChange={(event) => {
+                setSince(event.target.value);
+                setPage(0);
+              }}
+            />
+          </label>
+        </SocialFilters>
       </div>
       <p className="social-inline-meta" role="status">
         {hostFiltered && onFilterChange ? snapshot.pages?.jobs?.total : filtered.length} iş
@@ -290,11 +299,16 @@ export function JobHistory({
                 </div>
                 <p className="social-job-explanation">{socialJobExplanation(job)}</p>
                 <p className="social-history-excerpt">{job.payload.text}</p>
-                <div className="social-inline-meta">
-                  <span>Oluşturuldu {time(job.createdAt)}</span>
-                  {job.dispatchedAt ? <span>Gönderim başladı {time(job.dispatchedAt)}</span> : null}
-                  {job.attempts ? <span>{job.attempts} deneme</span> : null}
-                </div>
+                <details className="social-history-metadata">
+                  <summary>{t("İşlem ayrıntıları")}</summary>
+                  <div className="social-inline-meta">
+                    <span>Oluşturuldu {time(job.createdAt)}</span>
+                    {job.dispatchedAt ? (
+                      <span>Gönderim başladı {time(job.dispatchedAt)}</span>
+                    ) : null}
+                    {job.attempts ? <span>{job.attempts} deneme</span> : null}
+                  </div>
+                </details>
                 {job.error && job.status !== "cancelled" ? (
                   <details className="social-job-error">
                     <summary>Sonuç ayrıntısı</summary>

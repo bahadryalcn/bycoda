@@ -1,5 +1,52 @@
 import { test, expect } from "@playwright/test";
 
+test("chat shortcut hints follow custom bindings and expose rewind at narrow widths", async ({
+  page,
+}) => {
+  await initializeChatLayout(page);
+  await page.goto("/tests/browser/composer-extras.html?chat-layout&shortcuts");
+  const input = page.getByRole("textbox", { name: "Message", exact: true });
+  await input.fill("");
+  const rewind = page.getByRole("button", { name: "Rewind and edit", exact: true });
+  await expect(rewind).toHaveAttribute("title", "Rewind and edit (Esc Esc)");
+  for (const light of [false, true]) {
+    await page.evaluate(
+      (value) => document.documentElement.classList.toggle("theme-light", value),
+      light,
+    );
+    for (const width of [320, 390, 1000]) {
+      await page.setViewportSize({ width, height: 800 });
+      await expect(rewind).toBeInViewport();
+      await rewind.hover();
+    }
+  }
+  await rewind.focus();
+  await rewind.press("Enter");
+  await expect(input).toHaveValue("Earlier message");
+  await expect(rewind).toBeHidden();
+  await page.getByRole("button", { name: "Toggle busy", exact: true }).click();
+  const stop = page.getByRole("button", { name: "Stop", exact: true });
+  const queue = page.getByRole("button", { name: "Queue message", exact: true });
+  await page.evaluate(() => {
+    localStorage.setItem(
+      "bycoda.keybindingOverrides",
+      JSON.stringify({
+        "Session: Stop Turn": { shortcut: "Control+Shift+KeyM" },
+        "Composer: Queue Message": { disabled: true },
+      }),
+    );
+    window.dispatchEvent(new StorageEvent("storage", { key: "bycoda.keybindingOverrides" }));
+  });
+  await expect(stop).toHaveAttribute("title", /M.*Ctrl\+C/);
+  await expect(queue).toHaveAttribute("title", "Queue message for when this turn finishes");
+  await page.evaluate(() => {
+    localStorage.removeItem("bycoda.keybindingOverrides");
+    window.dispatchEvent(new StorageEvent("storage", { key: "bycoda.keybindingOverrides" }));
+  });
+  await expect(stop).toHaveAttribute("title", "Stop (Esc / Ctrl+C)");
+  await expect(queue).toHaveAttribute("title", /Tab/);
+});
+
 test("custom context signal exposes completed TPS and compact and respects reduced motion", async ({
   page,
 }, testInfo) => {

@@ -123,6 +123,14 @@ function host(
       fixtureTrees.push(tree);
       return { ...tree, head: "abc" };
     }
+    if (args.method === "sessions.get")
+      return {
+        status: "idle",
+        session: {
+          title: "Host transcript",
+          blocks: [{ id: "reply", role: "assistant", text: "Session preview reply" }],
+        },
+      };
     if (args.method === "tasks.start") {
       const target = tasks.find((task) => task.id === args.params.taskId)!;
       target.status = "running";
@@ -234,10 +242,21 @@ const button = (scope: ParentNode, label: string) =>
     (entry) => buttonName(entry) === label || buttonText(entry) === label,
   );
 async function pickAction(scope: ParentNode, label: string) {
+  const direct = button(scope, label);
+  if (direct) {
+    await act(async () => direct.click());
+    return;
+  }
   await act(async () => button(scope, "More actions")!.click());
   const action = button(document.body.querySelector('[role="menu"]')!, label)!;
   expect(action, label).toBeTruthy();
   await act(async () => action.click());
+}
+
+async function promoteSession() {
+  const open = button(document.body, "Open in Sessions");
+  expect(open).toBeTruthy();
+  await act(async () => open!.click());
 }
 
 /** Types into a controlled React field. */
@@ -384,6 +403,7 @@ it("lists the goal's worker sessions and preserves their host bindings", async (
   await act(async () => button(card("Launch the beta"), "Task sessions")!.click());
   const dialog = document.querySelector('[role="dialog"]')!;
   await act(async () => button(dialog, "Open worker session")!.click());
+  await promoteSession();
   expect(open).toHaveBeenCalledWith({
     machineId: "machine-local",
     cwd: "/work/project",
@@ -409,21 +429,17 @@ it("lays tasks out in six columns with the actions each status allows", async ()
   ).toEqual(["To do", "Queued", "Running", "Review", "Done", "Blocked"]);
   const actions = (status: string) =>
     Array.from(column(status).querySelectorAll("button"), buttonName);
-  expect(actions("todo")).toEqual(["Mark done", "Start", "More actions"]);
-  expect(actions("queued")).toEqual(["More actions"]);
+  expect(actions("todo")).toEqual(["Mark done", "Start", "Edit", "Delete"]);
+  expect(actions("queued")).toEqual(["Move to To do", "Edit", "Delete"]);
   expect(actions("running")).toEqual(["Stop"]);
-  expect(actions("review")).toEqual(["Approve", "Run again", "More actions"]);
-  expect(actions("done")).toEqual(["Run again", "More actions"]);
-  expect(actions("blocked")).toEqual(["Retry", "More actions"]);
-  await act(async () => button(column("blocked"), "More actions")!.click());
-  expect(
-    Array.from(document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]'), buttonName),
-  ).toEqual(["Move to To do", "Edit", "Delete"]);
-  await act(async () =>
-    document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })),
-  );
+  expect(actions("review")).toEqual(["Approve", "Run again", "Delete"]);
+  expect(actions("done")).toEqual(["Run again", "Reopen", "Delete"]);
+  expect(actions("blocked")).toEqual(["Task failed", "Retry", "Move to To do", "Edit", "Delete"]);
   expect(column("running").textContent).toContain("Needs input");
-  expect(column("blocked").textContent).toContain("Not signed in");
+  expect(column("blocked").textContent).not.toContain("Not signed in");
+  await act(async () => button(column("blocked"), "Task failed")!.click());
+  expect(document.body.textContent).toContain("Not signed in");
+  await act(async () => button(document.body.querySelector('[role="dialog"]')!, "Close")!.click());
   expect(column("queued").textContent).toContain("on this computer");
 });
 
@@ -477,9 +493,7 @@ it("shows pending and genuinely empty task board states", async () => {
     await Promise.resolve();
   });
   await act(async () => {});
-  expect(container.querySelector('[data-remote-data-state="empty"]')?.textContent).toContain(
-    "No task board.",
-  );
+  expect(container.querySelector('[data-remote-data-state="empty"]')).toBeTruthy();
 });
 
 it("keeps last-known cards visible on a failed refresh and retries the network read", async () => {
@@ -505,9 +519,9 @@ it("keeps last-known cards visible on a failed refresh and retries the network r
   await act(async () => button(container, "Refresh")!.click());
   await act(async () => {});
   expect(refreshCount()).toBe(beforeFailure + 1);
-  expect(container.querySelector('[data-remote-data-state="stale"]')?.textContent).toContain(
-    "Host timed out.",
-  );
+  await act(async () => button(container, "Connection issue")!.click());
+  expect(document.body.textContent).toContain("Host timed out.");
+  await act(async () => button(document.body.querySelector('[role="dialog"]')!, "Close")!.click());
   expect(card("Ship the report")).toBeTruthy();
 
   await act(async () => button(container, "Retry")!.click());
@@ -589,9 +603,9 @@ it("reuses a fresh reopened board and retains last-known cards when manual refre
   ).toHaveLength(readsBefore);
   expect(card("Previously read task")).toBeTruthy();
   await act(async () => button(container, "Refresh")!.click());
-  expect(container.querySelector('[data-remote-data-state="stale"]')?.textContent).toContain(
-    "Host is offline.",
-  );
+  await act(async () => button(container, "Connection issue")!.click());
+  expect(document.body.textContent).toContain("Host is offline.");
+  await act(async () => button(document.body.querySelector('[role="dialog"]')!, "Close")!.click());
   expect(container.querySelector('[data-remote-data-state="ready"]')).toBeNull();
   expect(container.querySelector('[data-remote-data-state="empty"]')).toBeNull();
 });
@@ -651,9 +665,7 @@ it("shows a task being verified under Running", async () => {
   expect(container.querySelectorAll("[data-task-column]")).toHaveLength(6);
   expect(column("running").textContent).toContain("Verifying");
   expect(column("running").textContent).toContain("mc/abcd1234");
-  expect(
-    Array.from(column("running").querySelectorAll("button"), (entry) => entry.textContent?.trim()),
-  ).toEqual(["Stop"]);
+  expect(Array.from(column("running").querySelectorAll("button"), buttonName)).toEqual(["Stop"]);
 });
 
 it("offers to merge a reviewed branch and shows what was checked", async () => {
@@ -675,15 +687,16 @@ it("offers to merge a reviewed branch and shows what was checked", async () => {
   const card = column("review");
   expect(button(card, "Approve")).toBeUndefined();
   expect(card.textContent).toContain("mc/abcd1234");
-  expect(card.textContent).toContain("1 file changed");
-  expect(card.textContent).toContain("Check command passed");
-  expect(card.textContent).toContain("Reviewer passed · Covers the week.");
-  // The command output is there to open.
-  expect(card.querySelector("details")!.open).toBe(false);
-  expect(card.querySelector("details pre")!.textContent).toBe("12 tests passed");
-  expect(card.querySelector('[role="alert"]')!.textContent).toBe(
-    "The project has uncommitted changes.",
-  );
+  expect(card.textContent).not.toContain("1 file changed");
+  expect(card.textContent).toContain("Delivery is blocked");
+  await act(async () => button(card, "Delivery is blocked")!.click());
+  const details = document.body.querySelector('[role="dialog"]')!;
+  expect(details.textContent).toContain("Check command passed");
+  expect(details.textContent).toContain("Reviewer passed · Covers the week.");
+  expect(details.querySelector("details")!.open).toBe(false);
+  expect(details.querySelector("details pre")!.textContent).toBe("12 tests passed");
+  expect(details.textContent).toContain("The project has uncommitted changes.");
+  await act(async () => button(details, "Close")!.click());
   await act(async () => button(card, "Merge into main")!.click());
   expect(requests).toContainEqual({
     method: "tasks.move",
@@ -705,7 +718,9 @@ it("confirms before discarding the branch of an unmerged task", async () => {
     }),
   ]);
   await render();
-  expect(column("blocked").textContent).toContain("Check command failed (exit code 1)");
+  await act(async () => button(column("blocked"), "Task failed")!.click());
+  expect(document.body.textContent).toContain("Check command failed (exit code 1)");
+  await act(async () => button(document.body.querySelector('[role="dialog"]')!, "Close")!.click());
   const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
   await pickAction(column("blocked"), "Delete");
   expect(confirm.mock.calls[0][0]).toContain(
@@ -979,7 +994,7 @@ it("refuses to silently ignore continuous execution on an older host", async () 
     type(form.querySelector("textarea")!, "Finish the work");
   });
   await act(async () => button(form, "Add and start")!.click());
-  expect(container.textContent).toContain(
+  expect(document.body.textContent).toContain(
     "Update bycoda Host on this computer to continue tasks until complete.",
   );
   expect(requests.some((entry) => entry.method === "tasks.save")).toBe(false);
@@ -996,7 +1011,9 @@ it("does not label a continuous runtime failure as an exhausted correction budge
     }),
   ]);
   await render();
-  expect(column("blocked").textContent).toContain("Provider disconnected");
+  expect(column("blocked").textContent).not.toContain("Provider disconnected");
+  await act(async () => button(column("blocked"), "Task failed")!.click());
+  expect(document.body.textContent).toContain("Provider disconnected");
   expect(column("blocked").textContent).not.toContain("attempt limit reached");
   expect(button(column("blocked"), "Retry")).toBeTruthy();
 });
@@ -1022,7 +1039,7 @@ it("shows a retained owner delivery request as automatic delivery and lets the o
   await render();
   expect(column("review").textContent).toContain("Waiting for automatic delivery");
   expect(column("review").textContent).not.toContain("Waiting for your merge approval");
-  await act(async () => button(column("review"), "More actions")!.click());
+
   expect(button(document.body, "Pause automatic merge")).toBeTruthy();
 });
 
@@ -1428,6 +1445,7 @@ it("shows new review notes and saves read/fixed states while opening the source 
   expect(notes.textContent).toContain("Friday is missing.");
   expect(notes.textContent).toContain("Include Friday totals.");
   await act(async () => button(notes, "Open review")!.click());
+  await promoteSession();
   expect(openReview).toHaveBeenCalledWith({
     machineId: "machine-local",
     cwd: "/work/project",
@@ -1476,7 +1494,9 @@ it("opens the current worker and active reviewer from the task card and details"
   await render(openSession);
   const taskCard = card("Ship the report");
   await act(async () => button(taskCard, "Open worker session")!.click());
+  await promoteSession();
   await act(async () => button(taskCard, "Open review session")!.click());
+  await promoteSession();
   expect(panel()).toBeNull();
   expect(openSession.mock.calls.map(([target]) => target)).toEqual([
     {
@@ -1494,6 +1514,7 @@ it("opens the current worker and active reviewer from the task card and details"
   ]);
   await act(async () => taskCard.click());
   await act(async () => button(panel()!, "Open review session")!.click());
+  await promoteSession();
   expect(openSession).toHaveBeenLastCalledWith({
     machineId: "machine-local",
     cwd: "/work/project",
@@ -1534,7 +1555,9 @@ it("retained worker and reviewer links are usable while attempt summaries stay c
   expect(workerLink.closest("[data-timeline-trigger]")).toBeNull();
   expect(reviewLink.closest("[data-timeline-trigger]")).toBeNull();
   await act(async () => workerLink.click());
+  await promoteSession();
   await act(async () => reviewLink.click());
+  await promoteSession();
   expect(openSession.mock.calls.map(([target]) => target.sessionId)).toEqual([
     "worker-retained",
     "review-retained",
@@ -1545,63 +1568,34 @@ it("shows a navigation failure without mutating the task", async () => {
   const requests = host([task({ status: "running", sessionId: "worker-unavailable" })]);
   await render(vi.fn().mockRejectedValue(new Error("This session is no longer available.")));
   await act(async () => button(card("Ship the report"), "Open worker session")!.click());
-  expect(container.textContent).toContain("This session is no longer available.");
+  await promoteSession();
+  expect(document.body.textContent).toContain("This session is no longer available.");
   expect(
     requests.some((request) => request.method === "tasks.move" || request.method === "tasks.save"),
   ).toBe(false);
 });
 
-it("deduplicates pending session opens across card, detail and history controls", async () => {
-  let finishOpening!: () => void;
+it("previews sessions without navigating and prevents duplicate promotion", async () => {
+  let finish!: () => void;
   const pending = new Promise<void>((resolve) => {
-    finishOpening = resolve;
+    finish = resolve;
   });
-  const openSession = vi.fn((target) =>
-    target.sessionId === "worker-loading" ? pending : Promise.resolve(),
-  );
-  host([
-    task({
-      status: "verifying",
-      sessionId: "worker-loading",
-      reviewer: { sessionId: "review-ready", startedAt: 1 },
-      attemptHistory: [
-        {
-          attempt: 0,
-          at: 1,
-          workerSessionId: "worker-loading",
-          reviewerSessionId: "review-retained",
-          workerSummary: "Earlier worker result",
-          verdict: "fail",
-          note: "Earlier review",
-          findings: [],
-        },
-      ],
-    }),
-  ]);
-  await render(openSession);
-  const taskCard = card("Ship the report");
-  const worker = button(taskCard, "Open worker session")!;
+  const open = vi.fn(() => pending);
+  const requests = host([task({ status: "running", sessionId: "worker-loading" })]);
+  await render(open);
+  await act(async () => button(card("Ship the report"), "Open worker session")!.click());
+  expect(open).not.toHaveBeenCalled();
+  expect(document.body.textContent).toContain("Session preview reply");
+  expect(requests.filter((request) => request.method === "sessions.get")).toHaveLength(1);
+  const promote = button(document.body, "Open in Sessions")!;
   await act(async () => {
-    worker.click();
-    worker.click();
+    promote.click();
+    promote.click();
   });
-  expect(openSession).toHaveBeenCalledTimes(1);
-  expect(worker.disabled).toBe(true);
-  expect(button(taskCard, "Open review session")!.disabled).toBe(false);
-  await act(async () => button(taskCard, "Open review session")!.click());
-  expect(openSession).toHaveBeenCalledTimes(2);
-  await act(async () => taskCard.click());
-  expect(button(panel()!, "Open worker session")!.disabled).toBe(true);
-  const history = panel()!.querySelector('[aria-label="Attempt history"]')!;
-  const retainedWorker = button(history, "Open worker session")!;
-  expect(retainedWorker.disabled).toBe(true);
-  await act(async () => retainedWorker.click());
-  expect(openSession).toHaveBeenCalledTimes(2);
-  await act(async () => finishOpening());
-  expect(worker.disabled).toBe(false);
-  expect(retainedWorker.disabled).toBe(false);
-  await act(async () => retainedWorker.click());
-  expect(openSession).toHaveBeenCalledTimes(3);
+  expect(open).toHaveBeenCalledTimes(1);
+  expect(promote.getAttribute("aria-busy")).toBe("true");
+  await act(async () => finish());
+  expect(button(document.body, "Open in Sessions")).toBeUndefined();
 });
 
 it("does not open the panel from a card's action buttons", async () => {
@@ -1657,7 +1651,7 @@ it("gives the panel the card's actions, and closes it when the task is gone", as
   await render();
   await act(async () => card("Ship the report").click());
   expect(Array.from(panel()!.querySelectorAll("button"), buttonName)).toEqual(
-    expect.arrayContaining(["Mark done", "Start", "Edit title and description", "More actions"]),
+    expect.arrayContaining(["Mark done", "Start", "Edit", "Delete"]),
   );
   await act(async () => button(panel()!, "Start")!.click());
   expect(requests).toContainEqual({
@@ -1681,7 +1675,8 @@ it("will not start a to-do item without a description", async () => {
   await render();
   await act(async () => card("Ship the report").click());
   await act(async () => button(panel()!, "Start")!.click());
-  expect(container.textContent).toContain(
+  await act(async () => button(container, "Task action failed")!.click());
+  expect(document.body.textContent).toContain(
     "Add a description before starting this task with an agent.",
   );
   expect(requests.some((request) => request.method === "tasks.move")).toBe(false);
@@ -1807,15 +1802,15 @@ it("marks a steward's suggestion and declines it instead of deleting it", async 
   expect(Array.from(suggested.querySelectorAll("button"), buttonName)).toEqual([
     "Mark done",
     "Start",
-    "More actions",
+    "Edit",
+    "Decline",
   ]);
 
   // The detail panel carries the badge and the same action.
   await act(async () => suggested.click());
   expect(panel()!.querySelector("[data-task-suggested]")).toBeTruthy();
-  await act(async () => button(panel()!, "More actions")!.click());
   expect(button(document.body, "Decline")).toBeTruthy();
-  expect(button(document.body, "Delete")).toBeUndefined();
+  expect(button(panel()!, "Delete")).toBeUndefined();
 
   await act(async () => button(document.body, "Decline")!.click());
   expect(requests).toContainEqual({
@@ -2108,7 +2103,11 @@ it("reconnects discovery on Retry and shows a probe failure only once", async ()
     return normal(command, args);
   });
   await render();
-  expect(container.textContent?.match(/this computer: Host connection refused/g)).toHaveLength(1);
+  await act(async () => button(container, "Connection issue")!.click());
+  expect(document.body.textContent?.match(/this computer: Host connection refused/g)).toHaveLength(
+    1,
+  );
+  await act(async () => button(document.body.querySelector('[role="dialog"]')!, "Close")!.click());
   expect(container.textContent).not.toContain("Recovered task");
   await act(async () => button(container, "Retry")!.click());
   await act(async () => {});

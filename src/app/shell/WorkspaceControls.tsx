@@ -2,6 +2,7 @@ import { Button } from "../../shared/ui/Button";
 import { t, useLocale } from "../../shared/i18n";
 import { GitPullRequest, RefreshCw, Settings } from "../../shared/ui/icons";
 import { FullscreenButton } from "./FullscreenButton";
+import { useKeybindingShortcut } from "../../features/settings/model/useKeybindingShortcut";
 
 export const WORKSPACE_REFRESH_EVENT = "bycoda:refresh-workspace-view";
 
@@ -37,6 +38,7 @@ export function WorkspaceControls({
 }) {
   useLocale();
   const actions = [
+    // The other actions have no registered keyboard command.
     {
       id: "settings",
       get label() {
@@ -62,6 +64,7 @@ export function WorkspaceControls({
       onClick: onUsage,
     },
   ] as const;
+  const settingsShortcut = useKeybindingShortcut("App: Settings");
   return (
     <nav
       aria-label={t("Workspace controls")}
@@ -76,6 +79,7 @@ export function WorkspaceControls({
           key={id}
           type="button"
           title={label}
+          shortcut={id === "settings" ? settingsShortcut : null}
           aria-label={label}
           aria-pressed={active === id}
           onClick={onClick}

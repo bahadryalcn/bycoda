@@ -294,9 +294,11 @@ function WebPopover({
     };
   }, [place]);
 
+  const positioned = position != null;
   useEffect(() => {
-    if (autoFocus) surface.current?.focus();
-  }, [autoFocus]);
+    // The measuring frame is hidden and cannot receive browser focus.
+    if (autoFocus && positioned) surface.current?.focus({ preventScroll: true });
+  }, [autoFocus, positioned]);
 
   useEffect(() => {
     if (!onDismiss) return;

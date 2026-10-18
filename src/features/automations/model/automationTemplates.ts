@@ -3,12 +3,16 @@ import type { AutomationScheduleKind, AutomationTriggerKind } from "./automation
 // English source strings are catalog keys. Translate at render/draft creation time,
 // so changing the application language also updates the gallery without rewriting data.
 export const AUTOMATION_TEMPLATE_CATEGORIES = [
+  { id: "all", label: "All" },
   { id: "popular", label: "Popular" },
   { id: "review", label: "Code Review" },
   { id: "security", label: "Security" },
   { id: "incidents", label: "Incidents & Triage" },
   { id: "research", label: "Data & Research" },
   { id: "environment", label: "Environment" },
+  { id: "tasks", label: "Tasks" },
+  { id: "social", label: "Social Media" },
+  { id: "planning", label: "Planning" },
 ] as const;
 
 export type AutomationTemplateCategoryId = (typeof AUTOMATION_TEMPLATE_CATEGORIES)[number]["id"];
@@ -27,7 +31,7 @@ export type AutomationTemplateIcon =
 
 export type AutomationTemplate = {
   id: string;
-  category: Exclude<AutomationTemplateCategoryId, "popular">;
+  category: Exclude<AutomationTemplateCategoryId, "popular" | "all">;
   popular?: boolean;
   icon: AutomationTemplateIcon;
   name: string;
@@ -45,6 +49,136 @@ export type AutomationTemplate = {
 };
 
 export const AUTOMATION_TEMPLATES: AutomationTemplate[] = [
+  ...(
+    [
+      [
+        "task-intake",
+        "tasks",
+        "inbox",
+        "Review new tasks",
+        "Clarify new tasks, identify dependencies and suggest acceptance checks without starting work.",
+        "tasks",
+        "task_created",
+        "Task created",
+      ],
+      [
+        "task-handoff",
+        "tasks",
+        "check",
+        "Summarize completed tasks",
+        "Summarize completed work and its checks, then suggest follow-up tasks without creating duplicates.",
+        "tasks",
+        "task_completed",
+        "Task completed",
+      ],
+      [
+        "task-blockers",
+        "tasks",
+        "alert",
+        "Explain blocked tasks",
+        "Read the blocked task and its session, explain the blocker and propose a recovery step without restarting it.",
+        "tasks",
+        "task_blocked",
+        "Task blocked",
+      ],
+      [
+        "task-review",
+        "tasks",
+        "search",
+        "Prepare task reviews",
+        "Gather the task diff and check results into a review checklist. Leave approval and merge to the owner.",
+        "tasks",
+        "task_review",
+        "Task ready for review",
+      ],
+      [
+        "social-messages",
+        "social",
+        "inbox",
+        "Triage incoming messages",
+        "Read the incoming message with social tools, check account policy and prepare a reply draft for owner review. Do not send.",
+        "social",
+        "message_received",
+        "Message received",
+      ],
+      [
+        "social-comments",
+        "social",
+        "note",
+        "Draft comment replies",
+        "Read the incoming comment, check account policy and draft a helpful reply in the sender's language. Do not publish.",
+        "social",
+        "comment_received",
+        "Comment received",
+      ],
+    ] as const
+  ).map(
+    ([id, category, icon, name, description, kind, event, triggerLabel]): AutomationTemplate => ({
+      id,
+      category,
+      icon,
+      name,
+      description,
+      prompt: description,
+      trigger: { kind, event },
+      triggerLabel,
+    }),
+  ),
+  ...(
+    [
+      [
+        "social-calendar",
+        "social",
+        "note",
+        "Plan social content",
+        "Review approved project facts and propose a weekly content calendar with drafts. Do not publish or change sending permissions.",
+      ],
+      [
+        "social-health",
+        "social",
+        "gauge",
+        "Check social account health",
+        "Check connected accounts, permissions, failed jobs and pending reviews. Report recovery actions without changing policy.",
+      ],
+      [
+        "daily-task-brief",
+        "tasks",
+        "file",
+        "Daily task briefing",
+        "Summarize queued, running, blocked and review tasks with their next actions. Do not start or merge tasks.",
+      ],
+      [
+        "weekly-plan",
+        "planning",
+        "note",
+        "Plan the week",
+        "Review open tasks and recent automation results, then propose a realistic weekly plan for owner review.",
+      ],
+      [
+        "automation-health",
+        "planning",
+        "gauge",
+        "Review automation health",
+        "Review automation failures, missed runs and limits. Suggest changes without deleting automations or enabling paused ones.",
+      ],
+      [
+        "research-brief",
+        "planning",
+        "search",
+        "Prepare a research brief",
+        "Research the topics in the project notes, cite original sources and summarize findings in the user's language.",
+      ],
+    ] as const
+  ).map(([id, category, icon, name, description]): AutomationTemplate => ({
+    id,
+    category,
+    icon,
+    name,
+    description,
+    prompt: description,
+    trigger: { kind: "time", event: "weekdays", scheduleKind: "weekdays", time: "09:00" },
+    triggerLabel: "Weekdays at 09:00",
+  })),
   {
     id: "find-critical-bugs",
     category: "review",
@@ -411,6 +545,7 @@ End with a pass/fail and the exact commands you ran.`,
 ];
 
 export function templatesForCategory(category: AutomationTemplateCategoryId): AutomationTemplate[] {
+  if (category === "all") return AUTOMATION_TEMPLATES;
   if (category === "popular") {
     return AUTOMATION_TEMPLATES.filter((template) => template.popular);
   }

@@ -1,5 +1,11 @@
 # Continuous integration
 
+`Issue triage` handles new GitHub issue classifications separately from build and
+release checks. Its catalog is `issue-labels.json`; see the classification guide
+in [CONTRIBUTING.md](../CONTRIBUTING.md). It runs only on newly opened issues or a
+manual catalog setup, with issue-label write access and read-only source access.
+It reads form text as allowlisted data and executes only default-branch code.
+
 `CI` runs on pull requests and pushes to `main`. Use `workflow_dispatch` for a
 full run on another branch. New commits cancel an older CI run for the same PR or
 branch. Release runs use a separate concurrency group and are not cancelled.

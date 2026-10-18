@@ -81,6 +81,7 @@ type Shared = {
   recents: RecentProject[];
   hideProjectPicker?: boolean;
   onFocus: (paneId: string) => void;
+  onSessionInteraction?: (sessionId: string) => void;
   onClose: (sessionId: string) => void;
   onRemoteSnapshot?: SessionPaneProps["onRemoteSnapshot"];
   onRefreshAdoptedSession?: SessionPaneProps["onRefreshAdoptedSession"];
@@ -216,6 +217,7 @@ function PaneTreeComponent({
   hideProjectPicker,
   workspaceSwitchingSessionId,
   onFocus,
+  onSessionInteraction,
   onClose,
   onRemoteSnapshot,
   onRefreshAdoptedSession,
@@ -588,6 +590,13 @@ function PaneTreeComponent({
             key={leaf.id}
             data-pane-id={hidden ? undefined : leaf.id}
             data-pane-active={focusedId === leaf.id ? "true" : undefined}
+            // User interaction keeps a browsing tab; automatic composer focus does not.
+            onPointerDownCapture={() => session && onSessionInteraction?.(session.id)}
+            onKeyDownCapture={() => session && onSessionInteraction?.(session.id)}
+            onKeyUpCapture={(event) => {
+              if (event.key === "Tab" && session) onSessionInteraction?.(session.id);
+            }}
+            onInputCapture={() => session && onSessionInteraction?.(session.id)}
             data-pane-can-maximize={(inSplit || maximum) && !hidden ? "true" : undefined}
             className={`absolute flex min-h-0 min-w-0 flex-col overflow-hidden ${focusedId === leaf.id ? "ring-1 ring-inset ring-accent/30" : ""} ${dragging ? "opacity-40" : ""}`}
             // The new pane focuses its composer or editor while it is still

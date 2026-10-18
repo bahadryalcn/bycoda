@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.25]
+
+### Workspace, sessions and automation
+
+- Improve workspace navigation, keyboard shortcuts, session status and update handling.
+- Refine composer controls, attachment previews, transcript search and terminal tools.
+- Expand automation setup, workspace activity and task session previews.
+
+### Shared controls and social workflows
+
+- Improve question forms, recovery surfaces, loading indicators and theme transitions.
+- Refine social setup, filtering, campaigns, publishing plans and inbox layouts.
+- Refresh translations, contributor issue forms and regression coverage.
+
 ## [0.6.21]
 
 ### Response speed indicator

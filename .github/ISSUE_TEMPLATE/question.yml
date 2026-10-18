@@ -1,0 +1,43 @@
+name: Question or feedback
+description: Ask for help, share feedback, or raise a topic that does not fit the other forms
+labels: [question, "status: needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Questions and early feedback are welcome. Write in the language you are comfortable with.
+        Remove credentials and private project or conversation data before posting.
+        For security vulnerabilities, use the private contact in SECURITY.md.
+
+  - type: textarea
+    id: question
+    attributes:
+      label: Question or feedback
+      description: What would you like to ask or share? Include the goal you are trying to achieve if helpful.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Affected area
+      options:
+        - Unsure / other
+        - Chat, composer, drafts, and attachments
+        - Queue, Stop, and recovery
+        - Providers, transcripts, and history import
+        - Remote hosts and connections
+        - Git, branches, diffs, and pull requests
+        - Files, editor, and search
+        - Tasks, goals, and automations
+        - Notes
+        - Settings, usage, and notifications
+        - Installation, updates, and startup
+        - Accessibility, layout, and translations
+      default: 0
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context (optional)
+      description: App version, environment, screenshots, examples, and things you have already tried.

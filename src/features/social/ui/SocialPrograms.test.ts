@@ -119,6 +119,36 @@ describe("Social campaign program UI", () => {
 
 const SocialPrograms = withQueryClient(QueryComponent);
 
+it("guides first campaign setup inline and preserves content while changing steps", async () => {
+  const { host, request } = await render();
+  expect(host.querySelector(".social-program-inline")).toBeTruthy();
+  expect(host.querySelector(".social-composer-dialog")).toBeNull();
+  const nameLabel = Array.from(host.querySelectorAll<HTMLLabelElement>("label")).find(
+    (label) => label.textContent === "Campaign name",
+  )!;
+  const name = document.getElementById(nameLabel.htmlFor) as HTMLInputElement;
+  expect(name.closest("details")).toBeNull();
+  const contentOptions = host.querySelector<HTMLDetailsElement>(".social-program-content-options")!;
+  expect(contentOptions.open).toBe(false);
+  expect(contentOptions.textContent).toContain("Brand voice");
+  expect(contentOptions.querySelector("[required]")).toBeNull();
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
+      name,
+      "Launch week",
+    );
+    name.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  const steps = host.querySelectorAll<HTMLButtonElement>(".social-program-steps button");
+  await act(async () => steps[1].click());
+  expect(host.querySelector<HTMLElement>('[data-program-step="0"]')!.hidden).toBe(true);
+  expect(host.querySelector<HTMLElement>('[data-program-step="1"]')!.hidden).toBe(false);
+  await act(async () => steps[0].click());
+  expect(name.value).toBe("Launch week");
+  expect(host.querySelector<HTMLElement>('[data-program-step="0"]')!.hidden).toBe(false);
+  expect(request.mock.calls.every(([action]) => action === "programs.list")).toBe(true);
+});
+
 it("keeps schedule drafts and approval step policy when choosing visible native radio modes", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   const { host, request } = await render();

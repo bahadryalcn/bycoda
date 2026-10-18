@@ -23,6 +23,8 @@ export interface ExpandingButtonGroupTriggerProps {
 }
 
 export interface ExpandingButtonGroupItem {
+  /** Display only; the caller supplies the current binding. */
+  shortcut?: string | null;
   /** Stable key for the action. Also the value passed to onAction. */
   id: string;
   /** Visible label once the button expands, and its accessible name at all times. Use a short verb, such as "Archive". */
@@ -271,6 +273,7 @@ function ItemButton({
       data-unmeasured={measured ? undefined : ""}
       aria-label={item.ariaLabel ?? item.label}
       title={item.ariaLabel ?? item.label}
+      shortcut={item.shortcut}
       aria-current={item.active ? "page" : undefined}
       onContextMenu={
         item.onOpenContextMenu

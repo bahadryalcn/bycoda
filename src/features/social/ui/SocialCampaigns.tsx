@@ -5,7 +5,10 @@ import { Checkbox } from "../../../shared/ui/Checkbox";
 import { TextareaField } from "../../../shared/ui/TextareaField";
 import { Button } from "../../../shared/ui/Button";
 import { SearchInput } from "../../../shared/ui/SearchInput";
-import { useState } from "react";
+import { SocialFilters } from "./SocialFilters";
+import { t } from "../../../shared/i18n";
+import { useContext, useState } from "react";
+import { SocialPanelActiveContext } from "./socialContext";
 import { useSocialWorkspaceFilter } from "./useSocialWorkspaceFilter";
 import { SocialPrograms } from "./SocialPrograms";
 import type {
@@ -71,6 +74,8 @@ export function Campaigns({
   run,
   onFilterChange,
 }: Props) {
+  const [view, setView] = useState<"manual" | "ai">("manual");
+  const active = useContext(SocialPanelActiveContext);
   const [selectedProjects, setSelectedProjects] = useState<string[]>(
     initialProject ? [initialProject] : [],
   );
@@ -184,738 +189,767 @@ export function Campaigns({
       current.map((item) => (item.accountId === id ? { ...item, ...change } : item)),
     );
   return (
-    <div className="social-page">
-      <SocialPrograms {...{ client, snapshot, projects, initialProject, run }} />
-      <div className="social-stats" aria-label="Kampanya özeti">
-        <span>
-          <strong>{snapshot.pages?.campaigns?.total ?? snapshot.campaigns.length}</strong> kampanya
-        </span>
-        <span>
-          <strong>
-            {snapshot.campaignJobCounts?.queued ??
-              snapshot.jobs.filter((job) => job.campaignId && job.status === "queued").length}
-          </strong>{" "}
-          planlanan yayın
-        </span>
-        <span>
-          <strong>
-            {snapshot.campaignJobCounts?.succeeded ??
-              snapshot.jobs.filter((job) => job.campaignId && job.status === "succeeded").length}
-          </strong>{" "}
-          gönderilen yayın
-        </span>
-        <span>
-          <strong>
-            {snapshot.campaignJobCounts
-              ? (snapshot.campaignJobCounts.review ?? 0) + (snapshot.campaignJobCounts.failed ?? 0)
-              : snapshot.jobs.filter(
-                  (job) => job.campaignId && ["review", "failed"].includes(job.status),
-                ).length}
-          </strong>{" "}
-          ilgilenmeniz gereken
-        </span>
+    <div className="social-page social-campaign-page">
+      {snapshot.programsSupported ? (
+        <nav className="social-campaign-modes" aria-label={t("Kampanyalar")}>
+          <Button variant="tab" aria-pressed={view === "ai"} onClick={() => setView("ai")}>
+            {t("AI kampanyaları")}
+          </Button>
+          <Button variant="tab" aria-pressed={view === "manual"} onClick={() => setView("manual")}>
+            {t("Kampanyalar")}
+          </Button>
+        </nav>
+      ) : null}
+      <div hidden={view !== "ai"}>
+        <SocialPanelActiveContext.Provider value={active && view === "ai"}>
+          <SocialPrograms {...{ client, snapshot, projects, initialProject, run }} />
+        </SocialPanelActiveContext.Provider>
       </div>
-      <Composer
-        title={editingId ? "Kampanya taslağını düzenle" : "Yeni kampanya"}
-        editing={editVersion}
-        description="İçeriği kaydedin, kontrol edin ve yayın onayı verin. Kaydetmek gönderim başlatmaz."
-      >
-        <form
-          className="social-form"
-          onSubmit={(event) => {
-            const form = event.currentTarget;
-            field(event);
-            let saved: SocialCampaign | undefined;
-            void (async () => {
-              if (
-                !(await run(async () => {
-                  if (!name.trim() || !validProjects || !variants.length || invalidVariants)
-                    throw new Error(
-                      "Proje, hesap erişimi, içerik sınırları ve yayın zamanlarını kontrol edin.",
-                    );
-                  await Promise.all(
-                    variants.map(async (variant) => {
-                      const { effective } = await client.request<{
-                        effective: SocialPolicy;
-                      }>("policy.get", { accountId: variant.accountId });
-                      const limit = socialLimit(effective, "content");
-                      if (limit !== undefined && variantCount(variant) > limit)
-                        throw new Error(
-                          `Bu hesap için içerik en fazla ${limit} karakter olabilir.`,
-                        );
-                    }),
-                  );
-                  saved = await client.request<SocialCampaign>("campaigns.create", {
-                    ...(editingId ? { id: editingId } : {}),
-                    name,
-                    projectIds: selectedProjects,
-                    variants,
-                  });
-                }, "Kampanya taslağı kaydedildi. Önizlemeyi kontrol edip yayın onayı verebilirsiniz.")) ||
-                !saved
-              )
-                return;
-              setSelectedId(saved.id);
-              setPreview(null);
-              setApprovalConfirmed(false);
-              setName("");
-              setVariants([]);
-              setEditingId(undefined);
-              closeComposer(form);
-            })();
-          }}
+      <div className="social-campaign-manual" hidden={view !== "manual"}>
+        <div className="social-stats" aria-label="Kampanya özeti">
+          <span>
+            <strong>{snapshot.pages?.campaigns?.total ?? snapshot.campaigns.length}</strong>{" "}
+            kampanya
+          </span>
+          <span>
+            <strong>
+              {snapshot.campaignJobCounts?.queued ??
+                snapshot.jobs.filter((job) => job.campaignId && job.status === "queued").length}
+            </strong>{" "}
+            planlanan yayın
+          </span>
+          <span>
+            <strong>
+              {snapshot.campaignJobCounts?.succeeded ??
+                snapshot.jobs.filter((job) => job.campaignId && job.status === "succeeded").length}
+            </strong>{" "}
+            gönderilen yayın
+          </span>
+          <span>
+            <strong>
+              {snapshot.campaignJobCounts
+                ? (snapshot.campaignJobCounts.review ?? 0) +
+                  (snapshot.campaignJobCounts.failed ?? 0)
+                : snapshot.jobs.filter(
+                    (job) => job.campaignId && ["review", "failed"].includes(job.status),
+                  ).length}
+            </strong>{" "}
+            ilgilenmeniz gereken
+          </span>
+        </div>
+        <Composer
+          title={editingId ? "Kampanya taslağını düzenle" : "Yeni kampanya"}
+          editing={editVersion}
+          description="İçeriği kaydedin, kontrol edin ve yayın onayı verin. Kaydetmek gönderim başlatmaz."
         >
-          <label>
-            Kampanya adı
-            <TextField
-              hideLabel
-              label=""
-              value={name}
-              onChange={(event) => setName(event.target.value)}
-              required
-              maxLength={200}
+          <form
+            className="social-form"
+            onSubmit={(event) => {
+              const form = event.currentTarget;
+              field(event);
+              let saved: SocialCampaign | undefined;
+              void (async () => {
+                if (
+                  !(await run(async () => {
+                    if (!name.trim() || !validProjects || !variants.length || invalidVariants)
+                      throw new Error(
+                        "Proje, hesap erişimi, içerik sınırları ve yayın zamanlarını kontrol edin.",
+                      );
+                    await Promise.all(
+                      variants.map(async (variant) => {
+                        const { effective } = await client.request<{
+                          effective: SocialPolicy;
+                        }>("policy.get", { accountId: variant.accountId });
+                        const limit = socialLimit(effective, "content");
+                        if (limit !== undefined && variantCount(variant) > limit)
+                          throw new Error(
+                            `Bu hesap için içerik en fazla ${limit} karakter olabilir.`,
+                          );
+                      }),
+                    );
+                    saved = await client.request<SocialCampaign>("campaigns.create", {
+                      ...(editingId ? { id: editingId } : {}),
+                      name,
+                      projectIds: selectedProjects,
+                      variants,
+                    });
+                  }, "Kampanya taslağı kaydedildi. Önizlemeyi kontrol edip yayın onayı verebilirsiniz.")) ||
+                  !saved
+                )
+                  return;
+                setSelectedId(saved.id);
+                setPreview(null);
+                setApprovalConfirmed(false);
+                setName("");
+                setVariants([]);
+                setEditingId(undefined);
+                closeComposer(form);
+              })();
+            }}
+          >
+            <label>
+              Kampanya adı
+              <TextField
+                hideLabel
+                label=""
+                value={name}
+                onChange={(event) => setName(event.target.value)}
+                required
+                maxLength={200}
+              />
+            </label>
+            <Projects
+              projects={projects}
+              selected={selectedProjects}
+              onChange={setSelectedProjects}
             />
-          </label>
-          <Projects
-            projects={projects}
-            selected={selectedProjects}
-            onChange={setSelectedProjects}
-          />
-          {!validProjects ? <Notice kind="info">En az bir proje seçin.</Notice> : null}
-          <SocialMultiSelect
-            label="Sosyal hesaplar"
-            placeholder="Hesap seçin"
-            searchPlaceholder="Hesap veya platform ara"
-            options={snapshot.accounts.map((account) => ({
-              value: account.id,
-              label: account.name,
-              description: `${names[account.platform]}${hasDraftAccess(account.id) ? "" : " · Seçili projeler için taslak erişimi gerekli"}`,
-              disabled: !hasDraftAccess(account.id),
-            }))}
-            selected={variants.map((variant) => variant.accountId)}
-            onChange={(ids) =>
-              setVariants((current) =>
-                ids.map(
-                  (id) =>
-                    current.find((variant) => variant.accountId === id) ?? {
-                      accountId: id,
-                      text: "",
-                      media: [],
-                      factIds: [],
-                      scheduledAt: Date.now(),
-                      ...(snapshot.accounts.find((account) => account.id === id)?.platform ===
-                      "youtube"
-                        ? { youtube: { ...youtubeDefaults } }
-                        : {}),
-                    },
-                ),
-              )
-            }
-          />
-          {!snapshot.accounts.length ? (
-            <Notice kind="info">
-              İçerik hazırlamak için Hesaplar bölümünden bir hesap bağlayın.
-            </Notice>
-          ) : null}
-          {variants.map((variant) => (
-            <fieldset key={variant.accountId} className="social-variant">
-              <legend>
-                {snapshot.accounts.find((account) => account.id === variant.accountId)?.name}
-              </legend>
-              {snapshot.accounts.find((account) => account.id === variant.accountId)?.platform ===
-              "youtube" ? (
-                <>
-                  <label>
-                    Video başlığı
-                    <TextField
-                      hideLabel
-                      label=""
-                      required
-                      maxLength={100}
-                      value={variant.youtube?.title ?? ""}
-                      onChange={(event) =>
-                        update(variant.accountId, {
-                          youtube: {
-                            ...youtubeDefaults,
-                            ...variant.youtube,
-                            title: event.target.value,
-                          },
-                        })
-                      }
-                    />
-                  </label>
-                  <label>
-                    Video görünürlüğü
-                    <NativeSelect
-                      value={variant.youtube?.privacy ?? "private"}
-                      onChange={(event) =>
-                        update(variant.accountId, {
-                          youtube: {
-                            ...youtubeDefaults,
-                            ...variant.youtube,
-                            privacy: event.target.value as "private" | "unlisted" | "public",
-                          },
-                        })
-                      }
-                    >
-                      <option value="private">Özel</option>
-                      <option value="unlisted">Liste dışı</option>
-                      <option value="public">Herkese açık</option>
-                    </NativeSelect>
-                  </label>
-                  <fieldset className="social-checks">
-                    <legend>İçerik beyanı</legend>
-                    <label>
-                      <Checkbox
-                        checked={variant.youtube?.madeForKids ?? false}
-                        onChange={(event) =>
-                          update(variant.accountId, {
-                            youtube: {
-                              ...youtubeDefaults,
-                              ...variant.youtube,
-                              madeForKids: event.target.checked,
-                            },
-                          })
-                        }
-                      />
-                      Çocuklara yönelik içerik
-                    </label>
-                    <label>
-                      <Checkbox
-                        checked={variant.youtube?.containsSyntheticMedia ?? false}
-                        onChange={(event) =>
-                          update(variant.accountId, {
-                            youtube: {
-                              ...youtubeDefaults,
-                              ...variant.youtube,
-                              containsSyntheticMedia: event.target.checked,
-                            },
-                          })
-                        }
-                      />
-                      Gerçekçi değiştirilmiş veya sentetik içerik içeriyor
-                    </label>
-                  </fieldset>
-                  <label>
-                    Videoyu host'a yükle · MP4/WebM, en fazla 64 MiB
-                    <TextField
-                      hideLabel
-                      label=""
-                      type="file"
-                      accept="video/mp4,video/webm"
-                      onChange={(event) => {
-                        const file = event.target.files?.[0];
-                        if (file)
-                          void run(async () => {
-                            setVideoProgress((current) => ({
-                              ...current,
-                              [variant.accountId]: 0,
-                            }));
-                            try {
-                              const upload = await client.uploadVideo(file, (percent) =>
-                                setVideoProgress((current) => ({
-                                  ...current,
-                                  [variant.accountId]: percent,
-                                })),
-                              );
-                              update(variant.accountId, {
-                                media: [
-                                  {
-                                    kind: "video",
-                                    uploadId: upload.uploadId,
-                                  },
-                                ],
-                              });
-                            } finally {
-                              setVideoProgress((current) => {
-                                const next = { ...current };
-                                delete next[variant.accountId];
-                                return next;
-                              });
-                            }
-                          });
-                      }}
-                    />
-                    {variant.media[0]?.uploadId ? "Video hosta yüklendi" : null}
-                    {videoProgress[variant.accountId] !== undefined ? (
-                      <span role="status">
-                        Host'a yükleniyor: %{videoProgress[variant.accountId]}
-                      </span>
-                    ) : null}
-                  </label>
-                  <p className="social-muted">
-                    Bu alanlar video açıklaması ve kanal yayını içindir. Topluluk gönderisi ve özel
-                    mesaj desteklenmez. Yükleme kabulü, videonun işlenip izlenebilir olduğu anlamına
-                    gelmez; sonuçtaki görünürlüğü kontrol edin.
-                  </p>
-                </>
-              ) : null}
-              <label>
-                Bu hesaba özel içerik
-                <TextareaField
-                  hideLabel
-                  label=""
-                  value={variant.text}
-                  required
-                  rows={4}
-                  onChange={(event) => update(variant.accountId, { text: event.target.value })}
-                />
-                <small role="status">
-                  {variantCount(variant)}
-                  {variantLimit(variant) !== undefined ? ` / ${variantLimit(variant)}` : ""}{" "}
-                  karakter · bağlantı dahildir
-                </small>
-                {variantLimit(variant) !== undefined &&
-                variantCount(variant) > variantLimit(variant)! ? (
-                  <Notice kind="error">İçerik sınırını aşıyor. Kaydetmeden önce kısaltın.</Notice>
-                ) : null}
-              </label>
-              <details className="social-settings">
-                <summary>Tek seferlik yayın zamanı, medya ve bağlantı</summary>
-                <label>
-                  Bağlantı
-                  <TextField
-                    hideLabel
-                    label=""
-                    type="url"
-                    placeholder="https://"
-                    value={variant.link ?? ""}
-                    onChange={(event) =>
-                      update(variant.accountId, {
-                        link: event.target.value || undefined,
-                      })
-                    }
-                  />
-                </label>
-                <label>
-                  Tek seferlik planlama zamanı · bu bilgisayarın saat dilimi
-                  <TextField
-                    hideLabel
-                    label=""
-                    type="datetime-local"
-                    required
-                    value={dateInput(variant.scheduledAt)}
-                    onChange={(event) =>
-                      update(variant.accountId, {
-                        scheduledAt: new Date(event.target.value).getTime(),
-                      })
-                    }
-                  />
-                </label>
-                {snapshot.accounts.find((account) => account.id === variant.accountId)?.platform !==
+            {!validProjects ? <Notice kind="info">En az bir proje seçin.</Notice> : null}
+            <SocialMultiSelect
+              label="Sosyal hesaplar"
+              placeholder="Hesap seçin"
+              searchPlaceholder="Hesap veya platform ara"
+              options={snapshot.accounts.map((account) => ({
+                value: account.id,
+                label: account.name,
+                description: `${names[account.platform]}${hasDraftAccess(account.id) ? "" : " · Seçili projeler için taslak erişimi gerekli"}`,
+                disabled: !hasDraftAccess(account.id),
+              }))}
+              selected={variants.map((variant) => variant.accountId)}
+              onChange={(ids) =>
+                setVariants((current) =>
+                  ids.map(
+                    (id) =>
+                      current.find((variant) => variant.accountId === id) ?? {
+                        accountId: id,
+                        text: "",
+                        media: [],
+                        factIds: [],
+                        scheduledAt: Date.now(),
+                        ...(snapshot.accounts.find((account) => account.id === id)?.platform ===
+                        "youtube"
+                          ? { youtube: { ...youtubeDefaults } }
+                          : {}),
+                      },
+                  ),
+                )
+              }
+            />
+            {!snapshot.accounts.length ? (
+              <Notice kind="info">
+                İçerik hazırlamak için Hesaplar bölümünden bir hesap bağlayın.
+              </Notice>
+            ) : null}
+            {variants.map((variant) => (
+              <fieldset key={variant.accountId} className="social-variant">
+                <legend>
+                  {snapshot.accounts.find((account) => account.id === variant.accountId)?.name}
+                </legend>
+                {snapshot.accounts.find((account) => account.id === variant.accountId)?.platform ===
                 "youtube" ? (
+                  <>
+                    <label>
+                      Video başlığı
+                      <TextField
+                        hideLabel
+                        label=""
+                        required
+                        maxLength={100}
+                        value={variant.youtube?.title ?? ""}
+                        onChange={(event) =>
+                          update(variant.accountId, {
+                            youtube: {
+                              ...youtubeDefaults,
+                              ...variant.youtube,
+                              title: event.target.value,
+                            },
+                          })
+                        }
+                      />
+                    </label>
+                    <label>
+                      Video görünürlüğü
+                      <NativeSelect
+                        value={variant.youtube?.privacy ?? "private"}
+                        onChange={(event) =>
+                          update(variant.accountId, {
+                            youtube: {
+                              ...youtubeDefaults,
+                              ...variant.youtube,
+                              privacy: event.target.value as "private" | "unlisted" | "public",
+                            },
+                          })
+                        }
+                      >
+                        <option value="private">Özel</option>
+                        <option value="unlisted">Liste dışı</option>
+                        <option value="public">Herkese açık</option>
+                      </NativeSelect>
+                    </label>
+                    <fieldset className="social-checks">
+                      <legend>İçerik beyanı</legend>
+                      <label>
+                        <Checkbox
+                          checked={variant.youtube?.madeForKids ?? false}
+                          onChange={(event) =>
+                            update(variant.accountId, {
+                              youtube: {
+                                ...youtubeDefaults,
+                                ...variant.youtube,
+                                madeForKids: event.target.checked,
+                              },
+                            })
+                          }
+                        />
+                        Çocuklara yönelik içerik
+                      </label>
+                      <label>
+                        <Checkbox
+                          checked={variant.youtube?.containsSyntheticMedia ?? false}
+                          onChange={(event) =>
+                            update(variant.accountId, {
+                              youtube: {
+                                ...youtubeDefaults,
+                                ...variant.youtube,
+                                containsSyntheticMedia: event.target.checked,
+                              },
+                            })
+                          }
+                        />
+                        Gerçekçi değiştirilmiş veya sentetik içerik içeriyor
+                      </label>
+                    </fieldset>
+                    <label>
+                      Videoyu host'a yükle · MP4/WebM, en fazla 64 MiB
+                      <TextField
+                        hideLabel
+                        label=""
+                        type="file"
+                        accept="video/mp4,video/webm"
+                        onChange={(event) => {
+                          const file = event.target.files?.[0];
+                          if (file)
+                            void run(async () => {
+                              setVideoProgress((current) => ({
+                                ...current,
+                                [variant.accountId]: 0,
+                              }));
+                              try {
+                                const upload = await client.uploadVideo(file, (percent) =>
+                                  setVideoProgress((current) => ({
+                                    ...current,
+                                    [variant.accountId]: percent,
+                                  })),
+                                );
+                                update(variant.accountId, {
+                                  media: [
+                                    {
+                                      kind: "video",
+                                      uploadId: upload.uploadId,
+                                    },
+                                  ],
+                                });
+                              } finally {
+                                setVideoProgress((current) => {
+                                  const next = { ...current };
+                                  delete next[variant.accountId];
+                                  return next;
+                                });
+                              }
+                            });
+                        }}
+                      />
+                      {variant.media[0]?.uploadId ? "Video hosta yüklendi" : null}
+                      {videoProgress[variant.accountId] !== undefined ? (
+                        <span role="status">
+                          Host'a yükleniyor: %{videoProgress[variant.accountId]}
+                        </span>
+                      ) : null}
+                    </label>
+                    <p className="social-muted">
+                      Bu alanlar video açıklaması ve kanal yayını içindir. Topluluk gönderisi ve
+                      özel mesaj desteklenmez. Yükleme kabulü, videonun işlenip izlenebilir olduğu
+                      anlamına gelmez; sonuçtaki görünürlüğü kontrol edin.
+                    </p>
+                  </>
+                ) : null}
+                <label>
+                  Bu hesaba özel içerik
+                  <TextareaField
+                    hideLabel
+                    label=""
+                    value={variant.text}
+                    required
+                    rows={4}
+                    onChange={(event) => update(variant.accountId, { text: event.target.value })}
+                  />
+                  <small role="status">
+                    {variantCount(variant)}
+                    {variantLimit(variant) !== undefined ? ` / ${variantLimit(variant)}` : ""}{" "}
+                    karakter · bağlantı dahildir
+                  </small>
+                  {variantLimit(variant) !== undefined &&
+                  variantCount(variant) > variantLimit(variant)! ? (
+                    <Notice kind="error">İçerik sınırını aşıyor. Kaydetmeden önce kısaltın.</Notice>
+                  ) : null}
+                </label>
+                <details className="social-settings">
+                  <summary>Tek seferlik yayın zamanı, medya ve bağlantı</summary>
                   <label>
-                    HTTPS görsel URL
+                    Bağlantı
                     <TextField
                       hideLabel
                       label=""
                       type="url"
                       placeholder="https://"
-                      value={variant.media[0]?.url ?? ""}
+                      value={variant.link ?? ""}
                       onChange={(event) =>
                         update(variant.accountId, {
-                          media: event.target.value
-                            ? [{ kind: "image", url: event.target.value }]
-                            : [],
+                          link: event.target.value || undefined,
                         })
                       }
                     />
                   </label>
-                ) : null}
-                {snapshot.accounts.find((account) => account.id === variant.accountId)?.platform ===
-                  "x" ||
-                snapshot.accounts.some(
-                  (account) =>
-                    account.id === variant.accountId &&
-                    account.platform === "linkedin" &&
-                    account.accountType === "organization",
-                ) ? (
                   <label>
-                    Görseli host'a yükle
+                    Tek seferlik planlama zamanı · bu bilgisayarın saat dilimi
                     <TextField
                       hideLabel
                       label=""
-                      type="file"
-                      accept="image/jpeg,image/png"
-                      onChange={(event) => {
-                        const file = event.target.files?.[0];
-                        if (file)
-                          void run(async () => {
-                            const upload = await client.upload(file);
-                            update(variant.accountId, {
-                              media: [{ kind: "image", uploadId: upload.uploadId }],
+                      type="datetime-local"
+                      required
+                      value={dateInput(variant.scheduledAt)}
+                      onChange={(event) =>
+                        update(variant.accountId, {
+                          scheduledAt: new Date(event.target.value).getTime(),
+                        })
+                      }
+                    />
+                  </label>
+                  {snapshot.accounts.find((account) => account.id === variant.accountId)
+                    ?.platform !== "youtube" ? (
+                    <label>
+                      HTTPS görsel URL
+                      <TextField
+                        hideLabel
+                        label=""
+                        type="url"
+                        placeholder="https://"
+                        value={variant.media[0]?.url ?? ""}
+                        onChange={(event) =>
+                          update(variant.accountId, {
+                            media: event.target.value
+                              ? [{ kind: "image", url: event.target.value }]
+                              : [],
+                          })
+                        }
+                      />
+                    </label>
+                  ) : null}
+                  {snapshot.accounts.find((account) => account.id === variant.accountId)
+                    ?.platform === "x" ||
+                  snapshot.accounts.some(
+                    (account) =>
+                      account.id === variant.accountId &&
+                      account.platform === "linkedin" &&
+                      account.accountType === "organization",
+                  ) ? (
+                    <label>
+                      Görseli host'a yükle
+                      <TextField
+                        hideLabel
+                        label=""
+                        type="file"
+                        accept="image/jpeg,image/png"
+                        onChange={(event) => {
+                          const file = event.target.files?.[0];
+                          if (file)
+                            void run(async () => {
+                              const upload = await client.upload(file);
+                              update(variant.accountId, {
+                                media: [{ kind: "image", uploadId: upload.uploadId }],
+                              });
                             });
+                        }}
+                      />
+                      {variant.media[0]?.uploadId ? "Görsel hosta yüklendi" : null}
+                    </label>
+                  ) : null}
+                  <label>
+                    Doğrulanmış bilgi
+                    <SearchableSelect
+                      value=""
+                      label={"Doğrulanmış bilgi"}
+                      options={[
+                        { value: "", label: "İçeriğe bilgi ekle" },
+                        ...publicFacts.map((fact) => ({
+                          value: fact.id,
+                          label: [fact.topic, ":", fact.text].join(" "),
+                        })),
+                      ]}
+                      onChange={(nextValue) => {
+                        const fact = publicFacts.find((item) => item.id === nextValue);
+                        if (fact)
+                          update(variant.accountId, {
+                            text: [variant.text, fact.text].filter(Boolean).join("\n"),
+                            factIds: [...new Set([...variant.factIds, fact.id])],
                           });
                       }}
+                      searchLocale="tr"
                     />
-                    {variant.media[0]?.uploadId ? "Görsel hosta yüklendi" : null}
                   </label>
-                ) : null}
-                <label>
-                  Doğrulanmış bilgi
-                  <SearchableSelect
-                    value=""
-                    label={"Doğrulanmış bilgi"}
-                    options={[
-                      { value: "", label: "İçeriğe bilgi ekle" },
-                      ...publicFacts.map((fact) => ({
-                        value: fact.id,
-                        label: [fact.topic, ":", fact.text].join(" "),
-                      })),
-                    ]}
-                    onChange={(nextValue) => {
-                      const fact = publicFacts.find((item) => item.id === nextValue);
-                      if (fact)
-                        update(variant.accountId, {
-                          text: [variant.text, fact.text].filter(Boolean).join("\n"),
-                          factIds: [...new Set([...variant.factIds, fact.id])],
-                        });
-                    }}
-                    searchLocale="tr"
-                  />
-                </label>
-                {variant.media.length ? (
-                  <Button
-                    variant="secondary"
-                    type="button"
-                    onClick={() => update(variant.accountId, { media: [] })}
-                  >
-                    Eklenen medyayı kaldır
-                  </Button>
-                ) : null}
-              </details>
-              {!hasDraftAccess(variant.accountId) ? (
-                <Notice kind="error">
-                  Bu hesaba seçili tüm projeler için taslak erişimi verin veya hesabı kaldırın.
-                </Notice>
-              ) : null}
-              {variant.factIds.some((id) => !publicFacts.some((fact) => fact.id === id)) ? (
-                <Notice kind="warning">
-                  İçerikteki doğrulanmış bilgi seçili projelerin dışında. İlgili projeyi yeniden
-                  seçin veya kampanyayı yeniden hazırlayın.
-                </Notice>
-              ) : null}
-              <Button
-                variant="secondary"
-                type="button"
-                onClick={() =>
-                  setVariants((current) =>
-                    current.filter((item) => item.accountId !== variant.accountId),
-                  )
-                }
-              >
-                Bu hesabı kampanyadan çıkar
-              </Button>
-            </fieldset>
-          ))}
-          <p className="social-muted">
-            Düzenli paylaşım için bu taslağı Otomasyonlar bölümünde bir yayın planına
-            ekleyebilirsiniz.
-          </p>
-          <Button
-            type="submit"
-            variant="secondary"
-            disabled={
-              !name.trim() ||
-              !variants.length ||
-              !validProjects ||
-              invalidVariants ||
-              Object.keys(videoProgress).length > 0
-            }
-          >
-            Kampanya taslağını kaydet
-          </Button>
-          {!name.trim() || !variants.length || !validProjects ? (
-            <small className="social-muted">
-              Kaydetmek için kampanya adını, projeyi, hesabı ve içeriği tamamlayın.
-            </small>
-          ) : invalidVariants ? (
-            <Notice kind="warning">
-              İçerik, karakter sınırı, hesap erişimi veya planlama zamanını kontrol edin.
-            </Notice>
-          ) : Object.keys(videoProgress).length ? (
-            <Notice kind="loading">Video yüklemesi bitince kaydedebilirsiniz.</Notice>
-          ) : null}
-          {editingId ? (
-            <Button
-              variant="secondary"
-              type="button"
-              onClick={(event) => {
-                setEditingId(undefined);
-                setName("");
-                setVariants([]);
-                closeComposer(event.currentTarget.closest("form")!);
-              }}
-            >
-              Düzenlemeyi bırak
-            </Button>
-          ) : null}
-        </form>
-      </Composer>
-      <div className="social-columns">
-        <section>
-          <h2>
-            Kampanyalar <small>{snapshot.campaigns.length}</small>
-          </h2>
-          <label>
-            Kampanya ara
-            <SearchInput
-              appearance="field"
-              type="search"
-              value={search}
-              onChange={(event) => setSearch(event.target.value)}
-              placeholder="Kampanya adı"
-            />
-          </label>
-          <label>
-            Durum
-            <NativeSelect
-              value={statusFilter}
-              onChange={(event) => setStatusFilter(event.target.value)}
-            >
-              <option value="">Tüm kampanyalar</option>
-              <option value="draft">Taslak</option>
-              <option value="queued">Planlandı</option>
-              <option value="running">Gönderiliyor</option>
-              <option value="succeeded">Gönderildi</option>
-              <option value="partial">Kısmen gönderildi</option>
-              <option value="failed">Başarısız</option>
-              <option value="review">İnceleme gerekli</option>
-              <option value="paused">Durduruldu</option>
-              <option value="cancelled">İptal edildi</option>
-            </NativeSelect>
-          </label>
-          {snapshot.campaigns.length ? (
-            visibleCampaigns.map((campaign) => (
-              <Button
-                type="submit"
-                variant="tab"
-                className="social-row"
-                aria-pressed={selectedId === campaign.id}
-                key={campaign.id}
-                onClick={() => {
-                  setSelectedId(campaign.id);
-                  setPreview(null);
-                  setApprovalConfirmed(false);
-                }}
-              >
-                <strong>{campaign.name}</strong>
-                <StatusBadge
-                  status={campaignState(campaign, snapshot.jobs, snapshot.campaignStates)}
-                  label={
-                    campaignState(campaign, snapshot.jobs, snapshot.campaignStates) === "partial"
-                      ? "Kısmen gönderildi"
-                      : undefined
-                  }
-                />
-                <span>
-                  {campaign.projectIds.length} proje · {campaign.variants.length} hesap
-                </span>
-              </Button>
-            ))
-          ) : (
-            <Empty title="İlk kampanyanızı hazırlayın">
-              Yeni kampanya ile proje ve hesapları seçip içeriğinizi hazırlayın.
-            </Empty>
-          )}
-          {snapshot.campaigns.length && !visibleCampaigns.length ? (
-            <Empty title="Eşleşen kampanya yok">Aramayı veya durum filtresini değiştirin.</Empty>
-          ) : null}
-        </section>
-        <section>
-          {selected ? (
-            <>
-              <header className="social-record-heading">
-                <div>
-                  <h2>{selected.name}</h2>
-                  <span className="social-muted">
-                    {selected.projectIds
-                      .map((id) => projects.find((project) => project.id === id)?.name || "Proje")
-                      .join(", ")}
-                  </span>
-                </div>
-                <StatusBadge
-                  status={campaignState(selected, snapshot.jobs, snapshot.campaignStates)}
-                  label={
-                    campaignState(selected, snapshot.jobs, snapshot.campaignStates) === "partial"
-                      ? "Kısmen gönderildi"
-                      : undefined
-                  }
-                />
-              </header>
-              {selected.variants.map((variant) => (
-                <article className="social-preview" key={variant.accountId}>
-                  <h3>
-                    {snapshot.accounts.find((account) => account.id === variant.accountId)?.name ??
-                      "Hesap kaldırıldı"}
-                  </h3>
-                  {variant.youtube ? (
-                    <p>
-                      {variant.youtube.title} · Görünürlük:{" "}
-                      {variant.youtube.privacy === "private"
-                        ? "Özel"
-                        : variant.youtube.privacy === "unlisted"
-                          ? "Liste dışı"
-                          : "Herkese açık"}{" "}
-                      · Çocuklara yönelik: {variant.youtube.madeForKids ? "Evet" : "Hayır"} ·
-                      Sentetik içerik: {variant.youtube.containsSyntheticMedia ? "Evet" : "Hayır"}
-                    </p>
+                  {variant.media.length ? (
+                    <Button
+                      variant="secondary"
+                      type="button"
+                      onClick={() => update(variant.accountId, { media: [] })}
+                    >
+                      Eklenen medyayı kaldır
+                    </Button>
                   ) : null}
-                  <p className="social-message">{variant.text}</p>
-                  {variant.media.map((media, index) => (
-                    <p key={index}>
-                      {media.kind === "video" ? "Video" : "Görsel"}:{" "}
-                      {media.url ?? "Hosta yüklenen dosya"}
-                    </p>
-                  ))}
-                  {variant.link ? <p className="social-message">{variant.link}</p> : null}
-                  <small>Tek seferlik yayın: {time(variant.scheduledAt)}</small>
-                  {currentPreview?.targets
-                    .filter((target) => target.accountId === variant.accountId)
-                    .map((target) => (
-                      <div key={target.accountId} className="social-inline-meta">
-                        <StatusBadge
-                          status={target.contentError ? "failed" : target.capability.status}
-                          label={target.contentError ? "İçerik sorunu" : undefined}
-                        />
-                        <StatusBadge
-                          status={target.approved ? "approved" : "draft"}
-                          label={target.approved ? "İçerik onaylı" : "Onay bekliyor"}
-                        />
-                        {target.contentError || target.capability.status !== "available" ? (
-                          <Notice kind="warning">
-                            {target.contentError || target.capability.reason}
-                          </Notice>
-                        ) : null}
-                      </div>
-                    ))}
-                </article>
-              ))}
-              <section className="social-workflow-steps" aria-label="Yayın onayı ve planlama">
-                <h3>Kontrol et ve yayınla</h3>
-                <div className="social-actions">
-                  <Button
-                    type="submit"
-                    variant="secondary"
-                    onClick={() =>
-                      void run(async () => {
-                        setPreview(
-                          await client.request("campaigns.preview", {
-                            id: selected.id,
-                          }),
-                        );
-                        setApprovalConfirmed(false);
-                      }, "Hesap ve içerik kontrolü tamamlandı.")
-                    }
-                  >
-                    1. Hesap ve içeriği kontrol et
-                  </Button>
-                </div>
-                {currentPreview && canApprove ? (
-                  <label className="social-check">
-                    <Checkbox
-                      checked={approvalConfirmed}
-                      onChange={(event) => setApprovalConfirmed(event.target.checked)}
-                    />
-                    Bu kampanyanın tüm hesap içeriklerini okudum ve yayınlanmasını onaylıyorum.
-                  </label>
-                ) : null}
-                <div className="social-actions">
-                  <Button
-                    type="submit"
-                    variant="secondary"
-                    disabled={!canApprove || !approvalConfirmed || approved}
-                    onClick={() =>
-                      void run(async () => {
-                        await client.request("campaigns.approve", { id: selected.id });
-                        setPreview(await client.request("campaigns.preview", { id: selected.id }));
-                      }, "İçerik onaylandı. Tek seferlik planlayabilir veya otomatik yayın planına ekleyebilirsiniz.")
-                    }
-                  >
-                    {approved ? "2. İçerik onaylandı" : "2. İçeriğe yayın onayı ver"}
-                  </Button>
-                  <Button
-                    type="submit"
-                    variant="secondary"
-                    disabled={!canSchedule}
-                    onClick={() =>
-                      void run(async () => {
-                        await client.request("campaigns.schedule", {
-                          id: selected.id,
-                        });
-                      }, "Tek seferlik yayınlar planlandı. Sonuçları aşağıdan veya İşlem geçmişinden takip edin.")
-                    }
-                  >
-                    3. Tek seferlik yayınları planla
-                  </Button>
-                </div>
-                {scheduleReason ? (
-                  <Notice kind={currentPreview && !canApprove ? "warning" : "info"}>
-                    {scheduleReason}
+                </details>
+                {!hasDraftAccess(variant.accountId) ? (
+                  <Notice kind="error">
+                    Bu hesaba seçili tüm projeler için taslak erişimi verin veya hesabı kaldırın.
                   </Notice>
                 ) : null}
-                <p className="social-muted">
-                  Her gün belirli saatlerde, örneğin 2–5 saat arayla paylaşmak için Otomasyonlar →
-                  Otomatik yayın planı oluştur.
-                </p>
-              </section>
-              <div className="social-actions">
+                {variant.factIds.some((id) => !publicFacts.some((fact) => fact.id === id)) ? (
+                  <Notice kind="warning">
+                    İçerikteki doğrulanmış bilgi seçili projelerin dışında. İlgili projeyi yeniden
+                    seçin veya kampanyayı yeniden hazırlayın.
+                  </Notice>
+                ) : null}
                 <Button
-                  type="submit"
                   variant="secondary"
+                  type="button"
                   onClick={() =>
-                    void run(
-                      () =>
-                        client.request("campaigns.pause", {
-                          id: selected.id,
-                          paused: !snapshot.campaigns.find(
-                            (campaign) => campaign.id === selected.id,
-                          )?.paused,
-                        }),
-                      selected.paused ? "Kampanya devam ettirildi." : "Kampanya durduruldu.",
+                    setVariants((current) =>
+                      current.filter((item) => item.accountId !== variant.accountId),
                     )
                   }
                 >
-                  {selected.paused ? "Kampanyayı devam ettir" : "Kampanyayı durdur"}
+                  Bu hesabı kampanyadan çıkar
                 </Button>
+              </fieldset>
+            ))}
+            <p className="social-muted">
+              Düzenli paylaşım için bu taslağı Otomasyonlar bölümünde bir yayın planına
+              ekleyebilirsiniz.
+            </p>
+            <Button
+              type="submit"
+              variant="secondary"
+              disabled={
+                !name.trim() ||
+                !variants.length ||
+                !validProjects ||
+                invalidVariants ||
+                Object.keys(videoProgress).length > 0
+              }
+            >
+              Kampanya taslağını kaydet
+            </Button>
+            {!name.trim() || !variants.length || !validProjects ? (
+              <small className="social-muted">
+                Kaydetmek için kampanya adını, projeyi, hesabı ve içeriği tamamlayın.
+              </small>
+            ) : invalidVariants ? (
+              <Notice kind="warning">
+                İçerik, karakter sınırı, hesap erişimi veya planlama zamanını kontrol edin.
+              </Notice>
+            ) : Object.keys(videoProgress).length ? (
+              <Notice kind="loading">Video yüklemesi bitince kaydedebilirsiniz.</Notice>
+            ) : null}
+            {editingId ? (
+              <Button
+                variant="secondary"
+                type="button"
+                onClick={(event) => {
+                  setEditingId(undefined);
+                  setName("");
+                  setVariants([]);
+                  closeComposer(event.currentTarget.closest("form")!);
+                }}
+              >
+                Düzenlemeyi bırak
+              </Button>
+            ) : null}
+          </form>
+        </Composer>
+        <div className="social-columns">
+          <section>
+            <h2 className="sr-only">
+              Kampanyalar <small>{snapshot.campaigns.length}</small>
+            </h2>
+            <div className="social-list-tools">
+              <label>
+                Kampanya ara
+                <SearchInput
+                  appearance="field"
+                  type="search"
+                  value={search}
+                  onChange={(event) => setSearch(event.target.value)}
+                  placeholder="Kampanya adı"
+                />
+              </label>
+              <SocialFilters activeCount={statusFilter ? 1 : 0} onReset={() => setStatusFilter("")}>
+                <label>
+                  Durum
+                  <NativeSelect
+                    value={statusFilter}
+                    onChange={(event) => setStatusFilter(event.target.value)}
+                  >
+                    <option value="">Tüm kampanyalar</option>
+                    <option value="draft">Taslak</option>
+                    <option value="queued">Planlandı</option>
+                    <option value="running">Gönderiliyor</option>
+                    <option value="succeeded">Gönderildi</option>
+                    <option value="partial">Kısmen gönderildi</option>
+                    <option value="failed">Başarısız</option>
+                    <option value="review">İnceleme gerekli</option>
+                    <option value="paused">Durduruldu</option>
+                    <option value="cancelled">İptal edildi</option>
+                  </NativeSelect>
+                </label>
+              </SocialFilters>
+            </div>
+            {snapshot.campaigns.length ? (
+              visibleCampaigns.map((campaign) => (
                 <Button
                   type="submit"
-                  variant="secondary"
-                  disabled={editBlocked}
+                  variant="tab"
+                  className="social-row"
+                  aria-pressed={selectedId === campaign.id}
+                  key={campaign.id}
                   onClick={() => {
-                    setEditVersion((value) => value + 1);
-                    setEditingId(selected.id);
-                    setName(selected.name);
-                    setSelectedProjects(selected.projectIds);
-                    setVariants(
-                      selected.variants.map((variant) => ({
-                        ...variant,
-                        media: [...variant.media],
-                        factIds: [...variant.factIds],
-                      })),
-                    );
+                    setSelectedId(campaign.id);
+                    setPreview(null);
+                    setApprovalConfirmed(false);
                   }}
                 >
-                  Taslağı düzenle
+                  <strong>{campaign.name}</strong>
+                  <StatusBadge
+                    status={campaignState(campaign, snapshot.jobs, snapshot.campaignStates)}
+                    label={
+                      campaignState(campaign, snapshot.jobs, snapshot.campaignStates) === "partial"
+                        ? "Kısmen gönderildi"
+                        : undefined
+                    }
+                  />
+                  <span>
+                    {campaign.projectIds.length} proje · {campaign.variants.length} hesap
+                  </span>
                 </Button>
-              </div>
-              {editBlocked ? (
-                <small className="social-muted">
-                  Planlanan, gönderilen veya incelemedeki yayınlar bu taslağın düzenlenmesini
-                  engelliyor. Yeni içerik için yeni kampanya oluşturun.
-                </small>
-              ) : null}
-              <h3>
-                Yayın sonuçları <small>{selectedJobs.length}</small>
-              </h3>
-              <JobList snapshot={snapshot} campaignId={selected.id} client={client} run={run} />
-            </>
-          ) : (
-            <Empty title="Kampanya önizlemesi">
-              İçeriği, yayın zamanını ve her hesabın sonucunu görmek için bir kampanya seçin.
-            </Empty>
-          )}
-        </section>
+              ))
+            ) : (
+              <Empty title="İlk kampanyanızı hazırlayın">
+                Yeni kampanya ile proje ve hesapları seçip içeriğinizi hazırlayın.
+              </Empty>
+            )}
+            {snapshot.campaigns.length && !visibleCampaigns.length ? (
+              <Empty title="Eşleşen kampanya yok">Aramayı veya durum filtresini değiştirin.</Empty>
+            ) : null}
+          </section>
+          <section>
+            {selected ? (
+              <>
+                <header className="social-record-heading">
+                  <div>
+                    <h2>{selected.name}</h2>
+                    <span className="social-muted">
+                      {selected.projectIds
+                        .map((id) => projects.find((project) => project.id === id)?.name || "Proje")
+                        .join(", ")}
+                    </span>
+                  </div>
+                  <StatusBadge
+                    status={campaignState(selected, snapshot.jobs, snapshot.campaignStates)}
+                    label={
+                      campaignState(selected, snapshot.jobs, snapshot.campaignStates) === "partial"
+                        ? "Kısmen gönderildi"
+                        : undefined
+                    }
+                  />
+                </header>
+                <div className="social-campaign-content">
+                  <div className="social-campaign-previews">
+                    {selected.variants.map((variant) => (
+                      <article className="social-preview" key={variant.accountId}>
+                        <h3>
+                          {snapshot.accounts.find((account) => account.id === variant.accountId)
+                            ?.name ?? "Hesap kaldırıldı"}
+                        </h3>
+                        {variant.youtube ? (
+                          <p>
+                            {variant.youtube.title} · Görünürlük:{" "}
+                            {variant.youtube.privacy === "private"
+                              ? "Özel"
+                              : variant.youtube.privacy === "unlisted"
+                                ? "Liste dışı"
+                                : "Herkese açık"}{" "}
+                            · Çocuklara yönelik: {variant.youtube.madeForKids ? "Evet" : "Hayır"} ·
+                            Sentetik içerik:{" "}
+                            {variant.youtube.containsSyntheticMedia ? "Evet" : "Hayır"}
+                          </p>
+                        ) : null}
+                        <p className="social-message">{variant.text}</p>
+                        {variant.media.map((media, index) => (
+                          <p key={index}>
+                            {media.kind === "video" ? "Video" : "Görsel"}:{" "}
+                            {media.url ?? "Hosta yüklenen dosya"}
+                          </p>
+                        ))}
+                        {variant.link ? <p className="social-message">{variant.link}</p> : null}
+                        <small>Tek seferlik yayın: {time(variant.scheduledAt)}</small>
+                        {currentPreview?.targets
+                          .filter((target) => target.accountId === variant.accountId)
+                          .map((target) => (
+                            <div key={target.accountId} className="social-inline-meta">
+                              <StatusBadge
+                                status={target.contentError ? "failed" : target.capability.status}
+                                label={target.contentError ? "İçerik sorunu" : undefined}
+                              />
+                              <StatusBadge
+                                status={target.approved ? "approved" : "draft"}
+                                label={target.approved ? "İçerik onaylı" : "Onay bekliyor"}
+                              />
+                              {target.contentError || target.capability.status !== "available" ? (
+                                <Notice kind="warning">
+                                  {target.contentError || target.capability.reason}
+                                </Notice>
+                              ) : null}
+                            </div>
+                          ))}
+                      </article>
+                    ))}
+                  </div>
+                  <aside className="social-campaign-controls">
+                    <section className="social-workflow-steps" aria-label="Yayın onayı ve planlama">
+                      <h3>Kontrol et ve yayınla</h3>
+                      {currentPreview && canApprove ? (
+                        <label className="social-check">
+                          <Checkbox
+                            checked={approvalConfirmed}
+                            onChange={(event) => setApprovalConfirmed(event.target.checked)}
+                          />
+                          Bu kampanyanın tüm hesap içeriklerini okudum ve yayınlanmasını
+                          onaylıyorum.
+                        </label>
+                      ) : null}
+                      <div className="social-actions">
+                        <Button
+                          type="submit"
+                          variant={currentPreview ? "secondary" : "primary"}
+                          onClick={() =>
+                            void run(async () => {
+                              setPreview(
+                                await client.request("campaigns.preview", {
+                                  id: selected.id,
+                                }),
+                              );
+                              setApprovalConfirmed(false);
+                            }, "Hesap ve içerik kontrolü tamamlandı.")
+                          }
+                        >
+                          Hesap ve içeriği kontrol et
+                        </Button>
+
+                        <Button
+                          type="submit"
+                          variant={canApprove && !approved ? "primary" : "secondary"}
+                          disabled={!canApprove || !approvalConfirmed || approved}
+                          onClick={() =>
+                            void run(async () => {
+                              await client.request("campaigns.approve", { id: selected.id });
+                              setPreview(
+                                await client.request("campaigns.preview", { id: selected.id }),
+                              );
+                            }, "İçerik onaylandı. Tek seferlik planlayabilir veya otomatik yayın planına ekleyebilirsiniz.")
+                          }
+                        >
+                          {approved ? "İçerik onaylandı" : "Yayın onayı ver"}
+                        </Button>
+                        <Button
+                          type="submit"
+                          variant={approved ? "primary" : "secondary"}
+                          disabled={!canSchedule}
+                          onClick={() =>
+                            void run(async () => {
+                              await client.request("campaigns.schedule", {
+                                id: selected.id,
+                              });
+                            }, "Tek seferlik yayınlar planlandı. Sonuçları aşağıdan veya İşlem geçmişinden takip edin.")
+                          }
+                        >
+                          Yayını planla
+                        </Button>
+                      </div>
+                      {scheduleReason ? (
+                        <Notice kind={currentPreview && !canApprove ? "warning" : "info"}>
+                          {scheduleReason}
+                        </Notice>
+                      ) : null}
+                    </section>
+                    <div className="social-actions">
+                      <Button
+                        type="submit"
+                        variant="secondary"
+                        onClick={() =>
+                          void run(
+                            () =>
+                              client.request("campaigns.pause", {
+                                id: selected.id,
+                                paused: !snapshot.campaigns.find(
+                                  (campaign) => campaign.id === selected.id,
+                                )?.paused,
+                              }),
+                            selected.paused ? "Kampanya devam ettirildi." : "Kampanya durduruldu.",
+                          )
+                        }
+                      >
+                        {selected.paused ? "Kampanyayı devam ettir" : "Kampanyayı durdur"}
+                      </Button>
+                      <Button
+                        type="submit"
+                        variant="secondary"
+                        disabled={editBlocked}
+                        onClick={() => {
+                          setEditVersion((value) => value + 1);
+                          setEditingId(selected.id);
+                          setName(selected.name);
+                          setSelectedProjects(selected.projectIds);
+                          setVariants(
+                            selected.variants.map((variant) => ({
+                              ...variant,
+                              media: [...variant.media],
+                              factIds: [...variant.factIds],
+                            })),
+                          );
+                        }}
+                      >
+                        Taslağı düzenle
+                      </Button>
+                    </div>
+                    {editBlocked ? (
+                      <small className="social-muted">
+                        Planlanan, gönderilen veya incelemedeki yayınlar bu taslağın düzenlenmesini
+                        engelliyor. Yeni içerik için yeni kampanya oluşturun.
+                      </small>
+                    ) : null}
+                  </aside>
+                </div>
+                <details className="social-campaign-results">
+                  <summary>
+                    Yayın sonuçları <small>{selectedJobs.length}</small>
+                  </summary>
+                  <JobList snapshot={snapshot} campaignId={selected.id} client={client} run={run} />
+                </details>
+              </>
+            ) : (
+              <Empty title="Kampanya önizlemesi">
+                İçeriği, yayın zamanını ve her hesabın sonucunu görmek için bir kampanya seçin.
+              </Empty>
+            )}
+          </section>
+        </div>
       </div>
       <section className="social-page-secondary">
         <ProjectProfile

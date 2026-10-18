@@ -35,6 +35,8 @@ type Props = {
   className?: string;
   /** Keep taller dialogs inside the viewport, scrolling their content. */
   fitViewport?: boolean;
+  /** Side detail surface with the same overlay, focus and native popup owner. */
+  placement?: "center" | "end";
   children: ReactNode;
 };
 
@@ -47,6 +49,7 @@ export function ModalPanel({
   minimalHeader = false,
   className,
   fitViewport = true,
+  placement = "center",
   children,
 }: Props) {
   const locale = useLocale(languageDomain);
@@ -73,9 +76,11 @@ export function ModalPanel({
           className={
             popupHost
               ? "relative z-[1] w-full"
-              : fitViewport
-                ? `relative z-[1] ${WIDTH[size]}`
-                : `absolute z-[1] left-1/2 ${TOP[size]} ${WIDTH[size]} -translate-x-1/2`
+              : placement === "end"
+                ? "relative z-[1] ms-auto h-full w-[min(880px,100vw)]"
+                : fitViewport
+                  ? `relative z-[1] ${WIDTH[size]}`
+                  : `absolute z-[1] left-1/2 ${TOP[size]} ${WIDTH[size]} -translate-x-1/2`
           }
         >
           <div
@@ -86,7 +91,7 @@ export function ModalPanel({
             aria-labelledby={titleId}
             aria-describedby={descriptionId}
             onMouseDown={(event) => event.stopPropagation()}
-            className={`relative isolate flex flex-col overflow-hidden rounded-2xl border border-content/7 shadow-2xl ${fitViewport ? "max-h-[calc(100dvh-32px)]" : ""} ${className ?? ""}`}
+            className={`relative isolate flex flex-col overflow-hidden border border-content/7 shadow-2xl ${placement === "end" ? "h-full rounded-none" : `rounded-2xl ${fitViewport ? "max-h-[calc(100dvh-32px)]" : ""}`} ${className ?? ""}`}
           >
             <GlassBackdrop className="bg-background-base dark:bg-background-base/85" />
             <div className="modal-panel relative z-[1] flex min-h-0 flex-1 flex-col">
@@ -139,7 +144,7 @@ export function Modal(props: Props) {
   if (host) return createPortal(<ModalPanel {...props} />, host);
   return createPortal(
     <div
-      className={`fixed inset-0 ${props.fitViewport !== false ? "grid place-items-center" : ""}`}
+      className={`fixed inset-0 ${props.placement === "end" ? "flex justify-end" : props.fitViewport !== false ? "grid place-items-center" : ""}`}
       style={{ zIndex: LAYER.dialog }}
       onMouseDown={(event) => {
         if (event.target !== event.currentTarget) return;

@@ -1,4 +1,3 @@
-import { Badge } from "../../../shared/ui/Badge";
 import { NativeSelect } from "../../../shared/ui/Select";
 import { Button } from "../../../shared/ui/Button";
 import { Skeleton } from "../../../shared/ui/Skeleton";
@@ -14,7 +13,7 @@ import { Campaigns } from "./SocialCampaigns";
 import { Audience, Rules } from "./SocialManagement";
 import { Inbox } from "./SocialInbox";
 import { PublishingPlans } from "./SocialPublishingPlans";
-import { SocialPrograms } from "./SocialPrograms";
+import { Popover } from "../../../shared/ui/Popover";
 import { SocialHistory } from "./SocialHistory";
 import { SocialSendingControls } from "./SocialSendingControls";
 import { RetainedSocialPanel } from "./RetainedSocialPanel";
@@ -72,6 +71,7 @@ import {
   MessageMultiple,
   Zap,
   Settings,
+  CircleHelp,
 } from "../../../shared/ui/icons";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import { accountConnectionStatus } from "../model/accountConnection";
@@ -502,15 +502,19 @@ export function SocialView({
       <div className="social-layout">
         <header className="social-header">
           <div className="social-heading">
-            <h1 id="social-title">{tab}</h1>
+            <h1 id="social-title" className="social-sr-only">
+              {tab}
+            </h1>
           </div>
           <div className="social-header-controls">
             <div className="social-header-field">
-              <span>Bağlantı</span>
+              <span>Bilgisayar</span>
               <SearchableSelect
                 value={machineId}
                 disabled={busy}
                 label={t("Yetkili host")}
+                searchable={machines.length > 5}
+                searchPlaceholder="Bilgisayar ara…"
                 options={machines.map((machine) => ({
                   value: machine.id,
                   label: isLocalSyncMachine(machine) ? "Bu bilgisayar" : machine.name,
@@ -563,6 +567,60 @@ export function SocialView({
             >
               İşlem geçmişi
             </Button>
+          </div>
+          <div className="social-host-status" role="status">
+            <span
+              className="social-status-dot"
+              data-online={snapshot?.hostOnline ?? false}
+              aria-hidden="true"
+            />
+            <span className="social-host-label">
+              {snapshot
+                ? snapshot.hostOnline
+                  ? "Zamanlama hazır"
+                  : "Zamanlama çevrimdışı"
+                : loading
+                  ? "Hesaplar yükleniyor…"
+                  : "Bağlantı kurulamadı"}
+            </span>
+            {snapshot ? (
+              <Button
+                variant="ghost"
+                type="button"
+                aria-label="Gönderim kontrolleri"
+                title="Gönderim kontrolleri"
+                size="sm"
+                onClick={() => {
+                  setTab("Otomasyonlar");
+                  setAutomationMode("sending");
+                  setVisited((current) =>
+                    current.includes("Otomasyonlar") ? current : [...current, "Otomasyonlar"],
+                  );
+                }}
+              >
+                {snapshot.stopped
+                  ? "Gönderimler durduruldu"
+                  : snapshot.sendingEnabled
+                    ? "Onaylı gönderimler açık"
+                    : "Taslak modu · gönderim kapalı"}
+              </Button>
+            ) : null}
+            <SchedulingHelp />
+            {updatedAt ? (
+              <small className="social-updated-at">
+                Son yenileme{" "}
+                {new Date(updatedAt).toLocaleTimeString("tr-TR", {
+                  hour: "2-digit",
+                  minute: "2-digit",
+                })}
+              </small>
+            ) : null}
+            {refreshing && snapshot ? (
+              <StatusBadge status="loading" label="Veriler yenileniyor" />
+            ) : null}
+            {stale && snapshot ? (
+              <StatusBadge status="warning" label="Son veriler gösteriliyor" />
+            ) : null}
           </div>
           <div className="social-header-actions">
             <Button
@@ -640,73 +698,6 @@ export function SocialView({
             );
           })}
         </nav>
-        <div className="social-host-status" role="status">
-          <span
-            className="social-status-dot"
-            data-online={snapshot?.hostOnline ?? false}
-            aria-hidden="true"
-          />
-          <span className="social-host-label">
-            {snapshot
-              ? snapshot.hostOnline
-                ? "Host çalışıyor"
-                : "Host kuyruğu kapalı"
-              : loading
-                ? "Hesaplar yükleniyor…"
-                : "Bağlantı kurulamadı"}
-          </span>
-          {snapshot ? (
-            <Badge
-              tone="neutral"
-              size="sm"
-              data-enabled={snapshot.sendingEnabled && !snapshot.stopped}
-            >
-              {snapshot.stopped
-                ? "Gönderimler durduruldu"
-                : snapshot.sendingEnabled
-                  ? "Onaylı gönderimler açık"
-                  : "Taslak modu · gönderim kapalı"}
-            </Badge>
-          ) : null}
-          {snapshot ? (
-            <Button
-              variant="secondary"
-              type="button"
-              size="sm"
-              onClick={() => {
-                setTab("Otomasyonlar");
-                setAutomationMode("sending");
-                setVisited((current) =>
-                  current.includes("Otomasyonlar") ? current : [...current, "Otomasyonlar"],
-                );
-              }}
-            >
-              Gönderim kontrolleri
-            </Button>
-          ) : null}
-          <details className="social-status-details">
-            <summary>Çalışma bilgisi</summary>
-            <p>
-              Host açıkken planlanan işler oturumdan bağımsız çalışır. Gönderim için içerik onayı
-              veya etkin bir kural gerekir. Host kapalıyken işler yürütülmez.
-            </p>
-          </details>
-          {updatedAt ? (
-            <small className="social-updated-at">
-              Son yenileme{" "}
-              {new Date(updatedAt).toLocaleTimeString("tr-TR", {
-                hour: "2-digit",
-                minute: "2-digit",
-              })}
-            </small>
-          ) : null}
-          {refreshing && snapshot ? (
-            <StatusBadge status="loading" label="Veriler yenileniyor" />
-          ) : null}
-          {stale && snapshot ? (
-            <StatusBadge status="warning" label="Son veriler gösteriliyor" />
-          ) : null}
-        </div>
         {error || loadError ? (
           <div className="social-error social-feedback-bar">
             <Notice kind="error" title={error ? "İşlem tamamlanamadı" : "Bağlantı yenilenemedi"}>
@@ -918,7 +909,7 @@ function WorkspacePanels({
   const present = (tab: Tab, section: Section) =>
     visited.includes(tab) && host.snapshots.has(section);
   return (
-    <fieldset disabled={busy} className="social-workspace">
+    <fieldset disabled={busy} className="social-workspace social-workspace-root">
       {present("Hesaplar", "accounts") ? (
         <RetainedSocialPanel {...feedback} active={active && tab === "Hesaplar"}>
           <Accounts {...props("accounts")} onOpenHistory={onOpenHistory} onNavigate={onNavigate} />
@@ -969,7 +960,6 @@ function WorkspacePanels({
               active={active && tab === "Otomasyonlar" && automationMode === "publish"}
             >
               <PublishingPlans {...props("plans")} />
-              <SocialPrograms {...props("plans")} />
             </RetainedSocialPanel>
           ) : null}
           {host.snapshots.has("rules") ? (
@@ -1039,6 +1029,47 @@ function Collapsible({
     <>{children}</>
   );
 }
+function SchedulingHelp() {
+  const trigger = useRef<HTMLButtonElement>(null);
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="social-scheduling-help">
+      <Button
+        ref={trigger}
+        variant="ghost"
+        iconOnly
+        label="Zamanlama nasıl çalışır?"
+        aria-haspopup="dialog"
+        aria-expanded={open}
+        onClick={() => setOpen(!open)}
+      >
+        <CircleHelp aria-hidden="true" />
+      </Button>
+      {open ? (
+        <Popover
+          anchor={trigger}
+          align="end"
+          width={320}
+          role="dialog"
+          aria-label="Zamanlama nasıl çalışır?"
+          onDismiss={() => setOpen(false)}
+          className="social-help-popover"
+        >
+          <strong>Zamanlama nasıl çalışır?</strong>
+          <p>
+            Seçili bilgisayar açık ve bycoda hizmeti bağlıyken planlanan işler çalışır. Bu ekranı
+            kapatabilirsiniz.
+          </p>
+          <p>
+            Paylaşım için içerik onayı veya etkin bir kural gerekir. Bilgisayar çevrimdışıyken işler
+            bekler.
+          </p>
+        </Popover>
+      ) : null}
+    </div>
+  );
+}
+
 function Accounts({
   client,
   snapshot,
@@ -1173,10 +1204,11 @@ function Accounts({
     };
   }, [browserAccount, active, visible, client]);
   return (
-    <div className="social-page">
-      <p className="social-page-intro">
-        Hesaplarınızı bağlayın, bağlantı durumunu ve proje erişimini tek yerden yönetin.
-      </p>
+    <div className="social-page social-accounts-page">
+      <div className="social-section-heading">
+        <h2>Hesaplar</h2>
+        <span className="social-muted">{snapshot.accounts.length} hesap</span>
+      </div>
       <Composer title="Hesap ekle">
         <form
           onSubmit={(event) => {
@@ -1254,8 +1286,11 @@ function Accounts({
           ) : null}
         </form>
       </Composer>
-      <div className="social-columns">
-        <section>
+      <div
+        className="social-columns social-account-workspace"
+        data-single={snapshot.accounts.length <= 1}
+      >
+        <section hidden={snapshot.accounts.length <= 1}>
           <h2>Bağlı hesaplar</h2>
           {!snapshot.accounts.length ? (
             <Empty title="İlk hesabınızı ekleyin" icon={Link}>
@@ -1295,7 +1330,7 @@ function Accounts({
             ))}
           </div>
         </section>
-        <section>
+        <section className="social-account-detail">
           {account ? (
             <>
               <h2>{account.name}</h2>
@@ -1315,9 +1350,9 @@ function Accounts({
                       variant="primary"
                       type="button"
 
-                      onClick={() => onNavigate("Otomasyonlar")}
+                      onClick={() => onNavigate("Kampanyalar")}
                     >
-                      Paylaşım planla
+                      Paylaşım hazırla
                     </Button>
                     <Button variant="secondary" type="button" onClick={onOpenHistory}>
                       Geçmişi gör
@@ -1325,8 +1360,32 @@ function Accounts({
                   </div>
                 ) : null}
               </div>
+              {account.connected ? (
+                <section className="social-account-capabilities">
+                  <h3>Bu hesapla yapabilecekleriniz</h3>
+                  <div className="social-capability-grid">
+                    {(snapshot.capabilities[account.id] ?? [])
+                      .filter((cap) =>
+                        ["publish", "reply", "inbox.read", "message.start"].includes(cap.operation),
+                      )
+                      .map((cap) => (
+                        <div key={cap.operation}>
+                          <span>{operations[cap.operation]}</span>
+                          <StatusBadge status={cap.status} />
+                        </div>
+                      ))}
+                  </div>
+                  {account.connection === "browser" ? (
+                    <p className="social-muted">
+                      Paylaşım ve gönderiye yanıt desteklenir. Gelen kutusu ve özel mesajlar için
+                      resmi API bağlantısı gerekir.
+                    </p>
+                  ) : null}
+                </section>
+              ) : null}
               {account.platform === "x" ? (
-                <div className="social-connection">
+                <details className="social-connection" open={!account.connected || undefined}>
+                  <summary>Tarayıcı bağlantısını yönet</summary>
                   <strong>
                     {account.connected && account.connection === "browser"
                       ? "X hesabı bağlı"
@@ -1409,7 +1468,7 @@ function Accounts({
                         )[browser.status]}
                     </p>
                   ) : null}
-                </div>
+                </details>
               ) : null}
               {account.platform === "x" &&
               account.connected &&
@@ -1655,11 +1714,13 @@ function Accounts({
                 </div>
               ) : null}
               <details className="social-form">
-                <summary>Kullanılabilir işlemler ve erişim ayrıntıları</summary>
+                <summary>Desteklenen işlemler</summary>
                 <p className="social-muted">
-                  Yürütücü:{" "}
-                  {account.executorId === snapshot.executorId ? "Seçili host" : account.executorId}.
-                  Aynı hesabı başka hostta yeniden bağlamak yerine bu hosta bağlanın.
+                  Bu hesap{" "}
+                  {account.executorId === snapshot.executorId
+                    ? "seçili bilgisayarda"
+                    : "başka bir bilgisayarda"}{" "}
+                  bağlı.
                 </p>
                 <table>
                   <thead>
@@ -1674,18 +1735,21 @@ function Accounts({
                         <td>{operations[cap.operation]}</td>
                         <td>
                           <StatusBadge status={cap.status} />
-                          <p>{cap.reason}</p>
-                          <a href={cap.source} target="_blank" rel="noreferrer">
-                            Resmi belge
-                          </a>
+                          <details>
+                            <summary>Ayrıntılar</summary>
+                            <p>{cap.reason}</p>
+                            <a href={cap.source} target="_blank" rel="noreferrer">
+                              Resmi belge
+                            </a>
+                          </details>
                         </td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
               </details>
-              <details className="social-form">
-                <summary>Proje izinlerini yönet</summary>
+              <details className="social-form social-account-permissions" open>
+                <summary>Proje erişimi</summary>
                 <form
                   className="social-form"
                   onSubmit={(event) => {
@@ -1699,7 +1763,6 @@ function Accounts({
                     );
                   }}
                 >
-                  <h3>Proje izinleri</h3>
                   <label>
                     Proje
                     <SearchableSelect
@@ -1749,7 +1812,7 @@ function Accounts({
                     {Object.entries(account.grants)
                       .map(
                         ([id, allowed]) =>
-                          `${projects.find((item) => item.id === id)?.name ?? id}: ${allowed.join(", ") || "yok"}`,
+                          `${projects.find((item) => item.id === id)?.name ?? id}: ${allowed.map((permission) => ({ read: "Okuma", draft: "Taslak", publish: "Paylaşım", reply: "Yanıt", message: "Mesaj", comment: "Yorum" })[permission] ?? permission).join(", ") || "yok"}`,
                       )
                       .join("; ")}
                   </p>
@@ -1757,9 +1820,13 @@ function Accounts({
               </details>
             </>
           ) : (
-            <Empty title="Hesabınızı yönetin" icon={Link}>
-              Bağlantı durumunu, platform yeteneklerini ve proje erişimini görmek için bir hesap
-              seçin.
+            <Empty
+              title={snapshot.accounts.length ? "Hesabınızı yönetin" : "İlk hesabınızı ekleyin"}
+              icon={Link}
+            >
+              {snapshot.accounts.length
+                ? "Bağlantı durumunu ve proje erişimini görmek için bir hesap seçin."
+                : "Hesap ekle ile başlayın; ardından platform bağlantısını tamamlayın."}
             </Empty>
           )}
         </section>

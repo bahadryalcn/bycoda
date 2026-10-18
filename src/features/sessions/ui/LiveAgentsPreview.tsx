@@ -1,6 +1,6 @@
 import { Button } from "../../../shared/ui/Button";
 import { t, useLocale } from "../../../shared/i18n";
-import { useEffect, useId, useState } from "react";
+import { useId, useState } from "react";
 import { useLockOverscroll } from "../../../shared/hooks/useLockOverscroll";
 import { formatLiveElapsed, shouldShowLiveAgents, type LiveAgent } from "../model/liveAgents";
 import { projectKey, projectName } from "../../../shared/lib/paths";
@@ -17,7 +17,8 @@ import { Check, ChevronDown, ChevronUp, CircleAlert, Internet } from "../../../s
 import { isRemoteProjectPath } from "../../projects/model/recents";
 import { HarnessIcon } from "./HarnessIcon";
 import { ProjectMascot } from "../../projects/ui/ProjectMascot";
-import { TerminalSpinner } from "./TerminalSpinner";
+import { useSharedNow } from "./AgentClock";
+import { SessionWorkingStatus } from "./SessionWorkingStatus";
 
 const LIVE_AGENT_CAP = 4;
 
@@ -56,7 +57,6 @@ export function LiveAgentsPreview({
   const [expanded, setExpanded] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
   const listId = useId();
-  const [now, setNow] = useState(() => Date.now());
   const lockList = useLockOverscroll<HTMLDivElement>();
   const hasIssues = agents.some((agent) => agent.issue);
   const finishedCount = agents.filter((agent) => agent.done).length;
@@ -66,11 +66,7 @@ export function LiveAgentsPreview({
   const ticking =
     visibleOnRail && !collapsed && agents.some((agent) => !agent.done && agent.startedAt != null);
 
-  useEffect(() => {
-    if (!ticking) return;
-    const id = window.setInterval(() => setNow(Date.now()), 1000);
-    return () => window.clearInterval(id);
-  }, [ticking]);
+  const now = useSharedNow(ticking);
 
   if (!visibleOnRail) return null;
 
@@ -222,7 +218,7 @@ function LiveAgentCard({
   const activity = agent.issue
     ? t(agent.issue === "retrying" ? "Retrying" : "Failed")
     : agent.needsApproval
-      ? "Need approval"
+      ? t(agent.inputKind === "question" ? "Question" : "Need approval")
       : agent.done
         ? "Done"
         : agent.activity;
@@ -247,13 +243,7 @@ function LiveAgentCard({
       onClick={() => onSelect?.(agent.id)}
     >
       <span className="flex min-w-0 items-center gap-2" data-live-agent-title>
-        <ProjectMascot
-          project={seed}
-          color={color}
-          name={resolveTabGroupMascot(key, groupMascots)}
-          className="size-2 shrink-0"
-          active={live}
-        />
+        <HarnessIcon harness={agent.harness} className="size-3 shrink-0" />
         <span className="min-w-0 flex-1 truncate text-(length:--ui-font-secondary) font-medium leading-snug">
           {agent.title}
         </span>
@@ -262,7 +252,13 @@ function LiveAgentCard({
         className="mbs-1 flex min-w-0 items-center gap-1.5 ps-4 text-(length:--ui-font-caption) leading-tight text-(--ui-text-muted)"
         data-live-agent-details
       >
-        <HarnessIcon harness={agent.harness} className="size-3 shrink-0" />
+        <ProjectMascot
+          project={seed}
+          color={color}
+          name={resolveTabGroupMascot(key, groupMascots)}
+          className="size-3 shrink-0"
+          active={live}
+        />
         {remote ? (
           <Internet
             aria-label={t("On another machine")}
@@ -290,13 +286,15 @@ function LiveAgentCard({
           ) : agent.done ? (
             <Check className="size-3 shrink-0" strokeWidth={2.25} />
           ) : (
-            <TerminalSpinner className="inline-block w-3 select-none text-center text-[11px] leading-none" />
+            <SessionWorkingStatus startedAt={agent.startedAt} />
           )}
           {agent.issue || agent.needsApproval || agent.done ? (
             <span className="min-w-0 truncate">{activity}</span>
           ) : null}
         </span>
-        {elapsed ? <span className="shrink-0 tabular-nums">{elapsed}</span> : null}
+        {elapsed && (agent.issue || agent.needsApproval || agent.done) ? (
+          <span className="shrink-0 tabular-nums">{elapsed}</span>
+        ) : null}
       </span>
     </Button>
   );

@@ -1,6 +1,6 @@
 import { Button } from "../../../shared/ui/Button";
 import { t, useLocale } from "../../../shared/i18n";
-import { X } from "../../../shared/ui/icons";
+import { Link, X } from "../../../shared/ui/icons";
 import { attachmentPreviewSrc, isAttachmentFolder } from "../model/attachments";
 import { tokenLabel } from "../model/attachmentTokens";
 import type { Attachment } from "../model/session";
@@ -57,7 +57,7 @@ export function AttachmentChip({
     ? "block max-w-14 truncate text-center text-(length:--ui-font-caption) leading-5 text-(--ui-text-secondary)"
     : "shrink-0 rounded bg-(--ui-surface-raised) px-1 text-[10px] leading-4 text-(--ui-text-secondary)";
   const labelNode =
-    label && onInsertToken ? (
+    image && label && onInsertToken ? (
       <Button
         motion="none"
         variant={image ? "link" : "ghost"}
@@ -92,7 +92,7 @@ export function AttachmentChip({
       <div
         data-attachment-chip={image ? "image" : "file"}
         className={`group relative flex min-w-0 items-center gap-1.5 rounded-md ${
-          image ? "w-14 shrink-0 flex-col gap-0" : "bg-(--ui-surface-raised) py-0.5 pl-1 pr-1"
+          image ? "w-14 shrink-0 flex-col gap-0" : "max-w-full bg-(--ui-surface-raised) py-0.5 px-1"
         }`}
         title={attachment.path ?? attachment.name}
       >
@@ -120,23 +120,18 @@ export function AttachmentChip({
         ) : (
           <>
             {labelNode}
-            <span className="grid size-5 shrink-0 place-items-center">
-              <FileTypeIcon
-                name={attachment.name}
-                isDir={isAttachmentFolder(attachment)}
-                size={16}
-              />
-            </span>
-            <span className="min-w-0 max-w-[140px] truncate text-[11px] leading-none text-(--ui-text-secondary)">
+            <span className="min-w-0 max-w-48 text-(length:--ui-font-caption) text-(--ui-text-secondary)">
               {canOpen || canOpenFile ? (
                 <Button
                   motion="none"
                   variant="ghost"
+                  className="min-w-0 max-w-full"
                   type="button"
                   disabled={loading}
                   aria-busy={loading}
                   aria-haspopup="dialog"
                   aria-label={t("Open {p0} full screen", { p0: attachment.name })}
+                  title={t("Open {p0} full screen", { p0: attachment.name })}
                   onClick={(event) => {
                     event.stopPropagation();
                     if (canOpenFile) {
@@ -145,12 +140,42 @@ export function AttachmentChip({
                     } else void show();
                   }}
                 >
-                  {loading ? t("Loading…") : attachment.name}
+                  <FileTypeIcon
+                    name={attachment.name}
+                    isDir={isAttachmentFolder(attachment)}
+                    size={16}
+                  />
+                  <span className="min-w-0 truncate">
+                    {loading ? t("Loading…") : attachment.name}
+                  </span>
                 </Button>
               ) : (
-                attachment.name
+                <span className="flex min-w-0 items-center gap-1.5">
+                  <FileTypeIcon
+                    name={attachment.name}
+                    isDir={isAttachmentFolder(attachment)}
+                    size={16}
+                  />
+                  <span className="truncate">{attachment.name}</span>
+                </span>
               )}
             </span>
+            {token && onInsertToken ? (
+              <Button
+                motion="none"
+                variant="ghost"
+                iconOnly
+                label={t("Insert {p0} into the message", { p0: token })}
+                className="shrink-0"
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onInsertToken();
+                }}
+              >
+                <Link className="size-3" />
+              </Button>
+            ) : null}
             {previewError ? (
               <span role="alert" className="text-[10px] text-(--ui-tone-warning-fg)">
                 {t("Preview unavailable. Try again.")}

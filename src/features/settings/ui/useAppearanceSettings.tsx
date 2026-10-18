@@ -168,7 +168,7 @@ export function useAppearanceSettings(
   useEffect(() => subscribeUiScale(() => setUiScale(loadUiScale())), []);
 
   const onThemePreference = useCallback((next: ThemePreference) => {
-    applyThemePreference(next);
+    applyThemePreference(next, { animate: true });
     saveThemePreference(next);
     setThemePreference(next);
   }, []);

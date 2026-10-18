@@ -1,11 +1,12 @@
 name: Bug report
 description: Report a problem with bycoda
-labels: [bug]
+labels: [bug, "status: needs-triage"]
 body:
   - type: markdown
     attributes:
       value: |
         Describe the issue with the information you have. Additional details are optional and can be added later.
+        Write in the language you are comfortable with. Choose unsure when you do not know a classification.
         Remove credentials and private project or conversation data from logs and screenshots.
         Please report security vulnerabilities privately using the guidance in SECURITY.md.
 
@@ -16,6 +17,54 @@ body:
       description: Describe what happened and, if possible, what you expected.
     validations:
       required: true
+
+  - type: dropdown
+    id: severity
+    attributes:
+      label: Severity
+      description: Choose the closest impact, or leave this as unsure. Maintainers may adjust it; severity is separate from scheduling priority.
+      options:
+        - Unsure / needs assessment
+        - Critical - widespread outage or unrecoverable data loss
+        - High - lost work, unintended actions, or a core workflow blocked
+        - Medium - incorrect behavior with a usable workaround
+        - Low - visual, wording, or minor inconvenience
+      default: 0
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Affected area
+      options:
+        - Unsure / other
+        - Chat, composer, drafts, and attachments
+        - Queue, Stop, and recovery
+        - Providers, transcripts, and history import
+        - Remote hosts and connections
+        - Git, branches, diffs, and pull requests
+        - Files, editor, and search
+        - Tasks, goals, and automations
+        - Notes
+        - Settings, usage, and notifications
+        - Installation, updates, and startup
+        - Accessibility, layout, and translations
+      default: 0
+
+  - type: textarea
+    id: impact
+    attributes:
+      label: Impact and workaround (optional)
+      description: What does this prevent you from doing? Is any work lost, and is there a workaround?
+
+  - type: dropdown
+    id: frequency
+    attributes:
+      label: Frequency (optional)
+      options:
+        - Every time
+        - Sometimes
+        - Once so far
+        - Not tested / unsure
 
   - type: textarea
     id: repro
