@@ -192,11 +192,16 @@ describe("owner-assisted social browser workflows", () => {
   });
   it("exposes owner RPC and prevents the X verifier from opening the same profile", async () => {
     const f = await fixture();
+    const verifier = vi.fn(async () => {
+      throw new Error("The verifier must not open a profile owned by a workflow.");
+    });
     const browser = new XBrowserSessions(
       f.directory,
-      undefined,
+      verifier,
       Date.now,
-      undefined,
+      // Use the fixture's short polling cadence: production polls at 1s,
+      // which exceeds until() on platforms with accurate 1ms timers.
+      async () => new Promise((resolve) => setTimeout(resolve, 1)),
       true,
       f.plain,
     );
@@ -208,12 +213,14 @@ describe("owner-assisted social browser workflows", () => {
       acknowledgeRisk: true,
     });
     expect(() => browser.begin(f.service, owner, f.account.id, true)).toThrow("browser workflow");
+    expect(verifier).not.toHaveBeenCalled();
     await until(() => f.windows.length === 1);
     await f.service.call(owner, "accounts.disconnect", { accountId: f.account.id });
     await until(() => !browser.workflows.hasActive(f.account.id));
     expect(
       await transport.rpc(owner, "social.browser.workflow.status", { accountId: f.account.id }),
     ).toMatchObject({ workflows: [expect.objectContaining({ status: "cancelled" })] });
+    expect(f.plain).toHaveBeenCalledTimes(1);
     browser.workflows.stop(f.service);
   });
 });

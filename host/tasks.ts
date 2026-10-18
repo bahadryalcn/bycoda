@@ -564,7 +564,9 @@ export class HostTasks {
    * that is not running or finished. An edit keeps the task's status. */
   save(raw: unknown): HostTask {
     const input = parseHostTask(raw);
-    const graph = new Map(this.list().map((task) => [task.id, task]));
+    const graph = this.schedulerTasks
+      ? new Map(this.schedulerTasks)
+      : new Map(this.list().map((task) => [task.id, task]));
     graph.set(input.id, input as HostTask);
     const cycle = this.dependencyCycle(input.id, graph);
     if (cycle)

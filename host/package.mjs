@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { mkdir, readFile, writeFile, chmod, copyFile, readdir, rm, utimes } from "node:fs/promises";
 import { execFileSync } from "node:child_process";
 import { resolve, join } from "node:path";
+import { createTarArchive, extractTarMembers } from "./package-archive.mjs";
 
 // Official Node release checksums, pinned so release builds are reproducible.
 // https://nodejs.org/dist/v24.21.0/SHASUMS256.txt
@@ -22,7 +23,10 @@ const ps = (script) =>
       "-NoProfile",
       "-NonInteractive",
       "-EncodedCommand",
-      Buffer.from(`$ErrorActionPreference = 'Stop'; ${script}`, "utf16le").toString("base64"),
+      Buffer.from(
+        `$ErrorActionPreference = 'Stop'; $ProgressPreference = 'SilentlyContinue'; ${script}`,
+        "utf16le",
+      ).toString("base64"),
     ],
     {
       windowsHide: true,
@@ -85,16 +89,7 @@ for (const target of targets) {
         folder,
       ]);
     }
-  } else
-    execFileSync("tar", [
-      "-xzf",
-      archive,
-      "-C",
-      folder,
-      "--strip-components=1",
-      `${stem}/bin/node`,
-      `${stem}/LICENSE`,
-    ]);
+  } else extractTarMembers(archive, folder, [`${stem}/bin/node`, `${stem}/LICENSE`]);
   await copyFile("build/host/host.mjs", join(folder, "host.mjs"));
   await copyFile("build/host/bycoda-host.mjs", join(folder, "bycoda-host.mjs"));
   await copyFile("host/provider-guard.mjs", join(folder, "provider-guard.mjs"));
@@ -141,7 +136,7 @@ for (const target of targets) {
       execFileSync("zip", ["-q", "-r", join(output, filename), "."], {
         cwd: folder,
       });
-  } else execFileSync("tar", ["-czf", join(output, filename), "-C", folder, "."]);
+  } else createTarArchive(join(output, filename), folder);
   const hash = createHash("sha256")
     .update(await readFile(join(output, filename)))
     .digest("hex");

@@ -2916,8 +2916,11 @@ describe("host work limits", () => {
 
   it("resumes queued work today when the daily limit is raised", async () => {
     const { tasks, input, task, turns, clock, addProject } = setup();
+    // Keep the recorded 721 minutes in today's calendar-day budget.
+    clock.now = new Date("2026-10-05T14:00:00").getTime();
     tasks.limits.save({ dailyAgentMinutes: 720 });
     tasks.limits.record(clock.now - 721 * MINUTE);
+    expect(tasks.limits.usedMinutes()).toBe(721);
     tasks.save(input({ id: "custom-limit", projectId: addProject("custom-limit").id }));
     await tasks.tick();
     expect(tasks.limits.reached()).toBe(true);

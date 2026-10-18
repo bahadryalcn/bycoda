@@ -657,13 +657,41 @@ fn connect_tunnel_with_config(
     drop(header);
     let mut response = Vec::new();
     while response.len() < MAX_HEADER && !response.ends_with(b"\r\n\r\n") {
+        if state.stopped.load(Ordering::Acquire) {
+            return Err(HttpProxyFailure::Cancelled);
+        }
+        // On Windows, shutdown through a duplicated socket handle does not
+        // reliably interrupt a concurrent read on the original handle. Poll
+        // cancellation independently while keeping the overall CONNECT deadline.
         upstream
             .socket()
-            .set_read_timeout(Some(remaining(deadline)?))
+            .set_read_timeout(Some(remaining(deadline)?.min(Duration::from_millis(50))))
             .map_err(|_| HttpProxyFailure::Transport)?;
         let mut byte = [0];
-        upstream.read_exact(&mut byte).map_err(|e| io_failure(&e))?;
-        response.push(byte[0]);
+        match upstream.read(&mut byte) {
+            Ok(0) => {
+                return Err(if state.stopped.load(Ordering::Acquire) {
+                    HttpProxyFailure::Cancelled
+                } else {
+                    HttpProxyFailure::Transport
+                });
+            }
+            Ok(_) => response.push(byte[0]),
+            Err(error)
+                if matches!(
+                    error.kind(),
+                    std::io::ErrorKind::TimedOut
+                        | std::io::ErrorKind::WouldBlock
+                        | std::io::ErrorKind::Interrupted
+                ) => {}
+            Err(error) => {
+                return Err(if state.stopped.load(Ordering::Acquire) {
+                    HttpProxyFailure::Cancelled
+                } else {
+                    io_failure(&error)
+                });
+            }
+        }
     }
     if !response.ends_with(b"\r\n\r\n") {
         return Err(HttpProxyFailure::Invalid);

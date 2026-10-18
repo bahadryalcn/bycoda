@@ -63,10 +63,26 @@ function reviewGit(root: string, ...args: string[]) {
   }).trim();
 }
 
-it.each([false, true])(
-  "unstages both rename paths from a project subdirectory (folder: %s)",
-  async (folder) => {
-    const root = reviewRepo();
+it.each([
+  [false, false],
+  [true, false],
+  [false, true],
+  [true, true],
+])(
+  "unstages both rename paths from a project subdirectory (folder: %s, alias: %s)",
+  async (folder, alias) => {
+    let root = reviewRepo();
+    if (alias) {
+      const aliases = mkdtempSync(join(tmpdir(), "bycoda-workspace-alias-"));
+      roots.push(aliases);
+      const target = join(aliases, "checkout");
+      symlinkSync(
+        realpathSync.native(root),
+        target,
+        process.platform === "win32" ? "junction" : "dir",
+      );
+      root = target;
+    }
     mkdirSync(join(root, "app"));
     writeFileSync(join(root, "old[1].txt"), "original\n");
     writeFileSync(join(root, "keep.txt"), "before\n");
@@ -569,7 +585,17 @@ it("rejects stale hunk bases and preserves other clients' index and lock files",
   const base = "first\n" + "context\n".repeat(20) + "second\n";
   writeFileSync(join(root, "a.txt"), base);
   git("add", "a.txt");
-  git("commit", "-qm", "hunk base");
+  git(
+    "-c",
+    "user.name=Workspace Test",
+    "-c",
+    "user.email=workspace@example.test",
+    "-c",
+    "commit.gpgsign=false",
+    "commit",
+    "-qm",
+    "hunk base",
+  );
   const external = base.replace("second", "SECOND");
   writeFileSync(join(root, "a.txt"), external);
   git("add", "a.txt");

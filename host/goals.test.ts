@@ -62,20 +62,18 @@ function setup() {
   const addProject = (name: string) => {
     const cwd = join(directory, name);
     mkdirSync(cwd);
+    // These goals request isolated tasks, which require a real Git root.
+    git(cwd, "init", "-q");
+    git(cwd, "checkout", "-q", "-b", "main");
+    git(cwd, "config", "user.name", "Test");
+    git(cwd, "config", "user.email", "test@example.test");
+    git(cwd, "config", "core.autocrlf", "false");
+    writeFileSync(join(cwd, "file.txt"), "initial\n");
+    git(cwd, "add", "file.txt");
+    git(cwd, "commit", "-q", "-m", "initial");
     return store.addProject(cwd, name);
   };
-  /** A project that is a git repository on `main`, with one commit. */
-  const addRepo = (name: string) => {
-    const added = addProject(name);
-    git(added.cwd, "init", "-q");
-    git(added.cwd, "checkout", "-q", "-b", "main");
-    git(added.cwd, "config", "user.name", "Test");
-    git(added.cwd, "config", "user.email", "test@example.test");
-    writeFileSync(join(added.cwd, "file.txt"), "initial\n");
-    git(added.cwd, "add", "file.txt");
-    git(added.cwd, "commit", "-q", "-m", "initial");
-    return added;
-  };
+  const addRepo = addProject;
   const turns: Array<{
     input: SendTurnInput;
     runId?: string;
@@ -108,10 +106,7 @@ function setup() {
   const clock = { now: new Date("2026-10-05T08:00:00").getTime() };
   const tasks = new HostTasks(store, engine, () => clock.now);
   const goals = new HostGoals(store, engine, tasks, () => clock.now);
-  const tick = tasks.tick.bind(tasks);
-  vi.spyOn(tasks, "tick").mockImplementation(async () => {
-    await tick();
-    // Checkpoint capture completes before the provider receives the new turn.
+  const providersStarted = async () => {
     await vi.waitFor(
       () => {
         for (const value of store.sessions().filter((entry) => entry.status === "running")) {
@@ -122,6 +117,12 @@ function setup() {
       },
       { timeout: 10_000 },
     );
+  };
+  const tick = tasks.tick.bind(tasks);
+  vi.spyOn(tasks, "tick").mockImplementation(async () => {
+    await tick();
+    // Checkpoint capture completes before the provider receives the new turn.
+    await providersStarted();
   });
   cleanups.push(async () => {
     for (const turn of turns) turn.finish();
@@ -164,6 +165,8 @@ function setup() {
     clock.now += MINUTE;
     await tasks.tick();
     await tasks.idle();
+    // Verification may have started a reviewer after tick() returned.
+    await providersStarted();
   };
   /** Ends a session's turn cleanly, optionally with a reply, and settles it. */
   const finish = async (sessionId: string, reply?: string) => {
@@ -218,19 +221,32 @@ describe("editing goal settings", () => {
   it("reuses the task index across goal polls and refreshes it after task writes", async () => {
     const { store, tasks, goals, input, lead } = setup();
     tasks.save({ ...input(), id: "waiting", projectId: lead.id, status: "todo" });
-    store.db.prepare("INSERT INTO goals VALUES (?, ?)").run("goal", JSON.stringify({
-      ...input(), status: "running", taskIds: ["waiting"], createdAt: 1, updatedAt: 1,
-    }));
+    store.db.prepare("INSERT INTO goals VALUES (?, ?)").run(
+      "goal",
+      JSON.stringify({
+        ...input(),
+        status: "running",
+        taskIds: ["waiting"],
+        createdAt: 1,
+        updatedAt: 1,
+      }),
+    );
     const list = vi.spyOn(tasks, "list");
     expect(goals.list()[0].status).toBe("running");
     expect(goals.list()[0].status).toBe("running");
     expect(list).toHaveBeenCalledTimes(1);
     tasks.save({ ...input(), id: "waiting", projectId: lead.id, title: "Changed" });
+    // save() independently reads current tasks to validate dependency cycles.
+    // Count goal polling itself: one refresh after a write, then shared reads.
+    list.mockClear();
     goals.list();
-    expect(list).toHaveBeenCalledTimes(2);
+    goals.list();
+    expect(list).toHaveBeenCalledTimes(1);
     await tasks.delete("waiting");
+    list.mockClear();
     expect(goals.list()[0].status).toBe("blocked");
-    expect(list).toHaveBeenCalledTimes(3);
+    goals.list();
+    expect(list).toHaveBeenCalledTimes(1);
   });
 
   function seeded() {
@@ -382,8 +398,9 @@ describe("editing goal settings", () => {
     await tasks.idle();
     expect(planned().one).toMatchObject({ status: "done", merged: true, autoMerged: true });
     expect(planned().two.status).toBe("running");
-    expect(readFileSync(join(repo.cwd, "result.txt"), "utf8").replace(/\r\n/g, "\n"))
-      .toBe("reviewed result\n");
+    expect(readFileSync(join(repo.cwd, "result.txt"), "utf8").replace(/\r\n/g, "\n")).toBe(
+      "reviewed result\n",
+    );
   });
 });
 
@@ -539,9 +556,10 @@ describe("goal planning", () => {
       status: "queued",
     });
     expect(second.verifyCommand).toBeUndefined();
-    expect(JSON.parse(turnOf(first.sessionId!).input.text).task.instructions.objective).toBe(
-      "Instructions for api",
-    );
+    const workerPrompt = turnOf(first.sessionId!).input.text;
+    expect(
+      JSON.parse(workerPrompt.slice(workerPrompt.indexOf("{"))).task.instructions.objective,
+    ).toBe("Instructions for api");
   });
 
   it("waits for the owner to approve the plan when asked to", async () => {
@@ -558,7 +576,8 @@ describe("goal planning", () => {
     const approved = goals.approve("goal");
     expect(approved.status).toBe("running");
     expect(approved.taskIds).toHaveLength(1);
-    await vi.waitFor(() => expect(turns).toHaveLength(2));
+    await tasks.tick();
+    expect(turns).toHaveLength(2);
     await tasks.idle();
     expect(tasks.list()[0].status).toBe("running");
     expect(() => goals.approve("goal")).toThrow(

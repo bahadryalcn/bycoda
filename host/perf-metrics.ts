@@ -158,6 +158,7 @@ const RPC_METHOD_NAMES: readonly string[] = [
   "attachments.upload",
   "automations.delete",
   "automations.list",
+  "automations.preview",
   "automations.runNow",
   "automations.runs",
   "automations.save",

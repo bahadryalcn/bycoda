@@ -248,6 +248,35 @@ fn non_success_and_invalid_headers_do_not_redirect_or_echo_upstream_content() {
 }
 
 #[test]
+fn connect_header_poll_timeouts_preserve_the_overall_response_deadline() {
+    let upstream = TcpListener::bind("127.0.0.1:0").unwrap();
+    let proxy = HttpProxyEndpoint {
+        scheme: Default::default(),
+        host: "127.0.0.1".into(),
+        port: upstream.local_addr().unwrap().port(),
+    };
+    let server = std::thread::spawn(move || {
+        let (mut stream, _) = upstream.accept().unwrap();
+        read_bounded(
+            &mut stream,
+            b"\r\n\r\n",
+            MAX_HEADER,
+            Instant::now() + Duration::from_secs(3),
+        )
+        .unwrap();
+        stream.write_all(b"HTTP/1.1 2").unwrap();
+        // Several cancellation-poll windows may elapse while a valid proxy
+        // slowly sends its response; they must not become connection failures.
+        std::thread::sleep(Duration::from_millis(180));
+        stream.write_all(b"00 OK\r\n\r\n").unwrap();
+    });
+    let lease = HttpProxyLease::start(proxy, target(), None).unwrap();
+    let mut local = client(&lease);
+    assert_eq!(ack(&mut local), b"OK\n");
+    server.join().unwrap();
+}
+
+#[test]
 fn stop_cancels_pending_authentication_and_active_connect_and_closes_listener() {
     let upstream = TcpListener::bind("127.0.0.1:0").unwrap();
     let proxy = HttpProxyEndpoint {

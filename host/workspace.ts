@@ -1037,9 +1037,12 @@ async function runHostGitAction(
             (entry.relative === selected || entry.relative.startsWith(`${selected}/`)),
         );
         if (renames.length) {
-          const repositoryRoot = (await git(root, ["rev-parse", "--show-toplevel"])).trim();
+          // Both names are repository-relative. Relating them directly avoids
+          // mixing a lexical project alias with Git's canonical checkout path
+          // (for example /var versus /private/var on macOS).
+          const prefix = (await git(root, ["rev-parse", "--show-prefix"])).trim();
           for (const entry of renames) {
-            paths.push(relative(root, resolve(repositoryRoot, entry.originalPath!)));
+            paths.push(relative(prefix || ".", entry.originalPath!));
           }
         }
       }

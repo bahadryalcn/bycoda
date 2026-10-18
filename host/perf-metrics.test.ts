@@ -151,7 +151,10 @@ it("keeps the RPC allowlist aligned with the dispatch literals, including J2 tok
     "mcp.tokens.revoke",
   ])) {
     recordDuration(name, 1);
-    expect(perfMetrics.snapshot().metrics.some((entry) => entry.name === name)).toBe(true);
+    expect(
+      perfMetrics.snapshot().metrics.some((entry) => entry.name === name),
+      name,
+    ).toBe(true);
   }
   expect(measure("resources.read", () => 42)).toBe(42);
 });
