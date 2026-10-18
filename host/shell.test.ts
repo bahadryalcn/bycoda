@@ -7,6 +7,7 @@ import type { ShellResult } from "../src/features/sessions/model/shellRun";
 import type { HostProvider } from "./providers";
 import { HostEngine, parseCommand } from "./engine";
 import { runHostShell } from "./shell";
+import type { ShellProfile } from "./shellProfiles";
 import { HostStore } from "./store";
 
 const cleanups: Array<() => Promise<void> | void> = [];
@@ -154,6 +155,23 @@ describe("a !command on the host", () => {
 });
 
 describe("runHostShell", () => {
+  // Exercise a known shell without inheriting the owner's persisted terminal
+  // choice (which may be Git Bash or cmd on Windows).
+  const profile: ShellProfile =
+    process.platform === "win32"
+      ? {
+          id: "test-powershell",
+          name: "Test PowerShell",
+          path: join(
+            process.env.SystemRoot ?? "C:\\Windows",
+            "System32",
+            "WindowsPowerShell",
+            "v1.0",
+            "powershell.exe",
+          ),
+          kind: "powershell",
+        }
+      : { id: "test-sh", name: "Test sh", path: "/bin/sh", kind: "sh" };
   const directory = () => {
     const path = mkdtempSync(join(tmpdir(), "bycoda-shell-run-"));
     cleanups.push(() => rmSync(path, { recursive: true, force: true }));
@@ -161,19 +179,19 @@ describe("runHostShell", () => {
   };
 
   it("returns what the command printed and its exit code", async () => {
-    const result = await runHostShell(directory(), "echo hello");
+    const result = await runHostShell(directory(), "echo hello", undefined, profile);
     expect(result).toMatchObject({ exitCode: 0, timedOut: false });
     expect(result.output.trim()).toBe("hello");
   });
 
   it("reports a failing command's exit code", async () => {
-    const result = await runHostShell(directory(), "exit 3");
+    const result = await runHostShell(directory(), "exit 3", undefined, profile);
     expect(result).toMatchObject({ exitCode: 3, timedOut: false });
   });
 
   it("stops a command that runs past the time limit", async () => {
     const command = process.platform === "win32" ? "Start-Sleep -Seconds 30" : "sleep 30";
-    const result = await runHostShell(directory(), command, 500);
+    const result = await runHostShell(directory(), command, 500, profile);
     expect(result).toMatchObject({ exitCode: null, timedOut: true });
   }, 20_000);
 });
