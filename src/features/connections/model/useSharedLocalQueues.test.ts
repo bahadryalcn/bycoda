@@ -6,6 +6,7 @@ import type { Session } from "../../sessions/model/session";
 import { mergeQueueChange, type SharedQueue } from "./sharedQueue";
 import {
   sharedLocalQueueReady,
+  resumeSharedLocalQueue,
   submitSharedLocalQueue,
   useSharedLocalQueues,
 } from "./useSharedLocalQueues";
@@ -174,4 +175,31 @@ it("holds the queue when Stop invalidates preparation instead of launching anoth
   await tick();
   expect(queue.messages).toEqual([row("a")]);
   expect(queue.status).toBe("paused");
+});
+
+it("recovers a synchronization failure and steers on the same click", async () => {
+  await mount();
+  mocks.request.mockRejectedValueOnce(new Error("temporary connection failure"));
+  await tick();
+  const send = vi.fn(() => true);
+  expect(await submitSharedLocalQueue("chat", "a", true, send)).toBe(true);
+  expect(send).toHaveBeenCalledOnce();
+  expect(queue.messages).toEqual([]);
+});
+
+it("durably releases a paused shared queue without sending a message", async () => {
+  await mount();
+  sessionsRef.current = [{ ...sessionsRef.current[0], queueStatus: "resuming", busy: true }];
+  await resumeSharedLocalQueue("chat");
+  expect(queue.status).toBe("active");
+  expect(queue.messages).toEqual([row("a")]);
+  expect(sharedLocalQueueReady("chat")).toBe(true);
+});
+
+it("keeps a shared queue paused when Stop cancels Resume", async () => {
+  await mount();
+  sessionsRef.current = [{ ...sessionsRef.current[0], queueStatus: "paused" }];
+  await expect(resumeSharedLocalQueue("chat", () => false)).rejects.toThrow("cancelled");
+  expect(queue.status).toBe("paused");
+  expect(queue.messages).toEqual([row("a")]);
 });

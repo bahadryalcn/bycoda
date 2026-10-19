@@ -464,6 +464,18 @@ export function gitStageFile(cwd: string, relative: string): Promise<void> {
   return invoke<void>("git_stage_file", { cwd, relative });
 }
 
+export function gitStageFiles(cwd: string, relatives: string[]): Promise<void> {
+  return invoke<void>("git_stage_files", { cwd, relatives });
+}
+
+export function gitUnstageFiles(cwd: string, relatives: string[]): Promise<void> {
+  return invoke<void>("git_unstage_files", { cwd, relatives });
+}
+
+export function gitDiscardFiles(cwd: string, relatives: string[]): Promise<void> {
+  return invoke<void>("git_discard_files", { cwd, relatives });
+}
+
 export function gitUnstageFile(cwd: string, relative: string): Promise<void> {
   return invoke<void>("git_unstage_file", { cwd, relative });
 }

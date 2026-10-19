@@ -50,6 +50,9 @@ vi.mock("../../../platform/tauri/fs", () => ({
   gitUnstageAll: vi.fn(async () => {}),
   gitDiscardAll: vi.fn(async () => {}),
   gitStageFile: vi.fn(async () => {}),
+  gitStageFiles: vi.fn(async () => {}),
+  gitDiscardFiles: vi.fn(async () => {}),
+  gitUnstageFiles: vi.fn(async () => {}),
   gitUnstageFile: vi.fn(async () => {}),
   gitDiscardFile: vi.fn(async () => {}),
   gitPrCreate: vi.fn(async () => ""),
@@ -87,6 +90,9 @@ import {
   gitPush,
   gitRangeContext,
   gitStageFile,
+  gitStageFiles,
+  gitDiscardFiles,
+  gitUnstageFiles,
   gitStageAll,
   gitDiscardFile,
   gitUnstageFile,
@@ -236,6 +242,9 @@ beforeEach(() => {
   vi.mocked(gitPull).mockReset();
   vi.mocked(generateCommitMessage).mockReset();
   vi.mocked(gitStageFile).mockReset().mockResolvedValue(undefined);
+  vi.mocked(gitStageFiles).mockReset().mockResolvedValue(undefined);
+  vi.mocked(gitDiscardFiles).mockReset().mockResolvedValue(undefined);
+  vi.mocked(gitUnstageFiles).mockReset().mockResolvedValue(undefined);
   vi.mocked(gitUnstageFile).mockReset().mockResolvedValue(undefined);
   vi.mocked(notifyGitChanged).mockReset();
   vi.mocked(subscribeGitChanged).mockImplementation(() => () => {});
@@ -1856,11 +1865,11 @@ describe("Git changed file multiple selection", () => {
       expect(onOpenFile).toHaveBeenCalledWith("/repo/src/a.ts", "unstaged", true);
     },
   );
-  it("stages a selected subset serially with one reload and combined optimistic state", async () => {
+  it("stages a selected subset in one command with one reload and combined optimistic state", async () => {
     const files = [changedFile("a.ts"), changedFile("b.ts"), changedFile("c.ts")];
     vi.mocked(gitDiffIndex).mockResolvedValue(index({ files }));
     const finish: (() => void)[] = [];
-    vi.mocked(gitStageFile).mockImplementation(
+    vi.mocked(gitStageFiles).mockImplementation(
       () => new Promise<void>((resolve) => finish.push(resolve)),
     );
     await renderPanel();
@@ -1868,14 +1877,12 @@ describe("Git changed file multiple selection", () => {
     await click("b.ts", { ctrlKey: true });
     vi.mocked(notifyGitChanged).mockClear();
     await menuAction("a.ts", "Stage Changes");
-    expect(gitStageFile).toHaveBeenCalledExactlyOnceWith("/repo", "a.ts");
+    expect(gitStageFiles).toHaveBeenCalledExactlyOnceWith("/repo", ["a.ts", "b.ts"]);
     const staged = container.querySelector('[role="listbox"][aria-label="Staged Changes"]')!;
     expect(staged.querySelectorAll("[data-git-file]")).toHaveLength(2);
     expect(
       container.querySelector('[role="listbox"][aria-label="Changes"]')!.textContent,
     ).toContain("c.ts");
-    await act(async () => finish[0]());
-    expect(gitStageFile).toHaveBeenLastCalledWith("/repo", "b.ts");
     vi.mocked(gitDiffIndex).mockResolvedValue(
       index({
         files: files.map((file) =>
@@ -1883,9 +1890,10 @@ describe("Git changed file multiple selection", () => {
         ),
       }),
     );
-    await act(async () => finish[1]());
+    await act(async () => finish[0]());
     expect(notifyGitChanged).toHaveBeenCalledExactlyOnceWith("/repo", "index");
-    expect(gitStageFile).toHaveBeenCalledTimes(2);
+    expect(gitStageFile).not.toHaveBeenCalled();
+    expect(gitStageFiles).toHaveBeenCalledTimes(1);
   });
   it("unstages only selected staged files", async () => {
     const files = ["a.ts", "b.ts", "c.ts"].map((relative) =>
@@ -1896,7 +1904,26 @@ describe("Git changed file multiple selection", () => {
     await click("a.ts");
     await click("c.ts", { ctrlKey: true });
     await menuAction("c.ts", "Unstage Changes");
-    expect(vi.mocked(gitUnstageFile).mock.calls.map(([, path]) => path)).toEqual(["a.ts", "c.ts"]);
+    expect(gitUnstageFiles).toHaveBeenCalledExactlyOnceWith("/repo", ["a.ts", "c.ts"]);
+    expect(gitUnstageFile).not.toHaveBeenCalled();
+  });
+  it("restores the selection after a batch fails and permits a retry", async () => {
+    vi.mocked(gitDiffIndex).mockResolvedValue(
+      index({ files: [changedFile("a.ts"), changedFile("b.ts"), changedFile("c.ts")] }),
+    );
+    vi.mocked(gitStageFiles).mockRejectedValueOnce(new Error("index.lock exists"));
+    await renderPanel();
+    await click("a.ts");
+    await click("b.ts", { ctrlKey: true });
+    await menuAction("a.ts", "Stage Changes");
+    await act(async () => {});
+    const changes = container.querySelector('[role="listbox"][aria-label="Changes"]')!;
+    expect(changes.querySelectorAll("[data-git-file]")).toHaveLength(3);
+    await click("a.ts");
+    await click("b.ts", { ctrlKey: true });
+    await menuAction("a.ts", "Stage Changes");
+    expect(gitStageFiles).toHaveBeenCalledTimes(2);
+    expect(gitStageFile).not.toHaveBeenCalled();
   });
   it("asks once before discarding a subset and respects cancellation", async () => {
     vi.mocked(gitDiffIndex).mockResolvedValue(
@@ -1909,9 +1936,11 @@ describe("Git changed file multiple selection", () => {
     await menuAction("a.ts", "Discard Changes");
     expect(ask).toHaveBeenCalledTimes(1);
     expect(gitDiscardFile).not.toHaveBeenCalled();
+    expect(gitDiscardFiles).not.toHaveBeenCalled();
     await menuAction("c.ts", "Discard Changes");
     expect(ask).toHaveBeenCalledTimes(2);
-    expect(vi.mocked(gitDiscardFile).mock.calls.map(([, path]) => path)).toEqual(["a.ts", "c.ts"]);
+    expect(gitDiscardFiles).toHaveBeenCalledExactlyOnceWith("/repo", ["a.ts", "c.ts"]);
+    expect(gitDiscardFile).not.toHaveBeenCalled();
   });
 });
 

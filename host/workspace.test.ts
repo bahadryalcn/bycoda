@@ -63,6 +63,85 @@ function reviewGit(root: string, ...args: string[]) {
   }).trim();
 }
 
+it("stages 300 selected long literal paths out of 700 and unstages only that selection before HEAD", async () => {
+  const root = reviewRepo();
+  const paths = Array.from(
+    { length: 700 },
+    (_, i) => `${String(i).padStart(3, "0")}-[literal] ${"x".repeat(100)}.txt`,
+  );
+  for (const path of paths) writeFileSync(join(root, path), "new\n");
+  const selected = paths.slice(0, 300);
+  await hostGitAction(root, "stageFiles", selected);
+  expect(
+    reviewGit(root, "diff", "--cached", "--name-only", "-z").split("\0").filter(Boolean),
+  ).toEqual(selected);
+  await hostGitAction(root, "unstageFiles", selected.slice(0, 200));
+  expect(
+    reviewGit(root, "diff", "--cached", "--name-only", "-z").split("\0").filter(Boolean),
+  ).toEqual(selected.slice(200));
+  expect(paths.every((path) => readFileSync(join(root, path), "utf8") === "new\n")).toBe(true);
+});
+
+it("validates the whole batch before staging and continues the queue after a failure", async () => {
+  const root = reviewRepo();
+  writeFileSync(join(root, "a.txt"), "new\n");
+  await expect(hostGitAction(root, "stageFiles", ["a.txt", "../outside.txt"])).rejects.toThrow();
+  expect(reviewGit(root, "ls-files")).toBe("");
+  await Promise.all([
+    hostGitAction(root, "stageFiles", ["a.txt"]),
+    hostGitAction(root, "unstageFiles", ["a.txt"]),
+  ]);
+  expect(reviewGit(root, "ls-files")).toBe("");
+  expect(readFileSync(join(root, "a.txt"), "utf8")).toBe("new\n");
+});
+
+it("refuses Stage All and discard when index inspection fails, preserving working files", async () => {
+  const root = reviewRepo();
+  writeFileSync(join(root, "a.txt"), "valuable draft\n");
+  writeFileSync(join(root, ".git/index"), "invalid index");
+  await expect(hostGitAction(root, "stageAll")).rejects.toThrow();
+  await expect(hostGitAction(root, "discardAll")).rejects.toThrow();
+  expect(readFileSync(join(root, "a.txt"), "utf8")).toBe("valuable draft\n");
+  expect(readFileSync(join(root, ".git/index"), "utf8")).toBe("invalid index");
+});
+
+it("discards only the selected tracked and untracked changes, preserving staged content", async () => {
+  const root = reviewRepo();
+  writeFileSync(join(root, "a[1].txt"), "base\n");
+  writeFileSync(join(root, "keep.txt"), "keep\n");
+  await hostGitAction(root, "stageFiles", ["a[1].txt", "keep.txt"]);
+  writeFileSync(join(root, "a[1].txt"), "draft\n");
+  writeFileSync(join(root, "keep.txt"), "keep draft\n");
+  writeFileSync(join(root, "new.txt"), "untracked\n");
+  await expect(hostGitAction(root, "discardFiles", ["new.txt", "missing.txt"])).rejects.toThrow(
+    /refresh/,
+  );
+  expect(readFileSync(join(root, "new.txt"), "utf8")).toBe("untracked\n");
+  await hostGitAction(root, "discardFiles", ["a[1].txt", "new.txt"]);
+  expect(readFileSync(join(root, "a[1].txt"), "utf8")).toBe("base\n");
+  expect(readFileSync(join(root, "keep.txt"), "utf8")).toBe("keep draft\n");
+  expect(reviewGit(root, "show", ":a[1].txt")).toBe("base");
+  expect(() => readFileSync(join(root, "new.txt"))).toThrow();
+});
+
+it("retries transient index contention and preserves a persistent external lock", async () => {
+  const root = reviewRepo();
+  writeFileSync(join(root, "a.txt"), "new\n");
+  const lock = join(root, ".git/index.lock");
+  writeFileSync(lock, "external writer");
+  const release = setTimeout(() => rmSync(lock), 300);
+  try {
+    await hostGitAction(root, "stageFiles", ["a.txt"]);
+  } finally {
+    clearTimeout(release);
+  }
+  expect(reviewGit(root, "ls-files")).toBe("a.txt");
+  writeFileSync(lock, "keep external lock");
+  await expect(hostGitAction(root, "unstageFiles", ["a.txt"])).rejects.toThrow(/index.lock/);
+  expect(readFileSync(lock, "utf8")).toBe("keep external lock");
+  expect(reviewGit(root, "ls-files")).toBe("a.txt");
+});
+
 it.each([
   [false, false],
   [true, false],

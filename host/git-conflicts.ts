@@ -65,13 +65,18 @@ async function run<T extends string | Buffer>(
   encoding: "utf8" | "buffer",
   maxBuffer = 4 * 1024 * 1024,
 ): Promise<T> {
-  const { stdout } = await exec("git", ["--no-pager", ...args], {
-    cwd: root,
-    timeout: LIST_MS,
-    maxBuffer,
-    encoding,
-    env: { ...process.env, LC_ALL: "C", GIT_OPTIONAL_LOCKS: "0", GIT_TERMINAL_PROMPT: "0" },
-  });
+  const { stdout } = await exec(
+    "git",
+    [...(args.includes("--") ? ["--literal-pathspecs"] : []), "--no-pager", ...args],
+    {
+      cwd: root,
+      timeout: LIST_MS,
+      maxBuffer,
+      encoding,
+      windowsHide: true,
+      env: { ...process.env, LC_ALL: "C", GIT_OPTIONAL_LOCKS: "0", GIT_TERMINAL_PROMPT: "0" },
+    },
+  );
   return stdout as T;
 }
 
@@ -80,7 +85,7 @@ async function unmergedEntries(root: string, pathspec?: string): Promise<Unmerge
     root,
     ["ls-files", "-u", "-z", ...(pathspec ? ["--", pathspec] : [])],
     "utf8",
-  ).catch(() => "");
+  );
   return parseUnmerged(output);
 }
 

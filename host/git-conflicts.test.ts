@@ -91,6 +91,27 @@ function mergeRepo() {
 const kinds = async (cwd: string) =>
   (await hostUnmerged(cwd)).map((file) => [file.relative, file.kind]);
 
+it("reads the literal conflicted filename instead of a wildcard-matching sibling", async () => {
+  const r = repo();
+  r.write("a[1].txt", "literal base\n");
+  r.write("a1.txt", "other base\n");
+  r.commit("base");
+  r.git("checkout", "-qb", "side");
+  r.write("a[1].txt", "literal side\n");
+  r.write("a1.txt", "other side\n");
+  r.commit("side");
+  r.git("checkout", "-q", "main");
+  r.write("a[1].txt", "literal main\n");
+  r.write("a1.txt", "other main\n");
+  r.commit("main");
+  expect(r.tryGit("merge", "side")).toBe(false);
+  expect(await hostConflictStages(r.cwd, "a[1].txt")).toMatchObject({
+    base: "literal base\n",
+    ours: "literal main\n",
+    theirs: "literal side\n",
+  });
+});
+
 describe("conflict kinds", () => {
   it("follow the stages git keeps", () => {
     const kind = (...stages: number[]) => conflictKind(new Set(stages));

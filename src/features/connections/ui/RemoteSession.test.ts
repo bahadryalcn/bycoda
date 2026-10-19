@@ -2523,6 +2523,53 @@ slow("dispatches only the selected idle queue row and keeps the other rows pause
   expect(remoteOverrides.session?.queueStatus).toBe("paused");
 });
 
+slow(
+  "keeps a selected row and its action pending until the host acknowledges steering",
+  async () => {
+    steerSupported = true;
+    savedQueue = [{ id: "selected", text: "steer this task", attachments: [] }];
+    openRunningChat();
+    await renderRemoteProbe();
+    await settle();
+    let release!: () => void;
+    dispatchDelay = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let action!: ReturnType<NonNullable<SessionPaneProps["onSteerQueuedMessage"]>>;
+    let finished = false;
+    await act(async () => {
+      action = remoteOverrides.onSteerQueuedMessage!("shell", "selected");
+      void Promise.resolve(action).then(() => {
+        finished = true;
+      });
+    });
+    await settle();
+    expect(finished).toBe(false);
+    expect(remoteOverrides.session?.queuedMessages?.map((row) => row.id)).toEqual(["selected"]);
+    await act(async () => {
+      dispatchDelay = undefined;
+      release();
+      expect(await action).toBe(true);
+    });
+    await settle();
+    expect(remoteOverrides.session?.queuedMessages ?? []).toEqual([]);
+    expect(commands.filter((command) => command.type === "steer")).toHaveLength(1);
+  },
+);
+
+slow("resumes a restored queue during a busy turn without sending another turn", async () => {
+  savedQueue = [{ id: "next", text: "after this turn", attachments: [] }];
+  openRunningChat();
+  await renderRemoteProbe();
+  await settle();
+  await act(async () => {
+    expect(await remoteOverrides.onResumeQueue!("shell")).toMatchObject({ kind: "waiting" });
+  });
+  expect(commands).toHaveLength(0);
+  expect(remoteOverrides.session?.queueStatus).toBe("active");
+  expect(remoteOverrides.session?.queuedMessages).toHaveLength(1);
+});
+
 slow("keeps one chat's queue from showing on another", async () => {
   savedQueue = [{ id: "q1", text: "belongs to the first", attachments: [] }];
   openExistingChat();

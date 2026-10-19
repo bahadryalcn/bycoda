@@ -119,6 +119,8 @@ if (accountPicker) {
 }
 
 function Fixture() {
+  const queueFeedback = new URLSearchParams(location.search).has("queue-feedback");
+  const [queueStatus, setQueueStatus] = useState<"paused" | "active">("paused");
   const [harness, setHarness] = useState<HarnessId>(
     antigravitySelection ? "antigravity" : "claude",
   );
@@ -148,6 +150,32 @@ function Fixture() {
         />
       </div>
       <Composer
+        queuedMessages={
+          queueFeedback
+            ? [{ id: "queued", text: "Queued task waiting for the current turn", attachments: [] }]
+            : undefined
+        }
+        queueStatus={queueFeedback ? queueStatus : undefined}
+        onResumeQueue={
+          queueFeedback
+            ? async () => {
+                await new Promise((resolve) => setTimeout(resolve, 800));
+                setQueueStatus("active");
+                return {
+                  kind: "waiting",
+                  message: "Queue resumed. Messages will send when this turn finishes.",
+                };
+              }
+            : undefined
+        }
+        onSteerQueuedMessage={
+          queueFeedback
+            ? async () => {
+                await new Promise((resolve) => setTimeout(resolve, 800));
+                return false;
+              }
+            : undefined
+        }
         sessionId="composer-layout-fixture"
         harness={harness}
         model={model}

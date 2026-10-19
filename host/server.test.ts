@@ -1880,6 +1880,18 @@ describe("remote host API", () => {
     expect((await run("git_diff_index", { cwd: root })).result.files).toContainEqual(
       expect.objectContaining({ relative: "src/app.ts", staged: true }),
     );
+    expect(
+      (await run("git_unstage_files", { cwd: root, relatives: ["src/app.ts"] })).error,
+    ).toBeFalsy();
+    expect((await run("git_diff_index", { cwd: root })).result.files).toContainEqual(
+      expect.objectContaining({ relative: "src/app.ts", staged: false, unstaged: true }),
+    );
+    expect(
+      (await run("git_stage_files", { cwd: root, relatives: ["src/app.ts"] })).error,
+    ).toBeFalsy();
+    expect((await run("git_diff_index", { cwd: root })).result.files).toContainEqual(
+      expect.objectContaining({ relative: "src/app.ts", staged: true }),
+    );
     const history = (await run("git_history", { cwd: root, limit: 10 })).result;
     expect(history.commits[0]).toMatchObject({
       subject: "initial",

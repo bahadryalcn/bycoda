@@ -1,5 +1,35 @@
 import { test, expect } from "@playwright/test";
 
+test("queue actions expose progress and recovery in both themes at narrow widths", async ({
+  page,
+}) => {
+  await initializeChatLayout(page);
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.goto("/tests/browser/composer-extras.html?chat-layout&queue-feedback");
+  const card = page.locator("[data-message-queue-card]");
+  for (const light of [false, true]) {
+    await page.evaluate(
+      (value) => document.documentElement.classList.toggle("theme-light", value),
+      light,
+    );
+    await page.setViewportSize({ width: 390, height: 800 });
+    const steer = card.getByRole("button", { name: "Steer", exact: true });
+    await steer.focus();
+    await steer.press("Enter");
+    await expect(card.getByRole("button", { name: "Sending…", exact: true })).toBeDisabled();
+    await expect(card.getByRole("status")).toHaveText("Waiting for confirmation…");
+    await expect(card.getByRole("alert")).toContainText("It remains queued");
+    await expect(steer).toBeEnabled();
+    expect(await card.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
+  }
+  await card.getByRole("button", { name: "Resume", exact: true }).click();
+  await expect(card.getByRole("button", { name: "Resuming…", exact: true })).toBeDisabled();
+  await expect(card.getByRole("status")).toContainText("when this turn finishes");
+  await page.screenshot({
+    path: "temp/verification/2026-10-20-git-reliability/queue-feedback.png",
+  });
+});
+
 test("chat shortcut hints follow custom bindings and expose rewind at narrow widths", async ({
   page,
 }) => {

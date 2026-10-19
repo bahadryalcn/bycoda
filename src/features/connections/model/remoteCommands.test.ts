@@ -269,6 +269,19 @@ it("sends git actions with the project translated and files left relative", asyn
   ).toEqual({ operation: "merge", conflicts: ["src/app.ts"] });
 });
 
+it.each(["git_stage_files", "git_unstage_files", "git_discard_files"])(
+  "sends %s as one host request with literal repository-relative paths",
+  async (command) => {
+    const relatives = ["src/a[1].ts", "folder with spaces/b.ts"];
+    remoteRequest.mockResolvedValueOnce(undefined);
+    await runRemoteCommand(command, { cwd: "remote://env/home/me/repo", relatives });
+    expect(remoteRequest).toHaveBeenLastCalledWith("machine", "workspace.run", {
+      command,
+      args: { cwd: "/home/me/repo", relatives },
+    });
+  },
+);
+
 it("reports a host that predates a command as outdated", async () => {
   remoteRequest.mockRejectedValueOnce("Host rejected request: Unsupported workspace command");
   await expect(runRemoteCommand("git_tags", { cwd: "remote://env/home/me/repo" })).rejects.toThrow(

@@ -252,40 +252,54 @@ fn rpc_agent() -> &'static ureq::Agent {
 
 const DEFAULT_RPC_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
 
-/// The single method -> client timeout map. A git network operation runs up to
-/// 120 s on the host (`NETWORK_MS` in `host/git-actions.ts`) and `git_sync`
-/// chains a 30 s pull and a push (150 s); the client must outlast them,
-/// otherwise a valid Push/Fetch/Pull looks failed while it still runs and the
-/// user resends it. Push/Fetch/Pull/Sync arrive as `workspace.run` commands.
-/// Browser/device setup can chain two 600 s installs. Device startup, boot and
-/// control likewise need to outlast their bounded host operations, with room
-/// for readiness checks and transport overhead; ordinary reads stay at 30 s.
+/// Git mutations may wait up to 120 s for the repository lease, then run a
+/// 120 s command (or pull + push for sync), plus bounded safety reads. The
+/// client must outlast that work so a successful write is not reported as failed.
+/// Ordinary reads retain their short deadline.
 fn rpc_timeout(method: &str, params: &Value) -> std::time::Duration {
-    const GIT_ACTION: std::time::Duration = std::time::Duration::from_secs(135);
-    const GIT_NETWORK_RUN: std::time::Duration = std::time::Duration::from_secs(165);
+    const GIT_MUTATION: std::time::Duration = std::time::Duration::from_secs(450);
     match method {
         "browser.setup" | "devices.setup" => std::time::Duration::from_secs(1230),
         "devices.start" => std::time::Duration::from_secs(60),
         "devices.boot" => std::time::Duration::from_secs(240),
         "devices.action" => std::time::Duration::from_secs(180),
-        "git.action" => GIT_ACTION,
+        "git.action" | "git.switch" | "git.createBranch" | "git.worktreeCreate" => GIT_MUTATION,
         "workspace.run"
-            if matches!(
-                params.get("command").and_then(Value::as_str),
-                Some(
-                    "git_push"
-                        | "git_pull"
-                        | "git_sync"
-                        | "git_fetch"
-                        | "git_trust_repository"
-                        | "git_merge"
-                        | "git_rebase"
-                        | "git_delete_remote_branch"
-                        | "git_pr_create"
-                )
-            ) =>
+            if params
+                .get("command")
+                .and_then(Value::as_str)
+                .is_some_and(|command| {
+                    command.starts_with("git_")
+                        && !matches!(
+                            command,
+                            "git_diff_index"
+                                | "git_diff_files"
+                                | "git_diff_stats"
+                                | "git_file_diff"
+                                | "git_staged_context"
+                                | "git_head_message"
+                                | "git_range_context"
+                                | "git_history"
+                                | "git_commit_files"
+                                | "git_commit_file_diff"
+                                | "git_branches"
+                                | "git_worktrees"
+                                | "git_submodules"
+                                | "git_pr_status"
+                                | "git_operation_state"
+                                | "git_operation_status"
+                                | "git_conflicts"
+                                | "git_conflict_stages"
+                                | "git_stash_list"
+                                | "git_tags"
+                                | "git_remotes"
+                                | "git_file_history"
+                                | "git_blame"
+                                | "git_commit_message"
+                        )
+                }) =>
         {
-            GIT_NETWORK_RUN
+            GIT_MUTATION
         }
         _ => DEFAULT_RPC_TIMEOUT,
     }
@@ -423,6 +437,9 @@ fn rpc_operation(method: &str, params: &Value) -> String {
                     | "git_stage_all"
                     | "git_stage_contents"
                     | "git_stage_file"
+                    | "git_stage_files"
+                    | "git_discard_files"
+                    | "git_unstage_files"
                     | "git_staged_context"
                     | "git_stash"
                     | "git_stash_action"
@@ -1990,12 +2007,38 @@ mod tests {
     #[test]
     fn git_actions_outlast_the_hosts_network_limit_and_others_keep_the_default() {
         use std::time::Duration;
-        // Host NETWORK_MS is 120 s; git_sync chains a 30 s pull and a push.
+        // Allow queue admission, safety reads, and both 120 s sync commands.
         let none = json!({});
         assert!(rpc_timeout("git.action", &none) >= Duration::from_secs(135));
-        for command in ["git_push", "git_pull", "git_sync", "git_fetch"] {
+        for command in [
+            "git_push",
+            "git_pull",
+            "git_sync",
+            "git_fetch",
+            "git_commit",
+            "git_stage_files",
+            "git_unstage_files",
+            "git_discard_files",
+            "git_stage_contents",
+            "git_checkout",
+        ] {
             let run = json!({ "command": command });
-            assert!(rpc_timeout("workspace.run", &run) >= Duration::from_secs(165));
+            assert!(rpc_timeout("workspace.run", &run) >= Duration::from_secs(450));
+        }
+        for method in ["git.switch", "git.createBranch", "git.worktreeCreate"] {
+            assert!(rpc_timeout(method, &none) >= Duration::from_secs(450));
+        }
+        for command in [
+            "git_diff_index",
+            "git_file_diff",
+            "git_operation_status",
+            "git_pr_status",
+            "git_blame",
+        ] {
+            assert_eq!(
+                rpc_timeout("workspace.run", &json!({"command": command})),
+                DEFAULT_RPC_TIMEOUT
+            );
         }
         let read = json!({ "command": "read_text_file" });
         assert_eq!(rpc_timeout("workspace.run", &read), DEFAULT_RPC_TIMEOUT);

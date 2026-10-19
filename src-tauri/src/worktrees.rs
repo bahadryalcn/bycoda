@@ -33,14 +33,15 @@ fn git(root: &Path, args: &[&str]) -> Result<String, String> {
     let mut command = Command::new("git");
     command.env("PATH", crate::harness::cached_gui_search_path());
     crate::hide_window_console(&mut command);
-    let output = command
-        .arg("-C")
-        .arg(root)
-        .args(args)
-        .env("GIT_TERMINAL_PROMPT", "0")
-        .env("GIT_OPTIONAL_LOCKS", "0")
-        .output()
-        .map_err(|e| e.to_string())?;
+    let output = crate::fs::git_cmd_output(
+        command
+            .arg("-C")
+            .arg(root)
+            .args(args)
+            .env("GIT_TERMINAL_PROMPT", "0")
+            .env("GIT_OPTIONAL_LOCKS", "0"),
+    )
+    .map_err(|e| e.to_string())?;
     if !output.status.success() {
         return Err(String::from_utf8_lossy(&output.stderr).trim().to_string());
     }
@@ -237,11 +238,9 @@ pub async fn git_worktree_create(
     base: String,
     existing: bool,
 ) -> Result<Worktree, String> {
-    tauri::async_runtime::spawn_blocking(move || {
-        create(&expand_home(&cwd), &branch, &base, existing)
-    })
-    .await
-    .map_err(|error| error.to_string())?
+    crate::fs::spawn_git_mutation(cwd, move |root| create(root, &branch, &base, existing))
+        .await
+        .map_err(|error| error.to_string())?
 }
 
 fn copy_checkout_state(source: &Path, target: &Path) -> Result<(), String> {
@@ -394,7 +393,7 @@ pub async fn git_orchestration_worktree_create(
     cwd: String,
     branch: String,
 ) -> Result<Worktree, String> {
-    tauri::async_runtime::spawn_blocking(move || create_seeded(&expand_home(&cwd), branch.trim()))
+    crate::fs::spawn_git_mutation(cwd, move |root| create_seeded(root, branch.trim()))
         .await
         .map_err(|error| error.to_string())?
 }
@@ -432,8 +431,8 @@ pub async fn git_worktree_rename_branch(
     path: String,
     branch: String,
 ) -> Result<Worktree, String> {
-    tauri::async_runtime::spawn_blocking(move || {
-        rename_branch(&expand_home(&cwd), &expand_home(&path), &branch)
+    crate::fs::spawn_git_mutation(cwd, move |root| {
+        rename_branch(root, &expand_home(&path), &branch)
     })
     .await
     .map_err(|error| error.to_string())?
@@ -714,19 +713,18 @@ pub fn git_worktree_remove(
     terminals: State<'_, crate::pty::PtyHost>,
     agents: State<'_, crate::harness::HarnessHost>,
 ) -> Result<WorktreeRemoval, String> {
-    let path = expand_home(&path);
-    let _reservation = crate::worktree_lifecycle::reserve_removal(&path)?;
-    if terminals.has_working_dir(&path) || agents.has_working_dir(&path) {
-        return Err("Close the terminals and agent processes using this worktree first.".into());
-    }
-    let conn = store.lock_conn()?;
-    remove_with_sessions(
-        &conn,
-        &expand_home(&cwd),
-        &path,
-        force,
-        keep_sessions.unwrap_or(false),
-    )
+    let root = expand_home(&cwd);
+    crate::fs::with_git_mutation(&root, || {
+        let path = expand_home(&path);
+        let _reservation = crate::worktree_lifecycle::reserve_removal(&path)?;
+        if terminals.has_working_dir(&path) || agents.has_working_dir(&path) {
+            return Err(
+                "Close the terminals and agent processes using this worktree first.".into(),
+            );
+        }
+        let conn = store.lock_conn()?;
+        remove_with_sessions(&conn, &root, &path, force, keep_sessions.unwrap_or(false))
+    })
 }
 
 #[tauri::command(async)]
@@ -738,45 +736,49 @@ pub fn git_orchestration_worktree_remove(
     agents: State<'_, crate::harness::HarnessHost>,
 ) -> Result<WorktreeRemoval, String> {
     let root = expand_home(&cwd);
-    let path = expand_home(&path);
-    let _reservation = crate::worktree_lifecycle::reserve_removal(&path)?;
-    if terminals.has_working_dir(&path) || agents.has_working_dir(&path) {
-        return Err("Close the terminals and agent processes using this worktree first.".into());
-    }
-    let tree = removal_target(&root, &path)?;
-    let branch = tree.branch.clone();
-    let conn = store.lock_conn()?;
-    let removed = remove_with_sessions(&conn, &root, &path, true, true)?;
-    if let Some(branch) = branch {
-        if branch.starts_with("mc/orch-") {
-            if let Err(error) = git(Path::new(&removed.project_cwd), &["branch", "-D", &branch]) {
-                eprintln!("Orchestration worktree removed; temporary branch cleanup will need a retry: {error}");
+    crate::fs::with_git_mutation(&root, || {
+        let path = expand_home(&path);
+        let _reservation = crate::worktree_lifecycle::reserve_removal(&path)?;
+        if terminals.has_working_dir(&path) || agents.has_working_dir(&path) {
+            return Err(
+                "Close the terminals and agent processes using this worktree first.".into(),
+            );
+        }
+        let tree = removal_target(&root, &path)?;
+        let branch = tree.branch.clone();
+        let conn = store.lock_conn()?;
+        let removed = remove_with_sessions(&conn, &root, &path, true, true)?;
+        if let Some(branch) = branch {
+            if branch.starts_with("mc/orch-") {
+                if let Err(error) = git(Path::new(&removed.project_cwd), &["branch", "-D", &branch])
+                {
+                    eprintln!("Orchestration worktree removed; temporary branch cleanup will need a retry: {error}");
+                }
             }
         }
-    }
-    Ok(removed)
+        Ok(removed)
+    })
 }
 
 #[tauri::command(async)]
 pub async fn git_orchestration_branch_remove(cwd: String, branch: String) -> Result<(), String> {
-    tauri::async_runtime::spawn_blocking(move || {
-        let root = expand_home(&cwd);
+    crate::fs::spawn_git_mutation(cwd, move |root| {
         let branch = branch.trim();
         if !branch.starts_with("mc/orch-") {
             return Err("Only orchestration temporary branches can be removed here".into());
         }
-        git(&root, &["check-ref-format", "--branch", branch])?;
+        git(root, &["check-ref-format", "--branch", branch])?;
         let branch_ref = format!("refs/heads/{branch}");
-        if git(&root, &["rev-parse", "--verify", &branch_ref]).is_err() {
+        if git(root, &["rev-parse", "--verify", &branch_ref]).is_err() {
             return Ok(());
         }
-        if list(&root)?
+        if list(root)?
             .iter()
             .any(|tree| tree.branch.as_deref() == Some(branch))
         {
             return Err("The orchestration branch still has a worktree".into());
         }
-        git(&root, &["branch", "-D", branch]).map(|_| ())
+        git(root, &["branch", "-D", branch]).map(|_| ())
     })
     .await
     .map_err(|error| error.to_string())?

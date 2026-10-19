@@ -1,4 +1,5 @@
 import { execFileAsync as exec } from "../src/shared/lib/processExecution.node";
+import { isHostGitMutation, withHostGitMutation } from "./git-mutations";
 import { constants } from "node:fs";
 import { createHash, randomUUID } from "node:crypto";
 import {
@@ -81,6 +82,9 @@ export const WORKSPACE_COMMANDS = [
   "git_file_diff",
   "git_stage_contents",
   "git_stage_file",
+  "git_stage_files",
+  "git_discard_files",
+  "git_unstage_files",
   "git_unstage_file",
   "git_discard_file",
   "git_discard_all",
@@ -160,6 +164,15 @@ export class WorkspaceCommands {
       args && typeof args === "object" && !Array.isArray(args)
         ? (args as Record<string, unknown>)
         : {};
+    if (isHostGitMutation(command as string)) {
+      return this.gitRoot(input.cwd).then((root) =>
+        withHostGitMutation(root, () => this.runCommand(command as WorkspaceCommand, input)),
+      );
+    }
+    return this.runCommand(command as WorkspaceCommand, input);
+  }
+
+  private runCommand(command: WorkspaceCommand, input: Record<string, unknown>): Promise<unknown> {
     if (GIT_ACTION_COMMANDS.includes(command as GitActionCommand))
       return this.gitActionCommand(command as GitActionCommand, input);
     switch (command as Exclude<WorkspaceCommand, GitActionCommand>) {
@@ -227,10 +240,16 @@ export class WorkspaceCommands {
         );
       case "git_stage_file":
         return this.gitAction(input.cwd, "stage", input.relative);
+      case "git_stage_files":
+        return this.gitAction(input.cwd, "stageFiles", input.relatives);
+      case "git_unstage_files":
+        return this.gitAction(input.cwd, "unstageFiles", input.relatives);
       case "git_unstage_file":
         return this.gitAction(input.cwd, "unstage", input.relative);
       case "git_discard_file":
         return this.gitAction(input.cwd, "discard", input.relative);
+      case "git_discard_files":
+        return this.gitAction(input.cwd, "discardFiles", input.relatives);
       case "git_discard_all":
         return this.gitAction(input.cwd, "discardAll");
       case "git_stage_all":
@@ -301,7 +320,7 @@ export class WorkspaceCommands {
     const out: string[] = [];
     const projects = this.store.projects();
     let cursor = 0;
-    // hostWorktrees already bounds each git subprocess with a 10 s timeout.
+    // hostWorktrees bounds each listing subprocess with a 10 s timeout.
     await Promise.all(
       Array.from({ length: Math.min(4, projects.length) }, async () => {
         while (cursor < projects.length) {
@@ -731,12 +750,10 @@ export class WorkspaceCommands {
       if (path === undefined) throw new Error("Choose a checkpoint file");
       return this.checkpoints.fileDiff(input.sessionId, cwd, path);
     }
-    return this.checkpoints.change(
-      input.sessionId,
-      cwd,
-      path,
-      command === "session_checkpoint_undo",
-    );
+    const session = input.sessionId;
+    const change = () =>
+      this.checkpoints.change(session, cwd, path, command === "session_checkpoint_undo");
+    return command === "session_checkpoint_undo" ? withHostGitMutation(cwd, change) : change();
   }
 
   /** This machine's skills for a project folder here; the desktop drops
@@ -811,10 +828,11 @@ export class WorkspaceCommands {
         [...(args.includes("--") ? ["--literal-pathspecs"] : []), "-c", "core.pager=cat", ...args],
         {
           cwd: root,
-          timeout: 30_000,
+          timeout: ["pull", "push", "fetch", "commit"].includes(args[0]) ? 120_000 : 30_000,
           maxBuffer: 4 * 1024 * 1024,
           encoding: "utf8",
-          env: { ...process.env, GIT_TERMINAL_PROMPT: "0" },
+          windowsHide: true,
+          env: { ...process.env, GIT_TERMINAL_PROMPT: "0", GIT_OPTIONAL_LOCKS: "0" },
         },
       )
     ).stdout;

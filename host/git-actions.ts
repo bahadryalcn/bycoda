@@ -1,4 +1,5 @@
 import { execFileAsync as exec } from "../src/shared/lib/processExecution.node";
+import { isHostGitMutation, withHostGitMutation } from "./git-mutations";
 import { relative, sep } from "node:path";
 import { realpath } from "node:fs/promises";
 import {
@@ -84,7 +85,25 @@ const MAX_BLAME_LINES = 50_000;
 async function git(
   root: string,
   args: string[],
-  { timeout = QUICK_MS, maxBuffer = 8 * 1024 * 1024 } = {},
+  {
+    timeout = [
+      "stash",
+      "checkout",
+      "branch",
+      "tag",
+      "reset",
+      "revert",
+      "cherry-pick",
+      "merge",
+      "rebase",
+      "commit",
+      "rm",
+      "add",
+    ].includes(args[0] === "-c" ? args[2] : args[0])
+      ? NETWORK_MS
+      : QUICK_MS,
+    maxBuffer = 8 * 1024 * 1024,
+  } = {},
 ): Promise<string> {
   try {
     return (
@@ -96,6 +115,7 @@ async function git(
           timeout,
           maxBuffer,
           encoding: "utf8",
+          windowsHide: true,
           env: {
             ...process.env,
             LC_ALL: "C",
@@ -420,11 +440,22 @@ export const branchCache = new BranchCache((cwd) =>
   exec("git", ["symbolic-ref", "--quiet", "--short", "HEAD"], {
     cwd,
     timeout: 2_000,
+    windowsHide: true,
+    env: { ...process.env, GIT_OPTIONAL_LOCKS: "0", GIT_TERMINAL_PROMPT: "0" },
   }).then(({ stdout }) => stdout.trim()),
 );
 
 /** Runs one command in `root`, a validated working copy. */
 export async function runGitAction(
+  command: GitActionCommand,
+  root: string,
+  input: Record<string, unknown>,
+): Promise<unknown> {
+  const run = () => runGitActionSerialized(command, root, input);
+  return isHostGitMutation(command) ? withHostGitMutation(root, run) : run();
+}
+
+async function runGitActionSerialized(
   command: GitActionCommand,
   root: string,
   input: Record<string, unknown>,

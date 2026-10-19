@@ -191,8 +191,11 @@ export type SessionPaneProps = {
   ) => void;
   onQueuedMessageEditingChange: (sessionId: string, messageId?: string) => void;
   onReorderQueuedMessages?: (sessionId: string, messageIds: string[]) => void;
-  onSteerQueuedMessage: (sessionId: string, messageId: string) => void;
-  onResumeQueue: (sessionId: string) => void;
+  onSteerQueuedMessage: (
+    sessionId: string,
+    messageId: string,
+  ) => import("../model/queueAction").QueueAction;
+  onResumeQueue: (sessionId: string) => import("../model/queueAction").QueueAction;
   onUsageLimitResume: (sessionId: string) => void;
   onUsageLimitResumeAtReset: (sessionId: string, enabled: boolean) => void;
   onUsageLimitDismiss: (sessionId: string) => void;
@@ -1294,7 +1297,9 @@ const LocalSessionPane = memo(function LocalSessionPane({
           {workingBadge}
           <div className="session-pane-header-actions">
             {projectActions}
-            {!session.inboxAsk ? <span ref={setFindTriggerContainer} className="flex" data-no-drag /> : null}
+            {!session.inboxAsk ? (
+              <span ref={setFindTriggerContainer} className="flex" data-no-drag />
+            ) : null}
             {notesButton}
             <Button
               variant="ghost"

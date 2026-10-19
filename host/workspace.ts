@@ -1,5 +1,7 @@
 import { execFileAsync as exec } from "../src/shared/lib/processExecution.node";
 import { spawn } from "node:child_process";
+import { setTimeout as delay } from "node:timers/promises";
+import { withHostGitMutation } from "./git-mutations";
 import {
   lstat,
   mkdir,
@@ -91,11 +93,13 @@ async function git(
         [...(literalPaths ? ["--literal-pathspecs"] : []), "-c", "core.pager=cat", ...args],
         {
           cwd: root,
-          timeout,
+          timeout: ["add", "restore", "rm", "commit"].includes(args[0])
+            ? Math.max(timeout, 120_000)
+            : timeout,
           maxBuffer,
           encoding: "utf8",
           windowsHide: true,
-          env: { ...process.env, LC_ALL: "C", GIT_TERMINAL_PROMPT: "0" },
+          env: { ...process.env, LC_ALL: "C", GIT_TERMINAL_PROMPT: "0", GIT_OPTIONAL_LOCKS: "0" },
         },
       )
     ).stdout;
@@ -109,26 +113,49 @@ async function git(
   }
 }
 
-function gitWithInput(root: string, args: string[], input: string): Promise<string> {
+function gitWithInput(
+  root: string,
+  args: string[],
+  input: string,
+  timeout = 10_000,
+): Promise<string> {
   return new Promise((resolve, reject) => {
     const child = spawn("git", ["--literal-pathspecs", "-c", "core.pager=cat", ...args], {
       cwd: root,
       windowsHide: true,
       stdio: ["pipe", "pipe", "pipe"],
+      env: { ...process.env, LC_ALL: "C", GIT_TERMINAL_PROMPT: "0", GIT_OPTIONAL_LOCKS: "0" },
     });
     const stdout: Buffer[] = [];
     const stderr: Buffer[] = [];
-    const timer = setTimeout(() => child.kill(), 10_000);
+    let inputError: Error | undefined;
+    let timedOut = false;
+    const timer = setTimeout(() => {
+      timedOut = true;
+      child.kill();
+      // A helper can inherit the pipes after Git exits. Do not wait forever for
+      // its handles to close before releasing the failed operation's queue slot.
+      child.stdin.destroy();
+      child.stdout.destroy();
+      child.stderr.destroy();
+      reject(new Error(`git ${args[0]} timed out after ${timeout / 1000} seconds`));
+    }, timeout);
     child.stdout.on("data", (chunk: Buffer) => stdout.push(chunk));
     child.stderr.on("data", (chunk: Buffer) => stderr.push(chunk));
-    child.stdin.on("error", reject);
+    // Git may reject a locked index before consuming stdin. Keep its stderr
+    // rather than replacing the useful lock error with EPIPE.
+    child.stdin.on("error", (error) => {
+      inputError = error;
+    });
     child.on("error", (error) => {
       clearTimeout(timer);
       reject(error);
     });
     child.on("close", (code) => {
       clearTimeout(timer);
-      if (code === 0) resolve(Buffer.concat(stdout).toString("utf8"));
+      if (timedOut) reject(new Error(`git ${args[0]} timed out after ${timeout / 1000} seconds`));
+      else if (code === 0 && inputError) reject(inputError);
+      else if (code === 0) resolve(Buffer.concat(stdout).toString("utf8"));
       else reject(new Error(Buffer.concat(stderr).toString("utf8") || `git exited ${code}`));
     });
     child.stdin.end(input);
@@ -924,6 +951,35 @@ export async function hostFileDiff(
   };
 }
 
+async function retryIndexLock<T>(run: () => Promise<T>): Promise<T> {
+  const deadline = Date.now() + 2_000;
+  for (;;) {
+    try {
+      return await run();
+    } catch (error) {
+      const message = (error as { stderr?: string }).stderr || String(error);
+      if (
+        !(message.includes("index.lock") && message.includes("File exists")) ||
+        Date.now() >= deadline
+      )
+        throw error;
+      await delay(100);
+    }
+  }
+}
+
+async function acquireGitIndexLock(path: string) {
+  const deadline = Date.now() + 2_000;
+  for (;;) {
+    try {
+      return await open(path, "wx");
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "EEXIST" || Date.now() >= deadline) throw error;
+      await delay(100);
+    }
+  }
+}
+
 export async function hostGitAction(
   root: string,
   action: unknown,
@@ -932,12 +988,25 @@ export async function hostGitAction(
   contents?: unknown,
   expectedOriginal?: unknown,
 ) {
-  try {
-    return await runHostGitAction(root, action, input, message, contents, expectedOriginal);
-  } finally {
-    invalidateHostFilePaths(root);
-    invalidateHostGitIndex(root);
-  }
+  const run = () => {
+    const execute = () =>
+      runHostGitAction(root, action, input, message, contents, expectedOriginal);
+    // Only retry index edits. A commit hook or network operation can report a
+    // lock error after other side effects, so replaying those is unsafe.
+    return ["stage", "unstage", "stageFiles", "unstageFiles", "stageAll", "unstageAll"].includes(
+      String(action),
+    )
+      ? retryIndexLock(execute)
+      : execute();
+  };
+  return withHostGitMutation(root, async () => {
+    try {
+      return await run();
+    } finally {
+      invalidateHostFilePaths(root);
+      invalidateHostGitIndex(root);
+    }
+  });
 }
 
 async function runHostGitAction(
@@ -968,7 +1037,7 @@ async function runHostGitAction(
       );
       const lockPath = `${indexPath}.lock`;
       // Own Git's real lock from comparison through publication, including external clients.
-      const lock = await open(lockPath, "wx");
+      const lock = await acquireGitIndexLock(lockPath);
       let published = false;
       try {
         const index = await readFile(indexPath).catch((error: NodeJS.ErrnoException) => {
@@ -1019,22 +1088,37 @@ async function runHostGitAction(
       }
       return;
     }
+    case "stageFiles":
+    case "unstageFiles":
     case "stage":
     case "unstage": {
-      const path = relative(root, await safeGitPath(root, input));
+      const bulk = action === "stageFiles" || action === "unstageFiles";
+      const staging = action === "stage" || action === "stageFiles";
+      const inputs = bulk ? input : [input];
+      if (!Array.isArray(inputs) || inputs.length > 100_000) throw new Error("Invalid Git paths");
+      if (!inputs.length) return;
+      // Validate the complete selection before touching the index.
+      const paths: string[] = [];
+      for (const value of inputs)
+        paths.push(
+          relative(root, await safeGitPath(root, value))
+            .split(sep)
+            .join("/"),
+        );
       const hasHead =
-        action === "unstage" &&
+        !staging &&
         (await git(root, ["rev-parse", "--verify", "HEAD"]).then(
           () => true,
           () => false,
         ));
-      const paths = [path];
       if (hasHead) {
-        const selected = path.split(sep).join("/");
         const renames = (await readChangedEntries(root)).filter(
           (entry) =>
             entry.stagedRename &&
-            (entry.relative === selected || entry.relative.startsWith(`${selected}/`)),
+            paths.some(
+              (selected) =>
+                entry.relative === selected || entry.relative.startsWith(`${selected}/`),
+            ),
         );
         if (renames.length) {
           // Both names are repository-relative. Relating them directly avoids
@@ -1046,13 +1130,15 @@ async function runHostGitAction(
           }
         }
       }
-      await git(
+      await gitWithInput(
         root,
-        action === "stage"
-          ? ["add", "--", path]
+        staging
+          ? ["add", "--pathspec-from-file=-", "--pathspec-file-nul"]
           : hasHead
-            ? ["restore", "--staged", "--", ...paths]
-            : ["rm", "--cached", "-r", "-f", "--", path],
+            ? ["restore", "--staged", "--pathspec-from-file=-", "--pathspec-file-nul"]
+            : ["rm", "--cached", "-r", "-f", "--pathspec-from-file=-", "--pathspec-file-nul"],
+        [...new Set(paths)].join("\0") + "\0",
+        120_000,
       );
       return;
     }
@@ -1065,14 +1151,13 @@ async function runHostGitAction(
         return;
       }
       const others = (await hostChangedEntries(root)).map((file) => file.relative);
-      for (let start = 0; start < others.length;) {
-        let end = start;
-        let length = 0;
-        while (end < others.length && (end === start || length + others[end].length < 16_000))
-          length += others[end++].length + 1;
-        await git(root, ["--literal-pathspecs", "add", "-A", "--", ...others.slice(start, end)]);
-        start = end;
-      }
+      if (others.length)
+        await gitWithInput(
+          root,
+          ["add", "-A", "--pathspec-from-file=-", "--pathspec-file-nul"],
+          others.join("\0") + "\0",
+          120_000,
+        );
       return;
     }
     case "unstageAll": {
@@ -1096,10 +1181,44 @@ async function runHostGitAction(
       await discard(file);
       return;
     }
-    case "discardAll":
-      for (const file of (await hostChangedEntries(root)).filter((entry) => entry.unstaged))
-        await discard(file);
+    case "discardFiles":
+    case "discardAll": {
+      let selected: Set<string> | undefined;
+      if (action === "discardFiles") {
+        if (!Array.isArray(input) || input.length > 100_000) throw new Error("Invalid Git paths");
+        selected = new Set<string>();
+        for (const value of input)
+          selected.add(
+            relative(root, await safeGitPath(root, value))
+              .split(sep)
+              .join("/"),
+          );
+        if (!selected.size) return;
+      }
+      const files = (await hostChangedEntries(root)).filter(
+        (file) => file.unstaged && (!selected || selected.has(file.relative)),
+      );
+      if (selected && files.length !== selected.size)
+        throw new Error("Selected files changed; refresh before discarding");
+      const tracked: string[] = [];
+      const untracked: string[] = [];
+      // Validate every target before the first write, and restore tracked files
+      // before deleting untracked files so a failed Git operation stops deletion.
+      for (const file of files) {
+        const path = await safeGitPath(root, file.relative);
+        if (file.status === "untracked") untracked.push(path);
+        else tracked.push(relative(root, path).split(sep).join("/"));
+      }
+      if (tracked.length)
+        await gitWithInput(
+          root,
+          ["restore", "--worktree", "--pathspec-from-file=-", "--pathspec-file-nul"],
+          tracked.join("\0") + "\0",
+          120_000,
+        );
+      for (const path of untracked) await rm(path);
       return;
+    }
     case "commit": {
       if (typeof message !== "string" || !message.trim() || message.length > 100_000)
         throw new Error("Enter a commit message");

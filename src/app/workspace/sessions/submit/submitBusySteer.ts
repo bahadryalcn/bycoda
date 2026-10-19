@@ -158,7 +158,7 @@ export function steerBusySubmit(
             : entry,
         ),
       );
-    void (async () => {
+    return (async () => {
       try {
         const prepared = await prepareAttachments(attachments);
         const prompt = await preparePrompt(harnessText, {
@@ -168,7 +168,7 @@ export function steerBusySubmit(
         });
         if (turnGen.current.get(sessionId) !== steerGeneration) {
           holdFollowUp();
-          return;
+          return false;
         }
         await steerHarnessTurn({
           harness: current.harness,
@@ -179,10 +179,11 @@ export function steerBusySubmit(
           text: inboxAskPrompt(rawCommand ? undefined : current.inboxAsk, prompt),
           attachments: prepared,
         });
+        return true;
       } catch (error: unknown) {
         if (turnGen.current.get(sessionId) !== steerGeneration) {
           holdFollowUp();
-          return;
+          return false;
         }
         const message =
           error instanceof Error
@@ -194,8 +195,8 @@ export function steerBusySubmit(
           text: `${t("The follow-up could not be delivered. It is saved in the paused queue.")} ${message}`,
         });
         flushHarnessEvents();
+        return false;
       }
     })();
-    return true;
   }
 }

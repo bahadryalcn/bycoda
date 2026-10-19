@@ -1678,7 +1678,11 @@ function ConnectedRemoteSession({
 
   // Starts a turn whose optimistic bubble is already in `starting`. Gives up,
   // clearing it, when the session cannot take a message now.
-  const launch = (turn: OptimisticTurn, generation = submissionGeneration.current): boolean => {
+  const launch = (
+    turn: OptimisticTurn,
+    generation = submissionGeneration.current,
+    onAcceptance?: (accepted: boolean) => void,
+  ): boolean => {
     if (generation !== submissionGeneration.current) return false;
     if (!hostSession) {
       if (sessionId || !draft.model) {
@@ -1697,6 +1701,7 @@ function ConnectedRemoteSession({
     const version = bindingVersion.current;
     void dispatchTurn(hostSession.id, turn, undefined, generation)
       .then((receipt) => {
+        onAcceptance?.(!!receipt);
         if (
           alive.current &&
           version === bindingVersion.current &&
@@ -1705,6 +1710,7 @@ function ConnectedRemoteSession({
           if (!receipt) setStarting({ ...turn, failed: true });
       })
       .catch((reason) => {
+        onAcceptance?.(false);
         if (
           alive.current &&
           version === bindingVersion.current &&
@@ -1862,6 +1868,7 @@ function ConnectedRemoteSession({
     asDraft = false,
     planBlockId?: string,
     queuedId?: string,
+    onAcceptance?: (accepted: boolean) => void,
   ): boolean => {
     if (rewindOwner.current) return false;
     if (pageCacheOnly || remoteDeleted || snapshotRef.current?.historyLoading || queue.error)
@@ -1878,7 +1885,7 @@ function ConnectedRemoteSession({
       return false;
     beginSessionPerformanceTrace(shell.id);
     const shellCommand =
-      asDraft || attachments.length || options?.draftBlockId || planBlockId
+      asDraft || queuedId || attachments.length || options?.draftBlockId || planBlockId
         ? undefined
         : parseShellCommand(text);
     if (shellCommand) return runShell(shellCommand);
@@ -1934,6 +1941,7 @@ function ConnectedRemoteSession({
       preparingRef.current = true;
       void (async () => {
         const commandId = crypto.randomUUID();
+        let accepted = false;
         try {
           const files = await uploadRemoteAttachments(machine.id, attachments, {
             ownership,
@@ -1958,6 +1966,7 @@ function ConnectedRemoteSession({
             attachments: files,
             ...(queuedId ? { queued: queue.dispatch(queuedId) } : {}),
           });
+          accepted = !!receipt;
           // Explicit rejection clears the outbox. An ambiguous response stays
           // there under its original command ID and must never also be queued.
           if (
@@ -1974,6 +1983,7 @@ function ConnectedRemoteSession({
             setError(`Could not deliver the follow-up: ${String(reason)}`);
           }
         } finally {
+          onAcceptance?.(accepted);
           ownership?.finishJob(`submit:${commandId}`);
           if (reservedFollowUp.current === unsent) reservedFollowUp.current = undefined;
           if (submission === submissionGeneration.current) preparingRef.current = false;
@@ -1991,7 +2001,7 @@ function ConnectedRemoteSession({
     ) {
       // Before the saved queue is read, or without a session to key it by,
       // the composer keeps the message.
-      if (!queue.loaded || !activeSessionId) return false;
+      if (queuedId || !queue.loaded || !activeSessionId) return false;
       const queued = {
         id: crypto.randomUUID(),
         text,
@@ -2036,7 +2046,7 @@ function ConnectedRemoteSession({
       void sendWhenConnected(turn, options, generation);
       return true;
     }
-    return launch(turn, generation);
+    return launch(turn, generation, onAcceptance);
   };
 
   const working = sending || !!pending;
@@ -2863,41 +2873,66 @@ function ConnectedRemoteSession({
     onEditQueuedMessage: (_, id, text, attachments) => queue.edit(id, text, attachments),
     onQueuedMessageEditingChange: (_, id) => queue.setEditing(id),
     onReorderQueuedMessages: (_, ids) => queue.reorder(ids),
-    onSteerQueuedMessage: (_, id) => {
-      if (!remoteCanSteer || sending || pending || preparingRef.current) return;
+    onSteerQueuedMessage: async (_, id) => {
+      if (!online || !hostSession || !remoteCanSteer || sending || pending || preparingRef.current)
+        throw new Error(t("This conversation is still preparing. Wait and try again."));
       const generation = followUpGeneration.current;
-      void (async () => {
-        if (!(await queue.prepareSend(true))) return;
-        if (generation !== followUpGeneration.current || !alive.current) return;
-        const message = queue.current().messages.find((entry) => entry.id === id);
-        if (!message) return;
+      if (!(await queue.prepareSend(true)))
+        throw new Error(t("The queue could not be synchronized. Retry before sending."));
+      if (generation !== followUpGeneration.current || !alive.current) return false;
+      const message = queue.current().messages.find((entry) => entry.id === id);
+      if (!message) return false;
+      if (
+        message.modelTarget &&
+        !sameQueuedModelTarget(message.modelTarget, {
+          harness: hostSession.harness,
+          model: hostSession.model,
+          modelSettings: hostSession.modelSettings ?? {},
+        })
+      )
+        throw new Error(
+          t("This queued message uses different model settings. It will wait for a new turn."),
+        );
+      const accepted = await new Promise<boolean>((resolve) => {
         if (
-          message.modelTarget &&
-          !sameQueuedModelTarget(message.modelTarget, {
-            harness: hostSession!.harness,
-            model: hostSession!.model,
-            modelSettings: hostSession!.modelSettings ?? {},
-          })
-        ) {
-          setError(
-            t("This queued message uses different model settings. It will wait for a new turn."),
-          );
-          return;
-        }
-        if (
-          submit(
+          !submit(
             message.text,
             message.attachments,
             { intent: message.intent, followUpBehavior: "steer" },
             false,
             undefined,
             id,
+            resolve,
           )
         )
-          queue.sent(id);
-      })().catch((reason) => setError(String(reason).replace(/^Error: /, "")));
+          resolve(false);
+      });
+      if (accepted) queue.sent(id);
+      return accepted;
     },
-    onResumeQueue: () => queue.release(),
+    onResumeQueue: async () => {
+      if (
+        !online ||
+        !queue.loaded ||
+        pending ||
+        sending ||
+        preparingRef.current ||
+        !connection.canSend
+      )
+        throw new Error(t("Reconnect to the host before resuming the queue."));
+      if (queue.current().editingId)
+        throw new Error(t("Finish editing the queued message before resuming."));
+      if (queue.current().messages[0]?.attachments.some((file) => file.missing))
+        throw new Error(t("An attachment is missing. Edit the queued message before resuming."));
+      const generation = followUpGeneration.current;
+      await queue.release(() => alive.current && generation === followUpGeneration.current);
+      return {
+        kind: "waiting",
+        message: busy
+          ? "Queue resumed. Messages will send when this turn finishes."
+          : "Queue resumed. The next message is being prepared.",
+      };
+    },
     interruptedTurn,
     onUsageLimitResume: noop,
     onUsageLimitResumeAtReset: (_, enabled) => usageLimit(enabled ? "arm" : "disarm"),

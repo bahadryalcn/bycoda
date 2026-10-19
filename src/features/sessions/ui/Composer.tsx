@@ -17,6 +17,7 @@ import { registerBrowserComposer } from "../../host-tools/browserComposer";
 import { registerLogsComposer } from "../../host-tools/logsComposer";
 import { releaseAttachments } from "../model/releaseAttachments";
 import { t, useLocale } from "../../../shared/i18n";
+import type { QueueAction } from "../model/queueAction";
 import { useComposerSpelling } from "../../settings/model/composerSpelling";
 import { ComposerTips } from "./ComposerTips";
 import "./chat-controls.css";
@@ -374,8 +375,8 @@ type Props = {
   onQueuedMessageEditingChange?: (messageId?: string) => void;
   /** The queue in its new order, as ids; resolved against the live queue by the owner. */
   onReorderQueuedMessages?: (messageIds: string[]) => void;
-  onSteerQueuedMessage?: (messageId: string) => void;
-  onResumeQueue?: () => void;
+  onSteerQueuedMessage?: (messageId: string) => QueueAction;
+  onResumeQueue?: () => QueueAction;
   onUsageLimitResume?: () => void;
   onUsageLimitResumeAtReset?: (enabled: boolean) => void;
   onUsageLimitDismiss?: () => void;
@@ -448,13 +449,56 @@ function MessageQueue({
   onEdit?: (messageId: string, text: string, attachments: Attachment[]) => void;
   onEditingChange?: (messageId?: string) => void;
   onReorder?: (messageIds: string[]) => void;
-  onSteer?: (messageId: string) => void;
-  onResume?: () => void;
+  onSteer?: (messageId: string) => QueueAction;
+  onResume?: () => QueueAction;
 }) {
   useLocale();
+  const actionRef = useRef(false);
+  const [pendingAction, setPendingAction] = useState<string>();
+  const [feedback, setFeedback] = useState<{ error: boolean; text: string }>();
+  useEffect(() => {
+    if (!feedback || feedback.error) return;
+    const timer = window.setTimeout(() => setFeedback(undefined), 6000);
+    return () => window.clearTimeout(timer);
+  }, [feedback]);
+  const perform = async (id: string, action: (() => QueueAction) | undefined) => {
+    if (actionRef.current) return;
+    actionRef.current = true;
+    setPendingAction(id);
+    setFeedback(undefined);
+    try {
+      if (!action)
+        throw new Error(
+          t("This queue action is unavailable. Reopen the conversation and try again."),
+        );
+      const result = await action();
+      if (result === false)
+        throw new Error(
+          t(
+            "The message was not accepted. It remains queued. Check the conversation and try again.",
+          ),
+        );
+      setFeedback({
+        error: false,
+        text:
+          typeof result === "object" && result?.message
+            ? t(result.message)
+            : id === "resume" && status !== "restored"
+              ? t("Queue resumed. Messages will send when this turn finishes.")
+              : t("Message accepted. Follow its progress in the conversation."),
+      });
+    } catch (error) {
+      setFeedback({ error: true, text: t(String(error).replace(/^Error: /, "")) });
+    } finally {
+      actionRef.current = false;
+      setPendingAction(undefined);
+    }
+  };
   const sortable = useAnimatedReorder(
     messages.map((message) => message.id),
-    (ids) => onReorder?.(ids),
+    (ids) => {
+      if (!actionRef.current) onReorder?.(ids);
+    },
     "y",
   );
   const card = useRef<HTMLDivElement>(null);
@@ -466,7 +510,12 @@ function MessageQueue({
     refocus.current = undefined;
   }, [messages]);
   const moveByKey = (event: KeyboardEvent, id: string, index: number) => {
-    if (!event.altKey || (event.key !== "ArrowUp" && event.key !== "ArrowDown")) return;
+    if (
+      actionRef.current ||
+      !event.altKey ||
+      (event.key !== "ArrowUp" && event.key !== "ArrowDown")
+    )
+      return;
     event.preventDefault();
     const next = moveQueuedMessage(messages, id, index + (event.key === "ArrowUp" ? -1 : 1));
     if (next === messages) return;
@@ -493,10 +542,11 @@ function MessageQueue({
       onEditingChangeRef.current?.();
     }
   }, [editingId, editingMessage]);
-  if (messages.length === 0) return null;
-  const paused = status === "paused";
-  const restored = status === "restored";
+  if (messages.length === 0 && !pendingAction && !feedback) return null;
+  const paused = (status === "paused" || status === "resuming") && messages.length > 0;
+  const restored = status === "restored" && messages.length > 0;
   const canSend = (message: QueuedMessage) =>
+    !pendingAction &&
     !hasMissingAttachment(message) &&
     (!busy || (steerSupported && message.intent !== "plan" && message.intent !== "orchestrate"));
 
@@ -522,9 +572,17 @@ function MessageQueue({
             <span className="min-w-0 flex-1 truncate">
               {t("Queue paused because you interrupted")}
             </span>
-            <Button variant="ghost" type="button" onClick={onResume} className="shrink-0">
+            <Button
+              variant="ghost"
+              type="button"
+              disabled={!onResume || !!pendingAction || hasMissingAttachment(messages[0])}
+              loading={pendingAction === "resume"}
+              loadingLabel={t("Resuming…")}
+              onClick={() => void perform("resume", onResume)}
+              className="shrink-0"
+            >
               <Play className="size-3.5" />
-              {t("Resume")}
+              {pendingAction === "resume" ? t("Resuming…") : t("Resume")}
             </Button>
           </div>
         ) : null}
@@ -539,12 +597,23 @@ function MessageQueue({
             <Button
               variant="ghost"
               type="button"
-              disabled={!canSend(messages[0])}
-              onClick={onResume ?? (() => onSteer?.(messages[0].id))}
+              disabled={
+                !!pendingAction ||
+                hasMissingAttachment(messages[0]) ||
+                (!onResume && !canSend(messages[0]))
+              }
+              loading={pendingAction === "resume"}
+              loadingLabel={t("Resuming…")}
+              onClick={() =>
+                void perform(
+                  "resume",
+                  onResume ?? (onSteer ? () => onSteer(messages[0].id) : undefined),
+                )
+              }
               className="shrink-0"
             >
               <Play className="size-3.5" />
-              {t("Send next")}
+              {pendingAction === "resume" ? t("Sending…") : t("Send next")}
             </Button>
           </div>
         ) : null}
@@ -569,6 +638,7 @@ function MessageQueue({
                   <Button
                     iconOnly
                     label={t("Reorder queued message")}
+                    disabled={!!pendingAction}
                     variant="ghost"
                     type="button"
                     data-queue-handle={message.id}
@@ -611,7 +681,11 @@ function MessageQueue({
                           ? t("New messages wait until this turn finishes. Stop pauses the queue.")
                           : undefined
                       }
-                      onClick={() => onSteer?.(message.id)}
+                      loading={pendingAction === message.id}
+                      loadingLabel={t("Sending…")}
+                      onClick={() =>
+                        void perform(message.id, onSteer ? () => onSteer(message.id) : undefined)
+                      }
                       className="shrink-0"
                     >
                       <CornerDownRight className="size-3.5" />
@@ -621,6 +695,7 @@ function MessageQueue({
                   <Button
                     iconOnly
                     label={t("Edit queued message")}
+                    disabled={!!pendingAction}
                     variant="ghost"
                     type="button"
                     title={t("Edit queued message")}
@@ -633,6 +708,7 @@ function MessageQueue({
                   <Button
                     iconOnly
                     label={t("Remove queued message")}
+                    disabled={!!pendingAction}
                     variant="ghost"
                     type="button"
                     title={t("Remove queued message")}
@@ -647,6 +723,18 @@ function MessageQueue({
             );
           })}
         </div>
+        {pendingAction || feedback || (busy && status === "active" && messages.length > 0) ? (
+          <div
+            role={feedback?.error ? "alert" : "status"}
+            aria-live="polite"
+            className="py-1 text-[12px] [overflow-wrap:anywhere]"
+            data-queue-feedback
+          >
+            {pendingAction
+              ? t("Waiting for confirmation…")
+              : (feedback?.text ?? t("Queue is waiting for the current turn to finish."))}
+          </div>
+        ) : null}
         {remote ? (
           <div className="border-t border-(--ui-tone-neutral-border) py-1 text-[11px] text-(--ui-text-secondary)">
             {t("Sent one at a time when the host finishes this turn, while {p0} is open.", {
@@ -2659,6 +2747,7 @@ export const Composer = memo(function Composer({
         />
       ) : null}
       <MessageQueue
+        key={sessionId}
         messages={queuedMessages}
         status={queueStatus}
         canAttach={attachmentsSupported}

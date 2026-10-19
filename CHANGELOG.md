@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.43]
+
+### Source control
+
+- Stage, unstage and discard selected files in batches, preserving unrelated staged work and literal filenames.
+- Serialize Git mutations across repository aliases and linked worktrees, with bounded lock retries and deadlines for local and remote operations.
+- Preserve external Git locks and report failed conflict and safety checks instead of treating them as empty results.
+- Correct rename unstaging and conflict inspection for filenames containing wildcard characters.
+
+### Conversation queues
+
+- Show loading, acceptance and actionable errors for Resume, Send next and Steer, and prevent duplicate queue actions.
+- Resume paused queues during running turns and send restored messages through the normal acceptance path.
+- Recover synchronization errors on the first retry and retain queued messages until the host acknowledges delivery.
+- Keep Stop authoritative while Resume or Steer is preparing, and preserve rejected messages for recovery.
+
 ## [0.6.40]
 
 ### Terminals and workspace

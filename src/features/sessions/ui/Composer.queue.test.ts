@@ -388,7 +388,8 @@ describe("a queue restored after a restart", () => {
   async function renderQueue(
     queuedMessages: { id: string; text: string; attachments: unknown[] }[],
     onSteer = vi.fn(),
-    onResume?: () => void,
+    onResume?: ComponentProps<typeof Composer>["onResumeQueue"],
+    overrides: Partial<ComponentProps<typeof Composer>> = {},
   ) {
     await act(async () =>
       root.render(
@@ -410,6 +411,7 @@ describe("a queue restored after a restart", () => {
           onModelChange: () => {},
           onRuntimeModeChange: () => {},
           onSubmit: () => true,
+          ...overrides,
         }),
       ),
     );
@@ -426,6 +428,76 @@ describe("a queue restored after a restart", () => {
     const send = [...card.querySelectorAll("button")].find((b) => b.textContent === "Send next")!;
     act(() => send.click());
     expect(onSteer).toHaveBeenCalledWith("q1");
+  });
+
+  it("shows pending acceptance, blocks duplicate actions and exposes rejection for retry", async () => {
+    let finish!: (accepted: boolean) => void;
+    const steer = vi.fn(
+      () =>
+        new Promise<boolean>((resolve) => {
+          finish = resolve;
+        }),
+    );
+    await renderQueue([{ id: "q1", text: "first", attachments: [] }], steer);
+    const send = [...container.querySelectorAll("button")].find(
+      (b) => b.textContent === "Send next",
+    )!;
+    act(() => {
+      send.click();
+      send.click();
+    });
+    expect(steer).toHaveBeenCalledOnce();
+    expect(send.disabled).toBe(true);
+    expect(container.querySelector('[role="status"]')?.textContent).toContain(
+      "Waiting for confirmation",
+    );
+    await act(async () => finish(false));
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain("It remains queued");
+    expect(container.textContent).toContain("first");
+    expect(send.disabled).toBe(false);
+  });
+
+  it("allows a busy paused queue to resume and reports that it is waiting for the turn", async () => {
+    let finish!: (value: { kind: "waiting"; message: string }) => void;
+    const resume = vi.fn(
+      () =>
+        new Promise<{ kind: "waiting"; message: string }>((resolve) => {
+          finish = resolve;
+        }),
+    );
+    await renderQueue([{ id: "q1", text: "first", attachments: [] }], vi.fn(), resume, {
+      busy: true,
+      queueStatus: "paused",
+    });
+    const button = [...container.querySelectorAll("button")].find(
+      (b) => b.textContent === "Resume",
+    )!;
+    expect(button.disabled).toBe(false);
+    act(() => button.click());
+    expect(button.textContent).toContain("Resuming");
+    expect(button.disabled).toBe(true);
+    await act(async () =>
+      finish({
+        kind: "waiting",
+        message: "Queue resumed. Messages will send when this turn finishes.",
+      }),
+    );
+    expect(container.querySelector('[role="status"]')?.textContent).toContain(
+      "when this turn finishes",
+    );
+  });
+
+  it("preserves the acceptance result after the last queued row disappears", async () => {
+    await renderQueue(
+      [{ id: "q1", text: "first", attachments: [] }],
+      vi.fn(async () => true),
+    );
+    const button = [...container.querySelectorAll("button")].find(
+      (b) => b.textContent === "Send next",
+    )!;
+    await act(async () => button.click());
+    await renderQueue([]);
+    expect(container.querySelector('[role="status"]')?.textContent).toContain("Message accepted");
   });
 
   it("holds a message whose attachment is gone", async () => {

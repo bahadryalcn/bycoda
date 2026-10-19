@@ -61,6 +61,12 @@ export function useSharedRemoteQueue(
   if (!enabled || !client)
     return {
       ...fallback,
+      release: async (isCurrent: () => boolean = () => true) => {
+        if (!isCurrent())
+          throw new Error("Queue resume was cancelled. The messages remain queued.");
+        fallback.release();
+        return true;
+      },
       canDrain: true,
       dispatch: (_id: string, _selected = false) => undefined,
       prepareSend: async (selected = false) => {
@@ -88,8 +94,25 @@ export function useSharedRemoteQueue(
       client.update((queue) => editRemoteMessage(queue, id, text, attachments)),
     setEditing: (id?: string) => client.update((queue) => setRemoteEditing(queue, id)),
     reorder: (ids: string[]) => client.update((queue) => reorderRemoteMessages(queue, ids)),
-    release: () =>
-      client.update((queue) => ({ ...releaseRemoteQueue(queue), editingId: undefined }), true),
+    release: async (isCurrent: () => boolean = () => true) => {
+      await client.retry();
+      if (!isCurrent()) throw new Error("Queue resume was cancelled. The messages remain queued.");
+      if (!client.update((queue) => ({ ...releaseRemoteQueue(queue), editingId: undefined }), true))
+        throw new Error(
+          client.snapshot().error ?? "The queue is being sent elsewhere. Wait and try again.",
+        );
+      await client.sync();
+      if (!isCurrent()) {
+        client.update(pauseRemoteQueue);
+        await client.sync();
+        throw new Error("Queue resume was cancelled. The messages remain queued.");
+      }
+      if (!client.canDrain())
+        throw new Error(client.snapshot().error ?? "The queue could not be resumed. Try again.");
+      if (client.snapshot().queue.status !== "active")
+        throw new Error("Queue resume was cancelled. The messages remain queued.");
+      return true;
+    },
     pause: () => client.update(pauseRemoteQueue),
     // The host consumes a queued row with its command receipt, never with an optimistic UI return.
     sent: (_id: string) => {
@@ -100,7 +123,7 @@ export function useSharedRemoteQueue(
     prepareSend: async (selected = false) => {
       if (client.snapshot().error) {
         await client.retry();
-        return false;
+        if (client.snapshot().error) return false;
       }
       if (
         !client.update(

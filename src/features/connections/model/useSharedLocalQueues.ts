@@ -55,11 +55,9 @@ export async function submitSharedLocalQueue(
   try {
     entry.publish();
     if (steer) {
-      if (entry.client.snapshot().error) {
-        await entry.client.retry();
-        return false; // A recovered edit is shown as a paused copy before another send action.
-      }
       await entry.client.retry();
+      if (entry.client.snapshot().error) throw new Error(entry.client.snapshot().error);
+      if (!isCurrent()) return false;
       entry.client.update((queue) => ({ ...queue, status: "active", editingId: undefined }), true);
     }
     token = await entry.client.claim(id, steer);
@@ -92,6 +90,41 @@ export async function submitSharedLocalQueue(
         console.warn("Shared queued send acknowledgement is pending", error);
       }
     }
+    entry.claiming = false;
+    entry.apply();
+  }
+}
+
+/** Explicit Resume also acquires desktop ownership and awaits durable release. */
+export async function resumeSharedLocalQueue(
+  sessionId: string,
+  isCurrent: () => boolean = () => true,
+): Promise<void> {
+  const entry = localQueues.get(sessionId);
+  if (!entry) return;
+  if (entry.claiming) throw new Error("A queue action is already waiting for confirmation.");
+  entry.claiming = true;
+  try {
+    entry.publish();
+    await entry.client.retry();
+    if (!isCurrent()) throw new Error("Queue resume was cancelled. The messages remain queued.");
+    if (
+      !entry.client.update((queue) => ({ ...queue, status: "active", editingId: undefined }), true)
+    )
+      throw new Error(
+        entry.client.snapshot().error ?? "The queue is being sent elsewhere. Wait and try again.",
+      );
+    await entry.client.sync();
+    if (!isCurrent()) {
+      entry.client.update((queue) => ({ ...queue, status: entry.read().status ?? "paused" }));
+      await entry.client.sync();
+      throw new Error("Queue resume was cancelled. The messages remain queued.");
+    }
+    if (!entry.client.canDrain())
+      throw new Error(
+        entry.client.snapshot().error ?? "The queue could not be resumed. Try again.",
+      );
+  } finally {
     entry.claiming = false;
     entry.apply();
   }

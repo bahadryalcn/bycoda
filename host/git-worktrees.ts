@@ -1,13 +1,15 @@
 import { execFileAsync as exec } from "../src/shared/lib/processExecution.node";
+import { withHostGitMutation } from "./git-mutations";
 import { execFileSync } from "node:child_process";
 import { existsSync, realpathSync, statSync } from "node:fs";
 import { mkdir } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 
-const options = (cwd: string) => ({
+const options = (cwd: string, mutation = false) => ({
   cwd,
   windowsHide: true,
-  timeout: 10_000,
+  env: { ...process.env, GIT_OPTIONAL_LOCKS: "0", GIT_TERMINAL_PROMPT: "0" },
+  timeout: mutation ? 120_000 : 10_000,
   maxBuffer: 1024 * 1024,
 });
 
@@ -184,6 +186,18 @@ export async function createHostWorktree(
   existing: unknown,
   sourceCwd = cwd,
 ): Promise<HostWorktree> {
+  return withHostGitMutation(cwd, () =>
+    createHostWorktreeSerialized(cwd, branch, base, existing, sourceCwd),
+  );
+}
+
+async function createHostWorktreeSerialized(
+  cwd: string,
+  branch: unknown,
+  base: unknown,
+  existing: unknown,
+  sourceCwd: string,
+): Promise<HostWorktree> {
   if (
     typeof branch !== "string" ||
     !branch ||
@@ -227,12 +241,12 @@ export async function createHostWorktree(
   await mkdir(listed.defaultRoot, { recursive: true });
   invalidateHostWorktrees(cwd);
   try {
-    if (existing) await exec("git", ["worktree", "add", "--", path, branch], options(cwd));
+    if (existing) await exec("git", ["worktree", "add", "--", path, branch], options(cwd, true));
     else
       await exec(
         "git",
         ["worktree", "add", "--no-track", "-b", branch, "--", path, commit],
-        options(cwd),
+        options(cwd, true),
       );
   } finally {
     invalidateHostWorktrees(cwd);
@@ -249,6 +263,18 @@ export async function renameHostWorktreeBranch(
   expectedBranch: string,
   branch: string,
   stillOwned: () => boolean = () => true,
+): Promise<HostWorktree> {
+  return withHostGitMutation(cwd, () =>
+    renameHostWorktreeBranchSerialized(cwd, path, expectedBranch, branch, stillOwned),
+  );
+}
+
+async function renameHostWorktreeBranchSerialized(
+  cwd: string,
+  path: string,
+  expectedBranch: string,
+  branch: string,
+  stillOwned: () => boolean,
 ): Promise<HostWorktree> {
   if (!/^mc\/[a-z0-9]{8}$/.test(expectedBranch))
     throw new Error("This is not an automatically created worktree branch");

@@ -63,27 +63,46 @@ fn parse_unmerged(text: &str) -> Vec<UnmergedEntry> {
 }
 
 fn unmerged_entries(root: &Path, pathspec: &str) -> Vec<UnmergedEntry> {
-    let text = git_run(root, &["ls-files", "-u", "-z", "--", pathspec]).unwrap_or_default();
-    parse_unmerged(&text)
+    unmerged_entries_checked(root, pathspec).unwrap_or_default()
+}
+
+fn unmerged_entries_checked(root: &Path, pathspec: &str) -> Result<Vec<UnmergedEntry>, String> {
+    let text = git_run(
+        root,
+        &[
+            "--literal-pathspecs",
+            "ls-files",
+            "-u",
+            "-z",
+            "--",
+            pathspec,
+        ],
+    )
+    .ok_or("Could not read Git conflict state")?;
+    Ok(parse_unmerged(&text))
 }
 
 /// Unmerged files under `root`, relative to it, in one git call.
 pub(crate) fn git_unmerged_for(root: &Path) -> Vec<GitConflictFile> {
+    git_unmerged_checked_for(root).unwrap_or_default()
+}
+
+pub(crate) fn git_unmerged_checked_for(root: &Path) -> Result<Vec<GitConflictFile>, String> {
     let mut grouped: Vec<(String, u8)> = Vec::new();
-    for entry in unmerged_entries(root, ".") {
+    for entry in unmerged_entries_checked(root, ".")? {
         match grouped.last_mut() {
             Some((relative, stages)) if *relative == entry.relative => *stages |= entry.stage,
             _ => grouped.push((entry.relative, entry.stage)),
         }
     }
-    grouped
+    Ok(grouped
         .into_iter()
         .map(|(relative, stages)| GitConflictFile {
             path: crate::fs::path_to_js(&root.join(&relative)),
             relative,
             kind: conflict_kind(stages),
         })
-        .collect()
+        .collect())
 }
 
 /// Why a commit or continue is refused while conflicts remain.

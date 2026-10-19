@@ -3,7 +3,7 @@ use std::io::{BufRead, BufReader, ErrorKind, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{mpsc, Mutex};
+use std::sync::{mpsc, Arc, Mutex, Weak};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
@@ -14,8 +14,8 @@ use uuid::Uuid;
 use crate::dirs_home;
 mod attachment_reads;
 use crate::git_conflicts::{
-    find_git_dir, git_unmerged_for, side_stage, stage_has_side, unmerged_message,
-    unmerged_stages_for, GitConflictFile,
+    find_git_dir, git_unmerged_checked_for, git_unmerged_for, side_stage, stage_has_side,
+    unmerged_message, unmerged_stages_for, GitConflictFile,
 };
 pub use attachment_reads::AttachmentChunk;
 
@@ -25,6 +25,47 @@ pub(crate) const MAX_PREVIEW_BYTES: u64 = 25 * 1024 * 1024;
 const MAX_GENERATED_IMAGE_BYTES: u64 = 25 * 1024 * 1024;
 const MAX_GENERATED_IMAGE_DATA_BYTES: u64 = MAX_GENERATED_IMAGE_BYTES * 4 / 3 + 4;
 const GENERATED_IMAGE_DIR: &str = "generated-images";
+
+static GIT_MUTATIONS: Mutex<Option<HashMap<PathBuf, Weak<Mutex<()>>>>> = Mutex::new(None);
+
+/// Hold the checkout lease for the whole operation, including safety reads and
+/// compound commands. Git's own lock still coordinates external processes.
+pub(crate) fn with_git_mutation<T>(
+    root: &Path,
+    work: impl FnOnce() -> Result<T, String>,
+) -> Result<T, String> {
+    let git_dir = find_git_dir(root).unwrap_or_else(|| root.to_path_buf());
+    let common = match std::fs::read_to_string(git_dir.join("commondir")) {
+        Ok(path) => git_dir.join(path.trim()),
+        Err(error) if error.kind() == ErrorKind::NotFound => git_dir,
+        Err(error) => return Err(error.to_string()),
+    };
+    let key = std::fs::canonicalize(common).map_err(|e| e.to_string())?;
+    let lock = {
+        let mut guard = GIT_MUTATIONS.lock().map_err(|e| e.to_string())?;
+        let locks = guard.get_or_insert_with(HashMap::new);
+        locks.retain(|_, value| value.strong_count() > 0);
+        if let Some(lock) = locks.get(&key).and_then(Weak::upgrade) {
+            lock
+        } else {
+            let lock = Arc::new(Mutex::new(()));
+            locks.insert(key, Arc::downgrade(&lock));
+            lock
+        }
+    };
+    let _lease = lock.lock().map_err(|e| e.to_string())?;
+    work()
+}
+
+pub(crate) fn spawn_git_mutation<T: Send + 'static>(
+    cwd: String,
+    work: impl FnOnce(&Path) -> Result<T, String> + Send + 'static,
+) -> tauri::async_runtime::JoinHandle<Result<T, String>> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let root = expand_home(&cwd);
+        with_git_mutation(&root, || work(&root))
+    })
+}
 
 #[derive(Serialize, Debug, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -981,9 +1022,12 @@ fn git_ignored_names(dir: &Path, names: &[&str]) -> Option<HashSet<String>> {
     let mut stdin = child.stdin.take()?;
     // Write on a separate thread: a large listing can fill the stdout pipe
     // while git still waits for stdin, which would deadlock a serial writer.
-    let writer = std::thread::spawn(move || stdin.write_all(&input));
-    let output = child.wait_with_output().ok()?;
-    writer.join().ok()?.ok()?;
+    let deadline = Instant::now() + GIT_LOCAL_TIMEOUT;
+    let (sender, written) = mpsc::channel();
+    thread::spawn(move || {
+        let _ = sender.send(stdin.write_all(&input));
+    });
+    let output = wait_with_timeout(child, GIT_LOCAL_TIMEOUT).ok()?;
 
     if !matches!(
         output.status.code(),
@@ -991,6 +1035,10 @@ fn git_ignored_names(dir: &Path, names: &[&str]) -> Option<HashSet<String>> {
     ) {
         return None;
     }
+    written
+        .recv_timeout(deadline.saturating_duration_since(Instant::now()))
+        .ok()?
+        .ok()?;
     Some(
         output
             .stdout
@@ -1269,9 +1317,26 @@ pub async fn git_commit_file_diff(
 /// Stage a changed file (`git add`).
 #[tauri::command]
 pub async fn git_stage_file(cwd: String, relative: String) -> Result<(), String> {
-    tauri::async_runtime::spawn_blocking(move || git_stage_file_for(&expand_home(&cwd), &relative))
+    spawn_git_mutation(cwd, move |root| git_stage_file_for(root, &relative))
         .await
         .map_err(|e| e.to_string())?
+}
+
+/// Stage an explicit selection in one index transaction.
+#[tauri::command]
+pub async fn git_stage_files(cwd: String, relatives: Vec<String>) -> Result<(), String> {
+    spawn_git_mutation(cwd, move |root| git_index_files_for(root, &relatives, true))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+pub async fn git_unstage_files(cwd: String, relatives: Vec<String>) -> Result<(), String> {
+    spawn_git_mutation(cwd, move |root| {
+        git_index_files_for(root, &relatives, false)
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 /// Write `contents` into the index for one path, leaving the working tree alone.
@@ -1282,9 +1347,9 @@ pub async fn git_stage_contents(
     contents: String,
     expected_original: Option<String>,
 ) -> Result<(), String> {
-    tauri::async_runtime::spawn_blocking(move || {
+    spawn_git_mutation(cwd, move |root| {
         git_stage_contents_for(
-            &expand_home(&cwd),
+            root,
             &relative,
             contents.as_bytes(),
             expected_original.as_deref().map(str::as_bytes),
@@ -1297,18 +1362,24 @@ pub async fn git_stage_contents(
 /// Unstage a file (`git restore --staged`).
 #[tauri::command]
 pub async fn git_unstage_file(cwd: String, relative: String) -> Result<(), String> {
-    tauri::async_runtime::spawn_blocking(move || {
-        git_unstage_file_for(&expand_home(&cwd), &relative)
-    })
-    .await
-    .map_err(|e| e.to_string())?
+    spawn_git_mutation(cwd, move |root| git_unstage_file_for(root, &relative))
+        .await
+        .map_err(|e| e.to_string())?
 }
 
 /// Discard uncommitted changes so the file matches HEAD (or delete if untracked).
 #[tauri::command]
 pub async fn git_discard_file(cwd: String, relative: String) -> Result<(), String> {
-    tauri::async_runtime::spawn_blocking(move || {
-        git_discard_file_for(&expand_home(&cwd), &relative)
+    spawn_git_mutation(cwd, move |root| git_discard_file_for(root, &relative))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+/// Discard every unstaged change (restore tracked files; delete untracked).
+#[tauri::command]
+pub async fn git_discard_files(cwd: String, relatives: Vec<String>) -> Result<(), String> {
+    spawn_git_mutation(cwd, move |root| {
+        git_discard_selection_for(root, Some(&relatives))
     })
     .await
     .map_err(|e| e.to_string())?
@@ -1317,7 +1388,7 @@ pub async fn git_discard_file(cwd: String, relative: String) -> Result<(), Strin
 /// Discard every unstaged change (restore tracked files; delete untracked).
 #[tauri::command]
 pub async fn git_discard_all(cwd: String) -> Result<(), String> {
-    tauri::async_runtime::spawn_blocking(move || git_discard_all_for(&expand_home(&cwd)))
+    spawn_git_mutation(cwd, git_discard_all_for)
         .await
         .map_err(|e| e.to_string())?
 }
@@ -1325,7 +1396,7 @@ pub async fn git_discard_all(cwd: String) -> Result<(), String> {
 /// Stage every changed file in the repo.
 #[tauri::command]
 pub async fn git_stage_all(cwd: String) -> Result<(), String> {
-    tauri::async_runtime::spawn_blocking(move || git_stage_all_for(&expand_home(&cwd)))
+    spawn_git_mutation(cwd, git_stage_all_for)
         .await
         .map_err(|e| e.to_string())?
 }
@@ -1333,7 +1404,7 @@ pub async fn git_stage_all(cwd: String) -> Result<(), String> {
 /// Unstage every staged file.
 #[tauri::command]
 pub async fn git_unstage_all(cwd: String) -> Result<(), String> {
-    tauri::async_runtime::spawn_blocking(move || git_unstage_all_for(&expand_home(&cwd)))
+    spawn_git_mutation(cwd, git_unstage_all_for)
         .await
         .map_err(|e| e.to_string())?
 }
@@ -1363,8 +1434,7 @@ pub async fn git_commit(
     amend: bool,
     signoff: Option<bool>,
 ) -> Result<(), String> {
-    tauri::async_runtime::spawn_blocking(move || {
-        let root = expand_home(&cwd);
+    spawn_git_mutation(cwd, move |root| {
         let mut extra = Vec::new();
         if amend {
             extra.push("--amend");
@@ -1372,7 +1442,7 @@ pub async fn git_commit(
         if signoff.unwrap_or(false) {
             extra.push("--signoff");
         }
-        git_commit_args(&root, &message, &extra)
+        git_commit_args(root, &message, &extra)
     })
     .await
     .map_err(|e| e.to_string())?
@@ -1381,7 +1451,7 @@ pub async fn git_commit(
 /// Move HEAD back one commit, keeping its changes staged.
 #[tauri::command]
 pub async fn git_undo_last_commit(cwd: String) -> Result<(), String> {
-    tauri::async_runtime::spawn_blocking(move || git_undo_last_commit_for(&expand_home(&cwd)))
+    spawn_git_mutation(cwd, git_undo_last_commit_for)
         .await
         .map_err(|e| e.to_string())?
 }
@@ -1397,7 +1467,7 @@ pub async fn git_head_message(cwd: String) -> Result<String, String> {
 /// Push the current branch to its upstream, or set upstream on first push.
 #[tauri::command]
 pub async fn git_push(cwd: String) -> Result<(), String> {
-    tauri::async_runtime::spawn_blocking(move || git_push_for(&expand_home(&cwd)))
+    spawn_git_mutation(cwd, git_push_for)
         .await
         .map_err(|e| e.to_string())?
 }
@@ -1405,17 +1475,15 @@ pub async fn git_push(cwd: String) -> Result<(), String> {
 /// Fast-forward the current branch from its upstream, or rebase onto it with `rebase`.
 #[tauri::command]
 pub async fn git_pull(cwd: String, rebase: Option<bool>) -> Result<(), String> {
-    tauri::async_runtime::spawn_blocking(move || {
-        git_pull_for(&expand_home(&cwd), rebase.unwrap_or(false))
-    })
-    .await
-    .map_err(|e| e.to_string())?
+    spawn_git_mutation(cwd, move |root| git_pull_for(root, rebase.unwrap_or(false)))
+        .await
+        .map_err(|e| e.to_string())?
 }
 
 /// Pull incoming commits, then push local commits.
 #[tauri::command]
 pub async fn git_sync(cwd: String) -> Result<(), String> {
-    tauri::async_runtime::spawn_blocking(move || git_sync_changes_for(&expand_home(&cwd)))
+    spawn_git_mutation(cwd, git_sync_changes_for)
         .await
         .map_err(|e| e.to_string())?
 }
@@ -2035,8 +2103,8 @@ pub async fn git_checkout(
     name: String,
     remote: Option<String>,
 ) -> Result<String, String> {
-    tauri::async_runtime::spawn_blocking(move || {
-        git_checkout_for(&expand_home(&cwd), &name, remote.as_deref())
+    spawn_git_mutation(cwd, move |root| {
+        git_checkout_for(root, &name, remote.as_deref())
     })
     .await
     .map_err(|e| e.to_string())?
@@ -2045,7 +2113,7 @@ pub async fn git_checkout(
 /// Create a branch from HEAD and switch to it.
 #[tauri::command]
 pub async fn git_create_branch(cwd: String, name: String) -> Result<String, String> {
-    tauri::async_runtime::spawn_blocking(move || git_create_branch_for(&expand_home(&cwd), &name))
+    spawn_git_mutation(cwd, move |root| git_create_branch_for(root, &name))
         .await
         .map_err(|e| e.to_string())?
 }
@@ -2058,14 +2126,14 @@ pub async fn git_stash(
     message: Option<String>,
     mode: Option<String>,
 ) -> Result<(), String> {
-    tauri::async_runtime::spawn_blocking(move || {
+    spawn_git_mutation(cwd, move |root| {
         let mode = match mode.as_deref() {
             None | Some("untracked") => GitStashMode::IncludeUntracked,
             Some("tracked") => GitStashMode::Tracked,
             Some("staged") => GitStashMode::Staged,
             Some(_) => return Err("Invalid stash mode".to_string()),
         };
-        git_stash_for(&expand_home(&cwd), message.as_deref(), mode)
+        git_stash_for(root, message.as_deref(), mode)
     })
     .await
     .map_err(|e| e.to_string())?
@@ -2074,7 +2142,7 @@ pub async fn git_stash(
 /// Delete every stash entry. This cannot be undone.
 #[tauri::command]
 pub async fn git_stash_clear(cwd: String) -> Result<(), String> {
-    tauri::async_runtime::spawn_blocking(move || git_stash_clear_for(&expand_home(&cwd)))
+    spawn_git_mutation(cwd, git_stash_clear_for)
         .await
         .map_err(|e| e.to_string())?
 }
@@ -2082,7 +2150,7 @@ pub async fn git_stash_clear(cwd: String) -> Result<(), String> {
 /// Check out a commit without moving any branch (detached HEAD).
 #[tauri::command]
 pub async fn git_checkout_commit(cwd: String, sha: String) -> Result<(), String> {
-    tauri::async_runtime::spawn_blocking(move || git_checkout_commit_for(&expand_home(&cwd), &sha))
+    spawn_git_mutation(cwd, move |root| git_checkout_commit_for(root, &sha))
         .await
         .map_err(|e| e.to_string())?
 }
@@ -2094,27 +2162,23 @@ pub async fn git_create_branch_at(
     name: String,
     sha: String,
 ) -> Result<String, String> {
-    tauri::async_runtime::spawn_blocking(move || {
-        git_create_branch_at_for(&expand_home(&cwd), &name, &sha)
-    })
-    .await
-    .map_err(|e| e.to_string())?
+    spawn_git_mutation(cwd, move |root| git_create_branch_at_for(root, &name, &sha))
+        .await
+        .map_err(|e| e.to_string())?
 }
 
 /// Create a lightweight tag at a commit.
 #[tauri::command]
 pub async fn git_create_tag(cwd: String, name: String, sha: String) -> Result<(), String> {
-    tauri::async_runtime::spawn_blocking(move || {
-        git_create_tag_for(&expand_home(&cwd), &name, &sha)
-    })
-    .await
-    .map_err(|e| e.to_string())?
+    spawn_git_mutation(cwd, move |root| git_create_tag_for(root, &name, &sha))
+        .await
+        .map_err(|e| e.to_string())?
 }
 
 /// Apply a commit on top of HEAD.
 #[tauri::command]
 pub async fn git_cherry_pick(cwd: String, sha: String) -> Result<(), String> {
-    tauri::async_runtime::spawn_blocking(move || git_cherry_pick_for(&expand_home(&cwd), &sha))
+    spawn_git_mutation(cwd, move |root| git_cherry_pick_for(root, &sha))
         .await
         .map_err(|e| e.to_string())?
 }
@@ -2122,7 +2186,7 @@ pub async fn git_cherry_pick(cwd: String, sha: String) -> Result<(), String> {
 /// Commit the inverse of a commit on top of HEAD.
 #[tauri::command]
 pub async fn git_revert(cwd: String, sha: String) -> Result<(), String> {
-    tauri::async_runtime::spawn_blocking(move || git_revert_for(&expand_home(&cwd), &sha))
+    spawn_git_mutation(cwd, move |root| git_revert_for(root, &sha))
         .await
         .map_err(|e| e.to_string())?
 }
@@ -2130,7 +2194,7 @@ pub async fn git_revert(cwd: String, sha: String) -> Result<(), String> {
 /// Move the current branch to a commit. `mode` is `soft`, `mixed`, or `hard`.
 #[tauri::command]
 pub async fn git_reset(cwd: String, sha: String, mode: String) -> Result<(), String> {
-    tauri::async_runtime::spawn_blocking(move || git_reset_for(&expand_home(&cwd), &sha, &mode))
+    spawn_git_mutation(cwd, move |root| git_reset_for(root, &sha, &mode))
         .await
         .map_err(|e| e.to_string())?
 }
@@ -2149,7 +2213,7 @@ pub async fn git_operation_state(cwd: String) -> Result<Option<String>, String> 
 /// Abandon the operation reported by `git_operation_state`.
 #[tauri::command]
 pub async fn git_operation_abort(cwd: String) -> Result<(), String> {
-    tauri::async_runtime::spawn_blocking(move || git_operation_abort_for(&expand_home(&cwd)))
+    spawn_git_mutation(cwd, git_operation_abort_for)
         .await
         .map_err(|e| e.to_string())?
 }
@@ -2157,7 +2221,7 @@ pub async fn git_operation_abort(cwd: String) -> Result<(), String> {
 /// Finish the operation reported by `git_operation_state` once conflicts are staged.
 #[tauri::command]
 pub async fn git_operation_continue(cwd: String) -> Result<(), String> {
-    tauri::async_runtime::spawn_blocking(move || git_operation_continue_for(&expand_home(&cwd)))
+    spawn_git_mutation(cwd, git_operation_continue_for)
         .await
         .map_err(|e| e.to_string())?
 }
@@ -2165,26 +2229,22 @@ pub async fn git_operation_continue(cwd: String) -> Result<(), String> {
 /// Delete a local branch. Without `force`, git refuses an unmerged branch.
 #[tauri::command]
 pub async fn git_delete_branch(cwd: String, name: String, force: bool) -> Result<(), String> {
-    tauri::async_runtime::spawn_blocking(move || {
-        git_delete_branch_for(&expand_home(&cwd), &name, force)
-    })
-    .await
-    .map_err(|e| e.to_string())?
+    spawn_git_mutation(cwd, move |root| git_delete_branch_for(root, &name, force))
+        .await
+        .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
 pub async fn git_rename_branch(cwd: String, from: String, to: String) -> Result<String, String> {
-    tauri::async_runtime::spawn_blocking(move || {
-        git_rename_branch_for(&expand_home(&cwd), &from, &to)
-    })
-    .await
-    .map_err(|e| e.to_string())?
+    spawn_git_mutation(cwd, move |root| git_rename_branch_for(root, &from, &to))
+        .await
+        .map_err(|e| e.to_string())?
 }
 
 /// Merge a local or remote branch into the current one.
 #[tauri::command]
 pub async fn git_merge(cwd: String, reference: String) -> Result<(), String> {
-    tauri::async_runtime::spawn_blocking(move || git_merge_for(&expand_home(&cwd), &reference))
+    spawn_git_mutation(cwd, move |root| git_merge_for(root, &reference))
         .await
         .map_err(|e| e.to_string())?
 }
@@ -2192,7 +2252,7 @@ pub async fn git_merge(cwd: String, reference: String) -> Result<(), String> {
 /// Rebase the current branch onto a local or remote branch.
 #[tauri::command]
 pub async fn git_rebase(cwd: String, reference: String) -> Result<(), String> {
-    tauri::async_runtime::spawn_blocking(move || git_rebase_for(&expand_home(&cwd), &reference))
+    spawn_git_mutation(cwd, move |root| git_rebase_for(root, &reference))
         .await
         .map_err(|e| e.to_string())?
 }
@@ -2200,11 +2260,9 @@ pub async fn git_rebase(cwd: String, reference: String) -> Result<(), String> {
 /// Trust only this checkout after an explicit owner confirmation.
 #[tauri::command]
 pub async fn git_trust_repository(cwd: String, confirmed: bool) -> Result<(), String> {
-    tauri::async_runtime::spawn_blocking(move || {
-        git_trust_repository_for(&expand_home(&cwd), confirmed)
-    })
-    .await
-    .map_err(|e| e.to_string())?
+    spawn_git_mutation(cwd, move |root| git_trust_repository_for(root, confirmed))
+        .await
+        .map_err(|e| e.to_string())?
 }
 
 fn git_trust_repository_for(root: &Path, confirmed: bool) -> Result<(), String> {
@@ -2246,11 +2304,9 @@ fn git_trust_repository_for(root: &Path, confirmed: bool) -> Result<(), String> 
 /// Fetch every remote, and with `prune` drop tracking branches deleted there.
 #[tauri::command]
 pub async fn git_fetch(cwd: String, prune: Option<bool>) -> Result<(), String> {
-    tauri::async_runtime::spawn_blocking(move || {
-        git_fetch_for(&expand_home(&cwd), prune.unwrap_or(false))
-    })
-    .await
-    .map_err(|e| e.to_string())?
+    spawn_git_mutation(cwd, move |root| git_fetch_for(root, prune.unwrap_or(false)))
+        .await
+        .map_err(|e| e.to_string())?
 }
 
 /// Create a branch at a local or remote branch and switch to it.
@@ -2260,8 +2316,8 @@ pub async fn git_create_branch_from(
     name: String,
     reference: String,
 ) -> Result<String, String> {
-    tauri::async_runtime::spawn_blocking(move || {
-        git_create_branch_from_for(&expand_home(&cwd), &name, &reference)
+    spawn_git_mutation(cwd, move |root| {
+        git_create_branch_from_for(root, &name, &reference)
     })
     .await
     .map_err(|e| e.to_string())?
@@ -2274,8 +2330,8 @@ pub async fn git_delete_remote_branch(
     remote: String,
     name: String,
 ) -> Result<(), String> {
-    tauri::async_runtime::spawn_blocking(move || {
-        git_delete_remote_branch_for(&expand_home(&cwd), &remote, &name)
+    spawn_git_mutation(cwd, move |root| {
+        git_delete_remote_branch_for(root, &remote, &name)
     })
     .await
     .map_err(|e| e.to_string())?
@@ -2297,16 +2353,14 @@ pub async fn git_remotes(cwd: String) -> Result<Vec<GitRemote>, String> {
 
 #[tauri::command]
 pub async fn git_remote_add(cwd: String, name: String, url: String) -> Result<(), String> {
-    tauri::async_runtime::spawn_blocking(move || {
-        git_remote_add_for(&expand_home(&cwd), &name, &url)
-    })
-    .await
-    .map_err(|e| e.to_string())?
+    spawn_git_mutation(cwd, move |root| git_remote_add_for(root, &name, &url))
+        .await
+        .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
 pub async fn git_remote_remove(cwd: String, name: String) -> Result<(), String> {
-    tauri::async_runtime::spawn_blocking(move || git_remote_remove_for(&expand_home(&cwd), &name))
+    spawn_git_mutation(cwd, move |root| git_remote_remove_for(root, &name))
         .await
         .map_err(|e| e.to_string())?
 }
@@ -2322,7 +2376,7 @@ pub async fn git_tags(cwd: String) -> Result<Vec<String>, String> {
 /// Delete a local tag. Tags already pushed stay on the remote.
 #[tauri::command]
 pub async fn git_delete_tag(cwd: String, name: String) -> Result<(), String> {
-    tauri::async_runtime::spawn_blocking(move || git_delete_tag_for(&expand_home(&cwd), &name))
+    spawn_git_mutation(cwd, move |root| git_delete_tag_for(root, &name))
         .await
         .map_err(|e| e.to_string())?
 }
@@ -2351,8 +2405,8 @@ pub async fn git_stash_action(
     index: u32,
     expected_sha: String,
 ) -> Result<(), String> {
-    tauri::async_runtime::spawn_blocking(move || {
-        git_stash_action_for(&expand_home(&cwd), &action, index, &expected_sha)
+    spawn_git_mutation(cwd, move |root| {
+        git_stash_action_for(root, &action, index, &expected_sha)
     })
     .await
     .map_err(|e| e.to_string())?
@@ -2373,8 +2427,8 @@ pub async fn git_resolve_conflict(
     relative: String,
     side: String,
 ) -> Result<(), String> {
-    tauri::async_runtime::spawn_blocking(move || {
-        git_resolve_conflict_for(&expand_home(&cwd), &relative, &side)
+    spawn_git_mutation(cwd, move |root| {
+        git_resolve_conflict_for(root, &relative, &side)
     })
     .await
     .map_err(|e| e.to_string())?
@@ -3354,30 +3408,136 @@ fn git_commit_file_diff_for(root: &Path, sha: &str, relative: &str) -> Result<Gi
 /// resolved with their conflict markers still in. Pathspec excludes do not
 /// hold back unmerged paths, so with conflicts the other files are named.
 pub(crate) fn git_stage_all_for(root: &Path) -> Result<(), String> {
-    if git_unmerged_for(root).is_empty() {
+    if git_unmerged_checked_for(root)?.is_empty() {
         return git_checked(root, &["add", "-A", "--", "."]);
     }
-    let files = git_diff_files_for(root).files;
-    // Chunked to stay under the command line limit.
-    let mut start = 0;
-    while start < files.len() {
-        let mut end = start;
-        let mut length = 0;
-        while end < files.len() && (end == start || length + files[end].relative.len() < 16_000) {
-            length += files[end].relative.len() + 1;
-            end += 1;
-        }
-        let mut args = vec!["--literal-pathspecs", "add", "-A", "--"];
-        args.extend(files[start..end].iter().map(|file| file.relative.as_str()));
-        git_checked(root, &args)?;
-        start = end;
-    }
-    Ok(())
+    let paths = git_diff_index_checked(root, false)?
+        .files
+        .into_iter()
+        .map(|file| file.relative)
+        .collect::<Vec<_>>();
+    git_index_files_for(root, &paths, true)
 }
 
 pub(crate) fn git_stage_file_for(root: &Path, relative: &str) -> Result<(), String> {
     let relative = resolve_repo_path(root, relative)?;
     git_checked(root, &["--literal-pathspecs", "add", "--", &relative])
+}
+
+/// Send literal NUL-separated pathspecs over stdin, so a large selection is one
+/// index transaction and cannot exceed Windows' command-line length limit.
+fn git_index_files_for(root: &Path, relatives: &[String], staging: bool) -> Result<(), String> {
+    if relatives.len() > 100_000 {
+        return Err("Too many Git paths".into());
+    }
+    if relatives.is_empty() {
+        return Ok(());
+    }
+    let mut paths = relatives
+        .iter()
+        .map(|path| resolve_repo_path(root, path))
+        .collect::<Result<Vec<_>, _>>()?;
+    let has_head = !staging && git_stdout(root, &["rev-parse", "--verify", "HEAD"]).is_some();
+    if has_head {
+        // Restoring only a rename destination leaves the old path staged as a
+        // deletion. Include the source names for the selected renames too.
+        let renames = git_run(
+            root,
+            &[
+                "diff",
+                "--cached",
+                "--relative",
+                "--name-status",
+                "-z",
+                "--diff-filter=R",
+                "--find-renames",
+            ],
+        )
+        .ok_or("Could not read staged renames")?;
+        let mut records = renames.split('\0');
+        while let Some(status) = records.next() {
+            if status.is_empty() {
+                break;
+            }
+            let (Some(source), Some(destination)) = (records.next(), records.next()) else {
+                return Err("Could not read staged renames".into());
+            };
+            if paths
+                .iter()
+                .any(|path| path == destination || destination.starts_with(&format!("{path}/")))
+            {
+                paths.push(resolve_repo_path(root, source)?);
+            }
+        }
+    }
+    let args = if staging {
+        vec!["add", "--pathspec-from-file=-", "--pathspec-file-nul"]
+    } else if has_head {
+        vec![
+            "restore",
+            "--staged",
+            "--pathspec-from-file=-",
+            "--pathspec-file-nul",
+        ]
+    } else {
+        vec![
+            "rm",
+            "--cached",
+            "-r",
+            "-f",
+            "--pathspec-from-file=-",
+            "--pathspec-file-nul",
+        ]
+    };
+    git_paths_checked(root, &args, &paths)
+}
+
+fn git_paths_checked(root: &Path, args: &[&str], paths: &[String]) -> Result<(), String> {
+    if paths.is_empty() {
+        return Ok(());
+    }
+    let input = paths.join("\0") + "\0";
+    let deadline = Instant::now() + Duration::from_secs(2);
+    loop {
+        let _turn = GIT_SPAWN_GATE.enter();
+        let mut child = git_cmd()
+            .arg("--literal-pathspecs")
+            .arg("-C")
+            .arg(root)
+            .args(args)
+            .env("GIT_OPTIONAL_LOCKS", "0")
+            .env("GIT_TERMINAL_PROMPT", "0")
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .map_err(|e| e.to_string())?;
+        let mut stdin = child.stdin.take().ok_or("Missing Git stdin")?;
+        let bytes = input.as_bytes().to_vec();
+        let input_deadline = Instant::now() + GIT_LOCAL_TIMEOUT;
+        let (sender, written) = mpsc::channel();
+        thread::spawn(move || {
+            let _ = sender.send(stdin.write_all(&bytes));
+        });
+        let output = wait_with_timeout(child, GIT_LOCAL_TIMEOUT).map_err(|e| e.to_string())?;
+        drop(_turn);
+        if output.status.success() {
+            return written
+                .recv_timeout(input_deadline.saturating_duration_since(Instant::now()))
+                .map_err(|e| format!("Git input did not close before its deadline: {e}"))?
+                .map_err(|e| e.to_string());
+        }
+        let error = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        if is_index_lock_error(&error) && Instant::now() < deadline {
+            thread::sleep(Duration::from_millis(100));
+            continue;
+        }
+        return Err(if error.is_empty() {
+            "Git index operation failed".into()
+        } else {
+            error
+        });
+    }
 }
 
 fn git_stage_contents_for(
@@ -3396,11 +3556,20 @@ fn git_stage_contents_for(
             .trim(),
     );
     let lock_path = PathBuf::from(format!("{}.lock", index_path.display()));
-    let mut lock = std::fs::OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .open(&lock_path)
-        .map_err(|e| e.to_string())?;
+    let deadline = Instant::now() + Duration::from_secs(2);
+    let mut lock = loop {
+        match std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&lock_path)
+        {
+            Ok(lock) => break lock,
+            Err(error) if error.kind() == ErrorKind::AlreadyExists && Instant::now() < deadline => {
+                thread::sleep(Duration::from_millis(100));
+            }
+            Err(error) => return Err(error.to_string()),
+        }
+    };
     let result = (|| {
         let index = match std::fs::read(&index_path) {
             Ok(bytes) => Some(bytes),
@@ -3499,9 +3668,13 @@ fn git_hash_object(root: &Path, relative: &str, contents: &[u8]) -> Result<Strin
         .stdin
         .take()
         .ok_or_else(|| "hash-object stdin".to_string())?;
-    stdin.write_all(contents).map_err(|e| e.to_string())?;
-    drop(stdin);
-    let output = child.wait_with_output().map_err(|e| e.to_string())?;
+    let bytes = contents.to_vec();
+    let input_deadline = Instant::now() + GIT_LOCAL_TIMEOUT;
+    let (sender, written) = mpsc::channel();
+    thread::spawn(move || {
+        let _ = sender.send(stdin.write_all(&bytes));
+    });
+    let output = wait_with_timeout(child, GIT_LOCAL_TIMEOUT).map_err(|e| e.to_string())?;
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
         let stdout = String::from_utf8_lossy(&output.stdout);
@@ -3515,6 +3688,10 @@ fn git_hash_object(root: &Path, relative: &str, contents: &[u8]) -> Result<Strin
         }
         return Err("git hash-object failed".into());
     }
+    written
+        .recv_timeout(input_deadline.saturating_duration_since(Instant::now()))
+        .map_err(|e| format!("Git input did not close before its deadline: {e}"))?
+        .map_err(|e| e.to_string())?;
     let hash = String::from_utf8_lossy(&output.stdout).trim().to_string();
     if hash.len() != 40 && hash.len() != 64 {
         return Err("git hash-object returned an invalid hash".into());
@@ -3523,32 +3700,7 @@ fn git_hash_object(root: &Path, relative: &str, contents: &[u8]) -> Result<Strin
 }
 
 fn git_unstage_file_for(root: &Path, relative: &str) -> Result<(), String> {
-    let relative = resolve_repo_path(root, relative)?;
-    if git_stdout(root, &["rev-parse", "--verify", "HEAD"]).is_some() {
-        git_checked(
-            root,
-            &[
-                "--literal-pathspecs",
-                "restore",
-                "--staged",
-                "--",
-                &relative,
-            ],
-        )
-    } else {
-        git_checked(
-            root,
-            &[
-                "--literal-pathspecs",
-                "rm",
-                "--cached",
-                "-r",
-                "-f",
-                "--",
-                &relative,
-            ],
-        )
-    }
+    git_index_files_for(root, &[relative.to_string()], false)
 }
 
 fn git_unstage_all_for(root: &Path) -> Result<(), String> {
@@ -3569,18 +3721,12 @@ fn git_unstage_all_for(root: &Path) -> Result<(), String> {
 fn git_discard_file_for(root: &Path, relative: &str) -> Result<(), String> {
     let relative = resolve_repo_path(root, relative)?;
     let abs = root.join(&relative);
-    if git_checked(
+    let tracked = git_run(
         root,
-        &[
-            "--literal-pathspecs",
-            "ls-files",
-            "--error-unmatch",
-            "--",
-            &relative,
-        ],
+        &["--literal-pathspecs", "ls-files", "-z", "--", &relative],
     )
-    .is_err()
-    {
+    .ok_or("Could not determine whether the Git path is tracked; nothing was discarded")?;
+    if tracked.is_empty() {
         if abs.is_file() {
             std::fs::remove_file(&abs).map_err(|e| e.to_string())?;
         } else if abs.exists() {
@@ -3604,31 +3750,62 @@ fn git_discard_file_for(root: &Path, relative: &str) -> Result<(), String> {
 }
 
 fn git_discard_all_for(root: &Path) -> Result<(), String> {
+    git_discard_selection_for(root, None)
+}
+
+fn git_discard_selection_for(root: &Path, relatives: Option<&[String]>) -> Result<(), String> {
+    if relatives.is_some_and(|paths| paths.len() > 100_000) {
+        return Err("Too many Git paths".into());
+    }
+    let selected = relatives
+        .map(|paths| {
+            paths
+                .iter()
+                .map(|p| resolve_repo_path(root, p))
+                .collect::<Result<HashSet<_>, _>>()
+        })
+        .transpose()?;
+    if selected.as_ref().is_some_and(HashSet::is_empty) {
+        return Ok(());
+    }
+    let files = git_diff_index_checked(root, false)?
+        .files
+        .into_iter()
+        .filter(|file| {
+            file.unstaged
+                && selected
+                    .as_ref()
+                    .is_none_or(|paths| paths.contains(&file.relative))
+        })
+        .collect::<Vec<_>>();
+    if selected
+        .as_ref()
+        .is_some_and(|paths| paths.len() != files.len())
+    {
+        return Err("Selected files changed; refresh before discarding".into());
+    }
     let mut tracked = Vec::new();
-    for file in git_diff_files_for(root).files {
-        if !file.unstaged {
-            continue;
-        }
+    let mut untracked = Vec::new();
+    for file in files {
+        let relative = resolve_repo_path(root, &file.relative)?;
         if file.status == "untracked" {
-            git_discard_file_for(root, &file.relative)?;
+            untracked.push(root.join(relative));
         } else {
-            tracked.push(file.relative);
+            tracked.push(relative);
         }
     }
-    // One `restore` per batch instead of two processes per file; chunked to
-    // stay under the command line limit.
-    let mut start = 0;
-    while start < tracked.len() {
-        let mut end = start;
-        let mut length = 0;
-        while end < tracked.len() && (end == start || length + tracked[end].len() < 16_000) {
-            length += tracked[end].len() + 1;
-            end += 1;
-        }
-        let mut args = vec!["--literal-pathspecs", "restore", "--worktree", "--"];
-        args.extend(tracked[start..end].iter().map(String::as_str));
-        git_checked(root, &args)?;
-        start = end;
+    git_paths_checked(
+        root,
+        &[
+            "restore",
+            "--worktree",
+            "--pathspec-from-file=-",
+            "--pathspec-file-nul",
+        ],
+        &tracked,
+    )?;
+    for path in untracked {
+        std::fs::remove_file(path).map_err(|e| e.to_string())?;
     }
     Ok(())
 }
@@ -3669,7 +3846,7 @@ pub(crate) fn git_commit_args(root: &Path, message: &str, extra: &[&str]) -> Res
     if message.is_empty() {
         return Err("Commit message cannot be empty".into());
     }
-    let conflicts = git_unmerged_for(root);
+    let conflicts = git_unmerged_checked_for(root)?;
     if !conflicts.is_empty() {
         return Err(unmerged_message(&conflicts));
     }
@@ -5529,6 +5706,7 @@ fn git_cmd_for_args_with_path(args: &[&str], gui_path: impl FnOnce() -> String) 
 /// How long a push, pull or fetch may run before it is stopped. A stuck
 /// credential helper would otherwise hold the Changes panel busy for good.
 const GIT_NETWORK_TIMEOUT: Duration = Duration::from_secs(300);
+const GIT_LOCAL_TIMEOUT: Duration = Duration::from_secs(120);
 
 fn git_is_network_command(args: &[&str]) -> bool {
     matches!(args.first().copied(), Some("push" | "pull" | "fetch"))
@@ -5539,20 +5717,29 @@ fn output_with_timeout(
     cmd: &mut Command,
     timeout: Duration,
 ) -> std::io::Result<std::process::Output> {
-    let mut child = cmd
+    let child = cmd
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()?;
+    wait_with_timeout(child, timeout)
+}
+
+fn wait_with_timeout(
+    mut child: std::process::Child,
+    timeout: Duration,
+) -> std::io::Result<std::process::Output> {
     // Drained on their own threads so a chatty child cannot fill a pipe and stall.
     let drain = |pipe: Option<Box<dyn Read + Send>>| {
+        let (sender, receiver) = mpsc::channel();
         thread::spawn(move || {
             let mut buf = Vec::new();
             if let Some(mut pipe) = pipe {
                 let _ = pipe.read_to_end(&mut buf);
             }
-            buf
-        })
+            let _ = sender.send(buf);
+        });
+        receiver
     };
     let stdout = drain(
         child
@@ -5586,9 +5773,25 @@ fn output_with_timeout(
     };
     Ok(std::process::Output {
         status,
-        stdout: stdout.join().unwrap_or_default(),
-        stderr: stderr.join().unwrap_or_default(),
+        stdout: receive_git_output(stdout, deadline)?,
+        stderr: receive_git_output(stderr, deadline)?,
     })
+}
+
+fn receive_git_output(
+    receiver: mpsc::Receiver<Vec<u8>>,
+    deadline: Instant,
+) -> std::io::Result<Vec<u8>> {
+    // A credential/filter helper may keep inherited pipes open after Git exits.
+    // The deadline covers output collection as well as the direct child.
+    receiver
+        .recv_timeout(deadline.saturating_duration_since(Instant::now()))
+        .map_err(|error| {
+            std::io::Error::new(
+                ErrorKind::TimedOut,
+                format!("Git output did not close before its deadline: {error}"),
+            )
+        })
 }
 
 fn git_cmd_for_args(args: &[&str]) -> Command {
@@ -5693,10 +5896,32 @@ impl Drop for GitSpawnTurn {
 /// `Command::output` for git, taking a turn at the spawn gate.
 pub(crate) fn git_cmd_output(cmd: &mut Command) -> std::io::Result<std::process::Output> {
     let _turn = GIT_SPAWN_GATE.enter();
-    cmd.output()
+    cmd.env("GIT_OPTIONAL_LOCKS", "0")
+        .env("GIT_TERMINAL_PROMPT", "0");
+    output_with_timeout(cmd, GIT_LOCAL_TIMEOUT)
 }
 
 pub(crate) fn git_checked(root: &Path, args: &[&str]) -> Result<(), String> {
+    let command = args.iter().find(|arg| !arg.starts_with('-')).copied();
+    if !matches!(command, Some("add" | "restore" | "rm")) {
+        return git_checked_once(root, args);
+    }
+    let deadline = Instant::now() + Duration::from_secs(2);
+    loop {
+        match git_checked_once(root, args) {
+            Err(error) if is_index_lock_error(&error) && Instant::now() < deadline => {
+                thread::sleep(Duration::from_millis(100));
+            }
+            result => return result,
+        }
+    }
+}
+
+fn is_index_lock_error(error: &str) -> bool {
+    error.contains("index.lock") && error.contains("File exists")
+}
+
+fn git_checked_once(root: &Path, args: &[&str]) -> Result<(), String> {
     let mut cmd = git_cmd_for_args(args);
     cmd.arg("--no-pager")
         .arg("-C")
@@ -5708,7 +5933,7 @@ pub(crate) fn git_checked(root: &Path, args: &[&str]) -> Result<(), String> {
     let output = if git_is_network_command(args) {
         output_with_timeout(&mut cmd, GIT_NETWORK_TIMEOUT)
     } else {
-        cmd.output()
+        output_with_timeout(&mut cmd, GIT_LOCAL_TIMEOUT)
     }
     .map_err(|e| e.to_string())?;
     if output.status.success() {
@@ -6262,7 +6487,7 @@ pub(crate) fn git_operation_continue_for(root: &Path) -> Result<(), String> {
     let Some(operation) = git_operation_state_for(root) else {
         return Err("No operation in progress".into());
     };
-    let conflicts = git_unmerged_for(root);
+    let conflicts = git_unmerged_checked_for(root)?;
     if !conflicts.is_empty() {
         return Err(unmerged_message(&conflicts));
     }
@@ -9919,6 +10144,195 @@ mod tests {
     }
 
     #[test]
+    fn git_reliability_preserves_working_files_when_index_reads_fail() {
+        let dir = tmp("git-reliability-corrupt");
+        if !init_git_commit(&dir.0, &[("a.txt", "base\n")]) {
+            return;
+        }
+        std::fs::write(dir.0.join("a.txt"), "valuable draft\n").unwrap();
+        std::fs::write(dir.0.join(".git/index"), "invalid index").unwrap();
+        assert!(git_discard_file_for(&dir.0, "a.txt")
+            .unwrap_err()
+            .contains("nothing was discarded"));
+        assert!(git_stage_all_for(&dir.0).is_err());
+        assert!(git_commit_args(&dir.0, "never commit", &[]).is_err());
+        assert!(git_discard_all_for(&dir.0).is_err());
+        assert_eq!(
+            std::fs::read_to_string(dir.0.join("a.txt")).unwrap(),
+            "valuable draft\n"
+        );
+        assert_eq!(
+            std::fs::read_to_string(dir.0.join(".git/index")).unwrap(),
+            "invalid index"
+        );
+    }
+
+    #[test]
+    fn git_reliability_discard_selection_preserves_index_and_other_drafts() {
+        let dir = tmp("git-reliability-discard");
+        if !init_git_commit(&dir.0, &[("a[1].txt", "base\n"), ("keep.txt", "keep\n")]) {
+            return;
+        }
+        std::fs::write(dir.0.join("a[1].txt"), "staged\n").unwrap();
+        git_stage_file_for(&dir.0, "a[1].txt").unwrap();
+        std::fs::write(dir.0.join("a[1].txt"), "draft\n").unwrap();
+        std::fs::write(dir.0.join("keep.txt"), "keep draft\n").unwrap();
+        std::fs::write(dir.0.join("new.txt"), "new\n").unwrap();
+        assert!(
+            git_discard_selection_for(&dir.0, Some(&["new.txt".into(), "missing.txt".into()]))
+                .is_err()
+        );
+        assert!(dir.0.join("new.txt").exists());
+        git_discard_selection_for(&dir.0, Some(&["a[1].txt".into(), "new.txt".into()])).unwrap();
+        assert_eq!(
+            std::fs::read_to_string(dir.0.join("a[1].txt")).unwrap(),
+            "staged\n"
+        );
+        assert_eq!(
+            std::fs::read_to_string(dir.0.join("keep.txt")).unwrap(),
+            "keep draft\n"
+        );
+        assert_eq!(git_run(&dir.0, &["show", ":a[1].txt"]).unwrap(), "staged\n");
+        assert!(!dir.0.join("new.txt").exists());
+    }
+
+    #[test]
+    fn git_reliability_unstages_both_names_of_selected_rename() {
+        let dir = tmp("git-reliability-rename");
+        if !init_git_commit(&dir.0, &[("old.txt", "base\n"), ("keep.txt", "keep\n")]) {
+            return;
+        }
+        std::fs::rename(dir.0.join("old.txt"), dir.0.join("new.txt")).unwrap();
+        std::fs::write(dir.0.join("keep.txt"), "staged\n").unwrap();
+        git_stage_all_for(&dir.0).unwrap();
+        git_checked(&dir.0, &["config", "diff.renames", "false"]).unwrap();
+        git_index_files_for(&dir.0, &["new.txt".into()], false).unwrap();
+        assert_eq!(
+            git_run(&dir.0, &["diff", "--cached", "--name-only"])
+                .unwrap()
+                .trim(),
+            "keep.txt"
+        );
+        assert_eq!(
+            std::fs::read_to_string(dir.0.join("new.txt")).unwrap(),
+            "base\n"
+        );
+        assert!(!dir.0.join("old.txt").exists());
+    }
+
+    #[test]
+    fn git_reliability_serializes_whole_mutations_from_subdirectories() {
+        let dir = tmp("git-reliability-queue");
+        std::fs::create_dir_all(dir.0.join(".git")).unwrap();
+        std::fs::create_dir_all(dir.0.join("sub")).unwrap();
+        let active = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let barrier = Arc::new(std::sync::Barrier::new(2));
+        let mut threads = Vec::new();
+        for root in [dir.0.clone(), dir.0.join("sub")] {
+            let active = active.clone();
+            let barrier = barrier.clone();
+            threads.push(thread::spawn(move || {
+                barrier.wait();
+                with_git_mutation(&root, || {
+                    assert_eq!(active.fetch_add(1, Ordering::SeqCst), 0);
+                    thread::sleep(Duration::from_millis(100));
+                    active.fetch_sub(1, Ordering::SeqCst);
+                    Ok(())
+                })
+                .unwrap();
+            }));
+        }
+        for thread in threads {
+            thread.join().unwrap();
+        }
+        assert!(with_git_mutation(&dir.0, || Err::<(), _>("expected failure".into())).is_err());
+        with_git_mutation(&dir.0, || Ok(())).unwrap();
+    }
+
+    #[test]
+    fn git_bulk_index_selection_preserves_unselected_files() {
+        let dir = tmp("git-bulk-selection");
+        if !init_git_commit(&dir.0, &[("base.txt", "base\n")]) {
+            return;
+        }
+        let paths: Vec<_> = (0..700)
+            .map(|i| format!("{i:03}-[literal] {}.txt", "x".repeat(100)))
+            .collect();
+        for path in &paths {
+            std::fs::write(dir.0.join(path), "new\n").unwrap();
+        }
+        git_index_files_for(&dir.0, &paths[..300], true).unwrap();
+        let staged = git_run(&dir.0, &["diff", "--cached", "--name-only", "-z"]).unwrap();
+        assert_eq!(
+            staged
+                .split('\0')
+                .filter(|p| !p.is_empty())
+                .collect::<Vec<_>>(),
+            paths[..300]
+        );
+        git_index_files_for(&dir.0, &paths[..200], false).unwrap();
+        let staged = git_run(&dir.0, &["diff", "--cached", "--name-only", "-z"]).unwrap();
+        assert_eq!(
+            staged
+                .split('\0')
+                .filter(|p| !p.is_empty())
+                .collect::<Vec<_>>(),
+            paths[200..300]
+        );
+        assert!(paths.iter().all(|p| dir.0.join(p).exists()));
+    }
+
+    #[test]
+    fn git_bulk_index_unborn_and_validation() {
+        let dir = tmp("git-bulk-unborn");
+        if git_checked(&dir.0, &["init", "-q"]).is_err() {
+            return;
+        }
+        std::fs::write(dir.0.join("a[1].txt"), "new\n").unwrap();
+        std::fs::write(dir.0.join("a1.txt"), "other\n").unwrap();
+        assert!(
+            git_index_files_for(&dir.0, &["a[1].txt".into(), "../outside.txt".into()], true)
+                .is_err()
+        );
+        assert!(git_run(&dir.0, &["ls-files"]).unwrap().is_empty());
+        let paths = vec!["a[1].txt".into()];
+        git_index_files_for(&dir.0, &paths, true).unwrap();
+        assert_eq!(git_run(&dir.0, &["ls-files"]).unwrap().trim(), "a[1].txt");
+        git_index_files_for(&dir.0, &paths, false).unwrap();
+        assert!(git_run(&dir.0, &["ls-files"]).unwrap().is_empty());
+        assert_eq!(
+            std::fs::read_to_string(dir.0.join("a[1].txt")).unwrap(),
+            "new\n"
+        );
+    }
+
+    #[test]
+    fn git_bulk_index_waits_for_external_lock_without_deleting_it() {
+        let dir = tmp("git-bulk-lock");
+        if !init_git_commit(&dir.0, &[("a.txt", "base\n")]) {
+            return;
+        }
+        std::fs::write(dir.0.join("a.txt"), "new\n").unwrap();
+        let lock = dir.0.join(".git/index.lock");
+        std::fs::write(&lock, "external writer").unwrap();
+        let release_path = lock.clone();
+        let release = thread::spawn(move || {
+            thread::sleep(Duration::from_millis(300));
+            std::fs::remove_file(release_path).unwrap();
+        });
+        git_index_files_for(&dir.0, &["a.txt".into()], true).unwrap();
+        release.join().unwrap();
+        std::fs::write(&lock, "keep external lock").unwrap();
+        assert!(git_index_files_for(&dir.0, &["a.txt".into()], false)
+            .unwrap_err()
+            .contains("index.lock"));
+        assert_eq!(
+            std::fs::read_to_string(&lock).unwrap(),
+            "keep external lock"
+        );
+    }
+
+    #[test]
     fn git_stage_and_unstage_file() {
         let dir = tmp("git-stage");
         if !init_git_commit(&dir.0, &[("a.txt", "alpha\n")]) {
@@ -11543,6 +11957,16 @@ mod tests {
         let shim = PathBuf::from("C:/scoop/shims/git.exe");
         assert!(direct_git_from([PathBuf::from("C:/scoop/shims")], |path| path == shim).is_none());
         assert!(direct_git_from([PathBuf::from("C:/Windows")], |_| false).is_none());
+    }
+
+    #[test]
+    fn output_with_timeout_does_not_wait_for_inherited_pipes_forever() {
+        let (sender, receiver) = mpsc::channel();
+        let started = Instant::now();
+        let error = receive_git_output(receiver, started + Duration::from_millis(100)).unwrap_err();
+        assert_eq!(error.kind(), ErrorKind::TimedOut);
+        assert!(started.elapsed() < Duration::from_secs(2));
+        drop(sender);
     }
 
     #[test]

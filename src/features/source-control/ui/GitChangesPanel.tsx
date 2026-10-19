@@ -91,6 +91,9 @@ import {
   gitRangeContext,
   gitStageAll,
   gitStageFile,
+  gitStageFiles,
+  gitDiscardFiles,
+  gitUnstageFiles,
   gitSync,
   gitUnstageAll,
   gitUnstageFile,
@@ -962,22 +965,43 @@ function ChangedFiles({
   ) => {
     if (!selectedFiles.length) return;
     if (selectedFiles.length === 1) return run(selectedFiles[0], action);
-    if (gitPanelRuntime(cwd).state.busy && fileActions.current.size === 0) return;
+    const queue = fileActions.current;
+    if (gitPanelRuntime(cwd).state.busy && queue.size === 0) return;
     if (action === "discard") {
       const ok = await confirmNative(
         `Discard changes in ${selectedFiles.length} selected files? Untracked files will be deleted. This cannot be undone.`,
         "Discard",
       );
-      if (!ok || (gitPanelRuntime(cwd).state.busy && fileActions.current.size === 0)) return;
+      if (!ok || (gitPanelRuntime(cwd).state.busy && queue.size === 0)) return;
     }
-    // Enqueue together; the existing queue serializes Git commands and reloads once.
-    let nextIndex = index;
-    await Promise.all(
-      selectedFiles.map((file) => {
-        if (nextIndex) nextIndex = applyIndexAction(nextIndex, action, file.relative);
-        return run(file, action, true, nextIndex ?? undefined);
-      }),
-    );
+    if (queue.size === 0) setGitFeedback(cwd, null);
+    queue.size += 1;
+    queue.paths.push(...selectedFiles.map((file) => file.path));
+    setBusy(action);
+    setPending(ACTION_LABEL[action]);
+    if (index) {
+      let nextIndex = index;
+      for (const file of selectedFiles)
+        nextIndex = applyIndexAction(nextIndex, action, file.relative);
+      showOptimistic(nextIndex);
+    }
+    const task = queue.tail.then(async () => {
+      try {
+        const paths = selectedFiles.map((file) => file.relative);
+        if (action === "stage") await gitStageFiles(cwd, paths);
+        else if (action === "unstage") await gitUnstageFiles(cwd, paths);
+        else await gitDiscardFiles(cwd, paths);
+      } catch (error) {
+        fail(error);
+      }
+    });
+    queue.tail = task;
+    await task;
+    queue.size -= 1;
+    if (queue.size > 0) return;
+    onMutated(queue.paths.splice(0), "index");
+    setBusy(null);
+    setPending(null);
   };
 
   const runAll = async (action: "stage" | "unstage" | "discard") => {

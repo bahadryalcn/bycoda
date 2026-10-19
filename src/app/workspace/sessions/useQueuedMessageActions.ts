@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useRef, type Dispatch, type MutableRefObject, type SetStateAction } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  type Dispatch,
+  type MutableRefObject,
+  type SetStateAction,
+} from "react";
 import { type Attachment, type Session } from "../../../features/sessions/model/session";
 import {
   canDispatchQueuedHead,
@@ -8,7 +15,12 @@ import {
 } from "../../../features/sessions/model/messageQueue";
 import { applyQueuedEdit } from "../../../features/sessions/model/queuedMessageEdit";
 import { CONTINUE_PROMPT } from "../../../features/sessions/model/inFlight";
-import { sharedLocalQueueReady } from "../../../features/connections/model/useSharedLocalQueues";
+import {
+  sharedLocalQueueReady,
+  resumeSharedLocalQueue,
+} from "../../../features/connections/model/useSharedLocalQueues";
+import { hasMissingAttachment } from "../../../features/sessions/model/queuePersistence";
+import type { QueueActionResult } from "../../../features/sessions/model/queueAction";
 import { type HarnessEvent } from "../../../integrations/harness";
 import { type Submit } from "../helpers/types";
 
@@ -42,6 +54,7 @@ export function useQueuedMessageActions(deps: QueuedMessageActionDeps) {
     flushHarnessEvents,
   } = deps;
   const queueDispatchingRef = useRef(new Set<string>());
+  const manualActions = useRef(new Set<string>());
 
   useEffect(() => {
     const timers: number[] = [];
@@ -57,9 +70,10 @@ export function useQueuedMessageActions(deps: QueuedMessageActionDeps) {
         continue;
 
       if (session.queueStatus === "resuming") {
+        if (manualActions.current.has(session.id)) continue;
         setSessions((prev) =>
           prev.map((entry) =>
-            entry.id === session.id ? { ...entry, queueStatus: "active" } : entry,
+            entry.id === session.id ? { ...entry, queueStatus: "paused" } : entry,
           ),
         );
         continue;
@@ -154,10 +168,11 @@ export function useQueuedMessageActions(deps: QueuedMessageActionDeps) {
   );
 
   const onSteerQueuedMessage = useCallback(
-    (sessionId: string, messageId: string) => {
+    async (sessionId: string, messageId: string): Promise<QueueActionResult> => {
+      if (manualActions.current.has(sessionId)) return false;
       const session = sessionsRef.current.find((entry) => entry.id === sessionId);
       const message = session ? queuedMessageForSubmit(session, messageId, "steer") : undefined;
-      if (!session) return;
+      if (!session) return false;
       if (!message) {
         if (
           session.queuedMessages?.some(
@@ -173,7 +188,9 @@ export function useQueuedMessageActions(deps: QueuedMessageActionDeps) {
           });
           flushHarnessEvents();
         }
-        return;
+        throw new Error(
+          "This message cannot be sent now. Check its attachments and saved model settings, or resume the queue.",
+        );
       }
       if (message.intent === "orchestrate" && session.busy) {
         enqueueHarnessEvent(sessionId, {
@@ -181,38 +198,119 @@ export function useQueuedMessageActions(deps: QueuedMessageActionDeps) {
           text: "Orchestration planning will start after the current turn finishes.",
         });
         flushHarnessEvents();
-        return;
+        return false;
       }
-      onSubmit(sessionId, message.text, message.attachments, {
-        followUpBehavior: "steer",
-        queuedMessageId: message.id,
-        noteCard: message.noteCard,
-        handoffCard: message.handoffCard,
-        intent: message.intent,
-      });
+      manualActions.current.add(sessionId);
+      try {
+        return await onSubmit(sessionId, message.text, message.attachments, {
+          followUpBehavior: "steer",
+          queuedMessageId: message.id,
+          noteCard: message.noteCard,
+          handoffCard: message.handoffCard,
+          intent: message.intent,
+        });
+      } finally {
+        manualActions.current.delete(sessionId);
+      }
     },
     [onSubmit, enqueueHarnessEvent, flushHarnessEvents],
   );
 
   const onResumeQueue = useCallback(
-    (sessionId: string) => {
+    async (sessionId: string): Promise<QueueActionResult> => {
+      if (manualActions.current.has(sessionId)) return false;
       const session = sessionsRef.current.find((entry) => entry.id === sessionId);
-      if (
-        !session ||
-        session.busy ||
-        session.queueStatus !== "paused" ||
-        !session.queuedMessages?.length
-      ) {
-        return;
+      if (!session || !session.queuedMessages?.length) {
+        return false;
       }
-      setSessions((prev) =>
-        prev.map((entry) =>
-          entry.id === sessionId ? { ...entry, queueStatus: "resuming" } : entry,
-        ),
-      );
-      onSubmit(sessionId, CONTINUE_PROMPT, [], {
-        followUpBehavior: "steer",
-      });
+      if (
+        windowTransferPendingRef.current ||
+        movingSessionIds.current.has(sessionId) ||
+        retiringTurns.current.has(sessionId) ||
+        session.historyLoading
+      )
+        throw new Error("This conversation is still preparing. Wait and try again.");
+      if (session.usageLimit)
+        throw new Error(
+          "The usage limit is holding this queue. Resolve the limit before resuming.",
+        );
+      if (session.editingQueuedMessageId)
+        throw new Error("Finish editing the queued message before resuming.");
+      const head = session.queuedMessages[0];
+      if (hasMissingAttachment(head))
+        throw new Error("An attachment is missing. Edit the queued message before resuming.");
+      manualActions.current.add(sessionId);
+      try {
+        if (session.busy) {
+          setSessions((prev) =>
+            prev.map((entry) =>
+              entry.id === sessionId ? { ...entry, queueStatus: "resuming" } : entry,
+            ),
+          );
+          await resumeSharedLocalQueue(
+            sessionId,
+            () =>
+              sessionsRef.current.find((entry) => entry.id === sessionId)?.queueStatus ===
+              "resuming",
+          );
+          setSessions((prev) =>
+            prev.map((entry) =>
+              entry.id === sessionId && entry.queueStatus === "resuming"
+                ? { ...entry, queueStatus: "active" }
+                : entry,
+            ),
+          );
+          return {
+            kind: "waiting",
+            message: "Queue resumed. Messages will send when this turn finishes.",
+          };
+        }
+        if (session.queueStatus === "restored") {
+          return await onSubmit(sessionId, head.text, head.attachments, {
+            followUpBehavior: "steer",
+            queuedMessageId: head.id,
+            noteCard: head.noteCard,
+            handoffCard: head.handoffCard,
+            intent: head.intent,
+          });
+        }
+        setSessions((prev) =>
+          prev.map((entry) =>
+            entry.id === sessionId ? { ...entry, queueStatus: "resuming" } : entry,
+          ),
+        );
+        const accepted = await onSubmit(sessionId, CONTINUE_PROMPT, [], {
+          followUpBehavior: "steer",
+        });
+        if (!accepted)
+          throw new Error("The interrupted turn could not be resumed. The queue is still paused.");
+        const latest = sessionsRef.current.find((entry) => entry.id === sessionId);
+        if (latest?.queueStatus !== "resuming") return false;
+        await resumeSharedLocalQueue(
+          sessionId,
+          () =>
+            sessionsRef.current.find((entry) => entry.id === sessionId)?.queueStatus === "resuming",
+        );
+        setSessions((prev) =>
+          prev.map((entry) =>
+            entry.id === sessionId && entry.queueStatus === "resuming"
+              ? { ...entry, queueStatus: "active" }
+              : entry,
+          ),
+        );
+        return true;
+      } catch (error) {
+        setSessions((prev) =>
+          prev.map((entry) =>
+            entry.id === sessionId && entry.queueStatus === "resuming"
+              ? { ...entry, queueStatus: "paused" }
+              : entry,
+          ),
+        );
+        throw error;
+      } finally {
+        manualActions.current.delete(sessionId);
+      }
     },
     [onSubmit],
   );
