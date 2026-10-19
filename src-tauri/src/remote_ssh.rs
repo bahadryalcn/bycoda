@@ -1611,8 +1611,9 @@ mod tests {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let port = listener.local_addr().unwrap().port();
         assert!(tcp_reachable("127.0.0.1", port, Duration::from_secs(2)));
-        drop(listener);
-        assert!(!tcp_reachable("127.0.0.1", port, Duration::from_secs(2)));
+        // A released ephemeral port can be reused by another parallel test.
+        // Port zero never has a listener, so the negative dial is deterministic.
+        assert!(!tcp_reachable("127.0.0.1", 0, Duration::from_secs(2)));
         assert_eq!(
             failure_tag(Some(255), Some(true)),
             " (exit 255, host reachable)"
