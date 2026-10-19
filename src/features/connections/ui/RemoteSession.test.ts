@@ -2042,6 +2042,31 @@ it("refreshes without remounting the composer or clearing its draft", async () =
   expect(container.querySelector("textarea")!.value).toBe("keep this unsent draft");
 });
 
+it("retries a failed content read when the healthy control channel has no revision hint", async () => {
+  lazyHistorySupported = true;
+  openExistingChat();
+  await render();
+  await vi.waitFor(() => expect(remoteDataPhase()).toBe("ready"));
+  await type("keep the draft while reconnecting");
+  const composer = container.querySelector("textarea");
+  const original = vi.mocked(invoke).getMockImplementation()!;
+  let failed = false;
+  vi.mocked(invoke).mockImplementation(async (command, input, ...rest) => {
+    const method = (input as { method?: string } | undefined)?.method;
+    if (!failed && command === "remote_request" && method === "sessions.sync") {
+      failed = true;
+      throw new Error("temporary transcript read failure");
+    }
+    return original(command, input, ...rest);
+  });
+  await act(async () => byLabel("Refresh conversation")!.click());
+  await vi.waitFor(() => expect(failed).toBe(true));
+  expect(machineSessionRevisionHint).toBeUndefined();
+  await vi.waitFor(() => expect(remoteDataPhase()).toBe("ready"), { timeout: 4_000 });
+  expect(container.querySelector("textarea")).toBe(composer);
+  expect(composer!.value).toBe("keep the draft while reconnecting");
+});
+
 it("marks known revision updates refreshing and settles on the new owner snapshot", async () => {
   lazyHistorySupported = true;
   openExistingChat();

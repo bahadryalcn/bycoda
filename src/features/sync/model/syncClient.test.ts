@@ -811,6 +811,37 @@ describe("per-machine scheduling", () => {
     loop.stop();
   });
 
+  it("a verified recovery clears only that peer's backoff and coalesces wakeups", async () => {
+    const counts = new Map<string, number>();
+    let online = false;
+    const loop = startSyncLoop(
+      () => ["recover-peer", "still-offline"],
+      (id) => {
+        counts.set(id, (counts.get(id) ?? 0) + 1);
+        return async () => {
+          if (!online || id === "still-offline") throw new Error("host offline");
+          return { rev: 0, records: [] };
+        };
+      },
+    );
+    try {
+      await vi.advanceTimersByTimeAsync(0);
+      expect(counts.get("recover-peer")).toBe(1);
+      online = true;
+      loop.recover("recover-peer");
+      loop.recover("recover-peer");
+      await vi.advanceTimersByTimeAsync(MIN_CYCLE_SPACING_MS);
+      expect(counts.get("recover-peer")).toBe(2);
+      expect(counts.get("still-offline")).toBe(1);
+      expect(getSyncStatus("recover-peer").state).toBe("ok");
+    } finally {
+      loop.stop();
+    }
+    loop.recover("recover-peer");
+    await vi.advanceTimersByTimeAsync(MIN_CYCLE_SPACING_MS);
+    expect(counts.get("recover-peer")).toBe(2);
+  });
+
   it("an explicit syncNow ignores the failure backoff", async () => {
     let starts = 0;
     const loop = startSyncLoop(

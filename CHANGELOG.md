@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.46]
+
+### Remote communication and recovery
+
+- Retry failed conversation content reads automatically even when the host reports no new revision, preserving unsent drafts.
+- Keep the content error visible while an automatic retry is waiting to run.
+- Wake the shared session and task notification channel when the connection returns, the network comes online or the app regains focus.
+- Refresh connected machines and library synchronization on app wake, coalescing overlapping discovery requests.
+- Clear library sync backoff after verified host recovery while preserving request spacing and independent failure backoff for other machines.
+
 ## [0.6.43]
 
 ### Source control

@@ -372,7 +372,7 @@ export function startSyncLoop(
   listMachineIds: () => readonly string[],
   requestFor: (machineId: string) => SyncRequest,
   environmentFor?: (machineId: string) => string | undefined,
-): { stop: () => void; nudge: () => void } {
+): { stop: () => void; nudge: () => void; recover: (machineId: string) => void } {
   let stopped = false;
   let lastRoundAt = Number.NEGATIVE_INFINITY;
   let lastEndedAt = Number.NEGATIVE_INFINITY;
@@ -533,5 +533,16 @@ export function startSyncLoop(
       }
     },
     nudge: requestRun,
+    recover: (id) => {
+      if (stopped || !listMachineIds().includes(id)) return;
+      const slot = slots.get(id);
+      if (slot) {
+        slot.failures = 0;
+        slot.nextAt = 0;
+      }
+      // A verified host recovery supersedes failure backoff, while retaining
+      // normal coalescing, spacing and the per-machine in-flight guard.
+      requestRun();
+    },
   };
 }

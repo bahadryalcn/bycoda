@@ -1,4 +1,6 @@
+// @vitest-environment happy-dom
 import { afterEach, expect, it, vi } from "vitest";
+import { notifyRemoteRecovered } from "./remoteHealth";
 import { remoteRequest } from "./connections";
 import {
   resetRemoteMachineChannelsForTests,
@@ -6,6 +8,36 @@ import {
 } from "./remoteMachineChannel";
 
 vi.mock("./connections", () => ({ remoteRequest: vi.fn() }));
+
+it.each(["recovered", "focus", "online", "visibilitychange"])(
+  "wakes a failed control channel on %s without waiting for backoff",
+  async (event) => {
+    vi.useFakeTimers();
+    vi.mocked(remoteRequest).mockReset();
+    vi.mocked(remoteRequest)
+      .mockRejectedValueOnce(new Error("host offline"))
+      .mockImplementation(() => new Promise(() => {}));
+    const listener = vi.fn();
+    const stop = subscribeRemoteMachineChannel("wake", {}, listener);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(remoteRequest).toHaveBeenCalledTimes(1);
+    if (event === "recovered") notifyRemoteRecovered("env");
+    else if (event === "visibilitychange") document.dispatchEvent(new Event(event));
+    else window.dispatchEvent(new Event(event));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(remoteRequest).toHaveBeenCalledTimes(2);
+    // A wake while polling must not start another long-poll.
+    window.dispatchEvent(new Event("online"));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(remoteRequest).toHaveBeenCalledTimes(2);
+    stop();
+    vi.mocked(remoteRequest).mockClear();
+    notifyRemoteRecovered("env");
+    window.dispatchEvent(new Event("focus"));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(remoteRequest).not.toHaveBeenCalled();
+  },
+);
 
 it("reports a shared poll failure to remaining consumers even if one error handler throws", async () => {
   vi.useFakeTimers();

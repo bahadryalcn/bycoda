@@ -16,6 +16,10 @@ import {
 } from "./syncClient";
 import { setLocalHostEnvironmentId } from "./syncProjects";
 import { setRemoteOpenTargets } from "./syncRemoteProjects";
+import {
+  readRemoteConnection,
+  subscribeRemoteRecovered,
+} from "../../connections/model/remoteHealth";
 
 export function collectSyncMachineIds(machines: readonly RemoteMachine[]): string[] {
   return machines.map((machine) => machine.id);
@@ -149,9 +153,13 @@ export function startAppSync(): () => void {
   started = true;
   let machines: readonly RemoteMachine[] = [];
   let stopped = false;
-  const refreshMachines = () =>
-    invoke<RemoteMachine[]>("remote_machines")
+  let refreshing: Promise<void> | undefined;
+  const refreshMachines = (): Promise<void> => {
+    if (stopped) return Promise.resolve();
+    if (refreshing) return refreshing;
+    refreshing = invoke<RemoteMachine[]>("remote_machines")
       .then((value) => {
+        if (stopped) return [];
         const all = Array.isArray(value) ? value : [];
         if (!stopped) applyMachineRoles(all);
         return syncCapableMachines(all);
@@ -159,7 +167,12 @@ export function startAppSync(): () => void {
       .then((value) => {
         if (!stopped) machines = value;
       })
-      .catch(() => undefined);
+      .catch(() => undefined)
+      .finally(() => {
+        refreshing = undefined;
+      });
+    return refreshing;
+  };
   const loop = startSyncLoop(
     () => collectSyncMachineIds(machines),
     (machineId) => (method, params) => remoteRequest(machineId, method, params),
@@ -182,6 +195,27 @@ export function startAppSync(): () => void {
   const onLocalChange = createLocalChangeHandler(nudger.trigger);
   const unsubscribePaths = subscribeProjectPathsChanged(onLocalChange);
   const unsubscribeLock = subscribeLockRecordChanges(onLocalChange);
+  const wake = () => {
+    if (stopped) return;
+    void (localLinked ? refreshMachines() : connectLocalHost().then(refreshMachines)).then(() => {
+      if (!stopped) loop.nudge();
+    });
+  };
+  const unsubscribeRecovered = subscribeRemoteRecovered(() => {
+    void refreshMachines().then(() => {
+      if (stopped) return;
+      for (const machine of machines) {
+        if (readRemoteConnection(machine.environmentId).status === "connected")
+          loop.recover(machine.id);
+      }
+    });
+  });
+  const onVisibility = () => {
+    if (!document.hidden) wake();
+  };
+  window.addEventListener("focus", wake);
+  window.addEventListener("online", wake);
+  document.addEventListener("visibilitychange", onVisibility);
   const interval = setInterval(() => {
     if (localLinked) void refreshMachines();
     else void connectLocalHost().then(refreshMachines);
@@ -193,6 +227,10 @@ export function startAppSync(): () => void {
     nudger.cancel();
     unsubscribePaths();
     unsubscribeLock();
+    unsubscribeRecovered();
+    window.removeEventListener("focus", wake);
+    window.removeEventListener("online", wake);
+    document.removeEventListener("visibilitychange", onVisibility);
     clearInterval(interval);
   };
 }

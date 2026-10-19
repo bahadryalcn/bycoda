@@ -809,10 +809,13 @@ function ConnectedRemoteSession({
                 const ownerReadNeeded =
                   recoveredControlChannel ||
                   changes.reset ||
+                  // A content request can fail while the control lane stays
+                  // healthy. An unchanged host has no revision hint to wake us.
+                  failed > 0 ||
                   (hint !== undefined && hint.revision !== snapshotRef.current?.revision);
                 if (ownerReadNeeded) {
                   const currentData = remoteDataStateRef.current;
-                  if (currentData.phase !== "refreshing")
+                  if (failed === 0 && currentData.phase !== "refreshing")
                     publishRemoteDataState({
                       phase:
                         snapshotRef.current || currentData.updatedAt ? "refreshing" : "loading",

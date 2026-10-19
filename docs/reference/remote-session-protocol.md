@@ -74,6 +74,14 @@ in-flight request is covered by the next combined request. After sleep, wake, or
 disconnection, read the current delta from the known revision; load the latest page
 if ordering or base state does not match.
 
+Focus, network recovery, visibility restoration and verified reconnects wake an
+idle control channel without opening a second in-flight poll. A successful
+control response also retries a failed content read when no revision changed;
+the content error stays visible while the retry waits. Library synchronization
+refreshes machine discovery on wake and clears a recovered peer's failure
+backoff only after its connection is verified, retaining normal cycle spacing
+and other peers' backoff. These wakeups do not replay uncertain session commands.
+
 Project lists send only `upserts` and `removed` summaries for a known etag. A base
 mismatch fetches a full summary list without downloading transcripts. Task etag
 notifications invalidate the shared task list; unchanged lists are not reread.

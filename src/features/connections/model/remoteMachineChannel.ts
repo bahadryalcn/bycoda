@@ -2,6 +2,7 @@ import type { MachineChanges, MachineChangesRequest } from "./protocol";
 import { remoteBackoffDelay, withBackoffJitter } from "./remotePollingPolicy";
 import { remoteRequest } from "./connections";
 import { startPerformanceSpan } from "../../../shared/lib/performanceTrace";
+import { subscribeRemoteRecovered } from "./remoteHealth";
 
 export type MachineChannelDemand = {
   inlineSync?: boolean;
@@ -30,6 +31,36 @@ const channels = new Map<string, Channel>();
 /** Git cursors a host answers per poll. */
 const GIT_CURSOR_LIMIT = 32;
 let channelSequence = 0;
+let stopWake: (() => void) | undefined;
+
+function startWake() {
+  if (stopWake) return;
+  const wake = () => {
+    for (const [machineId, channel] of channels) {
+      if (channel.timer) clearTimeout(channel.timer);
+      channel.timer = undefined;
+      schedule(machineId, channel);
+    }
+  };
+  const onVisibility = () => {
+    if (!document.hidden) wake();
+  };
+  const unsubscribe = subscribeRemoteRecovered(wake);
+  if (typeof window !== "undefined") {
+    window.addEventListener("focus", wake);
+    window.addEventListener("online", wake);
+    document.addEventListener("visibilitychange", onVisibility);
+  }
+  stopWake = () => {
+    unsubscribe();
+    if (typeof window !== "undefined") {
+      window.removeEventListener("focus", wake);
+      window.removeEventListener("online", wake);
+      document.removeEventListener("visibilitychange", onVisibility);
+    }
+    stopWake = undefined;
+  };
+}
 
 function mergedDemand(channel: Channel): MachineChangesRequest {
   const sessions = new Map<string, number>();
@@ -155,6 +186,7 @@ export function subscribeRemoteMachineChannel(
       subscriptionId: `renderer-${++channelSequence}-${Math.random().toString(36).slice(2)}`,
     };
     channels.set(machineId, channel);
+    startWake();
   }
   const subscriber: Subscriber = { demand, listener, onError };
   channel.subscribers.add(subscriber);
@@ -168,6 +200,7 @@ export function subscribeRemoteMachineChannel(
     if (channel!.timer) clearTimeout(channel!.timer);
     channel!.timer = undefined;
     channels.delete(machineId);
+    if (!channels.size) stopWake?.();
     // Release the native cross-window union even when the last listener closes.
     void remoteRequest(machineId, "machine.changes", {
       subscriptionId: channel!.subscriptionId,
@@ -184,4 +217,5 @@ export function resetRemoteMachineChannelsForTests() {
     if (channel.timer) clearTimeout(channel.timer);
   }
   channels.clear();
+  stopWake?.();
 }
