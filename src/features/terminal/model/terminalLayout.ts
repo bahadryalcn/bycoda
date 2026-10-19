@@ -60,16 +60,18 @@ export function stretchGridToHost(term: Terminal, host: HTMLElement, mode: Termi
   }
 }
 
-export function resetGridStretch(term: Terminal): void {
+export function resetGridStretch(term: Terminal, lineHeight = 1): void {
   term.options.letterSpacing = 0;
-  term.options.lineHeight = 1;
+  term.options.lineHeight = lineHeight;
 }
 
 export function fitTerminal(
   term: Terminal,
   host: HTMLElement,
   mode: TerminalFitMode,
+  lineHeight = 1,
 ): { cols: number; rows: number } | null {
+  if (mode === "shell") resetGridStretch(term, lineHeight);
   const size = availableSize(host, mode, term);
   if (!size) return null;
 
@@ -96,7 +98,7 @@ export function fitTerminal(
   if (mode === "tui") {
     stretchGridToHost(term, host, mode);
   } else {
-    resetGridStretch(term);
+    resetGridStretch(term, lineHeight);
   }
 
   return { cols: term.cols, rows: term.rows };

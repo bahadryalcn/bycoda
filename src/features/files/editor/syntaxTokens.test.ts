@@ -4,9 +4,9 @@ import { buildUnifiedFile } from "../../source-control/model/unifiedDiff";
 import { languageForPath } from "./editorLanguage";
 import { highlightDiffFile, highlightSource } from "./syntaxTokens";
 
-const KEYWORD_DARK = "#ff8ffd";
-const STRING_DARK = "#b4fa72";
-const COMMENT_DARK = "#fefdc2";
+const KEYWORD_DARK = "var(--syntax-keyword)";
+const STRING_DARK = "var(--syntax-string)";
+const COMMENT_DARK = "var(--syntax-comment)";
 
 describe("highlightSource", () => {
   it("colors TypeScript keywords, strings, and comments", () => {
@@ -29,8 +29,8 @@ describe("highlightSource", () => {
   it.each(["dark", "light"] as const)("colors JSON keys and values in %s mode", async (scheme) => {
     const language = await languageForPath("de.json");
     const lines = highlightSource('{"name": "hello"}', language, scheme);
-    expect(token(lines[0], '"name"')?.color).toBe(scheme === "dark" ? "#d0d1fe" : "#e45649");
-    expect(token(lines[0], '"hello"')?.color).toBe(scheme === "dark" ? STRING_DARK : "#50a14f");
+    expect(token(lines[0], '"name"')?.color).toBe("var(--syntax-property)");
+    expect(token(lines[0], '"hello"')?.color).toBe(STRING_DARK);
   });
 
   it("leaves unknown languages unstyled", () => {
@@ -95,7 +95,7 @@ describe("highlightDiffFile", () => {
     try {
       const tokens = await highlightDiffFile({ path: "de.json", blocks: diff.blocks }, "dark");
       const added = diff.lines.find((line) => line.kind === "add");
-      expect(added && token(tokens.get(added), '"Updated key 4599"')?.color).toBe("#d0d1fe");
+      expect(added && token(tokens.get(added), '"Updated key 4599"')?.color).toBe("var(--syntax-property)");
     } finally {
       clock.mockRestore();
     }

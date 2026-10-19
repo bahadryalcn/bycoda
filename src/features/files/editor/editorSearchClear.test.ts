@@ -3,13 +3,41 @@ import { EditorState } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import { getSearchQuery, openSearchPanel, SearchQuery, setSearchQuery } from "@codemirror/search";
 import { afterEach, expect, it } from "vitest";
-import { editorSearch, openReplacePanel } from "./editorSearch";
+import { editorSearch, handleEditorFindKey, openReplacePanel } from "./editorSearch";
+import { saveKeybindingOverride } from "../../settings/model/settings";
 
 let view: EditorView | undefined;
 let host: HTMLElement | undefined;
 afterEach(() => {
   view?.destroy();
   host?.remove();
+  saveKeybindingOverride("Editor: Replace", {});
+});
+
+it("routes Ctrl+H from the application handler to replacement, while respecting disabled shortcuts", () => {
+  host = document.createElement("div");
+  document.body.append(host);
+  view = new EditorView({
+    parent: host,
+    state: EditorState.create({ doc: "alpha", extensions: [editorSearch] }),
+  });
+  view.focus();
+  const press = () =>
+    new KeyboardEvent("keydown", {
+      key: "h",
+      code: "KeyH",
+      ctrlKey: true,
+      cancelable: true,
+    });
+  const event = press();
+  expect(handleEditorFindKey(event)).toBe(true);
+  expect(event.defaultPrevented).toBe(true);
+  expect(host.querySelector(".cm-find")!.classList.contains("is-replace")).toBe(true);
+  expect(document.activeElement).toBe(host.querySelector('input[name="replace"]'));
+  saveKeybindingOverride("Editor: Replace", { disabled: true });
+  host.querySelector<HTMLButtonElement>('button[aria-label="Toggle Replace"]')!.click();
+  expect(handleEditorFindKey(press())).toBe(true);
+  expect(host.querySelector(".cm-find")!.classList.contains("is-replace")).toBe(false);
 });
 
 it("clears editor matches while preserving replace text, options and the open panel", () => {

@@ -1,5 +1,6 @@
 import { startTransition, useCallback, useEffect, type Dispatch, type SetStateAction } from "react";
 import { loadNotesEnabled } from "../../../features/settings/model/settings";
+import { OPEN_NOTE_LIBRARY_EVENT } from "../../../features/notes/noteNavigation";
 import { OPEN_USAGE_GUIDE_EVENT } from "../../../features/onboarding/model/usageGuide";
 
 export interface SurfaceOpenersDeps {
@@ -75,6 +76,14 @@ export function useSurfaceOpeners({
   const onLeaveNotes = useCallback(() => {
     setNotesViewOpen(false);
   }, []);
+
+  useEffect(() => {
+    const open = () => {
+      void onOpenNotes(true);
+    };
+    window.addEventListener(OPEN_NOTE_LIBRARY_EVENT, open);
+    return () => window.removeEventListener(OPEN_NOTE_LIBRARY_EVENT, open);
+  }, [onOpenNotes]);
 
   const onOpenAutomations = useCallback(async (_routed = false) => {
     startTransition(() => {

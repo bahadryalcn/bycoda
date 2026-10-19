@@ -15,7 +15,6 @@ import { useNativeMenuEvents } from "./workspace/input/useNativeMenuEvents";
 import { useWindowChromeActions } from "./workspace/input/useWindowChromeActions";
 import { useNativeFullscreen } from "./workspace/windows/useNativeFullscreen";
 import { useMouseNavigation } from "./hooks/useMouseNavigation";
-import { useTabVisitState, useTabVisitRecorder } from "./workspace/navigation/useTabVisitHistory";
 import { useTabNavigation } from "./workspace/navigation/useTabNavigation";
 import { useRailNavigation } from "./workspace/navigation/useRailNavigation";
 import { useListNavigation } from "./workspace/navigation/useListNavigation";
@@ -418,6 +417,8 @@ function Workspace({
     setNotesViewOpen,
     automationsViewOpen,
     setAutomationsViewOpen,
+    auxiliaryTool,
+    setAuxiliaryTool,
     taskBoardShown,
     setTaskBoardShown,
     socialBoardShown,
@@ -621,8 +622,6 @@ function Workspace({
     activeTabIdRef,
   });
 
-  const { tabVisitRef, tabVisitFromHistoryRef, tabVisitNav, commitTabVisit } =
-    useTabVisitState(activeTabId);
   const persistenceRefs = useSessionPersistenceRefs();
   const {
     turnGen,
@@ -945,7 +944,6 @@ function Workspace({
       projectOfTab,
     });
 
-  useTabVisitRecorder({ tabs, activeTabId, tabVisitRef, tabVisitFromHistoryRef, commitTabVisit });
 
   // New-session and card callbacks (createWorkspaceTab, onNew*, onStartInboxItem,
   // onAddNoteToChat). The ADD_NOTE_TO_CHAT listener effect stays below.
@@ -1244,15 +1242,10 @@ function Workspace({
     workspaceNavigation,
   });
 
-  const { onNext, onPrev, onVisitBack, onVisitForward } = useTabNavigation({
+  const { onNext, onPrev } = useTabNavigation({
     activateTab,
     activeTabId,
     deckProjectTabs,
-    tabsRef,
-    activeTabIdRef,
-    tabVisitRef,
-    tabVisitFromHistoryRef,
-    commitTabVisit,
   });
 
   const { onActivate } = useTabSlotActions({ activateTab, deckProjectTabs });
@@ -2159,7 +2152,6 @@ function Workspace({
     setPullRequestsOnly,
   });
   const {
-    settingsReturnViewRef,
     openSettings,
     onOpenSettings,
     onOpenNotificationSettings,
@@ -2258,7 +2250,7 @@ function Workspace({
     {
       tools: !!toolWindow,
       grouped: toolWindow?.grouped ?? false,
-      activeTool: inboxViewOpen
+      activeTool: serversViewOpen ? "servers" : automationsViewOpen && auxiliaryTool ? auxiliaryTool : inboxViewOpen
         ? "inbox"
         : notesViewOpen
           ? "notes"
@@ -2293,9 +2285,10 @@ function Workspace({
       setSearchViewOpen(false);
       setInboxViewOpen(target.tool === "inbox");
       setPullRequestsOnly(false);
-      setServersViewOpen(false);
+      setServersViewOpen(target.tool === "servers");
       setNotesViewOpen(target.tool === "notes");
-      setAutomationsViewOpen(["tasks", "automations", "social"].includes(target.tool));
+      setAutomationsViewOpen(["tasks", "automations", "social", "terminal", "conversation-tools"].includes(target.tool));
+      setAuxiliaryTool(target.tool === "terminal" || target.tool === "conversation-tools" ? target.tool : null);
       setTaskBoardShown(target.tool === "tasks");
       setSocialBoardShown(target.tool === "social");
     },
@@ -2353,7 +2346,19 @@ function Workspace({
     isDetachedSessionWindow: () => detachedSessionWindow,
   });
 
-  const { surfaceForward, onRailBack, onRailForward } = useRailNavigation({
+  const { navigation: tabVisitNav, surfaceForward, onRailBack, onRailForward } = useRailNavigation({
+    auxiliaryTool,
+    setAuxiliaryTool,
+    toolWindow: !!toolWindow,
+    openTabIds: new Set(tabs.map(tab => tab.id)),
+    activateTab,
+    setProjectCwd,
+    socialPanelCwd,
+    setSocialPanelCwd,
+    socialBoardShown,
+    taskBoardShown,
+    setSocialBoardShown,
+    setTaskBoardShown,
     serversViewOpen,
     setServersViewOpen,
     activeTabId,
@@ -2368,10 +2373,6 @@ function Workspace({
     setInboxViewOpen,
     setNotesViewOpen,
     setAutomationsViewOpen,
-    settingsReturnViewRef,
-    onCloseSettings,
-    onVisitBack,
-    onVisitForward,
   });
 
   useMouseNavigation(onRailBack, onRailForward);
@@ -2409,8 +2410,8 @@ function Workspace({
     onClosePane,
     onNext,
     onPrev,
-    onVisitBack,
-    onVisitForward,
+    onVisitBack: onRailBack,
+    onVisitForward: onRailForward,
     onActivate,
     onSplit,
     onFocusDir,
@@ -2854,6 +2855,7 @@ function Workspace({
 
               <div className="body-glass flex min-h-0 min-w-0 flex-1 flex-col">
                 <div
+                  data-workspace-chrome
                   className={
                     searchViewOpen ||
                     settingsOpen ||
@@ -2999,6 +3001,10 @@ function Workspace({
                   sessionPaneProps={sessionPaneProps}
                 />
                 <WorkspaceToolPanels
+                  auxiliaryTool={auxiliaryTool}
+                  setAuxiliaryTool={setAuxiliaryTool}
+                  conversationTools={conversationTools}
+                  navigation={{ ...tabVisitNav, onBack: onRailBack, onForward: onRailForward }}
                   onLeaveServers={onLeaveServers}
                   setServersViewOpen={setServersViewOpen}
                   onLaunchAutomationAssistant={launchQuickSession}

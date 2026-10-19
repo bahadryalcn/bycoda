@@ -14,7 +14,7 @@ function editorThemeStyles(dark: boolean) {
         height: "100%",
         backgroundColor: "transparent",
         color: "var(--color-content)",
-        fontSize: "13px",
+        fontSize: "var(--appearance-code-size, 13px)",
         userSelect: "text",
       },
       "&.cm-focused": {
@@ -40,7 +40,7 @@ function editorThemeStyles(dark: boolean) {
       },
       ".cm-gutters": {
         backgroundColor: "transparent",
-        color: "color-mix(in srgb, var(--color-content) 38%, transparent)",
+        color: "var(--ui-text-secondary)",
         borderRight: "1px solid color-mix(in srgb, var(--color-content) 7%, transparent)",
         paddingLeft: "4px",
       },

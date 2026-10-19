@@ -2,6 +2,33 @@ import { expect, test } from "@playwright/test";
 import { mkdirSync } from "node:fs";
 
 for (const theme of ["light", "dark"]) {
+  test(`terminal typography wheel zoom: ${theme}`, async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 800 });
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await page.addInitScript(() => localStorage.setItem("bycoda.appearancePreferences.v1", JSON.stringify({
+      terminalSize: 16, terminalFont: "Consolas", terminalWeight: 600, terminalLineHeight: 1.35,
+    })));
+    await page.goto(`/tests/browser/terminal-tools.html?theme=${theme}`);
+    const typography = () => page.locator("html").getAttribute("data-terminal-typography").then((value) => JSON.parse(value ?? "{}"));
+    await expect.poll(typography).toMatchObject({ fontSize: 16, fontFamily: '"Consolas", monospace', fontWeight: 600, lineHeight: 1.35 });
+    await expect(page.locator("html")).toHaveAttribute("data-terminal-prompt", /^ready>\s*$/);
+    await page.locator(".xterm-screen").hover();
+    await page.keyboard.down("Control");
+    await page.mouse.wheel(0, -100);
+    await page.keyboard.up("Control");
+    await expect.poll(typography).toMatchObject({ fontSize: 17 });
+    await page.keyboard.down("Control");
+    await page.mouse.wheel(0, 100);
+    await page.keyboard.up("Control");
+    await expect.poll(typography).toMatchObject({ fontSize: 16 });
+    await page.mouse.wheel(0, 100);
+    await expect.poll(typography).toMatchObject({ fontSize: 16 });
+    await expect(page.locator("html")).toHaveAttribute("data-terminal-prompt", /^ready>\s*$/);
+    expect(await page.evaluate(() => window.visualViewport?.scale)).toBe(1);
+  });
+}
+
+for (const theme of ["light", "dark"]) {
   for (const width of [320, 768, 1440]) {
     test(`terminal search and completion: ${theme} ${width}`, async ({ page }) => {
       const errors: string[] = [];
@@ -10,6 +37,7 @@ for (const theme of ["light", "dark"]) {
       await page.emulateMedia({ reducedMotion: "reduce" });
       await page.goto(`/tests/browser/terminal-tools.html?theme=${theme}`);
       const terminal = page.locator(".xterm-helper-textarea");
+      await expect(page.locator("html")).toHaveAttribute("data-terminal-prompt", /^ready>\s*$/);
       await expect(page.getByRole("button", { name: "Terminal · More actions" })).toBeVisible();
       await expect(page.getByRole("textbox", { name: "Find in terminal" })).toHaveCount(0);
       await expect(page.locator("[data-terminal-tools]")).toHaveCount(0);
@@ -45,6 +73,12 @@ for (const theme of ["light", "dark"]) {
       await search.press("Escape");
       await terminal.type("git ");
       const list = page.getByRole("listbox", { name: "Command suggestions" });
+      const ghost = page
+        .locator('.xterm-screen [aria-hidden="true"]')
+        .filter({ hasText: "status" });
+      await expect(ghost).toBeVisible();
+      await expect(list).toHaveCount(0);
+      await terminal.press("Control+Space");
       await expect(list).toBeVisible();
       await expect(terminal).toBeFocused();
       await terminal.press("ArrowDown");
@@ -62,6 +96,7 @@ for (const theme of ["light", "dark"]) {
         JSON.stringify("\r"),
       );
       await terminal.type("pnpm b");
+      await terminal.press("Control+Space");
       await expect(list).toBeVisible();
       const bounds = await list.boundingBox();
       const screen = await page.locator(".xterm-screen").boundingBox();

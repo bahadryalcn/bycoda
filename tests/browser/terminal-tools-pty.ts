@@ -6,6 +6,11 @@ export async function resizePty() {}
 export async function getPtyStatus() {
   return { foreground: null, supported: false };
 }
+export async function getPtySuggestions(_id: string, prefix: string) {
+  return ["git status", "git diff", "pnpm build", "custom-tool --check"].filter(
+    (value) => value.startsWith(prefix) && value !== prefix,
+  );
+}
 let echo: ((data: string) => void) | undefined;
 export async function writePty(_id: string, data: string) {
   document.documentElement.dataset.lastPtyWrite = JSON.stringify(data);

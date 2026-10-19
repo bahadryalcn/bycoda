@@ -1,5 +1,30 @@
 import { expect, test } from "@playwright/test";
 
+test("code themes update open editors without replacing unsaved text", async ({ page }) => {
+  await page.goto("/tests/browser/editor-selection.html");
+  const content = page.locator(".cm-content").last();
+  await content.click();
+  await page.keyboard.press("Control+End");
+  await page.keyboard.type("// unsaved draft");
+  const keyword = content
+    .locator("span")
+    .filter({ hasText: /^const$/ })
+    .first();
+  await expect(keyword).toHaveCSS("color", "rgb(255, 123, 114)");
+  await page.evaluate(() => {
+    document.documentElement.dataset.codeTheme = "dracula";
+  });
+  await expect(keyword).toHaveCSS("color", "rgb(255, 121, 198)");
+  await expect(content).toContainText("// unsaved draft");
+  await page.evaluate(() => {
+    document.documentElement.classList.add("theme-light");
+    document.documentElement.style.setProperty("--appearance-code-size", "16px");
+  });
+  await expect(keyword).toHaveCSS("color", "rgb(207, 34, 46)");
+  await expect(page.locator(".cm-editor").last()).toHaveCSS("font-size", "16px");
+  await expect(content).toContainText("// unsaved draft");
+});
+
 for (const mode of ["file", "inline", "split"]) {
   test(`find stays readable and visible while scrolling ${mode}`, async ({ page }, info) => {
     await page.goto(`/tests/browser/editor-selection.html?search=${mode}`);
@@ -10,6 +35,10 @@ for (const mode of ["file", "inline", "split"]) {
     const find = editor.getByRole("textbox", { name: "Find", exact: true });
     await find.fill("value");
     await expect(editor.locator(".cm-find-count")).toContainText("300");
+    await find.press("Control+h");
+    const replace = editor.getByRole("textbox", { name: "Replace", exact: true });
+    await expect(replace).toBeFocused();
+    await expect(editor.getByRole("button", { name: "Replace all", exact: true })).toBeVisible();
 
     for (const width of [390, 768, 1024, 1440]) {
       await page.setViewportSize({ width, height: 700 });
@@ -24,6 +53,8 @@ for (const mode of ["file", "inline", "split"]) {
           .toBeGreaterThan(minimumWidth);
         const panel = editor.locator(".cm-find");
         const bounds = await panel.boundingBox();
+        expect(bounds!.width).toBeLessThanOrEqual(520);
+        await expect(panel.getByRole("button", { name: "Toggle Replace" })).toBeInViewport();
         for (const control of await panel.locator("input, button, .cm-find-count").all()) {
           if (!(await control.isVisible())) continue;
           const box = (await control.boundingBox())!;
@@ -53,11 +84,35 @@ for (const mode of ["file", "inline", "split"]) {
     await find.press("Enter");
     await expect(editor.locator(".cm-find-count")).toContainText("2 of 300");
     await editor.getByRole("button", { name: "Toggle Replace" }).click();
+    await expect(replace).toBeHidden();
+    await editor.getByRole("button", { name: "Toggle Replace" }).press("Enter");
     await expect(editor.getByRole("textbox", { name: "Replace", exact: true })).toBeVisible();
     await find.press("Escape");
     await expect(find).toHaveCount(0);
   });
 }
+
+test("Ctrl+H opens replacement directly and both replacement actions edit the document", async ({
+  page,
+}) => {
+  await page.goto("/tests/browser/editor-selection.html?search=file");
+  const editor = page.locator(".cm-editor");
+  await editor.locator(".cm-content").click();
+  await page.keyboard.press("Control+Home");
+  await page.keyboard.press("Control+h");
+  const find = editor.getByRole("textbox", { name: "Find", exact: true });
+  const replace = editor.getByRole("textbox", { name: "Replace", exact: true });
+  await expect(replace).toBeFocused();
+  await find.fill("value");
+  await replace.fill("item");
+  await editor.getByRole("button", { name: "Replace", exact: true }).click();
+  await expect(editor.locator(".cm-find-count")).toContainText("299");
+  await editor.getByRole("button", { name: "Replace all", exact: true }).click();
+  await expect(editor.locator(".cm-find-count")).toHaveText("No results");
+  await replace.press("Escape");
+  await page.keyboard.press("Control+Home");
+  await expect(editor.locator(".cm-content")).toContainText("const item0");
+});
 
 test("selected code has a clickable chat action, shortcut and dismiss behavior", async ({
   page,

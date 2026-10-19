@@ -12,6 +12,14 @@ vi.mock("../../model/windowNavigation", () => ({
 vi.mock("../../../features/connections/model/sshRunbookQueue", () => ({
   useSshRunbookQueue: () => ({ intents: [] }),
 }));
+vi.mock("../../../features/host-tools/SessionHostTools", () => ({
+  SessionHostTools: () => createElement("div", { "data-conversation-tools": "" }),
+}));
+vi.mock("../../../features/terminal/ui/TerminalView", () => ({
+  TerminalView: ({ active }: { active: boolean }) =>
+    createElement("div", { "data-tool-terminal": "", "data-active": active }),
+}));
+vi.mock("../../shell/WindowControls", () => ({ WindowControls: () => null }));
 vi.mock("../surfaces/lazySurfaces", () => {
   const view = () => createElement(ToolHeader, null, "Tool header");
   return {
@@ -24,7 +32,7 @@ vi.mock("../surfaces/lazySurfaces", () => {
   };
 });
 
-it("switches local tool panels even with an available remote owner and reserves routing for pop-out", async () => {
+it.each([false, true])("switches every tool locally and preserves the terminal (detached: %s)", async (detached) => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   const rootNode = document.createElement("div");
   document.body.append(rootNode);
@@ -33,6 +41,7 @@ it("switches local tool panels even with an available remote owner and reserves 
   function Workspace() {
     const [state, setState] = useState({
       inboxViewOpen: true,
+      auxiliaryTool: null as "terminal" | "conversation-tools" | null,
       notesViewOpen: false,
       serversViewOpen: false,
       automationsViewOpen: false,
@@ -43,7 +52,7 @@ it("switches local tool panels even with an available remote owner and reserves 
     const setters = Object.fromEntries(
       Object.keys(state).map((key) => [
         `set${key[0].toUpperCase()}${key.slice(1)}`,
-        (value: boolean) => setState((previous) => ({ ...previous, [key]: value })),
+        (value: boolean | string | null) => setState((previous) => ({ ...previous, [key]: value })),
       ]),
     );
     return createElement(WorkspaceToolPanels, {
@@ -54,8 +63,8 @@ it("switches local tool panels even with an available remote owner and reserves 
       sidebarCwd: "/repo",
       visibleRecents: [],
       notesEnabled: true,
-      toolWindow: null,
-      detachedSessionWindow: false,
+      toolWindow: detached ? { active: "inbox", cwd: "/repo", grouped: true } : null,
+      detachedSessionWindow: detached,
       projectRailOpen: false,
       compactProjectRail: false,
       compactRailActive: false,
@@ -74,6 +83,8 @@ it("switches local tool panels even with an available remote owner and reserves 
       "Automations",
       "Inbox",
       "Servers",
+      "Conversation tools",
+      "Terminal",
       "Inbox",
     ]) {
       await act(async () =>
@@ -88,6 +99,9 @@ it("switches local tool panels even with an available remote owner and reserves 
       ).toBe("true");
       expect(routeWindowDestination).not.toHaveBeenCalled();
     }
+    expect(rootNode.querySelector("[data-tool-terminal]")?.getAttribute("data-active")).toBe(
+      "false",
+    );
     expect(closeOverlay).toHaveBeenCalledWith(false);
     const popout = rootNode.querySelector<HTMLButtonElement>('[aria-label="Open in new window"]')!;
     await act(async () => popout.click());

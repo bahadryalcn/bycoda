@@ -1,7 +1,8 @@
 import { Button } from "../../../shared/ui/Button";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import { Select } from "../../../shared/ui/Select";
-import { DropdownMenu } from "../../../shared/ui/DropdownMenu";
+import { Checkbox } from "../../../shared/ui/Checkbox";
+import { Modal } from "../../../shared/ui/Modal";
 import { Alert } from "../../../shared/ui/Alert";
 import { Badge } from "../../../shared/ui/Badge";
 import { EmptyState } from "../../../shared/ui/EmptyState";
@@ -22,11 +23,10 @@ import {
   ChevronDown,
   SlidersHorizontal,
   MessageSquarePlus,
-  MoreHorizontal,
+  Check,
 } from "../../../shared/ui/icons";
 import { Popover } from "../../../shared/ui/Popover";
 import { ConfirmMorph } from "../../../shared/ui/ConfirmMorph";
-import { FilterToolbar } from "../../../shared/ui/FilterToolbar";
 import { TextField } from "../../../shared/ui/TextField";
 import { hasActiveOverlay } from "../../../shared/ui/overlay";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
@@ -105,6 +105,7 @@ import {
   type NoteSort,
 } from "../noteLibrary";
 import { useNoteDetail } from "../useNoteDetail";
+import { OPEN_NOTE_LIBRARY_EVENT, takeNoteLibraryTarget } from "../noteNavigation";
 import { noteLibraryItemIndex, windowNoteLibrary } from "../noteLibraryWindow";
 import { LIST_PAGE_SIZE } from "../../../shared/lib/listWindow";
 import "./notes.css";
@@ -257,6 +258,37 @@ export function NotesView({
       rememberedNoteId
     );
   });
+  const [selectionMode, setSelectionMode] = useState(false);
+  const [mobileListVisible, setMobileListVisible] = useState(false);
+  const [checkedIds, setCheckedIds] = useState<Set<string>>(() => new Set());
+  const [selectionNotes, setSelectionNotes] = useState(notesQuery.data);
+  const [deleteTargets, setDeleteTargets] = useState<NoteSummary[] | null>(null);
+  const [bulkDeleting, setBulkDeleting] = useState(false);
+  const bulkBusy = useRef(false);
+  const selectionButton = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    const reveal = () => {
+      const target = takeNoteLibraryTarget();
+      if (!target) return;
+      setQuery("");
+      setTagFilter(null);
+      setProjectFilter(target.cwd ? projectKey(target.cwd) : null);
+      setCollapsedGroups(new Set());
+      if (target.id) setSelectedId(target.id);
+      setMobileListVisible(!target.id);
+    };
+    reveal();
+    window.addEventListener(OPEN_NOTE_LIBRARY_EVENT, reveal);
+    return () => window.removeEventListener(OPEN_NOTE_LIBRARY_EVENT, reveal);
+  }, []);
+  if (selectionNotes !== notesQuery.data) {
+    setSelectionNotes(notesQuery.data);
+    const available = new Set(notes.map((note) => note.id));
+    setCheckedIds((current) => {
+      const next = new Set([...current].filter((id) => available.has(id)));
+      return next.size === current.size ? current : next;
+    });
+  }
   const [creating, setCreating] = useState(false);
   const logos = useTabGroupLogos();
   const [groupMascots] = useState(loadTabGroupMascots);
@@ -269,9 +301,9 @@ export function NotesView({
   }, [notesQuery.refetch]);
   useEffect(() => {
     if (notesQuery.error) setError(notesQuery.error.message);
-    else if (notesQuery.data) setError(null);
-  }, [notesQuery.error, notesQuery.data]);
+  }, [notesQuery.error]);
   useEffect(() => {
+    if (loading) return;
     setSelectedId((current) => {
       const preferred = current ?? rememberedNoteId;
       const recovery = preferred ? drafts.get(preferred) : null;
@@ -286,7 +318,7 @@ export function NotesView({
         return preferred;
       return notes[0]?.id ?? null;
     });
-  }, [notes]);
+  }, [notes, loading]);
   useEffect(
     () =>
       bridgeQueryEvents(
@@ -337,11 +369,16 @@ export function NotesView({
       if (event.key !== "Escape" || event.defaultPrevented || hasActiveOverlay()) return;
       event.preventDefault();
       event.stopPropagation();
-      onCloseRef.current();
+      if (bulkBusy.current) return;
+      if (selectionMode) {
+        setSelectionMode(false);
+        setCheckedIds(new Set());
+        selectionButton.current?.focus();
+      } else onCloseRef.current();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, []);
+  }, [selectionMode]);
 
   const visible = useMemo(
     () =>
@@ -465,6 +502,7 @@ export function NotesView({
       });
       setNotes(await loadNoteSummaries(true));
       setSelectedId(note.id);
+      setMobileListVisible(false);
       setQuery("");
       setCollapsedGroups(new Set());
     } catch (err: unknown) {
@@ -510,10 +548,62 @@ export function NotesView({
     onClose();
   };
 
+  const toggleChecked = (id: string) => {
+    if (bulkBusy.current) return;
+    setCheckedIds((current) => {
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+  const deleteChecked = async () => {
+    if (!deleteTargets || bulkBusy.current) return;
+    bulkBusy.current = true;
+    setBulkDeleting(true);
+    const removed = new Set<string>();
+    const failures: string[] = [];
+    // Freeze selected drafts before awaiting existing writes. Their unmount cleanup
+    // and debounce timers must never recreate a deleted document.
+    for (const note of deleteTargets) {
+      const draft = drafts.get(note.id);
+      if (draft) draft.skipSave.current = true;
+    }
+    try {
+      for (const note of deleteTargets) {
+        try {
+          await enqueueNoteSave(note.id, async (latest) => {
+            const draft = drafts.get(note.id);
+            const version = latest ?? draft?.saved ?? note;
+            await deleteNote(note.id, version.updatedAt);
+          });
+          removed.add(note.id);
+          drafts.delete(note.id);
+        } catch (reason) {
+          const draft = drafts.get(note.id);
+          if (draft) draft.skipSave.current = false;
+          failures.push(
+            `${note.title}: ${reason instanceof Error ? reason.message : String(reason)}`,
+          );
+        }
+      }
+      setNotes((current) => current.filter((note) => !removed.has(note.id)));
+      setCheckedIds((current) => new Set([...current].filter((id) => !removed.has(id))));
+      notifyDrafts();
+      setError(failures.length ? failures.join("\n") : null);
+      setDeleteTargets(null);
+      if (!failures.length) setSelectionMode(false);
+    } finally {
+      bulkBusy.current = false;
+      setBulkDeleting(false);
+      selectionButton.current?.focus();
+    }
+  };
+
   const list = (
     <div
       ref={resize.setPaneRef}
-      className="relative flex h-full min-h-0 shrink-0 flex-col border-r border-stroke"
+      className="note-library-sidebar relative flex h-full min-h-0 shrink-0 flex-col border-r border-stroke"
     >
       <div className="flex h-10 shrink-0 items-center gap-1 border-b border-(--ui-tone-neutral-border) px-2">
         <div className="relative flex h-7 min-w-0 flex-1 items-center">
@@ -556,6 +646,21 @@ export function NotesView({
           ) : null}
         </Button>
         <Button
+          ref={selectionButton}
+          variant="ghost"
+          iconOnly
+          label={t("Select notes")}
+          selected={selectionMode}
+          aria-pressed={selectionMode}
+          disabled={bulkDeleting}
+          onClick={() => {
+            setSelectionMode((current) => !current);
+            setCheckedIds(new Set());
+          }}
+        >
+          <Check className="size-3.5" />
+        </Button>
+        <Button
           iconOnly
           label={t("New note")}
           variant="ghost"
@@ -575,34 +680,6 @@ export function NotesView({
           )}
         </Button>
       </div>
-      {projectFilter !== null || tagFilter !== null ? (
-        <FilterToolbar
-          filters={[
-            ...(projectFilter !== null
-              ? [
-                  {
-                    id: "project",
-                    label: t("Project"),
-                    value:
-                      projects.find((project) => project.key === projectFilter)?.name ??
-                      t("No project"),
-                  },
-                ]
-              : []),
-            ...(tagFilter !== null
-              ? [{ id: "tag", label: t("Tags"), value: `#${tagFilter}` }]
-              : []),
-          ]}
-          onRemove={(id) => {
-            if (id === "project") setProjectFilter(null);
-            if (id === "tag") setTagFilter(null);
-          }}
-          onClearAll={() => {
-            setProjectFilter(null);
-            setTagFilter(null);
-          }}
-        />
-      ) : null}
       {filtersOpen ? (
         <Popover
           anchor={filtersButton}
@@ -683,6 +760,51 @@ export function NotesView({
             </Button>
           </div>
         </Popover>
+      ) : null}
+      {selectionMode ? (
+        <div className="note-bulk-actions">
+          <label className="note-select-all">
+            <Checkbox
+              aria-label={t("Select all filtered notes")}
+              disabled={bulkDeleting || visible.length === 0}
+              checked={visible.length > 0 && visible.every((note) => checkedIds.has(note.id))}
+              indeterminate={
+                visible.some((note) => checkedIds.has(note.id)) &&
+                !visible.every((note) => checkedIds.has(note.id))
+              }
+              onChange={(event) => {
+                const checked = event.target.checked;
+                setCheckedIds((current) => {
+                  const next = new Set(current);
+                  for (const note of visible) {
+                    if (checked) next.add(note.id);
+                    else next.delete(note.id);
+                  }
+                  return next;
+                });
+              }}
+            />
+            <span>{t("{p0} selected", { p0: checkedIds.size })}</span>
+          </label>
+          <Button
+            tone="danger"
+            disabled={checkedIds.size === 0 || bulkDeleting}
+            onClick={() => setDeleteTargets(notes.filter((note) => checkedIds.has(note.id)))}
+          >
+            <Trash2 className="size-3.5" />
+            {t("Delete selected")}
+          </Button>
+          <Button
+            variant="ghost"
+            disabled={bulkDeleting}
+            onClick={() => {
+              setSelectionMode(false);
+              setCheckedIds(new Set());
+            }}
+          >
+            {t("Cancel")}
+          </Button>
+        </div>
       ) : null}
       <div
         className="flex min-h-9 items-center justify-between gap-2 border-b border-stroke px-3 text-[11px] text-content/65"
@@ -792,7 +914,15 @@ export function NotesView({
                 {collapsedGroups.has(group.key) ? null : (
                   <ul className="flex flex-col gap-0.5">
                     {group.notes.map((note) => (
-                      <li key={note.id}>
+                      <li key={note.id} className="note-selectable-row">
+                        {selectionMode ? (
+                          <Checkbox
+                            aria-label={t("Select note: {p0}", { p0: note.title })}
+                            checked={checkedIds.has(note.id)}
+                            disabled={bulkDeleting}
+                            onChange={() => toggleChecked(note.id)}
+                          />
+                        ) : null}
                         <NoteCard
                           note={note}
                           group={group.key}
@@ -802,8 +932,13 @@ export function NotesView({
                           colors={groupColors}
                           customColors={groupCustomColors}
                           onSelect={() => {
+                            if (selectionMode) {
+                              toggleChecked(note.id);
+                              return;
+                            }
                             setSelectedGroup(group.key);
                             setSelectedId(note.id);
+                            setMobileListVisible(false);
                           }}
                           onNavigate={(event) => navigateNote(event, note.id, group.key)}
                         />
@@ -865,6 +1000,7 @@ export function NotesView({
       role="region"
       aria-label={t("Notes")}
       data-app-notes
+      data-library-visible={mobileListVisible}
       className="notes-workspace flex min-h-0 min-w-0 flex-1 flex-col text-content"
     >
       <div
@@ -882,9 +1018,30 @@ export function NotesView({
         </ToolHeader>
         {IS_MAC ? null : <WindowControls />}
       </div>
+      <div className="note-mobile-navigation">
+        <Button
+          variant="tab"
+          selected={mobileListVisible}
+          aria-pressed={mobileListVisible}
+          onClick={() => setMobileListVisible(true)}
+        >
+          {t("Notes")}
+        </Button>
+        <Button
+          variant="tab"
+          selected={!mobileListVisible}
+          aria-pressed={!mobileListVisible}
+          onClick={() => setMobileListVisible(false)}
+        >
+          {t("Editor")}
+        </Button>
+      </div>
       <div className="flex min-h-0 min-w-0 flex-1">
         {list}
-        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+        <div
+          inert={bulkDeleting}
+          className="notes-workspace-detail flex min-h-0 min-w-0 flex-1 flex-col"
+        >
           {selectedSummary && !visible.some((note) => note.id === selectedSummary.id) ? (
             <div className="flex flex-wrap items-center gap-2 border-b border-stroke px-5 py-2 text-[12px] text-content/70">
               {t("This note is outside the current filters.")}
@@ -918,6 +1075,44 @@ export function NotesView({
           )}
         </div>
       </div>
+      {deleteTargets ? (
+        <Modal
+          title={t("Delete {p0} notes permanently?", { p0: deleteTargets.length })}
+          size="sm"
+          onClose={() => {
+            if (!bulkBusy.current) setDeleteTargets(null);
+          }}
+        >
+          <div className="note-delete-description">
+            <p>
+              {t(
+                "This cannot be undone. Unsaved changes in the selected notes will also be deleted.",
+              )}
+            </p>
+            <ul>
+              {deleteTargets.slice(0, 5).map((note) => (
+                <li key={note.id}>{note.title}</li>
+              ))}
+            </ul>
+            {deleteTargets.length > 5 ? (
+              <p>{t("And {p0} more", { p0: deleteTargets.length - 5 })}</p>
+            ) : null}
+          </div>
+          <div className="note-delete-actions">
+            <Button disabled={bulkDeleting} onClick={() => setDeleteTargets(null)}>
+              {t("Cancel")}
+            </Button>
+            <Button
+              variant="primary"
+              tone="danger"
+              loading={bulkDeleting}
+              onClick={() => void deleteChecked()}
+            >
+              {t("Confirm delete")}
+            </Button>
+          </div>
+        </Modal>
+      ) : null}
     </div>
   );
 }
@@ -1166,7 +1361,6 @@ function NoteEditor({
     notifyDrafts();
   };
   const [deleting, setDeleting] = useState(false);
-  const [actionMenu, setActionMenu] = useState<HTMLElement | null>(null);
   const [imageDrag, setImageDrag] = useState(false);
   const [imageBusy, setImageBusy] = useState(false);
   const editsRef = draftState.edits;
@@ -1576,27 +1770,14 @@ function NoteEditor({
               {t("Add to chat")}
             </Button>
             <Button
-              variant="ghost"
+              variant="secondary"
               size="sm"
-              iconOnly
-              label={t("More options")}
-              aria-haspopup="menu"
-              aria-expanded={!!actionMenu}
-              onClick={(event) => setActionMenu(event.currentTarget)}
+              loading={saving}
+              disabled={deleting}
+              onClick={() => void saveNow()}
             >
-              <MoreHorizontal />
+              {t("Save")}
             </Button>
-            {actionMenu ? (
-              <DropdownMenu
-                anchor={actionMenu}
-                label={t("Note actions")}
-                items={[{ kind: "item", id: "save", label: t("Save"), disabled: saving }]}
-                onClose={() => setActionMenu(null)}
-                onPick={(id) => {
-                  if (id === "save") void saveNow();
-                }}
-              />
-            ) : null}
             <ConfirmMorph
               disabled={deleting}
               label={t("Delete")}

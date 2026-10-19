@@ -5,6 +5,10 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { useSurfaceOpeners, type SurfaceOpenersDeps } from "./useSurfaceOpeners";
 import { routeWindowDestination } from "../../model/windowNavigation";
 import { loadNotesEnabled } from "../../../features/settings/model/settings";
+import {
+  requestOpenNoteLibrary,
+  takeNoteLibraryTarget,
+} from "../../../features/notes/noteNavigation";
 
 vi.mock("../../model/windowNavigation", () => ({
   routeWindowDestination: vi.fn().mockResolvedValue(true),
@@ -66,6 +70,10 @@ it("opens tools locally even when another window could handle them", async () =>
       if (open === "onOpenInbox")
         expect(setters.setPullRequestsOnly).toHaveBeenLastCalledWith(false);
     }
+    Object.values(setters).forEach((setter) => setter.mockClear());
+    await act(async () => requestOpenNoteLibrary({ id: "panel-note", cwd: "/repo" }));
+    expect(setters.setNotesViewOpen).toHaveBeenLastCalledWith(true);
+    expect(takeNoteLibraryTarget()).toEqual({ id: "panel-note", cwd: "/repo" });
     vi.mocked(loadNotesEnabled).mockReturnValue(false);
     Object.values(setters).forEach((setter) => setter.mockClear());
     await act(async () => actions.onOpenNotes());

@@ -1,6 +1,6 @@
-import { useCallback, type Dispatch, type MutableRefObject, type SetStateAction } from "react";
-import { useSurfaceForwardHistory } from "../../hooks/useSurfaceForwardHistory";
+import { useLayoutEffect, useRef, useState, type Dispatch, type SetStateAction } from "react";
 import { loadNotesEnabled } from "../../../features/settings/model/settings";
+import type { AuxiliaryToolId } from "../../model/toolWindows";
 
 export interface SettingsReturnView {
   servers?: boolean;
@@ -10,152 +10,146 @@ export interface SettingsReturnView {
   automations: boolean;
 }
 
+type View =
+  | "workspace"
+  | "settings"
+  | "search"
+  | "servers"
+  | "inbox"
+  | "notes"
+  | "social"
+  | "tasks"
+  | "automations"
+  | AuxiliaryToolId;
+type Visit = { view: View; tabId: string; cwd: string };
+type SetBoolean = Dispatch<SetStateAction<boolean>>;
+
 export interface RailNavigationDeps {
   activeTabId: string;
   projectCwd: string;
+  socialPanelCwd: string;
+  toolWindow: boolean;
+  openTabIds: ReadonlySet<string>;
+  activateTab: (id: string) => void;
+  setProjectCwd: Dispatch<SetStateAction<string>>;
+  setSocialPanelCwd: Dispatch<SetStateAction<string>>;
   settingsOpen: boolean;
   searchViewOpen: boolean;
   inboxViewOpen: boolean;
   notesViewOpen: boolean;
   automationsViewOpen: boolean;
-  serversViewOpen?: boolean;
-  setServersViewOpen?: Dispatch<SetStateAction<boolean>>;
-  setSettingsOpen: Dispatch<SetStateAction<boolean>>;
-  setSearchViewOpen: Dispatch<SetStateAction<boolean>>;
-  setInboxViewOpen: Dispatch<SetStateAction<boolean>>;
-  setNotesViewOpen: Dispatch<SetStateAction<boolean>>;
-  setAutomationsViewOpen: Dispatch<SetStateAction<boolean>>;
-  settingsReturnViewRef: MutableRefObject<SettingsReturnView>;
-  onCloseSettings: () => void;
-  onVisitBack: () => void;
-  onVisitForward: () => void;
+  auxiliaryTool?: AuxiliaryToolId | null;
+  setAuxiliaryTool?: Dispatch<SetStateAction<AuxiliaryToolId | null>>;
+  socialBoardShown: boolean;
+  taskBoardShown: boolean;
+  serversViewOpen: boolean;
+  setServersViewOpen: SetBoolean;
+  setSettingsOpen: SetBoolean;
+  setSearchViewOpen: SetBoolean;
+  setInboxViewOpen: SetBoolean;
+  setNotesViewOpen: SetBoolean;
+  setAutomationsViewOpen: SetBoolean;
+  setSocialBoardShown: SetBoolean;
+  setTaskBoardShown: SetBoolean;
 }
 
-export interface RailSurface {
-  servers: boolean;
-  tabId: string;
-  cwd: string;
-  settings: boolean;
-  search: boolean;
-  inbox: boolean;
-  notes: boolean;
-  automations: boolean;
-}
+const sameVisit = (a: Visit, b: Visit) =>
+  a.view === b.view && a.tabId === b.tabId && a.cwd === b.cwd;
 
-export interface RailNavigation {
-  surfaceForward: {
-    canForward: boolean;
-    remember: (destination: RailSurface) => void;
-    forward: () => boolean;
+/** One chronological history per mounted window. Never share or persist this stack. */
+export function useRailNavigation(d: RailNavigationDeps) {
+  const view: View = d.settingsOpen
+    ? "settings"
+    : d.searchViewOpen
+      ? "search"
+      : d.serversViewOpen
+        ? "servers"
+        : d.inboxViewOpen
+          ? "inbox"
+          : d.notesViewOpen
+            ? "notes"
+            : d.automationsViewOpen
+              ? (d.auxiliaryTool ??
+                (d.socialBoardShown ? "social" : d.taskBoardShown ? "tasks" : "automations"))
+              : "workspace";
+  const current: Visit = {
+    view,
+    // Tool windows have a bootstrap session underneath their chrome. It is not a destination.
+    tabId: d.toolWindow ? "" : d.activeTabId,
+    cwd: view === "social" && d.socialPanelCwd ? d.socialPanelCwd : d.projectCwd,
   };
-  onRailBack: () => void;
-  onRailForward: () => void;
-}
-
-/**
- * Rail back/forward: closes surfaces (settings, search, inbox, notes, automations)
- * before stepping tab visit history, and remembers dismissed surfaces for Forward.
- * Call at the original `railSurface` position (it owns a surface-forward effect).
- */
-export function useRailNavigation({
-  activeTabId,
-  projectCwd,
-  settingsOpen,
-  searchViewOpen,
-  inboxViewOpen,
-  notesViewOpen,
-  automationsViewOpen,
-  serversViewOpen = false,
-  setServersViewOpen,
-  setSettingsOpen,
-  setSearchViewOpen,
-  setInboxViewOpen,
-  setNotesViewOpen,
-  setAutomationsViewOpen,
-  settingsReturnViewRef,
-  onCloseSettings,
-  onVisitBack,
-  onVisitForward,
-}: RailNavigationDeps): RailNavigation {
-  const railSurface: RailSurface = {
-    servers: serversViewOpen,
-    tabId: activeTabId,
-    cwd: projectCwd,
-    settings: settingsOpen,
-    search: searchViewOpen,
-    inbox: inboxViewOpen,
-    notes: notesViewOpen,
-    automations: automationsViewOpen,
+  const valid = (visit: Visit) =>
+    (!d.toolWindow || visit.view !== "workspace") &&
+    (d.toolWindow || d.openTabIds.has(visit.tabId)) &&
+    (visit.view !== "notes" || loadNotesEnabled());
+  const history = useRef({ back: [] as Visit[], current, forward: [] as Visit[] });
+  const [navigation, setNavigation] = useState({ canBack: false, canForward: false });
+  const updateNavigation = () => {
+    const canBack = history.current.back.some(valid);
+    const canForward = history.current.forward.some(valid);
+    setNavigation((prev) =>
+      prev.canBack === canBack && prev.canForward === canForward ? prev : { canBack, canForward },
+    );
   };
-  const surfaceForward = useSurfaceForwardHistory(railSurface, (surface) => {
-    setSettingsOpen(surface.settings);
-    setSearchViewOpen(surface.search);
-    setInboxViewOpen(surface.inbox);
-    setNotesViewOpen(surface.notes && loadNotesEnabled());
-    setAutomationsViewOpen(surface.automations);
-    setServersViewOpen?.(surface.servers);
+  useLayoutEffect(() => {
+    const h = history.current;
+    const back = h.back.filter(valid);
+    const forward = h.forward.filter(valid);
+    if (!sameVisit(h.current, current)) {
+      // Closing/transferring a tab replaces its location; it must not reopen it.
+      if (valid(h.current)) back.push(h.current);
+      history.current = { back: back.slice(-50), current, forward: [] };
+    } else if (back.length !== h.back.length || forward.length !== h.forward.length) {
+      history.current = { ...h, back, forward };
+    }
+    updateNavigation();
   });
 
-  const onRailBack = useCallback(() => {
-    if (settingsOpen) {
-      surfaceForward.remember({
-        ...railSurface,
-        ...settingsReturnViewRef.current,
-        notes: settingsReturnViewRef.current.notes && loadNotesEnabled(),
-        settings: false,
-      });
-      onCloseSettings();
+  const restore = (visit: Visit, previous: Visit) => {
+    if (!d.toolWindow && visit.tabId !== previous.tabId) d.activateTab(visit.tabId);
+    d.setProjectCwd(visit.cwd);
+    if (visit.view === "social") d.setSocialPanelCwd(visit.cwd);
+    d.setSettingsOpen(visit.view === "settings");
+    d.setSearchViewOpen(visit.view === "search");
+    d.setServersViewOpen(visit.view === "servers");
+    d.setInboxViewOpen(visit.view === "inbox");
+    d.setNotesViewOpen(visit.view === "notes");
+    d.setAutomationsViewOpen(
+      ["social", "tasks", "automations", "terminal", "conversation-tools"].includes(visit.view),
+    );
+    d.setAuxiliaryTool?.(
+      visit.view === "terminal" || visit.view === "conversation-tools" ? visit.view : null,
+    );
+    d.setSocialBoardShown(visit.view === "social");
+    d.setTaskBoardShown(visit.view === "tasks");
+  };
+  const step = (direction: "back" | "forward") => {
+    const h = history.current;
+    const entries = h[direction].filter(valid);
+    const next = entries.pop();
+    if (!next) {
+      updateNavigation();
       return;
     }
-    if (searchViewOpen) {
-      surfaceForward.remember({ ...railSurface, search: false });
-      setSearchViewOpen(false);
-      return;
-    }
-    if (serversViewOpen) {
-      surfaceForward.remember({ ...railSurface, servers: false });
-      setServersViewOpen?.(false);
-      return;
-    }
-    if (inboxViewOpen) {
-      surfaceForward.remember({ ...railSurface, inbox: false });
-      setInboxViewOpen(false);
-      return;
-    }
-    if (notesViewOpen) {
-      surfaceForward.remember({ ...railSurface, notes: false });
-      setNotesViewOpen(false);
-      return;
-    }
-    if (automationsViewOpen) {
-      surfaceForward.remember({ ...railSurface, automations: false });
-      setAutomationsViewOpen(false);
-      return;
-    }
-    onVisitBack();
-  }, [
-    onCloseSettings,
-    onVisitBack,
-    searchViewOpen,
-    settingsOpen,
-    inboxViewOpen,
-    notesViewOpen,
-    automationsViewOpen,
-    serversViewOpen,
-    surfaceForward,
-    railSurface,
-  ]);
-
-  const onRailForward = useCallback(() => {
-    if (surfaceForward.forward()) return;
-    setSearchViewOpen(false);
-    setSettingsOpen(false);
-    setInboxViewOpen(false);
-    setNotesViewOpen(false);
-    setAutomationsViewOpen(false);
-    setServersViewOpen?.(false);
-    onVisitForward();
-  }, [onVisitForward, surfaceForward]);
-
-  return { surfaceForward, onRailBack, onRailForward };
+    history.current =
+      direction === "back"
+        ? {
+            back: entries,
+            current: next,
+            forward: [...h.forward.filter(valid), h.current].slice(-50),
+          }
+        : {
+            back: [...h.back.filter(valid), h.current].slice(-50),
+            current: next,
+            forward: entries,
+          };
+    restore(next, h.current);
+    updateNavigation();
+  };
+  return {
+    navigation,
+    surfaceForward: { canForward: navigation.canForward },
+    onRailBack: () => step("back"),
+    onRailForward: () => step("forward"),
+  };
 }

@@ -1,4 +1,3 @@
-import { themePalette } from "../../../shared/theme/palette";
 import {
   HighlightStyle,
   LanguageSupport,
@@ -19,10 +18,6 @@ const HIGHLIGHT_TAGS = {
     tags.operatorKeyword,
     tags.modifier,
     tags.self,
-    tags.bool,
-    tags.null,
-    tags.atom,
-    tags.unit,
   ],
   callable: [
     tags.function(tags.variableName),
@@ -39,8 +34,8 @@ const HIGHLIGHT_TAGS = {
     tags.regexp,
     tags.escape,
   ],
-  type: [tags.typeName, tags.className, tags.namespace, tags.tagName, tags.standard(tags.typeName)],
-  number: [tags.number, tags.integer, tags.float],
+  type: [tags.typeName, tags.className, tags.namespace, tags.standard(tags.typeName)],
+  number: [tags.number, tags.integer, tags.float, tags.bool, tags.null, tags.atom, tags.unit],
   comment: [tags.comment, tags.lineComment, tags.blockComment, tags.docComment],
   property: [tags.propertyName, tags.attributeName],
   meta: [tags.meta, tags.processingInstruction, tags.annotation],
@@ -69,31 +64,24 @@ type HighlightPalette = {
 };
 
 const HIGHLIGHT_PALETTE: Record<ColorScheme, HighlightPalette> = {
-  dark: {
-    keyword: themePalette.hexff8ffd,
-    heading: "var(--color-markdown-heading)",
-    callable: themePalette.hexa5d5fe,
-    string: themePalette.hexb4fa72,
-    type: themePalette.hexff8272,
-    number: themePalette.hexb4fa72,
-    comment: themePalette.hexfefdc2,
-    property: themePalette.hexd0d1fe,
-    meta: themePalette.hex8e8e8e,
-    invalid: themePalette.hexffc4bd,
-  },
-  light: {
-    keyword: themePalette.hexa626a4,
-    heading: "var(--color-markdown-heading)",
-    callable: themePalette.hex4078f2,
-    string: themePalette.hex50a14f,
-    type: themePalette.hexc18401,
-    number: themePalette.hex986801,
-    comment: themePalette.hex8a9199,
-    property: themePalette.hexe45649,
-    meta: themePalette.hex5c6370,
-    invalid: themePalette.hexcf222e,
-  },
+  dark: syntaxPalette(),
+  light: syntaxPalette(),
 };
+
+function syntaxPalette(): HighlightPalette {
+  return {
+    keyword: "var(--syntax-keyword)",
+    heading: "var(--color-markdown-heading)",
+    callable: "var(--syntax-callable)",
+    string: "var(--syntax-string)",
+    type: "var(--syntax-type)",
+    number: "var(--syntax-number)",
+    comment: "var(--syntax-comment)",
+    property: "var(--syntax-property)",
+    meta: "var(--syntax-meta)",
+    invalid: "var(--color-danger)",
+  };
+}
 
 function highlightStyleFrom(palette: HighlightPalette) {
   return HighlightStyle.define([
@@ -106,6 +94,7 @@ function highlightStyleFrom(palette: HighlightPalette) {
     { tag: HIGHLIGHT_TAGS.comment, color: palette.comment },
     { tag: HIGHLIGHT_TAGS.property, color: palette.property },
     { tag: HIGHLIGHT_TAGS.meta, color: palette.meta },
+    { tag: tags.tagName, color: "var(--syntax-tag)" },
     { tag: tags.invalid, color: palette.invalid, textDecoration: "underline" },
   ]);
 }
@@ -130,6 +119,7 @@ export function syntaxTagHighlighter(scheme: ColorScheme): Highlighter {
     { tag: HIGHLIGHT_TAGS.comment, class: palette.comment },
     { tag: HIGHLIGHT_TAGS.property, class: palette.property },
     { tag: HIGHLIGHT_TAGS.meta, class: palette.meta },
+    { tag: tags.tagName, class: "var(--syntax-tag)" },
     { tag: tags.invalid, class: palette.invalid },
   ]);
 }

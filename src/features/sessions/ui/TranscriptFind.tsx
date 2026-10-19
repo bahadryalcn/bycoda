@@ -1,4 +1,5 @@
 import { Button } from "../../../shared/ui/Button";
+import { createPortal } from "react-dom";
 import { SearchInput } from "../../../shared/ui/SearchInput";
 import { t, useLocale } from "../../../shared/i18n";
 import {
@@ -25,6 +26,8 @@ type Props = {
   /** Lets a jump from cross-session search open this find with its query. */
   sessionId?: string;
   side?: "left" | "right";
+  /** Mount the action in the pane header while keeping search state with the transcript. */
+  triggerContainer?: HTMLElement | null;
   /** Tells the owner when results depend on live text, so it can feed every frame. */
   onSearchingChange?: (searching: boolean) => void;
 };
@@ -36,6 +39,7 @@ export const TranscriptFind = memo(function TranscriptFind({
   onNavigate,
   sessionId,
   side = "right",
+  triggerContainer,
   onSearchingChange,
 }: Props) {
   useLocale();
@@ -136,91 +140,108 @@ export const TranscriptFind = memo(function TranscriptFind({
 
   if (!visible) return null;
 
-  if (!open)
+  const trigger = (
+    <Button
+      variant="ghost"
+      size="sm"
+      motion="none"
+      iconOnly
+      label={t("Find in conversation")}
+      shortcut={findShortcut}
+      aria-expanded={open}
+      data-no-drag
+      onPointerDown={(event) => event.stopPropagation()}
+      onMouseDown={(event) => event.stopPropagation()}
+      onClick={openFind}
+    >
+      <Search className="size-3.5" strokeWidth={1.75} />
+    </Button>
+  );
+  const headerTrigger = triggerContainer ? createPortal(trigger, triggerContainer) : null;
+
+  if (!open) {
+    if (triggerContainer !== undefined) return headerTrigger;
     return (
       <div
         className={`pointer-events-none absolute top-2 z-40 ${side === "left" ? "left-3" : "right-3"}`}
       >
-        <Button
-          className="pointer-events-auto"
-          variant="ghost"
-          motion="none"
-          iconOnly
-          label={t("Find in conversation")}
-          shortcut={findShortcut}
-          onClick={openFind}
-        >
-          <Search className="size-3.5" strokeWidth={1.75} />
-        </Button>
+        <div className="pointer-events-auto">{trigger}</div>
       </div>
     );
+  }
 
   return (
-    <div
-      className={`pointer-events-none absolute top-2 z-40 ${side === "left" ? "left-3" : "right-3"}`}
-    >
+    <>
+      {headerTrigger}
       <div
-        role="search"
-        aria-label={t("Find in conversation")}
-        className="pointer-events-auto flex w-[min(360px,calc(100cqw-24px))] items-center gap-1 rounded-lg border border-(--ui-tone-neutral-border) bg-(--ui-surface-raised) p-1 shadow-lg backdrop-blur-xl"
+        className={`pointer-events-none absolute top-2 z-40 ${side === "left" ? "left-3" : "right-3"}`}
       >
-        <Search className="ml-1 size-3.5 shrink-0 text-(--ui-text-secondary)" strokeWidth={1.75} />
-        <SearchInput
-          ref={input}
-          type="text"
-          value={query}
+        <div
+          role="search"
           aria-label={t("Find in conversation")}
-          placeholder={t("Find in conversation")}
-          autoComplete="off"
-          autoCorrect="off"
-          autoCapitalize="off"
-          spellCheck={false}
-          onChange={(event) => {
-            setQuery(event.target.value);
-            setActive(0);
-          }}
-          onKeyDown={(event: ReactKeyboardEvent<HTMLInputElement>) => {
-            if (event.key === "Enter") {
-              event.preventDefault();
-              step(event.shiftKey ? -1 : 1);
-            }
-          }}
-          className="w-44 min-w-0 flex-1 bg-transparent text-[12px] text-(--ui-tone-neutral-fg) outline-none placeholder:text-(--ui-text-secondary)"
-        />
-        <span
-          aria-live="polite"
-          className="min-w-[10ch] shrink-0 whitespace-nowrap text-right font-mono text-[11px] tabular-nums text-(--ui-text-secondary)"
+          className="pointer-events-auto flex w-[min(360px,calc(100cqw-24px))] items-center gap-1 rounded-lg border border-(--ui-tone-neutral-border) bg-(--ui-surface-raised) p-1 shadow-lg backdrop-blur-xl"
         >
-          {query.trim()
-            ? matches.length
-              ? t("{p0} of {p1}", {
-                  p0: Math.min(active, matches.length - 1) + 1,
-                  p1: matches.length,
-                })
-              : t("No results")
-            : ""}
-        </span>
-        <FindButton
-          label={t("Previous match")}
-          shortcut="Shift+Enter / Shift+F3"
-          onClick={() => step(-1)}
-          disabled={!matches.length}
-        >
-          <ChevronUp className="size-3.5" strokeWidth={1.75} />
-        </FindButton>
-        <FindButton
-          label={t("Next match")}
-          shortcut="Enter / F3"
-          onClick={() => step(1)}
-          disabled={!matches.length}
-        >
-          <ChevronDown className="size-3.5" strokeWidth={1.75} />
-        </FindButton>
-        <FindButton label={t("Close find")} shortcut="Esc" onClick={closeFind}>
-          <X className="size-3.5" strokeWidth={1.75} />
-        </FindButton>
+          <Search
+            className="ml-1 size-3.5 shrink-0 text-(--ui-text-secondary)"
+            strokeWidth={1.75}
+          />
+          <SearchInput
+            ref={input}
+            type="text"
+            value={query}
+            aria-label={t("Find in conversation")}
+            placeholder={t("Find in conversation")}
+            autoComplete="off"
+            autoCorrect="off"
+            autoCapitalize="off"
+            spellCheck={false}
+            onChange={(event) => {
+              setQuery(event.target.value);
+              setActive(0);
+            }}
+            onKeyDown={(event: ReactKeyboardEvent<HTMLInputElement>) => {
+              if (event.key === "Enter") {
+                event.preventDefault();
+                step(event.shiftKey ? -1 : 1);
+              }
+            }}
+            className="w-44 min-w-0 flex-1 bg-transparent text-[12px] text-(--ui-tone-neutral-fg) outline-none placeholder:text-(--ui-text-secondary)"
+          />
+          <span
+            aria-live="polite"
+            className="min-w-[10ch] shrink-0 whitespace-nowrap text-right font-mono text-[11px] tabular-nums text-(--ui-text-secondary)"
+          >
+            {query.trim()
+              ? matches.length
+                ? t("{p0} of {p1}", {
+                    p0: Math.min(active, matches.length - 1) + 1,
+                    p1: matches.length,
+                  })
+                : t("No results")
+              : ""}
+          </span>
+          <FindButton
+            label={t("Previous match")}
+            shortcut="Shift+Enter / Shift+F3"
+            onClick={() => step(-1)}
+            disabled={!matches.length}
+          >
+            <ChevronUp className="size-3.5" strokeWidth={1.75} />
+          </FindButton>
+          <FindButton
+            label={t("Next match")}
+            shortcut="Enter / F3"
+            onClick={() => step(1)}
+            disabled={!matches.length}
+          >
+            <ChevronDown className="size-3.5" strokeWidth={1.75} />
+          </FindButton>
+          <FindButton label={t("Close find")} shortcut="Esc" onClick={closeFind}>
+            <X className="size-3.5" strokeWidth={1.75} />
+          </FindButton>
+        </div>
       </div>
-    </div>
+    </>
   );
 });
 

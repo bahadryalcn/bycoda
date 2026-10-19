@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.40]
+
+### Terminals and workspace
+
+- Add local command and history suggestions with inline ghost text and bounded native completion discovery.
+- Refine server terminal sessions, terminal layouts and keyboard interactions.
+- Extend native tool-window routing and improve workspace navigation and window controls.
+
+### Editing and appearance
+
+- Improve notes navigation and layouts, editor search controls and Windows replace shortcuts.
+- Keep code highlighting aligned with the selected theme across editors and conversation code blocks.
+- Refine shared controls, appearance previews and surface motion across the application.
+
 ## [0.6.39]
 
 ### Source control

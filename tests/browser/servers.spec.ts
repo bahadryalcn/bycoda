@@ -38,6 +38,16 @@ for (const theme of ["light", "dark"]) {
       await expect(page.getByRole("region", { name: "SSH terminal", exact: true })).toBeVisible();
       await expect.poll(async () => (await requests()).length).toBe(1);
       expect((await requests())[0].input.connectionId).toBe("fixture-3");
+      const session = page.locator("[data-server-terminal-session]:visible");
+      const typography = session.getByRole("group", { name: "Terminal text size" });
+      await expect(typography.getByRole("button", { name: "Reset text size" })).toHaveText("13");
+      await typography.getByRole("button", { name: "Increase text size", exact: true }).click();
+      await expect(typography.getByRole("button", { name: "Reset text size" })).toHaveText("14");
+      expect(await requests()).toHaveLength(1);
+      await typography.getByRole("button", { name: "Reset text size" }).click();
+      await page.evaluate((id) => (window as any).serversFixtureTerminalOutput(id,
+        "\x1b[32mubuntu@server-3\x1b[0m:~$ ls -lah\r\ntotal 24K\r\ndrwxr-xr-x  ubuntu ubuntu 4.0K  projects\r\n-rw-r--r--  ubuntu ubuntu 1.2K  README.md\r\n\x1b[32mubuntu@server-3\x1b[0m:~$ "), (await requests())[0].input.id);
+      await page.screenshot({ path: `temp/verification/2026-10-19-server-terminal/session-${theme}-${width}.png` });
       await page.getByRole("button", { name: "Servers", exact: true }).click();
       const search = page.getByRole("textbox", { name: "Search servers" });
       await search.fill("Server 02");
@@ -394,7 +404,7 @@ for (const theme of ["dark", "light"])
       await expect(machine).toHaveAttribute("aria-pressed", "true");
       await expect(
         page.getByRole("button", { name: "Open in new window", exact: true }),
-      ).toHaveCount(0);
+      ).toHaveCount(1);
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
         true,
       );
@@ -1084,6 +1094,12 @@ for (const theme of ["light", "dark"]) {
     await editor
       .locator("summary")
       .filter({ hasText: "Hop identity and trust references" })
+      .click();
+    await editor
+      .getByRole("region", { name: "Per-hop SSH policy", exact: true })
+      .locator("details:not([open]) > summary")
+      .filter({ hasText: "Use a key file path" })
+      .first()
       .click();
     await expect(
       editor.getByRole("textbox", { name: "Jump host 1: Identity file", exact: true }),

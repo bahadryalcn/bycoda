@@ -19,6 +19,7 @@ import { withQueryClient } from "../../../../tests/browser/queryTest";
 const NotesView = withQueryClient(RawNotesView);
 import { NoteDraftRecoveryNotice } from "./NoteDraftRecoveryNotice";
 import { drafts } from "../noteDrafts";
+import { requestOpenNoteLibrary } from "../noteNavigation";
 import { savePinnedProjects, saveProjectRailOrder } from "../../projects/model/recents";
 
 const invoke = vi.hoisted(() => vi.fn());
@@ -516,10 +517,9 @@ it("appends a separate block and invalidates preview ranges after a source edit"
     "Changed this text.",
   );
   await act(async () =>
-    container.querySelector<HTMLButtonElement>('[aria-label="More options"]')!.click(),
-  );
-  await act(async () =>
-    document.querySelector<HTMLButtonElement>('[role="menuitem"][aria-label="Save"]')!.click(),
+    [...container.querySelectorAll<HTMLButtonElement>("button")]
+      .find((button) => button.textContent === "Save")!
+      .click(),
   );
   expect(stored.body).toBe("Changed this text.\n\nSecond paragraph");
 });
@@ -1148,4 +1148,87 @@ it("releases successfully saved drafts after the editor unmounts", async () => {
   expect(stored.title).toBe("Save and release");
   expect(drafts.has(stored.id)).toBe(false);
   root = createRoot(container);
+});
+
+it("opens the requested project and note from the session panel", async () => {
+  const other = { ...stored, id: "requested", title: "Requested note", sourceCwd: "/work/other" };
+  invoke.mockImplementation(async (command, args) => {
+    if (command === "notes_list_summaries") return [summarizeNote(stored), summarizeNote(other)];
+    if (command === "notes_get") return args.id === other.id ? other : stored;
+    throw new Error(`Unexpected command: ${command}`);
+  });
+  requestOpenNoteLibrary({ id: other.id, cwd: other.sourceCwd });
+  await render();
+  expect(container.querySelector<HTMLInputElement>('[aria-label="Note title"]')?.value).toBe(
+    other.title,
+  );
+  expect(container.querySelectorAll("[data-note-id]")).toHaveLength(1);
+  expect(container.querySelector("[data-note-id]")?.getAttribute("data-note-id")).toBe(other.id);
+});
+
+it("keeps failed bulk deletions selected, preserves their drafts and never recreates successes", async () => {
+  vi.useFakeTimers();
+  let all = [
+    { ...stored, id: "bulk-a", title: "Delete me" },
+    { ...stored, id: "bulk-b", title: "Keep on failure" },
+  ];
+  const deleted = new Set<string>();
+  invoke.mockImplementation(async (command, args) => {
+    if (command === "notes_list_summaries") return all.map(summarizeNote);
+    if (command === "notes_get") return all.find((note) => note.id === args.id) ?? null;
+    if (command === "notes_delete") {
+      if (args.id === "bulk-b") throw new Error("Delete denied");
+      deleted.add(args.id);
+      all = all.filter((note) => note.id !== args.id);
+      return;
+    }
+    if (command === "notes_upsert") {
+      if (deleted.has(args.note.id)) throw new Error("Recreated deleted document");
+      const saved = {
+        ...all.find((note) => note.id === args.note.id)!,
+        ...args.note,
+        updatedAt: 2,
+      };
+      all = all.map((note) => (note.id === saved.id ? saved : note));
+      return saved;
+    }
+    throw new Error(`Unexpected command: ${command}`);
+  });
+  await render();
+  await act(async () =>
+    container.querySelector<HTMLButtonElement>('[data-note-id="bulk-b"]')!.click(),
+  );
+  await editTitle("Unsaved before bulk delete");
+  await act(async () =>
+    container.querySelector<HTMLButtonElement>('[aria-label="Select notes"]')!.click(),
+  );
+  await act(async () =>
+    container.querySelector<HTMLInputElement>('[aria-label="Select all filtered notes"]')!.click(),
+  );
+  await act(async () => button("Delete selected").click());
+  expect(document.querySelector('[role="dialog"]')?.textContent).toContain(
+    "Delete 2 notes permanently?",
+  );
+  expect(deleted.size).toBe(0);
+  await act(async () =>
+    document
+      .querySelector<HTMLButtonElement>('[role="dialog"] [data-button-hierarchy="primary"]')!
+      .click(),
+  );
+  await act(async () => vi.advanceTimersByTimeAsync(600));
+  expect([...deleted]).toEqual(["bulk-a"]);
+  expect(all.map((note) => note.id)).toEqual(["bulk-b"]);
+  expect(all[0].title).toBe("Unsaved before bulk delete");
+  expect(container.textContent).toContain("Delete denied");
+  expect(container.textContent).toContain("1 selected");
+  expect(
+    container.querySelector<HTMLInputElement>(
+      '[aria-label="Select note: Unsaved before bulk delete"]',
+    )?.checked,
+  ).toBe(true);
+  expect(
+    invoke.mock.calls.filter(
+      ([command, args]) => command === "notes_upsert" && args.note.id === "bulk-a",
+    ),
+  ).toHaveLength(0);
 });

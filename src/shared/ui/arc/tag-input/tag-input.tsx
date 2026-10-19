@@ -187,7 +187,11 @@ export function TagInput({
   useEffect(() => {
     const node = contentRef.current;
     if (!node || typeof ResizeObserver === "undefined") return;
-    const observer = new ResizeObserver(() => setHeight(node.offsetHeight));
+    const observer = new ResizeObserver(() => {
+      // Hidden workbench panes have no layout box. Retain the last real height
+      // so showing the pane does not animate its tags out of a clipped zero row.
+      if (node.offsetHeight > 0) setHeight(node.offsetHeight);
+    });
     observer.observe(node);
     return () => observer.disconnect();
   }, []);

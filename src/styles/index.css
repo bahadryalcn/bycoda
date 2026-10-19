@@ -3,6 +3,7 @@
 @import "./bycoda.css";
 @import "./arc.css";
 @import "./theme-transition.css";
+@import "./surface-motion.css";
 
 /* Desktop UI classes come from product code; explicit Streamdown sources remain below. */
 @source not "../../host";
@@ -294,6 +295,7 @@ html.theme-light {
   );
   --ui-text-disabled: color-mix(in srgb, var(--color-content) 50%, var(--color-background-base));
   --ui-text-muted: color-mix(in oklab, var(--ui-text-secondary) 72%, var(--color-background-base));
+  --ui-terminal-suggestion: color-mix(in oklab, var(--color-info) 55%, var(--color-background-base));
   /* Cartesian mixing preserves the cool theme hue across light/dark surfaces. */
   --ui-surface: color-mix(in oklab, var(--color-content) 3%, var(--color-background-base));
   /* Startup brand canvas stays dark so the white loading mark is legible in every theme. */
@@ -2584,7 +2586,7 @@ html:not(.theme-light) .markdown-code-token {
 }
 
 .approval-toast {
-  animation: approval-toast-in 180ms cubic-bezier(0.22, 1, 0.36, 1);
+  animation: approval-toast-in var(--motion-notice-duration) var(--motion-ease-out);
 }
 
 @keyframes linked-activity-notice-in {
@@ -2597,7 +2599,7 @@ html:not(.theme-light) .markdown-code-token {
 }
 
 .linked-activity-notice {
-  animation: linked-activity-notice-in 180ms cubic-bezier(0.22, 1, 0.36, 1);
+  animation: linked-activity-notice-in var(--motion-notice-duration) var(--motion-ease-out);
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -3556,10 +3558,10 @@ html.theme-light .btw-burst {
     0 8px 10px -6px var(--palette-rgb_0_0_0_0_1);
 }
 
-/* Tabs and messages arrive once the panel has mostly opened; the composer
-   is where the morph starts, so it stays put. */
+/* Tabs and messages enter with the panel; the composer is where the morph
+   starts, so it stays put. */
 .btw-sheet-body {
-  animation: btw-body-in 240ms 100ms cubic-bezier(0.22, 1, 0.36, 1) backwards;
+  animation: btw-body-in var(--motion-sheet-duration) var(--motion-ease-out) backwards;
 }
 
 .btw-overlay[data-state="closed"] {
@@ -3712,7 +3714,8 @@ html.theme-light .btw-burst {
   }
 }
 
-/* Centered modals: lift the content inside the stationary glass frame. */
+/* Shared modal backdrop and legacy content entrance. Modal's frame entrance
+   and reduced-motion opt-in live in surface-motion.css. */
 @keyframes modal-backdrop-in {
   from {
     opacity: 0;
@@ -3734,11 +3737,11 @@ html.theme-light .btw-burst {
 }
 
 .modal-backdrop {
-  animation: modal-backdrop-in 160ms ease-out both;
+  animation: modal-backdrop-in var(--motion-reorder-duration) var(--motion-ease-out) backwards;
 }
 
 .modal-panel {
-  animation: modal-panel-in 200ms cubic-bezier(0.16, 1, 0.3, 1) backwards;
+  animation: modal-panel-in var(--motion-surface-duration) var(--motion-ease-out) backwards;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -3879,7 +3882,7 @@ html.theme-light .btw-burst {
 }
 
 .subagent-sheet {
-  animation: subagent-sheet-in 220ms cubic-bezier(0.22, 1, 0.36, 1) backwards;
+  animation: subagent-sheet-in var(--motion-sheet-duration) var(--motion-ease-out) backwards;
 }
 
 @keyframes subagent-sheet-in {
@@ -3957,7 +3960,7 @@ html.theme-light .btw-burst {
   }
 }
 .linked-work-item-enter {
-  animation: linked-work-item-slide-in 180ms cubic-bezier(0.22, 1, 0.36, 1);
+  animation: linked-work-item-slide-in var(--motion-sheet-duration) var(--motion-ease-out);
 }
 @keyframes linked-work-item-reveal {
   from {
@@ -3970,7 +3973,7 @@ html.theme-light .btw-burst {
   }
 }
 .linked-work-item-content-enter {
-  animation: linked-work-item-reveal 180ms ease-out;
+  animation: linked-work-item-reveal var(--motion-surface-duration) var(--motion-ease-out);
 }
 /* Quiet work-state accents. */
 
@@ -4048,4 +4051,40 @@ html:is(.is-reordering, .is-resizing)
 .codex-effort-option .codex-effort-tile--filled,
 .codex-effort-option::after {
   will-change: auto !important;
+}
+
+/* Shared syntax roles. Light appearance always uses GitHub Light; custom app
+   surfaces remain owned by the UI theme. Colors follow the bundled Shiki themes. */
+:root {
+  --syntax-keyword: var(--palette-hexff7b72);
+  --syntax-callable: var(--palette-hexd2a8ff);
+  --syntax-string: var(--palette-hexa5d6ff);
+  --syntax-type: var(--palette-hexffa657);
+  --syntax-tag: var(--palette-hex7ee787);
+  --syntax-number: var(--palette-hex79c0ff);
+  --syntax-comment: var(--palette-hex8b949e);
+  --syntax-property: var(--palette-hex79c0ff);
+  --syntax-meta: var(--palette-hexd2a8ff);
+}
+:root[data-code-theme="dracula"] {
+  --syntax-keyword: var(--palette-hexff79c6);
+  --syntax-callable: var(--palette-hex50fa7b);
+  --syntax-string: var(--palette-hexf1fa8c);
+  --syntax-type: var(--palette-hex8be9fd);
+  --syntax-tag: var(--palette-hexff79c6);
+  --syntax-number: var(--palette-hexbd93f9);
+  --syntax-comment: var(--palette-hexa0a9c7);
+  --syntax-property: var(--palette-hex8be9fd);
+  --syntax-meta: var(--palette-hexbd93f9);
+}
+:root.theme-light {
+  --syntax-keyword: var(--palette-hexcf222e);
+  --syntax-callable: var(--palette-hex8250df);
+  --syntax-string: var(--palette-hex0a3069);
+  --syntax-type: var(--palette-hex953800);
+  --syntax-tag: var(--palette-hex116329);
+  --syntax-number: var(--palette-hex0550ae);
+  --syntax-comment: var(--palette-hex6e7781);
+  --syntax-property: var(--palette-hex0550ae);
+  --syntax-meta: var(--palette-hex8250df);
 }

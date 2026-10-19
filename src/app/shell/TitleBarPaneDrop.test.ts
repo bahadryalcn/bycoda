@@ -8,6 +8,7 @@ import {
   titleTabDropFromPoint,
 } from "../../features/workspace/model/paneDrop";
 import { TitleBar, type Tab } from "./TitleBar";
+import { IS_MAC } from "../../platform/tauri/platform";
 
 vi.mock("./WindowControls", () => ({ WindowControls: () => null }));
 
@@ -131,7 +132,7 @@ describe("title tab pane drops", () => {
 
     const nav = container.querySelector<HTMLElement>("[data-compact-title-nav]")!;
     expect(nav.closest("header")?.className).toContain("body-glass");
-    expect(nav.className).toContain("pl-[70px]");
+    expect(nav.className).toContain(IS_MAC ? "ps-[70px]" : "ps-1.5");
     expect(
       Array.from(nav.querySelectorAll("button"), (button) =>
         button.getAttribute("aria-label")?.replace(/ \(.+\)$/, ""),

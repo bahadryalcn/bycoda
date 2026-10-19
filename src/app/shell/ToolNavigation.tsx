@@ -17,6 +17,8 @@ import {
   StickyNote,
   Server,
   Zap,
+  Wrench,
+  Terminal,
 } from "../../shared/ui/icons";
 import { t, useLocale } from "../../shared/i18n";
 import { TOOL_IDS, type WorkspaceToolId } from "../model/toolWindows";
@@ -28,13 +30,25 @@ import "./toolNavigation.css";
 // Retained panels own separate headers. Carry keyboard focus into the header
 // revealed by switching tools, after the previous tablist becomes hidden.
 let pendingKeyboardFocus: WorkspaceToolId | null = null;
+function requestKeyboardFocus(tool: WorkspaceToolId) {
+  pendingKeyboardFocus = tool;
+  // Opening a separate window may leave the current navigation unchanged.
+  window.setTimeout(() => {
+    if (pendingKeyboardFocus === tool) pendingKeyboardFocus = null;
+  }, 1000);
+}
+function clearKeyboardFocus() {
+  pendingKeyboardFocus = null;
+}
 
 export const ToolNavigationContext = createContext<{
+  history?: { canBack: boolean; canForward: boolean; onBack: () => void; onForward: () => void };
   active: WorkspaceToolId | null;
   cwd: string;
   notesEnabled: boolean;
   grouped?: boolean;
   includeServers?: boolean;
+  includeAuxiliaryTools?: boolean;
   onSelect: (tool: WorkspaceToolId) => void;
 } | null>(null);
 
@@ -50,6 +64,8 @@ const labels = {
   automations: "Automations",
   inbox: "Inbox",
   notes: "Notes",
+  "conversation-tools": "Conversation tools",
+  terminal: "Terminal",
 };
 const icons = {
   servers: Server,
@@ -58,6 +74,8 @@ const icons = {
   automations: Zap,
   inbox: Inbox,
   notes: StickyNote,
+  "conversation-tools": Wrench,
+  terminal: Terminal,
 };
 
 /** Mount on first visit, retain edits and selection, suspend effects while hidden. */
@@ -75,14 +93,16 @@ export function ToolPanel({
   if (visited.current && keepEffects)
     return (
       <div
-        className={active ? "flex min-h-0 min-w-0 flex-1 flex-col" : "hidden"}
+        className={active ? "ui-page-enter flex min-h-0 min-w-0 flex-1 flex-col" : "hidden"}
         inert={!active ? true : undefined}
       >
         {children}
       </div>
     );
   return visited.current ? (
-    <Activity mode={active ? "visible" : "hidden"}>{children}</Activity>
+    <Activity mode={active ? "visible" : "hidden"}>
+      <div className="ui-page-enter flex min-h-0 min-w-0 flex-1 flex-col">{children}</div>
+    </Activity>
   ) : null;
 }
 
@@ -96,23 +116,25 @@ export function ToolNavigation() {
   useLayoutEffect(() => {
     if (pendingKeyboardFocus && pendingKeyboardFocus === navigation?.active) {
       tabRefs.current.get(pendingKeyboardFocus)?.focus();
-      pendingKeyboardFocus = null;
+      clearKeyboardFocus();
     }
   }, [navigation?.active]);
   if (!navigation?.active) return null;
   const tools: WorkspaceToolId[] =
     navigation.grouped === false
       ? [navigation.active]
-      : [
-          ...(navigation.includeServers || navigation.active === "servers"
-            ? ["servers" as const]
-            : []),
-          ...TOOL_IDS.filter((id) => id !== "notes" || navigation.notesEnabled),
-        ];
+      : TOOL_IDS.filter((id) =>
+          id === "notes"
+            ? navigation.notesEnabled
+            : id === "servers"
+              ? navigation.includeServers || navigation.active === "servers"
+              : id === "terminal" || id === "conversation-tools"
+                ? navigation.includeAuxiliaryTools
+                : true,
+        );
   const open = async (grouped: boolean) => {
-    if (opening || (navigation.active === "servers" && !grouped)) return;
-    // Servers stays in the workspace; start the combined window on its first tool.
-    const active = navigation.active === "servers" ? TOOL_IDS[0] : navigation.active!;
+    if (opening) return;
+    const active = navigation.active!;
     setOpening(true);
     setError("");
     try {
@@ -153,12 +175,7 @@ export function ToolNavigation() {
           if (next < 0) return;
           event.preventDefault();
           const nextTool = tools[next];
-          pendingKeyboardFocus = nextTool;
-          // Revealing an existing native window may leave this workspace as-is.
-          // Do not carry a stale keyboard request into a later unrelated visit.
-          window.setTimeout(() => {
-            if (pendingKeyboardFocus === nextTool) pendingKeyboardFocus = null;
-          }, 1000);
+          requestKeyboardFocus(nextTool);
           navigation.onSelect(tools[next]);
           tabRefs.current.get(tools[next])?.focus();
         }}
@@ -192,21 +209,19 @@ export function ToolNavigation() {
         })}
       </div>
       <div className="tool-window-actions">
-        {navigation.active !== "servers" ? (
-          <Button
-            variant="ghost"
-            motion="none"
-            iconOnly
-            label={t("Open in new window")}
-            data-tauri-drag-region="false"
-            disabled={opening}
-            onClick={() => void open(false)}
-            aria-label={t("Open in new window")}
-            title={t("Open in new window")}
-          >
-            <AppWindow className="size-3.5" aria-hidden />
-          </Button>
-        ) : null}
+        <Button
+          variant="ghost"
+          motion="none"
+          iconOnly
+          label={t("Open in new window")}
+          data-tauri-drag-region="false"
+          disabled={opening}
+          onClick={() => void open(false)}
+          aria-label={t("Open in new window")}
+          title={t("Open in new window")}
+        >
+          <AppWindow className="size-3.5" aria-hidden />
+        </Button>
         <Button
           variant="ghost"
           motion="none"

@@ -14,7 +14,9 @@ import {
 } from "../model/appearance";
 import { UI_SCALE_DEFAULT, UI_SCALE_PERCENTS } from "../model/uiScale";
 import { useColorScheme } from "../../../shared/hooks/useColorScheme";
+import { useCodeTheme } from "../../../shared/hooks/useCodeTheme";
 import { Button } from "../../../shared/ui/Button";
+import { TextField } from "../../../shared/ui/TextField";
 import "./AppearancePreviews.css";
 
 const presets = [
@@ -323,6 +325,7 @@ export function AppearanceInterface({ appearance: a }: { appearance: AppearanceS
 
 export function AppearanceTypography({ appearance: a }: { appearance: AppearanceSettings }) {
   useLocale();
+  const codeTheme = useCodeTheme();
   const p = a.preferences;
   const fontOptions = (fonts: readonly string[]) =>
     fonts.map((value) => ({
@@ -342,6 +345,10 @@ export function AppearanceTypography({ appearance: a }: { appearance: Appearance
               interfaceFont: APPEARANCE_DEFAULTS.interfaceFont,
               codeFont: APPEARANCE_DEFAULTS.codeFont,
               codeSize: APPEARANCE_DEFAULTS.codeSize,
+              terminalFont: APPEARANCE_DEFAULTS.terminalFont,
+              terminalSize: APPEARANCE_DEFAULTS.terminalSize,
+              terminalWeight: APPEARANCE_DEFAULTS.terminalWeight,
+              terminalLineHeight: APPEARANCE_DEFAULTS.terminalLineHeight,
             })
           }
         >
@@ -375,7 +382,7 @@ export function AppearanceTypography({ appearance: a }: { appearance: Appearance
       <Row
         id="monospace-font"
         label={t("Monospace font")}
-        description={t("Code blocks, file editors, diffs and the terminal.")}
+        description={t("Code blocks, file editors and diffs. Terminals inherit this font unless overridden below.")}
       >
         <Select
           label={t("Monospace font")}
@@ -383,6 +390,12 @@ export function AppearanceTypography({ appearance: a }: { appearance: Appearance
           options={fontOptions(CODE_FONTS)}
           onChange={(codeFont) => a.onPreferences({ ...p, codeFont })}
         />
+      </Row>
+      <Row id="code-theme" label={t("Code theme")}
+        description={t("Applies to editors, diffs and code blocks. Light appearance uses GitHub Light.")}>
+        <Select label={t("Code theme")} value={codeTheme}
+          options={[{ value: "github", label: "GitHub Dark default" }, { value: "dracula", label: "Dracula" }]}
+          onChange={(value) => a.onPreferences({ ...p, codeTheme: value === "dracula" ? "dracula" : "github" })} />
       </Row>
       <Row id="code-font-size" label={t("Code font size")}>
         <Select
@@ -410,6 +423,29 @@ export function AppearanceTypography({ appearance: a }: { appearance: Appearance
           {" greet(name: string) {\n  return `${message}, ${name}`;\n}"}
         </code>
       </pre>
+      <Row id="terminal-font" label={t("Terminal font")}
+        description={t("Enter an installed font name, such as Cascadia Code or JetBrains Mono. Leave empty to inherit the monospace font.")}>
+        <TextField label={t("Terminal font")} hideLabel
+          value={p.terminalFont} placeholder={t("System default")}
+          onChange={(event) => a.onPreferences({ ...p, terminalFont: event.target.value })} />
+      </Row>
+      <Row id="terminal-font-size" label={t("Terminal font size")}
+        description={t("Ctrl + mouse wheel zooms only the terminal under the pointer.")}>
+        <Slider label={t("Terminal font size")} value={p.terminalSize}
+          display={t("{p0} px", { p0: p.terminalSize })} min={8} max={40}
+          onChange={(terminalSize) => a.onPreferences({ ...p, terminalSize })} />
+      </Row>
+      <Row id="terminal-font-weight" label={t("Terminal font weight")}>
+        <Select label={t("Terminal font weight")} value={String(p.terminalWeight)}
+          options={[{ value: "300", label: t("Light") }, { value: "400", label: t("Regular") },
+            { value: "500", label: t("Medium") }, { value: "600", label: t("Semibold") }, { value: "700", label: t("Bold") }]}
+          onChange={(value) => a.onPreferences({ ...p, terminalWeight: Number(value) })} />
+      </Row>
+      <Row id="terminal-line-height" label={t("Terminal line spacing")}>
+        <Select label={t("Terminal line spacing")} value={String(p.terminalLineHeight)}
+          options={[1, 1.15, 1.35, 1.5].map((value) => ({ value: String(value), label: `${value}×` }))}
+          onChange={(value) => a.onPreferences({ ...p, terminalLineHeight: Number(value) })} />
+      </Row>
     </Group>
   );
 }

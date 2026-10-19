@@ -609,6 +609,27 @@ export function ProjectRail({
     tasksActive ||
     socialActive ||
     serversActive;
+  const brand = (
+    <div
+      className={`bycoda-rail-brand ${IS_MAC ? "@max-[140px]/rail:flex-col @max-[140px]/rail:justify-center" : "bycoda-rail-brand--title"}`}
+    >
+      <img src={PRODUCT_IDENTITY.logoSrc} alt={PRODUCT_IDENTITY.displayName} />
+      {settingsOpen ? null : (
+        <div
+          className={`min-w-0 flex-1 ${IS_MAC ? "@max-[140px]/rail:w-full @max-[140px]/rail:flex-none" : ""}`}
+        >
+          <RailSearch
+            label={t("Search")}
+            icon={Search}
+            onClick={onSearch}
+            active={searchActive}
+            command="App: Search"
+          />
+        </div>
+      )}
+      {settingsOpen ? null : recoveryControl}
+    </div>
+  );
   const renderProjectGroup = (
     { group, items, workspaceItems, locked }: (typeof groupedProjectSections.grouped)[number],
     sortableGroups: SortableHandle = groupSortable,
@@ -770,6 +791,7 @@ export function ProjectRail({
         data-tauri-drag-region="deep"
       >
         {IS_MAC ? <div className="w-[78px] shrink-0" /> : null}
+        {IS_MAC ? null : brand}
         <DevModeSlot />
         {/* Icon-only, just the panel toggle fits; in settings nothing does. */}
         <div
@@ -791,21 +813,7 @@ export function ProjectRail({
       </div>
 
       <div className="@container/rail flex min-h-0 flex-1 flex-col">
-        <div className="bycoda-rail-brand @max-[140px]/rail:flex-col @max-[140px]/rail:justify-center">
-          <img src={PRODUCT_IDENTITY.logoSrc} alt={PRODUCT_IDENTITY.displayName} />
-          {settingsOpen ? null : (
-            <div className="min-w-0 flex-1 @max-[140px]/rail:w-full @max-[140px]/rail:flex-none">
-              <RailSearch
-                label={t("Search")}
-                icon={Search}
-                onClick={onSearch}
-                active={searchActive}
-                command="App: Search"
-              />
-            </div>
-          )}
-          {settingsOpen ? null : recoveryControl}
-        </div>
+        {IS_MAC ? brand : null}
         {settingsOpen ? (
           <Button
             variant="ghost"

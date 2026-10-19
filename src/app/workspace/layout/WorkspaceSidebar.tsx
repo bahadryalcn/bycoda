@@ -53,10 +53,10 @@ export const WorkspaceSidebar = memo(
   function WorkspaceSidebar({
     workspaceNavigation,
     historyFailed,
-    searchViewOpen,
-    inboxViewOpen,
-    notesViewOpen,
-    serversViewOpen = false,
+    searchViewOpen: _searchViewOpen,
+    inboxViewOpen: _inboxViewOpen,
+    notesViewOpen: _notesViewOpen,
+    serversViewOpen: _serversViewOpen,
     automationsViewOpen,
     taskBoardShown,
     socialBoardShown,
@@ -77,15 +77,7 @@ export const WorkspaceSidebar = memo(
             : undefined
         }
         status={historyFailed ? "error" : "idle"}
-        canGoBack={
-          tabVisitNav.canBack ||
-          searchViewOpen ||
-          props.settingsOpen ||
-          inboxViewOpen ||
-          notesViewOpen ||
-          serversViewOpen ||
-          automationsViewOpen
-        }
+        canGoBack={tabVisitNav.canBack}
         canGoForward={surfaceForward.canForward || tabVisitNav.canForward}
         selectedDiffPath={activeTab ? selectedChangePath(activeTab, props.gitCwd) : undefined}
         selectedDiffKind={activeTab ? selectedChangeKind(activeTab) : undefined}

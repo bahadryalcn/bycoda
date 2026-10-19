@@ -37,6 +37,31 @@ type CommonButtonProps = ComponentPropsWithRef<"button"> & {
 export type ButtonProps = CommonButtonProps &
   ({ iconOnly: true; label: string } | { iconOnly?: false; label?: string });
 
+/** Shared native presentation for DOM-owned composites such as CodeMirror panels. */
+export function nativeButtonPresentation({
+  variant = "ghost",
+  size = "sm",
+  iconOnly = false,
+}: { variant?: "ghost" | "secondary"; size?: ButtonSize; iconOnly?: boolean } = {}) {
+  return {
+    className: [
+      arcStyles.button,
+      arcStyles[variant],
+      arcStyles[size],
+      "bycoda-arc",
+      styles.control,
+      styles[variant],
+      iconOnly ? styles.iconOnly : "",
+    ]
+      .filter(Boolean)
+      .join(" "),
+    "data-button-variant": variant,
+    "data-button-hierarchy": variant,
+    "data-button-tone": "neutral",
+    "data-button-size": size,
+  };
+}
+
 const isTrue = (value: unknown) => value === true || value === "true";
 
 /** One application API, with Arc action rendering and native structural/event rendering. */

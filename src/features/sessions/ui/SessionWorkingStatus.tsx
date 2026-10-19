@@ -14,11 +14,11 @@ export function SessionWorkingStatus({ startedAt }: { startedAt?: number }) {
       role="img"
       aria-label={[t("Working"), elapsed].filter(Boolean).join(", ")}
       title={t("Working")}
-      className="inline-flex shrink-0 items-center gap-1 text-(--color-active)"
+      className="inline-flex shrink-0 items-center gap-1 text-[11px] text-(--color-active)"
     >
       <TerminalSpinner className="inline-block w-3 select-none text-center text-[11px] leading-none" />
       {elapsed ? (
-        <span className="shrink-0 tabular-nums text-(--ui-text-secondary)">{elapsed}</span>
+        <span className="shrink-0 tabular-nums">{elapsed}</span>
       ) : null}
     </span>
   );

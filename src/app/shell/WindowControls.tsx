@@ -88,6 +88,7 @@ function NativeWindowControls() {
 
   return (
     <div
+      data-window-controls
       className="flex h-full shrink-0 items-stretch border-s border-stroke"
       data-tauri-drag-region="false"
     >

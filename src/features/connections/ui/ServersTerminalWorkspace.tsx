@@ -14,6 +14,7 @@ import { SshConfigurationConnectReview } from "./SshConfigurationConnectReview";
 import { useSshHttpProxyApproval } from "./useSshHttpProxyApproval";
 import { SshRunbookQueue } from "./SshRunbookQueue";
 import { requestSshStartupReviews } from "../model/sshRunbookQueue";
+import { ServerTerminalSession } from "./ServerTerminalSession";
 
 type TerminalActions = {
   open: (server: ServerRecord) => void;
@@ -286,80 +287,99 @@ export function ServersTerminalWorkspace({
                     {t("Identity file")}: {terminal.keyGenerationPath}
                   </p>
                 ) : null}
-                <TerminalView
-                  id={terminal.id}
-                  cwd=""
-                  onReturnToServers={() => setActive(null)}
-                  sshConnectionId={terminal.server?.id}
-                  sshEndpoint={terminal.endpoint}
-                  shellIntegration={terminal.shellIntegration}
-                  agentForwardingReviewId={terminal.agentForwardingReviewId}
-                  expectedConfigurationDigest={terminal.expectedConfigurationDigest}
-                  httpProxyTicketId={terminal.httpProxyTicketId}
-                  onStartupReview={
-                    terminal.server
-                      ? async () => {
-                          await requestSshStartupReviews(terminal.server!.id);
-                          setReviewQueueRequest((value) => value + 1);
-                        }
-                      : undefined
-                  }
-                  onSshPromptReady={
-                    terminal.server && terminal.startupEligible
-                      ? () => {
-                          if (startupNotified.current.has(terminal.id)) return;
-                          startupNotified.current.add(terminal.id);
-                          void requestSshStartupReviews(terminal.server!.id);
-                        }
-                      : undefined
-                  }
-                  onEnableShellIntegration={
-                    !terminal.keyGenerationPath && !terminal.shellIntegration
-                      ? async (shell = "bash") => {
-                          if (terminal.server?.metadata.sshInheritance) {
-                            setConfigurationReview({
-                              server: terminal.server,
-                              shellIntegration: shell,
-                              startupEligible: terminal.startupEligible,
-                              name: terminal.name,
-                            });
-                            return;
-                          }
-                          const id = `ssh-${shell}:${crypto.randomUUID()}`;
-                          const approval = authorizeProxy(
-                            id,
-                            terminal.server,
-                            terminal.endpoint,
-                            shell,
-                          );
-                          const httpProxyTicketId = approval ? await approval : undefined;
-                          if (httpProxyTicketId === null) return;
-                          const restoreId = crypto.randomUUID();
-                          if (terminal.server)
-                            serverTerminalRestoreState.add({
-                              tabId: restoreId,
-                              serverId: terminal.server.id,
-                            });
-                          setTerminals((previous) => [
-                            ...previous,
-                            {
-                              id,
-                              restoreId,
-                              name: `${terminal.name} · ${shell === "powershell" ? "PowerShell 7" : shell === "zsh" ? "Zsh" : "Bash"}`,
-                              server: terminal.server,
-                              endpoint: terminal.endpoint ? { ...terminal.endpoint } : undefined,
-                              shellIntegration: shell,
-                              httpProxyTicketId,
-                              startupEligible: terminal.startupEligible,
-                            },
-                          ]);
-                          setActive(id);
-                        }
-                      : undefined
-                  }
+                <ServerTerminalSession
                   keyGenerationPath={terminal.keyGenerationPath}
-                  active={visible && active === terminal.id}
-                />
+                  target={terminal.server?.machine?.ssh?.target}
+                  port={terminal.server?.machine?.ssh?.port}
+                  identityFile={terminal.server?.machine?.ssh?.identityFile}
+                  endpoint={
+                    terminal.endpoint ??
+                    terminal.server?.effectiveSshEndpoint ??
+                    terminal.server?.sshEndpoint
+                  }
+                >
+                  {(fontSize, onFontSizeChange, lineHeight) => (
+                    <TerminalView
+                      fontSize={fontSize}
+                      onFontSizeChange={onFontSizeChange}
+                      lineHeight={lineHeight}
+                      id={terminal.id}
+                      cwd=""
+                      onReturnToServers={() => setActive(null)}
+                      sshConnectionId={terminal.server?.id}
+                      sshEndpoint={terminal.endpoint}
+                      shellIntegration={terminal.shellIntegration}
+                      agentForwardingReviewId={terminal.agentForwardingReviewId}
+                      expectedConfigurationDigest={terminal.expectedConfigurationDigest}
+                      httpProxyTicketId={terminal.httpProxyTicketId}
+                      onStartupReview={
+                        terminal.server
+                          ? async () => {
+                              await requestSshStartupReviews(terminal.server!.id);
+                              setReviewQueueRequest((value) => value + 1);
+                            }
+                          : undefined
+                      }
+                      onSshPromptReady={
+                        terminal.server && terminal.startupEligible
+                          ? () => {
+                              if (startupNotified.current.has(terminal.id)) return;
+                              startupNotified.current.add(terminal.id);
+                              void requestSshStartupReviews(terminal.server!.id);
+                            }
+                          : undefined
+                      }
+                      onEnableShellIntegration={
+                        !terminal.keyGenerationPath && !terminal.shellIntegration
+                          ? async (shell = "bash") => {
+                              if (terminal.server?.metadata.sshInheritance) {
+                                setConfigurationReview({
+                                  server: terminal.server,
+                                  shellIntegration: shell,
+                                  startupEligible: terminal.startupEligible,
+                                  name: terminal.name,
+                                });
+                                return;
+                              }
+                              const id = `ssh-${shell}:${crypto.randomUUID()}`;
+                              const approval = authorizeProxy(
+                                id,
+                                terminal.server,
+                                terminal.endpoint,
+                                shell,
+                              );
+                              const httpProxyTicketId = approval ? await approval : undefined;
+                              if (httpProxyTicketId === null) return;
+                              const restoreId = crypto.randomUUID();
+                              if (terminal.server)
+                                serverTerminalRestoreState.add({
+                                  tabId: restoreId,
+                                  serverId: terminal.server.id,
+                                });
+                              setTerminals((previous) => [
+                                ...previous,
+                                {
+                                  id,
+                                  restoreId,
+                                  name: `${terminal.name} · ${shell === "powershell" ? "PowerShell 7" : shell === "zsh" ? "Zsh" : "Bash"}`,
+                                  server: terminal.server,
+                                  endpoint: terminal.endpoint
+                                    ? { ...terminal.endpoint }
+                                    : undefined,
+                                  shellIntegration: shell,
+                                  httpProxyTicketId,
+                                  startupEligible: terminal.startupEligible,
+                                },
+                              ]);
+                              setActive(id);
+                            }
+                          : undefined
+                      }
+                      keyGenerationPath={terminal.keyGenerationPath}
+                      active={visible && active === terminal.id}
+                    />
+                  )}
+                </ServerTerminalSession>
               </div>
             ))}
           </section>

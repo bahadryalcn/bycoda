@@ -184,6 +184,10 @@ const machines = Array.from({ length: params.has("emptyServers") ? 0 : 35 }, (_,
       : { target: `fixture@server-${index}.example.invalid`, port: 2222, remotePort: 3774 },
 }));
 Object.assign(window, {
+  serversFixtureTerminalOutput: (id: string, text: string) => {
+    const bytes = new TextEncoder().encode(text);
+    emitFixtureEvent("pty-data", { id, data: btoa(String.fromCharCode(...bytes)) });
+  },
   serversFixtureProxyMode: (mode: "ready" | "stale") => {
     proxyApprovalMode = mode;
   },

@@ -188,13 +188,13 @@
   border-end-end-radius: inherit;
 }
 .appearance-code-comment {
-  color: var(--ui-text-secondary);
+  color: var(--syntax-comment);
 }
 .appearance-code-keyword {
-  color: var(--color-accent);
+  color: var(--syntax-keyword);
 }
 .appearance-code-string {
-  color: var(--color-success);
+  color: var(--syntax-string);
 }
 html.appearance-word-wrap .appearance-code-sample {
   white-space: pre-wrap;

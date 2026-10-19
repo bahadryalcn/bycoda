@@ -1207,10 +1207,40 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
         "discover connect directory folder cli sign in profile terminal hesap profil klasör keşfet",
     },
     {
+      id: "code-theme",
+      section: "appearance",
+      label: "Code theme",
+      keywords: "syntax highlighting github dark dracula code theme kod tema renk",
+    },
+    {
       id: "code-font-size",
       section: "appearance",
       label: "Code font size",
-      keywords: "code terminal text size px kod yazı boyut",
+      keywords: "code text size px kod yazı boyut",
+    },
+    {
+      id: "terminal-font",
+      section: "appearance",
+      label: "Terminal font",
+      keywords: "terminal font family typeface yazı tipi monospace cascadia jetbrains",
+    },
+    {
+      id: "terminal-font-size",
+      section: "appearance",
+      label: "Terminal font size",
+      keywords: "terminal zoom ctrl wheel size büyüt küçült tekerlek boyut",
+    },
+    {
+      id: "terminal-font-weight",
+      section: "appearance",
+      label: "Terminal font weight",
+      keywords: "terminal weight bold regular medium kalınlık stil",
+    },
+    {
+      id: "terminal-line-height",
+      section: "appearance",
+      label: "Terminal line spacing",
+      keywords: "terminal line height spacing satır aralık",
     },
     {
       id: "skill-folders",
@@ -2226,7 +2256,7 @@ export const KEYBINDINGS: KeybindingRow[] = [
   { command: "Terminal: New Tab", keys: `${MOD}${SHIFT}\``, when: "Always" },
   { command: "Terminal: Toggle Dock", keys: `${MOD}J`, when: "Always" },
   { command: "Editor: Find", keys: `${MOD}F`, when: "editorFocus" },
-  { command: "Editor: Replace", keys: `${MOD}${ALT}F`, when: "editorFocus" },
+  { command: "Editor: Replace", keys: IS_MAC ? `${MOD}${ALT}F` : "Ctrl+H", when: "editorFocus" },
   ...[
     "General",
     "Providers",

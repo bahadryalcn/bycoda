@@ -1,5 +1,57 @@
 import { test, expect } from "@playwright/test";
+
+for (const theme of ["light", "dark"]) {
+  for (const width of [390, 1440]) {
+    test(`terminal typography settings: ${theme} ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 900 });
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      await page.goto(`/tests/browser/settings.html?section=appearance&theme=${theme}&lang=tr`);
+      const font = page.getByRole("textbox", { name: "Terminal yazı tipi", exact: true });
+      await font.fill("JetBrains Mono");
+      const size = page.getByRole("slider", { name: "Terminal yazı boyutu", exact: true });
+      await size.focus();
+      await size.press("ArrowRight");
+      await expect(size).toHaveAttribute("aria-valuenow", "14");
+      await page.locator('[data-setting-id="terminal-font-weight"] button').click();
+      await page.getByRole("option", { name: "Yarı kalın", exact: true }).click();
+      await page.locator('[data-setting-id="terminal-line-height"] button').click();
+      await page.getByRole("option", { name: "1.35×", exact: true }).click();
+      const saved = () => page.evaluate(() => JSON.parse(localStorage.getItem("bycoda.appearancePreferences.v1") ?? "{}"));
+      await expect.poll(saved).toMatchObject({ terminalFont: "JetBrains Mono", terminalSize: 14,
+        terminalWeight: 600, terminalLineHeight: 1.35, codeSize: 13 });
+      await page.reload();
+      await expect(font).toHaveValue("JetBrains Mono");
+      await expect(size).toHaveAttribute("aria-valuenow", "14");
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
+    });
+  }
+}
 import { mkdirSync } from "node:fs";
+
+for (const theme of ["dark", "light"]) {
+  test(`code theme follows appearance and persists: ${theme}`, async ({ page }) => {
+    await page.setViewportSize({ width: 768, height: 900 });
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await page.goto(`/tests/browser/settings.html?section=appearance&theme=${theme}&lang=tr`);
+    const row = page.locator('[data-setting-id="code-theme"]');
+    const trigger = row.getByRole("button");
+    await trigger.scrollIntoViewIfNeeded();
+    await trigger.focus();
+    await trigger.press("Enter");
+    await page.getByRole("option", { name: "Dracula", exact: true }).click();
+    await expect(page.locator("html")).toHaveAttribute("data-code-theme", "dracula");
+    const keyword = page.locator(".appearance-code-keyword").first();
+    await expect(keyword).toHaveCSS("color", theme === "dark" ? "rgb(255, 121, 198)" : "rgb(207, 34, 46)");
+    await page.reload();
+    await expect(trigger).toContainText("Dracula");
+    await expect(page.locator("html")).toHaveAttribute("data-code-theme", "dracula");
+    await trigger.scrollIntoViewIfNeeded();
+    await page.setViewportSize({ width: 390, height: 844 });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
+    mkdirSync("temp/verification/2026-10-19-code-themes", { recursive: true });
+    await row.screenshot({ path: `temp/verification/2026-10-19-code-themes/${theme}-theme-control.png` });
+  });
+}
 
 for (const theme of ["light", "dark"])
   for (const width of [390, 768, 1024, 1440]) {

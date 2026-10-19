@@ -4,6 +4,11 @@ import { SearchInput } from "../../../shared/ui/SearchInput";
 import { useRetainedState } from "../../../shared/hooks/useRetainedState";
 import { InlineEdit } from "../../../shared/ui/InlineEdit";
 import { Button } from "../../../shared/ui/Button";
+import { Popover } from "../../../shared/ui/Popover";
+import { ConfirmMorph } from "../../../shared/ui/ConfirmMorph";
+import { hasActiveOverlay } from "../../../shared/ui/overlay";
+import { requestOpenNoteLibrary } from "../noteNavigation";
+import "./notes.css";
 import { ExpandingButtonGroup } from "../../../shared/ui/ExpandingButtonGroup";
 import { SurfaceSelection } from "../../sessions/ui/SurfaceSelection";
 import { errorText } from "../../../shared/lib/errors";
@@ -67,8 +72,6 @@ import { ALT, MOD } from "../../../platform/tauri/platform";
 
 /** The note each session last had open, so reopening the panel resumes it. */
 const lastNoteBySession = new Map<string, string>();
-// An initial blank document belongs to the session, even across quick remounts.
-const initialNotes = new Map<string, Promise<Note>>();
 
 function createSessionNote(sessionId: string, project: string) {
   return createNote({
@@ -77,16 +80,6 @@ function createSessionNote(sessionId: string, project: string) {
     sourceSessionId: sessionId,
     ...(project ? { sourceCwd: project } : {}),
   });
-}
-
-function initialSessionNote(sessionId: string, project: string): Promise<Note> {
-  const pending = initialNotes.get(sessionId);
-  if (pending) return pending;
-  const promise = createSessionNote(sessionId, project).finally(() => {
-    if (initialNotes.get(sessionId) === promise) initialNotes.delete(sessionId);
-  });
-  initialNotes.set(sessionId, promise);
-  return promise;
 }
 
 // Saves of one note run in order and outlive the editor that started them, so a
@@ -105,7 +98,7 @@ function enqueueSave(id: string, run: () => Promise<void>) {
 }
 
 async function settlePendingSaves() {
-  await Promise.allSettled([...pendingSaves.values()]);
+  await Promise.allSettled(pendingSaves.values());
 }
 
 type Props = {
@@ -124,7 +117,7 @@ export function SessionNotesPanel({ sessionId, cwd }: Props) {
 function SessionNotesContent({ sessionId, cwd }: Props) {
   useLocale();
   const project = looksLikeProject(cwd) ? cwd : "";
-  const resize = useDragResize({
+  const { width: panelWidth, setPaneRef, dragging, separatorProps, onPointerDown, onDoubleClick } = useDragResize({
     direction: "left",
     min: NOTES_PANEL_MIN_WIDTH,
     max: () => notesPanelMaxWidth(window.innerWidth),
@@ -140,6 +133,7 @@ function SessionNotesContent({ sessionId, cwd }: Props) {
     () => lastNoteBySession.get(sessionId) ?? null,
   );
   const [listOpen, setListOpen] = useState(false);
+  const listButton = useRef<HTMLButtonElement>(null);
   const [query, setQuery] = useRetainedState(`session-notes:${sessionId}:query`, "");
   const [listLimit, setListLimit] = useState(40);
   const [creating, setCreating] = useState(false);
@@ -191,34 +185,9 @@ function SessionNotesContent({ sessionId, cwd }: Props) {
 
   useEffect(() => {
     if (!selected) return;
-    if (selected.sourceSessionId === sessionId) lastNoteBySession.set(sessionId, selected.id);
+    lastNoteBySession.set(sessionId, selected.id);
     if (selected.id !== selectedId) setSelectedId(selected.id);
   }, [selected, selectedId, sessionId]);
-
-  useEffect(() => {
-    if (!loaded || selected || error) return;
-    let cancelled = false;
-    setCreating(true);
-    void initialSessionNote(sessionId, project)
-      .then((created) => {
-        setNotes((current) => [
-          summarizeNote(created),
-          ...current.filter((item) => item.id !== created.id),
-        ]);
-        if (cancelled) return;
-        setSelectedId(created.id);
-        setWantFocus(true);
-      })
-      .catch((err: unknown) => {
-        if (!cancelled) setError(errorText(err));
-      })
-      .finally(() => {
-        setCreating(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [loaded, selected, error, sessionId, project]);
 
   const onCreate = async () => {
     if (creating) return;
@@ -273,7 +242,13 @@ function SessionNotesContent({ sessionId, cwd }: Props) {
   );
 
   const onKeyDown = (event: ReactKeyboardEvent<HTMLElement>) => {
-    if (event.key !== "Escape" || event.nativeEvent.isComposing) return;
+    if (
+      event.key !== "Escape" ||
+      event.nativeEvent.isComposing ||
+      event.defaultPrevented ||
+      hasActiveOverlay()
+    )
+      return;
     event.preventDefault();
     event.stopPropagation();
     if (listOpen) setListOpen(false);
@@ -286,7 +261,7 @@ function SessionNotesContent({ sessionId, cwd }: Props) {
 
   return (
     <aside
-      ref={resize.setPaneRef}
+      ref={setPaneRef}
       role="complementary"
       aria-label={t("Session notes")}
       data-notes-panel
@@ -294,26 +269,28 @@ function SessionNotesContent({ sessionId, cwd }: Props) {
       className="relative flex h-full min-h-0 min-w-0 shrink-0 flex-col border-l border-stroke text-content"
     >
       <div
-        role="separator"
-        aria-orientation="vertical"
+        {...separatorProps}
         aria-label={t("Resize notes panel")}
         className={`absolute inset-y-0 -left-px z-10 w-1.5 cursor-col-resize touch-none ${
-          resize.dragging ? "bg-content/15" : "hover:bg-content/10"
+          dragging ? "bg-content/15" : "hover:bg-content/10"
         }`}
-        onPointerDown={resize.onPointerDown}
-        onDoubleClick={resize.onDoubleClick}
+        onPointerDown={onPointerDown}
+        onDoubleClick={onDoubleClick}
       />
       <div
         data-notes-header
         className="flex h-9 shrink-0 items-center gap-1 border-b border-stroke px-2"
       >
         <Button
+          ref={listButton}
           variant="ghost"
           motion="none"
           aria-expanded={listOpen}
           aria-label={t("Switch note")}
+          aria-haspopup="dialog"
           title={selected?.title ?? t("Switch note")}
-          onClick={() => {
+          onClick={(event) => {
+            event.currentTarget.focus();
             setListOpen((open) => !open);
             setListLimit(40);
           }}
@@ -344,9 +321,22 @@ function SessionNotesContent({ sessionId, cwd }: Props) {
         </PanelIconButton>
       </div>
       {listOpen ? (
-        <div
-          ref={listLock}
-          className="max-h-56 shrink-0 overflow-y-auto overscroll-none border-b border-stroke p-1.5"
+        <Popover
+          anchor={listButton}
+          width={Math.max(NOTES_PANEL_MIN_WIDTH, panelWidth)}
+          maxHeight={420}
+          role="dialog"
+          aria-label={t("Switch note")}
+          autoFocus
+          tabIndex={-1}
+          onFocus={(event) => {
+            if (event.target === event.currentTarget)
+              event.currentTarget
+                .querySelector<HTMLInputElement>("input")
+                ?.focus({ preventScroll: true });
+          }}
+          onDismiss={() => setListOpen(false)}
+          className="session-note-picker"
         >
           <SearchInput
             appearance="field"
@@ -359,41 +349,53 @@ function SessionNotesContent({ sessionId, cwd }: Props) {
             }}
             containerClassName="mb-1 w-full"
           />
-          <NoteGroup
-            label={t("This session")}
-            notes={visibleSession}
-            activeId={selected?.id}
-            onSelect={(id) => {
-              setSelectedId(id);
-              setListOpen(false);
-              setWantFocus(true);
-            }}
-          />
-          <NoteGroup
-            label={t("Project notes")}
-            notes={visibleProject}
-            activeId={selected?.id}
-            onSelect={(id) => {
-              setSelectedId(id);
-              setListOpen(false);
-              setWantFocus(true);
-            }}
-          />
-          {filtered.session.length + filtered.project.length > listLimit ? (
-            <Button
-              variant="ghost"
-              size="sm"
-              type="button"
-              className="w-full"
-              onClick={() => setListLimit((limit) => limit + 40)}
-            >
-              {t("Show more")}
-            </Button>
-          ) : null}
-          {hasNotes || error || !loaded ? null : (
-            <EmptyState icon={null} description={t("No notes yet.")} />
-          )}
-        </div>
+          <div ref={listLock} className="session-note-picker-list">
+            <NoteGroup
+              label={t("This session")}
+              notes={visibleSession}
+              activeId={selected?.id}
+              onSelect={(id) => {
+                setSelectedId(id);
+                setListOpen(false);
+                setWantFocus(true);
+              }}
+            />
+            <NoteGroup
+              label={t("Project notes")}
+              notes={visibleProject}
+              activeId={selected?.id}
+              onSelect={(id) => {
+                setSelectedId(id);
+                setListOpen(false);
+                setWantFocus(true);
+              }}
+            />
+            {filtered.session.length + filtered.project.length > listLimit ? (
+              <Button
+                variant="ghost"
+                size="sm"
+                type="button"
+                className="w-full"
+                onClick={() => setListLimit((limit) => limit + 40)}
+              >
+                {t("Show more")}
+              </Button>
+            ) : null}
+            {filtered.session.length + filtered.project.length === 0 && loaded && !error ? (
+              <EmptyState
+                icon={null}
+                description={query.trim() ? t("No matching notes") : t("No notes yet.")}
+              />
+            ) : null}
+          </div>
+          <Button
+            variant="ghost"
+            fullWidth
+            onClick={() => requestOpenNoteLibrary({ cwd: project })}
+          >
+            {t("Open note library")}
+          </Button>
+        </Popover>
       ) : null}
       {error ? (
         <Alert tone="danger">
@@ -422,11 +424,34 @@ function SessionNotesContent({ sessionId, cwd }: Props) {
           sessionId={sessionId}
           onLink={onLink}
         />
-      ) : error ? null : (
+      ) : error ? null : loaded && !selected ? (
+        <div className="session-notes-empty">
+          <EmptyState icon={<File />} description={t("No notes for this session yet.")} />
+          <Button variant="primary" loading={creating} onClick={() => void onCreate()}>
+            {t("New note")}
+          </Button>
+          {hasNotes ? (
+            <Button variant="ghost" onClick={() => setListOpen(true)}>
+              {t("Browse project notes")}
+            </Button>
+          ) : null}
+        </div>
+      ) : (
         <div className="grid min-h-0 flex-1 place-items-center">
           <LoaderCircle className="size-4 animate-spin text-content/40" strokeWidth={1.75} />
         </div>
       )}
+      <div className="session-notes-library-link">
+        <Button
+          variant="ghost"
+          fullWidth
+          onClick={() =>
+            requestOpenNoteLibrary({ id: selected?.id, cwd: selected?.sourceCwd ?? project })
+          }
+        >
+          {t("Open note library")}
+        </Button>
+      </div>
     </aside>
   );
 }
@@ -528,6 +553,7 @@ const PanelNoteEditor = memo(function PanelNoteEditor({
   const [title, setTitle] = useState(restored?.title ?? note.title);
   const [body, setBody] = useState(restored?.body ?? note.body);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
   const [recovering, setRecovering] = useState(false);
   const [linking, setLinking] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -591,6 +617,7 @@ const PanelNoteEditor = memo(function PanelNoteEditor({
     const finalizeSlug =
       !!current.slugPending && finalizeRequested.current && !!typed && typed !== "Untitled";
     if (!finalizeSlug && nextTitle === current.title && nextBody === current.body) return;
+    setSaving(true);
     try {
       const saved = await upsertNote({
         id: current.id,
@@ -625,6 +652,8 @@ const PanelNoteEditor = memo(function PanelNoteEditor({
     } catch (err: unknown) {
       retainDraft();
       setSaveError(errorText(err));
+    } finally {
+      setSaving(false);
     }
   }, [draftKey, retainDraft]);
 
@@ -802,6 +831,15 @@ const PanelNoteEditor = memo(function PanelNoteEditor({
         </Alert>
       ) : null}
       <div className="flex min-h-9 shrink-0 flex-wrap items-center gap-1 border-t border-stroke px-2 py-1">
+        <span role="status" className="session-note-status">
+          {saveError || conflict
+            ? t("Unsaved changes")
+            : saving
+              ? t("Saving…")
+              : body !== note.body || title !== note.title
+                ? t("Unsaved changes")
+                : t("Saved")}
+        </span>
         <ExpandingButtonGroup
           label={t("Note actions")}
           size="sm"
@@ -845,27 +883,29 @@ const PanelNoteEditor = memo(function PanelNoteEditor({
           ]}
         />
         <span className="min-w-0 flex-1" />
-        <PanelIconButton
+        <ConfirmMorph
           label={t("Delete note")}
+          icon={<Trash2 className="size-3.5" />}
+          prompt={t("Delete note permanently?")}
+          confirmTimeout={0}
           disabled={deleting}
-          onClick={() => {
+          onConfirm={async () => {
             if (skipSave.current) return;
             skipSave.current = true;
             setDeleting(true);
             if (saveTimer.current != null) window.clearTimeout(saveTimer.current);
-            void enqueueSave(note.id, async () => {
+            await enqueueSave(note.id, async () => {
               const deleted = await onDelete(note.id, savedRef.current.updatedAt);
               if (deleted) editorDrafts.delete(draftKey);
               if (!deleted) {
                 skipSave.current = false;
                 setDeleting(false);
                 scheduleSave();
+                throw new Error(t("Could not delete note"));
               }
             });
           }}
-        >
-          <Trash2 className="size-3.5" strokeWidth={1.75} />
-        </PanelIconButton>
+        />
       </div>
     </SurfaceSelection>
   );

@@ -88,6 +88,87 @@ vi.mock("@xterm/xterm", () => ({
 import { TerminalView } from "./TerminalView";
 import { queueTerminalCommand } from "../model/terminalLaunchCommand";
 import { takeTerminalCommand } from "../model/terminalLaunchCommand";
+import { APPEARANCE_DEFAULTS, saveAppearancePreferences } from "../../settings/model/appearancePreferences";
+
+it("zooms only the hovered terminal, clamps size and applies saved typography without respawning", async () => {
+  localStorage.clear();
+  const { host, root } = setup();
+  try {
+    await act(async () => root.render(createElement("div", null,
+      createElement(TerminalView, { id: "zoom-first", cwd: "", active: true }),
+      createElement(TerminalView, { id: "zoom-second", cwd: "", active: true }),
+    )));
+    const first = xterm.instances[0];
+    const second = xterm.instances[1];
+    const pane = host.querySelector(".bycoda-terminal-host")!;
+    const wheel = (ctrlKey: boolean, deltaY: number) => {
+      const event = new WheelEvent("wheel", { ctrlKey, deltaY, bubbles: true, cancelable: true });
+      // happy-dom's WheelEvent does not copy modifier keys from its init dictionary.
+      Object.defineProperty(event, "ctrlKey", { value: ctrlKey });
+      pane.dispatchEvent(event);
+      return event;
+    };
+    expect(wheel(false, -100).defaultPrevented).toBe(false);
+    expect(wheel(true, -100).defaultPrevented).toBe(true);
+    expect(first.options).toMatchObject({ fontSize: 14 });
+    expect(second.options).toMatchObject({ fontSize: 13 });
+    expect(wheel(true, 0).defaultPrevented).toBe(false);
+    for (let i = 0; i < 60; i++) wheel(true, 100);
+    expect(first.options).toMatchObject({ fontSize: 8 });
+    for (let i = 0; i < 60; i++) wheel(true, -100);
+    expect(first.options).toMatchObject({ fontSize: 40 });
+    await act(async () => saveAppearancePreferences({ ...APPEARANCE_DEFAULTS,
+      codeSize: 18, terminalSize: 20, terminalWeight: 600,
+      terminalFont: "JetBrains Mono", terminalLineHeight: 1.35,
+    }));
+    for (const instance of [first, second]) expect(instance.options).toMatchObject({
+      fontSize: 20, fontWeight: 600, fontFamily: '"JetBrains Mono", monospace', lineHeight: 1.35,
+    });
+    expect(pty.spawnPty).toHaveBeenCalledTimes(2);
+    expect(pty.killPty).not.toHaveBeenCalled();
+    expect(xterm.instances).toHaveLength(2);
+  } finally {
+    await act(async () => root.unmount());
+    host.remove();
+    localStorage.clear();
+  }
+});
+
+it("changes server typography without replacing or restarting its SSH process", async () => {
+  const { host, root } = setup();
+  const render = (fontSize: number) =>
+    createElement(TerminalView, {
+      id: "ssh-typography",
+      cwd: "",
+      sshConnectionId: "saved",
+      active: true,
+      fontSize,
+      lineHeight: 1.35,
+    });
+  try {
+    await act(async () => root.render(render(15)));
+    const instance = xterm.instances[0];
+    expect(instance.options).toMatchObject({
+      fontSize: 15,
+      lineHeight: 1.35,
+      minimumContrastRatio: 4.5,
+    });
+    expect(instance.options).toHaveProperty(
+      "theme.background",
+      expect.not.stringMatching(/^(#00000000|transparent)$/),
+    );
+    await act(async () => root.render(render(20)));
+    expect(xterm.instances).toHaveLength(1);
+    expect(instance.options).toMatchObject({ fontSize: 20, lineHeight: 1.35 });
+    expect(
+      native.invoke.mock.calls.filter(([command]) => command === "ssh_terminal_spawn"),
+    ).toHaveLength(1);
+    expect(pty.killPty).not.toHaveBeenCalled();
+  } finally {
+    await act(async () => root.unmount());
+    host.remove();
+  }
+});
 
 it("opens opt-in integration through a new-tab callback without injecting into the current shell", async () => {
   const { host, root } = setup();

@@ -27,6 +27,7 @@ async function mount(
   grouped = true,
   active: WorkspaceToolId = "tasks",
   includeServers = false,
+  includeAuxiliaryTools = false,
 ) {
   const container = document.createElement("div");
   document.body.append(container);
@@ -37,7 +38,17 @@ async function mount(
     root.render(
       h(
         ToolNavigationContext.Provider,
-        { value: { active, cwd: "/repo", notesEnabled, grouped, onSelect, includeServers } },
+        {
+          value: {
+            active,
+            cwd: "/repo",
+            notesEnabled,
+            grouped,
+            onSelect,
+            includeServers,
+            includeAuxiliaryTools,
+          },
+        },
         h(ToolHeader, null, "Title"),
       ),
     ),
@@ -50,7 +61,7 @@ it("includes Servers in the main workspace and offers the combined tools window"
   expect(container.querySelectorAll('[role="tab"]')).toHaveLength(6);
   const selected = container.querySelector<HTMLButtonElement>('[aria-selected="true"]')!;
   expect(selected.textContent).toBe("Servers");
-  expect(container.querySelector('[aria-label="Open in new window"]')).toBeNull();
+  expect(container.querySelector('[aria-label="Open in new window"]')).not.toBeNull();
   expect(container.querySelector('[aria-label="Open all tools in one window"]')).not.toBeNull();
   await act(() =>
     selected.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true })),
@@ -69,7 +80,7 @@ it.each([false, true])(
         .querySelector<HTMLButtonElement>('[aria-label="Open all tools in one window"]')!
         .click(),
     );
-    const destination = { tool: "social", cwd: "/repo", grouped: true };
+    const destination = { tool: "servers", cwd: "/repo", grouped: true };
     expect(routeWindowDestination).toHaveBeenCalledWith({ kind: "tool", ...destination });
     if (existing) expect(invoke).not.toHaveBeenCalled();
     else expect(invoke).toHaveBeenCalledWith("open_tool_window", destination);
@@ -197,4 +208,19 @@ it("retains edits between tool tabs and suspends hidden listeners", async () => 
   expect(cleanup).toHaveBeenCalled();
   await act(() => render(true));
   expect(container.querySelector("input")?.value).toBe("unsaved note");
+});
+
+it("includes and selects all added tools in a grouped window", async () => {
+  const { container, onSelect } = await mount(true, true, "inbox", true, true);
+  expect(container.querySelectorAll('[role="tab"]')).toHaveLength(8);
+  for (const label of ["Servers", "Conversation tools", "Terminal"]) {
+    const tab = container.querySelector<HTMLButtonElement>(`[title="${label}"]`)!;
+    expect(tab).not.toBeNull();
+    await act(() => tab.click());
+  }
+  expect(onSelect.mock.calls.map(([tool]) => tool)).toEqual([
+    "servers",
+    "conversation-tools",
+    "terminal",
+  ]);
 });

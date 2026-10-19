@@ -83,7 +83,18 @@ pub fn open_tool_window(
 }
 
 fn tool_window_url(tool: &str, cwd: &str, grouped: bool) -> Result<tauri::WebviewUrl, String> {
-    if !["social", "tasks", "automations", "inbox", "notes"].contains(&tool) {
+    if ![
+        "servers",
+        "social",
+        "tasks",
+        "automations",
+        "inbox",
+        "notes",
+        "conversation-tools",
+        "terminal",
+    ]
+    .contains(&tool)
+    {
         return Err("Unknown workspace tool".into());
     }
     let mut url =
@@ -948,7 +959,16 @@ mod tests {
 
     #[test]
     fn tool_urls_preserve_project_paths_and_allow_only_workspace_tools() {
-        for tool in ["social", "tasks", "automations", "inbox", "notes"] {
+        for tool in [
+            "servers",
+            "social",
+            "tasks",
+            "automations",
+            "inbox",
+            "notes",
+            "conversation-tools",
+            "terminal",
+        ] {
             let tauri::WebviewUrl::App(path) =
                 tool_window_url(tool, "G:\\İş & plan #1", true).unwrap()
             else {

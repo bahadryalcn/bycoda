@@ -47,6 +47,7 @@ struct LivePty {
     ssh_identity: Option<String>,
     shell_integration: Option<Arc<Mutex<crate::ssh_shell_integration::ShellIntegration>>>,
     cwd: std::path::PathBuf,
+    completion_shell: Option<String>,
     writer: Mutex<Box<dyn Write + Send>>,
     #[cfg(unix)]
     master_fd: i32,
@@ -337,6 +338,25 @@ pub fn pty_spawn(
         let _ = (app, cwd, cols, rows, shell);
         Err("Terminals are not supported on this platform.".into())
     }
+}
+
+/// Only the window owning a local PTY can query its launch shell's catalog.
+#[tauri::command(async)]
+pub fn pty_suggestions(
+    window: tauri::Window,
+    host: State<'_, PtyHost>,
+    id: String,
+    prefix: String,
+) -> Result<Vec<String>, String> {
+    let live = host.get_for_window(&id, window.label())?;
+    if live.ssh_identity.is_some() {
+        return Err("Local suggestions are unavailable for private terminals".into());
+    }
+    let shell = live
+        .completion_shell
+        .as_deref()
+        .ok_or("Shell catalog unavailable")?;
+    Ok(crate::terminal_completion::suggestions(shell, &prefix))
 }
 
 fn ensure_identity(live: Option<&LivePty>, identity: Option<&str>) -> Result<(), String> {
@@ -827,6 +847,7 @@ fn spawn_unix(
         ssh_identity: ssh_identity.clone(),
         shell_integration: integration.clone(),
         cwd: workdir.clone(),
+        completion_shell: (!private).then(|| shell.clone()),
         writer: Mutex::new(Box::new(QueuedWriter::spawn(Box::new(writer)))),
         master_fd: master,
         pid,
@@ -995,6 +1016,7 @@ fn spawn_windows(
         ssh_identity: ssh_identity.clone(),
         shell_integration: integration.clone(),
         cwd: workdir.clone(),
+        completion_shell: (!private).then(|| shell.clone()),
         writer: Mutex::new(Box::new(QueuedWriter::spawn(writer))),
         master: Mutex::new(pair.master),
         pid,
@@ -1764,6 +1786,7 @@ mod tests {
             ssh_identity: None,
             shell_integration: None,
             cwd: std::path::PathBuf::from("/test"),
+            completion_shell: None,
             writer: Mutex::new(Box::new(std::io::sink())),
             master_fd: -1,
             pid,
@@ -1983,6 +2006,7 @@ mod queued_writer_tests {
             ssh_identity: Some("server:user:endpoint".into()),
             shell_integration: None,
             cwd: std::env::temp_dir(),
+            completion_shell: None,
             writer: Mutex::new(Box::new(QueuedWriter::spawn(Box::new(Capture(tx))))),
             #[cfg(unix)]
             master_fd: -1,
@@ -2056,6 +2080,7 @@ mod queued_writer_tests {
             ssh_identity: Some("fixture".into()),
             shell_integration: Some(state.clone()),
             cwd: std::env::temp_dir(),
+            completion_shell: None,
             writer: Mutex::new(Box::new(BlockingWriter {
                 entered: entered_tx,
                 release: release_rx,
@@ -2127,6 +2152,7 @@ mod queued_writer_tests {
                 ssh_identity: None,
                 shell_integration: None,
                 cwd: root.join("subdir"),
+                completion_shell: None,
                 writer: Mutex::new(Box::new(Capture(tx))),
                 #[cfg(unix)]
                 master_fd: -1,

@@ -1,6 +1,10 @@
 import { expect, it } from "vitest";
 import type { Terminal } from "@xterm/xterm";
-import { localTerminalCompletion } from "./localTerminalCompletion";
+import {
+  localTerminalCompletion,
+  localTerminalPrefix,
+  safeHistoryCommand,
+} from "./localTerminalCompletion";
 
 function terminal(
   line: string,
@@ -48,4 +52,37 @@ it("ignores password prompts, ordinary output, wrapped lines, alternate screens 
   ]) {
     expect(localTerminalCompletion(terminal("$ git status", options))).toBeNull();
   }
+});
+
+it("ranks recent matching commands ahead of templates without adding duplicate or mismatched suffixes", () => {
+  const term = terminal("$ git s");
+  expect(
+    localTerminalCompletion(term, [
+      "git show HEAD",
+      "git status",
+      "git show HEAD",
+      "docker ps",
+      "git s",
+      "git secret-token abc",
+    ]),
+  ).toEqual({
+    prefix: "git s",
+    suggestions: ["git show HEAD", "git status", "git stash list"],
+  });
+  expect(localTerminalPrefix(terminal("$ custom-tool --check"))).toBe("custom-tool --check");
+});
+
+it("keeps potentially sensitive and multiline values out of suggestions and session history", () => {
+  for (const value of [
+    "export KEY=value",
+    "tool --token abc",
+    "echo a\nb",
+    "curl https://a:b@host",
+    "cat .env",
+    "tool \u001b[31m",
+    "tool \u202ebad",
+  ]) {
+    expect(safeHistoryCommand(value)).toBe(false);
+  }
+  expect(safeHistoryCommand("custom-tool --check")).toBe(true);
 });

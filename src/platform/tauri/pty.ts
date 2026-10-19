@@ -175,6 +175,11 @@ export async function writePty(id: string, data: string): Promise<void> {
   await invoke("pty_write", { id, data });
 }
 
+/** Prefix-matched local shell history and commands. No history is sent to agents or persisted here. */
+export function getPtySuggestions(id: string, prefix: string): Promise<string[]> {
+  return invoke<string[]>("pty_suggestions", { id, prefix });
+}
+
 export async function resizePty(id: string, cols: number, rows: number): Promise<void> {
   await invoke("pty_resize", { id, cols, rows });
 }

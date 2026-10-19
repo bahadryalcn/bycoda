@@ -511,8 +511,9 @@ export const MenuBar = memo(function MenuBar({
   return (
     <div
       ref={barRef}
+      data-workspace-menubar
       className="flex h-7 shrink-0 items-center gap-0.5 border-b border-stroke bg-content/5 px-2 text-[12px]"
-      data-tauri-drag-region="false"
+      data-tauri-drag-region="deep"
     >
       {MENUS.map(({ key, label }) => {
         const isActive = activeMenu === key;

@@ -11,6 +11,20 @@ applyThemePreference(params.get("theme") === "light" ? "light" : "dark");
 const open = Terminal.prototype.open;
 Terminal.prototype.open = function (element) {
   open.call(this, element);
+  this.onRender(() => {
+    document.documentElement.dataset.terminalTypography = JSON.stringify({
+      fontSize: this.options.fontSize,
+      fontFamily: this.options.fontFamily,
+      fontWeight: this.options.fontWeight,
+      lineHeight: this.options.lineHeight,
+    });
+  });
+  this.onWriteParsed(() => {
+    const buffer = this.buffer.active;
+    document.documentElement.dataset.terminalPrompt = buffer
+      .getLine(buffer.baseY + buffer.cursorY)
+      ?.translateToString(true);
+  });
   this.onSelectionChange(() => {
     document.documentElement.dataset.terminalSelection = this.getSelection();
     document.documentElement.dataset.terminalPosition = JSON.stringify(this.getSelectionPosition());

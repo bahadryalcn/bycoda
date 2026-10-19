@@ -119,7 +119,7 @@ it("persists inline title edits and restores the saved title after a rejected re
   expect(stored.find((note) => note.sourceSessionId === sessionId)?.title).toBe("Inline title");
 });
 
-async function render(id = sessionId, strict = false) {
+async function render(id = sessionId, strict = false, create = true) {
   await act(async () => {
     const panel = createElement(SessionNotesPanel, {
       sessionId: id,
@@ -127,9 +127,12 @@ async function render(id = sessionId, strict = false) {
     });
     root.render(strict ? createElement(StrictMode, null, panel) : panel);
   });
+  if (create && !body() && !container.querySelector('[role="alert"]')) {
+    await click("New note");
+  }
 }
 function button(label: string) {
-  const found = [...container.querySelectorAll("button")].find(
+  const found = [...document.querySelectorAll("button")].find(
     (item) => item.getAttribute("aria-label") === label || item.textContent === label,
   );
   expect(found, label).toBeTruthy();
@@ -154,8 +157,15 @@ it("keeps autosaving the draft after deletion fails", async () => {
   await render();
   vi.useFakeTimers();
   await input(body(), "Keep this draft");
-  invoke.mockRejectedValueOnce(new Error("Delete unavailable"));
   await click("Delete note");
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(300);
+  });
+  invoke.mockRejectedValueOnce(new Error("Delete unavailable"));
+  await click("Confirm delete");
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(600);
+  });
   expect(container.textContent).toContain("Delete unavailable");
   await input(body(), "Keep this draft and the next edit");
   await act(async () => {
@@ -167,15 +177,15 @@ it("keeps autosaving the draft after deletion fails", async () => {
   expect(button("Delete note").disabled).toBe(false);
 });
 
-it("creates one blank session document even with project notes and StrictMode remounts", async () => {
-  await render(sessionId, true);
-  expect(body().value).toBe("");
-  const own = stored.filter((note) => note.sourceSessionId === sessionId);
-  expect(own).toHaveLength(1);
-  expect(own[0].sourceCwd).toBe("/work/app");
-  expect(own[0].slugPending).toBe(true);
+it("creates no blank documents on open or StrictMode remount until explicitly requested", async () => {
+  await render(sessionId, true, false);
+  expect(body()).toBeNull();
+  expect(stored.filter((note) => note.sourceSessionId === sessionId)).toHaveLength(0);
   await act(async () => root.render(null));
-  await render();
+  await render(sessionId, false, false);
+  expect(stored.filter((note) => note.sourceSessionId === sessionId)).toHaveLength(0);
+  await click("New note");
+  expect(body().value).toBe("");
   expect(stored.filter((note) => note.sourceSessionId === sessionId)).toHaveLength(1);
 });
 
@@ -197,7 +207,7 @@ it("links a chosen project note and remembers it after reopening", async () => {
   await render();
   await click("Switch note");
   await act(async () =>
-    container.querySelector<HTMLButtonElement>('button[title="Project plan"]')!.click(),
+    document.querySelector<HTMLButtonElement>('button[title="Project plan"]')!.click(),
   );
   expect(body().value).toBe("Project text");
   await click("Link to this session");
@@ -205,6 +215,19 @@ it("links a chosen project note and remembers it after reopening", async () => {
   await act(async () => root.render(null));
   await render();
   expect(body().value).toBe("Project text");
+});
+
+it("remembers an explicitly chosen project note without linking it or creating a blank note", async () => {
+  await render(sessionId, false, false);
+  await click("Switch note");
+  await act(async () =>
+    document.querySelector<HTMLButtonElement>('button[title="Project plan"]')!.click(),
+  );
+  await act(async () => root.render(null));
+  await render(sessionId, false, false);
+  expect(body().value).toBe("Project text");
+  expect(stored).toHaveLength(1);
+  expect(stored[0].sourceSessionId).toBeUndefined();
 });
 
 it("sends the current unsaved note as a composer card", async () => {
@@ -269,7 +292,7 @@ it("opens the dropdown without waiting for a pending save or fetching the list a
   ).length;
   await click("Switch note");
   expect(button("Switch note").getAttribute("aria-expanded")).toBe("true");
-  expect(container.querySelector('button[title="Project plan"]')).not.toBeNull();
+  expect(document.querySelector('button[title="Project plan"]')).not.toBeNull();
   expect(
     invoke.mock.calls.filter(
       ([command]) => command === "notes_list" || command === "notes_list_summaries",
@@ -288,15 +311,15 @@ it("bounds dropdown rendering and finds notes beyond the first page", async () =
   await loadNotes(true);
   await render();
   await click("Switch note");
-  expect(container.querySelectorAll("li")).toHaveLength(40);
+  expect(document.querySelectorAll("li")).toHaveLength(40);
   await click("Show more");
-  expect(container.querySelectorAll("li")).toHaveLength(80);
+  expect(document.querySelectorAll("li")).toHaveLength(80);
   await input(
-    container.querySelector<HTMLInputElement>('input[aria-label="Search notes"]')!,
+    document.querySelector<HTMLInputElement>('input[aria-label="Search notes"]')!,
     "Plan 0",
   );
-  expect(container.querySelectorAll("li")).toHaveLength(1);
-  expect(container.querySelector('button[title="Plan 0"]')).not.toBeNull();
+  expect(document.querySelectorAll("li")).toHaveLength(1);
+  expect(document.querySelector('button[title="Plan 0"]')).not.toBeNull();
 });
 
 it("shows a load error without creating an empty document on failed reads", async () => {
@@ -305,6 +328,7 @@ it("shows a load error without creating an empty document on failed reads", asyn
   expect(container.querySelector('[role="alert"]')?.textContent).toContain("Disk unavailable");
   expect(invoke.mock.calls.some(([command]) => command === "notes_upsert")).toBe(false);
   await click("Retry");
+  await click("New note");
   expect(body().value).toBe("");
 });
 it("preserves an unsaved body across close and reopen after persistent write failure", async () => {

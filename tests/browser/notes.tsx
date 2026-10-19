@@ -1,6 +1,9 @@
 import { createRoot } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { NotesView } from "../../src/features/notes/ui/NotesView";
+import { SessionNotesPanel } from "../../src/features/notes/ui/SessionNotesPanel";
+import { useEffect, useState } from "react";
+import { OPEN_NOTE_LIBRARY_EVENT } from "../../src/features/notes/noteNavigation";
 import { setLanguagePreference } from "../../src/shared/i18n";
 import { summarizeNote, type Note, type NoteUpsert } from "../../src/features/notes/notes";
 import "../../src/styles/index.css";
@@ -24,6 +27,7 @@ const notes: Note[] = Array.from({ length: count }, (_, index) => ({
   tags: index % 2 ? ["ideas"] : ["release", "todo"],
   sourceCwd:
     index % 3 === 0 ? "G:/Projects/monocode" : index % 3 === 1 ? "G:/Projects/mobile" : undefined,
+  sourceSessionId: index === 0 && !parameters.has("empty") ? "fixture-session" : undefined,
   createdAt: Date.now() - index * 120000,
   updatedAt: Date.now() - index * 60000,
 }));
@@ -83,20 +87,33 @@ Object.assign(window, {
 await setLanguagePreference(
   new URLSearchParams(location.search).get("lang") === "tr" ? "tr" : "en",
 );
+function Fixture() {
+  const [panel, setPanel] = useState(parameters.has("panel"));
+  useEffect(() => {
+    const open = () => setPanel(false);
+    window.addEventListener(OPEN_NOTE_LIBRARY_EVENT, open);
+    return () => window.removeEventListener(OPEN_NOTE_LIBRARY_EVENT, open);
+  }, []);
+  return panel ? (
+    <SessionNotesPanel sessionId="fixture-session" cwd="G:/Projects/monocode" />
+  ) : (
+    <NotesView
+      besideRail
+      cwd="G:/Projects/monocode"
+      recents={[
+        { path: "G:/Projects/monocode", openedAt: 2 },
+        { path: "G:/Projects/mobile", openedAt: 1 },
+      ]}
+      onClose={() => {}}
+    />
+  );
+}
 createRoot(document.getElementById("root")!).render(
   <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
     <div
       style={{ blockSize: "100dvh", display: "flex", background: "var(--color-background-base)" }}
     >
-      <NotesView
-        besideRail
-        cwd="G:/Projects/monocode"
-        recents={[
-          { path: "G:/Projects/monocode", openedAt: 2 },
-          { path: "G:/Projects/mobile", openedAt: 1 },
-        ]}
-        onClose={() => {}}
-      />
+      <Fixture />
     </div>
   </QueryClientProvider>,
 );

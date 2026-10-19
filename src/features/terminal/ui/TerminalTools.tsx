@@ -27,6 +27,7 @@ import { RemoteShellSuggestions } from "./RemoteShellSuggestions";
 export type TerminalTool = "search" | "command" | "remote" | null;
 
 export function TerminalTools({
+  terminalId,
   terminal,
   mode,
   onModeChange,
@@ -37,6 +38,7 @@ export function TerminalTools({
   onSavedCommands,
   onStartupReview,
 }: {
+  terminalId?: string;
   terminal: Terminal | null;
   mode: TerminalTool;
   onModeChange: (mode: TerminalTool) => void;
@@ -403,6 +405,7 @@ export function TerminalTools({
       )}
       {ready && suggestionsAllowed && terminal ? (
         <LocalTerminalSuggestions
+          terminalId={terminalId}
           terminal={terminal}
           explicit={mode === "command"}
           onClose={() => changeMode(null)}

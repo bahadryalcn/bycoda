@@ -54,6 +54,10 @@ const ServerSnippets = lazy(() =>
 );
 
 type Props = {
+  /** Surface-specific typography, independent of the code editor's text size. */
+  fontSize?: number;
+  onFontSizeChange?: (size: number) => void;
+  lineHeight?: number;
   id: string;
   cwd: string;
   /** Terminal profile to start in; the user's default when absent. */
@@ -156,9 +160,15 @@ const ANSI_LIGHT = {
   brightWhite: themePalette.solidInk,
 };
 
-function terminalTheme(light: boolean, scope?: HTMLElement) {
+function terminalTheme(light: boolean, scope?: HTMLElement, opaque = false) {
   return {
-    background: themePalette.hex00000000,
+    background: opaque
+      ? cssColor(
+          "var(--terminal-canvas, var(--ui-surface))",
+          light ? themePalette.hexfafafa : themePalette.hex171717,
+          scope,
+        )
+      : themePalette.hex00000000,
     foreground: cssColor(
       "var(--terminal-text, var(--color-content))",
       light ? themePalette.hex2e2e2e : themePalette.hexe8eef2,
@@ -189,6 +199,8 @@ function terminalTheme(light: boolean, scope?: HTMLElement) {
 }
 
 function monoFont(): string {
+  const font = loadAppearancePreferences().terminalFont.trim();
+  if (font) return `${JSON.stringify(font)}, monospace`;
   const fromCss = getComputedStyle(document.documentElement).getPropertyValue("--font-mono").trim();
   return fromCss || "ui-monospace, SFMono-Regular, Menlo, Monaco, monospace";
 }
@@ -226,6 +238,9 @@ function oscColors(scope?: HTMLElement) {
 let metaSupported = true;
 
 export function TerminalView({
+  fontSize,
+  onFontSizeChange,
+  lineHeight,
   id,
   cwd,
   profile,
@@ -243,6 +258,16 @@ export function TerminalView({
   onReturnToServers,
   onMetaChange,
 }: Props) {
+  const typographyRef = useRef({ fontSize, lineHeight });
+  const fontSizeCallback = useRef(onFontSizeChange);
+  useLayoutEffect(() => {
+    fontSizeCallback.current = onFontSizeChange;
+  }, [onFontSizeChange]);
+  const zoomSizeRef = useRef<number | null>(null);
+  useLayoutEffect(() => {
+    typographyRef.current = { fontSize, lineHeight };
+    zoomSizeRef.current = null;
+  }, [fontSize, lineHeight]);
   const privateTerminal = Boolean(sshConnectionId || sshEndpoint || keyGenerationPath);
   const integrated = Boolean(
     (shellIntegration === "bash" ||
@@ -305,17 +330,22 @@ export function TerminalView({
     const host = hostRef.current;
     if (!outer || !host) return;
 
+    let preferences = loadAppearancePreferences();
     const term = new Terminal({
       cursorBlink: true,
       cursorStyle: "bar",
       fontFamily: monoFont(),
-      fontSize: loadAppearancePreferences().codeSize,
-      lineHeight: 1,
+      fontSize: typographyRef.current.fontSize ?? preferences.terminalSize,
+      fontWeight: preferences.terminalWeight,
+      lineHeight: typographyRef.current.lineHeight ?? preferences.terminalLineHeight,
+      minimumContrastRatio: typographyRef.current.lineHeight ? 4.5 : 1,
       letterSpacing: 0,
       scrollback: 5000,
       allowTransparency: true,
       smoothScrollDuration: 0,
-      theme: terminalTheme(isLightScheme(), outer),
+      theme: terminalTheme(
+        isLightScheme(), outer, Boolean(typographyRef.current.lineHeight),
+      ),
       macOptionIsMeta: IS_MAC,
       linkHandler: { activate: activateTerminalLink },
     });
@@ -595,7 +625,9 @@ export function TerminalView({
     );
 
     const onSchemeChange = () => {
-      term.options.theme = terminalTheme(isLightScheme(), outer);
+      term.options.theme = terminalTheme(
+        isLightScheme(), outer, Boolean(typographyRef.current.lineHeight),
+      );
     };
     window.addEventListener(SCHEME_CHANGE_EVENT, onSchemeChange);
     const themeObserver = new MutationObserver(onSchemeChange);
@@ -604,11 +636,30 @@ export function TerminalView({
       attributeFilter: ["class", "style"],
     });
     const onTypographyChange = () => {
+      const next = loadAppearancePreferences();
+      if (next.terminalSize !== preferences.terminalSize) zoomSizeRef.current = null;
+      preferences = next;
       term.options.fontFamily = monoFont();
-      term.options.fontSize = loadAppearancePreferences().codeSize;
+      term.options.fontSize = zoomSizeRef.current ?? typographyRef.current.fontSize ?? next.terminalSize;
+      term.options.fontWeight = next.terminalWeight;
+      term.options.lineHeight = typographyRef.current.lineHeight ?? next.terminalLineHeight;
       applySizeRef.current();
     };
     window.addEventListener(APPEARANCE_PREFERENCES_EVENT, onTypographyChange);
+
+    // Capture before xterm and the webview can scroll a TUI or zoom the whole app.
+    const onZoomWheel = (event: WheelEvent) => {
+      if (!event.ctrlKey || event.deltaY === 0) return;
+      event.preventDefault();
+      event.stopPropagation();
+      const size = Math.max(8, Math.min(40, term.options.fontSize! + (event.deltaY < 0 ? 1 : -1)));
+      if (size === term.options.fontSize) return;
+      zoomSizeRef.current = size;
+      term.options.fontSize = size;
+      fontSizeCallback.current?.(size);
+      applySizeRef.current();
+    };
+    host.addEventListener("wheel", onZoomWheel, { capture: true, passive: false });
 
     term.attachCustomWheelEventHandler(() => {
       if (term.element?.classList.contains("enable-mouse-events")) return true;
@@ -632,7 +683,7 @@ export function TerminalView({
         remoteShellRef.current.suspendAutomatic();
       }
       applyTerminalChrome(term, outer, next);
-      if (!next) resetGridStretch(term);
+      if (!next) resetGridStretch(term, typographyRef.current.lineHeight ?? preferences.terminalLineHeight);
       lastCols = 0;
       lastRows = 0;
       schedule();
@@ -640,7 +691,7 @@ export function TerminalView({
 
     const applySize = () => {
       if (closed) return;
-      const next = fitTerminal(term, host, fitMode());
+      const next = fitTerminal(term, host, fitMode(), typographyRef.current.lineHeight ?? preferences.terminalLineHeight);
       if (!next) return;
       const { cols, rows } = next;
       if (cols === lastCols && rows === lastRows) return;
@@ -692,6 +743,7 @@ export function TerminalView({
       window.removeEventListener(SCHEME_CHANGE_EVENT, onSchemeChange);
       themeObserver.disconnect();
       window.removeEventListener(APPEARANCE_PREFERENCES_EVENT, onTypographyChange);
+      host.removeEventListener("wheel", onZoomWheel, true);
       dataSub.dispose();
       oscCwd.dispose();
       oscFg.dispose();
@@ -800,6 +852,16 @@ export function TerminalView({
     termRef.current?.focus();
   }, [active]);
 
+  useEffect(() => {
+    const term = termRef.current;
+    if (!term) return;
+    const preferences = loadAppearancePreferences();
+    term.options.fontSize = fontSize ?? preferences.terminalSize;
+    term.options.lineHeight = lineHeight ?? preferences.terminalLineHeight;
+    term.options.minimumContrastRatio = lineHeight ? 4.5 : 1;
+    applySizeRef.current();
+  }, [fontSize, lineHeight]);
+
   return (
     <div
       ref={outerRef}
@@ -835,6 +897,7 @@ export function TerminalView({
       }}
     >
       <TerminalTools
+        terminalId={id}
         terminal={terminal}
         mode={tool}
         onModeChange={setTool}

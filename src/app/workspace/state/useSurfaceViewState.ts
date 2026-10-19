@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useCallback, useState, type Dispatch, type SetStateAction } from "react";
 import { loadNotesEnabled } from "../../../features/settings/model/settings";
-import type { ToolWindow } from "../../model/toolWindows";
+import type { AuxiliaryToolId, ToolWindow } from "../../model/toolWindows";
 
 export interface SurfaceViewStateDeps {
   toolWindow: ToolWindow | null;
@@ -32,15 +32,26 @@ export function useSurfaceViewFlags({ toolWindow }: SurfaceViewStateDeps) {
 
 /** Notes, automations and the task/social board flags. */
 export function useSurfaceBoardFlags({ toolWindow }: SurfaceViewStateDeps) {
-  const [serversViewOpen, setServersViewOpen] = useState(false);
+  const [serversViewOpen, setServersViewOpen] = useState(toolWindow?.active === "servers");
   const [notesViewOpen, setNotesViewOpen] = useState(
     toolWindow?.active === "notes" && loadNotesEnabled(),
   );
-  const [automationsViewOpen, setAutomationsViewOpen] = useState(
-    toolWindow?.active === "automations" ||
+  const [auxiliaryTool, setAuxiliaryTool] = useState<AuxiliaryToolId | null>(
+    toolWindow?.active === "terminal" || toolWindow?.active === "conversation-tools"
+      ? toolWindow.active
+      : null,
+  );
+  const [automationsViewOpen, setAutomationsViewOpenState] = useState(
+    toolWindow?.active === "terminal" ||
+      toolWindow?.active === "conversation-tools" ||
+      toolWindow?.active === "automations" ||
       toolWindow?.active === "tasks" ||
       toolWindow?.active === "social",
   );
+  const setAutomationsViewOpen: Dispatch<SetStateAction<boolean>> = useCallback((value) => {
+    setAuxiliaryTool(null);
+    setAutomationsViewOpenState(value);
+  }, []);
   // Tasks and Social Media share the workspace navigation lifecycle with
   // Automations; closing or restoring it also handles the selected panel.
   const [taskBoardShown, setTaskBoardShown] = useState(toolWindow?.active === "tasks");
@@ -51,6 +62,8 @@ export function useSurfaceBoardFlags({ toolWindow }: SurfaceViewStateDeps) {
     setServersViewOpen,
     notesViewOpen,
     setNotesViewOpen,
+    auxiliaryTool,
+    setAuxiliaryTool,
     automationsViewOpen,
     setAutomationsViewOpen,
     taskBoardShown,

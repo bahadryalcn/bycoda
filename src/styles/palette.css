@@ -611,6 +611,21 @@
   --palette-rgb_0_0_0_0_1: rgb(0 0 0 / 0.1);
   --palette-rgb_0_0_0_0_18: rgb(0 0 0 / 0.18);
   --palette-rgb_0_0_0_0_12: rgb(0 0 0 / 0.12);
+  --palette-hexff7b72: #ff7b72;
+  --palette-hexd2a8ff: #d2a8ff;
+  --palette-hexa5d6ff: #a5d6ff;
+  --palette-hex7ee787: #7ee787;
+  --palette-hex8b949e: #8b949e;
+  --palette-hexff79c6: #ff79c6;
+  --palette-hex50fa7b: #50fa7b;
+  --palette-hexf1fa8c: #f1fa8c;
+  --palette-hex8be9fd: #8be9fd;
+  --palette-hexbd93f9: #bd93f9;
+  --palette-hexa0a9c7: #a0a9c7;
+  --palette-hex8250df: #8250df;
+  --palette-hex0a3069: #0a3069;
+  --palette-hex116329: #116329;
+  --palette-hex6e7781: #6e7781;
 }
 
 @theme {

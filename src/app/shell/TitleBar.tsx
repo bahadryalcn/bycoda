@@ -20,6 +20,7 @@ import {
 import {
   memo,
   useCallback,
+  useContext,
   useEffect,
   useLayoutEffect,
   useMemo,
@@ -29,6 +30,7 @@ import {
   type ReactNode,
 } from "react";
 import { basename } from "../../platform/tauri/fs";
+import { ToolNavigationContext } from "./ToolNavigation";
 import { looksLikeProject } from "../../features/projects/model/recents";
 import type { HarnessId } from "../../features/sessions/model/session";
 import { CwdPicker } from "../../features/projects/ui/CwdPicker";
@@ -664,6 +666,16 @@ export function OverlayNav({
   onToggleSidebar?: () => void;
 }) {
   useLocale();
+  const navigation = useContext(ToolNavigationContext)?.history;
+  if (navigation) return (
+    <TabVisitNav
+      canGoBack={navigation.canBack}
+      canGoForward={navigation.canForward}
+      onGoBack={navigation.onBack}
+      onGoForward={navigation.onForward}
+      onTogglePanel={onToggleSidebar}
+    />
+  );
   if (!onBack && !onToggleSidebar) return null;
   return (
     <div className="flex shrink-0 items-center px-1.5">
@@ -1263,7 +1275,10 @@ function TitleBarComponent({
       data-tauri-drag-region="deep"
     >
       {compactRail ? (
-        <div data-compact-title-nav className="flex shrink-0 items-center pl-[70px]">
+        <div
+          data-compact-title-nav
+          className={`flex shrink-0 items-center ${IS_MAC ? "ps-[70px]" : "ps-1.5"}`}
+        >
           <TabVisitNav
             canGoBack={canGoBack}
             canGoForward={canGoForward}
@@ -1276,7 +1291,7 @@ function TitleBarComponent({
           title bar takes over the traffic lights and the rail toggle. */}
       {projectless && railClosed && !compactRail ? (
         <>
-          <div className="w-[78px] shrink-0" />
+          {IS_MAC ? <div className="w-[78px] shrink-0" /> : null}
           <div className="flex shrink-0 items-center px-1.5">
             <IconButton
               label={t("Toggle Sidebar")}

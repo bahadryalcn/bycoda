@@ -6,6 +6,11 @@ export const APPEARANCE_DEFAULTS = {
   interfaceFont: "System",
   codeFont: "System",
   codeSize: 13,
+  codeTheme: "github",
+  terminalFont: "",
+  terminalSize: 13,
+  terminalWeight: 400,
+  terminalLineHeight: 1,
   contrast: 100,
   controlDensity: "compact",
   chatWidth: "comfortable",
@@ -15,6 +20,12 @@ export type AppearancePreferences = {
   interfaceFont: string;
   codeFont: string;
   codeSize: number;
+  codeTheme: "github" | "dracula";
+  /** Empty inherits the application's monospace font. */
+  terminalFont: string;
+  terminalSize: number;
+  terminalWeight: number;
+  terminalLineHeight: number;
   contrast: number;
   controlDensity: "compact" | "comfortable" | "touch";
   chatWidth: "comfortable" | "wide" | "full";
@@ -36,6 +47,16 @@ export function normalizeAppearancePreferences(
       ? value.codeFont!
       : "System",
     codeSize: bounded(value.codeSize, 13, 11, 18),
+    codeTheme: value.codeTheme === "dracula" ? "dracula" : "github",
+    terminalFont: typeof value.terminalFont === "string"
+      ? Array.from(value.terminalFont).filter((char) => char.charCodeAt(0) >= 32 && char.charCodeAt(0) !== 127 && ![34, 39, 92].includes(char.charCodeAt(0))).join("").slice(0, 100)
+      : "",
+    // Existing installations used the editor size until terminal preferences existed.
+    terminalSize: bounded(value.terminalSize, bounded(value.codeSize, 13, 11, 18), 8, 40),
+    terminalWeight: [300, 400, 500, 600, 700].includes(value.terminalWeight ?? 0)
+      ? value.terminalWeight! : 400,
+    terminalLineHeight: [1, 1.15, 1.35, 1.5].includes(value.terminalLineHeight ?? 0)
+      ? value.terminalLineHeight! : 1,
     contrast: bounded(value.contrast, 100, 75, 150),
     controlDensity:
       value.controlDensity === "comfortable" || value.controlDensity === "touch"
@@ -56,6 +77,7 @@ export function loadAppearancePreferences(): AppearancePreferences {
 export function applyAppearancePreferences(value: AppearancePreferences) {
   const root = document.documentElement;
   root.dataset.controlDensity = value.controlDensity;
+  root.dataset.codeTheme = value.codeTheme;
   for (const [property, font, fallback] of [
     ["--font-sans", value.interfaceFont, "sans-serif"],
     ["--font-mono", value.codeFont, "monospace"],

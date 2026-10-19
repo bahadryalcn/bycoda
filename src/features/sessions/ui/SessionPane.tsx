@@ -487,6 +487,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
   const stableAllowedHarnesses = useStableValue(allowedModelHarnesses, shallowArrayEqual);
   // Find and the outline read live text only while a search or a card is open.
   const [findSearching, setFindSearching] = useState(false);
+  const [findTriggerContainer, setFindTriggerContainer] = useState<HTMLSpanElement | null>(null);
   const [outlineOpen, setOutlineOpen] = useState(false);
   const draftBlock = useMemo(() => sessionDraftBlock(stableSession), [stableSession]);
   useSyncExternalStore(
@@ -1215,7 +1216,6 @@ const LocalSessionPane = memo(function LocalSessionPane({
       <Button
         variant="ghost"
         size="sm"
-        iconOnly
         label={t("Open notes panel")}
         motion="none"
         tooltip={t("Open notes panel")}
@@ -1227,6 +1227,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
         onClick={toggleNotesPanel}
       >
         <File className="size-3.5" strokeWidth={1.75} />
+        {t("Notes")}
       </Button>
     ) : null;
 
@@ -1234,6 +1235,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
     <div
       ref={paneRef}
       data-session-drop={session.id}
+      data-session-visible={visible}
       data-session-empty={isEmpty}
       data-project-chat-background={!!projectBackground}
       data-project-background-effect={projectBackground?.effect}
@@ -1292,6 +1294,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
           {workingBadge}
           <div className="session-pane-header-actions">
             {projectActions}
+            {!session.inboxAsk ? <span ref={setFindTriggerContainer} className="flex" data-no-drag /> : null}
             {notesButton}
             <Button
               variant="ghost"
@@ -1473,6 +1476,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
               {!session.inboxAsk ? (
                 <TranscriptFind
                   sessionId={session.id}
+                  triggerContainer={hasPaneHeader ? findTriggerContainer : undefined}
                   blocks={findSearching ? session.blocks : stableBlocks}
                   visible={visible}
                   focused={focused}

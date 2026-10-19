@@ -6,9 +6,31 @@ import {
   applyAppearancePreferences,
   loadAppearancePreferences,
   saveAppearancePreferences,
+  normalizeAppearancePreferences,
 } from "./appearancePreferences";
 
 describe("appearance preferences", () => {
+  it("defaults old preferences to GitHub and persists the selected code theme", () => {
+    expect(normalizeAppearancePreferences({}).codeTheme).toBe("github");
+    expect(normalizeAppearancePreferences({ codeTheme: "unknown" as never }).codeTheme).toBe("github");
+    saveAppearancePreferences({ ...APPEARANCE_DEFAULTS, codeTheme: "dracula" });
+    expect(loadAppearancePreferences().codeTheme).toBe("dracula");
+    expect(document.documentElement.dataset.codeTheme).toBe("dracula");
+    saveAppearancePreferences({ ...APPEARANCE_DEFAULTS });
+    expect(document.documentElement.dataset.codeTheme).toBe("github");
+  });
+  it("validates terminal typography separately from editor typography", () => {
+    const value = normalizeAppearancePreferences({
+      codeSize: 16, terminalSize: 99, terminalFont: 'JetBrains Mono',
+      terminalWeight: 600, terminalLineHeight: 1.35,
+    });
+    expect(value).toMatchObject({ codeSize: 16, terminalSize: 40,
+      terminalFont: 'JetBrains Mono', terminalWeight: 600, terminalLineHeight: 1.35 });
+    expect(normalizeAppearancePreferences({ terminalSize: -1,
+      terminalWeight: 999, terminalLineHeight: NaN })).toMatchObject({
+      terminalSize: 8, terminalWeight: 400, terminalLineHeight: 1,
+    });
+  });
   beforeEach(() => {
     localStorage.clear();
     document.documentElement.style.cssText = "";
@@ -31,6 +53,7 @@ describe("appearance preferences", () => {
     expect(loadAppearancePreferences()).toEqual({
       ...APPEARANCE_DEFAULTS,
       codeSize: 18,
+      terminalSize: 18,
       contrast: 75,
     });
   });
@@ -59,7 +82,7 @@ describe("appearance preferences", () => {
   });
   it("upgrades saved preferences without density and persists a shared touch target preference", () => {
     localStorage.setItem("bycoda.appearancePreferences.v1", JSON.stringify({ codeSize: 15 }));
-    expect(loadAppearancePreferences()).toEqual({ ...APPEARANCE_DEFAULTS, codeSize: 15 });
+    expect(loadAppearancePreferences()).toEqual({ ...APPEARANCE_DEFAULTS, codeSize: 15, terminalSize: 15 });
     saveAppearancePreferences({ ...loadAppearancePreferences(), controlDensity: "touch" });
     expect(loadAppearancePreferences().controlDensity).toBe("touch");
     expect(document.documentElement.dataset.controlDensity).toBe("touch");

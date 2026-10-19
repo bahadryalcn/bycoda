@@ -59,7 +59,132 @@ async function choose(page: Page, label: string, option: string | RegExp) {
   await page.getByRole("option", { name: option }).click();
 }
 
-test("shared tags, searchable filters and action menu preserve note drafts", async ({
+test("session note picker overlays the editor, restores keyboard focus and opens the same note in the library", async ({
+  page,
+}, testInfo) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.goto("/tests/browser/notes.html?panel");
+  const editor = page.getByRole("textbox", { name: "Note", exact: true });
+  await expect(editor).toHaveValue(/Release checklist/);
+  const before = await editor.boundingBox();
+  const switcher = page.getByRole("button", { name: "Switch note", exact: true });
+  await switcher.click();
+  const picker = page.getByRole("dialog", { name: "Switch note", exact: true });
+  await expect(picker).toBeVisible();
+  await expect(picker.getByRole("textbox", { name: "Search notes" })).toBeFocused();
+  expect(await editor.boundingBox()).toEqual(before);
+  await picker.getByRole("textbox", { name: "Search notes" }).fill("no such note");
+  await expect(picker).toContainText("No matching notes");
+  await page.keyboard.press("Escape");
+  await expect(picker).toHaveCount(0);
+  await expect(switcher).toBeFocused();
+  await expect(editor).toBeVisible();
+  await page.screenshot({
+    path: `temp/verification/2026-10-19-notes/${testInfo.project.name}-panel.png`,
+  });
+  await page.getByRole("button", { name: "Open note library", exact: true }).click();
+  await expect(page.getByRole("textbox", { name: "Note title", exact: true })).toHaveValue(
+    "Release planning",
+  );
+  await expect(page.locator('[data-note-id="note-1"]')).toHaveCount(0);
+});
+
+test("opening an empty session creates no document and browsing project notes remembers the selection", async ({
+  page,
+}) => {
+  await page.goto("/tests/browser/notes.html?panel&empty");
+  await expect(page.getByText("No notes for this session yet.", { exact: true })).toBeVisible();
+  expect(
+    await page.evaluate(
+      () => (window as unknown as { notesFixture: unknown[] }).notesFixture.length,
+    ),
+  ).toBe(42);
+  await page.getByRole("button", { name: "Browse project notes" }).click();
+  await page
+    .getByRole("dialog", { name: "Switch note" })
+    .getByRole("button", { name: /Note 03/ })
+    .click();
+  await expect(page.getByRole("textbox", { name: "Note", exact: true })).toHaveValue(
+    "Project notes and ideas for item 3.",
+  );
+  await page.getByRole("button", { name: "Delete note", exact: true }).click();
+  await expect(page.getByRole("group", { name: "Delete note permanently?" })).toBeVisible();
+  expect(
+    await page.evaluate(
+      () => (window as unknown as { notesFixture: unknown[] }).notesFixture.length,
+    ),
+  ).toBe(42);
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("textbox", { name: "Note", exact: true })).toBeVisible();
+});
+
+test("bulk selection spans pages, confirms explicitly and deletes only selected notes", async ({
+  page,
+}, testInfo) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.goto("/tests/browser/notes.html");
+  await page.getByRole("button", { name: "Select notes", exact: true }).click();
+  await page.getByRole("checkbox", { name: "Select all filtered notes", exact: true }).check();
+  await expect(page.getByText("42 selected", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Show more", exact: true }).click();
+  for (const checkbox of await page.locator('.note-selectable-row input[type="checkbox"]').all()) {
+    await expect(checkbox).toBeChecked();
+  }
+  await page.getByRole("button", { name: "Delete selected", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Delete 42 notes permanently?" });
+  await expect(dialog).toBeVisible();
+  await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
+  expect(
+    await page.evaluate(
+      () => (window as unknown as { notesFixture: unknown[] }).notesFixture.length,
+    ),
+  ).toBe(42);
+  await page.getByRole("checkbox", { name: "Select all filtered notes", exact: true }).uncheck();
+  await page.getByRole("button", { name: "Back", exact: true }).first().click();
+  await page.getByRole("checkbox", { name: "Select note: Release planning", exact: true }).check();
+  await page.getByRole("button", { name: "Delete selected", exact: true }).click();
+  await page
+    .getByRole("dialog")
+    .getByRole("button", { name: "Confirm delete", exact: true })
+    .click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect
+    .poll(() =>
+      page.evaluate(() => (window as unknown as { notesFixture: unknown[] }).notesFixture.length),
+    )
+    .toBe(41);
+  await expect(page.locator('[data-note-id="note-0"]')).toHaveCount(0);
+  await page.screenshot({
+    path: `temp/verification/2026-10-19-notes/${testInfo.project.name}-bulk-result.png`,
+  });
+});
+
+test("narrow library and editor switch without losing a draft", async ({ page }, testInfo) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/tests/browser/notes.html?theme=light");
+  const title = page.getByRole("textbox", { name: "Note title", exact: true });
+  await title.fill("Narrow layout draft");
+  await expect(title).toBeInViewport();
+  await page
+    .locator(".note-mobile-navigation")
+    .getByRole("button", { name: "Notes", exact: true })
+    .click();
+  await expect(title).not.toBeVisible();
+  await expect(page.getByRole("textbox", { name: "Filter notes" })).toBeInViewport();
+  await page
+    .locator(".note-mobile-navigation")
+    .getByRole("button", { name: "Editor", exact: true })
+    .click();
+  await expect(title).toHaveValue("Narrow layout draft");
+  const tags = page.locator('.note-detail-tags [data-tag="release"]');
+  await expect(tags).toBeInViewport();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await page.screenshot({
+    path: `temp/verification/2026-10-19-notes/${testInfo.project.name}-narrow-light.png`,
+  });
+});
+
+test("shared tags, searchable filters and visible save preserve note drafts", async ({
   page,
 }, testInfo) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
@@ -81,11 +206,9 @@ test("shared tags, searchable filters and action menu preserve note drafts", asy
   await expect(page.getByRole("textbox", { name: "Note title", exact: true })).toHaveValue(
     "Release planning",
   );
-  await page.getByRole("button", { name: "More options", exact: true }).click();
-  const save = page.getByRole("menuitem", { name: "Save", exact: true });
-  await expect(save).toBeFocused();
-  await page.keyboard.press("Escape");
-  await expect(page.getByRole("button", { name: "More options", exact: true })).toBeFocused();
+  const save = page.getByRole("button", { name: "Save", exact: true });
+  await expect(save).toBeVisible();
+  await save.click();
   await expect
     .poll(() =>
       page.evaluate(

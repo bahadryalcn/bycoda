@@ -80,6 +80,7 @@ mod ssh_sftp;
 mod ssh_shell_integration;
 mod ssh_terminal;
 mod ssh_window_lifecycle;
+mod terminal_completion;
 mod terminal_profiles;
 mod trackpad_zoom;
 mod tray;
@@ -733,6 +734,7 @@ pub fn run() {
             pty::pty_write,
             pty::pty_resize,
             pty::pty_status,
+            pty::pty_suggestions,
             pty::pty_kill,
             pty::pty_kill_all,
             session_import::import_discover,

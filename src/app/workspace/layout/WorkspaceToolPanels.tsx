@@ -1,5 +1,15 @@
+import { OverlayNav } from "../../shell/TitleBar";
+import { WindowControls } from "../../shell/WindowControls";
+import { IS_MAC } from "../../../platform/tauri/platform";
+import { useState } from "react";
+import {
+  SessionHostTools,
+  type ConversationTools,
+} from "../../../features/host-tools/SessionHostTools";
+import { lazySurface } from "../../../shared/ui/lazySurface";
+import { ToolNavigation } from "../../shell/ToolNavigation";
 import type { ComponentProps, Dispatch, SetStateAction } from "react";
-import type { WorkspaceToolId, ToolWindow } from "../../model/toolWindows";
+import type { AuxiliaryToolId, WorkspaceToolId, ToolWindow } from "../../model/toolWindows";
 import { NavigationBoundary } from "../../shell/NavigationBoundary";
 import { ToolNavigationContext, ToolPanel } from "../../shell/ToolNavigation";
 import {
@@ -11,12 +21,20 @@ import {
   ServersView,
 } from "../surfaces/lazySurfaces";
 
+const TerminalView = lazySurface(async () => ({
+  default: (await import("../../../features/terminal/ui/TerminalView")).TerminalView,
+}));
+
 type InboxProps = ComponentProps<typeof InboxView>;
 type NotesProps = ComponentProps<typeof NotesView>;
 type AutomationsProps = ComponentProps<typeof AutomationsView>;
 type SetBoolean = Dispatch<SetStateAction<boolean>>;
 
 export interface WorkspaceToolPanelsProps {
+  auxiliaryTool?: AuxiliaryToolId | null;
+  setAuxiliaryTool?: (tool: AuxiliaryToolId | null) => void;
+  conversationTools?: ConversationTools;
+  navigation?: { canBack: boolean; canForward: boolean; onBack: () => void; onForward: () => void };
   // Tool view open state and setters
   inboxViewOpen: boolean;
   notesViewOpen: boolean;
@@ -74,6 +92,10 @@ export interface WorkspaceToolPanelsProps {
 }
 
 export function WorkspaceToolPanels({
+  auxiliaryTool,
+  setAuxiliaryTool,
+  conversationTools,
+  navigation,
   inboxViewOpen,
   notesViewOpen,
   serversViewOpen,
@@ -103,7 +125,7 @@ export function WorkspaceToolPanels({
   compactRailActive,
   onToggleSidebar,
   pickProject,
-  onLeaveInbox,
+  onLeaveInbox: leaveInbox,
   onStartInboxItem,
   onAskInboxItem,
   onRestartInboxAsk,
@@ -113,34 +135,55 @@ export function WorkspaceToolPanels({
   onRepairChecks,
   onOpenInboxSession,
   onOpenInboxIntegrations,
-  onLeaveNotes,
-  onLeaveServers,
-  onLeaveAutomations,
+  onLeaveNotes: leaveNotes,
+  onLeaveServers: leaveServers,
+  onLeaveAutomations: leaveAutomations,
   onOpenBackgroundSession,
   onOpenAutomationSession,
   launchAutomation,
   onLaunchAutomationAssistant,
 }: WorkspaceToolPanelsProps) {
+  const [terminalId] = useState(() => `tools-terminal-${crypto.randomUUID()}`);
+  const onLeaveInbox = navigation?.onBack ?? leaveInbox;
+  const onLeaveNotes = navigation?.onBack ?? leaveNotes;
+  const onLeaveServers = navigation?.onBack ?? leaveServers;
+  const onLeaveAutomations = navigation?.onBack ?? leaveAutomations;
+  const auxiliaryHeader = (
+    <div
+      className="flex h-10 shrink-0 select-none items-center border-b border-stroke"
+      data-tauri-drag-region="deep"
+    >
+      {IS_MAC && detachedSessionWindow ? <div className="w-[78px] shrink-0" /> : null}
+      {detachedSessionWindow ? <OverlayNav onBack={onLeaveAutomations} /> : null}
+      <ToolNavigation />
+      {IS_MAC ? null : <WindowControls />}
+    </div>
+  );
   return (
     <ToolNavigationContext.Provider
       value={{
-        active: serversViewOpen
-          ? "servers"
-          : inboxViewOpen
-            ? "inbox"
-            : notesViewOpen
-              ? "notes"
-              : automationsViewOpen
-                ? socialBoardShown
-                  ? "social"
-                  : taskBoardShown
-                    ? "tasks"
-                    : "automations"
-                : null,
+        history: navigation,
+        active:
+          automationsViewOpen && auxiliaryTool
+            ? auxiliaryTool
+            : serversViewOpen
+              ? "servers"
+              : inboxViewOpen
+                ? "inbox"
+                : notesViewOpen
+                  ? "notes"
+                  : automationsViewOpen
+                    ? socialBoardShown
+                      ? "social"
+                      : taskBoardShown
+                        ? "tasks"
+                        : "automations"
+                    : null,
         cwd:
           automationsViewOpen && socialBoardShown && socialPanelCwd ? socialPanelCwd : projectCwd,
         notesEnabled,
-        includeServers: !toolWindow,
+        includeServers: !toolWindow || toolWindow.grouped || toolWindow.active === "servers",
+        includeAuxiliaryTools: !!setAuxiliaryTool,
         grouped: toolWindow?.grouped ?? true,
         onSelect: (tool: WorkspaceToolId) => {
           setFilePickerOpen(false);
@@ -150,12 +193,43 @@ export function WorkspaceToolPanels({
           setPullRequestsOnly(false);
           setNotesViewOpen(tool === "notes" && notesEnabled);
           setServersViewOpen(tool === "servers");
-          setAutomationsViewOpen(tool === "social" || tool === "tasks" || tool === "automations");
+          setAutomationsViewOpen(
+            tool === "social" ||
+              tool === "tasks" ||
+              tool === "automations" ||
+              tool === "terminal" ||
+              tool === "conversation-tools",
+          );
+          setAuxiliaryTool?.(tool === "terminal" || tool === "conversation-tools" ? tool : null);
           setSocialBoardShown(tool === "social");
           setTaskBoardShown(tool === "tasks");
         },
       }}
     >
+      <ToolPanel active={automationsViewOpen && auxiliaryTool === "conversation-tools"}>
+        <NavigationBoundary name="Conversation tools" onBack={onLeaveAutomations}>
+          <div className="flex min-h-0 min-w-0 flex-1 flex-col bg-(--ui-surface)">
+            {auxiliaryHeader}
+            <SessionHostTools
+              {...(conversationTools ?? { cwd: projectCwd, sessionId: "", title: "" })}
+              hideHeading
+              hidePresentation
+            />
+          </div>
+        </NavigationBoundary>
+      </ToolPanel>
+      <ToolPanel active={automationsViewOpen && auxiliaryTool === "terminal"} keepEffects>
+        <NavigationBoundary name="Terminal" onBack={onLeaveAutomations}>
+          {auxiliaryHeader}
+          <div className="min-h-0 min-w-0 flex-1">
+            <TerminalView
+              id={terminalId}
+              cwd={projectCwd}
+              active={automationsViewOpen && auxiliaryTool === "terminal"}
+            />
+          </div>
+        </NavigationBoundary>
+      </ToolPanel>
       <ToolPanel active={serversViewOpen} keepEffects>
         <NavigationBoundary name="Servers" onBack={onLeaveServers}>
           <ServersView
@@ -222,7 +296,9 @@ export function WorkspaceToolPanels({
           />
         </NavigationBoundary>
       </ToolPanel>
-      <ToolPanel active={automationsViewOpen && !taskBoardShown && !socialBoardShown}>
+      <ToolPanel
+        active={automationsViewOpen && !auxiliaryTool && !taskBoardShown && !socialBoardShown}
+      >
         <AutomationsView
           besideRail={!detachedSessionWindow && (projectRailOpen || compactProjectRail)}
           compactRail={compactRailActive}

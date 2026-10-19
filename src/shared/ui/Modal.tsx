@@ -87,6 +87,7 @@ export function ModalPanel({
             ref={dialogRef}
             tabIndex={-1}
             role="dialog"
+            data-modal-placement={placement}
             aria-modal="true"
             aria-labelledby={titleId}
             aria-describedby={descriptionId}

@@ -21,10 +21,11 @@ import {
   type Panel,
   type ViewUpdate,
 } from "@codemirror/view";
-import { MOD, ALT, SHIFT } from "../../../platform/tauri/platform";
+import { MOD, ALT, SHIFT, IS_MAC } from "../../../platform/tauri/platform";
 import { keybindingPressed } from "../../settings/model/settings";
 import { handleFilePreviewFindKey, openFindInActiveFilePreview } from "../ui/FilePreviewSearch";
 import { t } from "../../../shared/i18n";
+import { nativeButtonPresentation } from "../../../shared/ui/Button";
 
 const MATCH_CAP = 999;
 const panels = new WeakMap<EditorView, FindPanel>();
@@ -72,7 +73,10 @@ export function handleEditorFindKey(event: KeyboardEvent): boolean {
   const mod = event.metaKey || event.ctrlKey;
   const key = event.key.toLowerCase();
 
-  const defaultReplace = mod && event.altKey && !event.shiftKey && key === "f";
+  const defaultReplace =
+    !event.shiftKey &&
+    ((mod && event.altKey && key === "f") ||
+      (!IS_MAC && event.ctrlKey && !event.metaKey && !event.altKey && key === "h"));
   const defaultFind = mod && !event.altKey && !event.shiftKey && key === "f";
   if (
     (defaultReplace && !keybindingPressed("Editor: Replace", event, true)) ||
@@ -183,6 +187,16 @@ function findKeymap(): KeyBinding[] {
       scope: "editor search-panel",
       preventDefault: true,
     },
+    ...(!IS_MAC
+      ? [
+          {
+            key: "Ctrl-h",
+            run: openReplacePanel,
+            scope: "editor search-panel",
+            preventDefault: true,
+          },
+        ]
+      : []),
     {
       key: "F3",
       run: findNext,
@@ -257,7 +271,7 @@ class FindPanel implements Panel {
     this.expandButton = iconButton(
       "cm-find-expand",
       "Toggle Replace",
-      `${MOD}${ALT}F`,
+      IS_MAC ? `${MOD}${ALT}F` : "Ctrl+H",
       svgIcon("M6 4l4 4-4 4"),
     );
     this.expandButton.setAttribute("aria-expanded", "false");
@@ -284,7 +298,7 @@ class FindPanel implements Panel {
         "div",
         { class: "cm-find-replace-actions" },
         textButton("Replace", () => replaceNext(this.view)),
-        textButton("All", () => replaceAll(this.view)),
+        textButton("Replace all", () => replaceAll(this.view)),
       ),
     );
 
@@ -376,6 +390,7 @@ class FindPanel implements Panel {
     this.replaceVisible = visible;
     this.dom.classList.toggle("is-replace", visible);
     this.expandButton.setAttribute("aria-expanded", String(visible));
+    if (!visible && this.view.root.activeElement === this.replaceField) this.searchField.focus();
     if (visible && focusReplace) {
       this.replaceField.focus();
       this.replaceField.select();
@@ -489,6 +504,7 @@ class FindPanel implements Panel {
       keyEvent.preventDefault();
       return;
     }
+    if (keyEvent.target instanceof Element && keyEvent.target.closest("button")) return;
     if (keyEvent.altKey && !keyEvent.metaKey && !keyEvent.ctrlKey && !keyEvent.shiftKey) {
       if (keyEvent.code === "KeyC") {
         keyEvent.preventDefault();
@@ -552,15 +568,13 @@ function inputField(label: string, attrs: Record<string, string>): HTMLInputElem
 }
 
 function toggleButton(label: string, title: string, shortcut: string) {
-  const button = elt(
-    "button",
+  const button = panelButton(
     {
       type: "button",
       class: "cm-find-toggle",
       title: shortcut ? `${title} (${shortcut})` : title,
       "aria-label": title,
       "aria-pressed": "false",
-      tabindex: "-1",
     },
     label,
   );
@@ -568,35 +582,43 @@ function toggleButton(label: string, title: string, shortcut: string) {
 }
 
 function iconButton(className: string, title: string, shortcut: string, icon: Node) {
-  return elt(
-    "button",
+  return panelButton(
     {
       type: "button",
       class: className,
-      title: `${title} (${shortcut})`,
+      title: shortcut ? `${title} (${shortcut})` : title,
       "aria-label": title,
-      tabindex: "-1",
     },
     icon,
   );
 }
 
 function textButton(label: string, onClick: () => void) {
-  return elt(
-    "button",
+  return panelButton(
     {
       type: "button",
       class: "cm-find-text",
-      tabindex: "-1",
       onclick: onClick,
     },
     label,
   );
 }
 
+function panelButton(attrs: Attrs, child: Node | string) {
+  const { className, ...presentation } = nativeButtonPresentation({
+    iconOnly: typeof child !== "string",
+  });
+  return elt(
+    "button",
+    { ...presentation, ...attrs, class: `${className} ${attrs.class ?? ""}` },
+    child,
+  );
+}
+
 function setPressed(button: HTMLButtonElement, pressed: boolean) {
   button.setAttribute("aria-pressed", String(pressed));
   button.classList.toggle("is-active", pressed);
+  button.toggleAttribute("data-button-selected", pressed);
 }
 
 function svgIcon(path: string) {
@@ -670,35 +692,21 @@ const findTheme = EditorView.theme(
       alignItems: "stretch",
       gap: "4px",
       boxSizing: "border-box",
-      width: "100%",
-      padding: "4px 8px",
+      width: "min(100%, 520px)",
+      marginInlineStart: "auto",
+      padding: "4px 6px",
       border: "0",
       backgroundColor: "transparent",
       color: "var(--color-content)",
     },
-    ".cm-find-expand, .cm-find-step, .cm-find-close, .cm-find-toggle, .cm-find-text": {
-      display: "grid",
-      placeItems: "center",
-      margin: "0",
-      padding: "0",
-      border: "0",
-      borderRadius: "6px",
-      background: "transparent",
-      color: "color-mix(in srgb, var(--color-content) 62%, transparent)",
-      cursor: "pointer",
-    },
-    ".cm-find-expand:hover, .cm-find-step:hover, .cm-find-close:hover, .cm-find-toggle:hover, .cm-find-text:hover":
-      {
-        backgroundColor: "color-mix(in srgb, var(--color-content) 10%, transparent)",
-        color: "var(--color-content)",
-      },
     ".cm-find-expand": {
-      width: "20px",
+      width: "24px",
+      height: "26px",
       flexShrink: "0",
-      alignSelf: "stretch",
+      alignSelf: "start",
     },
     ".cm-find-expand svg": {
-      transition: "transform 0.12s ease",
+      flexShrink: "0",
     },
     ".cm-find.is-replace .cm-find-expand svg": {
       transform: "rotate(90deg)",
@@ -727,16 +735,19 @@ const findTheme = EditorView.theme(
       display: "flex",
       alignItems: "center",
       boxSizing: "border-box",
-      minInlineSize: "min(100%, 220px)",
-      flex: "1 1 240px",
+      minInlineSize: "min(100%, 150px)",
+      flex: "1 1 170px",
       height: "26px",
       padding: "0 8px",
-      border: "1px solid color-mix(in srgb, var(--color-content) 12%, transparent)",
+      border: "1px solid var(--color-stroke)",
       borderRadius: "6px",
-      backgroundColor: "color-mix(in srgb, var(--color-content) 6%, transparent)",
+      backgroundColor: "var(--ui-surface-raised)",
+    },
+    ".cm-find-query:focus-within": {
+      borderColor: "var(--ui-border-accent)",
     },
     ".cm-find.is-empty .cm-find-search, .cm-find.is-invalid .cm-find-search": {
-      borderColor: "color-mix(in srgb, var(--color-danger) 55%, transparent)",
+      borderColor: "var(--color-danger)",
     },
     ".cm-find input": {
       width: "0",
@@ -755,11 +766,11 @@ const findTheme = EditorView.theme(
     },
     ".cm-find-count": {
       boxSizing: "border-box",
-      minInlineSize: "10ch",
+      minInlineSize: "0",
       flex: "none",
       paddingInlineEnd: "4px",
       overflow: "hidden",
-      color: "color-mix(in srgb, var(--color-content) 45%, transparent)",
+      color: "var(--ui-text-secondary)",
       fontFamily: "var(--font-mono)",
       fontSize: "11px",
       fontVariantNumeric: "tabular-nums",
@@ -775,7 +786,7 @@ const findTheme = EditorView.theme(
     },
     ".cm-find-controls": {
       display: "flex",
-      flex: "1 1 auto",
+      flex: "1 1 max-content",
       flexWrap: "wrap",
       alignItems: "center",
       gap: "4px",
@@ -790,16 +801,16 @@ const findTheme = EditorView.theme(
       gap: "2px",
       flexShrink: "0",
     },
+    ".cm-find-replace-actions": {
+      flexWrap: "wrap",
+      maxInlineSize: "100%",
+    },
     ".cm-find-toggle": {
       width: "24px",
       height: "24px",
       fontFamily: "var(--font-mono)",
       fontSize: "11px",
-      fontWeight: "600",
-    },
-    ".cm-find-toggle.is-active": {
-      backgroundColor: "color-mix(in srgb, var(--color-accent) 28%, transparent)",
-      color: "var(--color-content)",
+      fontWeight: "500",
     },
     ".cm-find-step, .cm-find-close": {
       width: "24px",

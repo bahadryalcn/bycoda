@@ -5,6 +5,110 @@
   padding: 12px;
 }
 
+.notes-workspace {
+  container: notes-workspace / inline-size;
+}
+
+.note-mobile-navigation {
+  display: none;
+}
+
+@container notes-workspace (max-width: 720px) {
+  .note-mobile-navigation {
+    display: flex;
+    flex: none;
+    gap: 4px;
+    padding: 4px 8px;
+    border-block-end: 1px solid var(--color-stroke);
+  }
+  .note-library-sidebar {
+    inline-size: 100% !important;
+  }
+  .notes-workspace[data-library-visible="false"] .note-library-sidebar,
+  .notes-workspace[data-library-visible="true"] .notes-workspace-detail {
+    display: none;
+  }
+  .note-library-sidebar > [role="separator"] {
+    display: none;
+  }
+}
+
+.session-note-status {
+  flex-basis: 100%;
+  color: var(--ui-text-secondary);
+  font-size: 11px;
+  padding-inline: 4px;
+}
+
+.session-note-picker {
+  display: flex;
+  flex-direction: column;
+  padding: 6px;
+  gap: 6px;
+}
+
+.session-note-picker-list {
+  min-block-size: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+
+.session-notes-empty {
+  display: flex;
+  flex: 1;
+  min-block-size: 0;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  gap: 8px;
+  overflow-y: auto;
+  padding: 16px;
+}
+
+.session-notes-library-link {
+  flex: none;
+  padding: 4px 8px;
+  border-block-start: 1px solid var(--ui-tone-neutral-border);
+}
+
+.note-bulk-actions {
+  display: flex;
+  flex: none;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 8px;
+  border-block-end: 1px solid var(--color-stroke);
+}
+
+.note-select-all {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  white-space: nowrap;
+  color: var(--ui-text-secondary);
+  font-size: 12px;
+}
+
+.note-selectable-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-inline-size: 0;
+}
+
+.note-selectable-row > input {
+  flex: none;
+  margin-inline-start: 6px;
+}
+
+.note-selectable-row > .note-library-card {
+  min-inline-size: 0;
+  flex: 1;
+}
+
 .note-filter-dot {
   position: absolute;
   inset-block-start: 5px;

@@ -436,6 +436,20 @@ html.theme-light .project-sigil {
   background: var(--color-background-base);
   border-bottom: 1px solid var(--color-stroke);
 }
+/* Keep the same native controls on the highest visible chrome row. */
+[data-workspace-chrome]:has(> [data-workspace-menubar]) {
+  position: relative;
+  --workspace-menu-height: 1.75rem;
+}
+[data-workspace-chrome]:has(> .bycoda-titlebar [data-window-controls]) > [data-workspace-menubar] {
+  padding-inline-end: calc(7.5rem + 1px);
+}
+[data-workspace-chrome]:has(> [data-workspace-menubar]) > .bycoda-titlebar [data-window-controls] {
+  position: absolute;
+  inset-block-start: 0;
+  inset-inline-end: 0;
+  block-size: var(--workspace-menu-height);
+}
 .bycoda-settings-return {
   margin: 4px 8px;
   padding: 8px;
@@ -473,6 +487,27 @@ html.theme-light .bycoda-workspace-tabs {
 }
 .bycoda-project-rail > [data-tauri-drag-region] {
   height: 34px;
+}
+.bycoda-rail-brand.bycoda-rail-brand--title {
+  min-inline-size: 0;
+  flex: 1;
+  gap: 4px;
+  padding-block: 0;
+  padding-inline: 7px 0;
+}
+.bycoda-rail-brand--title img {
+  inline-size: 24px;
+  block-size: 24px;
+}
+@container rail (width < 340px) {
+  .bycoda-rail-brand--title button > span[aria-hidden] {
+    display: none;
+  }
+}
+@container rail (width < 220px) {
+  .bycoda-rail-brand--title img {
+    display: none;
+  }
 }
 .bycoda-rail-tools > button,
 .bycoda-rail-status .recovery-rail-control {

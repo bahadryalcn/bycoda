@@ -49,6 +49,16 @@
   padding: 4px;
 }
 
+.ghost {
+  position: absolute;
+  z-index: 1;
+  color: var(--ui-terminal-suggestion);
+  pointer-events: none;
+  user-select: none;
+  white-space: pre;
+  overflow: clip;
+}
+
 .menuTrigger {
   position: absolute;
   inset-block-start: 4px;

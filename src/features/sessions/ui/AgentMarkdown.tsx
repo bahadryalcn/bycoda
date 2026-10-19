@@ -48,7 +48,7 @@ import {
 import { ExplorerMenu, type ExplorerMenuItem } from "../../files/ui/ExplorerMenu";
 import { FileActionError } from "../../files/ui/FileActionError";
 import { FileTypeIcon } from "../../files/ui/FileTypeIcon";
-import { boundedCode } from "../../files/editor/codeHighlightPlugin";
+import { useCodeHighlightPlugin } from "../../files/editor/useCodeHighlightPlugin";
 import { createLazyMermaidPlugin } from "../../files/editor/mermaidPlugin";
 import {
   displayPath,
@@ -112,7 +112,6 @@ const mermaid = createLazyMermaidPlugin({
   },
 });
 
-const MARKDOWN_PLUGINS = { code: boundedCode, mermaid };
 
 const MARKDOWN_REHYPE_PLUGINS: PluggableList = [
   defaultRehypePlugins.raw,
@@ -937,6 +936,8 @@ export const AgentMarkdown = memo(function AgentMarkdown({
   hardBreaks?: boolean;
 }) {
   useLocale();
+  const codePlugin = useCodeHighlightPlugin();
+  const markdownPlugins = useMemo(() => ({ code: codePlugin, mermaid }), [codePlugin]);
   const [fileMenu, setFileMenu] = useState<FileLinkMenu | null>(null);
   const [fileActionError, setFileActionError] = useState<string | null>(null);
   const [remoteFolder, setRemoteFolder] = useState<string>();
@@ -1183,7 +1184,7 @@ export const AgentMarkdown = memo(function AgentMarkdown({
                 isAnimating={!!streaming || paced.revealing}
                 parseIncompleteMarkdown={false}
                 parseMarkdownIntoBlocksFn={parseBlocks}
-                plugins={MARKDOWN_PLUGINS}
+                plugins={markdownPlugins}
                 remarkPlugins={remarkPlugins}
                 rehypePlugins={rehypePlugins}
               >

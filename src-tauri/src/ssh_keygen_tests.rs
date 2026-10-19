@@ -114,6 +114,7 @@ fn real_private_pty_keygen_encrypts_without_passphrase_echo_and_cleans_up() {
     command.args(keygen_args(pending.to_str().unwrap()));
     let mut child = crate::windows::spawn_pty(pair.slave.as_ref(), command).unwrap();
     let live = Arc::new(LivePty {
+        completion_shell: None,
         _jump_config: None,
         _http_proxy: None,
         ssh_identity: Some("keygen-fixture".into()),
