@@ -1930,7 +1930,7 @@ export function FileSection({
           <span className="min-w-0 truncate text-[10px] font-semibold tracking-[0.04em] text-[var(--ui-text-secondary)] uppercase">
             {title}
           </span>
-          <span className="ml-1 grid h-4 min-w-4 shrink-0 place-items-center rounded-full bg-accent px-1 text-[8px] text-on-solid">
+          <span className="ml-1 grid h-4 min-w-4 shrink-0 place-items-center rounded-full bg-[var(--ui-surface-selected)] px-1 text-[10px] font-semibold text-content tabular-nums">
             {count}
           </span>
         </Button>

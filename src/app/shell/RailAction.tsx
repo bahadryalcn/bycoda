@@ -65,7 +65,7 @@ export function RailAction({
       {badge != null ? (
         <span
           aria-hidden
-          className="absolute left-1 top-1/2 grid min-w-4 -translate-y-1/2 place-items-center rounded-full bg-accent px-1 text-[10px] font-semibold leading-none text-on-solid tabular-nums"
+          className="absolute left-1 top-1/2 grid min-w-4 -translate-y-1/2 place-items-center rounded-full bg-[var(--ui-surface-selected)] px-1 text-[10px] font-semibold leading-none text-content tabular-nums"
         >
           {badge > 99 ? "99+" : badge}
         </span>
