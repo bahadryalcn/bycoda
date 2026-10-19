@@ -1,4 +1,5 @@
 import { beforeEach, expect, it, vi } from "vitest";
+import { tmpdir } from "node:os";
 const runtime = vi.hoisted(() => ({ calls: vi.fn(), failPush: false }));
 vi.mock("node:child_process", () => ({
   spawn: vi.fn(),
@@ -22,7 +23,7 @@ beforeEach(() => {
 });
 
 it("gives push a network timeout and disables terminal prompting", async () => {
-  await hostGitAction("/repo", "push");
+  await hostGitAction(tmpdir(), "push");
   const push = runtime.calls.mock.calls.find((call) => call[1].includes("push"))!;
   expect(push[2]).toMatchObject({
     timeout: 120_000,
@@ -32,7 +33,7 @@ it("gives push a network timeout and disables terminal prompting", async () => {
 });
 it("reports an explicit push timeout", async () => {
   runtime.failPush = true;
-  await expect(hostGitAction("/repo", "push")).rejects.toThrow(
+  await expect(hostGitAction(tmpdir(), "push")).rejects.toThrow(
     "git push timed out after 120 seconds",
   );
 });
