@@ -129,10 +129,12 @@ describe("merge conflicts and blame in the file editor", () => {
   const blameToggle = () =>
     container.querySelector<HTMLButtonElement>('button[aria-label="Git blame"]')!;
   const buttonByText = (text: string) =>
-    [...container.querySelectorAll("button")].find((button) => button.textContent === text);
+    [...container.querySelectorAll("button")].find(
+      (button) => button.textContent === text || button.getAttribute("aria-label") === text,
+    );
   const choice = (id: number, text: string) =>
     [...container.querySelectorAll<HTMLButtonElement>(`[data-merge-widget="${id}"] button`)].find(
-      (button) => button.textContent === text,
+      (button) => button.textContent === text || button.getAttribute("aria-label") === text,
     )!;
   const gutterText = () => container.querySelector(".cm-blameGutter")?.textContent;
 
@@ -141,7 +143,7 @@ describe("merge conflicts and blame in the file editor", () => {
     await render();
     expect(container.querySelector(".cm-merge-b")).toBeNull();
     expect(container.querySelectorAll(".conflict-source-actions")).toHaveLength(4);
-    expect(conflictStatus()).toBe("Conflict 1 of 2 · 2 unresolved");
+    expect(conflictStatus()).toBe("1 / 2 · 2 unresolved");
     expect(view().state.doc.toString()).not.toContain("<<<<<<<");
     expect(container.querySelector(".conflict-workspace")?.getAttribute("data-layout")).toBe(
       "stacked",
@@ -204,13 +206,13 @@ describe("merge conflicts and blame in the file editor", () => {
       "Conflict 1 of 2 · Unresolved · showing current",
     );
     await act(async () => choice(0, "Accept Current").click());
-    expect(conflictStatus()).toBe("Conflict 1 of 2 · 1 unresolved");
+    expect(conflictStatus()).toBe("1 / 2 · 1 unresolved");
     expect(choice(0, "Accept Current").getAttribute("aria-pressed")).toBe("true");
     await act(async () =>
       container.querySelector<HTMLButtonElement>('button[aria-label="Next conflict"]')!.click(),
     );
     await act(async () => choice(1, "Accept Incoming").click());
-    expect(conflictStatus()).toBe("Conflict 2 of 2 · 0 unresolved");
+    expect(conflictStatus()).toBe("2 / 2 · 0 unresolved");
     expect(view().state.doc.toString()).toBe("top\nmine\nmiddle\nt2\nend\n");
 
     await act(async () => buttonByText("Save and stage")!.click());
@@ -261,7 +263,7 @@ describe("merge conflicts and blame in the file editor", () => {
     await act(async () => accept.click());
     expect(view().state.doc.toString()).toContain("middle\nt2\nend");
     expect(accept.getAttribute("aria-pressed")).toBe("true");
-    expect(conflictStatus()).toBe("Conflict 2 of 2 · 1 unresolved");
+    expect(conflictStatus()).toBe("2 / 2 · 1 unresolved");
   });
 
   it("shows no conflict UI for an ordinary file", async () => {

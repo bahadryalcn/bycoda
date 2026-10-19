@@ -5,7 +5,10 @@ import { applyThemePreference } from "../../src/features/settings/model/appearan
 import "../../src/styles/index.css";
 
 const context = Array.from({ length: 28 }, (_, i) => `unchanged context ${i}`).join("\n");
-const markers = `start\n<<<<<<< HEAD\nprice=100\n=======\nprice=120\n>>>>>>> incoming-price\n${context}\n<<<<<<< HEAD\nname=current\n=======\nname=incoming\n>>>>>>> incoming-price\nend\n`;
+const incoming = new URLSearchParams(location.search).has("hash")
+  ? "b".repeat(40)
+  : "feature/pricing";
+const markers = `start\n<<<<<<< HEAD\nprice=100\n=======\nprice=120\n>>>>>>> ${incoming}\n${context}\n<<<<<<< HEAD\nname=current\n=======\nname=incoming\n>>>>>>> ${incoming}\nend\n`;
 const base = `start\nprice=80\n${context}\nname=base\nend\n`;
 const calls: { command: string; args: Record<string, unknown> }[] = [];
 Object.assign(window, {
@@ -14,6 +17,37 @@ Object.assign(window, {
     invoke: async (command: string, args: Record<string, unknown> = {}) => {
       calls.push({ command, args });
       if (command === "git_conflict_stages") return { base, binary: false, tooLarge: false };
+      if (command === "git_operation_state") return "merge";
+      if (command === "git_branches") return { current: "main", detached: false, branches: [] };
+      if (command === "git_history")
+        return {
+          head: "a".repeat(40),
+          commits: [
+            {
+              sha: "a".repeat(40),
+              shortSha: "aaaaaaa",
+              parents: [],
+              author: "Alice",
+              timestamp: 1,
+              subject: "Update existing prices",
+              refs: [{ name: "main", kind: "local" }],
+              head: true,
+            },
+            {
+              sha: "b".repeat(40),
+              shortSha: "bbbbbbb",
+              parents: [],
+              author: "Bob",
+              timestamp: 2,
+              subject: "Introduce new pricing",
+              refs: [
+                { name: "incoming-price", kind: "local" },
+                { name: "feature/pricing", kind: "local" },
+              ],
+              head: false,
+            },
+          ],
+        };
       if (command === "git_stage_file") return;
       throw new Error(`Unexpected fixture command: ${command}`);
     },

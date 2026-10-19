@@ -160,11 +160,18 @@ async function renderPanel() {
 
 const button = (label: string, within: ParentNode = container) =>
   [...within.querySelectorAll<HTMLButtonElement>("button")].find(
-    (candidate) => candidate.textContent?.trim() === label,
+    (candidate) =>
+      candidate.textContent?.trim() === label || candidate.getAttribute("aria-label") === label,
   );
 const row = (relative: string) =>
   container.querySelector<HTMLElement>(`[data-conflict="${relative}"]`)!;
 const click = (element: HTMLElement | undefined) => act(async () => element!.click());
+const openMenu = (relative: string) =>
+  click(row(relative).querySelector<HTMLButtonElement>('button[aria-haspopup="menu"]')!);
+const menuAction = async (relative: string, label: string) => {
+  await openMenu(relative);
+  await click(button(label, document));
+};
 const FILE_SECTIONS = ["Merge Conflicts", "Staged Changes", "Changes"];
 const sectionTitles = () =>
   [...container.querySelectorAll("span.uppercase")]
@@ -205,31 +212,26 @@ describe("Merge Conflicts section", () => {
       }),
     );
     await renderPanel();
-    const labels = (relative: string) =>
-      [...row(relative).querySelectorAll('[role="group"] button')].map((b) => b.textContent);
-    expect(labels("both.ts")).toEqual([
+    const labels = async (relative: string) => {
+      await openMenu(relative);
+      const result = [...document.querySelectorAll('[role="menuitem"]')].map((b) => b.textContent);
+      await act(async () =>
+        document
+          .querySelector<HTMLElement>('[role="menu"]')
+          ?.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })),
+      );
+      return result;
+    };
+    expect(await labels("both.ts")).toEqual([
       "Open",
-      "Compare",
       "Current",
       "Incoming",
       "Both",
       "Mark Resolved",
     ]);
-    expect(labels("us.ts")).toEqual([
-      "Open",
-      "Compare",
-      "Keep file",
-      "Delete file",
-      "Mark Resolved",
-    ]);
-    expect(labels("them.ts")).toEqual([
-      "Open",
-      "Compare",
-      "Keep file",
-      "Delete file",
-      "Mark Resolved",
-    ]);
-    expect(labels("dd.ts")).toEqual(["Delete file"]);
+    expect(await labels("us.ts")).toEqual(["Open", "Keep file", "Delete file", "Mark Resolved"]);
+    expect(await labels("them.ts")).toEqual(["Open", "Keep file", "Delete file", "Mark Resolved"]);
+    expect(await labels("dd.ts")).toEqual(["Delete file"]);
   });
 
   it("resolves by side, and Keep or Delete pick the side that matches", async () => {
@@ -237,14 +239,14 @@ describe("Merge Conflicts section", () => {
       index({ conflicts: [conflict("both.ts"), conflict("us.ts", "deleted-by-us")] }),
     );
     await renderPanel();
-    await click(button("Incoming", row("both.ts")));
+    await menuAction("both.ts", "Incoming");
     expect(gitResolveConflict).toHaveBeenLastCalledWith("/repo", "both.ts", "theirs");
-    await click(button("Current", row("both.ts")));
+    await menuAction("both.ts", "Current");
     expect(gitResolveConflict).toHaveBeenLastCalledWith("/repo", "both.ts", "ours");
     // We deleted it: keeping the file takes their side, deleting takes ours.
-    await click(button("Keep file", row("us.ts")));
+    await menuAction("us.ts", "Keep file");
     expect(gitResolveConflict).toHaveBeenLastCalledWith("/repo", "us.ts", "theirs");
-    await click(button("Delete file", row("us.ts")));
+    await menuAction("us.ts", "Delete file");
     expect(gitResolveConflict).toHaveBeenLastCalledWith("/repo", "us.ts", "ours");
   });
 
@@ -253,12 +255,12 @@ describe("Merge Conflicts section", () => {
     vi.mocked(readTextFile).mockResolvedValue("a\n<<<<<<< HEAD\nx\n=======\ny\n>>>>>>> side\n");
     vi.mocked(ask).mockResolvedValueOnce(false);
     await renderPanel();
-    await click(button("Mark Resolved", row("a.ts")));
+    await menuAction("a.ts", "Mark Resolved");
     expect(ask).toHaveBeenCalledOnce();
     expect(gitStageFile).not.toHaveBeenCalled();
 
     vi.mocked(readTextFile).mockResolvedValue("clean\n");
-    await click(button("Mark Resolved", row("a.ts")));
+    await menuAction("a.ts", "Mark Resolved");
     expect(ask).toHaveBeenCalledOnce();
     expect(gitStageFile).toHaveBeenCalledWith("/repo", "a.ts");
   });
@@ -269,9 +271,9 @@ describe("Merge Conflicts section", () => {
     );
     vi.mocked(ask).mockResolvedValueOnce(false);
     await renderPanel();
-    await click(button("All Incoming"));
+    await click(button("Accept All Incoming"));
     expect(gitResolveConflict).not.toHaveBeenCalled();
-    await click(button("All Current"));
+    await click(button("Accept All Current"));
     expect(vi.mocked(ask).mock.calls[1]?.[0]).toContain("2 conflicted files");
     expect(vi.mocked(gitResolveConflict).mock.calls).toEqual([
       ["/repo", "a.ts", "ours"],
@@ -282,7 +284,7 @@ describe("Merge Conflicts section", () => {
   it("opens the file in the editor, so its conflict blocks can be resolved", async () => {
     vi.mocked(gitDiffIndex).mockResolvedValue(index({ conflicts: [conflict("a.ts")] }));
     await renderPanel();
-    await click(button("Open", row("a.ts")));
+    await menuAction("a.ts", "Open");
     expect(onOpenInEditor).toHaveBeenCalledWith("/repo/a.ts", true);
   });
 });
@@ -328,7 +330,7 @@ describe("operation banner", () => {
 });
 
 describe("committing with conflicts", () => {
-  it("is blocked, and the message names the files", async () => {
+  it("is blocked with compact feedback and file details in the tooltip", async () => {
     vi.mocked(gitDiffIndex).mockResolvedValue(
       index({
         files: [file("staged.ts", { staged: true, unstaged: false })],
@@ -344,7 +346,10 @@ describe("committing with conflicts", () => {
       textarea.dispatchEvent(new Event("input", { bubbles: true }));
     });
     expect(container.querySelector('[role="alert"]')?.textContent).toBe(
-      "Resolve 2 merge conflicts before committing: a.ts, b.ts",
+      "Resolve 2 conflicts before committing",
+    );
+    expect(container.querySelector('[role="alert"]')?.getAttribute("title")).toContain(
+      "a.ts, b.ts",
     );
     expect(button("Commit")!.disabled).toBe(true);
   });
@@ -368,9 +373,13 @@ describe("a host that predates conflict info", () => {
     expect(container.textContent).toContain("Merge in progress · 1 conflict");
     expect(container.querySelectorAll('[title="a.ts"]')).toHaveLength(0);
     // The kind is unknown, so only choices that work for any kind are offered.
-    expect(
-      [...row("a.ts").querySelectorAll('[role="group"] button')].map((b) => b.textContent),
-    ).toEqual(["Open", "Current", "Incoming", "Mark Resolved"]);
+    await openMenu("a.ts");
+    expect([...document.querySelectorAll('[role="menuitem"]')].map((b) => b.textContent)).toEqual([
+      "Open",
+      "Current",
+      "Incoming",
+      "Mark Resolved",
+    ]);
   });
 
   it("shows nothing extra when it lacks those commands too", async () => {

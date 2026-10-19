@@ -1102,6 +1102,79 @@ describe("GitChangesPanel loading and publication recovery", () => {
     hidden.mockRestore();
   });
 
+  it.each(["focusin", "pointerdown"])(
+    "checks stale changes on panel %s without rereading fresh data",
+    async (type) => {
+      vi.mocked(gitDiffIndex).mockResolvedValue(index({ files: [changedFile("before.ts")] }));
+      await renderPanel(`/repo-panel-${type}`);
+      const target = container.querySelector("textarea")!;
+      const enter = () =>
+        target.dispatchEvent(
+          type === "focusin"
+            ? new FocusEvent(type, { bubbles: true })
+            : new Event(type, { bubbles: true }),
+        );
+      const reads = vi.mocked(gitDiffIndex).mock.calls.length;
+      await act(async () => {
+        enter();
+        enter();
+      });
+      expect(gitDiffIndex).toHaveBeenCalledTimes(reads);
+      await act(async () => vi.advanceTimersByTimeAsync(5_000));
+      vi.mocked(gitDiffIndex).mockResolvedValue(index({ files: [changedFile("after.ts")] }));
+      await act(async () => {
+        enter();
+        enter();
+      });
+      expect(gitDiffIndex).toHaveBeenCalledTimes(reads + 1);
+      expect(container.querySelector('button[title="after.ts"]')).not.toBeNull();
+      expect(container.querySelector('button[title="before.ts"]')).toBeNull();
+      await act(async () => enter());
+      expect(gitDiffIndex).toHaveBeenCalledTimes(reads + 1);
+    },
+  );
+
+  it("does not refresh just for keyboard movement within the panel", async () => {
+    vi.mocked(gitDiffIndex).mockResolvedValue(index());
+    await renderPanel("/repo-panel-internal-focus");
+    const reads = vi.mocked(gitDiffIndex).mock.calls.length;
+    await act(async () => vi.advanceTimersByTimeAsync(5_000));
+    await act(async () =>
+      container.querySelector("textarea")!.dispatchEvent(
+        new FocusEvent("focusin", {
+          bubbles: true,
+          relatedTarget: container.querySelector('button[aria-label="Refresh source control"]'),
+        }),
+      ),
+    );
+    expect(gitDiffIndex).toHaveBeenCalledTimes(reads);
+  });
+
+  it("joins a pending panel refresh and keeps the last good index until it finishes", async () => {
+    vi.mocked(gitDiffIndex).mockResolvedValue(index({ files: [changedFile("before.ts")] }));
+    await renderPanel("/repo-panel-pending-focus");
+    const reads = vi.mocked(gitDiffIndex).mock.calls.length;
+    await act(async () => vi.advanceTimersByTimeAsync(5_000));
+    let finish!: (value: GitDiffIndex) => void;
+    vi.mocked(gitDiffIndex).mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const target = container.querySelector("textarea")!;
+    await act(async () => {
+      target.dispatchEvent(new Event("pointerdown", { bubbles: true }));
+      target.dispatchEvent(new FocusEvent("focusin", { bubbles: true }));
+      target.dispatchEvent(new Event("pointerdown", { bubbles: true }));
+    });
+    expect(gitDiffIndex).toHaveBeenCalledTimes(reads + 1);
+    expect(container.querySelector('button[title="before.ts"]')).not.toBeNull();
+    await act(async () => finish(index({ files: [changedFile("after.ts")] })));
+    expect(gitDiffIndex).toHaveBeenCalledTimes(reads + 1);
+    expect(container.querySelector('button[title="after.ts"]')).not.toBeNull();
+  });
+
   it("refreshes local changes and PR status explicitly, without polling every two seconds", async () => {
     vi.mocked(gitDiffIndex).mockResolvedValue(index({ remote: "origin" }));
     await renderPanel("/repo-manual-refresh");

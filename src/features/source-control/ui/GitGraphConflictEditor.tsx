@@ -216,6 +216,7 @@ export function GitGraphConflictEditor({
       </header>
       {editable ? (
         <ConflictLayout
+          cwd={cwd}
           path={path}
           dirty={dirty}
           resultActions={

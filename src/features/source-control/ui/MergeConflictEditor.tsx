@@ -21,6 +21,7 @@ import { hasConflictMarkers } from "../model/conflictMarkers";
 import { nextConflictedFile } from "../model/conflictSection";
 import {
   chooseMergeRegion,
+  chooseAllMergeRegions,
   createMergeResolution,
   mergeResolution,
   mergeResolutionField,
@@ -282,6 +283,7 @@ export function MergeConflictEditor(props: MergeConflictEditorProps) {
       ) : null}
       {!initial ? <p role="status">{t("Loading conflict versions")}</p> : null}
       <ConflictLayout
+        cwd={cwd}
         path={path}
         {...sources}
         dirty={dirty}
@@ -291,6 +293,10 @@ export function MergeConflictEditor(props: MergeConflictEditorProps) {
                 state,
                 disabled: disabled || busy,
                 choose,
+                chooseAll: (side) => {
+                  if (viewRef.current && !busyRef.current && !disabled)
+                    chooseAllMergeRegions(viewRef.current, side);
+                },
                 select: (id) => {
                   if (viewRef.current) selectMergeRegion(viewRef.current, id);
                 },

@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.39]
+
+### Source control
+
+- Clarify merge, rebase, cherry-pick and revert conflicts with branch and commit details.
+- Accept either side across a file in one undoable action while preserving manual edits.
+- Simplify conflict actions and layout controls, including narrow layouts and Turkish labels.
+- Refresh local changes when returning to or interacting with the Git panel without discarding pending optimistic changes.
+
 ## [0.6.38]
 
 ### SSH identities

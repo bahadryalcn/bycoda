@@ -1011,5 +1011,11 @@
   "Weekdays at 11:00": "Hafta içi 11:00",
   "Monday at 09:30": "Pazartesi 09:30",
   "Weekdays at 08:30": "Hafta içi 08:30",
-  "Friday at 16:00": "Cuma 16:00"
+  "Friday at 16:00": "Cuma 16:00",
+  "Accept all": "Tümünü kabul et",
+  "Accept this side for every conflict in this file": "Bu dosyadaki tüm çakışmalarda bu tarafı kabul et",
+  "Resolve {p0} conflicts before committing": "Commit öncesinde {p0} çakışmayı çözün",
+  "Cherry-pick": "Cherry-pick",
+  "Revert": "Geri al",
+  "Resolve the conflict before committing": "Commit öncesinde çakışmayı çözün"
 }

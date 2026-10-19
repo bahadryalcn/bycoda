@@ -484,7 +484,7 @@ test("conflict sonucu panel içinde düzenlenip stage edilir ve merge sürdürü
   const ours = workspace.locator(".conflict-pane-ours");
   const theirs = workspace.locator(".conflict-pane-theirs");
   const result = workspace.locator(".conflict-pane-result");
-  await expect(ours).toContainText("HEAD");
+  await expect(ours).toContainText("main");
   await expect(theirs).toContainText("feature/theme");
   await expect(ours.locator(".cm-content")).toHaveAttribute("contenteditable", "false");
   await expect(theirs.locator(".cm-content")).toContainText("const theme = 'light';");

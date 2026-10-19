@@ -4,6 +4,7 @@ import { EditorView } from "@codemirror/view";
 import { history, redo, undo } from "@codemirror/commands";
 import {
   chooseMergeRegion,
+  chooseAllMergeRegions,
   createMergeResolution,
   mergeResolution,
   mergeResolutionField,
@@ -29,6 +30,28 @@ function mount(text = markers, base?: string) {
 }
 
 describe("editable merge result", () => {
+  it("accepts all regions atomically, preserves context edits and undoes every decision together", () => {
+    mount();
+    view.dispatch({ changes: { from: 0, to: 3, insert: "edited context" } });
+    chooseMergeRegion(view, 0, "manual");
+    const before = view.state.doc.toString();
+    chooseAllMergeRegions(view, "theirs");
+    expect(view.state.doc.toString()).toBe("edited context\nprice=120\nmiddle\nname=theirs\nend\n");
+    expect(mergeResolution(view.state).regions.map((region) => region.choice)).toEqual([
+      "theirs",
+      "theirs",
+    ]);
+    undo(view);
+    expect(view.state.doc.toString()).toBe(before);
+    expect(mergeResolution(view.state).regions.map((region) => region.choice)).toEqual([
+      "manual",
+      null,
+    ]);
+    redo(view);
+    chooseAllMergeRegions(view, "ours");
+    expect(view.state.doc.toString()).toBe("edited context\nprice=100\nmiddle\nname=ours\nend\n");
+  });
+
   it("starts from the ancestor only inside conflicts and preserves merged context", () => {
     mount(markers, "top\nprice=80\nmiddle\nname=base\nend\n");
     expect(view.state.doc.toString()).toBe("top\nprice=80\nmiddle\nname=base\nend\n");

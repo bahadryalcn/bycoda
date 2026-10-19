@@ -8,7 +8,7 @@ test("merge editor selects individual source conflicts, preserves manual edits a
   const output = page.getByRole("textbox", { name: "Resolved output", exact: true });
   await expect(output).toContainText("price=80");
   await expect(output).not.toContainText("<<<<<<<");
-  await expect(page.getByRole("status")).toContainText("Conflict 1 of 2 · 2 unresolved");
+  await expect(page.getByRole("status")).toContainText("1 / 2 · 2 unresolved");
   await page
     .getByRole("group", { name: "Conflict 1 of 2", exact: true })
     .getByRole("button", { name: "Accept Current", exact: true })
@@ -16,7 +16,7 @@ test("merge editor selects individual source conflicts, preserves manual edits a
   await expect(output).toContainText("price=100");
   await expect(page.getByRole("button", { name: "Save and stage", exact: true })).toBeDisabled();
   await page.getByRole("button", { name: "Next conflict", exact: true }).click();
-  await expect(page.getByRole("status")).toContainText("Conflict 2 of 2 · 1 unresolved");
+  await expect(page.getByRole("status")).toContainText("2 / 2 · 1 unresolved");
   await page
     .getByRole("group", { name: "Conflict 2 of 2", exact: true })
     .getByRole("button", { name: "Accept Incoming", exact: true })
@@ -101,9 +101,9 @@ test("merge editor keyboard navigation, undo and narrow light layout keep all de
   await expect(output).toContainText("price=80");
   await expect(page.getByRole("status")).toContainText("2 unresolved");
   await page.getByRole("button", { name: "Next conflict", exact: true }).press("Enter");
-  await expect(page.getByRole("status")).toContainText("Conflict 2 of 2");
+  await expect(page.getByRole("status")).toContainText("2 / 2");
   await page.getByRole("button", { name: "Previous conflict", exact: true }).press("Enter");
-  await expect(page.getByRole("status")).toContainText("Conflict 1 of 2");
+  await expect(page.getByRole("status")).toContainText("1 / 2");
   await page.setViewportSize({ width: 390, height: 900 });
   await expect(page.locator(".conflict-pane-ours")).toBeVisible();
   await expect(page.locator(".conflict-pane-theirs")).toBeVisible();
@@ -164,3 +164,48 @@ test("merge editor panes resize with separators and scroll to matching conflicts
   await expect.poll(() => topLine(".conflict-pane-result")).not.toBe(before);
   expect(await topLine(".conflict-pane-ours")).toBe(before);
 });
+
+for (const theme of ["dark", "light"]) {
+  test(`merge editor accepts either entire source with undo and shows provenance in ${theme}`, async ({
+    page,
+  }, info) => {
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await page.goto(`/tests/browser/merge-conflicts.html${theme === "light" ? "?light&hash" : ""}`);
+    const output = page.getByRole("textbox", { name: "Resolved output", exact: true });
+    await expect(page.locator(".conflict-provenance")).toContainText("main");
+    await expect(page.locator(".conflict-provenance")).toContainText("feature/pricing");
+    await expect(page.locator(".conflict-pane-ours .conflict-source-identity")).toContainText(
+      "Update existing prices",
+    );
+    await expect(page.locator(".conflict-pane-theirs .conflict-source-identity")).toContainText(
+      "Introduce new pricing",
+    );
+    for (const width of [1440, 1024, 768, 390]) {
+      await page.setViewportSize({ width, height: 900 });
+      expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
+        width,
+      );
+      await page.screenshot({ path: info.outputPath(`${theme}-${width}.png`) });
+    }
+    const incoming = page.getByRole("button", { name: "Accept All Incoming", exact: true });
+    await incoming.focus();
+    await incoming.press("Enter");
+    await expect(output).toContainText("price=120");
+    await expect(output).toContainText("name=incoming");
+    await expect(page.getByRole("button", { name: "Save and stage", exact: true })).toBeEnabled();
+    await output.focus();
+    await output.press("ControlOrMeta+z");
+    await expect(output).toContainText("price=80");
+    await expect(output).toContainText("name=base");
+    await expect(page.getByRole("button", { name: "Save and stage", exact: true })).toBeDisabled();
+    await page.getByRole("button", { name: "Accept All Current", exact: true }).click();
+    await expect(output).toContainText("price=100");
+    await expect(output).toContainText("name=current");
+    const writes = await page.evaluate(() =>
+      (window as unknown as { mergeCalls: { command: string }[] }).mergeCalls.filter((call) =>
+        /write_text_file|git_stage_file/.test(call.command),
+      ),
+    );
+    expect(writes).toEqual([]);
+  });
+}

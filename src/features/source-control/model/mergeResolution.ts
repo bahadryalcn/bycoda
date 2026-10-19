@@ -206,3 +206,26 @@ export function selectMergeRegion(view: EditorView, id: number) {
     annotations: Transaction.addToHistory.of(false),
   });
 }
+
+/** Accept a source for this file in one undoable transaction, preserving context edits. */
+export function chooseAllMergeRegions(view: EditorView, side: "ours" | "theirs") {
+  const state = mergeResolution(view.state);
+  const changes = state.regions.map((region) => ({
+    from: region.from,
+    to: region.to,
+    insert: region[side],
+  }));
+  let offset = 0;
+  const regions = state.regions.map((region) => {
+    const from = region.from + offset;
+    const to = from + region[side].length;
+    offset += region[side].length - (region.to - region.from);
+    return { ...region, from, to, choice: side };
+  });
+  view.dispatch({
+    changes,
+    effects: setMergeResolution.of({ ...state, regions }),
+    annotations: isolateHistory.of("full"),
+    userEvent: "input.merge",
+  });
+}

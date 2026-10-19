@@ -83,9 +83,9 @@ it("marker varken stage etmez, seçilen sonucu dosyaya yazıp stage eder", async
   await mount();
   expect(host.querySelector(".conflict-pane-ours")?.textContent).toContain("HEAD");
   expect(host.querySelector(".conflict-pane-theirs")?.textContent).toContain("topic");
-  expect(host.querySelector(".conflict-pane-ours strong")?.getAttribute("title")).toContain(
-    "Current side of conflict markers",
-  );
+  expect(
+    host.querySelector(".conflict-pane-ours .conflict-source-identity")?.getAttribute("title"),
+  ).toContain("Current side of conflict markers");
   expect(
     [...host.querySelectorAll<HTMLButtonElement>("button")].find(
       (button) => button.textContent === "Save and stage",

@@ -27,6 +27,8 @@ import {
   Loader,
   Minus,
   Plus,
+  PanelLeft,
+  PanelRight,
   RefreshCw,
   Undo2,
   WandSparkles,
@@ -154,6 +156,7 @@ import { useGitResource } from "../hooks/useGitResource";
 import {
   ACTIVE_PROJECT_REFRESH_MS,
   GIT_PANEL_ENTRY_FRESH_MS,
+  GIT_PANEL_FOCUS_FRESH_MS,
   GITHUB_PR_FRESH_MS,
 } from "../model/gitRefreshPolicy";
 import { GitGenerationSettings, useGitGenerationChoice } from "./GitGenerationSettings";
@@ -248,13 +251,14 @@ export function GitChangesPanel({
 }: Props) {
   "use memo";
   useLocale();
+  const paneRef = useRef<HTMLDivElement>(null);
   const {
     index,
     reload,
     showOptimistic,
     error: loadError,
     loading,
-  } = useDiffIndex(cwd, enabled, !repository || repository.expanded === true);
+  } = useDiffIndex(cwd, enabled, !repository || repository.expanded === true, paneRef);
   // Fetch, and the merge status of a host that predates conflict info, need
   // this computer or a host with `git.actions`.
   const gitActions = useRemoteSupports(cwd, GIT_ACTIONS) === true;
@@ -270,7 +274,6 @@ export function GitChangesPanel({
   // A collapsed repository row shows only its summary; its hidden list stays
   // mounted for the header menu but does no background work.
   const detailsOpen = !repository || (repository.expanded ?? !!operation);
-  const paneRef = useRef<HTMLDivElement>(null);
   // Lets the header menu drive the commit box and bulk stage actions below.
   const changesRef = useRef<ChangesActions | null>(null);
   // Shared across the header and the changed-files list so no two Git
@@ -1412,8 +1415,14 @@ function ChangedFiles({
           />
         </div>
         {blockedMessage ? (
-          <p role="alert" className="mt-1.5 text-[11px] leading-snug text-warning">
-            {blockedMessage}
+          <p
+            role="alert"
+            title={blockedMessage}
+            className="mt-1.5 text-[11px] leading-snug text-warning"
+          >
+            {conflicts.length === 1
+              ? t("Resolve the conflict before committing")
+              : t("Resolve {p0} conflicts before committing", { p0: conflicts.length })}
           </p>
         ) : null}
         {index ? (
@@ -1533,18 +1542,14 @@ function ChangedFiles({
                     get title() {
                       return t("Accept All Current");
                     },
-                    get label() {
-                      return t("All Current");
-                    },
+                    icon: <PanelLeft size={14} />,
                     onClick: () => void conflictActions.acceptAll(conflicts, "ours"),
                   },
                   {
                     get title() {
                       return t("Accept All Incoming");
                     },
-                    get label() {
-                      return t("All Incoming");
-                    },
+                    icon: <PanelRight size={14} />,
                     onClick: () => void conflictActions.acceptAll(conflicts, "theirs"),
                   },
                 ]}
@@ -2604,7 +2609,8 @@ function statusColor(status: string): string {
 function useDiffIndex(
   cwd: string,
   enabled: boolean,
-  polling = true,
+  polling: boolean,
+  panel: RefObject<HTMLDivElement | null>,
 ): {
   index: GitDiffIndex | null;
   reload: () => void;
@@ -2739,6 +2745,19 @@ function useDiffIndex(
     const onResume = () => {
       if (polling && !document.hidden) void load();
     };
+    const pane = panel.current;
+    const onPanelInteraction = () => {
+      // Keep pending optimistic changes until their mutation confirms the index.
+      if (document.hidden || holdRef.current || gitPanelRuntime(cwd).state.busy) return;
+      void load(false, GIT_PANEL_FOCUS_FRESH_MS);
+    };
+    const onPanelFocus = (event: FocusEvent) => {
+      // Moving between controls in this panel is not a new panel entry.
+      if (event.relatedTarget instanceof Node && pane?.contains(event.relatedTarget)) return;
+      onPanelInteraction();
+    };
+    pane?.addEventListener("focusin", onPanelFocus);
+    pane?.addEventListener("pointerdown", onPanelInteraction);
     // Polling slows while a remote machine is unreachable.
     const timer = window.setInterval(() => {
       // Local polls wait for window focus; `focus` above refreshes on return.
@@ -2760,12 +2779,14 @@ function useDiffIndex(
     );
     return () => {
       cancelled = true;
+      pane?.removeEventListener("focusin", onPanelFocus);
+      pane?.removeEventListener("pointerdown", onPanelInteraction);
       window.clearInterval(timer);
       window.removeEventListener("focus", onResume);
       document.removeEventListener("visibilitychange", onResume);
       unsubGit();
     };
-  }, [cwd, enabled, nonce, remote, polling]);
+  }, [cwd, enabled, nonce, remote, polling, panel]);
 
   return { index, reload, showOptimistic, error, loading };
 }
