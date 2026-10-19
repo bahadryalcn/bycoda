@@ -194,12 +194,14 @@ fn load(shell: &str) -> Catalog {
 
 /// Fixed enumeration programs, never user input or programmable completion hooks.
 /// Profiles are skipped: discovery must not run the owner's startup tasks a second time.
+/// PowerShell enumerates imported commands only, avoiding installed-module discovery
+/// that can exceed the bounded startup window on CI and heavily configured machines.
 fn shell_commands(shell: &str) -> Vec<String> {
     use std::process::{Command, Stdio};
     let args: &[&str] = match kind(shell) {
         "bash" => &["--noprofile", "--norc", "-c", "compgen -b"],
         "zsh" => &["-f", "-c", "print -rl -- ${(k)builtins}"],
-        "powershell" | "pwsh" => &["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", "[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new(); Get-Command -CommandType Cmdlet,Function,Alias -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Name"],
+        "powershell" | "pwsh" => &["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", "[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new(); Get-Command -ListImported -CommandType Cmdlet,Function,Alias -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Name"],
         _ => return Vec::new(),
     };
     let mut cmd = Command::new(shell);
