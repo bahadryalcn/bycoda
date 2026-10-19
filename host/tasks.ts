@@ -461,8 +461,14 @@ export class HostTasks {
     while (this.ticking || this.jobs.size) await Promise.all([this.ticking, ...this.jobs.values()]);
   }
 
-  /** Bumped by every task write or delete made through this board. */
-  private revisionCounter = 0;
+  /** Boards reopened over the same store must invalidate each other's caches. */
+  private static readonly revisions = new WeakMap<HostStore, number>();
+  private get revisionCounter(): number {
+    return HostTasks.revisions.get(this.store) ?? 0;
+  }
+  private set revisionCounter(value: number) {
+    HostTasks.revisions.set(this.store, value);
+  }
   onChange?: () => void;
   private etagCache?: { revision: number; etag: string };
   private listCache?: { revision: number; byId: Map<string, HostTask>; tasks: HostTask[] };

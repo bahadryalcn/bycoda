@@ -9,7 +9,7 @@ on:
       - ".github/workflows/release*.yml"
       - "Cargo.toml"
       - "Cargo.lock"
-      - "src-tauri/**"
+      - "src-tauri/Cargo.toml"
       - "vendor/**"
       - ".cargo/**"
       - "rust-toolchain*"
@@ -20,7 +20,7 @@ permissions:
 
 concurrency:
   group: release-cache-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   warm:
@@ -47,11 +47,15 @@ jobs:
         with:
           targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin' || '' }}
       - uses: Swatinem/rust-cache@v2
+        id: cache
         with:
           shared-key: desktop-release-${{ matrix.platform }}
       - run: pnpm install --frozen-lockfile
+        if: steps.cache.outputs.cache-hit != 'true'
       - run: pnpm run host:package
+        if: steps.cache.outputs.cache-hit != 'true'
       # Compile with the same Tauri configuration without installers, signing
       # credentials, draft creation or uploads. Only dependencies are cached.
       - name: Warm optimized desktop dependencies
+        if: steps.cache.outputs.cache-hit != 'true'
         run: pnpm exec tauri build --no-bundle ${{ matrix.args }}

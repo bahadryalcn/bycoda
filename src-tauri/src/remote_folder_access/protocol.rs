@@ -653,7 +653,24 @@ mod tests {
 
     fn exchange(gateway: &Gateway, method: &str, path: &str, extra: &str) -> Vec<u8> {
         let (bytes, result) = exchange_result(gateway, method, path, extra);
-        result.unwrap();
+        if let Err(error) = result {
+            // macOS can reset a closed socket after the complete HTTP response.
+            // Accept it only when HTTP framing proves no response bytes are missing.
+            assert_eq!(error.kind(), std::io::ErrorKind::ConnectionReset);
+            let end = bytes
+                .windows(4)
+                .position(|part| part == b"\r\n\r\n")
+                .expect("complete response headers");
+            let header = std::str::from_utf8(&bytes[..end]).unwrap();
+            let length = header
+                .lines()
+                .find_map(|line| line.strip_prefix("Content-Length: "))
+                .expect("response content length")
+                .parse::<usize>()
+                .unwrap();
+            let body_length = if method == "HEAD" { 0 } else { length };
+            assert_eq!(bytes.len(), end + 4 + body_length, "truncated response");
+        }
         bytes
     }
 
