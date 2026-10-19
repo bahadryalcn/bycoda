@@ -104,7 +104,10 @@ it("opens opt-in integration through a new-tab callback without injecting into t
         }),
       ),
     );
-    const button = Array.from(host.querySelectorAll("button")).find((element) =>
+    await act(async () =>
+      host.querySelector<HTMLButtonElement>('[aria-label="Terminal · More actions"]')!.click(),
+    );
+    const button = Array.from(document.querySelectorAll("button")).find((element) =>
       element.textContent?.startsWith("Bash suggestions"),
     )!;
     await act(async () => button.click());

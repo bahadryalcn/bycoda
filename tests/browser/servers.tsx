@@ -173,7 +173,7 @@ let abandonFailedOnce = false;
 let runbookMode: "ready" | "ambiguous" | "preclaim" = "ready";
 const runbookTickets = new Map<string, number>();
 let inventoryLoads = 0;
-const machines = Array.from({ length: 35 }, (_, index) => ({
+const machines = Array.from({ length: params.has("emptyServers") ? 0 : 35 }, (_, index) => ({
   id: `fixture-${index}`,
   environmentId: `environment-${index}`,
   name: `Server ${String(index).padStart(2, "0")}`,
@@ -563,7 +563,13 @@ Object.assign(window, {
               },
             ]
           : [];
-      if (command === "ssh_sftp_list") return [];
+      if (command === "ssh_sftp_list")
+        return params.has("filesFixture")
+          ? [
+              { name: "deployments", kind: "directory" },
+              { name: "README.md", kind: "file" },
+            ]
+          : [];
       if (command === "ssh_sftp_resume")
         return new Promise<void>((resolve) => {
           finishTransfer = resolve;

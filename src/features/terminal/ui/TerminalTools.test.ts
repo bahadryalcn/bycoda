@@ -2,10 +2,25 @@
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import type { Terminal } from "@xterm/xterm";
-import { afterEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { TerminalTools } from "./TerminalTools";
 
+beforeEach(() => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  vi.stubGlobal(
+    "ResizeObserver",
+    class {
+      observe() {}
+      disconnect() {}
+    },
+  );
+});
 afterEach(() => vi.unstubAllGlobals());
+async function openTools(host: HTMLElement) {
+  await act(async () =>
+    host.querySelector<HTMLButtonElement>('[aria-label="Terminal · More actions"]')!.click(),
+  );
+}
 
 it("requests a startup review explicitly without writing terminal input and blocks duplicate pending requests", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
@@ -39,7 +54,10 @@ it("requests a startup review explicitly without writing terminal input and bloc
       ),
     );
     expect(review).not.toHaveBeenCalled();
-    const button = host.querySelector<HTMLButtonElement>('[aria-label="Review startup scripts"]')!;
+    await openTools(host);
+    const button = document.querySelector<HTMLButtonElement>(
+      '[aria-label="Review startup scripts"]',
+    )!;
     await act(async () => {
       button.click();
       button.click();
@@ -89,13 +107,16 @@ it("opens PowerShell suggestions only from an explicit alternative without termi
       ),
     );
     expect(enable).not.toHaveBeenCalled();
-    const help = host.querySelector<HTMLButtonElement>('[aria-label="About shell suggestions"]')!;
+    await openTools(host);
+    const help = document.querySelector<HTMLButtonElement>(
+      '[aria-label="About shell suggestions"]',
+    )!;
     expect(help.getAttribute("aria-expanded")).toBe("false");
     await act(async () => help.click());
     expect(document.body.textContent).toContain("-NoProfile");
     await act(async () => help.click());
     await act(async () =>
-      host.querySelector<HTMLButtonElement>('[aria-label="Shell suggestions"]')!.click(),
+      document.querySelector<HTMLButtonElement>('[aria-label="Shell suggestions"]')!.click(),
     );
     const option = [...document.querySelectorAll<HTMLButtonElement>('[role^="menuitem"]')].find(
       (element) => element.textContent?.includes("PowerShell suggestions"),
@@ -111,130 +132,29 @@ it("opens PowerShell suggestions only from an explicit alternative without termi
   }
 });
 
-async function setup(options: { suggestionsAllowed?: boolean; alternate?: boolean } = {}) {
-  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+it("keeps the search and command composer out of the terminal until requested", async () => {
   const host = document.createElement("div");
-  document.body.appendChild(host);
+  document.body.append(host);
   const root = createRoot(host);
-  const paste = vi.fn();
-  const focus = vi.fn();
-  const mode = vi.fn();
-  const terminal = {
-    paste,
-    focus,
-    buffer: {
-      active: { type: options.alternate ? "alternate" : "normal" },
-      onBufferChange: () => ({ dispose() {} }),
-    },
-  } as unknown as Terminal;
-  await act(async () =>
-    root.render(
-      createElement(TerminalTools, {
-        terminal,
-        mode: "command",
-        onModeChange: mode,
-        ready: true,
-        suggestionsAllowed: options.suggestionsAllowed,
-      }),
-    ),
-  );
-  return {
-    host,
-    paste,
-    focus,
-    mode,
-    cleanup: async () => {
-      await act(async () => root.unmount());
-      host.remove();
-    },
-  };
-}
-
-it("makes suggestion navigation explicit and inserts text without command submission", async () => {
-  const context = await setup();
-  try {
-    const field = context.host.querySelector<HTMLInputElement>('[role="combobox"]')!;
-    await act(async () =>
-      field.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true })),
-    );
-    expect(context.host.querySelector('[role="option"][aria-selected="true"]')?.textContent).toBe(
-      "git diff",
-    );
-    await act(async () =>
-      field.dispatchEvent(new KeyboardEvent("keydown", { key: "Tab", bubbles: true })),
-    );
-    expect(field.value).toBe("git diff");
-    expect(context.paste).not.toHaveBeenCalled();
-    await act(async () =>
-      field.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })),
-    );
-    expect(context.paste).toHaveBeenCalledExactlyOnceWith("git diff");
-    expect(context.mode).toHaveBeenCalledWith(null);
-    expect(context.focus).toHaveBeenCalled();
-  } finally {
-    await context.cleanup();
-  }
-});
-
-it("Escape exits selection mode without inserting anything", async () => {
-  const context = await setup();
   try {
     await act(async () =>
-      context.host
-        .querySelector("input")!
-        .dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })),
-    );
-    expect(context.mode).toHaveBeenCalledWith(null);
-    expect(context.paste).not.toHaveBeenCalled();
-    expect(context.focus).toHaveBeenCalled();
-  } finally {
-    await context.cleanup();
-  }
-});
-
-it("does not accept a composing IME Enter", async () => {
-  const context = await setup();
-  try {
-    const field = context.host.querySelector<HTMLInputElement>('[role="combobox"]')!;
-    await act(async () =>
-      field.dispatchEvent(new KeyboardEvent("keydown", { key: "Tab", bubbles: true })),
-    );
-    await act(async () =>
-      field.dispatchEvent(
-        new KeyboardEvent("keydown", { key: "Enter", bubbles: true, isComposing: true }),
+      root.render(
+        createElement(TerminalTools, {
+          terminal: null,
+          mode: null,
+          ready: false,
+          onModeChange: vi.fn(),
+        }),
       ),
     );
-    expect(context.paste).not.toHaveBeenCalled();
-    expect(context.mode).not.toHaveBeenCalled();
+    expect(document.querySelector("input")).toBeNull();
+    expect(host.textContent).not.toContain("Find in terminal");
+    expect(host.querySelector("[data-terminal-tools]")).toBeNull();
+    await openTools(host);
+    expect(document.querySelector('[aria-label="Find in terminal"]')).not.toBeNull();
   } finally {
-    await context.cleanup();
-  }
-});
-
-it("suppresses assistance entirely when remote prompt safety is unverified", async () => {
-  const context = await setup({ suggestionsAllowed: false });
-  try {
-    expect(context.host.querySelector('[role="combobox"]')).toBeNull();
-    expect(context.host.querySelector('[aria-label="Command suggestions"]')).toBeNull();
-    expect(context.paste).not.toHaveBeenCalled();
-  } finally {
-    await context.cleanup();
-  }
-});
-
-it("prevents insertion into an alternate-screen program", async () => {
-  const context = await setup({ alternate: true });
-  try {
-    const field = context.host.querySelector<HTMLInputElement>('[role="combobox"]')!;
-    await act(async () =>
-      field.dispatchEvent(new KeyboardEvent("keydown", { key: "Tab", bubbles: true })),
-    );
-    await act(async () =>
-      field.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })),
-    );
-    expect(context.paste).not.toHaveBeenCalled();
-  } finally {
-    await context.cleanup();
+    await act(async () => root.unmount());
+    host.remove();
   }
 });
 
@@ -282,11 +202,12 @@ it("keeps automatic exposure and source choices explicit without requesting on m
       ),
     );
     expect(shell.request).not.toHaveBeenCalled();
-    expect(host.querySelector("details")?.open).toBe(false);
-    expect(host.textContent).toContain("Session only.");
-    await act(async () => (host.querySelector('[role="switch"]') as HTMLButtonElement).click());
+    await openTools(host);
+    expect(document.querySelector("details")?.open).toBe(false);
+    expect(document.body.textContent).toContain("Session only.");
+    await act(async () => (document.querySelector('[role="switch"]') as HTMLButtonElement).click());
     expect(shell.setAutomatic).toHaveBeenCalledExactlyOnceWith(true);
-    const paths = [...host.querySelectorAll('[role="radio"]')].find((item) =>
+    const paths = [...document.querySelectorAll('[role="radio"]')].find((item) =>
       item.textContent?.includes("Remote paths"),
     ) as HTMLButtonElement;
     await act(async () => paths.click());

@@ -1,14 +1,12 @@
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { Terminal } from "@xterm/xterm";
 import { SearchAddon } from "@xterm/addon-search";
 import { Button } from "../../../shared/ui/Button";
-import { Badge } from "../../../shared/ui/Badge";
 import { Switch } from "../../../shared/ui/Switch";
 import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
 import { SplitButton } from "../../../shared/ui/SplitButton";
 import { Popover } from "../../../shared/ui/Popover";
 import { SearchInput } from "../../../shared/ui/SearchInput";
-import { TextField } from "../../../shared/ui/TextField";
 import {
   ChevronDown,
   CheckList,
@@ -17,9 +15,11 @@ import {
   Terminal as TerminalIcon,
   X,
   Info,
+  MoreHorizontal,
 } from "../../../shared/ui/icons";
 import { t, useLocale } from "../../../shared/i18n";
-import { isSingleLineCommand, terminalSuggestions } from "../model/terminalSuggestions";
+import { LocalTerminalSuggestions } from "./LocalTerminalSuggestions";
+import { TerminalCursorPopover } from "./TerminalCursorPopover";
 import styles from "./TerminalTools.module.css";
 import type { SshShellController } from "../model/sshShellIntegration";
 import { RemoteShellSuggestions } from "./RemoteShellSuggestions";
@@ -49,8 +49,8 @@ export function TerminalTools({
 }) {
   useLocale();
   const [query, setQuery] = useState("");
-  const [command, setCommand] = useState("");
-  const [selected, setSelected] = useState(0);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuAnchor = useRef<HTMLButtonElement>(null);
   const [found, setFound] = useState(true);
   const [alternate, setAlternate] = useState(false);
   const [reviewingStartup, setReviewingStartup] = useState(false);
@@ -59,11 +59,6 @@ export function TerminalTools({
   const helpAnchor = useRef<HTMLButtonElement>(null);
   const searchRef = useRef<SearchAddon | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
-  const commandRef = useRef<HTMLInputElement>(null);
-  const listId = useId();
-  const suggestions = terminalSuggestions(command, suggestionsAllowed ? "local" : "ssh");
-  const choice = Math.min(selected, Math.max(0, suggestions.length - 1));
-  const canInsert = suggestionsAllowed && ready && !alternate && isSingleLineCommand(command);
 
   useEffect(() => {
     if (!terminal) return;
@@ -100,41 +95,34 @@ export function TerminalTools({
     // xterm clears its selection when the grid resizes, including when this
     // compact toolbar wraps in a narrow split pane. Restore the active search.
     const subscription = terminal.onResize(refresh);
-    return () => subscription.dispose();
+    const parsed = terminal.onWriteParsed(refresh);
+    return () => {
+      subscription.dispose();
+      parsed.dispose();
+    };
   }, [query, mode, terminal]);
 
   useEffect(() => {
-    const input =
-      mode === "search" ? inputRef.current : mode === "command" ? commandRef.current : null;
+    const input = mode === "search" ? inputRef.current : null;
     input?.focus();
     input?.select();
   }, [mode]);
 
+  const changeMode = (next: TerminalTool) => {
+    setMenuOpen(false);
+    onModeChange(next);
+  };
   const close = () => {
     if (mode === "remote") remoteShell?.dismiss();
-    onModeChange(null);
+    changeMode(null);
     terminal?.focus();
   };
   const find = (previous: boolean) => {
     const addon = searchRef.current;
     if (addon && query) setFound(previous ? addon.findPrevious(query) : addon.findNext(query));
   };
-  const insert = () => {
-    if (
-      !ready ||
-      !suggestionsAllowed ||
-      !terminal ||
-      !isSingleLineCommand(command) ||
-      terminal.buffer.active.type === "alternate"
-    )
-      return;
-    // paste() preserves xterm's bracketed-paste handling. No CR/Enter is sent.
-    terminal.paste(command);
-    setCommand("");
-    close();
-  };
 
-  return (
+  const controls = (
     <div
       data-terminal-tools=""
       onMouseDown={(event) => event.stopPropagation()}
@@ -195,10 +183,9 @@ export function TerminalTools({
             title={`${t("Find in terminal")} (Ctrl/Cmd+F)`}
             aria-label={t("Find in terminal")}
             disabled={!terminal}
-            onClick={() => onModeChange("search")}
+            onClick={() => changeMode("search")}
           >
             <Search size={14} />
-            {t("Find in terminal")}
           </Button>
         )}
         {suggestionsAllowed && (
@@ -211,7 +198,7 @@ export function TerminalTools({
             disabled={!ready || alternate}
             onClick={() => {
               if (mode === "command") close();
-              else onModeChange("command");
+              else changeMode("command");
             }}
           >
             <TerminalIcon size={14} />
@@ -252,7 +239,7 @@ export function TerminalTools({
             title={`${t("Remote command suggestions")} (Ctrl+Space)`}
             aria-pressed={mode === "remote"}
             onClick={() => {
-              onModeChange("remote");
+              changeMode("remote");
               void remoteShell.request(remoteShell.source);
             }}
           >
@@ -305,13 +292,6 @@ export function TerminalTools({
           >
             <Info aria-hidden size={14} />
           </Button>
-        ) : null}
-        {ready ? (
-          <span className="ms-auto inline-flex items-center">
-            <Badge tone="success" size="sm" title={t("Terminal process is running.")}>
-              {t("Running")}
-            </Badge>
-          </span>
         ) : null}
         {mode && (
           <Button
@@ -378,102 +358,72 @@ export function TerminalTools({
           </p>
         </details>
       ) : null}
-      {mode === null &&
-      remoteShell?.automatic &&
-      !alternate &&
-      remoteShell.state?.status === "suggestions" &&
-      remoteShell.state.suggestions?.length ? (
-        <RemoteShellSuggestions
-          shell={remoteShell}
-          terminal={terminal}
-          selectionMode={false}
-          onClose={() => onModeChange(null)}
-        />
-      ) : null}
-      {mode === "remote" && remoteShell ? (
-        <RemoteShellSuggestions
-          key={remoteShell.state?.requestId ?? "waiting"}
-          shell={remoteShell}
-          terminal={terminal}
-          onClose={() => onModeChange(null)}
-        />
-      ) : null}
-      {suggestionsAllowed && mode === "command" && (
-        <div className={styles.command}>
-          <div className={styles.row}>
-            <TextField
-              ref={commandRef}
-              fieldClassName={styles.field}
-              label={t("Command suggestions")}
-              hideLabel
-              role="combobox"
-              aria-autocomplete="list"
-              aria-expanded={suggestions.length > 0}
-              aria-controls={listId}
-              aria-activedescendant={suggestions.length ? `${listId}-${choice}` : undefined}
-              autoComplete="off"
-              spellCheck={false}
-              value={command}
-              onChange={(event) => {
-                setCommand(event.target.value);
-                setSelected(0);
-              }}
-              onKeyDown={(event) => {
-                if (event.nativeEvent.isComposing) return;
-                if ((event.key === "ArrowDown" || event.key === "ArrowUp") && suggestions.length) {
-                  event.preventDefault();
-                  setSelected(
-                    (choice + (event.key === "ArrowDown" ? 1 : -1) + suggestions.length) %
-                      suggestions.length,
-                  );
-                } else if (event.key === "Tab" && !event.shiftKey && suggestions[choice]) {
-                  event.preventDefault();
-                  setCommand(suggestions[choice]);
-                  setSelected(0);
-                } else if (event.key === "Enter") {
-                  event.preventDefault();
-                  insert();
-                }
-              }}
-            />
-            <Button variant="ghost" size="sm" disabled={!canInsert} onClick={insert}>
-              {t("Insert into terminal")}
-            </Button>
-          </div>
-          <div
-            id={listId}
-            role="listbox"
-            aria-label={t("Command suggestions")}
-            className={styles.list}
+    </div>
+  );
+  const showRemote =
+    terminal &&
+    remoteShell &&
+    !alternate &&
+    (mode === "remote" ||
+      (mode === null &&
+        remoteShell.automatic &&
+        remoteShell.state?.status === "suggestions" &&
+        !!remoteShell.state.suggestions?.length));
+  return (
+    <>
+      {mode === "search" ? (
+        controls
+      ) : (
+        <div className={styles.menuTrigger}>
+          <Button
+            ref={menuAnchor}
+            variant="ghost"
+            size="sm"
+            iconOnly
+            label={`${t("Terminal")} · ${t("More actions")}`}
+            aria-expanded={menuOpen}
+            aria-haspopup="dialog"
+            onClick={() => setMenuOpen(!menuOpen)}
           >
-            {suggestions.map((value, index) => (
-              <Button
-                key={value}
-                id={`${listId}-${index}`}
-                role="option"
-                tabIndex={-1}
-                aria-selected={index === choice}
-                variant="item"
-                size="sm"
-                className={styles.option}
-                onMouseDown={(event) => event.preventDefault()}
-                onClick={() => {
-                  setCommand(value);
-                  setSelected(0);
-                  commandRef.current?.focus();
-                }}
-              >
-                <span className={styles.text} title={value}>
-                  {value}
-                </span>
-              </Button>
-            ))}
-          </div>
-          <div className={styles.hint}>
-            {t("Tab to complete. Enter to insert. Run with Enter in the terminal.")}
-          </div>
+            <MoreHorizontal size={14} />
+          </Button>
+          {menuOpen ? (
+            <Popover
+              anchor={menuAnchor}
+              align="end"
+              width={360}
+              role="dialog"
+              aria-label={`${t("Terminal")} · ${t("More actions")}`}
+              onDismiss={() => setMenuOpen(false)}
+            >
+              {controls}
+            </Popover>
+          ) : null}
         </div>
       )}
-    </div>
+      {ready && suggestionsAllowed && terminal ? (
+        <LocalTerminalSuggestions
+          terminal={terminal}
+          explicit={mode === "command"}
+          onClose={() => changeMode(null)}
+        />
+      ) : null}
+      {showRemote ? (
+        <TerminalCursorPopover
+          terminal={terminal}
+          onDismiss={() => {
+            remoteShell.dismiss();
+            changeMode(null);
+          }}
+        >
+          <RemoteShellSuggestions
+            shell={remoteShell}
+            terminal={terminal}
+            selectionMode={mode === "remote"}
+            onClose={() => changeMode(null)}
+          />
+        </TerminalCursorPopover>
+      ) : null}
+    </>
   );
 }

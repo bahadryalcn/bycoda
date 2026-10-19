@@ -369,3 +369,25 @@ it("filters favorites without clearing hidden selection and resets inside the po
   expect(container.querySelectorAll("li")).toHaveLength(2);
   expect(container.querySelector('[aria-pressed="true"]')?.textContent).toContain("Home Mac");
 });
+
+it("searches and displays the effective SSH destination while preserving the editable base", async () => {
+  const server: ServerRecord = {
+    id: "inherited-destination",
+    name: "Inherited destination",
+    kind: "ssh",
+    sshEndpoint: { host: "target.invalid", user: "local-user", port: 22 },
+    effectiveSshEndpoint: { host: "target.invalid", user: "group-user", port: 2200 },
+    metadata: { tags: [], favorite: false },
+  };
+  fixture.extraServers = [server];
+  terminalActions.open = vi.fn();
+  await render();
+  await search("group-user");
+  expect(container.querySelectorAll("[data-server-row]")).toHaveLength(1);
+  await click("Inherited destination");
+  const details = container.querySelector('[aria-label="Server details"]')!;
+  expect(details.textContent).toContain("group-user@target.invalid");
+  expect(details.textContent).toContain("2200");
+  expect(server.sshEndpoint).toEqual({ host: "target.invalid", user: "local-user", port: 22 });
+  expect(terminalActions.open).not.toHaveBeenCalled();
+});

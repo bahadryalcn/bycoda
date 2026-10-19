@@ -44,6 +44,7 @@ async function setup(
     suspendAutomatic: vi.fn(),
   };
   const terminal = {
+    element: document.createElement("div"),
     focus: vi.fn(),
     input: vi.fn(),
     buffer: { active: { type: alternate ? "alternate" : "normal" } },
@@ -143,27 +144,28 @@ it("refuses acceptance in a full-screen alternate buffer and keeps Ctrl+C interr
   }
 });
 
-it("passive preview never focuses or intercepts shell keys and still inserts only on explicit click", async () => {
+it("automatic preview keeps typing focus and navigates from the terminal without submission", async () => {
   const context = await setup(false, false, "bash", false);
   try {
     const preview = context.host.querySelector('[aria-label="Remote suggestion preview"]')!;
     expect(document.activeElement).not.toBe(preview);
-    expect(preview.hasAttribute("tabindex")).toBe(false);
-    expect(preview.textContent).toContain("Shell keys stay in the terminal.");
-    expect(preview.textContent).not.toContain("↑/↓ select");
-    for (const key of ["ArrowUp", "ArrowDown", "Tab", "Enter", "Escape", "r"]) {
+    const element = context.terminal.element!;
+    const key = async (value: string, extra: KeyboardEventInit = {}) => {
       const event = new KeyboardEvent("keydown", {
-        key,
-        ctrlKey: key === "r",
+        key: value,
         bubbles: true,
         cancelable: true,
+        ...extra,
       });
-      await act(async () => preview.dispatchEvent(event));
-      expect(event.defaultPrevented).toBe(false);
-    }
-    expect(context.shell.accept).not.toHaveBeenCalled();
-    await act(async () => (context.host.querySelector('[role="option"]') as HTMLElement).click());
-    expect(context.shell.accept).toHaveBeenCalledWith("git status");
+      await act(async () => element.dispatchEvent(event));
+      return event;
+    };
+    expect((await key("g")).defaultPrevented).toBe(false);
+    expect((await key("Enter", { isComposing: true })).defaultPrevented).toBe(false);
+    await key("ArrowDown");
+    expect(context.host.querySelector('[aria-selected="true"]')?.textContent).toBe("git diff");
+    await key("Tab");
+    expect(context.shell.accept).toHaveBeenCalledExactlyOnceWith("git diff");
     expect(context.terminal.input).not.toHaveBeenCalled();
   } finally {
     await context.cleanup();

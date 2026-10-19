@@ -1,6 +1,13 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Locator } from "@playwright/test";
 import { mkdir } from "node:fs/promises";
 const evidence = "temp/verification/2026-10-19-servers-ux/browser";
+
+async function openAdvancedSshSettings(editor: Locator) {
+  const closed = editor
+    .locator("details:not([open]) > summary")
+    .filter({ hasText: "Advanced SSH settings" });
+  if (await closed.count()) await closed.click();
+}
 
 for (const theme of ["light", "dark"]) {
   for (const width of [390, 1024, 1440]) {
@@ -203,13 +210,9 @@ for (const theme of ["light", "dark"]) {
       await page.screenshot({ path: `${evidence}/connection-${theme}-${width}.png` });
       await choose("Automation");
       await expect(
-        details.getByRole("button", { name: "Saved commands", exact: true }),
+        details.getByRole("heading", { name: "Saved commands", exact: true }),
       ).toBeVisible();
       await choose("Settings");
-      await details
-        .locator("summary")
-        .filter({ hasText: /^Organization$/ })
-        .click();
       await details
         .getByRole("textbox", { name: "Group", exact: true })
         .fill("Unfinished server group");
@@ -463,8 +466,7 @@ test("saved SSH command previews its target and copies without terminal input or
     .getByRole("navigation", { name: "Server tools" })
     .getByRole("button", { name: "Automation", exact: true })
     .click();
-  await page.getByRole("button", { name: "Saved commands", exact: true }).click();
-  const dialog = page.getByRole("dialog", { name: "Saved commands", exact: true });
+  const dialog = page.getByRole("region", { name: "Saved SSH commands", exact: true });
   await expect(dialog).toContainText("Target: Server 00");
   await dialog.getByRole("textbox", { name: "Name", exact: true }).fill("Inspect directory");
   await dialog.getByRole("textbox", { name: "Command preview", exact: true }).fill("pwd");
@@ -546,6 +548,7 @@ test("SSH config duplicate choices use or edit the existing record without impor
     .click();
   await page.getByRole("button", { name: "SSH settings", exact: true }).click();
   const dialog = page.getByRole("dialog", { name: "SSH settings", exact: true });
+  await dialog.getByRole("button", { name: "Import SSH config", exact: true }).click();
   await dialog
     .getByRole("textbox", { name: "SSH config", exact: true })
     .fill("Host imported\n HostName duplicate.example.invalid\n User fixture");
@@ -584,7 +587,8 @@ for (const theme of ["light", "dark"])
     const address = "application.production.example.invalid";
     await quick.getByRole("textbox", { name: "Host", exact: true }).fill(address);
     await quick.getByRole("textbox", { name: "SSH user", exact: true }).fill("deployment");
-    await quick.locator("summary").filter({ hasText: "Authentication and jump host" }).click();
+    await openAdvancedSshSettings(quick);
+    await quick.locator("summary").filter({ hasText: "Use a key file path" }).click();
     await quick
       .getByRole("textbox", { name: "Identity file", exact: true })
       .fill("C:/Users/fixture/ssh/production-deployment-identity-ed25519");
@@ -625,6 +629,7 @@ for (const theme of ["light", "dark"])
       .click();
     await page.getByRole("button", { name: "SSH settings", exact: true }).click();
     const config = page.getByRole("dialog", { name: "SSH settings", exact: true });
+    await config.getByRole("button", { name: "Import SSH config", exact: true }).click();
     await config
       .getByRole("textbox", { name: "SSH config", exact: true })
       .fill("Host imported\n HostName duplicate.example.invalid\n User fixture");
@@ -650,7 +655,7 @@ test("certificate and ordered jump chain edit retains canonical ID and previews 
     .click();
   await page.getByRole("button", { name: "Edit SSH server", exact: true }).click();
   const editor = page.getByRole("dialog", { name: "Edit SSH server", exact: true });
-  await editor.locator("summary").filter({ hasText: "Authentication and jump host" }).click();
+  await openAdvancedSshSettings(editor);
   await expect(editor.getByRole("textbox", { name: "Jump host", exact: true })).toHaveValue(
     "legacy@first.example.invalid:22",
   );
@@ -701,6 +706,7 @@ test("certificate and ordered jump chain edit retains canonical ID and previews 
     .click();
   await page.getByRole("button", { name: "SSH settings", exact: true }).click();
   const settings = page.getByRole("dialog", { name: "SSH settings", exact: true });
+  await settings.getByRole("button", { name: "Import SSH config", exact: true }).click();
   await settings
     .getByRole("textbox", { name: "SSH config", exact: true })
     .fill(
@@ -729,9 +735,13 @@ for (const theme of ["light", "dark"]) {
       .getByRole("textbox", { name: "Host", exact: true })
       .fill("windows.example.invalid");
     await dialog.getByRole("button", { name: "Connect", exact: true }).click();
+    await page.getByRole("button", { name: "Terminal · More actions", exact: true }).click();
     await page.getByRole("button", { name: "About shell suggestions", exact: true }).click();
     await expect(page.getByText(/A new session starts with -NoProfile/)).toBeVisible();
     await page.keyboard.press("Escape");
+    if (!(await page.getByRole("button", { name: "Shell suggestions", exact: true }).isVisible())) {
+      await page.getByRole("button", { name: "Terminal · More actions", exact: true }).click();
+    }
     await page.getByRole("button", { name: "Shell suggestions", exact: true }).click();
     const option = page.getByRole("menuitem", { name: /PowerShell suggestions/ });
     await expect(option).toBeVisible();
@@ -887,7 +897,9 @@ for (const theme of ["light", "dark"]) {
 }
 
 for (const theme of ["light", "dark"]) {
-  test(`Automatic remote suggestions preserve shell keys ${theme} 390px`, async ({ page }) => {
+  test(`Automatic remote suggestions insert one line without running it ${theme} 390px`, async ({
+    page,
+  }) => {
     await page.setViewportSize({ width: 390, height: 780 });
     await page.emulateMedia({ reducedMotion: "reduce" });
     await page.goto(`/tests/browser/servers.html?autocompleteFixture&theme=${theme}`);
@@ -917,20 +929,24 @@ for (const theme of ["light", "dark"]) {
       );
     const count = async () =>
       (await requests()).filter((r) => r.command === "ssh_terminal_suggestions_request").length;
+    await page.getByRole("button", { name: "Terminal · More actions", exact: true }).click();
     await page.locator("summary").filter({ hasText: "Suggestion settings" }).click();
     const automatic = page.getByRole("switch", { name: "Show suggestions while typing" });
     await expect(automatic).toHaveAttribute("aria-checked", "false");
+    await page.keyboard.press("Escape");
     await emit("ready", true);
     await input.focus();
     await page.keyboard.type("doc");
     await page.waitForTimeout(350);
     expect(await count()).toBe(0);
+    await page.getByRole("button", { name: "Terminal · More actions", exact: true }).click();
+    await page.locator("summary").filter({ hasText: "Suggestion settings" }).click();
     await automatic.click();
+    await page.keyboard.press("Escape");
     await input.focus();
     await page.keyboard.type("doc");
     const preview = page.getByLabel("Remote suggestion preview", { exact: true });
     await expect(preview).toBeVisible();
-    await expect(preview).toContainText("Shell keys stay in the terminal.");
     await expect(preview.getByRole("option", { name: "docker", exact: true })).toBeVisible();
     await expect(input).toBeFocused();
     expect(
@@ -938,13 +954,22 @@ for (const theme of ["light", "dark"]) {
         .source,
     ).toBe("commands");
     const beforeNavigation = await count();
+    const beforeNavigationWrites = (await requests()).filter(
+      (r) => r.command === "pty_write",
+    ).length;
     for (const key of ["ArrowUp", "ArrowDown", "Tab", "Control+r"]) await page.keyboard.press(key);
     await expect(input).toBeFocused();
     await expect
       .poll(async () =>
-        (await requests()).filter((r) => r.command === "pty_write").map((r) => r.input.data),
+        (await requests())
+          .filter((r) => r.command === "pty_write")
+          .slice(beforeNavigationWrites)
+          .map((r) => r.input.data),
       )
-      .toEqual(expect.arrayContaining(["\u001b[A", "\u001b[B", "\t", "\u0012"]));
+      .toEqual(["\u0012"]);
+    expect(
+      (await requests()).filter((r) => r.command === "ssh_terminal_suggestion_accept"),
+    ).toHaveLength(1);
     await page.waitForTimeout(350);
     expect(await count()).toBe(beforeNavigation);
     await expect(preview).toBeHidden();
@@ -957,7 +982,7 @@ for (const theme of ["light", "dark"]) {
         async () =>
           (await requests()).filter((r) => r.command === "ssh_terminal_suggestion_accept").length,
       )
-      .toBe(1);
+      .toBe(2);
     expect((await requests()).filter((r) => r.command === "pty_write")).toHaveLength(beforeAccept);
     await expect(input).toBeFocused();
     await page.keyboard.press("Control+Space");
@@ -1017,7 +1042,7 @@ for (const theme of ["light", "dark"]) {
       .click();
     await page.getByRole("button", { name: "Edit SSH server", exact: true }).click();
     const editor = page.getByRole("dialog", { name: "Edit SSH server", exact: true });
-    await editor.locator("summary").filter({ hasText: "Authentication and jump host" }).click();
+    await openAdvancedSshSettings(editor);
     const toggle = editor.getByRole("switch", { name: "Per-hop SSH policy", exact: true });
     await expect(toggle).not.toBeChecked();
     await toggle.click();
@@ -1032,6 +1057,12 @@ for (const theme of ["light", "dark"]) {
     await editor
       .locator("summary")
       .filter({ hasText: "Hop identity and trust references" })
+      .click();
+    await editor
+      .getByRole("region", { name: "Per-hop SSH policy", exact: true })
+      .locator("summary")
+      .filter({ hasText: "Use a key file path" })
+      .first()
       .click();
     await editor
       .getByRole("textbox", { name: "Jump host 1: Identity file", exact: true })
@@ -1206,7 +1237,7 @@ for (const theme of ["light", "dark"]) {
     await expect(editor.getByRole("textbox", { name: "Proxy host", exact: true })).toHaveValue(
       "edited-proxy.example.invalid",
     );
-    await editor.locator("summary").filter({ hasText: "Authentication and jump host" }).click();
+    await openAdvancedSshSettings(editor);
     await editor
       .getByRole("textbox", { name: "Jump host", exact: true })
       .fill("hop.example.invalid");
@@ -1550,7 +1581,7 @@ for (const theme of ["light", "dark"]) {
     await files.getByRole("button", { name: "Close", exact: true }).click();
     await page
       .getByRole("navigation", { name: "Server tools" })
-      .getByRole("button", { name: "Connection", exact: true })
+      .getByRole("button", { name: "Port forwarding", exact: true })
       .click();
     await page.getByRole("button", { name: "Start", exact: true }).click();
     await auth
@@ -1827,6 +1858,7 @@ for (const theme of ["light", "dark"]) {
       .getByRole("button", { name: /Existing SSH target/ })
       .click();
     await page.getByRole("button", { name: "Connect via SSH", exact: true }).click();
+    await page.getByRole("button", { name: "Terminal · More actions", exact: true }).click();
     await page.getByRole("button", { name: "Review startup scripts", exact: true }).click();
     await expect(page.getByRole("dialog", { name: "SSH reviews", exact: true })).toContainText(
       "No pending SSH reviews.",

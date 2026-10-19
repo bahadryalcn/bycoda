@@ -13,10 +13,14 @@ export function SshIdentityField({
   value,
   onChange,
   disabled,
+  label = t("Choose SSH key"),
+  pathLabel = t("Identity file"),
 }: {
   value: string;
   onChange: (value: string) => void;
   disabled?: boolean;
+  label?: string;
+  pathLabel?: string;
 }) {
   const [keys, setKeys] = useState<PublicIdentity[]>([]);
   const [loading, setLoading] = useState(true);
@@ -57,9 +61,11 @@ export function SshIdentityField({
     options.unshift({ value, label: value, description: t("Identity file") });
   }
   return (
-    <>
+    <div className="flex min-w-0 flex-col gap-2">
+      <span className="text-xs font-medium text-content">{t("SSH key")}</span>
       <SearchableSelect
-        label={t("Choose SSH key")}
+        label={label}
+        searchPlaceholder={t("Search SSH keys…")}
         value={value}
         onChange={onChange}
         disabled={disabled || loading || failed}
@@ -81,14 +87,21 @@ export function SshIdentityField({
           </Button>
         </Alert>
       ) : null}
-      <TextField
-        label={t("Identity file")}
-        value={value}
-        maxLength={4096}
-        onChange={(event) => onChange(event.target.value)}
-        disabled={disabled}
-        description={t("Leave empty to use your SSH agent and default identities.")}
-      />
-    </>
+      <details
+        open={failed || Boolean(value && !keys.some((key) => key.identityFile === value))}
+        className="text-xs text-(--ui-text-muted)"
+      >
+        <summary className="cursor-pointer py-1">{t("Use a key file path")}</summary>
+        <TextField
+          label={pathLabel}
+          aria-label={pathLabel}
+          value={value}
+          maxLength={4096}
+          onChange={(event) => onChange(event.target.value)}
+          disabled={disabled}
+          description={t("Leave empty to use your SSH agent and default identities.")}
+        />
+      </details>
+    </div>
   );
 }

@@ -6,6 +6,7 @@ import { Badge } from "../../../shared/ui/Badge";
 import { Button } from "../../../shared/ui/Button";
 import { TextField } from "../../../shared/ui/TextField";
 import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
+import { SearchInput } from "../../../shared/ui/SearchInput";
 import { updateServerMetadata, type ServerRecord } from "../model/serverInventory";
 import {
   forwardRuntimeId,
@@ -20,9 +21,11 @@ import {
 export function ServerForwards({
   server,
   expanded = false,
+  active = true,
 }: {
   server: ServerRecord;
   expanded?: boolean;
+  active?: boolean;
 }) {
   const proxy = useSshHttpProxyApproval();
   const locked = useRef(false);
@@ -37,7 +40,16 @@ export function ServerForwards({
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
   const rules = server.metadata.forwards ?? [];
+  const [search, setSearch] = useState("");
+  const matchingRules = rules.filter((rule) =>
+    `${rule.name} ${rule.localPort} ${rule.targetHost ?? ""} ${rule.targetPort ?? ""} ${rule.kind === "dynamic" ? "SOCKS5" : ""}`
+      .toLocaleLowerCase()
+      .includes(search.trim().toLocaleLowerCase()),
+  );
+  const Container = expanded ? "section" : "details";
+  const Heading = expanded ? "h3" : "summary";
   useEffect(() => {
+    if (!active) return;
     let disposed = false;
     let pending = false;
     const refresh = async () => {
@@ -58,7 +70,7 @@ export function ServerForwards({
       disposed = true;
       window.clearInterval(timer);
     };
-  }, [server.id]);
+  }, [server.id, active]);
   const run = async (id: string, action: () => Promise<unknown>) => {
     if (locked.current) return;
     locked.current = true;
@@ -76,13 +88,27 @@ export function ServerForwards({
   };
   return (
     <>
-      <details open={expanded || undefined} className="text-xs">
-        <summary className="cursor-pointer py-1 font-medium">
+      <Container className="text-xs">
+        <Heading className="py-1 font-medium">
           {t("Port forwarding")}
           {rules.length ? ` (${rules.length})` : ""}
-        </summary>
+        </Heading>
         <div className="mbs-3 flex min-w-0 flex-col gap-3">
-          {rules.map((rule) => {
+          {rules.length ? (
+            <SearchInput
+              appearance="field"
+              aria-label={t("Search forwarding rules")}
+              placeholder={t("Search forwarding rules")}
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+            />
+          ) : (
+            <p className="py-3 text-(--ui-text-muted)">{t("No forwarding rules yet.")}</p>
+          )}
+          {rules.length > 0 && matchingRules.length === 0 ? (
+            <p className="py-3 text-(--ui-text-muted)">{t("No matching forwarding rules.")}</p>
+          ) : null}
+          {matchingRules.map((rule) => {
             const runtimeId = forwardRuntimeId(server.id, rule.id);
             const status = statuses.find((item) => item.id === runtimeId);
             const running = status?.state === "running" || status?.state === "starting";
@@ -272,7 +298,7 @@ export function ServerForwards({
             </p>
           ) : null}
         </div>
-      </details>
+      </Container>
       {proxy.dialog}
     </>
   );

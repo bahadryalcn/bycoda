@@ -14,10 +14,21 @@ import { Switch } from "../../../shared/ui/Switch";
 import { QuickConnect } from "./QuickConnect";
 import { useOpenQuickServerTerminal, useOpenServerTerminal } from "./ServersTerminalWorkspace";
 import { SshServerEditor } from "./SshServerEditor";
+import { SshSettings } from "./SshSettings";
 import { ServersConnectionTools } from "./ServersConnectionTools";
 import { useServerInventory, type ServerRecord } from "../model/serverInventory";
 import { SearchInput } from "../../../shared/ui/SearchInput";
-import { Loader, Plus, RefreshCw, Server, ListFilter, Star, X } from "../../../shared/ui/icons";
+import {
+  Loader,
+  Plus,
+  RefreshCw,
+  Server,
+  ListFilter,
+  Star,
+  X,
+  Lock,
+  Pencil,
+} from "../../../shared/ui/icons";
 import {
   requestMachineEdit,
   requestMachineReconnect,
@@ -123,6 +134,7 @@ export function ServersView({
     openTerminal?.(server);
   };
   const [quickConnect, setQuickConnect] = useState(false);
+  const [sshSettings, setSshSettings] = useState(false);
   const [editor, setEditor] = useState<ServerRecord | "new" | undefined>();
   const [filtersOpen, setFiltersOpen] = useState(false);
   const filtersAnchor = useRef<HTMLButtonElement>(null);
@@ -143,10 +155,12 @@ export function ServersView({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loaded]);
   const query = search.trim().toLocaleLowerCase();
-  const address = (server: ServerRecord) =>
-    server.machine
+  const address = (server: ServerRecord) => {
+    const endpoint = server.effectiveSshEndpoint ?? server.sshEndpoint;
+    return server.machine
       ? machineAddress(server.machine)
-      : `${server.sshEndpoint?.user ? `${server.sshEndpoint.user}@` : ""}${server.sshEndpoint?.host ?? ""}`;
+      : `${endpoint?.user ? `${endpoint.user}@` : ""}${endpoint?.host ?? ""}`;
+  };
   const groups = [
     ...new Set(servers.flatMap((server) => (server.metadata.group ? [server.metadata.group] : []))),
   ].sort();
@@ -168,7 +182,7 @@ export function ServersView({
     <section
       aria-label={t("Servers")}
       data-app-servers
-      className="flex min-h-0 min-w-0 flex-1 flex-col bg-(--ui-surface) text-content"
+      className="@container/servers flex min-h-0 min-w-0 flex-1 flex-col bg-(--ui-surface) text-content"
     >
       <div
         className="flex h-10 shrink-0 select-none items-center border-b border-stroke"
@@ -270,6 +284,15 @@ export function ServersView({
           >
             <RefreshCw aria-hidden className="size-3.5" />
           </Button>
+          <Button
+            variant="ghost"
+            iconOnly
+            label={t("Manage SSH")}
+            tooltip={t("SSH settings")}
+            onClick={() => setSshSettings(true)}
+          >
+            <Lock aria-hidden className="size-3.5" />
+          </Button>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           {openQuick ? (
@@ -312,11 +335,11 @@ export function ServersView({
           {loaded ? t("Refreshing servers…") : t("Loading servers…")}
         </div>
       ) : null}
-      <div className="flex min-h-0 min-w-0 flex-1 flex-col md:flex-row">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col @min-[44rem]/servers:flex-row">
         <div
           ref={list}
           onScroll={(event) => setScrollTop(event.currentTarget.scrollTop)}
-          className={`min-h-0 min-w-0 overflow-y-auto p-2 md:w-80 md:flex-none ${selected ? "max-h-[40%] shrink-0 md:max-h-none" : "flex-1"}`}
+          className={`min-h-0 min-w-0 overflow-y-auto p-2 @min-[44rem]/servers:p-3 @min-[44rem]/servers:flex-1 ${selected ? "max-h-[40%] shrink-0 @min-[44rem]/servers:max-h-none" : "flex-1"}`}
         >
           {loaded && servers.length === 0 ? (
             <div className="flex flex-col items-center gap-3 px-3 py-8 text-center text-sm">
@@ -344,9 +367,18 @@ export function ServersView({
               </Button>
             </div>
           ) : null}
-          <ul aria-label={t("Servers")} className="flex flex-col gap-1">
+          <div className="mbe-3 hidden items-center justify-between gap-2 text-xs text-(--ui-text-muted) @min-[44rem]/servers:flex">
+            <span>
+              {t("Servers")} <span className="tabular-nums">({filtered.length})</span>
+            </span>
+            {group ? <span className="truncate">{group}</span> : null}
+          </div>
+          <ul
+            aria-label={t("Servers")}
+            className="grid grid-cols-[repeat(auto-fill,minmax(min(100%,15rem),1fr))] content-start gap-1 @min-[44rem]/servers:gap-2"
+          >
             {filtered.map((server) => (
-              <li key={server.id} className="min-w-0">
+              <li key={server.id} className="min-w-0 rounded-lg border border-stroke">
                 <Button
                   variant="item"
                   selected={selectedId === server.id}
@@ -358,7 +390,7 @@ export function ServersView({
                       ? t("Double-click or press Enter to connect via SSH. Space shows details.")
                       : undefined
                   }
-                  className="h-auto min-h-14 w-full"
+                  className="h-auto min-h-14 w-full @min-[44rem]/servers:min-h-20"
                   onClick={() => setSelectedId(server.id)}
                   onDoubleClick={(event) => {
                     if (
@@ -417,6 +449,18 @@ export function ServersView({
                     >
                       {address(server)}
                     </span>
+                    {server.metadata.group || server.metadata.tags.length ? (
+                      <span
+                        className="truncate text-xs text-(--ui-text-muted)"
+                        title={[server.metadata.group, ...server.metadata.tags]
+                          .filter(Boolean)
+                          .join(" · ")}
+                      >
+                        {[server.metadata.group, ...server.metadata.tags]
+                          .filter(Boolean)
+                          .join(" · ")}
+                      </span>
+                    ) : null}
                   </span>
                 </Button>
               </li>
@@ -426,13 +470,36 @@ export function ServersView({
         {selected ? (
           <section
             aria-label={t("Server details")}
-            className="max-h-[65%] min-h-0 min-w-0 flex-1 overflow-y-auto border-t border-stroke p-4 md:max-h-none md:border-t-0 md:border-s"
+            className="flex min-h-0 min-w-0 flex-1 flex-col border-t border-stroke @min-[44rem]/servers:w-[min(45%,28rem)] @min-[44rem]/servers:flex-none @min-[44rem]/servers:border-t-0 @min-[44rem]/servers:border-s"
           >
-            <div className="flex min-w-0 items-center gap-2">
+            <div className="flex min-w-0 shrink-0 items-center gap-2 border-b border-stroke px-4 py-3">
               <Server aria-hidden className="size-4 shrink-0 text-(--ui-text-muted)" />
               <h2 className="min-w-0 flex-1 truncate text-base font-medium" title={selected.name}>
                 {selected.name}
               </h2>
+              {selected.kind === "ssh" ? <Badge size="sm">SSH</Badge> : null}
+              {selected.machine || selected.kind === "ssh" ? (
+                <Button
+                  variant="ghost"
+                  iconOnly
+                  label={t(selected.kind === "ssh" ? "Edit SSH server" : "Edit machine")}
+                  onClick={() =>
+                    selected.kind === "ssh" ? setEditor(selected) : requestMachineEdit(selected.id)
+                  }
+                >
+                  <Pencil aria-hidden className="size-3.5" />
+                </Button>
+              ) : null}
+              {selected.kind === "host" ? (
+                <Button
+                  variant="ghost"
+                  iconOnly
+                  label={t("Reconnect")}
+                  onClick={() => requestMachineReconnect(selected.id)}
+                >
+                  <RefreshCw aria-hidden className="size-3.5" />
+                </Button>
+              ) : null}
               <Button
                 variant="ghost"
                 iconOnly
@@ -449,60 +516,48 @@ export function ServersView({
                 <X aria-hidden className="size-3.5" />
               </Button>
             </div>
-            {selected.machine || selected.kind === "ssh" ? (
-              <div className="mbs-3 flex flex-wrap gap-2">
-                <Button
-                  variant="ghost"
-                  onClick={() =>
-                    selected.kind === "ssh" ? setEditor(selected) : requestMachineEdit(selected.id)
-                  }
-                >
-                  {t(selected.kind === "ssh" ? "Edit SSH server" : "Edit machine")}
-                </Button>
-                {selected.kind === "host" ? (
-                  <Button variant="secondary" onClick={() => requestMachineReconnect(selected.id)}>
-                    {t("Reconnect")}
-                  </Button>
-                ) : null}
-              </div>
-            ) : null}
-            <div className="mbs-3 border-t border-stroke pbs-3">
+            <div className="min-h-0 flex-1 overflow-y-auto p-4">
               {selected.machine ? (
-                <MachineStatus key={selected.id} machine={selected.machine} details />
-              ) : (
-                <Badge size="sm">{t("SSH only")}</Badge>
-              )}
-            </div>
-            <dl className="mbs-3 grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-2 text-xs">
-              <dt className="text-(--ui-text-muted)">{t("Address")}</dt>
-              <dd className="break-all">{address(selected)}</dd>
-              {selected.machine?.ssh || selected.sshEndpoint ? (
-                <>
-                  <dt className="text-(--ui-text-muted)">{t("SSH port")}</dt>
-                  <dd>{selected.sshEndpoint?.port ?? selected.machine?.ssh?.port ?? 22}</dd>
-                  {selected.machine?.ssh ? (
-                    <>
-                      <dt className="text-(--ui-text-muted)">{t("Host service port")}</dt>
-                      <dd>{selected.machine.ssh.remotePort}</dd>
-                    </>
-                  ) : null}
-                </>
+                <div className="mbe-3">
+                  <MachineStatus key={selected.id} machine={selected.machine} details />
+                </div>
               ) : null}
-            </dl>
-            <ServersConnectionTools
-              key={selected.id}
-              server={selected}
-              servers={servers}
-              onUseServer={setSelectedId}
-              onEditServer={(existing) => {
-                setSelectedId(existing.id);
-                setEditor(existing);
-              }}
-            />
+              <dl className="mbs-3 grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-2 text-xs">
+                <dt className="text-(--ui-text-muted)">{t("Address")}</dt>
+                <dd className="break-all">{address(selected)}</dd>
+                {selected.machine?.ssh || selected.sshEndpoint ? (
+                  <>
+                    <dt className="text-(--ui-text-muted)">{t("SSH port")}</dt>
+                    <dd>
+                      {selected.effectiveSshEndpoint?.port ??
+                        selected.sshEndpoint?.port ??
+                        selected.machine?.ssh?.port ??
+                        22}
+                    </dd>
+                    {selected.machine?.ssh ? (
+                      <>
+                        <dt className="text-(--ui-text-muted)">{t("Host service port")}</dt>
+                        <dd>{selected.machine.ssh.remotePort}</dd>
+                      </>
+                    ) : null}
+                  </>
+                ) : null}
+              </dl>
+              <ServersConnectionTools
+                key={selected.id}
+                server={selected}
+                servers={servers}
+                onUseServer={setSelectedId}
+                onEditServer={(existing) => {
+                  setSelectedId(existing.id);
+                  setEditor(existing);
+                }}
+              />
+            </div>
           </section>
         ) : loaded && servers.length > 0 ? (
-          <div className="hidden min-w-0 flex-1 flex-col items-center justify-center gap-2 border-s border-stroke p-6 text-center md:flex">
-            <Server aria-hidden className="size-6 text-(--ui-text-muted)" />
+          <div className="hidden min-h-0 min-w-0 flex-col items-center justify-center gap-2 border-s border-stroke p-4 text-center @min-[44rem]/servers:flex @min-[44rem]/servers:w-[min(45%,28rem)] @min-[44rem]/servers:flex-none">
+            <Server aria-hidden className="size-5 text-(--ui-text-muted)" />
             <h2 className="text-sm font-medium">{t("Select a server")}</h2>
             <p className="max-w-xs text-xs text-(--ui-text-muted)">
               {t(
@@ -513,6 +568,17 @@ export function ServersView({
         ) : null}
       </div>
       {quickConnect ? <QuickConnect onClose={() => setQuickConnect(false)} /> : null}
+      {sshSettings ? (
+        <SshSettings
+          servers={servers}
+          onClose={() => setSshSettings(false)}
+          onUseServer={setSelectedId}
+          onEditServer={(server) => {
+            setSelectedId(server.id);
+            setEditor(server);
+          }}
+        />
+      ) : null}
       {editor ? (
         <SshServerEditor
           key={editor === "new" ? "new" : editor.id}

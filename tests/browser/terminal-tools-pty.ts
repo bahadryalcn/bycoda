@@ -6,14 +6,21 @@ export async function resizePty() {}
 export async function getPtyStatus() {
   return { foreground: null, supported: false };
 }
+let echo: ((data: string) => void) | undefined;
 export async function writePty(_id: string, data: string) {
   document.documentElement.dataset.lastPtyWrite = JSON.stringify(data);
+  if (data === "\r") echo?.("\r\nready> ");
+  else if (data === "\x7f") echo?.("\b \b");
+  // oxlint-disable-next-line no-control-regex -- emulate shell echo only for printable PTY input
+  else if (!/[\x00-\x1f\x7f]/.test(data)) echo?.(data);
 }
 export function subscribePty(_id: string, onData: (data: string) => void) {
+  echo = onData;
   const timer = setTimeout(() => onData("alpha target\r\nbeta target\r\nready> "), 50);
   const listener = (event: Event) => onData((event as CustomEvent<string>).detail);
   document.addEventListener("test-pty-output", listener);
   return () => {
+    echo = undefined;
     clearTimeout(timer);
     document.removeEventListener("test-pty-output", listener);
   };

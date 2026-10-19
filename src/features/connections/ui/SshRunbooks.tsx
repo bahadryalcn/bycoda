@@ -226,6 +226,9 @@ export function SshRunbooks({
     <>
       <Modal title={t("SSH runbooks")} onClose={onClose} size="lg">
         <div className="flex min-w-0 flex-col gap-3 p-4">
+          <p className="text-xs text-(--ui-text-muted)">
+            {t("Target")}: {server.name}
+          </p>
           {error ? (
             <Alert tone="danger" role="alert">
               {error}

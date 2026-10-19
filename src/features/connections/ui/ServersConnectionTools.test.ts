@@ -89,9 +89,12 @@ it("keeps connection explicit and retains organization drafts when changing tool
   const find = (label: string) =>
     [...container.querySelectorAll("button")].find((button) => button.textContent === label)!;
   expect(find("Connect via SSH").closest("[hidden]")).toBeNull();
-  expect(find("Saved commands").closest("[hidden]")).toBeTruthy();
+  expect(find("SSH runbooks").closest("[hidden]")).toBeTruthy();
   await act(async () => find("Settings").click());
-  const group = [...container.querySelectorAll("input")][0];
+  const label = [...container.querySelectorAll("label")].find(
+    (item) => item.textContent === "Group",
+  )!;
+  const group = container.querySelector<HTMLInputElement>(`#${label.htmlFor}`)!;
   await act(async () => {
     Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
       group,
@@ -100,7 +103,7 @@ it("keeps connection explicit and retains organization drafts when changing tool
     group.dispatchEvent(new Event("input", { bubbles: true }));
   });
   await act(async () => find("Automation").click());
-  expect(find("Saved commands").closest("[hidden]")).toBeNull();
+  expect(find("SSH runbooks").closest("[hidden]")).toBeNull();
   await act(async () => find("Settings").click());
   expect(group.value).toBe("Unfinished group");
   expect(bridge.invoke).not.toHaveBeenCalled();
@@ -331,8 +334,10 @@ it("previews certificate and ordered jump references before an import choice", a
   const help = container.querySelector("details")!;
   expect(help.open).toBe(false);
   expect(help.querySelector("summary")?.textContent).toBe("Jump host authentication");
-  expect(help.textContent).toContain("apply only to the final target");
-  expect(help.textContent).toContain("verify their own host keys");
+  expect(help.textContent).toContain(
+    "Each jump host uses its own identity and host-key verification",
+  );
+  expect(help.textContent).toContain("choose a different key for each hop");
 });
 
 it("offers agent forwarding only with the compatible terminal owner and delegates explicit approval", async () => {

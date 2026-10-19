@@ -6,16 +6,24 @@ import { TextField } from "../../../shared/ui/TextField";
 import { updateServerMetadata, type ServerRecord } from "../model/serverInventory";
 
 /** Metadata remains attached to canonical IDs, never to a second connection list. */
-export function ServerOrganization({ server }: { server: ServerRecord }) {
+export function ServerOrganization({
+  server,
+  expanded = false,
+}: {
+  server: ServerRecord;
+  expanded?: boolean;
+}) {
   const [group, setGroup] = useState(server.metadata.group ?? "");
   const [tags, setTags] = useState(server.metadata.tags.join(", "));
   const [favorite, setFavorite] = useState(server.metadata.favorite);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [saved, setSaved] = useState(false);
+  const Container = expanded ? "section" : "details";
+  const Heading = expanded ? "h3" : "summary";
   return (
-    <details className="mbs-3 border-t border-stroke pbs-3 text-xs">
-      <summary className="cursor-pointer text-(--ui-text-muted)">{t("Organization")}</summary>
+    <Container className="mbs-4 border-t border-stroke pbs-4 text-xs">
+      <Heading className="font-medium">{t("Organization")}</Heading>
       <form
         className="mbs-3 flex flex-col gap-3"
         onSubmit={async (event) => {
@@ -91,6 +99,6 @@ export function ServerOrganization({ server }: { server: ServerRecord }) {
           </Button>
         </div>
       </form>
-    </details>
+    </Container>
   );
 }

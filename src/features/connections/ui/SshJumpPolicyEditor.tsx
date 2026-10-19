@@ -1,6 +1,7 @@
 import { t } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { TextField } from "../../../shared/ui/TextField";
+import { SshIdentityField } from "./SshIdentityField";
 import { ArrowDown, ArrowUp, Plus, X } from "../../../shared/ui/icons";
 import { MAX_SSH_JUMP_HOSTS } from "../model/sshEndpointReview";
 import {
@@ -95,9 +96,15 @@ export function SshJumpPolicyEditor({
               {t("Hop identity and trust references")}
             </summary>
             <div className="flex min-w-0 flex-col gap-2">
+              <SshIdentityField
+                label={`${t("Jump host")} ${index + 1}: ${t("Choose SSH key")}`}
+                pathLabel={`${t("Jump host")} ${index + 1}: ${t("Identity file")}`}
+                value={hop.identityFile}
+                disabled={disabled}
+                onChange={(value) => update(index, "identityFile", value)}
+              />
               {(
                 [
-                  ["identityFile", "Identity file"],
                   ["certificateFile", "Certificate file"],
                   ["knownHostsFile", "Known hosts file"],
                 ] as const

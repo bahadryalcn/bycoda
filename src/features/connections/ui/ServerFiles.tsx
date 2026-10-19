@@ -9,6 +9,7 @@ import { Modal } from "../../../shared/ui/Modal";
 import { TextField } from "../../../shared/ui/TextField";
 import { Alert } from "../../../shared/ui/Alert";
 import { Progress } from "../../../shared/ui/Progress";
+import { SearchInput } from "../../../shared/ui/SearchInput";
 import {
   ArrowUp,
   ArrowDown as Download,
@@ -38,10 +39,12 @@ export function ServerFiles({
   connectionId,
   endpoint,
   onClose,
+  serverName,
 }: {
   connectionId: string;
   endpoint?: SshEndpoint;
   onClose: () => void;
+  serverName?: string;
 }) {
   const proxy = useSshHttpProxyApproval();
   const approve = (operation: SshHttpProxyOperation) =>
@@ -49,6 +52,10 @@ export function ServerFiles({
   const [path, setPath] = useState(".");
   const [query, setQuery] = useState(".");
   const [entries, setEntries] = useState<SftpEntry[]>([]);
+  const [fileSearch, setFileSearch] = useState("");
+  const visibleEntries = entries.filter((entry) =>
+    entry.name.toLocaleLowerCase().includes(fileSearch.trim().toLocaleLowerCase()),
+  );
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState("");
   const [status, setStatus] = useState("");
@@ -115,6 +122,7 @@ export function ServerFiles({
       setPath(next);
       setQuery(next);
       setLoaded(true);
+      setFileSearch("");
     });
   const close = () => {
     if (operation.current) void cancelSftp(operation.current).catch(() => undefined);
@@ -125,6 +133,11 @@ export function ServerFiles({
     <>
       <Modal title={t("SFTP files")} onClose={close} size="lg" fitViewport>
         <div className="flex min-h-0 flex-col gap-3 p-4">
+          {serverName ? (
+            <p className="truncate text-xs text-(--ui-text-muted)">
+              {t("Target")}: {serverName}
+            </p>
+          ) : null}
           <form
             className="flex flex-wrap items-center gap-2"
             onSubmit={(event) => {
@@ -386,8 +399,21 @@ export function ServerFiles({
               </div>
             </section>
           ) : null}
-          <div className="max-h-[55vh] min-h-0 overflow-auto" aria-label={t("Remote files")}>
-            {entries.map((entry) => (
+          {loaded ? (
+            <SearchInput
+              appearance="field"
+              aria-label={t("Search remote files")}
+              placeholder={t("Search remote files")}
+              value={fileSearch}
+              onChange={(event) => setFileSearch(event.target.value)}
+            />
+          ) : (
+            <p className="py-4 text-center text-xs text-(--ui-text-muted)">
+              {t("Open a directory to browse files.")}
+            </p>
+          )}
+          <div className="max-h-[55dvh] min-h-0 overflow-auto" aria-label={t("Remote files")}>
+            {visibleEntries.map((entry) => (
               <div
                 key={entry.name}
                 className="flex items-center gap-2 border-b border-stroke py-1.5 text-xs"
@@ -456,6 +482,11 @@ export function ServerFiles({
             {loaded && !entries.length ? (
               <p className="py-6 text-center text-xs text-(--ui-text-muted)">
                 {t("Empty directory")}
+              </p>
+            ) : null}
+            {loaded && entries.length > 0 && visibleEntries.length === 0 ? (
+              <p className="py-6 text-center text-xs text-(--ui-text-muted)">
+                {t("No matching files.")}
               </p>
             ) : null}
           </div>

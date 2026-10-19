@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { Terminal } from "@xterm/xterm";
 import { Button } from "../../../shared/ui/Button";
 import { t } from "../../../shared/i18n";
@@ -21,6 +21,7 @@ export function RemoteShellSuggestions({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const host = useRef<HTMLDivElement>(null);
+  const pending = useRef(false);
   const snapshot = shell.state?.status === "suggestions" ? shell.state : undefined;
   const suggestions = [...new Set(snapshot?.suggestions ?? [])];
   const choice = Math.min(selected, Math.max(0, suggestions.length - 1));
@@ -33,7 +34,9 @@ export function RemoteShellSuggestions({
     terminal?.focus();
   };
   const accept = async (value: string) => {
-    if (busy || !snapshot || terminal?.buffer.active.type === "alternate") return;
+    if (pending.current || busy || !snapshot || terminal?.buffer.active.type === "alternate")
+      return;
+    pending.current = true;
     setBusy(true);
     setError("");
     try {
@@ -43,9 +46,39 @@ export function RemoteShellSuggestions({
     } catch (reason) {
       setError(String(reason));
     } finally {
+      pending.current = false;
       setBusy(false);
     }
   };
+  const previewKeys = useRef<(event: KeyboardEvent) => void>(() => {});
+  const handlePreviewKey = (event: KeyboardEvent) => {
+    if (event.isComposing || event.ctrlKey || event.metaKey || event.altKey) return;
+    if ((event.key === "ArrowDown" || event.key === "ArrowUp") && suggestions.length) {
+      setSelected(
+        (value) =>
+          (value + (event.key === "ArrowDown" ? 1 : -1) + suggestions.length) % suggestions.length,
+      );
+    } else if (
+      ((event.key === "Tab" && !event.shiftKey) || event.key === "Enter") &&
+      suggestions[choice]
+    ) {
+      void accept(suggestions[choice]);
+    } else if (event.key === "Escape") {
+      close();
+    } else return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+  };
+  useLayoutEffect(() => {
+    previewKeys.current = handlePreviewKey;
+  });
+  useEffect(() => {
+    const element = terminal?.element;
+    if (selectionMode || !element) return;
+    const listener = (event: KeyboardEvent) => previewKeys.current(event);
+    element.addEventListener("keydown", listener, true);
+    return () => element.removeEventListener("keydown", listener, true);
+  }, [terminal, selectionMode]);
   return (
     <div
       ref={host}
@@ -82,7 +115,7 @@ export function RemoteShellSuggestions({
         }
       }}
     >
-      {snapshot ? (
+      {snapshot && selectionMode ? (
         <p className={styles.hint}>
           {snapshot.user}@{snapshot.host} ·{" "}
           {snapshot.shell === "zsh"
@@ -118,7 +151,7 @@ export function RemoteShellSuggestions({
               variant="item"
               size="sm"
               className={styles.option}
-              aria-selected={selectionMode && index === choice}
+              aria-selected={index === choice}
               disabled={busy}
               onMouseDown={(event) => event.preventDefault()}
               onClick={() => void accept(value)}
@@ -137,7 +170,7 @@ export function RemoteShellSuggestions({
         {t(
           selectionMode
             ? "↑/↓ select · Tab/Enter insert only · Esc returns to the shell. Press Enter in the terminal to run."
-            : "Shell keys stay in the terminal. Ctrl+Space selects suggestions; accepting inserts only.",
+            : "Tab to complete. Enter to insert. Run with Enter in the terminal.",
         )}
       </p>
     </div>

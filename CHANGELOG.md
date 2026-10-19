@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.37]
+
+### Servers and SSH
+
+- Refresh the server workspace layout and consolidate SSH settings, identity selection and config imports.
+- Refine server activity, files, forwards, snippets, organization and runbook controls.
+- Improve narrow layouts and retain server workspace state across navigation.
+
+### Terminal tools
+
+- Show local command suggestions at the terminal cursor using the current visible shell prompt.
+- Insert command completions without executing them or storing input history.
+- Refine remote suggestions, search controls and keyboard interactions.
+
 ## [0.6.36]
 
 ### Reliability and workspace

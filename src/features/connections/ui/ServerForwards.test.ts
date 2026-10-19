@@ -94,19 +94,8 @@ it("running rule stops explicitly and cannot be removed while active", async () 
 });
 it("saving metadata never connects and patches only forward rules", async () => {
   await render();
-  const inputs = [...container.querySelectorAll("input")];
-  await act(async () => {
-    for (const [index, value] of [
-      [1, "12222"],
-      [3, "22"],
-    ] as const) {
-      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
-        inputs[index],
-        value,
-      );
-      inputs[index].dispatchEvent(new Event("input", { bubbles: true }));
-    }
-  });
+  await setInput("Local port", "12222");
+  await setInput("Destination port", "22");
   await act(async () => {
     container
       .querySelector("form")!

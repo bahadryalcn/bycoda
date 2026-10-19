@@ -3,6 +3,7 @@ import { t } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { Timestamp } from "../../../shared/ui/Timestamp";
 import { Star } from "../../../shared/ui/icons";
+import { Switch } from "../../../shared/ui/Switch";
 import { bookmarkServerActivity, type ServerRecord } from "../model/serverInventory";
 
 /** Metadata only. Never receives or stores terminal command/output contents. */
@@ -16,11 +17,22 @@ export function ServerActivity({
   const [pending, setPending] = useState<string>();
   const [error, setError] = useState("");
   const activity = server.metadata.activity ?? [];
+  const [bookmarkedOnly, setBookmarkedOnly] = useState(false);
+  const visibleActivity = activity.filter((event) => !bookmarkedOnly || event.bookmarked);
+  const Container = expanded ? "section" : "details";
+  const Heading = expanded ? "h3" : "summary";
   return (
-    <details open={expanded || undefined} className="text-xs">
-      <summary className="cursor-pointer py-1 font-medium">
+    <Container className="text-xs">
+      <Heading className="py-1 font-medium">
         {t("Connection activity")} ({activity.length})
-      </summary>
+      </Heading>
+      <div className="my-3">
+        <Switch
+          label={t("Bookmarked only")}
+          checked={bookmarkedOnly}
+          onCheckedChange={setBookmarkedOnly}
+        />
+      </div>
       <details className="mbs-2 text-(--ui-text-muted)">
         <summary className="cursor-pointer">{t("About connection activity")}</summary>
         <p className="mbs-2">{t("Launch metadata only. Terminal contents are not recorded.")}</p>
@@ -30,11 +42,13 @@ export function ServerActivity({
           {error}
         </p>
       ) : null}
-      {!activity.length ? (
-        <p className="mbs-2 text-(--ui-text-muted)">{t("No connection activity yet.")}</p>
+      {!visibleActivity.length ? (
+        <p className="py-4 text-(--ui-text-muted)">
+          {t(bookmarkedOnly ? "No bookmarked activity." : "No connection activity yet.")}
+        </p>
       ) : (
-        <ul className="mbs-2 max-h-48 overflow-y-auto">
-          {[...activity].reverse().map((event) => (
+        <ul className="mbs-2 max-h-80 overflow-y-auto">
+          {[...visibleActivity].reverse().map((event) => (
             <li key={event.id} className="flex min-w-0 items-center gap-2 py-1">
               <div className="min-w-0 flex-1">
                 <p>{t("Terminal opened")}</p>
@@ -67,6 +81,6 @@ export function ServerActivity({
           ))}
         </ul>
       )}
-    </details>
+    </Container>
   );
 }

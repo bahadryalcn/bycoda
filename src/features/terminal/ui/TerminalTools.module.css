@@ -48,3 +48,10 @@
   font-size: 11px;
   padding: 4px;
 }
+
+.menuTrigger {
+  position: absolute;
+  inset-block-start: 4px;
+  inset-inline-end: 8px;
+  z-index: 1;
+}

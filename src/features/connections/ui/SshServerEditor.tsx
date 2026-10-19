@@ -118,7 +118,7 @@ export function SshServerEditor({
       onClose={() => {
         if (!saving) onClose();
       }}
-      size="sm"
+      size="md"
     >
       <form
         className="flex flex-col gap-3 p-4"
@@ -157,16 +157,40 @@ export function SshServerEditor({
           }
         }}
       >
-        <TextField
-          label={t("Host")}
-          placeholder="server.example.com"
-          value={host}
-          required
-          maxLength={253}
-          onChange={(event) => setHost(event.target.value)}
-          disabled={saving}
-        />
-        <div className="grid grid-cols-2 gap-3">
+        <fieldset className="flex min-w-0 flex-col gap-3">
+          <legend className="mbe-3 text-sm font-medium">{t("Connection")}</legend>
+          <TextField
+            label={t("Name")}
+            value={name}
+            required={!onConnect || saveConnection}
+            maxLength={200}
+            onChange={(event) => setName(event.target.value)}
+            disabled={saving}
+          />
+          <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_6rem] items-start gap-3">
+            <TextField
+              label={t("Host")}
+              placeholder="server.example.com"
+              value={host}
+              required
+              maxLength={253}
+              onChange={(event) => setHost(event.target.value)}
+              disabled={saving}
+            />
+            <TextField
+              label={t("SSH port")}
+              type="number"
+              value={port}
+              min={1}
+              max={65535}
+              required
+              onChange={(event) => setPort(event.target.value)}
+              disabled={saving}
+            />
+          </div>
+        </fieldset>
+        <fieldset className="flex min-w-0 flex-col gap-3 border-t border-stroke pbs-3">
+          <legend className="text-sm font-medium">{t("Credentials")}</legend>
           <TextField
             label={t("SSH user")}
             value={user}
@@ -174,25 +198,8 @@ export function SshServerEditor({
             onChange={(event) => setUser(event.target.value)}
             disabled={saving}
           />
-          <TextField
-            label={t("SSH port")}
-            type="number"
-            value={port}
-            min={1}
-            max={65535}
-            required
-            onChange={(event) => setPort(event.target.value)}
-            disabled={saving}
-          />
-        </div>
-        <TextField
-          label={t("Name")}
-          value={name}
-          required={!onConnect || saveConnection}
-          maxLength={200}
-          onChange={(event) => setName(event.target.value)}
-          disabled={saving}
-        />
+          <SshIdentityField value={identityFile} onChange={setIdentityFile} disabled={saving} />
+        </fieldset>
         <details className="text-xs text-(--ui-text-muted)">
           <summary className="cursor-pointer py-1">{t("Connection help")}</summary>
           <p className="mbs-2">
@@ -208,14 +215,18 @@ export function SshServerEditor({
             {sshEndpointPreview(endpoint.httpProxy)}
           </p>
         ) : null}
-        <details open={Boolean(server?.sshEndpoint?.identityFile)} className="text-xs text-(--ui-text-muted)">
-          <summary className="cursor-pointer py-1">{t("Authentication and jump host")}</summary>
+        <details
+          open={Boolean(
+            server?.sshEndpoint?.certificateFile ||
+            server?.sshEndpoint?.httpProxy ||
+            server?.sshEndpoint?.jumpHost ||
+            server?.sshEndpoint?.jumpHosts?.length ||
+            server?.sshEndpoint?.jumpPolicies?.length,
+          )}
+          className="border-t border-stroke pbs-3 text-xs text-(--ui-text-muted)"
+        >
+          <summary className="cursor-pointer py-1">{t("Advanced SSH settings")}</summary>
           <div className="mbs-2 flex flex-col gap-3">
-            <SshIdentityField
-              value={identityFile}
-              onChange={setIdentityFile}
-              disabled={saving}
-            />
             <TextField
               label={t("Public SSH certificate file")}
               value={certificateFile}
@@ -359,7 +370,7 @@ export function SshServerEditor({
             {error}
           </p>
         ) : null}
-        <div className="flex justify-end gap-2">
+        <div className="sticky inset-be-0 z-10 -mbe-4 flex justify-end gap-2 border-t border-stroke bg-(--ui-surface) py-3">
           <Button variant="ghost" disabled={saving} onClick={onClose}>
             {t("Cancel")}
           </Button>

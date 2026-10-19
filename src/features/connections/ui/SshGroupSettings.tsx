@@ -4,6 +4,7 @@ import { Modal } from "../../../shared/ui/Modal";
 import { Button } from "../../../shared/ui/Button";
 import { Checkbox } from "../../../shared/ui/Checkbox";
 import { TextField } from "../../../shared/ui/TextField";
+import { SshIdentityField } from "./SshIdentityField";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
 import { Alert } from "../../../shared/ui/Alert";
@@ -151,6 +152,9 @@ export function SshGroupSettings({
   return (
     <Modal title={t("SSH group settings")} onClose={onClose} size="md">
       <div className="flex min-w-0 flex-col gap-3 p-4">
+        <p className="text-xs text-(--ui-text-muted)">
+          {t("Target")}: {server.name}
+        </p>
         <details className="text-xs text-(--ui-text-muted)">
           <summary className="cursor-pointer py-1">{t("About group settings")}</summary>
           <p className="mbs-2">
@@ -204,7 +208,8 @@ export function SshGroupSettings({
             {t("Edit group")}
           </Button>
         </div>
-        <div className="flex flex-wrap gap-x-3 gap-y-2">
+        <fieldset className="grid min-w-0 grid-cols-[repeat(auto-fit,minmax(min(100%,10rem),1fr))] gap-x-3 gap-y-2 border-0 p-0">
+          <legend className="mbe-2 text-xs font-medium">{t("Inherited fields")}</legend>
           {SSH_INHERITED_FIELDS.map((field) => (
             <label key={field} className="flex items-center gap-1 text-xs">
               <Checkbox
@@ -231,7 +236,7 @@ export function SshGroupSettings({
             />
             {t("Remote environment")}
           </label>
-        </div>
+        </fieldset>
         <div className="flex justify-end gap-2">
           <Button
             disabled={busy || loading || !initialized}
@@ -351,11 +356,11 @@ export function SshGroupSettings({
                 onChange={(event) => editDraft({ port: event.target.value })}
               />
             </div>
-            <TextField
-              label={t("Default identity file")}
+            <SshIdentityField
+              pathLabel={t("Default identity file")}
               value={draft.value.identityFile}
               disabled={busy}
-              onChange={(event) => editDraft({ identityFile: event.target.value })}
+              onChange={(value) => editDraft({ identityFile: value })}
             />
             <TextField
               label={t("Default certificate file")}
