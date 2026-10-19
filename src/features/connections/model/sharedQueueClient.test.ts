@@ -1,7 +1,20 @@
 // @vitest-environment happy-dom
 import { beforeEach, expect, it, vi } from "vitest";
+import { invoke } from "@tauri-apps/api/core";
 import { SharedQueueClient, type QueueTransport } from "./sharedQueueClient";
 import { mergeQueueChange, type SharedQueue } from "./sharedQueue";
+import { recordRemoteCapabilities } from "./connections";
+import { ATTACHMENT_OWNERSHIP_CAPABILITY, attachmentOwnershipScope } from "./attachmentOwnership";
+vi.mock("@tauri-apps/api/core", async (original) => ({
+  ...(await original<typeof import("@tauri-apps/api/core")>()),
+  invoke: vi.fn(async (command: string) =>
+    command === "session_attachment_references" ? { draftIds: [], queues: {} } : undefined,
+  ),
+}));
+vi.mock("@tauri-apps/api/window", () => ({
+  getCurrentWindow: () => ({ label: "main" }),
+  getAllWindows: async () => [{ label: "main" }],
+}));
 import {
   editRemoteMessage,
   enqueueRemoteMessage,
@@ -160,4 +173,125 @@ it("recovers an acknowledged desktop send after a lost finish response", async (
   f.offline(false);
   await restored.initialize();
   expect(restored.snapshot().queue.messages).toEqual([]);
+});
+
+it("atomically claims host-owned queue views on every reply and releases only after durable consume", async () => {
+  recordRemoteCapabilities("managed-view-host", [ATTACHMENT_OWNERSHIP_CAPABILITY]);
+  const calls: Array<{ method: string; params: Record<string, unknown> }> = [];
+  let queue: SharedQueue = {
+    revision: 1,
+    consumer: "remote:managed-view",
+    messages: [
+      {
+        id: "row",
+        text: "queued",
+        attachments: [
+          {
+            id: "host-file",
+            name: "a.txt",
+            kind: "file",
+            mimeType: "text/plain",
+            size: 1,
+            hostEnvironmentId: "managed-view-host",
+          },
+        ],
+      },
+    ],
+  };
+  const request: QueueTransport = async (method, params) => {
+    calls.push({ method, params });
+    if (method === "attachments.claims") return { claims: [] } as never;
+    if (method === "sessions.queue.claim")
+      queue = { ...queue, claim: { id: "row", clientId: "remote:managed-view", token: "held" } };
+    if (method === "sessions.queue.finish") queue = { ...queue, claim: undefined, messages: [] };
+    return structuredClone(queue) as never;
+  };
+  const client = new SharedQueueClient(
+    "managed-view-machine",
+    "managed-view-host",
+    "managed-view-session",
+    "remote:managed-view",
+    request,
+    vi.fn(async (_machine, files) => files),
+  );
+  await client.initialize();
+  const snapshot = client.snapshot();
+  expect(snapshot.queue.messages[0].attachments[0].id).toBe("host-file");
+  expect(calls[0]).toMatchObject({
+    method: "sessions.queue.get",
+    params: { ownerId: expect.any(String), claimId: expect.any(String) },
+  });
+  const token = await client.claim("row", false);
+  expect(token).toBe("held");
+  expect(calls.some((call) => call.method === "attachments.release")).toBe(false);
+  await client.finish(token!, true);
+  await vi.waitFor(() =>
+    expect(calls.some((call) => call.method === "attachments.release")).toBe(true),
+  );
+  for (const call of calls.filter((call) => call.method.startsWith("sessions.queue.")))
+    expect(call.params).toMatchObject({ ownerId: expect.any(String), claimId: expect.any(String) });
+});
+
+it("hands closed-window queue claims to durable global drafts and retires them after that draft clears", async () => {
+  recordRemoteCapabilities("closed-queue-host", [ATTACHMENT_OWNERSHIP_CAPABILITY]);
+  let draftIds = ["exported-file"];
+  const original = vi.mocked(invoke).getMockImplementation()!;
+  vi.mocked(invoke).mockImplementation(async (command) =>
+    command === "session_attachment_references" ? { draftIds, queues: {} } : undefined,
+  );
+  const calls: Array<{ method: string; params: Record<string, unknown> }> = [];
+  const request: QueueTransport = async (method, params) => {
+    calls.push({ method, params });
+    return (
+      method === "attachments.claims" ? { claims: [] } : { messages: [], revision: 0 }
+    ) as never;
+  };
+  const oldOwner = JSON.stringify(["desktop-queue", "closed-queue-session", "closed-window"]);
+  await attachmentOwnershipScope(
+    "closed-queue-machine",
+    "closed-queue-host",
+    oldOwner,
+    request,
+  ).acquire("cache", ["exported-file"]);
+  const client = new SharedQueueClient(
+    "closed-queue-machine",
+    "closed-queue-host",
+    "closed-queue-session",
+    "remote:closed",
+    request,
+    vi.fn(async (_machine, files) => files),
+  );
+  try {
+    await client.initialize();
+    await vi.waitFor(() =>
+      expect(
+        calls.some(
+          (call) => call.method === "attachments.release" && call.params.ownerId === oldOwner,
+        ),
+      ).toBe(true),
+    );
+    const newClaim = calls.find(
+      (call) => call.method === "attachments.claim" && call.params.ownerId !== oldOwner,
+    );
+    expect(newClaim?.params.ids).toEqual(["exported-file"]);
+    expect(
+      calls.some(
+        (call) =>
+          call.method === "attachments.release" && call.params.ownerId === newClaim?.params.ownerId,
+      ),
+    ).toBe(false);
+    draftIds = [];
+    await client.sync();
+    await vi.waitFor(() =>
+      expect(
+        calls.some(
+          (call) =>
+            call.method === "attachments.release" &&
+            call.params.ownerId === newClaim?.params.ownerId,
+        ),
+      ).toBe(true),
+    );
+  } finally {
+    vi.mocked(invoke).mockImplementation(original);
+  }
 });

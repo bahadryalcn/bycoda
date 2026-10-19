@@ -177,6 +177,7 @@ async function promptOnLive(input: {
   session.toolsByIndex = new Map();
   session.toolsById = new Map();
   const timeoutMs = input.timeoutMs ?? REQUEST_TIMEOUT_MS;
+  let timeout: ReturnType<typeof setTimeout> | undefined;
   let abortHandler: (() => void) | undefined;
   const abortPromise = input.signal
     ? new Promise<never>((_, reject) => {
@@ -209,7 +210,10 @@ async function promptOnLive(input: {
     await Promise.race([
       turnPromise,
       new Promise<void>((_, reject) => {
-        setTimeout(() => reject(new Error("Claude text generation timed out")), timeoutMs);
+        timeout = setTimeout(
+          () => reject(new Error("Claude text generation timed out")),
+          timeoutMs,
+        );
       }),
       ...(abortPromise ? [abortPromise] : []),
     ]);
@@ -221,6 +225,7 @@ async function promptOnLive(input: {
     if (session.closed) await dropLive();
     throw error;
   } finally {
+    clearTimeout(timeout);
     if (abortHandler && input.signal) {
       input.signal.removeEventListener("abort", abortHandler);
     }

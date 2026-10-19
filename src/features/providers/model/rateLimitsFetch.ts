@@ -89,6 +89,12 @@ export async function fetchClaudeRateLimits(accountId = "default"): Promise<Prov
     if (result.status === "unavailable") {
       return unavailableRateLimits("claude", result.error?.trim() || "Claude not signed in");
     }
+    if (result.status === "renewal_pending") {
+      return {
+        ...errorRateLimits("claude", result.error?.trim() || "Claude usage unavailable"),
+        renewalPending: true,
+      };
+    }
     return errorRateLimits("claude", result.error?.trim() || "Claude usage unavailable");
   } catch (error) {
     return errorRateLimits(

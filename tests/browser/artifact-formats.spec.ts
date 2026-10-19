@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { writeFile } from "node:fs/promises";
 
 test("attachment opening, reference and removal stay distinct at narrow widths", async ({
   page,
@@ -283,6 +284,84 @@ test("XLSX attachment is parsed by the real worker and switches workbook sheets"
   );
   await page.screenshot({ path: info.outputPath("actual-xlsx-preview.png") });
 });
+
+for (const dpr of [1, 2, 3]) {
+  test.describe(`PDF raster budget at DPR ${dpr}`, () => {
+    test.use({ deviceScaleFactor: dpr });
+    test("retains CSS and selectable text geometry at 25 and 500 percent", async ({
+      page,
+    }, info) => {
+      await page.goto("/tests/browser/artifact-formats.html", { waitUntil: "domcontentloaded" });
+      await page.getByRole("button", { name: "Open proof.pdf full screen", exact: true }).click();
+      const dialog = page.getByRole("dialog");
+      const layer = dialog.locator(".pdf-text-layer");
+      await expect(layer).toContainText("PDF preview verified");
+      const metrics = [];
+      for (const zoom of [0.25, 5]) {
+        const button = dialog.getByRole("button", {
+          name: zoom === 0.25 ? "Zoom out" : "Zoom in",
+          exact: true,
+        });
+        for (let step = 0; step < 20; step++) await button.click();
+        await expect(
+          dialog.getByText(zoom === 0.25 ? "25%" : "500%", { exact: true }),
+        ).toBeVisible();
+        await expect(layer).toContainText("PDF preview verified");
+        const frame = dialog.locator('[data-page="1"]');
+        await expect
+          .poll(() =>
+            frame
+              .locator("canvas")
+              .evaluate((canvas: HTMLCanvasElement) => canvas.width * canvas.height),
+          )
+          .toBeGreaterThan(0);
+        const metric = await frame.evaluate((element) => {
+          const canvas = element.querySelector("canvas")!;
+          const span = element.querySelector(".pdf-text-layer span")!;
+          const box = element.getBoundingClientRect();
+          const text = span.getBoundingClientRect();
+          return {
+            dpr: window.devicePixelRatio,
+            width: canvas.width,
+            height: canvas.height,
+            cssWidth: box.width,
+            cssHeight: box.height,
+            textWidth: text.width,
+            textOffset: text.left - box.left,
+          };
+        });
+        expect(metric.width * metric.height).toBeLessThanOrEqual(2_000_000);
+        expect(metric.cssWidth).toBeCloseTo(420 * zoom, 0);
+        expect(metric.cssHeight).toBeCloseTo(300 * zoom, 0);
+        expect(metric.textOffset).toBeCloseTo(50 * zoom, 0);
+        metrics.push({ zoom, ...metric });
+        if (zoom === 5) {
+          const rangeBox = await layer
+            .locator("span")
+            .first()
+            .evaluate((span) => {
+              const range = document.createRange();
+              range.setStart(span.firstChild!, 0);
+              range.setEnd(span.firstChild!, 3);
+              const box = range.getBoundingClientRect();
+              return { x: box.x, y: box.y, width: box.width, height: box.height };
+            });
+          await page.mouse.move(rangeBox.x + 1, rangeBox.y + rangeBox.height / 2);
+          await page.mouse.down();
+          await page.mouse.move(rangeBox.x + rangeBox.width - 1, rangeBox.y + rangeBox.height / 2, {
+            steps: 6,
+          });
+          await page.mouse.up();
+          expect(await page.evaluate(() => window.getSelection()?.toString())).toContain("PDF");
+        }
+      }
+      expect(metrics[1].textWidth / metrics[0].textWidth).toBeCloseTo(20, 1);
+      const metricPath = info.outputPath(`pdf-raster-dpr-${dpr}.json`);
+      await writeFile(metricPath, JSON.stringify(metrics, null, 2));
+      await info.attach(`pdf-raster-dpr-${dpr}.json`, { path: metricPath, contentType: "application/json" });
+    });
+  });
+}
 
 test("owned video reaches metadata and plays with native controls", async ({
   page,

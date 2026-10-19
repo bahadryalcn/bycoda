@@ -29,7 +29,7 @@ import { ChevronDown, ChevronUp } from "../../../shared/ui/icons";
 
 import { formatInteger } from "../../../shared/lib/numbers";
 import { minimalSetup } from "codemirror";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import { useColorScheme } from "../../../shared/hooks/useColorScheme";
 import { useLockOverscroll } from "../../../shared/hooks/useLockOverscroll";
@@ -99,6 +99,7 @@ import { MergeConflictEditor } from "../../source-control/ui/MergeConflictEditor
 import { useInlineBlame, useInlineBlameUnavailableReason } from "./InlineBlameToggle";
 
 import { FILE_EDITOR_AUTOSAVE_DELAY_MS } from "../editor/editorTiming";
+import { registerClosingEditor } from "../model/editorClose";
 
 type EditorNavigationRequest = EditorNavigation & { token: number };
 
@@ -108,6 +109,37 @@ const editorBlameConfig = new Compartment();
 const inlineBlameExtension = editorBlame({ onOpenCommit: requestOpenCommit });
 
 export function CodeMirrorEditor(props: Parameters<typeof StandardCodeMirrorEditor>[0]) {
+  const propsRef = useRef(props);
+  useLayoutEffect(() => { propsRef.current = props; });
+  const dirtyRef = useRef(false);
+  const internalSaveRef = useRef<(() => Promise<boolean>) | null>(null);
+  const pending = useRef(new Set<Promise<void>>());
+  const saveRequestRef = props.saveRequestRef ?? internalSaveRef;
+  const onDirtyChange = useCallback((dirty: boolean) => {
+    dirtyRef.current = dirty;
+    propsRef.current.onDirtyChange(dirty);
+  }, []);
+  const onSave = useCallback((text: string) => {
+    const write = propsRef.current.onSave(text);
+    pending.current.add(write);
+    void write.then(
+      () => pending.current.delete(write),
+      () => pending.current.delete(write),
+    );
+    return write;
+  }, []);
+  useEffect(
+    () =>
+      registerClosingEditor({
+        path: props.path,
+        dirty: () => dirtyRef.current,
+        settle: async () => {
+          while (pending.current.size) await Promise.allSettled(pending.current);
+        },
+        save: () => saveRequestRef.current?.() ?? Promise.resolve(false),
+      }),
+    [props.path, saveRequestRef],
+  );
   const [merge, setMerge] = useState(() => hasConflictMarkers(props.value));
   useEffect(() => {
     if (hasConflictMarkers(props.value)) setMerge(true);
@@ -118,14 +150,19 @@ export function CodeMirrorEditor(props: Parameters<typeof StandardCodeMirrorEdit
       cwd={props.cwd}
       value={props.value}
       active={props.active}
-      onSave={props.onSave}
-      onDirtyChange={props.onDirtyChange}
+      onSave={onSave}
+      onDirtyChange={onDirtyChange}
       canSave={props.canAutosave}
-      saveRequestRef={props.saveRequestRef}
+      saveRequestRef={saveRequestRef}
       onOpenFile={props.onOpenFile}
     />
   ) : (
-    <StandardCodeMirrorEditor {...props} />
+    <StandardCodeMirrorEditor
+      {...props}
+      onSave={onSave}
+      onDirtyChange={onDirtyChange}
+      saveRequestRef={saveRequestRef}
+    />
   );
 }
 

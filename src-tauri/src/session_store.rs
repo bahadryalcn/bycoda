@@ -890,6 +890,129 @@ pub fn session_list_drafts(store: State<'_, SessionStore>) -> Result<Vec<Value>,
     list_composer_drafts(&conn).map_err(|e| e.to_string())
 }
 
+/// Strict, read-only inventory for remote attachment ownership. Ordinary draft
+/// hydration may discard expired/malformed rows; it cannot authorize a release.
+#[tauri::command(async)]
+pub fn session_attachment_references(
+    store: State<'_, SessionStore>,
+    session_id: String,
+    queue_session_ids: Vec<String>,
+    all_sessions: Option<bool>,
+) -> Result<Value, String> {
+    let conn = store.conn.lock().map_err(|_| "Session store is locked")?;
+    read_attachment_references(
+        &conn,
+        &session_id,
+        &queue_session_ids,
+        all_sessions.unwrap_or(false),
+    )
+}
+
+fn read_attachment_references(
+    conn: &Connection,
+    session_id: &str,
+    queue_session_ids: &[String],
+    all_sessions: bool,
+) -> Result<Value, String> {
+    validate_id(session_id, "session")?;
+    if queue_session_ids.len() > 100 {
+        return Err("Too many attachment reference queues".into());
+    }
+    for id in queue_session_ids {
+        validate_id(id, "queue session")?;
+    }
+    // All windows see the same atomic inventory, including an external writer.
+    let snapshot = conn.unchecked_transaction().map_err(|e| e.to_string())?;
+    let read_ids = |sql: &str| -> Result<Vec<String>, String> {
+        let mut statement = snapshot.prepare(sql).map_err(|e| e.to_string())?;
+        let rows = statement
+            .query_map([], |row| row.get::<_, String>(0))
+            .map_err(|e| e.to_string())?;
+        let mut ids = Vec::new();
+        for row in rows {
+            if ids.len() >= 10_000 {
+                return Err("Too many attachment reference rows".into());
+            }
+            ids.push(row.map_err(|e| e.to_string())?);
+        }
+        Ok(ids)
+    };
+    let draft_sessions = if all_sessions {
+        read_ids("SELECT session_id FROM composer_drafts")?
+    } else {
+        vec![session_id.to_string()]
+    };
+    let queue_sessions = if all_sessions {
+        read_ids("SELECT session_id FROM session_queues")?
+    } else {
+        queue_session_ids.to_vec()
+    };
+    let mut bytes = 0usize;
+    let mut count = 0usize;
+    let mut read = |sql: &str, id: &str| -> Result<Option<Value>, String> {
+        let raw: Option<String> = snapshot
+            .query_row(sql, [id], |row| row.get(0))
+            .optional()
+            .map_err(|e| e.to_string())?;
+        raw.map(|raw| {
+            bytes = bytes.saturating_add(raw.len());
+            if bytes > 64 * 1024 * 1024 {
+                return Err("Saved attachment reference inventory is too large".into());
+            }
+            serde_json::from_str(&raw)
+                .map_err(|_| "Could not read saved attachment references".into())
+        })
+        .transpose()
+    };
+    let mut ids = |value: &Value| -> Result<Vec<String>, String> {
+        let attachments = value
+            .as_object()
+            .and_then(|value| value.get("attachments"))
+            .and_then(Value::as_array)
+            .ok_or("Could not read saved attachment references")?;
+        let mut result = Vec::new();
+        for file in attachments {
+            let id = file
+                .get("id")
+                .and_then(Value::as_str)
+                .filter(|id| !id.is_empty() && id.len() <= 128)
+                .ok_or("Could not read saved attachment references")?;
+            count += 1;
+            if count > 10_000 {
+                return Err("Too many saved attachment references".into());
+            }
+            result.push(id.to_string());
+        }
+        Ok(result)
+    };
+    let mut draft_ids = Vec::new();
+    for session in draft_sessions {
+        if let Some(draft) = read(
+            "SELECT draft_json FROM composer_drafts WHERE session_id=?1",
+            &session,
+        )? {
+            draft_ids.extend(ids(&draft)?);
+        }
+    }
+    let mut queues = serde_json::Map::new();
+    for id in &queue_sessions {
+        let mut references = Vec::new();
+        if let Some(queue) = read(
+            "SELECT queue_json FROM session_queues WHERE session_id=?1",
+            id,
+        )? {
+            for row in queue
+                .as_array()
+                .ok_or("Could not read saved attachment references")?
+            {
+                references.extend(ids(row)?);
+            }
+        }
+        queues.insert(id.clone(), json!(references));
+    }
+    Ok(json!({ "draftIds": draft_ids, "queues": queues }))
+}
+
 fn set_composer_draft(
     conn: &Connection,
     session_id: &str,
@@ -4003,6 +4126,89 @@ mod tests {
         set_session_queue(&conn, "s1", Some(&json!([{ "id": "q1" }]))).unwrap();
         delete_session(&conn, "s1").unwrap();
         assert_eq!(get_session_queue(&conn, "s1").unwrap(), None);
+    }
+
+    #[test]
+    fn attachment_reference_inventory_is_read_only_and_preserves_expired_drafts() {
+        let store = SessionStore::open_in_memory().unwrap();
+        let conn = store.conn.lock().unwrap();
+        set_composer_draft(
+            &conn,
+            "draft",
+            Some(&json!({"attachments":[{"id":"draft-file"}]})),
+        )
+        .unwrap();
+        conn.execute("UPDATE composer_drafts SET updated_at=1", [])
+            .unwrap();
+        set_session_queue(
+            &conn,
+            "queue",
+            Some(&json!([{"attachments":[{"id":"queue-file"}]}])),
+        )
+        .unwrap();
+        assert_eq!(
+            read_attachment_references(&conn, "draft", &["queue".into(), "missing".into()], false)
+                .unwrap(),
+            json!({"draftIds":["draft-file"],"queues":{"queue":["queue-file"],"missing":[]}})
+        );
+        let left: i64 = conn
+            .query_row("SELECT count(*) FROM composer_drafts", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(left, 1);
+    }
+
+    #[test]
+    fn attachment_reference_inventory_rejects_corruption_instead_of_claiming_absence() {
+        let store = SessionStore::open_in_memory().unwrap();
+        let conn = store.conn.lock().unwrap();
+        set_session_queue(&conn, "queue", Some(&json!([]))).unwrap();
+        conn.execute("UPDATE session_queues SET queue_json='not json'", [])
+            .unwrap();
+        assert!(read_attachment_references(&conn, "draft", &["queue".into()], false).is_err());
+        conn.execute("UPDATE session_queues SET queue_json='[{}]'", [])
+            .unwrap();
+        assert!(read_attachment_references(&conn, "draft", &["queue".into()], false).is_err());
+        set_session_queue(&conn, "queue", Some(&json!([]))).unwrap();
+        for draft in [json!({"attachments":null}), json!({"attachments":[{}]})] {
+            set_composer_draft(&conn, "draft", Some(&draft)).unwrap();
+            assert!(read_attachment_references(&conn, "draft", &["queue".into()], false).is_err());
+        }
+        conn.execute("UPDATE composer_drafts SET draft_json='not json'", [])
+            .unwrap();
+        assert!(read_attachment_references(&conn, "draft", &[], false).is_err());
+        assert!(read_attachment_references(&conn, "../draft", &[], false).is_err());
+        assert!(
+            read_attachment_references(&conn, "draft", &vec!["queue".into(); 101], false).is_err()
+        );
+    }
+
+    #[test]
+    fn attachment_reference_inventory_can_protect_exports_to_other_local_drafts() {
+        let store = SessionStore::open_in_memory().unwrap();
+        let conn = store.conn.lock().unwrap();
+        set_composer_draft(
+            &conn,
+            "other-draft",
+            Some(&json!({"attachments":[{"id":"shared"}]})),
+        )
+        .unwrap();
+        set_session_queue(
+            &conn,
+            "other-queue",
+            Some(&json!([{"attachments":[{"id":"queued"}]}])),
+        )
+        .unwrap();
+        assert_eq!(
+            read_attachment_references(&conn, "current", &[], false).unwrap(),
+            json!({"draftIds":[],"queues":{}})
+        );
+        assert_eq!(
+            read_attachment_references(&conn, "current", &[], true).unwrap(),
+            json!({"draftIds":["shared"],"queues":{"other-queue":["queued"]}})
+        );
+        conn.execute("UPDATE composer_drafts SET draft_json='broken'", [])
+            .unwrap();
+        assert!(read_attachment_references(&conn, "current", &[], true).is_err());
     }
 
     #[test]

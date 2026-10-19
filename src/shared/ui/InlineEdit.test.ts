@@ -123,3 +123,21 @@ it("reconciles a submitted draft already equal to the latest saved value", async
     container.querySelector('button[aria-label="Note title: External update"]'),
   ).not.toBeNull();
 });
+
+it.each(["", "New title"])("offers retry with the exact rejected draft %j", async (draft) => {
+  const save = vi.fn(async () => {
+    throw new Error("Disk unavailable");
+  });
+  await render("Original", save);
+  const input = await edit(draft);
+  await act(async () =>
+    input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })),
+  );
+  expect(save).toHaveBeenCalledWith(draft);
+  const retry = Array.from(container.querySelectorAll("button")).find(
+    (button) => button.textContent === "Try again",
+  );
+  expect(retry).toBeDefined();
+  await act(async () => retry!.click());
+  expect(container.querySelector("input")?.value).toBe(draft);
+});

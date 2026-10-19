@@ -3355,6 +3355,9 @@
   "{p0} command": "{p0}-Befehl",
   "{p0} commands": "{p0} Befehle",
   "Rate-limit details": "Details zur Ratenbegrenzung",
+  "Checked just now": "Gerade eben geprüft",
+  "Checked {p0}m ago": "Vor {p0}m geprüft",
+  "Checked {p0}h ago": "Vor {p0}h geprüft",
   "Updated just now": "Gerade erst aktualisiert",
   "Updated {p0}m ago": "Vor {p0}m aktualisiert",
   "Updated {p0}h ago": "Vor {p0}h aktualisiert",
@@ -5413,5 +5416,15 @@
   "The upstream connection uses plain HTTP. Basic credentials require separate approval for each operation.": "Die Upstream-Verbindung verwendet unverschlüsseltes HTTP. Basic-Zugangsdaten erfordern für jeden Vorgang eine gesonderte Genehmigung.",
   "Abandon pending start": "Ausstehenden Start aufgeben",
   "Review startup scripts": "Startskripte prüfen",
-  "Automatic startup reviews require trusted shell integration. Use Review startup scripts for other terminals.": "Automatische Startprüfungen erfordern vertrauenswürdige Shell-Integration. Verwenden Sie Startskripte prüfen für andere Terminals."
+  "Automatic startup reviews require trusted shell integration. Use Review startup scripts for other terminals.": "Automatische Startprüfungen erfordern vertrauenswürdige Shell-Integration. Verwenden Sie Startskripte prüfen für andere Terminals.",
+  "Choose SSH key": "SSH-Schlüssel auswählen",
+  "SSH agent and default keys": "SSH-Agent und Standardschlüssel",
+  "Could not load SSH keys. Enter a path or retry.": "SSH-Schlüssel konnten nicht geladen werden. Pfad eingeben oder erneut versuchen.",
+  "Select a key for": "Schlüssel auswählen für",
+  "Use key": "Schlüssel verwenden",
+  "Assign key": "Schlüssel zuweisen",
+  "Assigned": "Zugewiesen",
+  "Local SSH keys and known hosts.": "Lokale SSH-Schlüssel und bekannte Hosts.",
+  "Use SSH defaults": "SSH-Standardwerte verwenden",
+  "SSH key": "SSH-Schlüssel"
 }

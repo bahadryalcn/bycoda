@@ -93,6 +93,13 @@ one template. On macOS, update the existing LaunchAgent runtime paths. Verify th
 new process path, health, and SQLite integrity; restore the previous configuration
 if a service swap fails.
 
+The shared Windows runner logs native stderr diagnostics without treating them as
+termination requests; the host's exit code controls crash recovery. Runtime upgrades
+regenerate this runner from the packaged host code. Normal CI covers the Windows
+service tests, and the release workflow requires those tests before building app
+installers or uploading host packages, including consecutive runtime upgrades and
+recovery from an exited host whose state file remains.
+
 If the registered Windows host PID has already exited, installation may proceed
 after idle database and stopped-service checks. If the PID still runs, a lifecycle
 failure blocks installation. A connection error is not evidence that the host is idle.

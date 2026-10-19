@@ -24,6 +24,15 @@ import {
  * picks the live queue up again from the module cache instead.
  */
 const live = new Map<string, RemoteQueue>();
+const persistedListeners = new Set<(key: string, queue: RemoteQueue) => void>();
+export function subscribePersistedRemoteQueues(
+  listener: (key: string, queue: RemoteQueue) => void,
+): () => void {
+  persistedListeners.add(listener);
+  return () => {
+    persistedListeners.delete(listener);
+  };
+}
 
 /** Test harness isolation for suites that reuse host session identifiers. */
 export function resetRemoteQueuesForTests(): void {
@@ -33,7 +42,11 @@ export function resetRemoteQueuesForTests(): void {
 /** The conversation is gone: its queue goes from memory and from the store. */
 export function forgetRemoteQueue(key: string): void {
   live.delete(key);
-  void setSessionQueue(key, undefined).catch(() => {});
+  void setSessionQueue(key, undefined)
+    .then(() => {
+      for (const listener of persistedListeners) listener(key, EMPTY_REMOTE_QUEUE);
+    })
+    .catch(() => {});
 }
 
 type Entry = { key?: string; queue: RemoteQueue; loaded: boolean; error?: string };
@@ -62,6 +75,7 @@ export function useRemoteQueue(key: string | undefined) {
           messages.length > 0 ? { messages, status: "restored" } : EMPTY_REMOTE_QUEUE;
         // What was saved is what is on disk; nothing to write back yet.
         written.current.set(key, queue);
+        for (const listener of persistedListeners) listener(key, queue);
         if (queue.messages.length > 0) live.set(key, queue);
         setEntry({ key, queue, loaded: true });
       })
@@ -95,12 +109,14 @@ export function useRemoteQueue(key: string | undefined) {
       return;
     }
     written.current.set(owner, queue);
-    void setSessionQueue(owner, queue.messages.length > 0 ? queue.messages : undefined).catch(
-      () => {
+    void setSessionQueue(owner, queue.messages.length > 0 ? queue.messages : undefined)
+      .then(() => {
+        for (const listener of persistedListeners) listener(owner, queue);
+      })
+      .catch(() => {
         // Try again on the next change instead of trusting a write that failed.
         written.current.delete(owner);
-      },
-    );
+      });
   }, [entry, key]);
 
   const update = useCallback(

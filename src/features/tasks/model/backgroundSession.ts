@@ -69,11 +69,13 @@ export type BackgroundSessionSummary = {
 
 export function backgroundSessionSummary(host: HostSession): BackgroundSessionSummary {
   const { blocks, harness, title } = host.session;
-  const last = (role: string) =>
-    [...blocks]
-      .reverse()
-      .find((block) => block.role === role && block.text.trim())
-      ?.text.trim() ?? "";
+  const last = (role: string) => {
+    for (let at = blocks.length - 1; at >= 0; at--) {
+      const block = blocks[at];
+      if (block.role === role && block.text.trim()) return block.text.trim();
+    }
+    return "";
+  };
   return {
     title: sessionDisplayTitle(title, harness),
     status:
@@ -94,6 +96,8 @@ export async function loadBackgroundSessionSummary(
 ): Promise<BackgroundSessionSummary> {
   const host = await remoteRequest<HostSession | null>(target.machineId, "sessions.get", {
     sessionId: target.sessionId,
+    preview: true,
+    summary: true,
   });
   if (!host) throw new Error("This session is no longer available.");
   return backgroundSessionSummary(host);

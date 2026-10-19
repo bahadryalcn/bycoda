@@ -89,8 +89,11 @@ it("opens PowerShell suggestions only from an explicit alternative without termi
       ),
     );
     expect(enable).not.toHaveBeenCalled();
-    expect(host.querySelector("details")?.open).toBe(false);
-    expect(host.textContent).toContain("-NoProfile");
+    const help = host.querySelector<HTMLButtonElement>('[aria-label="About shell suggestions"]')!;
+    expect(help.getAttribute("aria-expanded")).toBe("false");
+    await act(async () => help.click());
+    expect(document.body.textContent).toContain("-NoProfile");
+    await act(async () => help.click());
     await act(async () =>
       host.querySelector<HTMLButtonElement>('[aria-label="Shell suggestions"]')!.click(),
     );

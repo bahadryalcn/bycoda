@@ -3,6 +3,7 @@ import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import PdfViewer from "./PdfViewer";
+import { PdfRasterBudget } from "../model/pdfRasterBudget";
 
 const pdf = vi.hoisted(() => ({ getPage: vi.fn(), pages: 2 }));
 vi.mock("pdfjs-dist/legacy/build/pdf.mjs", () => ({
@@ -141,6 +142,7 @@ it("reports a decoder failure, frees its render buffer and preserves the other p
 });
 
 it("ignores rendering cancellation and stale render failures after leaving the viewport", async () => {
+  const reserve = vi.spyOn(PdfRasterBudget.prototype, "reserve");
   const pending = deferred();
   const cancel = vi.fn();
   const first = page(vi.fn(() => ({ promise: pending.promise, cancel })));
@@ -148,12 +150,19 @@ it("ignores rendering cancellation and stale render failures after leaving the v
   const second = page(vi.fn(() => ({ promise: Promise.reject(cancelled), cancel: vi.fn() })));
   pdf.getPage.mockImplementation(async (number: number) => (number === 1 ? first : second));
   await mount();
+  const budget = reserve.mock.contexts[0];
+  const pendingPixels = budget.pixels;
   expect(host.querySelector('[role="alert"]')).toBeNull();
   await act(async () => observers.find(({ target }) => target === frame(1))!.notify(false));
   expect(cancel).toHaveBeenCalledTimes(1);
+  // Cancellation is asynchronous: preserve the render buffer until its task
+  // settles so a replacement cannot spend the same raster allocation early.
+  expect(first.render.mock.calls[0][0].canvas.width).toBeGreaterThan(0);
+  expect(budget.pixels).toBe(pendingPixels);
   await act(async () => pending.reject(new Error("Late worker failure")));
   expect(host.querySelector('[role="alert"]')).toBeNull();
   expect(first.render.mock.calls[0][0].canvas.width).toBe(0);
+  expect(budget.pixels).toBe(0);
 });
 
 it("ignores stale getPage failures after unmount", async () => {

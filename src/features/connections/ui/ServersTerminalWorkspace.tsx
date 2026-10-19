@@ -4,7 +4,8 @@ import { ToolHeader } from "../../../app/shell/ToolNavigation";
 import { WindowControls } from "../../../app/shell/WindowControls";
 import { IS_MAC } from "../../../platform/tauri/platform";
 import { Button } from "../../../shared/ui/Button";
-import { ArrowLeft, X } from "../../../shared/ui/icons";
+import { ArrowLeft, Terminal, X } from "../../../shared/ui/icons";
+import { Badge } from "../../../shared/ui/Badge";
 import { t, useLocale } from "../../../shared/i18n";
 import type { ServerRecord, SshEndpoint } from "../model/serverInventory";
 import { serverTerminalRestoreState } from "../model/serverTerminalRestoreState";
@@ -189,19 +190,37 @@ export function ServersTerminalWorkspace({
                 <ArrowLeft className="size-3.5" />
               </Button>
               <ToolHeader>
-                <span>{t("SSH terminal")}</span>
+                <div className="flex min-w-0 items-center gap-2 px-3 text-sm">
+                  <Terminal aria-hidden className="size-4 shrink-0 text-accent" />
+                  <span className="truncate">
+                    {terminals.find((terminal) => terminal.id === active)?.name ??
+                      t("SSH terminal")}
+                  </span>
+                  <Badge tone="info" size="sm">
+                    SSH
+                  </Badge>
+                </div>
               </ToolHeader>
               {!IS_MAC ? <WindowControls /> : null}
             </div>
             <div
-              className="flex shrink-0 overflow-x-auto border-b border-stroke"
+              className="flex shrink-0 gap-1 overflow-x-auto border-b border-stroke bg-(--ui-surface-raised) px-2 py-1"
               role="tablist"
               aria-label={t("SSH terminals")}
             >
               {terminals.map((terminal) => (
-                <div key={terminal.id} className="flex shrink-0 items-center">
+                <div
+                  key={terminal.id}
+                  data-server-terminal-tab
+                  className="relative min-w-28 max-w-64 shrink-0"
+                >
                   <Button
                     variant="tab"
+                    tone={active === terminal.id ? "info" : "neutral"}
+                    motion="none"
+                    fullWidth
+                    className="h-9 min-w-0 pe-9"
+                    title={terminal.name}
                     role="tab"
                     id={`tab-${terminal.id}`}
                     aria-controls={`panel-${terminal.id}`}
@@ -230,11 +249,14 @@ export function ServersTerminalWorkspace({
                       serverTerminalRestoreState.activate(terminal.restoreId);
                     }}
                   >
-                    {terminal.name}
+                    <Terminal aria-hidden className="size-3.5 shrink-0" />
+                    <span className="min-w-0 flex-1 truncate">{terminal.name}</span>
                   </Button>
                   <Button
                     variant="ghost"
                     iconOnly
+                    motion="none"
+                    className="absolute end-1 inset-bs-1"
                     label={`${t("Close terminal")}: ${terminal.name}`}
                     onClick={() => {
                       serverTerminalRestoreState.remove(terminal.restoreId);
@@ -267,6 +289,7 @@ export function ServersTerminalWorkspace({
                 <TerminalView
                   id={terminal.id}
                   cwd=""
+                  onReturnToServers={() => setActive(null)}
                   sshConnectionId={terminal.server?.id}
                   sshEndpoint={terminal.endpoint}
                   shellIntegration={terminal.shellIntegration}

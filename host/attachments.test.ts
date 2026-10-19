@@ -9,6 +9,7 @@ import {
   readAttachmentChunk,
   attachmentPath,
   MAX_REMOTE_ATTACHMENT_BYTES,
+  collectAttachmentGarbage,
 } from "./attachments";
 import { createHash } from "node:crypto";
 
@@ -84,21 +85,68 @@ afterEach(() => {
 it("reads non-image files only after session acceptance and ignores client-supplied paths", async () => {
   const { store, id } = fixture();
   const bytes = Buffer.from("# Saved note\n");
-  await writeAttachmentChunk(store, { id, size: bytes.length, offset: 0, data: bytes.toString("base64") });
-  vi.spyOn(store, "session").mockImplementation((sessionId) => ({ session: { blocks: sessionId === "owner" ? [{ attachments: [{ id, name: "note.md", kind: "file", mimeType: "text/markdown", size: bytes.length }] }] : [] } }) as ReturnType<HostStore["session"]>);
-  const read = await readAttachmentChunk(store, { sessionId: "owner", id, offset: 0, path: "C:/private/secret" });
+  await writeAttachmentChunk(store, {
+    id,
+    size: bytes.length,
+    offset: 0,
+    data: bytes.toString("base64"),
+  });
+  vi.spyOn(store, "session").mockImplementation(
+    (sessionId) =>
+      ({
+        session: {
+          blocks:
+            sessionId === "owner"
+              ? [
+                  {
+                    attachments: [
+                      {
+                        id,
+                        name: "note.md",
+                        kind: "file",
+                        mimeType: "text/markdown",
+                        size: bytes.length,
+                      },
+                    ],
+                  },
+                ]
+              : [],
+        },
+      }) as ReturnType<HostStore["session"]>,
+  );
+  const read = await readAttachmentChunk(store, {
+    sessionId: "owner",
+    id,
+    offset: 0,
+    path: "C:/private/secret",
+  });
   expect(Buffer.from(read.data, "base64")).toEqual(bytes);
-  await expect(readAttachmentChunk(store, { sessionId: "other", id, offset: 0 })).rejects.toThrow("not found");
-  await expect(readAttachmentChunk(store, { sessionId: "owner", id: "../secret", offset: 0 })).rejects.toThrow("not found");
+  await expect(readAttachmentChunk(store, { sessionId: "other", id, offset: 0 })).rejects.toThrow(
+    "not found",
+  );
+  await expect(
+    readAttachmentChunk(store, { sessionId: "owner", id: "../secret", offset: 0 }),
+  ).rejects.toThrow("not found");
 });
 
 it("preserves generated-image ownership and metadata size bounds", async () => {
   const { store, id } = fixture();
-  const image = { path: join(store.attachmentDir, "..", id), name: "generated.png", mimeType: "image/png", size: 0 };
-  vi.spyOn(store, "session").mockReturnValue({ session: { blocks: [{ id: "generated", image }] } } as ReturnType<HostStore["session"]>);
-  await expect(readAttachmentChunk(store, { sessionId: "owner", id: "generated", offset: 0 })).rejects.toThrow("generated image path");
+  const image = {
+    path: join(store.attachmentDir, "..", id),
+    name: "generated.png",
+    mimeType: "image/png",
+    size: 0,
+  };
+  vi.spyOn(store, "session").mockReturnValue({
+    session: { blocks: [{ id: "generated", image }] },
+  } as ReturnType<HostStore["session"]>);
+  await expect(
+    readAttachmentChunk(store, { sessionId: "owner", id: "generated", offset: 0 }),
+  ).rejects.toThrow("generated image path");
   image.size = MAX_REMOTE_ATTACHMENT_BYTES + 1;
-  await expect(readAttachmentChunk(store, { sessionId: "owner", id: "generated", offset: 0 })).rejects.toThrow("size");
+  await expect(
+    readAttachmentChunk(store, { sessionId: "owner", id: "generated", offset: 0 }),
+  ).rejects.toThrow("size");
 });
 
 it("accepts ordered chunks and an identical retry while rejecting changes", async () => {
@@ -260,4 +308,50 @@ it("accepts an empty attachment and rejects declared-size, path and chunk limit 
   await expect(
     writeAttachmentChunk(store, { id, offset: 0, size: 5, data: "YWJj" }),
   ).rejects.toThrow("size mismatch");
+});
+
+it("collects old orphans only with complete references and preserves queue, other consumers and current uploads", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "attachment-gc-"));
+  const store = new HostStore(join(directory, "host.db"));
+  cleanups.push(() => {
+    store.close();
+    rmSync(directory, { recursive: true, force: true });
+  });
+  const ids = [
+    "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+    "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+    "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+    "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+  ];
+  for (const id of ids)
+    await writeAttachmentChunk(store, {
+      id,
+      offset: 0,
+      size: 6,
+      data: Buffer.from("abc").toString("base64"),
+    });
+  store.db.exec("CREATE TABLE gc_other_consumer (payload TEXT)");
+  store.db
+    .prepare("INSERT INTO gc_other_consumer VALUES (?)")
+    .run(JSON.stringify({ attachment: ids[1] }));
+  const { SessionQueues } = await import("./session-queue");
+  new SessionQueues(store.db);
+  store.db
+    .prepare("INSERT INTO session_queues VALUES (?, ?)")
+    .run("session", JSON.stringify({ messages: [{ attachments: [{ id: ids[2] }] }] }));
+  const future = Date.now() + 8 * 24 * 60 * 60 * 1000;
+  expect(await collectAttachmentGarbage(store, () => undefined, future)).toEqual([]);
+  expect(await collectAttachmentGarbage(store, () => new Set([ids[3]]), future)).toEqual([ids[0]]);
+  for (const id of ids.slice(1))
+    expect(readFileSync(attachmentPath(store, id), "utf8")).toBe("abc");
+  const current = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee";
+  const upload = writeAttachmentChunk(store, {
+    id: current,
+    offset: 0,
+    size: 6,
+    data: Buffer.from("abc").toString("base64"),
+  });
+  await collectAttachmentGarbage(store, () => new Set(ids), Date.now());
+  await upload;
+  expect(readFileSync(attachmentPath(store, current), "utf8")).toBe("abc");
 });

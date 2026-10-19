@@ -28,6 +28,7 @@ import { XBrowserSessions } from "./social-browser";
 import { SocialPeers } from "./social-peers";
 import { createSocialAdapters } from "../src/integrations/social/platformAdapters";
 import { HostTasks } from "./tasks";
+import { AttachmentOwnership } from "./attachment-ownership";
 import { HostGoals } from "./goals";
 import { HostStewards } from "./stewards";
 import { basename, dirname, join } from "node:path";
@@ -84,6 +85,7 @@ import { SyncTransfers, serializedResponse } from "./sync-transfer";
 import { RevisionWaits } from "./revisionWait";
 import {
   TranscriptPages,
+  transcriptPage,
   partialSessionSync,
   previewRewindHistory,
   previewSession,
@@ -275,6 +277,7 @@ export function createHostServer(
   };
   const desktopDelete = new DesktopDelete();
   const sessionQueues = new SessionQueues(engine.store.db);
+  const attachmentOwnership = new AttachmentOwnership(engine.store);
   /** A desktop-only session on this machine, matched to a registered project. */
   const desktopSnapshot = (id: string) => {
     if (!id || inHost(id)) return undefined;
@@ -1373,6 +1376,7 @@ export function createHostServer(
                 "git.conflicts",
                 "attachments.upload",
                 "attachments.resume",
+                "attachments.ownership.v1",
                 "attachments.read",
                 "sessions.draft",
                 "sessions.plan",
@@ -1844,12 +1848,15 @@ export function createHostServer(
           case "sessions.queue.claim":
           case "sessions.queue.finish": {
             const id = String(params.sessionId ?? "");
+            attachmentOwnership.validateExposure(params);
             featureSession(id); // Verify that the queue belongs to an existing host/desktop session.
             const clientId = params.clientId;
             if (typeof clientId !== "string" || !clientId || clientId.length > 200)
               throw new Error("Invalid queue client");
-            if (input.method === "sessions.queue.get") result = sessionQueues.get(id);
-            else if (input.method === "sessions.queue.change") {
+            if (input.method === "sessions.queue.get") {
+              const queue = sessionQueues.get(id);
+              result = queue;
+            } else if (input.method === "sessions.queue.change") {
               const normalize = (raw: unknown) => {
                 if (
                   !raw ||
@@ -1911,6 +1918,13 @@ export function createHostServer(
                 sessionQueues.finish(id, String(params.token ?? ""), params.accepted as boolean),
               );
             }
+            const exposed =
+              result as import("../src/features/connections/model/sharedQueue").SharedQueue;
+            attachmentOwnership.expose(
+              token,
+              exposed.messages.flatMap((message) => message.attachments.map((file) => file.id)),
+              params,
+            );
             break;
           }
           case "sessions.syncChunk":
@@ -1949,7 +1963,35 @@ export function createHostServer(
             const id = String(params.sessionId ?? "");
             const watch = desktopWatch(id);
             const value = (watch && desktopView(id, watch.projectId)) ?? engine.store.session(id);
-            result = value.revision === params.revision ? null : value;
+            result =
+              value.revision === params.revision
+                ? null
+                : params.preview === true
+                  ? transcriptPage(
+                      params.summary === true
+                        ? {
+                            ...value,
+                            session: {
+                              ...value.session,
+                              blocks: [
+                                value.session.blocks.findLast(
+                                  (block) => block.role === "assistant" && block.text.trim(),
+                                ),
+                                value.session.blocks.findLast(
+                                  (block) => block.role === "system" && block.text.trim(),
+                                ),
+                                value.session.blocks.findLast(
+                                  (block) => block.approval && !block.approval.decided,
+                                ),
+                              ].filter((block): block is NonNullable<typeof block> => !!block),
+                            },
+                          }
+                        : value,
+                      undefined,
+                      undefined,
+                      true,
+                    ).value
+                  : value;
             break;
           }
           case "events.read": {
@@ -2187,11 +2229,9 @@ export function createHostServer(
             break;
           case "tasks.list":
             if (params.projectId !== undefined) engine.store.project(String(params.projectId));
-            result = tasks
-              .list()
-              .filter(
-                (task) => params.projectId === undefined || task.projectId === params.projectId,
-              );
+            result = tasks.list(
+              params.projectId === undefined ? undefined : String(params.projectId),
+            );
             break;
           case "tasks.save":
             result = tasks.save(params.task);
@@ -2276,12 +2316,31 @@ export function createHostServer(
             await stewards.decline(String(params.taskId ?? ""));
             result = { declined: true };
             break;
-          case "attachments.status":
-            result = await attachmentUploadStatus(engine.store, params);
+          case "attachments.claim":
+            attachmentOwnership.claim(token, params);
+            result = { claimed: true };
             break;
-          case "attachments.upload":
-            result = await writeAttachmentChunk(engine.store, params);
+          case "attachments.release":
+            attachmentOwnership.release(token, params);
+            result = { released: true };
             break;
+          case "attachments.claims":
+            result = attachmentOwnership.claims(token, params);
+            break;
+          case "attachments.status": {
+            attachmentOwnership.touch(token, params);
+            const status = await attachmentUploadStatus(engine.store, params);
+            attachmentOwnership.uploaded(params, status.offset);
+            result = status;
+            break;
+          }
+          case "attachments.upload": {
+            attachmentOwnership.touch(token, params);
+            const uploaded = await writeAttachmentChunk(engine.store, params);
+            attachmentOwnership.uploaded(params, uploaded.offset);
+            result = uploaded;
+            break;
+          }
           case "attachments.read":
             result = await readAttachmentChunk(engine.store, params);
             break;
@@ -2492,10 +2551,12 @@ export function createHostServer(
   // Cached read-only desktop connections would keep the files locked.
   server.on("listening", () => {
     perfMetrics.start();
+    attachmentOwnership.start();
     void mobileLan.start().catch(() => {});
     social.start();
   });
   server.on("close", () => {
+    attachmentOwnership.close();
     void terminals.close();
     devServerAccess.close();
     gitWatches.close();

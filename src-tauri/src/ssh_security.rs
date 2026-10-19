@@ -189,7 +189,12 @@ pub(crate) fn connection_args(endpoint: &SshEndpoint) -> Result<Vec<String>, Str
         } else {
             identity.clone()
         };
-        args.extend(["-i".into(), expanded]);
+        args.extend([
+            "-o".into(),
+            "IdentitiesOnly=yes".into(),
+            "-i".into(),
+            expanded,
+        ]);
     }
     if let Some(certificate) = &endpoint.certificate_file {
         let expanded = if let Some(tail) = certificate

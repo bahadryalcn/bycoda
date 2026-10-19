@@ -30,6 +30,7 @@ vi.mock("./SshRunbooks", () => ({
 }));
 const terminalHooks = vi.hoisted(() => ({
   openAgent: undefined as undefined | ReturnType<typeof vi.fn>,
+  open: undefined as undefined | ReturnType<typeof vi.fn>,
 }));
 vi.mock("./SshAgentForwarding", () => ({
   SshAgentForwarding: ({
@@ -51,7 +52,7 @@ vi.mock("./SshGroupSettings", () => ({
 }));
 vi.mock("./ServerActivity", () => ({ ServerActivity: () => null }));
 vi.mock("./ServersTerminalWorkspace", () => ({
-  useOpenServerTerminal: () => undefined,
+  useOpenServerTerminal: () => terminalHooks.open,
   useOpenAgentServerTerminal: () => terminalHooks.openAgent,
   useGenerateSshKey: () => undefined,
 }));
@@ -65,6 +66,7 @@ beforeEach(() => {
     command === "ssh_agent_identities" ? { status: "empty", identities: [] } : [],
   );
   terminalHooks.openAgent = undefined;
+  terminalHooks.open = undefined;
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   container = document.createElement("div");
   root = createRoot(container);
@@ -81,6 +83,171 @@ const existing: ServerRecord = {
   metadata: { tags: [], favorite: false },
 };
 const host = { alias: "imported-alias", endpoint: existing.sshEndpoint!, duplicate: false };
+it("keeps connection explicit and retains organization drafts when changing tool panels", async () => {
+  terminalHooks.open = vi.fn();
+  await act(async () => root.render(createElement(ServersConnectionTools, { server: existing })));
+  const find = (label: string) =>
+    [...container.querySelectorAll("button")].find((button) => button.textContent === label)!;
+  expect(find("Connect via SSH").closest("[hidden]")).toBeNull();
+  expect(find("Saved commands").closest("[hidden]")).toBeTruthy();
+  await act(async () => find("Settings").click());
+  const group = [...container.querySelectorAll("input")][0];
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
+      group,
+      "Unfinished group",
+    );
+    group.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  await act(async () => find("Automation").click());
+  expect(find("Saved commands").closest("[hidden]")).toBeNull();
+  await act(async () => find("Settings").click());
+  expect(group.value).toBe("Unfinished group");
+  expect(bridge.invoke).not.toHaveBeenCalled();
+  expect(terminalHooks.open).not.toHaveBeenCalled();
+  await act(async () => find("Connect via SSH").click());
+  expect(terminalHooks.open).toHaveBeenCalledExactlyOnceWith(existing);
+});
+it("persists the key assignment once and reuses the saved server on later connects and remount", async () => {
+  const saved: ServerRecord = {
+    ...existing,
+    sshEndpoint: { ...existing.sshEndpoint!, identityFile: "C:/keys/work" },
+  };
+  bridge.invoke.mockImplementation(async (command: string) => {
+    if (command === "ssh_public_keys_list")
+      return [
+        { identityFile: "C:/keys/work", keyType: "ssh-ed25519", fingerprint: "SHA256:public" },
+      ];
+    if (command === "ssh_agent_identities") return { status: "unavailable", identities: [] };
+    if (command === "server_ssh_identity_set") return saved;
+    return [];
+  });
+  terminalHooks.open = vi.fn();
+  await act(async () => root.render(createElement(ServersConnectionTools, { server: existing })));
+  const find = (label: string) =>
+    [...container.querySelectorAll("button")].find((button) => button.textContent === label)!;
+  await act(async () => find("Settings").click());
+  await act(async () => find("SSH settings").click());
+  const choose = document.querySelector<HTMLButtonElement>(
+    'button[aria-label="Assign key: C:/keys/work (Saved identity)"]',
+  )!;
+  expect(choose).toBeTruthy();
+  await act(async () => choose.click());
+  expect(bridge.invoke).toHaveBeenCalledWith("server_ssh_identity_set", {
+    id: existing.id,
+    identityFile: "C:/keys/work",
+  });
+  expect(choose.disabled).toBe(true);
+  expect(choose.textContent).toContain("Assigned");
+  expect(document.querySelector('[role="dialog"]')?.textContent).not.toContain("Edit SSH server");
+  expect(terminalHooks.open).not.toHaveBeenCalled();
+  await act(async () =>
+    document
+      .querySelector<HTMLButtonElement>('[role="dialog"] button[aria-label="Close"]')!
+      .click(),
+  );
+  await act(async () => find("Connect via SSH").click());
+  await act(async () => find("Connect via SSH").click());
+  expect(terminalHooks.open).toHaveBeenNthCalledWith(1, saved);
+  expect(terminalHooks.open).toHaveBeenNthCalledWith(2, saved);
+  await act(async () => root.render(null));
+  await act(async () => root.render(createElement(ServersConnectionTools, { server: saved })));
+  await act(async () => find("Settings").click());
+  await act(async () => find("SSH settings").click());
+  expect(
+    document.querySelector<HTMLButtonElement>('button[aria-label^="Assign key:"]')?.disabled,
+  ).toBe(true);
+  expect(
+    bridge.invoke.mock.calls.filter(([command]) => command === "server_ssh_identity_set"),
+  ).toHaveLength(1);
+});
+it.each(["host", "inherited"])("assigns a persistent key to a %s connection", async (kind) => {
+  const base: ServerRecord =
+    kind === "host"
+      ? {
+          ...existing,
+          kind: "host",
+          sshEndpoint: undefined,
+          machine: {
+            id: existing.id,
+            name: existing.name,
+            endpoint: "ssh://alice@server.invalid",
+            environmentId: "env",
+            ssh: { target: "alice@server.invalid", port: 22, remotePort: 3776 },
+          },
+        }
+      : {
+          ...existing,
+          metadata: {
+            ...existing.metadata,
+            sshInheritance: { groupId: "group", fields: ["identityFile"] },
+          },
+          effectiveSshEndpoint: { ...existing.sshEndpoint!, identityFile: "C:/keys/work" },
+        };
+  const saved: ServerRecord =
+    kind === "host"
+      ? {
+          ...base,
+          machine: {
+            ...base.machine!,
+            ssh: { ...base.machine!.ssh!, identityFile: "C:/keys/work" },
+          },
+        }
+      : {
+          ...base,
+          sshEndpoint: { ...base.sshEndpoint!, identityFile: "C:/keys/work" },
+          metadata: { ...base.metadata, sshInheritance: { groupId: "group", fields: [] } },
+        };
+  bridge.invoke.mockImplementation(async (command: string) => {
+    if (command === "ssh_public_keys_list")
+      return [
+        { identityFile: "C:/keys/work", keyType: "ssh-ed25519", fingerprint: "SHA256:public" },
+      ];
+    if (command === "ssh_agent_identities") return { status: "unavailable", identities: [] };
+    if (command === "server_ssh_identity_set") return saved;
+    return [];
+  });
+  await act(async () => root.render(createElement(ServersConnectionTools, { server: base })));
+  const find = (label: string) =>
+    [...container.querySelectorAll("button")].find((button) => button.textContent === label)!;
+  await act(async () => find("Settings").click());
+  await act(async () => find("SSH settings").click());
+  const choose = document.querySelector<HTMLButtonElement>('button[aria-label^="Assign key:"]')!;
+  expect(choose.disabled).toBe(false);
+  await act(async () => choose.click());
+  expect(choose.disabled).toBe(true);
+  expect(choose.getAttribute("aria-pressed")).toBe("true");
+  expect(bridge.invoke).toHaveBeenCalledWith("server_ssh_identity_set", {
+    id: base.id,
+    identityFile: "C:/keys/work",
+  });
+});
+it("does not replace a saved key when assigning another key fails", async () => {
+  const saved = {
+    ...existing,
+    sshEndpoint: { ...existing.sshEndpoint!, identityFile: "C:/keys/previous" },
+  };
+  bridge.invoke.mockImplementation(async (command: string) => {
+    if (command === "ssh_public_keys_list")
+      return [
+        { identityFile: "C:/keys/work", keyType: "ssh-ed25519", fingerprint: "SHA256:public" },
+      ];
+    if (command === "ssh_agent_identities") return { status: "unavailable", identities: [] };
+    if (command === "server_ssh_identity_set") throw new Error("Could not save key");
+    return [];
+  });
+  await act(async () => root.render(createElement(ServersConnectionTools, { server: saved })));
+  const find = (label: string) =>
+    [...container.querySelectorAll("button")].find((button) => button.textContent === label)!;
+  await act(async () => find("Settings").click());
+  await act(async () => find("SSH settings").click());
+  const choose = document.querySelector<HTMLButtonElement>('button[aria-label^="Assign key:"]')!;
+  await act(async () => choose.click());
+  expect(document.querySelector('[role="alert"]')?.textContent).toContain("Could not save key");
+  expect(choose.disabled).toBe(false);
+  expect(choose.getAttribute("aria-pressed")).toBe("false");
+  expect(container.textContent).toContain("C:/keys/previous");
+});
 it("offers target-explicit use/edit/skip for a duplicate and cannot import over it", async () => {
   const onUse = vi.fn(),
     onEdit = vi.fn(),

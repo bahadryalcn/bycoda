@@ -4,10 +4,81 @@ import { createHash } from "node:crypto";
 import { uploadRemoteAttachments } from "./remoteAttachments";
 import { hashBase64Prefix } from "./attachmentPrefix";
 import { ATTACHMENT_CHUNK_BYTES } from "./attachmentData";
+import { AttachmentOwnership } from "./attachmentOwnership";
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
 vi.mock("./attachmentPrefix", () => ({ hashBase64Prefix: vi.fn() }));
 afterEach(() => vi.clearAllMocks());
+
+it("claims managed uploads before bytes and includes the generation on resume and upload", async () => {
+  const events: string[] = [];
+  const values = new Map<string, string>();
+  const ownership = new AttachmentOwnership(
+    "managed-owner",
+    "managed",
+    async (method) => {
+      events.push(method);
+    },
+    {
+      getItem: (key) => values.get(key) ?? null,
+      setItem: (key, value) => {
+        values.set(key, value);
+      },
+    },
+  );
+  vi.mocked(invoke).mockImplementation(async (_command, input) => {
+    const { method, params } = input as { method: string; params: Record<string, unknown> };
+    events.push(method);
+    expect(params).toMatchObject({
+      ownerId: ownership.ownerId,
+      claimId: ownership.claimId("managed"),
+    });
+    return { offset: method === "attachments.status" ? 0 : 1 };
+  });
+  await uploadRemoteAttachments(
+    "managed-host",
+    [{ id: "managed", name: "a", mimeType: "text/plain", kind: "file", size: 1, data: "eA==" }],
+    { resumable: true, ownership, ownershipSource: "submit:turn" },
+  );
+  expect(events).toEqual(["attachments.claim", "attachments.status", "attachments.upload"]);
+});
+
+it("claims host-owned attachment reuse without reading bytes and retains it until handoff", async () => {
+  const values = new Map<string, string>();
+  const request = vi.fn(async () => {});
+  const ownership = new AttachmentOwnership("managed-owner", "reuse", request, {
+    getItem: (key) => values.get(key) ?? null,
+    setItem: (key, value) => {
+      values.set(key, value);
+    },
+  });
+  await uploadRemoteAttachments(
+    "managed-host",
+    [
+      {
+        id: "reuse",
+        name: "a",
+        mimeType: "text/plain",
+        kind: "file",
+        size: 1,
+        hostEnvironmentId: "host",
+        path: "/foreign/path",
+      },
+    ],
+    { environmentId: "host", ownership, ownershipSource: "submit:turn" },
+  );
+  expect(request).toHaveBeenCalledWith(
+    "attachments.claim",
+    expect.objectContaining({ ids: ["reuse"] }),
+  );
+  expect(invoke).not.toHaveBeenCalled();
+  ownership.finishJob("submit:turn");
+  await ownership.replaceDurable("submit:turn", []);
+  expect(request).toHaveBeenLastCalledWith(
+    "attachments.release",
+    expect.objectContaining({ ids: ["reuse"] }),
+  );
+});
 
 it("reuses a shared queue attachment on its owning host without reading a foreign path", async () => {
   const file = {

@@ -448,8 +448,10 @@ fn expired_claude_usage(creds: &ClaudeCredentials, now_ms: i64) -> ClaudeUsageFe
         .expires_at_ms
         .is_some_and(|expires| now_ms.saturating_sub(expires) < CLAUDE_CLI_RENEWAL_GRACE_MS);
     if creds.has_refresh_token && within_grace {
+        // A distinct status lets the footer re-read the local credential
+        // promptly; this branch makes no network request.
         usage_result(
-            "error",
+            "renewal_pending",
             None,
             None,
             Some("Claude usage will update when this account is used again".into()),
@@ -950,15 +952,16 @@ mod tests {
             });
             let creds = credentials_from_blob(&raw.to_string()).unwrap();
             let result = expired_claude_usage(&creds, now);
-            assert_eq!(result.status, "error");
             assert!(result.body.is_none());
             if defers {
+                assert_eq!(result.status, "renewal_pending");
                 assert!(result.http_status.is_none());
                 assert_eq!(
                     result.error.as_deref(),
                     Some("Claude usage will update when this account is used again")
                 );
             } else {
+                assert_eq!(result.status, "error");
                 assert_eq!(result.http_status, Some(401));
                 assert_eq!(result.error.as_deref(), Some("Claude sign-in expired"));
             }

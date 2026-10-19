@@ -62,12 +62,14 @@ export function socialClient(machineId: string) {
         accountId,
       }),
     snapshot: () => request<SocialSnapshot>("snapshot"),
-    workspaceSnapshot: (input: SocialWorkspaceQuery = {}) =>
+    workspaceSnapshot: (input: SocialWorkspaceQuery = {}, fresh = false) =>
       // Reads need no idempotency receipt containing another copy of the page.
-      remoteRequest<SocialWorkspaceResponse>(machineId, "social.request", {
-        action: "workspace.snapshot",
-        input,
-      }),
+      remoteRequest<SocialWorkspaceResponse>(
+        machineId,
+        "social.request",
+        { action: "workspace.snapshot", input },
+        fresh,
+      ),
     oauthAvailability: () =>
       remoteRequest<Record<string, { configured: boolean; reason: string }>>(
         machineId,

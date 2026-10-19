@@ -83,6 +83,15 @@ const sshRecords: ServerRecord[] =
           metadata: {
             tags: [],
             favorite: false,
+            ...(params.has("inheritedFixture")
+              ? {
+                  sshInheritance: {
+                    groupId: "fixture-group",
+                    fields: ["user"],
+                    environment: false,
+                  } satisfies SshInheritance,
+                }
+              : {}),
             ...(params.has("groupFixture") ? { group: "Legacy display label" } : {}),
             ...(params.has("proxyAuthFixture")
               ? {
@@ -169,7 +178,10 @@ const machines = Array.from({ length: 35 }, (_, index) => ({
   environmentId: `environment-${index}`,
   name: `Server ${String(index).padStart(2, "0")}`,
   endpoint: `ssh://fixture@server-${index}.example.invalid`,
-  ssh: { target: `fixture@server-${index}.example.invalid`, port: 2222, remotePort: 3774 },
+  ssh:
+    params.has("hostOnlyFixture") && index === 0
+      ? undefined
+      : { target: `fixture@server-${index}.example.invalid`, port: 2222, remotePort: 3774 },
 }));
 Object.assign(window, {
   serversFixtureProxyMode: (mode: "ready" | "stale") => {
@@ -456,6 +468,13 @@ Object.assign(window, {
               ],
         );
       }
+      if (command === "server_ssh_identity_set") {
+        const record = sshRecords.find((record) => record.id === input.id);
+        if (!record?.sshEndpoint) throw new Error("Fixture SSH server not found");
+        record.sshEndpoint.identityFile =
+          typeof input.identityFile === "string" ? input.identityFile : undefined;
+        return structuredClone(record);
+      }
       if (command === "server_ssh_save") {
         const existing = sshRecords.findIndex((record) => record.id === input.id);
         const record: ServerRecord = {
@@ -490,7 +509,22 @@ Object.assign(window, {
         return;
       }
       // Fixed synthetic native replies: they exercise UI choices, not native parsing or trust.
-      if (command === "ssh_public_keys_list" || command === "ssh_known_hosts_list") return [];
+      if (command === "ssh_public_keys_list")
+        return params.has("sshKeys")
+          ? [
+              {
+                identityFile: "C:/Users/fixture/.ssh/id_ed25519_work",
+                keyType: "ssh-ed25519",
+                fingerprint: "SHA256:fixture-public-metadata",
+              },
+              {
+                identityFile: "C:/Users/fixture/.ssh/a-long-descriptive-production-server-key",
+                keyType: "ssh-ed25519",
+                fingerprint: "SHA256:fixture-other-public-metadata",
+              },
+            ]
+          : [];
+      if (command === "ssh_known_hosts_list") return [];
       if (command === "ssh_agent_identities") return { status: "empty", identities: [] };
       if (command === "ssh_certificate_inspect")
         return {

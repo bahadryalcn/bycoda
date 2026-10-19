@@ -16,8 +16,14 @@ export function runHostShell(
   command: string,
   timeoutMs = SHELL_TIMEOUT_MS,
   profile: ShellProfile | undefined = resolveShellProfile(),
+  signal?: AbortSignal,
+  onTerminationFailure?: (message: string) => void,
 ): Promise<ShellResult> {
   return new Promise((resolve) => {
+    if (signal?.aborted) {
+      resolve({ output: "Command cancelled.", exitCode: null, timedOut: false });
+      return;
+    }
     const windows = process.platform === "win32";
     // The shell chosen for this machine (Settings > Terminal on its desktop
     // app, or from another machine's), as a login shell: the host service
@@ -62,12 +68,30 @@ export function runHostShell(
     };
     child.stdout.on("data", (chunk: Buffer) => (stdout = keep(stdout, stdoutDecoder.write(chunk))));
     child.stderr.on("data", (chunk: Buffer) => (stderr = keep(stderr, stderrDecoder.write(chunk))));
+    let terminating: Promise<void> | undefined;
     const kill = () => {
+      if (terminating) return;
       if (windows) {
-        spawn("taskkill", ["/pid", String(child.pid), "/T", "/F"], {
-          stdio: "ignore",
-          windowsHide: true,
-        }).on("error", () => child.kill());
+        terminating = new Promise<void>((done) => {
+          spawn("taskkill", ["/pid", String(child.pid), "/T", "/F"], {
+            stdio: "ignore",
+            windowsHide: true,
+          })
+            .on("error", (error) => {
+              // Killing only the parent cannot prove its descendants stopped.
+              // Keep ownership locked rather than permit overlapping checks.
+              console.error("Could not terminate the command tree:", error.message);
+              onTerminationFailure?.(error.message);
+            })
+            .on("close", (code) => {
+              if (code === 0) done();
+              else {
+                const message = `Command tree termination failed (exit ${code}); verification remains locked.`;
+                console.error(message);
+                onTerminationFailure?.(message);
+              }
+            });
+        });
         return;
       }
       try {
@@ -76,6 +100,9 @@ export function runHostShell(
         child.kill("SIGKILL");
       }
     };
+    const abort = () => kill();
+    signal?.addEventListener("abort", abort, { once: true });
+    if (signal?.aborted) abort();
     const timer = setTimeout(() => {
       timedOut = true;
       kill();
@@ -85,6 +112,7 @@ export function runHostShell(
       if (settled) return;
       settled = true;
       clearTimeout(timer);
+      signal?.removeEventListener("abort", abort);
       stdout = keep(stdout, stdoutDecoder.end());
       stderr = keep(stderr, stderrDecoder.end());
       const tail = failure ?? stderr;
@@ -92,7 +120,8 @@ export function runHostShell(
         tail.trim() && stdout && !stdout.endsWith("\n")
           ? `${stdout}\n${tail}`
           : stdout + (tail.trim() ? tail : "");
-      resolve({ output, exitCode: timedOut ? null : exitCode, timedOut });
+      const result = { output, exitCode: timedOut || signal?.aborted ? null : exitCode, timedOut };
+      void Promise.resolve(terminating).then(() => resolve(result));
     };
     child.on("error", (error) => finish(null, error.message));
     child.on("close", (code) => finish(code));

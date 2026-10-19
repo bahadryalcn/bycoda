@@ -1,4 +1,5 @@
 import { useCallback, type Dispatch, type MutableRefObject, type SetStateAction } from "react";
+import { flushSync } from "react-dom";
 import { confirmWorkspaceClose } from "../../model/closeConfirmation";
 import { basename } from "../../../platform/tauri/fs";
 import {
@@ -67,28 +68,35 @@ export function useEditorFileClose(deps: EditorFileCloseDeps): EditorFileClose {
       if (!tab) return;
       const found = findSurfacePane(tab, paneId);
       if (!found) return;
-      const { kind, pane } = found;
+      const { pane } = found;
       const index = pane.files.findIndex((file) => file.id === fileId);
       if (index < 0) return;
       const file = pane.files[index];
       const needsUnsavedConfirm =
         !opts?.skipConfirm && isFilesystemTab(file) && dirtyFilesRef.current.has(fileId);
 
+      const closingTabId = tab.id;
       const finishClose = () => {
+        // Include queued React updates before deciding whether the last pane needs
+        // a new session. Keep session creation and onCloseTab outside the updater.
+        let currentTabs = tabsRef.current;
+        flushSync(() =>
+          setTabs((previous) => {
+            currentTabs = previous;
+            return previous;
+          }),
+        );
+        // Confirmation may have yielded while files, panes or the whole tab changed.
+        const currentTab = currentTabs.find((entry) => entry.id === closingTabId);
+        const current = currentTab && findSurfacePane(currentTab, paneId);
+        if (!currentTab || !current || isMovingPane(paneId)) return;
+        const tab = currentTab;
+        const { pane } = current;
+        const index = pane.files.findIndex((entry) => entry.id === fileId);
+        if (index < 0) return;
         const files = pane.files.filter((entry) => entry.id !== fileId);
         let nextFocus = tab.focusedId;
-        let nextLayout = tab.layout;
-        let nextPanes = surfacePanes(tab, kind);
-        if (files.length > 0) {
-          nextFocus = paneId;
-          const activeFileId =
-            pane.activeFileId === fileId
-              ? files[Math.min(index, files.length - 1)].id
-              : pane.activeFileId;
-          nextPanes = nextPanes.map((entry) =>
-            entry.id === paneId ? { ...entry, files, activeFileId } : entry,
-          );
-        } else {
+        if (files.length === 0) {
           const sibling = siblingLeafId(tab.layout, paneId);
           const withoutPane = removePane(tab.layout, paneId);
           if (!withoutPane) {
@@ -98,7 +106,7 @@ export function useEditorFileClose(deps: EditorFileCloseDeps): EditorFileClose {
               return next;
             });
             const closePlan = planWorkspaceTabClose({
-              tabs: tabsRef.current,
+              tabs: currentTabs,
               sessions: sessionsRef.current,
               closingTabId: tab.id,
               scope: tabCloseScope,
@@ -135,26 +143,50 @@ export function useEditorFileClose(deps: EditorFileCloseDeps): EditorFileClose {
             setComposerFocused(true);
             return;
           }
-          nextLayout = withoutPane;
           nextFocus =
             tab.focusedId === paneId ? (sibling ?? firstLeafId(withoutPane)) : tab.focusedId;
-          nextPanes = nextPanes.filter((entry) => entry.id !== paneId);
         }
 
         setTabs((prev) =>
-          prev.map((entry) =>
-            entry.id === tab.id
-              ? withSurfacePanes(
-                  {
-                    ...entry,
-                    layout: nextLayout,
-                    focusedId: nextFocus,
-                  },
-                  kind,
-                  nextPanes,
-                )
-              : entry,
-          ),
+          prev.map((entry) => {
+            if (entry.id !== tab.id) return entry;
+            const current = findSurfacePane(entry, paneId);
+            if (!current) return entry;
+            const index = current.pane.files.findIndex((file) => file.id === fileId);
+            if (index < 0) return entry;
+            const files = current.pane.files.filter((file) => file.id !== fileId);
+            const layout = files.length ? entry.layout : removePane(entry.layout, paneId);
+            if (!layout) return entry;
+            return withSurfacePanes(
+              {
+                ...entry,
+                layout,
+                focusedId:
+                  entry.focusedId !== paneId
+                    ? entry.focusedId
+                    : files.length
+                      ? paneId
+                      : (siblingLeafId(entry.layout, paneId) ?? firstLeafId(layout)),
+              },
+              current.kind,
+              surfacePanes(entry, current.kind).flatMap((pane) =>
+                pane.id !== paneId
+                  ? [pane]
+                  : files.length
+                    ? [
+                        {
+                          ...pane,
+                          files,
+                          activeFileId:
+                            pane.activeFileId === fileId
+                              ? files[Math.min(index, files.length - 1)].id
+                              : pane.activeFileId,
+                        },
+                      ]
+                    : [],
+              ),
+            );
+          }),
         );
         setDirtyFiles((prev) => {
           const next = new Set(prev);

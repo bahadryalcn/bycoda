@@ -151,11 +151,14 @@ export function SshGroupSettings({
   return (
     <Modal title={t("SSH group settings")} onClose={onClose} size="md">
       <div className="flex min-w-0 flex-col gap-3 p-4">
-        <p className="text-xs text-(--ui-text-muted)">
-          {t(
-            "Local connection values stay saved. Only checked fields inherit from the selected group.",
-          )}
-        </p>
+        <details className="text-xs text-(--ui-text-muted)">
+          <summary className="cursor-pointer py-1">{t("About group settings")}</summary>
+          <p className="mbs-2">
+            {t(
+              "Local connection values stay saved. Only checked fields inherit from the selected group.",
+            )}
+          </p>
+        </details>
         {error ? (
           <Alert tone="danger" role="alert">
             {error}

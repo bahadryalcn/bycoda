@@ -15,6 +15,8 @@ use std::time::{Duration, Instant};
 #[serde(rename_all = "camelCase")]
 pub struct SshTarget {
     pub target: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub identity_file: Option<String>,
     pub port: Option<u16>,
     pub remote_port: u16,
     /// A second way to the same machine, such as its Tailscale address next
@@ -291,6 +293,9 @@ fn command_with_keepalive(target: &SshTarget, interactive: bool, keepalive: u32)
     ]);
     if let Some(port) = target.port {
         command.args(["-p", &port.to_string()]);
+    }
+    if let Some(identity) = &target.identity_file {
+        command.args(["-o", "IdentitiesOnly=yes", "-i", identity]);
     }
     if let Some(alias) = &target.host_key_alias {
         command.args(["-o", &format!("HostKeyAlias={alias}")]);
@@ -964,7 +969,7 @@ impl Tunnels {
             let stale = tunnel
                 .target
                 .as_ref()
-                .is_some_and(|started| started != target);
+                .is_some_and(|started| !same_tunnel_route(started, target));
             if tunnel.alive() && !stale {
                 return Ok(TunnelLease {
                     endpoint: format!("http://127.0.0.1:{}", tunnel.port),
@@ -1049,6 +1054,16 @@ impl Tunnels {
 }
 
 /// How this desktop appears in the host's device list.
+// A saved authentication change applies to the next SSH handshake. It must not
+// tear down an already authenticated tunnel and interrupt active host sessions.
+fn same_tunnel_route(left: &SshTarget, right: &SshTarget) -> bool {
+    left.target == right.target
+        && left.port == right.port
+        && left.remote_port == right.remote_port
+        && left.alternate == right.alternate
+        && left.host_key_alias == right.host_key_alias
+}
+
 pub fn device_name() -> String {
     #[cfg(not(windows))]
     let run = |program: &str, args: &[&str]| {
@@ -1107,6 +1122,7 @@ mod tests {
             remote_port: 3774,
             alternate: None,
             host_key_alias: None,
+            identity_file: None,
         };
         let alternate = SshTarget {
             target: "me@tailnet".into(),
@@ -1141,6 +1157,7 @@ mod tests {
             remote_port: 3774,
             alternate: None,
             host_key_alias: None,
+            identity_file: None,
         };
         let result = detect_platform_from_dials(vec![target], &job, |_| {
             panic!("cancelled setup must not connect")
@@ -1212,6 +1229,7 @@ mod tests {
             remote_port: required("BYCODA_TEST_HOST_PORT").parse().unwrap(),
             alternate: None,
             host_key_alias: None,
+            identity_file: None,
         };
         let make_command = || {
             let mut command = command(&target, false);
@@ -1358,6 +1376,7 @@ mod tests {
             remote_port: 3774,
             alternate: None,
             host_key_alias: None,
+            identity_file: None,
         };
         let mut tunnel = Tunnel::adopt(long_lived_child(), 4321);
         tunnel.target = Some(target("me@old"));
@@ -1383,6 +1402,7 @@ mod tests {
             remote_port: 3774,
             alternate: None,
             host_key_alias: None,
+            identity_file: None,
         };
         let started = Instant::now();
         let error = tunnels
@@ -1396,6 +1416,53 @@ mod tests {
         assert!(slot.lock().unwrap().failure.is_none());
     }
     #[test]
+    fn saved_identity_is_used_for_setup_tunnels_and_alternate_addresses() {
+        let target = SshTarget {
+            target: "alice@host.invalid".into(),
+            port: Some(2222),
+            remote_port: 3776,
+            alternate: Some("alice@alternate.invalid".into()),
+            host_key_alias: None,
+            identity_file: Some("C:/keys/saved key".into()),
+        };
+        let decoded: SshTarget =
+            serde_json::from_str(&serde_json::to_string(&target).unwrap()).unwrap();
+        for interactive in [false, true] {
+            let command = command(&decoded, interactive);
+            let args: Vec<String> = command
+                .get_args()
+                .map(|arg| arg.to_string_lossy().into_owned())
+                .collect();
+            assert!(args
+                .windows(2)
+                .any(|pair| pair == ["-i", "C:/keys/saved key"]));
+            assert!(args.contains(&"IdentitiesOnly=yes".into()));
+        }
+        assert!(dial_order(&decoded)
+            .iter()
+            .all(|dial| dial.identity_file == target.identity_file));
+        let legacy: SshTarget =
+            serde_json::from_str(r#"{"target":"host.invalid","port":22,"remotePort":3776}"#)
+                .unwrap();
+        assert!(legacy.identity_file.is_none());
+        let mut tunnel = Tunnel::adopt(long_lived_child(), 4321);
+        tunnel.target = Some(decoded.clone());
+        let tunnels = Tunnels::default();
+        tunnels.insert("saved".into(), "env", tunnel);
+        let changed_key = SshTarget {
+            identity_file: Some("C:/keys/replacement".into()),
+            ..decoded
+        };
+        assert_eq!(
+            tunnels
+                .endpoint("saved", "env", &changed_key, false)
+                .unwrap()
+                .endpoint,
+            "http://127.0.0.1:4321"
+        );
+    }
+
+    #[test]
     fn tunnels_use_fast_keepalives_without_blocking_interactive_auth() {
         let target = SshTarget {
             target: "me@host".into(),
@@ -1403,6 +1470,7 @@ mod tests {
             remote_port: 3774,
             alternate: None,
             host_key_alias: None,
+            identity_file: None,
         };
         let args = |command: &Command| -> Vec<String> {
             command
@@ -1496,6 +1564,7 @@ mod tests {
             remote_port: 3774,
             alternate: Some("me@127.0.0.1".into()),
             host_key_alias: None,
+            identity_file: None,
         };
         let order = dial_order(&target);
         assert_eq!(

@@ -12,7 +12,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createHash } from "node:crypto";
-import { transferTaskArtifacts } from "./task-artifacts";
+import { hashTaskArtifact, transferTaskArtifacts } from "./task-artifacts";
 
 const folders: string[] = [];
 afterEach(() => {
@@ -92,4 +92,26 @@ it("refuses dependency outputs modified after delivery", async () => {
     "Delivered task artifact changed",
   );
   expect(existsSync(join(target, path))).toBe(false);
+});
+
+it("cancels an artifact transfer without modifying its destination", async () => {
+  const source = checkout(),
+    target = checkout();
+  output(source);
+  const controller = new AbortController();
+  controller.abort();
+  await expect(
+    transferTaskArtifacts(source, target, undefined, undefined, controller.signal),
+  ).rejects.toThrow();
+  expect(existsSync(join(target, "temp/local/inventory/result.txt"))).toBe(false);
+});
+
+it("cancels an in-flight stream hash without buffering a whole artifact", async () => {
+  const source = checkout();
+  const path = output(source);
+  writeFileSync(path, Buffer.alloc(16 * 1024 * 1024));
+  const controller = new AbortController();
+  const hashing = hashTaskArtifact(path, controller.signal);
+  controller.abort();
+  await expect(hashing).rejects.toMatchObject({ name: "AbortError" });
 });

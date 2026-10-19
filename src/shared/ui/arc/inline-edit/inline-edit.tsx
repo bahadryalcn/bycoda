@@ -439,7 +439,7 @@ export function InlineEdit({
   }
 
   function retry() {
-    if (!failed) return;
+    if (failed === null) return;
     startEdit(failed.length, failed);
   }
 
@@ -488,7 +488,7 @@ export function InlineEdit({
           </>
         ),
       }
-    : failed && !editing
+    : failed !== null && !editing
       ? {
           key: `failed:${failed}`,
           tone: "failed" as const,

@@ -359,6 +359,48 @@ function setup() {
   return { host, root: createRoot(host) };
 }
 
+it("shows the native exit status and returns to servers without offering input resume or spawning again", async () => {
+  const { host, root } = setup();
+  const back = vi.fn();
+  let exit!: (code: number | null) => void;
+  pty.subscribePty.mockImplementationOnce((...args: unknown[]) => {
+    exit = args[2] as (code: number | null) => void;
+    return () => {};
+  });
+  try {
+    await act(async () =>
+      root.render(
+        createElement(TerminalView, {
+          id: "closed-ssh",
+          cwd: "",
+          active: true,
+          sshConnectionId: "server",
+          onReturnToServers: back,
+        }),
+      ),
+    );
+    await act(async () => exit(255));
+    expect(host.querySelector('[role="alert"]')?.textContent).toContain("Terminal closed");
+    expect(host.querySelector('[role="alert"]')?.textContent).toContain("255");
+    expect(
+      [...host.querySelectorAll("button")].some((button) =>
+        button.textContent?.includes("Resume input"),
+      ),
+    ).toBe(false);
+    const calls = native.invoke.mock.calls.length;
+    await act(async () =>
+      [...host.querySelectorAll("button")]
+        .find((button) => button.textContent === "Back to servers")!
+        .click(),
+    );
+    expect(back).toHaveBeenCalledOnce();
+    expect(native.invoke.mock.calls).toHaveLength(calls);
+  } finally {
+    await act(async () => root.unmount());
+    host.remove();
+  }
+});
+
 it.each(["terminal input is backed up", "disconnected"])(
   "shows %s and resumes only fresh input",
   async (message) => {

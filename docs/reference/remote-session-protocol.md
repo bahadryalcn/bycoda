@@ -115,3 +115,48 @@ drafts, outbox entries, and attachment payloads. It grants no send authority and
 must be validated by a fresh host read. Summary writes coalesce per key and run
 in separate macrotasks. Host operation continues if this cache is unavailable;
 the cache database is separate from the authoritative session store.
+
+## Attachment ownership and collection
+
+Hosts advertising `attachments.ownership.v1` support durable draft ownership.
+New clients acquire `attachments.claim` before uploading, and include `ownerId`
+and `claimId` in `attachments.status` and `attachments.upload`. Claim and release
+requests contain `{ ids, ownerId, claimId }`, with at most 20 attachment UUIDs per
+request. Owner and claim IDs are bounded opaque identifiers, not credentials.
+The host scopes each claim to the authenticated principal as well as those IDs.
+Releasing one draft, device or generation cannot release another one's claim.
+`attachments.claims` lists only that principal's claims for an `ownerId`, in pages
+of at most 200 `{ id, claimId }` records. Its `after`/`next` cursor uses the same
+pair. Clients use this inventory to recover claims established by a queue response
+whose acknowledgement or local ledger write was lost. They reacquire all confirmed
+references before releasing superseded or unreferenced generations.
+Managed attachment UUIDs use lowercase spelling; legacy upload spelling remains
+compatible with existing files.
+
+Queue RPCs returning snapshots (`sessions.queue.get/change/claim/finish`) also
+accept `ownerId` and `claimId`. The host acquires claims for their attachment IDs
+before returning the snapshot, so an offline cached queue edit remains protected
+if another device removes the original row. These attachment view claims are
+separate from the queue's scheduling consumer claim. A snapshot returned without
+ownership metadata conservatively protects any known managed files as legacy.
+
+A completed upload's claim does not expire while its draft is offline. Clients
+release only after durable draft removal or a durable session/queue handoff, and
+retain release intent across failures and restarts. Closing a window, cancelling
+a request, locking the app or disconnecting a device does not discard ownership.
+A new acquisition cancels or supersedes stale release intent; an older generation's
+delayed release cannot release a newly acquired generation. Desktop windows use
+independent ownership scopes. Ownership mutations are never shared-read requests.
+Desktop reconciliation uses `session_attachment_references`, a strict native
+snapshot of draft and queue attachment IDs. Its optional `allSessions` inventory
+also protects exports from a closed window into another local draft. These reads
+neither prune old drafts nor treat malformed JSON as an empty reference set.
+
+The host runs collection at startup and hourly. Explicit release starts a seven-day
+grace period; incomplete uploads may also become eligible after seven idle days.
+Before removing a managed file, collection checks current claims, durable session,
+queue and other host references, and active attachment operations. Unknown reference
+state defers deletion. Files touched by legacy clients without ownership metadata,
+and pre-existing files whose external draft ownership is unknown, remain protected.
+Clients without this capability retain the existing upload contract. This migration
+does not authorize guessing that an old file or an offline device has no owners.

@@ -4,7 +4,6 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { IS_MAC } from "../../../platform/tauri/platform";
 import {
   closeBusyWindow,
-  closeCurrentWindow,
   hasInFlightSessions,
   hideCurrentWindow,
   persistLiveTranscripts,
@@ -68,14 +67,16 @@ export function useSessionPersistenceFlush({
         // calls JS `window.destroy`, which Tauri denies without a permission.
         event.preventDefault();
         const toTray = loadCloseToTray();
+        // Every actual destroy shares editor, terminal and strict persistence gates.
+        if (
+          !toTray &&
+          (!hasInFlightSessions(sessionsRef.current) || (!windowTransfer && !toolWindow && !IS_MAC))
+        ) {
+          void closeBusyWindow().catch((error) => console.warn("Closing window failed", error));
+          return;
+        }
         if (hasInFlightSessions(sessionsRef.current)) {
           flushHarnessEvents();
-          if (!windowTransfer && !toolWindow && !toTray && !IS_MAC) {
-            void closeBusyWindow().catch((error) =>
-              console.warn("Closing busy window failed", error),
-            );
-            return;
-          }
           // Not `persistQuitState`: that marks the live turns interrupted.
           void persistLiveTranscripts(sessionsRef.current).catch((error) =>
             console.warn("Persisting live transcripts failed", error),
@@ -94,10 +95,8 @@ export function useSessionPersistenceFlush({
           lastDockSideRef.current ?? undefined,
           keepWorkspaceTab,
         )
-          .finally(() => {
-            void (toTray ? hideCurrentWindow() : closeCurrentWindow()).catch((error) =>
-              console.warn("Closing window failed", error),
-            );
+          .then(() => {
+            void hideCurrentWindow().catch((error) => console.warn("Closing window failed", error));
           })
           .catch((error) => console.warn("Persisting close state failed", error));
       }),

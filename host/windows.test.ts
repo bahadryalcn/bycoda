@@ -13,6 +13,7 @@ import {
   protectWindowsDirectory,
   runPowerShell,
   windowsTaskScript,
+  windowsServiceRunner,
   windowsUninstallScript,
 } from "./windows";
 
@@ -25,6 +26,74 @@ const temporary = () => {
   directories.push(dir);
   return dir;
 };
+
+it.skipIf(process.platform !== "win32").each([0, 23])(
+  "keeps a host alive after stderr diagnostics and preserves exit code %s",
+  (exitCode) => {
+    const directory = temporary();
+    const entry = join(directory, "diagnostic-host.cjs");
+    const runner = join(directory, "service.ps1");
+    writeFileSync(
+      entry,
+      `process.stderr.write('provider diagnostic\\n');
+setTimeout(() => { console.log('host still running'); process.exitCode = ${exitCode}; }, 200);`,
+    );
+    writeFileSync(
+      runner,
+      windowsServiceRunner(
+        {
+          directory,
+          entry,
+          executable: process.execPath,
+          port: 3776,
+        },
+        process.env.PATH ?? "",
+      ),
+    );
+    let status: number | null | undefined;
+    try {
+      execFileSync(powershell(), powershellArgs(`& ${psQuote(runner)}; exit $LASTEXITCODE`), {
+        windowsHide: true,
+        timeout: 15_000,
+        env: powershellEnvironment(),
+        stdio: "pipe",
+      });
+      status = 0;
+    } catch (error) {
+      status = (error as { status?: number | null }).status;
+    }
+    const bytes = readFileSync(join(directory, "host.log"));
+    const log = bytes.toString(bytes[0] === 0xff && bytes[1] === 0xfe ? "utf16le" : "utf8");
+    expect(log).toContain("provider diagnostic");
+    expect(log).toContain("host still running");
+    expect(status).toBe(exitCode);
+  },
+);
+
+it.skipIf(process.platform !== "win32")("reports a missing host executable as failure", () => {
+  const directory = temporary();
+  const runner = join(directory, "service.ps1");
+  writeFileSync(
+    runner,
+    windowsServiceRunner(
+      {
+        directory,
+        entry: join(directory, "host.mjs"),
+        executable: join(directory, "missing.exe"),
+        port: 3776,
+      },
+      process.env.PATH ?? "",
+    ),
+  );
+  expect(() =>
+    execFileSync(powershell(), powershellArgs(`& ${psQuote(runner)}; exit $LASTEXITCODE`), {
+      windowsHide: true,
+      timeout: 15_000,
+      env: powershellEnvironment(),
+      stdio: "pipe",
+    }),
+  ).toThrow();
+});
 
 it("runs npm provider entry points directly with literal arguments and bundled Node", async () => {
   const directory = temporary();
@@ -81,6 +150,45 @@ it("keeps only the text of a PowerShell error written as CLIXML", () => {
   ).toBe(privilege);
   expect(powershellErrorText("Access denied.\r\n")).toBe("Access denied.");
 });
+
+it.skipIf(process.platform !== "win32")(
+  "keeps stderr diagnostics harmless across successive service runtime upgrades",
+  async () => {
+    const directory = temporary();
+    // Task Scheduler is isolated; exercise the generated runner with real Windows PowerShell.
+    writeFileSync(join(directory, "service-launcher-v3.exe"), "unused test launcher");
+    for (const version of ["0.6.35", "0.6.36"]) {
+      const runtime = join(directory, "runtime", version);
+      mkdirSync(runtime, { recursive: true });
+      const entry = join(runtime, "host.cjs");
+      writeFileSync(
+        entry,
+        `console.error('diagnostic ${version}');
+setTimeout(() => console.log('healthy ${version}'), 100);`,
+      );
+      await runPowerShell(`
+$sid = [Security.Principal.WindowsIdentity]::GetCurrent().User.Value
+$script:task = [PSCustomObject]@{ Principal = [PSCustomObject]@{ UserId = $sid }; State = 'Ready'; Actions = @([PSCustomObject]@{ Execute = 'old'; Arguments = 'old' }) }
+function Get-ScheduledTask { param($TaskName, $ErrorAction) $script:task }
+function Set-ScheduledTask { param($TaskName, $Action, $ErrorAction) $script:task.Actions = @($Action) }
+function Start-ScheduledTask { param($TaskName) }
+${windowsTaskScript({ directory, entry, executable: process.execPath, port: 3776 }, process.env.PATH ?? "")}
+`);
+      const runner = join(directory, "service.ps1");
+      expect(readFileSync(runner, "utf8")).toContain(entry);
+      execFileSync(powershell(), powershellArgs(`& ${psQuote(runner)}; exit $LASTEXITCODE`), {
+        windowsHide: true,
+        timeout: 15_000,
+        env: powershellEnvironment(),
+        stdio: "pipe",
+      });
+      const bytes = readFileSync(join(directory, "host.log"));
+      const log = bytes.toString(bytes[0] === 0xff && bytes[1] === 0xfe ? "utf16le" : "utf8");
+      expect(log).toContain(`diagnostic ${version}`);
+      expect(log).toContain(`healthy ${version}`);
+    }
+  },
+);
 
 it.skipIf(process.platform !== "win32")(
   "refreshes a stopped task's runner and refuses to replace a running one",
@@ -271,7 +379,9 @@ Add-Type -TypeDefinition 'using System; using System.Runtime.InteropServices; pu
       try {
         execFileSync(
           result.definition.executable,
-          powershellArgs(`Add-Content -LiteralPath ${psQuote(runs)} -Value run; exit ${code}`).slice(-1),
+          powershellArgs(
+            `Add-Content -LiteralPath ${psQuote(runs)} -Value run; exit ${code}`,
+          ).slice(-1),
           {
             windowsHide: true,
             timeout: 30_000,

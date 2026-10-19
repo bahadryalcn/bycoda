@@ -234,6 +234,14 @@ pub fn server_ssh_save(
     } else {
         ServerMetadata::default()
     };
+    let identity_changed = id.as_ref().is_some_and(|id| {
+        records
+            .iter()
+            .find(|record| record.get("id").and_then(Value::as_str) == Some(id))
+            .and_then(|record| record.pointer("/sshEndpoint/identityFile"))
+            .and_then(Value::as_str)
+            != endpoint.identity_file.as_deref()
+    });
     let record = SshRecord {
         id: id.unwrap_or_else(|| uuid::Uuid::new_v4().to_string()),
         name: name.trim().into(),
@@ -246,10 +254,74 @@ pub fn server_ssh_save(
     if let Some(metadata) = preserved_metadata {
         value["metadata"] = metadata;
     }
+    if identity_changed {
+        detach_identity_inheritance(&mut value);
+    }
     let projected = project_with_effective(&app, &value)?;
     records.push(value.clone());
     remote::write_store_values(&path, &records)?;
     Ok(projected)
+}
+
+/// Change just the authentication reference under the canonical store lock.
+/// Never copies a stale endpoint, host token, or another session's metadata.
+#[tauri::command(async)]
+pub fn server_ssh_identity_set(
+    app: AppHandle,
+    state: State<'_, remote::RemoteConnections>,
+    id: String,
+    identity_file: Option<String>,
+) -> Result<ServerRecord, String> {
+    let _guard = state
+        .store
+        .lock()
+        .map_err(|_| "Connection store is locked")?;
+    let path = remote::store_path(&app)?;
+    let mut records = remote::read_store_values(&path)?;
+    let record = records
+        .iter_mut()
+        .find(|record| record.get("id").and_then(Value::as_str) == Some(&id))
+        .ok_or("Server no longer exists")?;
+    let updated = with_identity_file(record, identity_file)?;
+    let projected = project_with_effective(&app, &updated)?;
+    *record = updated;
+    remote::write_store_values(&path, &records)?;
+    let _ = app.emit("server-inventory-changed", ());
+    Ok(projected)
+}
+
+fn detach_identity_inheritance(record: &mut Value) {
+    if let Some(fields) = record
+        .pointer_mut("/metadata/sshInheritance/fields")
+        .and_then(Value::as_array_mut)
+    {
+        fields.retain(|field| field.as_str() != Some("identityFile"));
+    }
+}
+
+fn with_identity_file(record: &Value, identity_file: Option<String>) -> Result<Value, String> {
+    let mut updated = record.clone();
+    let projected = project(record)?;
+    if projected.kind == "ssh" {
+        let mut endpoint = projected.ssh_endpoint.ok_or("Missing SSH endpoint")?;
+        endpoint.identity_file = identity_file.clone();
+        ssh_security::validate_endpoint(&endpoint)?;
+        updated["sshEndpoint"]["identityFile"] =
+            serde_json::to_value(identity_file).map_err(|_| "Invalid SSH identity reference")?;
+        // Selecting a server key is an explicit override of its inherited key.
+        // Keep username, port, environment, and all other group choices intact.
+        detach_identity_inheritance(&mut updated);
+    } else {
+        let mut target = projected
+            .machine
+            .and_then(|machine| machine.ssh)
+            .ok_or("Machine has no SSH connection")?;
+        target.identity_file = identity_file.clone();
+        ssh_security::validate_endpoint(&host_ssh_endpoint(&target))?;
+        updated["ssh"]["identityFile"] =
+            serde_json::to_value(identity_file).map_err(|_| "Invalid SSH identity reference")?;
+    }
+    Ok(updated)
 }
 
 /// The editor retains base overrides; consumers comparing destinations use the
@@ -396,23 +468,27 @@ pub(crate) fn resolve_ssh_endpoint(app: &AppHandle, id: &str) -> Result<SshEndpo
         .machine
         .and_then(|machine| machine.ssh)
         .ok_or("Machine has no SSH connection")?;
+    let endpoint = host_ssh_endpoint(&target);
+    ssh_security::validate_endpoint(&endpoint)?;
+    Ok(endpoint)
+}
+
+fn host_ssh_endpoint(target: &crate::remote_ssh::SshTarget) -> SshEndpoint {
     let (user, host) = target
         .target
         .rsplit_once('@')
         .map(|(user, host)| (Some(user.to_string()), host.to_string()))
         .unwrap_or((None, target.target.clone()));
-    let endpoint = SshEndpoint {
+    SshEndpoint {
         host,
         user,
         port: target.port.unwrap_or(22),
-        identity_file: None,
+        identity_file: target.identity_file.clone(),
         certificate_file: None,
         jump_host: None,
         jump_hosts: Vec::new(),
         ..Default::default()
-    };
-    ssh_security::validate_endpoint(&endpoint)?;
-    Ok(endpoint)
+    }
 }
 
 pub(crate) fn mark_used(app: &AppHandle, id: &str) -> Result<(), String> {
@@ -448,6 +524,81 @@ pub(crate) fn mark_used(app: &AppHandle, id: &str) -> Result<(), String> {
 mod tests {
     use super::*;
     use serde_json::json;
+    #[test]
+    fn saved_identity_survives_disk_roundtrip_and_is_reused_by_every_connection_mode() {
+        let record = json!({
+            "id":"ssh-saved", "name":"Work", "kind":"ssh",
+            "sshEndpoint":{"host":"server.invalid","port":2222,"user":"alice","certificateFile":"C:/keys/certificate.pub","jumpHosts":["jump.invalid"]},
+            "metadata":{"tags":["work"],"favorite":true,"futureField":"keep"}
+        });
+        let updated = with_identity_file(&record, Some("C:/keys/work key".into())).unwrap();
+        assert_eq!(updated["metadata"], record["metadata"]);
+        assert_eq!(
+            updated["sshEndpoint"]["jumpHosts"],
+            record["sshEndpoint"]["jumpHosts"]
+        );
+        let path =
+            std::env::temp_dir().join(format!("bycoda-ssh-identity-{}.json", uuid::Uuid::new_v4()));
+        remote::write_store_values(&path, &[updated]).unwrap();
+        for _ in 0..2 {
+            let records = remote::read_store_values(&path).unwrap();
+            let endpoint = project(&records[0]).unwrap().ssh_endpoint.unwrap();
+            for args in [
+                ssh_security::connection_args(&endpoint).unwrap(),
+                ssh_security::interactive_args(&endpoint).unwrap(),
+            ] {
+                assert!(args
+                    .windows(2)
+                    .any(|pair| pair == ["-i", "C:/keys/work key"]));
+                assert!(args.contains(&"IdentitiesOnly=yes".into()));
+            }
+        }
+        assert!(with_identity_file(&record, Some("bad\nreference".into())).is_err());
+        assert!(record["sshEndpoint"].get("identityFile").is_none());
+        std::fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn assigning_a_key_overrides_only_key_inheritance_and_can_be_cleared() {
+        let record = json!({
+            "id":"ssh-saved", "name":"Work", "kind":"ssh",
+            "sshEndpoint":{"host":"server.invalid","port":22},
+            "metadata":{"sshInheritance":{"groupId":"group","fields":["user","port","identityFile","certificateFile"],"environment":true}}
+        });
+        let updated = with_identity_file(&record, Some("C:/keys/work".into())).unwrap();
+        assert_eq!(
+            updated["metadata"]["sshInheritance"]["fields"],
+            json!(["user", "port", "certificateFile"])
+        );
+        assert_eq!(updated["metadata"]["sshInheritance"]["environment"], true);
+        let cleared = with_identity_file(&updated, None).unwrap();
+        assert!(project(&cleared)
+            .unwrap()
+            .ssh_endpoint
+            .unwrap()
+            .identity_file
+            .is_none());
+    }
+
+    #[test]
+    fn host_key_binding_keeps_pairing_credentials_and_reaches_the_ssh_endpoint() {
+        let record = json!({
+            "id":"host-saved", "name":"Mac", "endpoint":"ssh://alice@mac.invalid", "environmentId":"env", "token":"fixture-token",
+            "ssh":{"target":"alice@mac.invalid","port":2222,"remotePort":3776,"alternate":"alice@alternate.invalid"},
+            "metadata":{"tags":["mac"],"futureField":"keep"}
+        });
+        let updated = with_identity_file(&record, Some("C:/keys/mac".into())).unwrap();
+        assert_eq!(updated["token"], record["token"]);
+        assert_eq!(updated["metadata"], record["metadata"]);
+        assert_eq!(updated["ssh"]["alternate"], record["ssh"]["alternate"]);
+        let target = project(&updated).unwrap().machine.unwrap().ssh.unwrap();
+        assert_eq!(
+            host_ssh_endpoint(&target).identity_file.as_deref(),
+            Some("C:/keys/mac")
+        );
+        assert_eq!(host_ssh_endpoint(&target).user.as_deref(), Some("alice"));
+        assert!(with_identity_file(&json!({"id":"local","name":"Local","endpoint":"http://localhost","environmentId":"env","token":"fixture"}), Some("C:/keys/work".into())).is_err());
+    }
     #[test]
     fn forward_mode_extension_keeps_legacy_records_and_canonical_identity() {
         let record = json!({

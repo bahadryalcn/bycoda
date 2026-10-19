@@ -255,10 +255,13 @@ export function SocialView({
     const read = async (): Promise<SocialWorkspaceResponse> => {
       if (!legacyHosts.current.has(id)) {
         try {
-          return await base.workspaceSnapshot({
-            ...input,
-            ...(force ? {} : { cursor: host.cursors.get(queryKey)?.cursor }),
-          });
+          return await base.workspaceSnapshot(
+            {
+              ...input,
+              ...(force ? {} : { cursor: host.cursors.get(queryKey)?.cursor }),
+            },
+            force,
+          );
         } catch (value) {
           if (!String(value).includes("Unsupported social operation")) throw value;
           legacyHosts.current.add(id);
@@ -270,7 +273,7 @@ export function SocialView({
     const answers = await Promise.allSettled([
       read(),
       withProjects
-        ? remoteRequest<HostProject[]>(id, "projects.list", {})
+        ? remoteRequest<HostProject[]>(id, "projects.list", {}, force)
         : Promise.resolve(host.projects),
     ]);
     if (!isCurrent() || version !== epoch.current || currentMachine.current !== id) return;
@@ -306,7 +309,12 @@ export function SocialView({
       host.projects = answers[1].value;
       host.projectsLoaded = true;
       setProjects(answers[1].value);
-    } else setLoadError("Proje listesi yenilenemedi. Önceki veriler korunuyor; tekrar deneyin.");
+    } else if (answers[0].status === "fulfilled") {
+      const reason = answers[1].reason;
+      setLoadError(
+        `Proje listesi yenilenemedi: ${reason instanceof Error ? reason.message : String(reason)}`,
+      );
+    }
     setLoading(false);
     setRefreshing(false);
     refreshSucceeded.current = answers.every((answer) => answer.status === "fulfilled");
@@ -710,8 +718,8 @@ export function SocialView({
             <Button
               type="button"
               variant="secondary"
-              loading={busy}
-              disabled={busy || loading}
+              loading={busy || (!error && refreshing)}
+              disabled={busy || loading || (!error && refreshing)}
               onClick={() => {
                 if (error) setError("");
                 else if (machineId) void refresh(machineId, true);

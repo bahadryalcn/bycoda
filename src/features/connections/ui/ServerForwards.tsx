@@ -17,7 +17,13 @@ import {
 } from "../model/sshForwards";
 
 /** Saved rules belong to canonical records. Mounting/restoring never starts SSH. */
-export function ServerForwards({ server }: { server: ServerRecord }) {
+export function ServerForwards({
+  server,
+  expanded = false,
+}: {
+  server: ServerRecord;
+  expanded?: boolean;
+}) {
   const proxy = useSshHttpProxyApproval();
   const locked = useRef(false);
   const [draft, setDraft] = useRetainedState(`servers:forward-draft:${server.id}`, {
@@ -70,8 +76,8 @@ export function ServerForwards({ server }: { server: ServerRecord }) {
   };
   return (
     <>
-      <details className="border-t border-stroke pbs-3 text-xs">
-        <summary className="cursor-pointer text-(--ui-text-muted)">
+      <details open={expanded || undefined} className="text-xs">
+        <summary className="cursor-pointer py-1 font-medium">
           {t("Port forwarding")}
           {rules.length ? ` (${rules.length})` : ""}
         </summary>
@@ -156,105 +162,110 @@ export function ServerForwards({ server }: { server: ServerRecord }) {
               </div>
             );
           })}
-          <form
-            className="flex flex-col gap-3"
-            onSubmit={(event) => {
-              event.preventDefault();
-              void run("save", async () => {
-                const rule = validateForwardRule(draft);
-                await updateServerMetadata(server.id, {
-                  forwards: [...rules, { ...rule, id: crypto.randomUUID() }],
+          <details>
+            <summary className="cursor-pointer py-1 font-medium">
+              {t("Add forwarding rule")}
+            </summary>
+            <form
+              className="flex flex-col gap-3"
+              onSubmit={(event) => {
+                event.preventDefault();
+                void run("save", async () => {
+                  const rule = validateForwardRule(draft);
+                  await updateServerMetadata(server.id, {
+                    forwards: [...rules, { ...rule, id: crypto.randomUUID() }],
+                  });
+                  setDraft((previous) =>
+                    previous.kind === "dynamic"
+                      ? { ...previous, name: "", localPort: "" }
+                      : {
+                          kind: "local",
+                          name: "",
+                          localPort: "",
+                          targetHost: "127.0.0.1",
+                          targetPort: "",
+                        },
+                  );
                 });
-                setDraft((previous) =>
-                  previous.kind === "dynamic"
-                    ? { ...previous, name: "", localPort: "" }
-                    : {
-                        kind: "local",
-                        name: "",
-                        localPort: "",
-                        targetHost: "127.0.0.1",
-                        targetPort: "",
-                      },
-                );
-              });
-            }}
-          >
-            <fieldset disabled={Boolean(busy)} className="min-w-0 border-0 p-0">
-              <SegmentedControl
-                label={t("Forwarding type")}
-                value={draft.kind ?? "local"}
-                options={[
-                  { value: "local", label: t("Local") },
-                  { value: "dynamic", label: "SOCKS5" },
-                ]}
-                onValueChange={(value) => {
-                  if (!busy)
-                    setDraft((previous) => ({
-                      ...previous,
-                      kind: value === "dynamic" ? "dynamic" : "local",
-                    }));
-                }}
+              }}
+            >
+              <fieldset disabled={Boolean(busy)} className="min-w-0 border-0 p-0">
+                <SegmentedControl
+                  label={t("Forwarding type")}
+                  value={draft.kind ?? "local"}
+                  options={[
+                    { value: "local", label: t("Local") },
+                    { value: "dynamic", label: "SOCKS5" },
+                  ]}
+                  onValueChange={(value) => {
+                    if (!busy)
+                      setDraft((previous) => ({
+                        ...previous,
+                        kind: value === "dynamic" ? "dynamic" : "local",
+                      }));
+                  }}
+                />
+              </fieldset>
+              <TextField
+                label={t("Name")}
+                value={draft.name}
+                maxLength={100}
+                disabled={Boolean(busy)}
+                onChange={(event) =>
+                  setDraft((previous) => ({ ...previous, name: event.target.value }))
+                }
               />
-            </fieldset>
-            <TextField
-              label={t("Name")}
-              value={draft.name}
-              maxLength={100}
-              disabled={Boolean(busy)}
-              onChange={(event) =>
-                setDraft((previous) => ({ ...previous, name: event.target.value }))
-              }
-            />
-            <TextField
-              label={t("Local port")}
-              type="number"
-              min={1}
-              max={65535}
-              required
-              value={draft.localPort}
-              disabled={Boolean(busy)}
-              onChange={(event) =>
-                setDraft((previous) => ({ ...previous, localPort: event.target.value }))
-              }
-            />
-            {(draft.kind ?? "local") === "local" ? (
-              <>
-                <TextField
-                  label={t("Destination host")}
-                  required
-                  value={draft.targetHost}
-                  disabled={Boolean(busy)}
-                  onChange={(event) =>
-                    setDraft((previous) => ({ ...previous, targetHost: event.target.value }))
-                  }
-                />
-                <TextField
-                  label={t("Destination port")}
-                  type="number"
-                  min={1}
-                  max={65535}
-                  required
-                  value={draft.targetPort}
-                  disabled={Boolean(busy)}
-                  onChange={(event) =>
-                    setDraft((previous) => ({ ...previous, targetPort: event.target.value }))
-                  }
-                />
-              </>
-            ) : (
-              <p className="break-all text-(--ui-text-muted)">
-                SOCKS5 · 127.0.0.1:{draft.localPort || "…"}
-              </p>
-            )}
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <span className="text-(--ui-text-muted)">
-                {t("Loopback only. Start separately after saving.")}
-              </span>
-              <Button type="submit" loading={busy === "save"} disabled={Boolean(busy)}>
-                {t("Save rule")}
-              </Button>
-            </div>
-          </form>
+              <TextField
+                label={t("Local port")}
+                type="number"
+                min={1}
+                max={65535}
+                required
+                value={draft.localPort}
+                disabled={Boolean(busy)}
+                onChange={(event) =>
+                  setDraft((previous) => ({ ...previous, localPort: event.target.value }))
+                }
+              />
+              {(draft.kind ?? "local") === "local" ? (
+                <>
+                  <TextField
+                    label={t("Destination host")}
+                    required
+                    value={draft.targetHost}
+                    disabled={Boolean(busy)}
+                    onChange={(event) =>
+                      setDraft((previous) => ({ ...previous, targetHost: event.target.value }))
+                    }
+                  />
+                  <TextField
+                    label={t("Destination port")}
+                    type="number"
+                    min={1}
+                    max={65535}
+                    required
+                    value={draft.targetPort}
+                    disabled={Boolean(busy)}
+                    onChange={(event) =>
+                      setDraft((previous) => ({ ...previous, targetPort: event.target.value }))
+                    }
+                  />
+                </>
+              ) : (
+                <p className="break-all text-(--ui-text-muted)">
+                  SOCKS5 · 127.0.0.1:{draft.localPort || "…"}
+                </p>
+              )}
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <span className="text-(--ui-text-muted)">
+                  {t("Loopback only. Start separately after saving.")}
+                </span>
+                <Button type="submit" loading={busy === "save"} disabled={Boolean(busy)}>
+                  {t("Save rule")}
+                </Button>
+              </div>
+            </form>
+          </details>
           {error ? (
             <p role="alert" className="break-words text-(--ui-tone-danger-fg)">
               {error}

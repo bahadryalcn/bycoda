@@ -126,7 +126,7 @@ export function ServerFiles({
       <Modal title={t("SFTP files")} onClose={close} size="lg" fitViewport>
         <div className="flex min-h-0 flex-col gap-3 p-4">
           <form
-            className="flex items-center gap-2"
+            className="flex flex-wrap items-center gap-2"
             onSubmit={(event) => {
               event.preventDefault();
               void load(query);

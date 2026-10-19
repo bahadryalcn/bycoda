@@ -409,4 +409,30 @@ describe("composer draft store", () => {
     await store.flushComposerDrafts();
     expect(writes()).toHaveLength(0);
   });
+  it("reports attachment removal only after its native draft write succeeds", async () => {
+    answer([]);
+    await store.hydrateComposerDrafts();
+    cache.setComposerDraft("d1", "held attachment");
+    cache.setComposerAttachments("d1", [
+      { id: "held", name: "a.txt", kind: "file", mimeType: "text/plain", size: 1, data: "eA==" },
+    ]);
+    await store.flushComposerDrafts();
+    const observed = vi.fn();
+    const stop = store.subscribePersistedComposerDrafts(observed);
+    const original = invoke.getMockImplementation()!;
+    try {
+      invoke.mockImplementation(async (command: string, args: any) => {
+        if (command === "session_set_draft") throw new Error("disk full");
+        return original(command, args);
+      });
+      cache.clearComposerDraft("d1");
+      await expect(store.flushComposerDrafts()).rejects.toThrow("disk full");
+      expect(observed).not.toHaveBeenCalled();
+      invoke.mockImplementation(original);
+      await store.flushComposerDrafts();
+      expect(observed).toHaveBeenCalledWith("d1", []);
+    } finally {
+      stop();
+    }
+  });
 });

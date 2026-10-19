@@ -257,6 +257,53 @@ export function pendingRemoteFollowup(project: string, environment: string, id: 
   return value ? readPendingEntry(value, id)?.followup : undefined;
 }
 
+/** Validated durable attachment inventory; an unreadable request is never empty. */
+export function pendingRemoteAttachmentIds(
+  project: string,
+  environment: string,
+  shellId: string,
+): string[] {
+  if (remoteOutboxIssues(project, environment).length)
+    throw new Error("Attachment ownership is held by an unreadable pending request");
+  const prefix = pendingPrefix(project, environment);
+  const ids = new Set<string>();
+  const collect = (command?: HostCommand) => {
+    if (!command) return;
+    if ("attachments" in command) for (const file of command.attachments ?? []) ids.add(file.id);
+    if (command.type === "create") collect(command.firstTurn);
+  };
+  for (let index = 0; index < localStorage.length; index++) {
+    const key = localStorage.key(index);
+    if (!key?.startsWith(prefix)) continue;
+    const entry = readPendingEntry(localStorage.getItem(key) ?? "", key.slice(prefix.length));
+    if (!entry || (entry.shellId && entry.shellId !== shellId)) continue;
+    collect(entry.command);
+    collect(entry.followup);
+  }
+  return [...ids];
+}
+
+export function pendingRemoteEnvironmentAttachmentIds(environment: string): string[] {
+  if (remoteOutboxIssues(undefined, environment).length)
+    throw new Error("Attachment ownership is held by an unreadable pending request");
+  const ids = new Set<string>();
+  const collect = (command?: HostCommand) => {
+    if (!command) return;
+    if ("attachments" in command) for (const file of command.attachments ?? []) ids.add(file.id);
+    if (command.type === "create") collect(command.firstTurn);
+  };
+  for (let index = 0; index < localStorage.length; index++) {
+    const key = localStorage.key(index)!;
+    const scope = scopeForKey(key);
+    if (!scope || scope.environment !== environment) continue;
+    const entry = readPendingEntry(localStorage.getItem(key) ?? "", scope.id);
+    if (!entry) throw new Error("Could not read pending attachment inventory");
+    collect(entry.command);
+    collect(entry.followup);
+  }
+  return [...ids];
+}
+
 export function pendingRemoteCommand(
   project: string,
   environment: string,

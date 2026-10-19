@@ -3355,6 +3355,9 @@
   "{p0} command": "{p0} コマンド",
   "{p0} commands": "{p0} コマンド",
   "Rate-limit details": "レート制限の詳細",
+  "Checked just now": "たった今確認しました",
+  "Checked {p0}m ago": "{p0}分前に確認しました",
+  "Checked {p0}h ago": "{p0}時間前に確認しました",
   "Updated just now": "たった今更新されました",
   "Updated {p0}m ago": "{p0}分前に更新されました",
   "Updated {p0}h ago": "{p0}時間前に更新されました",
@@ -5413,5 +5416,15 @@
   "The upstream connection uses plain HTTP. Basic credentials require separate approval for each operation.": "上流接続は暗号化されないHTTPを使用します。Basic認証情報は操作ごとに承認が必要です。",
   "Abandon pending start": "保留中の開始を破棄",
   "Review startup scripts": "起動スクリプトを確認",
-  "Automatic startup reviews require trusted shell integration. Use Review startup scripts for other terminals.": "自動起動確認には信頼できるシェル統合が必要です。他のターミナルでは起動スクリプトを確認を使用してください。"
+  "Automatic startup reviews require trusted shell integration. Use Review startup scripts for other terminals.": "自動起動確認には信頼できるシェル統合が必要です。他のターミナルでは起動スクリプトを確認を使用してください。",
+  "Choose SSH key": "SSH キーを選択",
+  "SSH agent and default keys": "SSH エージェントと既定のキー",
+  "Could not load SSH keys. Enter a path or retry.": "SSH キーを読み込めませんでした。パスを入力するか、再試行してください。",
+  "Select a key for": "キーを選択するサーバー",
+  "Use key": "キーを使用",
+  "Assign key": "キーを割り当て",
+  "Assigned": "割り当て済み",
+  "Local SSH keys and known hosts.": "ローカル SSH キーと既知のホスト。",
+  "Use SSH defaults": "SSH の既定値を使用",
+  "SSH key": "SSH キー"
 }

@@ -18,8 +18,23 @@ for (const theme of ["light", "dark"]) {
       await details.locator("summary").click();
       await expect(details).toContainText("owner@studio-tailnet");
       await root.getByRole("button", { name: "Add machine", exact: true }).click();
-      const address = root.getByPlaceholder("user@my-mac-mini or an SSH alias");
+      const address = root.getByRole("textbox", { name: "SSH address", exact: true });
       await address.fill("owner@new-machine");
+      await expect(
+        root.getByText("Installs bycoda Host over SSH so you can run agents on this machine.", {
+          exact: true,
+        }),
+      ).toBeVisible();
+      const help = root
+        .locator("details")
+        .filter({ has: page.locator("summary").filter({ hasText: /^Connection help$/ }) });
+      await expect(help).not.toHaveAttribute("open");
+      await expect(
+        root.getByRole("textbox", { name: "Other address (optional)", exact: true }),
+      ).toBeVisible();
+      const evidence = "temp/verification/2026-10-19-servers-ux/machines";
+      mkdirSync(evidence, { recursive: true });
+      await page.screenshot({ path: `${evidence}/add-${theme}-${width}.png` });
       const machines = root.getByRole("radio", { name: "Your machines", exact: true });
       await machines.focus();
       await page.keyboard.press("ArrowRight");

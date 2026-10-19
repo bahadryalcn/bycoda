@@ -1,7 +1,7 @@
 {
   "name": "bycoda-desktop",
   "private": true,
-  "version": "0.6.35",
+  "version": "0.6.36",
   "type": "module",
   "packageManager": "pnpm@12.8.2",
   "scripts": {
@@ -14,6 +14,7 @@
     "test:browser": "playwright test",
     "lint": "oxlint . && pnpm run lint:hooks",
     "lint:hooks": "oxlint --config .oxlint-hooks.json src",
+    "lint:baseline": "node scripts/checks/check-lint-baseline.mjs",
     "check:colors": "node scripts/checks/check-theme-colors.mjs",
     "lint:fix": "oxlint --fix .",
     "format": "oxfmt --write .",

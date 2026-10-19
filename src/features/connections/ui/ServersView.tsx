@@ -12,13 +12,12 @@ import { Popover } from "../../../shared/ui/Popover";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import { Switch } from "../../../shared/ui/Switch";
 import { QuickConnect } from "./QuickConnect";
-import { useOpenQuickServerTerminal } from "./ServersTerminalWorkspace";
+import { useOpenQuickServerTerminal, useOpenServerTerminal } from "./ServersTerminalWorkspace";
 import { SshServerEditor } from "./SshServerEditor";
-import { ServerOrganization } from "./ServerOrganization";
 import { ServersConnectionTools } from "./ServersConnectionTools";
 import { useServerInventory, type ServerRecord } from "../model/serverInventory";
 import { SearchInput } from "../../../shared/ui/SearchInput";
-import { Loader, Plus, RefreshCw, Server, ListFilter, Star } from "../../../shared/ui/icons";
+import { Loader, Plus, RefreshCw, Server, ListFilter, Star, X } from "../../../shared/ui/icons";
 import {
   requestMachineEdit,
   requestMachineReconnect,
@@ -115,6 +114,14 @@ export function ServersView({
   useLocale();
   const { servers, loaded, loading, error, refresh } = useServerInventory();
   const openQuick = useOpenQuickServerTerminal();
+  const openTerminal = useOpenServerTerminal();
+  const canConnect = (server: ServerRecord) =>
+    Boolean(openTerminal && (server.kind === "ssh" || server.machine?.ssh));
+  const connect = (server: ServerRecord) => {
+    if (!canConnect(server)) return;
+    setSelectedId(server.id);
+    openTerminal?.(server);
+  };
   const [quickConnect, setQuickConnect] = useState(false);
   const [editor, setEditor] = useState<ServerRecord | "new" | undefined>();
   const [filtersOpen, setFiltersOpen] = useState(false);
@@ -179,101 +186,106 @@ export function ServersView({
         {IS_MAC ? null : <WindowControls />}
       </div>
       <div className="flex flex-wrap items-center gap-2 border-b border-stroke px-3 py-2">
-        <SearchInput
-          appearance="field"
-          containerClassName="min-w-32 flex-1"
-          aria-label={t("Search servers")}
-          placeholder={t("Search by name or address")}
-          value={search}
-          onChange={(event) => setSearch(event.target.value)}
-        />
-        <Button
-          ref={filtersAnchor}
-          variant="ghost"
-          iconOnly
-          label={t("Server filters")}
-          selected={filterCount > 0}
-          aria-expanded={filtersOpen}
-          aria-haspopup="dialog"
-          onClick={() => setFiltersOpen(!filtersOpen)}
-        >
-          <ListFilter aria-hidden className="size-3.5" />
-          {filterCount > 0 ? <span className="sr-only">{filterCount}</span> : null}
-        </Button>
-        {filtersOpen ? (
-          <Popover
-            anchor={filtersAnchor}
-            align="end"
-            width={280}
-            role="dialog"
-            aria-label={t("Server filters")}
-            onDismiss={() => setFiltersOpen(false)}
+        <div className="flex min-w-0 basis-64 flex-1 items-center gap-2">
+          <SearchInput
+            appearance="field"
+            containerClassName="min-w-0 flex-1"
+            aria-label={t("Search servers")}
+            placeholder={t("Search by name or address")}
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+          />
+          <Button
+            ref={filtersAnchor}
+            variant="ghost"
+            iconOnly
+            label={t("Server filters")}
+            selected={filterCount > 0}
+            aria-expanded={filtersOpen}
+            aria-haspopup="dialog"
+            onClick={() => setFiltersOpen(!filtersOpen)}
           >
-            <div className="flex flex-col gap-3 p-3">
-              <SearchableSelect
-                label={t("Group")}
-                value={group}
-                options={[
-                  { value: "", label: t("All groups") },
-                  ...groups.map((value) => ({ value, label: value })),
-                ]}
-                onChange={setGroup}
-              />
-              <SearchableSelect
-                label={t("Tags")}
-                value={tag}
-                options={[
-                  { value: "", label: t("All tags") },
-                  ...tags.map((value) => ({ value, label: value })),
-                ]}
-                onChange={setTag}
-              />
-              <Switch
-                label={t("Favorites only")}
-                checked={favoritesOnly}
-                onCheckedChange={setFavoritesOnly}
-              />
-              <Switch
-                label={t("Recently used first")}
-                checked={recentFirst}
-                onCheckedChange={setRecentFirst}
-              />
-              <Button
-                variant="ghost"
-                disabled={!filterCount}
-                onClick={() => {
-                  setGroup("");
-                  setTag("");
-                  setFavoritesOnly(false);
-                  setRecentFirst(false);
-                }}
-              >
-                {t("Reset filters")}
-              </Button>
-            </div>
-          </Popover>
-        ) : null}
-        <Button
-          variant="ghost"
-          iconOnly
-          label={t("Refresh servers")}
-          disabled={loading}
-          onClick={refresh}
-        >
-          <RefreshCw aria-hidden className="size-3.5" />
-        </Button>
-        {openQuick ? (
-          <Button variant="ghost" onClick={() => setQuickConnect(true)}>
-            {t("Quick connect")}
+            <ListFilter aria-hidden className="size-3.5" />
+            {filterCount > 0 ? <span className="sr-only">{filterCount}</span> : null}
           </Button>
-        ) : null}
-        <Button variant="secondary" onClick={() => setEditor("new")}>
-          <Plus aria-hidden className="size-3.5" />
-          {t("Add SSH server")}
-        </Button>
-        <Button variant="ghost" iconOnly label={t("Add machine")} onClick={requestMachineAdd}>
-          <Plus aria-hidden className="size-3.5" />
-        </Button>
+          {filtersOpen ? (
+            <Popover
+              anchor={filtersAnchor}
+              align="end"
+              width={280}
+              role="dialog"
+              aria-label={t("Server filters")}
+              onDismiss={() => setFiltersOpen(false)}
+            >
+              <div className="flex flex-col gap-3 p-3">
+                <SearchableSelect
+                  label={t("Group")}
+                  value={group}
+                  options={[
+                    { value: "", label: t("All groups") },
+                    ...groups.map((value) => ({ value, label: value })),
+                  ]}
+                  onChange={setGroup}
+                />
+                <SearchableSelect
+                  label={t("Tags")}
+                  value={tag}
+                  options={[
+                    { value: "", label: t("All tags") },
+                    ...tags.map((value) => ({ value, label: value })),
+                  ]}
+                  onChange={setTag}
+                />
+                <Switch
+                  label={t("Favorites only")}
+                  checked={favoritesOnly}
+                  onCheckedChange={setFavoritesOnly}
+                />
+                <Switch
+                  label={t("Recently used first")}
+                  checked={recentFirst}
+                  onCheckedChange={setRecentFirst}
+                />
+                <Button
+                  variant="ghost"
+                  disabled={!filterCount}
+                  onClick={() => {
+                    setGroup("");
+                    setTag("");
+                    setFavoritesOnly(false);
+                    setRecentFirst(false);
+                  }}
+                >
+                  {t("Reset filters")}
+                </Button>
+              </div>
+            </Popover>
+          ) : null}
+          <Button
+            variant="ghost"
+            iconOnly
+            label={t("Refresh servers")}
+            disabled={loading}
+            onClick={refresh}
+          >
+            <RefreshCw aria-hidden className="size-3.5" />
+          </Button>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          {openQuick ? (
+            <Button variant="primary" onClick={() => setQuickConnect(true)}>
+              {t("Quick connect")}
+            </Button>
+          ) : null}
+          <Button variant="secondary" onClick={() => setEditor("new")}>
+            <Plus aria-hidden className="size-3.5" />
+            {t("Add SSH server")}
+          </Button>
+          <Button variant="ghost" onClick={requestMachineAdd}>
+            <Plus aria-hidden className="size-3.5" />
+            {t("Add machine")}
+          </Button>
+        </div>
       </div>
       {error ? (
         <div className="px-3 py-2">
@@ -304,30 +316,80 @@ export function ServersView({
         <div
           ref={list}
           onScroll={(event) => setScrollTop(event.currentTarget.scrollTop)}
-          className="min-h-0 min-w-0 flex-1 overflow-y-auto p-2"
+          className={`min-h-0 min-w-0 overflow-y-auto p-2 md:w-80 md:flex-none ${selected ? "max-h-[40%] shrink-0 md:max-h-none" : "flex-1"}`}
         >
           {loaded && servers.length === 0 ? (
-            <p className="py-8 text-center text-sm text-(--ui-text-muted)">
-              {t("No machines connected.")}
-            </p>
+            <div className="flex flex-col items-center gap-3 px-3 py-8 text-center text-sm">
+              <Server aria-hidden className="size-6 text-(--ui-text-muted)" />
+              <p className="font-medium">{t("No machines connected.")}</p>
+              <p className="max-w-sm text-(--ui-text-muted)">
+                {t("Add an SSH server for terminal access, or a machine running bycoda Host.")}
+              </p>
+            </div>
           ) : null}
           {servers.length > 0 && filtered.length === 0 ? (
-            <p className="py-8 text-center text-sm text-(--ui-text-muted)">
-              {t("No matching servers.")}
-            </p>
+            <div className="flex flex-col items-center gap-2 py-8 text-sm text-(--ui-text-muted)">
+              <p>{t("No matching servers.")}</p>
+              <Button
+                variant="ghost"
+                onClick={() => {
+                  setSearch("");
+                  setGroup("");
+                  setTag("");
+                  setFavoritesOnly(false);
+                  setRecentFirst(false);
+                }}
+              >
+                {t("Reset filters")}
+              </Button>
+            </div>
           ) : null}
-          <ul
-            aria-label={t("Servers")}
-            className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,22rem),1fr))] gap-1"
-          >
+          <ul aria-label={t("Servers")} className="flex flex-col gap-1">
             {filtered.map((server) => (
               <li key={server.id} className="min-w-0">
                 <Button
                   variant="item"
                   selected={selectedId === server.id}
                   aria-pressed={selectedId === server.id}
+                  data-server-row={server.id}
+                  aria-keyshortcuts={canConnect(server) ? "Enter" : undefined}
+                  aria-description={
+                    canConnect(server)
+                      ? t("Double-click or press Enter to connect via SSH. Space shows details.")
+                      : undefined
+                  }
                   className="h-auto min-h-14 w-full"
                   onClick={() => setSelectedId(server.id)}
+                  onDoubleClick={(event) => {
+                    if (
+                      event.button !== 0 ||
+                      event.ctrlKey ||
+                      event.metaKey ||
+                      event.altKey ||
+                      event.shiftKey
+                    )
+                      return;
+                    connect(server);
+                  }}
+                  onKeyDown={(event) => {
+                    if (
+                      event.key !== "Enter" ||
+                      !canConnect(server) ||
+                      event.nativeEvent.isComposing
+                    )
+                      return;
+                    event.preventDefault();
+                    event.stopPropagation();
+                    if (
+                      event.repeat ||
+                      event.ctrlKey ||
+                      event.metaKey ||
+                      event.altKey ||
+                      event.shiftKey
+                    )
+                      return;
+                    connect(server);
+                  }}
                 >
                   <Server aria-hidden className="size-4 shrink-0 text-(--ui-text-muted)" />
                   <span className="flex min-w-0 flex-1 flex-col gap-0.5">
@@ -364,25 +426,41 @@ export function ServersView({
         {selected ? (
           <section
             aria-label={t("Server details")}
-            className="max-h-[45%] min-h-0 shrink-0 overflow-y-auto border-t border-stroke p-3 md:max-h-none md:w-72 md:border-t-0 md:border-s"
+            className="max-h-[65%] min-h-0 min-w-0 flex-1 overflow-y-auto border-t border-stroke p-4 md:max-h-none md:border-t-0 md:border-s"
           >
             <div className="flex min-w-0 items-center gap-2">
               <Server aria-hidden className="size-4 shrink-0 text-(--ui-text-muted)" />
-              <h2 className="min-w-0 truncate text-sm font-medium" title={selected.name}>
+              <h2 className="min-w-0 flex-1 truncate text-base font-medium" title={selected.name}>
                 {selected.name}
               </h2>
+              <Button
+                variant="ghost"
+                iconOnly
+                label={t("Close server details")}
+                onClick={() => {
+                  setSelectedId(undefined);
+                  Array.from(
+                    list.current?.querySelectorAll<HTMLButtonElement>("[data-server-row]") ?? [],
+                  )
+                    .find((row) => row.dataset.serverRow === selected.id)
+                    ?.focus({ preventScroll: true });
+                }}
+              >
+                <X aria-hidden className="size-3.5" />
+              </Button>
             </div>
-            {selected.machine?.ssh || selected.kind === "ssh" ? (
+            {selected.machine || selected.kind === "ssh" ? (
               <div className="mbs-3 flex flex-wrap gap-2">
                 <Button
+                  variant="ghost"
                   onClick={() =>
                     selected.kind === "ssh" ? setEditor(selected) : requestMachineEdit(selected.id)
                   }
                 >
-                  {t("Edit machine")}
+                  {t(selected.kind === "ssh" ? "Edit SSH server" : "Edit machine")}
                 </Button>
                 {selected.kind === "host" ? (
-                  <Button onClick={() => requestMachineReconnect(selected.id)}>
+                  <Button variant="secondary" onClick={() => requestMachineReconnect(selected.id)}>
                     {t("Reconnect")}
                   </Button>
                 ) : null}
@@ -411,8 +489,8 @@ export function ServersView({
                 </>
               ) : null}
             </dl>
-            <ServerOrganization key={selected.id} server={selected} />
             <ServersConnectionTools
+              key={selected.id}
               server={selected}
               servers={servers}
               onUseServer={setSelectedId}
@@ -422,6 +500,16 @@ export function ServersView({
               }}
             />
           </section>
+        ) : loaded && servers.length > 0 ? (
+          <div className="hidden min-w-0 flex-1 flex-col items-center justify-center gap-2 border-s border-stroke p-6 text-center md:flex">
+            <Server aria-hidden className="size-6 text-(--ui-text-muted)" />
+            <h2 className="text-sm font-medium">{t("Select a server")}</h2>
+            <p className="max-w-xs text-xs text-(--ui-text-muted)">
+              {t(
+                "Select a server to view details. Double-click or press Enter to connect via SSH.",
+              )}
+            </p>
+          </div>
         ) : null}
       </div>
       {quickConnect ? <QuickConnect onClose={() => setQuickConnect(false)} /> : null}

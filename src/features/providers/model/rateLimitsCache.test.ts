@@ -108,6 +108,25 @@ it("tries again by itself after a failed read, and stops once it works", async (
   expect(fetchClaude).toHaveBeenCalledTimes(2);
 });
 
+it("checks back soon while a Claude token awaits renewal by the CLI", async () => {
+  const pendingRenewal = () => ({
+    ...errorRateLimits("claude", "Claude usage will update when this account is used again"),
+    renewalPending: true,
+  });
+  fetchClaude.mockResolvedValueOnce(pendingRenewal()).mockResolvedValueOnce(pendingRenewal());
+  await loadRateLimits("claude");
+
+  await vi.advanceTimersByTimeAsync(15_000);
+  expect(fetchClaude).toHaveBeenCalledTimes(2);
+
+  fetchClaude.mockResolvedValueOnce(usage(30));
+  await vi.advanceTimersByTimeAsync(15_000);
+  expect(getCachedRateLimits("claude")).toMatchObject({
+    status: "ok",
+    session: { usedPercent: 30 },
+  });
+});
+
 it("shares a recent read instead of asking the provider again", async () => {
   fetchClaude.mockResolvedValue(usage(70));
   await loadRateLimits("claude");

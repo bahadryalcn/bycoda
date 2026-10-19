@@ -3355,6 +3355,9 @@
   "{p0} command": "Commande {p0}",
   "{p0} commands": "{p0} commandes",
   "Rate-limit details": "Détails de la limite de débit",
+  "Checked just now": "Vérifié à l'instant",
+  "Checked {p0}m ago": "Vérifié il y a {p0} min",
+  "Checked {p0}h ago": "Vérifié il y a {p0} h",
   "Updated just now": "Mis à jour tout à l'heure",
   "Updated {p0}m ago": "Mis à jour il y a {p0} mois",
   "Updated {p0}h ago": "Mis à jour il y a {p0}h",
@@ -5413,5 +5416,15 @@
   "The upstream connection uses plain HTTP. Basic credentials require separate approval for each operation.": "La connexion en amont utilise HTTP sans chiffrement. Les identifiants Basic nécessitent une approbation distincte pour chaque opération.",
   "Abandon pending start": "Abandonner le démarrage en attente",
   "Review startup scripts": "Vérifier les scripts de démarrage",
-  "Automatic startup reviews require trusted shell integration. Use Review startup scripts for other terminals.": "Les vérifications automatiques au démarrage nécessitent une intégration shell fiable. Utilisez Vérifier les scripts de démarrage pour les autres terminaux."
+  "Automatic startup reviews require trusted shell integration. Use Review startup scripts for other terminals.": "Les vérifications automatiques au démarrage nécessitent une intégration shell fiable. Utilisez Vérifier les scripts de démarrage pour les autres terminaux.",
+  "Choose SSH key": "Choisir une clé SSH",
+  "SSH agent and default keys": "Agent SSH et clés par défaut",
+  "Could not load SSH keys. Enter a path or retry.": "Impossible de charger les clés SSH. Saisissez un chemin ou réessayez.",
+  "Select a key for": "Sélectionner une clé pour",
+  "Use key": "Utiliser la clé",
+  "Assign key": "Associer la clé",
+  "Assigned": "Associée",
+  "Local SSH keys and known hosts.": "Clés SSH locales et hôtes connus.",
+  "Use SSH defaults": "Utiliser les paramètres SSH par défaut",
+  "SSH key": "Clé SSH"
 }

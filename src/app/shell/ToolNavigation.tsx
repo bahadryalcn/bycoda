@@ -110,8 +110,9 @@ export function ToolNavigation() {
           ...TOOL_IDS.filter((id) => id !== "notes" || navigation.notesEnabled),
         ];
   const open = async (grouped: boolean) => {
-    if (opening || navigation.active === "servers") return;
-    const active = navigation.active!;
+    if (opening || (navigation.active === "servers" && !grouped)) return;
+    // Servers stays in the workspace; start the combined window on its first tool.
+    const active = navigation.active === "servers" ? TOOL_IDS[0] : navigation.active!;
     setOpening(true);
     setError("");
     try {
@@ -124,7 +125,7 @@ export function ToolNavigation() {
         })
       )
         return;
-      await invoke("open_tool_window", { tool: navigation.active, cwd: navigation.cwd, grouped });
+      await invoke("open_tool_window", { tool: active, cwd: navigation.cwd, grouped });
     } catch (cause) {
       setError(String(cause));
     } finally {
@@ -190,8 +191,8 @@ export function ToolNavigation() {
           );
         })}
       </div>
-      {navigation.active !== "servers" ? (
-        <div className="tool-window-actions">
+      <div className="tool-window-actions">
+        {navigation.active !== "servers" ? (
           <Button
             variant="ghost"
             motion="none"
@@ -205,22 +206,22 @@ export function ToolNavigation() {
           >
             <AppWindow className="size-3.5" aria-hidden />
           </Button>
-          <Button
-            variant="ghost"
-            motion="none"
-            data-tauri-drag-region="false"
-            disabled={opening}
-            onClick={() => void open(true)}
-            aria-label={t("Open all tools in one window")}
-            title={t("Open all tools in one window")}
-          >
-            <DashboardSquare className="size-3.5" aria-hidden />
-            <span className="tool-action-label">
-              {opening ? t("Opening new window…") : t("All tools in one window")}
-            </span>
-          </Button>
-        </div>
-      ) : null}
+        ) : null}
+        <Button
+          variant="ghost"
+          motion="none"
+          data-tauri-drag-region="false"
+          disabled={opening}
+          onClick={() => void open(true)}
+          aria-label={t("Open all tools in one window")}
+          title={t("Open all tools in one window")}
+        >
+          <DashboardSquare className="size-3.5" aria-hidden />
+          <span className="tool-action-label">
+            {opening ? t("Opening new window…") : t("All tools in one window")}
+          </span>
+        </Button>
+      </div>
       {error ? (
         <Alert tone="danger" role="alert" data-tauri-drag-region="false">
           <span>

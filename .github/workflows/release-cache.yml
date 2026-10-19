@@ -1,0 +1,57 @@
+name: Release cache
+
+# Seed optimized dependencies on main, whose caches are readable by release
+# tags. Keep the toolchain, target and shared-key aligned with release.yml.
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/release*.yml"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "src-tauri/**"
+      - "vendor/**"
+      - ".cargo/**"
+      - "rust-toolchain*"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-cache-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  warm:
+    if: github.ref == 'refs/heads/main'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: windows-latest
+            args: --config src-tauri/tauri.fork.conf.json
+          - platform: macos-latest
+            args: --target aarch64-apple-darwin --config src-tauri/tauri.fork.macos.conf.json
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 12.8.2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin' || '' }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: desktop-release-${{ matrix.platform }}
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run host:package
+      # Compile with the same Tauri configuration without installers, signing
+      # credentials, draft creation or uploads. Only dependencies are cached.
+      - name: Warm optimized desktop dependencies
+        run: pnpm exec tauri build --no-bundle ${{ matrix.args }}

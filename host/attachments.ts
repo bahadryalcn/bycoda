@@ -1,21 +1,40 @@
-import { statSync } from "node:fs";
+import { statSync, lstatSync, unlinkSync } from "node:fs";
 import { join, basename, dirname, resolve } from "node:path";
 import type { Attachment } from "../src/features/sessions/model/session";
 import type { RemoteAttachment } from "../src/features/connections/model/protocol";
 import type { HostStore } from "./store";
-import { mkdir, open, type FileHandle } from "node:fs/promises";
+import { mkdir, open, readdir, type FileHandle } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { parseBrowserAnnotation } from "../src/shared/lib/browserAnnotation";
 
 // Reads, status hashes and writes of the same file observe a single ordered stream.
 // Each operation closes its handle; settled queues retain neither handles nor stores.
 const attachmentOperations = new Map<string, Promise<void>>();
+const attachmentTouches = new Map<string, number>();
+const TOUCH_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+let attachmentTouchOverflowUntil = 0;
+function touchAttachment(key: string): void {
+  const now = Date.now();
+  for (const [entry, touched] of attachmentTouches) {
+    if (touched > now - TOUCH_TTL_MS) break;
+    attachmentTouches.delete(entry);
+  }
+  attachmentTouches.delete(key);
+  if (attachmentTouches.size >= 10000) {
+    // A bounded lease cache cannot prove all recent consumers are represented.
+    // Suspend collection through the missing lease's protection interval.
+    attachmentTouchOverflowUntil = now + TOUCH_TTL_MS;
+    attachmentTouches.delete(attachmentTouches.keys().next().value!);
+  }
+  attachmentTouches.set(key, now);
+}
 
 function serializeAttachment<T>(path: string, operation: () => Promise<T>): Promise<T> {
   // UUID spelling is case-insensitive; Windows and common macOS volumes also
   // resolve upper/lower-case names to the same file. Serialize those aliases.
   const absolute = resolve(path);
   const key = join(dirname(absolute), basename(absolute).toLowerCase());
+  touchAttachment(key);
   const previous = attachmentOperations.get(key) ?? Promise.resolve();
   const result = previous.then(operation);
   const settled = result.then(
@@ -185,6 +204,7 @@ export function parseRemoteAttachments(value: unknown): RemoteAttachment[] {
 export function resolveAttachments(store: HostStore, refs: RemoteAttachment[]): Attachment[] {
   return refs.map((ref) => {
     const path = attachmentPath(store, ref.id);
+    touchAttachment(join(dirname(resolve(path)), basename(path).toLowerCase()));
     if (statSync(path).size !== ref.size) throw new Error(`Attachment ${ref.name} is incomplete`);
     return { ...ref, path };
   });
@@ -203,7 +223,11 @@ export async function readAttachmentChunk(store: HostStore, input: Record<string
         .flatMap((block) => block.attachments ?? [])
         .find((file) => file.id === input.id);
   if (!attachment) throw new Error("Session attachment not found");
-  if (!Number.isSafeInteger(attachment.size) || attachment.size < 0 || attachment.size > MAX_REMOTE_ATTACHMENT_BYTES)
+  if (
+    !Number.isSafeInteger(attachment.size) ||
+    attachment.size < 0 ||
+    attachment.size > MAX_REMOTE_ATTACHMENT_BYTES
+  )
     throw new Error("Invalid attachment size");
   const offset = input.offset;
   if (!Number.isSafeInteger(offset) || Number(offset) < 0 || Number(offset) > attachment.size)
@@ -230,5 +254,135 @@ export async function readAttachmentChunk(store: HostStore, input: Record<string
     } finally {
       await handle.close();
     }
+  });
+}
+
+/** A reference authority must include external drafts/desktop consumers. Unknown
+ * consumers return undefined, which suspends deletion rather than guessing. */
+export async function collectAttachmentGarbage(
+  store: HostStore,
+  externalReferences: () => ReadonlySet<string> | undefined,
+  now = Date.now(),
+  graceMs = 7 * 24 * 60 * 60 * 1000,
+  eligible?: ReadonlySet<string>,
+  onRemoved?: (id: string) => void,
+  shouldContinue: () => boolean = () => true,
+): Promise<string[]> {
+  if (eligible?.size === 0) return [];
+  if (!Number.isFinite(graceMs) || graceMs < 24 * 60 * 60 * 1000)
+    throw new Error("Attachment grace period must be at least one day");
+  const entries = eligible
+    ? Array.from(eligible).slice(0, 200)
+    : await readdir(store.attachmentDir).catch((error: NodeJS.ErrnoException) => {
+        if (error.code === "ENOENT") return [];
+        throw error;
+      });
+  if (attachmentTouchOverflowUntil > now) return [];
+  const external = externalReferences();
+  if (!external) return [];
+  if (entries.length > 10000) return [];
+  // Flush may fail: never delete if the authoritative durable scan cannot run.
+  store.flushAll();
+  const candidates = new Set(entries.map((id) => id.toLowerCase()));
+  const referenced = new Set(Array.from(external, (id) => id.toLowerCase()));
+  const uuid = /[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}/gi;
+  const stamp = () =>
+    `${store.changeVersion}:${store.db.prepare("SELECT total_changes() AS changes").get()?.changes}:${store.db.prepare("PRAGMA data_version").get()?.data_version}`;
+  const startedStamp = stamp();
+  const quote = (name: string) => '"' + name.replaceAll('"', '""') + '"';
+  const scanStarted = performance.now();
+  let sliceStarted = scanStarted;
+  let sliceCharacters = 0;
+  // The SELECT cursor may span yields. Any local or external write invalidates
+  // this scan; no deletion occurs until a stable, complete inventory finishes.
+  for (const table of store.db
+    .prepare("SELECT name FROM sqlite_schema WHERE type='table' AND name NOT LIKE 'sqlite_%'")
+    .all()) {
+    if (
+      eligible &&
+      ["attachment_ownership_files", "attachment_ownership_claims"].includes(String(table.name))
+    )
+      continue;
+    for (const row of store.db.prepare(`SELECT * FROM ${quote(String(table.name))}`).iterate()) {
+      for (const value of Object.values(row)) {
+        if (value instanceof Uint8Array) return [];
+        if (typeof value !== "string") continue;
+        for (let at = 0; at < value.length; at += 256 * 1024) {
+          // A UUID split at a chunk boundary must still be seen exactly once or
+          // conservatively twice. Only candidate IDs are retained in memory.
+          const chunk = value.slice(Math.max(0, at - 35), at + 256 * 1024);
+          for (const match of chunk.matchAll(uuid)) {
+            const id = match[0].toLowerCase();
+            if (candidates.has(id)) referenced.add(id);
+          }
+          sliceCharacters += chunk.length;
+          if (sliceCharacters >= 256 * 1024 || performance.now() - sliceStarted >= 8) {
+            await new Promise<void>((done) => setImmediate(done));
+            if (
+              !shouldContinue() ||
+              stamp() !== startedStamp ||
+              performance.now() - scanStarted > 120000
+            )
+              return [];
+            sliceStarted = performance.now();
+            sliceCharacters = 0;
+          }
+        }
+      }
+      if (performance.now() - sliceStarted >= 8) {
+        await new Promise<void>((done) => setImmediate(done));
+        if (
+          !shouldContinue() ||
+          stamp() !== startedStamp ||
+          performance.now() - scanStarted > 120000
+        )
+          return [];
+        sliceStarted = performance.now();
+        sliceCharacters = 0;
+      }
+    }
+  }
+  // Flush newly pending session state before the final revision check. Refresh
+  // external ownership after all yields; nothing below this point awaits.
+  if (!shouldContinue()) return [];
+  store.flushAll();
+  // Reserve the SQLite writer for the final check and unlink phase too: a
+  // different connection cannot publish a new reference between them. Ledger
+  // removals share this transaction rather than committing per file.
+  return store.transaction(() => {
+    if (stamp() !== startedStamp) return [];
+    const currentExternal = externalReferences();
+    if (!currentExternal) return [];
+    for (const id of currentExternal) referenced.add(id.toLowerCase());
+    const directory = lstatSync(store.attachmentDir, { throwIfNoEntry: false });
+    if (directory && (!directory.isDirectory() || directory.isSymbolicLink())) return [];
+    const removed: string[] = [];
+    // No await between the reference scan, final lease/stat recheck and unlink:
+    // this process cannot accept a new reference or upload in that interval.
+    for (const id of entries) {
+      if (
+        !UUID.test(id) ||
+        (eligible && !eligible.has(id.toLowerCase())) ||
+        referenced.has(id.toLowerCase())
+      )
+        continue;
+      const path = attachmentPath(store, id);
+      const key = join(dirname(resolve(path)), basename(path).toLowerCase());
+      if (attachmentOperations.has(key) || (attachmentTouches.get(key) ?? 0) > now - graceMs)
+        continue;
+      const info = lstatSync(path, { throwIfNoEntry: false });
+      if (!info) {
+        if (eligible) onRemoved?.(id.toLowerCase());
+        continue;
+      }
+      if (!info.isFile() || Math.max(info.mtimeMs, info.ctimeMs) > now - graceMs) continue;
+      unlinkSync(path);
+      attachmentTouches.delete(key);
+      removed.push(id);
+      onRemoved?.(id.toLowerCase());
+    }
+    for (const [key, touched] of attachmentTouches)
+      if (touched < now - graceMs && !attachmentOperations.has(key)) attachmentTouches.delete(key);
+    return removed;
   });
 }

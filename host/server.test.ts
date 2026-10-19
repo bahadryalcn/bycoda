@@ -2445,3 +2445,209 @@ describe("host settings commands", () => {
     ).toBe("Invalid concurrent task limit");
   });
 });
+
+it("previews a transcript above 16 MiB with revision-only unchanged polls and bounded summaries", async () => {
+  const s = await setup();
+  const created = s.engine.command({
+    type: "create",
+    commandId: "large-task-preview",
+    projectId: s.project.id,
+    harness: "codex",
+    model: "codex:test",
+    runtimeMode: "supervised",
+  });
+  const before = s.store.session(created.sessionId);
+  const blocks = Array.from({ length: 200 }, (_, at) => ({
+    id: String(at),
+    role: "assistant" as const,
+    text: "x".repeat(100000),
+  }));
+  blocks.unshift({ id: "note", role: "system" as never, text: "Retained early note" });
+  const current = s.store.save(
+    { ...before, revision: before.revision + 1, session: { ...before.session, blocks } },
+    { type: "test" },
+  );
+  expect(Buffer.byteLength(JSON.stringify(current))).toBeGreaterThan(16 * 1024 * 1024);
+  const page = (await s.call("sessions.page", { sessionId: current.session.id, preview: true }))
+    .value.result;
+  const result = (await s.call("sessions.get", { sessionId: current.session.id, preview: true }))
+    .value.result;
+  expect(Buffer.byteLength(JSON.stringify(result))).toBeLessThan(1024 * 1024);
+  expect(result.history.totalBlocks).toBe(201);
+  expect(
+    (
+      await s.call("sessions.get", {
+        sessionId: current.session.id,
+        preview: true,
+        revision: current.revision,
+      })
+    ).value.result,
+  ).toBeNull();
+  const summary = (
+    await s.call("sessions.get", { sessionId: current.session.id, preview: true, summary: true })
+  ).value.result;
+  expect(summary.session.blocks.map((block: { id: string }) => block.id)).toEqual(["199", "note"]);
+  expect(Buffer.byteLength(JSON.stringify(summary))).toBeLessThan(140000);
+  const history = (
+    await s.call("sessions.page", {
+      sessionId: current.session.id,
+      before: page.before,
+      revision: current.revision,
+      preview: true,
+    })
+  ).value.result;
+  expect(history.sync.value.session.blocks.length).toBeGreaterThan(2);
+  const approval = {
+    id: "approval",
+    role: "tool" as const,
+    text: "Approve command",
+    approval: { decided: false },
+  };
+  s.store.save(
+    {
+      ...current,
+      revision: current.revision + 1,
+      status: "running",
+      session: { ...current.session, blocks: [approval as never, ...blocks] },
+    },
+    { type: "test" },
+  );
+  const waiting = (
+    await s.call("sessions.get", { sessionId: current.session.id, preview: true, summary: true })
+  ).value.result;
+  expect(
+    waiting.session.blocks.some(
+      (block: { approval?: { decided?: boolean } }) => block.approval && !block.approval.decided,
+    ),
+  ).toBe(true);
+});
+
+it("advertises durable attachment ownership and scopes release to the authenticated claim generation", async () => {
+  const s = await setup();
+  const descriptor = (await s.call("environment.describe")).value.result;
+  expect(descriptor.capabilities).toContain("attachments.ownership.v1");
+  const id = "ffffffff-ffff-4fff-8fff-ffffffffffff";
+  const owner = { ids: [id], ownerId: "composer-session", claimId: "generation-A" };
+  expect((await s.call("attachments.claim", owner)).value.result).toEqual({ claimed: true });
+  const bytes = Buffer.from("attachment");
+  expect(
+    (
+      await s.call("attachments.upload", {
+        id,
+        ownerId: owner.ownerId,
+        claimId: owner.claimId,
+        offset: 0,
+        size: bytes.length,
+        data: bytes.toString("base64"),
+      })
+    ).value.result.offset,
+  ).toBe(bytes.length);
+  expect(
+    s.store.db.prepare("SELECT complete FROM attachment_ownership_files WHERE id=?").get(id)
+      ?.complete,
+  ).toBe(1);
+  await s.call("attachments.release", owner, s.second.token);
+  expect(
+    s.store.db
+      .prepare("SELECT count(*) AS count FROM attachment_ownership_claims WHERE id=?")
+      .get(id)?.count,
+  ).toBe(1);
+  await s.call("attachments.claim", { ...owner, claimId: "generation-B" });
+  await s.call("attachments.release", owner);
+  const remaining = s.store.db
+    .prepare("SELECT principal,claim_id FROM attachment_ownership_claims WHERE id=?")
+    .all(id);
+  expect(remaining).toHaveLength(1);
+  expect(remaining[0].claim_id).toBe("generation-B");
+  expect(String(remaining[0].principal)).toMatch(/^[0-9a-f]{64}$/);
+  expect(
+    (await s.call("attachments.claim", { ...owner, ownerId: "x".repeat(129) })).value.error,
+  ).toBe("Invalid attachment owner ID");
+});
+
+it("claims host queue attachment exports before returning an offline-editable snapshot", async () => {
+  const s = await setup();
+  const created = s.engine.command({
+    type: "create",
+    commandId: "owned-queue",
+    projectId: s.project.id,
+    harness: "codex",
+    model: "codex:test",
+    runtimeMode: "supervised",
+  });
+  const id = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee";
+  await s.call("attachments.upload", {
+    id,
+    ownerId: "composer",
+    claimId: "source-generation",
+    offset: 0,
+    size: 3,
+    data: Buffer.from("abc").toString("base64"),
+  });
+  const messages = [
+    {
+      id: "queued",
+      text: "Later",
+      attachments: [{ id, name: "file.txt", mimeType: "text/plain", kind: "file", size: 3 }],
+    },
+  ];
+  s.store.db
+    .prepare("INSERT INTO session_queues VALUES(?,?)")
+    .run(created.sessionId, JSON.stringify({ messages, revision: 1 }));
+  const response = await s.call(
+    "sessions.queue.get",
+    {
+      sessionId: created.sessionId,
+      clientId: "reader",
+      ownerId: "queue-view",
+      claimId: "view-generation",
+    },
+    s.second.token,
+  );
+  expect(response.value.result.messages).toEqual(messages);
+  expect((await s.call("attachments.claims", { ownerId: "queue-view" })).value.result).toEqual({
+    claims: [],
+  });
+  expect(
+    (await s.call("attachments.claims", { ownerId: "queue-view" }, s.second.token)).value.result,
+  ).toEqual({ claims: [{ id, claimId: "view-generation" }] });
+  expect(
+    (
+      await s.call(
+        "attachments.claims",
+        { ownerId: "queue-view", after: { id: "invalid", claimId: "" } },
+        s.second.token,
+      )
+    ).value.error,
+  ).toBe("Invalid attachment claims cursor");
+  expect(
+    s.store.db
+      .prepare(
+        "SELECT claim_id FROM attachment_ownership_claims WHERE id=? AND owner_id='queue-view'",
+      )
+      .get(id)?.claim_id,
+  ).toBe("view-generation");
+  expect(
+    s.store.db.prepare("SELECT legacy FROM attachment_ownership_files WHERE id=?").get(id)?.legacy,
+  ).toBe(0);
+  const changed = await s.call(
+    "sessions.queue.change",
+    {
+      sessionId: created.sessionId,
+      clientId: "reader",
+      ownerId: "queue-view",
+      claimId: "view-generation",
+      before: response.value.result,
+      after: response.value.result,
+    },
+    s.second.token,
+  );
+  expect(changed.value.error).toBeUndefined();
+  expect(
+    s.store.db.prepare("SELECT legacy FROM attachment_ownership_files WHERE id=?").get(id)?.legacy,
+  ).toBe(0);
+  await s.call("sessions.queue.get", { sessionId: created.sessionId, clientId: "legacy-reader" });
+  expect(
+    s.store.db.prepare("SELECT legacy FROM attachment_ownership_files WHERE id=?").get(id)?.legacy,
+  ).toBe(1);
+});

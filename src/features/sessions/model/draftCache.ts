@@ -88,6 +88,9 @@ export function setComposerMcpTags(sessionId: string, tags: McpTag[]): void {
 export function getComposerAttachments(sessionId: string): Attachment[] {
   return attachments.get(sessionId) ?? [];
 }
+export function allComposerAttachmentIds(): string[] {
+  return [...new Set([...attachments.values()].flatMap((files) => files.map((file) => file.id)))];
+}
 
 export function setComposerAttachments(sessionId: string, files: Attachment[]): void {
   if (files.length > 0) {

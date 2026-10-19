@@ -110,6 +110,7 @@ async function promptOnLive(input: TextPromptInput): Promise<string> {
   session.collecting = true;
   session.onEvent = input.onEvent;
   const timeoutMs = input.timeoutMs ?? REQUEST_TIMEOUT_MS;
+  let timeout: ReturnType<typeof setTimeout> | undefined;
   let abortHandler: (() => void) | undefined;
   const abortPromise = input.signal
     ? new Promise<void>((_, reject) => {
@@ -148,7 +149,7 @@ async function promptOnLive(input: TextPromptInput): Promise<string> {
     await Promise.race([
       turnPromise,
       new Promise<void>((_, reject) => {
-        setTimeout(() => reject(new Error("Codex text generation timed out")), timeoutMs);
+        timeout = setTimeout(() => reject(new Error("Codex text generation timed out")), timeoutMs);
       }),
       ...(abortPromise ? [abortPromise] : []),
     ]);
@@ -161,6 +162,7 @@ async function promptOnLive(input: TextPromptInput): Promise<string> {
     if (session.closed) await dropLive();
     throw error;
   } finally {
+    clearTimeout(timeout);
     if (abortHandler && input.signal) {
       input.signal.removeEventListener("abort", abortHandler);
     }

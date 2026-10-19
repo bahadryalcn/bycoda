@@ -81,8 +81,13 @@ Connect another computer using an SSH forward to the loopback port.`);
   }
   if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error("Invalid port");
   const { protectWindowsDirectory } = await import("./windows");
-  const { connectionInfo, installService, uninstallService, stopHostWithServicePolicy } =
-    await import("./service");
+  const {
+    connectionInfo,
+    installService,
+    uninstallService,
+    stopHostWithServicePolicy,
+    stopWindowsHostForUninstall,
+  } = await import("./service");
   mkdirSync(directory, { recursive: true, mode: 0o700 });
   if (process.platform === "win32") await protectWindowsDirectory(directory);
   else chmodSync(directory, 0o700);
@@ -95,15 +100,25 @@ Connect another computer using an SSH forward to the loopback port.`);
     let notes = process.platform === "win32" ? [] : await uninstallService();
     // Also stops a manually started host, or one the service manager left.
     const state = readRunning();
+    let exitedState: Running | undefined;
     if (state) {
-      if (process.platform === "win32") await lifecycle(state, "stop");
-      else await lifecycle(state, "stop").catch(() => undefined);
-      for (let i = 0; i < 200 && existsSync(statePath); i++)
+      if (process.platform === "win32") {
+        const stopped = await stopWindowsHostForUninstall(state.pid, () =>
+          lifecycle(state, "stop"),
+        );
+        if (!stopped) {
+          if (readRunning()?.pid !== state.pid)
+            throw new Error("The host restarted during shutdown; retry service uninstall.");
+          exitedState = state;
+        }
+      } else await lifecycle(state, "stop").catch(() => undefined);
+      for (let i = 0; !exitedState && i < 200 && existsSync(statePath); i++)
         await new Promise((resolve) => setTimeout(resolve, 100));
-      if (process.platform === "win32" && existsSync(statePath))
+      if (process.platform === "win32" && !exitedState && existsSync(statePath))
         throw new Error("The old host did not finish shutting down; service paths were preserved.");
     }
     if (process.platform === "win32") notes = await uninstallService();
+    if (exitedState && readRunning()?.pid === exitedState.pid) rmSync(statePath, { force: true });
     console.log(
       [
         existsSync(statePath)

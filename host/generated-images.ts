@@ -2,7 +2,7 @@ import { mkdir, writeFile, unlink } from "node:fs/promises";
 import { join, resolve, dirname } from "node:path";
 import { randomUUID } from "node:crypto";
 
-const MAX_BYTES = 25 * 1024 * 1024;
+import { MAX_REMOTE_ATTACHMENT_BYTES as MAX_BYTES } from "./attachments";
 const PNG = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
 
 export async function saveHostGeneratedImage(
@@ -10,14 +10,12 @@ export async function saveHostGeneratedImage(
   input: { data: string; name: string },
 ) {
   if (input.data.length > 4 * Math.ceil(MAX_BYTES / 3) + 4)
-    throw new Error("Generated image exceeds 25 MiB");
+    throw new Error("Generated image exceeds the remote attachment limit");
   const encoded = input.data.replace(/\s/g, "");
   const bytes = Buffer.from(encoded, "base64");
-  if (
-    bytes.toString("base64") !== encoded ||
-    bytes.length > MAX_BYTES ||
-    !bytes.subarray(0, 8).equals(PNG)
-  )
+  if (bytes.length > MAX_BYTES)
+    throw new Error("Generated image exceeds the remote attachment limit");
+  if (bytes.toString("base64") !== encoded || !bytes.subarray(0, 8).equals(PNG))
     throw new Error("Generated image data is not a valid base64 PNG image");
   await mkdir(directory, { recursive: true, mode: 0o700 });
   const path = join(directory, randomUUID());

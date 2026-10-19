@@ -1,4 +1,5 @@
 /** Browser-only PTY transport. The terminal renderer and search addon are real. */
+export async function readyPtyBridge() {}
 export async function spawnPty() {}
 export async function killPty() {}
 export async function resizePty() {}

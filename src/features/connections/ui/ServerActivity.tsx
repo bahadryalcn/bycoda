@@ -6,18 +6,25 @@ import { Star } from "../../../shared/ui/icons";
 import { bookmarkServerActivity, type ServerRecord } from "../model/serverInventory";
 
 /** Metadata only. Never receives or stores terminal command/output contents. */
-export function ServerActivity({ server }: { server: ServerRecord }) {
+export function ServerActivity({
+  server,
+  expanded = false,
+}: {
+  server: ServerRecord;
+  expanded?: boolean;
+}) {
   const [pending, setPending] = useState<string>();
   const [error, setError] = useState("");
   const activity = server.metadata.activity ?? [];
   return (
-    <details className="mbs-3 border-t border-stroke pbs-3 text-xs">
-      <summary className="cursor-pointer text-(--ui-text-muted)">
+    <details open={expanded || undefined} className="text-xs">
+      <summary className="cursor-pointer py-1 font-medium">
         {t("Connection activity")} ({activity.length})
       </summary>
-      <p className="mbs-2 text-(--ui-text-muted)">
-        {t("Launch metadata only. Terminal contents are not recorded.")}
-      </p>
+      <details className="mbs-2 text-(--ui-text-muted)">
+        <summary className="cursor-pointer">{t("About connection activity")}</summary>
+        <p className="mbs-2">{t("Launch metadata only. Terminal contents are not recorded.")}</p>
+      </details>
       {error ? (
         <p className="mbs-2 text-(--ui-tone-danger-fg)" role="alert">
           {error}

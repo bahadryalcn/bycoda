@@ -72,6 +72,18 @@ export async function saveSshConnection(input: {
   refreshServerInventory();
   return result;
 }
+/** Save a key binding without replacing endpoint or organization fields. */
+export async function setServerSshIdentity(
+  id: string,
+  identityFile?: string,
+): Promise<ServerRecord> {
+  const result = await invoke<ServerRecord>("server_ssh_identity_set", {
+    id,
+    identityFile: identityFile ?? null,
+  });
+  refreshServerInventory();
+  return result;
+}
 export async function updateServerMetadata(
   id: string,
   metadata: Partial<ServerMetadata>,

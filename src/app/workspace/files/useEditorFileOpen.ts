@@ -1,5 +1,6 @@
 import {
   useCallback,
+  useRef,
   type Dispatch,
   type MutableRefObject,
   type SetStateAction,
@@ -8,10 +9,7 @@ import { flushSync } from "react-dom";
 import { loadFileTabMode } from "../../../features/settings/model/settings";
 import { planTitle } from "../../../features/sessions/model/plan";
 import { sessionWorkCwd, type Session } from "../../../features/sessions/model/session";
-import {
-  isLocalDirectory,
-  openPathWithDefaultApp,
-} from "../../../platform/tauri/fs";
+import { isLocalDirectory, openPathWithDefaultApp } from "../../../platform/tauri/fs";
 import {
   newEditorWorkspaceTab,
   newFileTab,
@@ -46,7 +44,10 @@ export interface EditorFileOpenDeps {
 
 export interface EditorFileOpen {
   onOpenFile: (
-    ...args: [...Parameters<OpenFileFn>, checkout?: { cwd: string; projectCwd: string; external?: boolean }]
+    ...args: [
+      ...Parameters<OpenFileFn>,
+      checkout?: { cwd: string; projectCwd: string; external?: boolean },
+    ]
   ) => void;
   onOpenPlan: (sessionId: string, blockId: string) => void;
 }
@@ -70,10 +71,27 @@ export function useEditorFileOpen(deps: EditorFileOpenDeps): EditorFileOpen {
     editorNavigationToken,
   } = deps;
 
+  const openRequest = useRef(0);
+  const lastOpenedLocation = useRef<{
+    request: number;
+    origin: string;
+    tab: string;
+    focus?: string;
+  } | null>(null);
   const onOpenFile = useCallback<
-    (...args: [...Parameters<OpenFileFn>, checkout?: { cwd: string; projectCwd: string; external?: boolean }]) => void
+    (
+      ...args: [
+        ...Parameters<OpenFileFn>,
+        checkout?: { cwd: string; projectCwd: string; external?: boolean },
+      ]
+    ) => void
   >(
     (path, navigation, options, checkout) => {
+      const request = ++openRequest.current;
+      const originTabId = activeTabIdRef.current;
+      const originProject = sidebarCwdRef.current;
+      const originTab = tabsRef.current.find((entry) => entry.id === originTabId);
+      const originFocus = originTab?.focusedId;
       void (async () => {
         const fileCwd = checkout?.cwd ?? gitCwdRef.current;
         const fileProjectCwd = checkout?.projectCwd ?? sidebarCwdRef.current;
@@ -82,19 +100,37 @@ export function useEditorFileOpen(deps: EditorFileOpenDeps): EditorFileOpen {
         // system's file manager instead.
         // Native external drops have already checked this path. A second IPC
         // round trip delays the tab without adding another validation.
-        if (!checkout?.external && await isLocalDirectory(resolved)) {
+        if (!checkout?.external && (await isLocalDirectory(resolved))) {
           void openPathWithDefaultApp(resolved).catch((error) => {
             console.error("Failed to open folder:", error);
           });
           return;
         }
+        // Older pinned requests in one batch still belong to the original pane,
+        // even when the latest request already activated its destination.
+        const latest = lastOpenedLocation.current;
+        const followsBatchOpen =
+          !!options?.pin &&
+          latest?.origin === originTabId &&
+          latest.request > request &&
+          activeTabIdRef.current === latest.tab &&
+          tabsRef.current.find((entry) => entry.id === latest.tab)?.focusedId === latest.focus;
+        // Ignore superseded navigation and requests whose origin has disappeared.
+        if (
+          (!options?.pin && request !== openRequest.current) ||
+          (activeTabIdRef.current !== originTabId && !followsBatchOpen) ||
+          sidebarCwdRef.current !== originProject
+        )
+          return;
+        const tab = tabsRef.current.find((entry) => entry.id === originTabId);
+        if (originTab && (!tab || (tab.focusedId !== originFocus && !followsBatchOpen))) return;
         rememberOpenedFile(fileCwd, resolved);
-        const tab = tabsRef.current.find((entry) => entry.id === activeTabIdRef.current);
         const file = {
           ...newFileTab(resolved, fileCwd, false, undefined, fileProjectCwd),
           ...(checkout?.external ? { external: true } : {}),
         };
         const pin = !!options?.pin;
+        const foreground = request === openRequest.current;
         if (checkout || loadFileTabMode() === "workspace") {
           // Built once: the updater may run twice in StrictMode.
           const created = newEditorWorkspaceTab(pin ? file : { ...file, preview: true });
@@ -112,11 +148,21 @@ export function useEditorFileOpen(deps: EditorFileOpenDeps): EditorFileOpen {
                 pin,
               );
               target = result;
-              return result.tabs;
+              return foreground ? result.tabs : preserveOpenFocus(prev, result.tabs);
             });
           });
+          if (!foreground) return;
           if (target?.paneId) activateTab(target.tabId, target.paneId);
           else if (target) setActiveTabId(target.tabId);
+          if (target) {
+            const tabId = target.tabId;
+            lastOpenedLocation.current = {
+              request,
+              origin: originTabId,
+              tab: tabId,
+              focus: tabsRef.current.find((entry) => entry.id === tabId)?.focusedId,
+            };
+          }
           setProjectTerminalFocused(false);
           setComposerFocused(false);
           if (navigation) {
@@ -130,18 +176,37 @@ export function useEditorFileOpen(deps: EditorFileOpenDeps): EditorFileOpen {
           return;
         }
         if (!tab) return;
-        setTabs((prev) =>
-          prev.map((entry) => {
-            if (entry.id !== tab.id) return entry;
-            const focusedSession = sessionsRef.current.find(
-              (session) => session.id === entry.focusedId,
-            );
-            return openEditorTab(entry, file, {
-              split: focusedSession?.blocks.length === 0 ? "left" : "right",
-              pin,
-            });
-          }),
+        flushSync(() =>
+          setTabs((prev) =>
+            prev.map((entry) => {
+              if (entry.id !== tab.id) return entry;
+              const focusedSession = sessionsRef.current.find(
+                (session) => session.id === entry.focusedId,
+              );
+              const opened = openEditorTab(entry, file, {
+                split: focusedSession?.blocks.length === 0 ? "left" : "right",
+                pin,
+              });
+              return foreground
+                ? opened
+                : {
+                    ...opened,
+                    focusedId: entry.focusedId,
+                    editorPanes: opened.editorPanes.map((pane) => {
+                      const previous = entry.editorPanes.find((old) => old.id === pane.id);
+                      return previous ? { ...pane, activeFileId: previous.activeFileId } : pane;
+                    }),
+                  };
+            }),
+          ),
         );
+        if (!foreground) return;
+        lastOpenedLocation.current = {
+          request,
+          origin: originTabId,
+          tab: tab.id,
+          focus: tabsRef.current.find((entry) => entry.id === tab.id)?.focusedId,
+        };
         if (navigation) {
           editorNavigationToken.current += 1;
           setEditorNavigation({
@@ -151,7 +216,7 @@ export function useEditorFileOpen(deps: EditorFileOpenDeps): EditorFileOpen {
           });
         }
         setComposerFocused(false);
-      })();
+      })().catch((error) => console.error("Failed to open file:", error));
     },
     [activateTab, insertBesideActive],
   );
@@ -176,4 +241,19 @@ export function useEditorFileOpen(deps: EditorFileOpenDeps): EditorFileOpen {
 
   useExternalFileDrop(onOpenFile);
   return { onOpenFile, onOpenPlan };
+}
+
+function preserveOpenFocus(previous: WorkspaceTab[], next: WorkspaceTab[]): WorkspaceTab[] {
+  return next.map((tab) => {
+    const old = previous.find((entry) => entry.id === tab.id);
+    if (!old) return tab;
+    return {
+      ...tab,
+      focusedId: old.focusedId,
+      editorPanes: tab.editorPanes.map((pane) => {
+        const prior = old.editorPanes.find((entry) => entry.id === pane.id);
+        return prior ? { ...pane, activeFileId: prior.activeFileId } : pane;
+      }),
+    };
+  });
 }

@@ -30,12 +30,14 @@ vi.mock("../../../app/shell/TitleBar", () => ({ OverlayNav: () => null }));
 vi.mock("@tauri-apps/api/core", () => ({ invoke: mocks.invoke }));
 vi.mock("@tauri-apps/plugin-opener", () => ({ openUrl: mocks.openUrl }));
 vi.mock("../../connections/model/connections", () => ({
-  remoteRequest: (id: string) => mocks.projects(id),
+  remoteRequest: (id: string, method: string, params: unknown, fresh?: boolean) =>
+    mocks.projects(id, method, params, fresh),
 }));
 vi.mock("../model/socialClient", () => ({
   socialClient: (id: string) => ({
     snapshot: () => mocks.snapshot(id),
-    workspaceSnapshot: (input: unknown) => mocks.workspaceSnapshot(id, input),
+    workspaceSnapshot: (input: unknown, fresh?: boolean) =>
+      mocks.workspaceSnapshot(id, input, fresh),
     request: mocks.request,
     oauthAvailability: mocks.availability,
     oauthBegin: mocks.oauthBegin,
@@ -391,6 +393,32 @@ describe("Sosyal Medya ürün ekranı", () => {
     expect(container.textContent).toContain("Saved campaign");
     expect(container.querySelector('[role="alert"]')?.textContent).toContain("Host offline");
     expect(container.textContent).toContain("Son veriler gösteriliyor");
+  });
+
+  it("preserves the host failure when both social and project reads fail, then retries fresh", async () => {
+    mocks.snapshot.mockRejectedValue(new Error("Machine is unreachable"));
+    mocks.projects.mockRejectedValue(new Error("Projects unavailable"));
+    await mount();
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain(
+      "Machine is unreachable",
+    );
+    expect(container.textContent).not.toContain("Proje listesi yenilenemedi");
+    mocks.snapshot.mockResolvedValue(empty());
+    mocks.projects.mockResolvedValue([]);
+    await click("Tekrar dene");
+    expect(mocks.workspaceSnapshot).toHaveBeenLastCalledWith("one", expect.anything(), true);
+    expect(mocks.projects).toHaveBeenLastCalledWith("one", "projects.list", {}, true);
+    expect(container.querySelector('[role="alert"]')).toBeNull();
+    expect(container.textContent).not.toContain("Host bağlantısı gerekli");
+  });
+
+  it("shows a project read failure without hiding the loaded social workspace", async () => {
+    mocks.projects.mockRejectedValue(new Error("Project access denied"));
+    await mount();
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain(
+      "Project access denied",
+    );
+    expect(container.textContent).not.toContain("Host bağlantısı gerekli");
   });
 
   it("YouTube channel selection opens video fields with private visibility and no automatic sends", async () => {

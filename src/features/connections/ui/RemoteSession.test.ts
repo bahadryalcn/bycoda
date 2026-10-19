@@ -55,7 +55,8 @@ vi.mock("@tauri-apps/api/core", () => ({
 }));
 vi.mock("../../../app/shell/WindowControls", () => ({ WindowControls: () => null }));
 vi.mock("@tauri-apps/api/window", () => ({
-  getCurrentWindow: () => ({ setTitle: async () => {} }),
+  getCurrentWindow: () => ({ label: "main", setTitle: async () => {} }),
+  getAllWindows: async () => [{ label: "main" }],
 }));
 vi.mock("../model/remotePageCache", () => ({
   readRemotePageCache: vi.fn(),
@@ -171,6 +172,7 @@ let host: HostSession | undefined;
 let catalog: HostModelCatalog | Error;
 let providers: HostDescriptor["providers"];
 let harnessSwitchSupported = false;
+let attachmentOwnershipSupported = false;
 let steerSupported = false;
 let lazyHistorySupported = false;
 let inlineSyncSupported = false;
@@ -219,6 +221,7 @@ beforeEach(() => {
   resetDisabledModels();
   resetHarnessModelOverlays();
   harnessSwitchSupported = false;
+  attachmentOwnershipSupported = false;
   steerSupported = false;
   lazyHistorySupported = false;
   conversationRewindSupported = false;
@@ -258,6 +261,14 @@ beforeEach(() => {
     cwd: "/home/me/repo",
   }).key;
   vi.mocked(invoke).mockImplementation(async (command, input) => {
+    if (command === "session_attachment_references")
+      return {
+        draftIds: [],
+        queues: Object.fromEntries(
+          (input as { queueSessionIds: string[] }).queueSessionIds.map((id) => [id, []]),
+        ),
+      };
+    if (command === "session_list_drafts") return [];
     if (command === "remote_machines") return [machine];
     if (command === "session_get_queue") {
       if (queueReadFailed) throw new Error("queue storage unavailable");
@@ -302,6 +313,7 @@ beforeEach(() => {
         providers,
         capabilities: [
           "attachments.upload",
+          ...(attachmentOwnershipSupported ? ["attachments.ownership.v1"] : []),
           "sessions.plan",
           "sessions.draft",
           ...(steerSupported ? ["sessions.steer"] : []),
@@ -466,6 +478,8 @@ beforeEach(() => {
           };
     }
     if (method === "attachments.upload") return { offset: (params as { size: number }).size };
+    if (method === "attachments.claim" || method === "attachments.release") return {};
+    if (method === "attachments.claims") return { claims: [] };
     if (method === "commands.dispatch") {
       if (dispatchDelay && params.type !== "cancel") await dispatchDelay;
       if (params.type === "steer" && steerFailure) throw new Error(steerFailure);
@@ -3038,3 +3052,53 @@ it.each(["inline", "mismatched", "legacy"] as const)(
     }
   },
 );
+
+it("releases desktop attachment ownership only after a successful host handoff", async () => {
+  attachmentOwnershipSupported = true;
+  openExistingChat();
+  await renderRemoteProbe();
+  await act(async () => {
+    expect(
+      remoteOverrides.onSubmit!("shell", "managed attachment", [
+        {
+          id: "managed-handoff-file",
+          name: "note.txt",
+          kind: "file",
+          mimeType: "text/plain",
+          size: 1,
+          data: "eA==",
+        },
+      ]),
+    ).toBe(true);
+  });
+  await vi.waitFor(() => expect(sends()).toHaveLength(1));
+  await settle();
+  const requests = vi
+    .mocked(invoke)
+    .mock.calls.filter(([method]) => method === "remote_request")
+    .map(([, input]) => input as { method: string; params: Record<string, unknown> });
+  const claim = requests.find(
+    (request) =>
+      request.method === "attachments.claim" &&
+      (request.params.ids as string[])?.includes("managed-handoff-file"),
+  );
+  const upload = requests.find((request) => request.method === "attachments.upload");
+  const release = requests.find(
+    (request) =>
+      request.method === "attachments.release" &&
+      (request.params.ids as string[])?.includes("managed-handoff-file"),
+  );
+  expect(claim).toBeDefined();
+  expect(upload?.params).toMatchObject({
+    ownerId: claim!.params.ownerId,
+    claimId: claim!.params.claimId,
+  });
+  expect(release?.params).toMatchObject({
+    ownerId: claim!.params.ownerId,
+    claimId: claim!.params.claimId,
+  });
+  expect(requests.indexOf(claim!)).toBeLessThan(requests.indexOf(upload!));
+  expect(requests.indexOf(release!)).toBeGreaterThan(
+    requests.findIndex((request) => request.method === "commands.dispatch"),
+  );
+});

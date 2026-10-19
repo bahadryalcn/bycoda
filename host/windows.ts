@@ -73,11 +73,18 @@ export type WindowsServiceOptions = {
   entry: string;
 };
 
+export function windowsServiceRunner(options: WindowsServiceOptions, path: string): string {
+  // Windows PowerShell 5.1 treats redirected native stderr as ErrorRecords.
+  // A provider diagnostic must be logged without terminating the host pipeline.
+  // The native exit code, rather than stderr output, decides service recovery.
+  return `$ErrorActionPreference = 'Stop'\n$env:PATH = ${psQuote(path)}\n$global:LASTEXITCODE = 1\n$ErrorActionPreference = 'Continue'\n& ${psQuote(options.executable)} ${[options.entry, "serve", "--data-dir", options.directory, "--port", String(options.port)].map(psQuote).join(" ")} >> ${psQuote(join(options.directory, "host.log"))} 2>&1\nexit $global:LASTEXITCODE`;
+}
+
 /** Task Scheduler owns the process, independently of the SSH session. An
  * interactive token preserves this user's normal network/credential access.
  * S4U cannot access network or encrypted files and is unsuitable for agents. */
 export function windowsTaskScript(options: WindowsServiceOptions, path: string): string {
-  const runner = `$ErrorActionPreference = 'Stop'\n$env:PATH = ${psQuote(path)}\n& ${psQuote(options.executable)} ${[options.entry, "serve", "--data-dir", options.directory, "--port", String(options.port)].map(psQuote).join(" ")} >> ${psQuote(join(options.directory, "host.log"))} 2>&1\nexit $LASTEXITCODE`;
+  const runner = windowsServiceRunner(options, path);
   const runnerPath = join(options.directory, "service.ps1");
   const launcher = `$ErrorActionPreference = 'Stop'; try { & ([ScriptBlock]::Create([IO.File]::ReadAllText(${psQuote(runnerPath)}))) } catch { [Console]::Error.WriteLine($_.Exception.Message); exit 1 }`;
   const launcherPath = join(options.directory, "service-launcher-v3.exe");

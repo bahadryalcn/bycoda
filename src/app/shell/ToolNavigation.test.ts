@@ -45,19 +45,36 @@ async function mount(
   return { container, onSelect };
 }
 
-it("includes Servers in the main workspace and keeps its header local", async () => {
+it("includes Servers in the main workspace and offers the combined tools window", async () => {
   const { container, onSelect } = await mount(true, true, "servers", true);
   expect(container.querySelectorAll('[role="tab"]')).toHaveLength(6);
   const selected = container.querySelector<HTMLButtonElement>('[aria-selected="true"]')!;
   expect(selected.textContent).toBe("Servers");
   expect(container.querySelector('[aria-label="Open in new window"]')).toBeNull();
-  expect(container.querySelector('[aria-label="Open all tools in one window"]')).toBeNull();
+  expect(container.querySelector('[aria-label="Open all tools in one window"]')).not.toBeNull();
   await act(() =>
     selected.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true })),
   );
   expect(onSelect).toHaveBeenCalledWith("social");
   expect(invoke).not.toHaveBeenCalled();
 });
+
+it.each([false, true])(
+  "opens or reveals the combined tools window from Servers (existing: %s)",
+  async (existing) => {
+    vi.mocked(routeWindowDestination).mockResolvedValueOnce(existing);
+    const { container } = await mount(true, true, "servers", true);
+    await act(() =>
+      container
+        .querySelector<HTMLButtonElement>('[aria-label="Open all tools in one window"]')!
+        .click(),
+    );
+    const destination = { tool: "social", cwd: "/repo", grouped: true };
+    expect(routeWindowDestination).toHaveBeenCalledWith({ kind: "tool", ...destination });
+    if (existing) expect(invoke).not.toHaveBeenCalled();
+    else expect(invoke).toHaveBeenCalledWith("open_tool_window", destination);
+  },
+);
 
 it("hands keyboard focus to the header of the newly visible retained tool", async () => {
   function Workspace() {

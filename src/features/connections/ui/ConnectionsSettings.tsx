@@ -562,22 +562,12 @@ ${t("The new address is saved. Edit it again, or choose Reconnect to retry.")}`
                 {"SSH"}
               </span>
             </div>
-            <p className="text-[12px] leading-relaxed text-(--ui-text-muted)">
+            <p className="text-xs text-(--ui-text-muted)">
               {editing
-                ? t(
-                    "Changes apply to this machine. To connect a different computer, choose Add machine.",
-                  )
-                : t(
-                    "Connect a different computer with its own SSH address. Existing machines stay saved.",
-                  )}
+                ? t("Saving reconnects this machine with the updated address.")
+                : t("Installs bycoda Host over SSH so you can run agents on this machine.")}
             </p>
-            <p className="text-[12px] leading-relaxed text-(--ui-text-muted)">
-              {t(
-                "Enable SSH on the target computer and make sure this computer can reach it with your SSH key or password. Sign in to the agent provider on the target computer before running agents.",
-              )}
-            </p>
-            <label className="flex flex-col gap-1.5 text-[12px] text-(--ui-text-muted)">
-              {t("SSH address")}
+            <div className="flex flex-col gap-1.5 text-xs text-(--ui-text-muted)">
               <TextField
                 autoFocus
                 required
@@ -588,19 +578,21 @@ ${t("The new address is saved. Edit it again, or choose Reconnect to retry.")}`
                 placeholder={t("user@my-mac-mini or an SSH alias")}
                 autoComplete="off"
                 spellCheck={false}
-                label=""
-                hideLabel
+                label={t("SSH address")}
                 fieldClassName="min-w-0 flex-1"
               />
-              <span className="text-[11px] leading-relaxed text-(--ui-text-muted)">
-                {t("A hostname works too, such as a Mac's Bonjour name (")}
-                <code className="rounded bg-(--ui-surface-raised) px-1">
-                  {"user@MacBook-Pro.local"}
-                </code>
-                {t(") or an alias from")}{" "}
-                <code className="rounded bg-(--ui-surface-raised) px-1">{"~/.ssh/config"}</code>
-                {t(". Then the address does not need editing when the IP changes.")}
-              </span>
+              <details className="text-xs leading-relaxed text-(--ui-text-muted)">
+                <summary className="cursor-pointer">{t("Address help")}</summary>
+                <p className="mbs-2">
+                  {t("A hostname works too, such as a Mac's Bonjour name (")}
+                  <code className="rounded bg-(--ui-surface-raised) px-1">
+                    {"user@MacBook-Pro.local"}
+                  </code>
+                  {t(") or an alias from")}{" "}
+                  <code className="rounded bg-(--ui-surface-raised) px-1">{"~/.ssh/config"}</code>
+                  {t(". Then the address does not need editing when the IP changes.")}
+                </p>
+              </details>
               {suggestion && (
                 <Button
                   type="button"
@@ -615,9 +607,8 @@ ${t("The new address is saved. Edit it again, or choose Reconnect to retry.")}`
                   {t(" instead of the IP")}
                 </Button>
               )}
-            </label>
-            <label className="flex flex-col gap-1.5 text-[12px] text-(--ui-text-muted)">
-              {t("Other address (optional)")}
+            </div>
+            <div className="flex flex-col gap-1.5 text-xs text-(--ui-text-muted)">
               <TextField
                 disabled={busy}
 
@@ -626,20 +617,22 @@ ${t("The new address is saved. Edit it again, or choose Reconnect to retry.")}`
                 placeholder={t("Optional, e.g. user@100.64.0.5 (Tailscale)")}
                 autoComplete="off"
                 spellCheck={false}
-                label=""
-                hideLabel
+                label={t("Other address (optional)")}
                 fieldClassName="min-w-0 flex-1"
               />
-              <span className="text-[11px] leading-relaxed text-(--ui-text-muted)">
-                {t(
-                  "Optional fallback for this same machine, such as its Tailscale address. If the first address cannot connect,",
-                )}{" "}
-                {PRODUCT_IDENTITY.displayName}
-                {t(
-                  " automatically tries this one. Both addresses stay saved and use the same SSH port. The other address is checked against this machine's known host key.",
-                )}
-              </span>
-            </label>
+              <details className="text-xs leading-relaxed text-(--ui-text-muted)">
+                <summary className="cursor-pointer">{t("Fallback address help")}</summary>
+                <p className="mbs-2">
+                  {t(
+                    "Optional fallback for this same machine, such as its Tailscale address. If the first address cannot connect,",
+                  )}{" "}
+                  {PRODUCT_IDENTITY.displayName}
+                  {t(
+                    " automatically tries this one. Both addresses stay saved and use the same SSH port. The other address is checked against this machine's known host key.",
+                  )}
+                </p>
+              </details>
+            </div>
             <label className="flex flex-col gap-1.5 text-[12px] text-(--ui-text-muted)">
               {t("Name (optional)")}
               <TextField
@@ -680,8 +673,8 @@ ${t("The new address is saved. Edit it again, or choose Reconnect to retry.")}`
                 </span>
               </label>
             ) : null}
-            <section className="text-[12px] text-(--ui-text-muted)">
-              <h3 className="">{t("Advanced")}</h3>
+            <details className="text-[12px] text-(--ui-text-muted)">
+              <summary className="cursor-pointer py-1">{t("Advanced")}</summary>
               <label className="mt-3 flex max-w-40 flex-col gap-1.5">
                 {t("SSH port")}
                 <NumberField
@@ -698,10 +691,25 @@ ${t("The new address is saved. Edit it again, or choose Reconnect to retry.")}`
                   fieldClassName="min-w-0 flex-1"
                 />
               </label>
-            </section>
-            <section className="text-[12px] text-(--ui-text-muted)">
-              <h3 className="">{t("Connection help")}</h3>
-              <div className="mt-3 flex flex-col gap-2">
+            </details>
+            <details className="text-[12px] text-(--ui-text-muted)">
+              <summary className="cursor-pointer py-1">{t("Connection help")}</summary>
+              <div className="mbs-3 flex flex-col gap-2">
+                <p className="text-[12px] leading-relaxed text-(--ui-text-muted)">
+                  {editing
+                    ? t(
+                        "Changes apply to this machine. To connect a different computer, choose Add machine.",
+                      )
+                    : t(
+                        "Connect a different computer with its own SSH address. Existing machines stay saved.",
+                      )}
+                </p>
+                <p className="text-[12px] leading-relaxed text-(--ui-text-muted)">
+                  {t(
+                    "Enable SSH on the target computer and make sure this computer can reach it with your SSH key or password. Sign in to the agent provider on the target computer before running agents.",
+                  )}
+                </p>
+
                 {editing ? (
                   <p className="text-[12px] leading-relaxed text-(--ui-text-muted)">
                     {t(
@@ -730,7 +738,7 @@ ${t("The new address is saved. Edit it again, or choose Reconnect to retry.")}`
                   </>
                 )}
               </div>
-            </section>
+            </details>
             {error && (
               <Alert role="alert" tone="danger">
                 {error}
@@ -875,8 +883,8 @@ ${t("The new address is saved. Edit it again, or choose Reconnect to retry.")}`
                       probed={status[machine.id]}
                     />
                     <SyncLine machineId={machine.id} />
-                    <section className="connection-details">
-                      <h3>{t("Connection details")}</h3>
+                    <details className="connection-details">
+                      <summary>{t("Connection details")}</summary>
                       {machine.ssh?.alternate && (
                         <div className="mt-1 break-all text-[12px] text-(--ui-text-muted)">
                           {t("Other address · ")}
@@ -906,7 +914,7 @@ ${t("The new address is saved. Edit it again, or choose Reconnect to retry.")}`
                           </span>
                         </div>
                       ) : null}
-                    </section>
+                    </details>
                     {machine.ssh && needsUpdate[machine.id] ? (
                       <div className="mt-1 text-[11px] text-(--ui-text-muted)">
                         {t("Updating restarts the host and interrupts active agent turns.")}

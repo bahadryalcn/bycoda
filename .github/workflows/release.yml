@@ -48,8 +48,24 @@ jobs:
             --title "bycoda ${{ steps.version.outputs.version }}" --notes-file release-notes.md
           echo "id=$(gh release view "${GITHUB_REF_NAME}" --json databaseId --jq .databaseId)" >> "$GITHUB_OUTPUT"
 
-  build:
+  host-service-checks:
     needs: draft
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 12.8.2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Verify Windows host diagnostics and upgrade recovery
+        run: pnpm exec vitest run --config host/vitest.config.ts host/windows.test.ts host/service.test.ts
+
+  build:
+    needs: [draft, host-service-checks]
     strategy:
       fail-fast: false
       matrix:
@@ -73,7 +89,10 @@ jobs:
           targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin' || '' }}
       - uses: Swatinem/rust-cache@v2
         with:
-          key: release-${{ matrix.platform }}
+          # Tags cannot read caches from earlier tags. The default branch's
+          # release-cache workflow seeds this shared key for every release.
+          shared-key: desktop-release-${{ matrix.platform }}
+          save-if: false
       - run: pnpm install --frozen-lockfile
       # The installer ships this platform's host package; the app installs and
       # upgrades its own host from it (src-tauri/src/bundled_host.rs).
@@ -98,7 +117,7 @@ jobs:
 
   # Host packages for every supported machine, for SSH setup and Update Host.
   host-packages:
-    needs: draft
+    needs: [draft, host-service-checks]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

@@ -697,6 +697,7 @@ fn apply_edit(
         remote_port: remote_port.unwrap_or(old.remote_port),
         alternate,
         host_key_alias: None,
+        identity_file: old.identity_file.clone(),
     };
     machine.endpoint = format!("ssh://{}", ssh.target);
     machine.ssh = Some(ssh);
@@ -1348,6 +1349,9 @@ fn supported_remote_method(method: &str) -> bool {
             | "attachments.upload"
             | "attachments.status"
             | "attachments.read"
+            | "attachments.claim"
+            | "attachments.claims"
+            | "attachments.release"
             | "devices.revokeSelf"
             | "git.diff"
             | "git.branches"
@@ -1415,6 +1419,11 @@ fn merge_known_machine(
     named: bool,
 ) {
     machine.id = old.id.clone();
+    // Setup/reconnect may have started before a key was assigned. Keep the
+    // latest saved binding instead of writing the job's older target over it.
+    if let (Some(new), Some(previous)) = (machine.ssh.as_mut(), old.ssh.as_ref()) {
+        new.identity_file = previous.identity_file.clone();
+    }
     if !adding {
         return;
     }
@@ -1716,6 +1725,7 @@ pub fn remote_ssh_begin(
             remote_port: 3776,
             alternate,
             host_key_alias: None,
+            identity_file: None,
         },
         name.trim().chars().take(100).collect(),
         None,
@@ -2140,6 +2150,9 @@ mod tests {
             "git.worktreeCreate",
             "attachments.upload",
             "attachments.read",
+            "attachments.claim",
+            "attachments.claims",
+            "attachments.release",
             "sync.pull",
             "sync.push",
             "social.browser.availability",
@@ -2152,6 +2165,12 @@ mod tests {
         }
         assert!(!supported_remote_method("git.arbitrary"));
         assert!(!supported_remote_method("social.browser.cookies"));
+        for method in ["attachments.claim", "attachments.release"] {
+            assert!(!super::shareable_remote_read(
+                method,
+                &serde_json::json!({})
+            ));
+        }
     }
     #[test]
     fn endpoints_require_an_encrypted_route_and_no_embedded_secrets() {
@@ -2310,6 +2329,7 @@ mod tests {
                 remote_port: 3999,
                 alternate: None,
                 host_key_alias: None,
+                identity_file: None,
             }),
         }
     }
@@ -2317,6 +2337,7 @@ mod tests {
     #[test]
     fn editing_the_address_keeps_identity_and_credentials() {
         let mut machines = vec![saved("a", "me@192.168.1.5"), saved("b", "me@other")];
+        machines[0].ssh.as_mut().unwrap().identity_file = Some("C:/keys/mac".into());
         let edited = apply_edit(
             &mut machines,
             "a",
@@ -2333,6 +2354,7 @@ mod tests {
         assert_eq!(edited.name, "Mac");
         assert_eq!(edited.endpoint, "ssh://me@new.local");
         let ssh = edited.ssh.unwrap();
+        assert_eq!(ssh.identity_file.as_deref(), Some("C:/keys/mac"));
         assert_eq!(
             (ssh.target.as_str(), ssh.port, ssh.remote_port),
             ("me@new.local", Some(2222), 3999)
@@ -2388,12 +2410,16 @@ mod tests {
     }
 
     #[test]
-    fn reconnecting_a_machine_keeps_only_its_identity() {
-        let old = saved("a", "me@home");
+    fn reconnecting_a_machine_keeps_its_identity_and_latest_saved_key() {
+        let mut old = saved("a", "me@home");
+        old.ssh.as_mut().unwrap().identity_file = Some("C:/keys/latest".into());
         let mut again = saved("fresh-id", "me@moved");
+        again.ssh.as_mut().unwrap().identity_file = Some("C:/keys/outdated".into());
         merge_known_machine(&mut again, &old, false, false);
         assert_eq!(again.id, "a");
-        assert_eq!(again.ssh.unwrap().target, "me@moved");
+        let ssh = again.ssh.unwrap();
+        assert_eq!(ssh.target, "me@moved");
+        assert_eq!(ssh.identity_file.as_deref(), Some("C:/keys/latest"));
     }
 
     #[test]

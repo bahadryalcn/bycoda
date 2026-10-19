@@ -1,6 +1,6 @@
 import { runGitText } from "../src/shared/lib/processExecution.node";
 import { createHash, randomUUID } from "node:crypto";
-import { realpathSync, statSync, readFileSync } from "node:fs";
+import { realpathSync, statSync } from "node:fs";
 import { lstat, readdir, readFile } from "node:fs/promises";
 import { setImmediate as yieldFingerprint } from "node:timers/promises";
 import { join } from "node:path";
@@ -40,7 +40,7 @@ import {
   resolveHostWorktreeAsync,
 } from "./git-worktrees";
 import { taskWorkspace } from "./task-workspace";
-import { transferTaskArtifacts } from "./task-artifacts";
+import { hashTaskArtifact, transferTaskArtifacts } from "./task-artifacts";
 import { cleanupTaskWorktree } from "./task-worktree-cleanup";
 import { resolve } from "node:path";
 import { parseTaskWorkspace } from "../src/features/tasks/model/taskWorkspace";
@@ -408,6 +408,7 @@ export class HostTasks {
   private ticking?: Promise<void>;
   /** Verifications in progress, by task. A task keeps one at most. */
   private readonly jobs = new Map<string, Promise<void>>();
+  private readonly jobControllers = new Map<string, AbortController>();
   /** Tasks being merged. */
   private readonly delivering = new Set<string>();
   private readonly mergingProjects = new Set<string>();
@@ -424,7 +425,9 @@ export class HostTasks {
     private readonly now: () => number = Date.now,
     private readonly verifyTimeoutMs = VERIFY_TIMEOUT_MS,
   ) {
-    store.db.exec("CREATE TABLE IF NOT EXISTS tasks (id TEXT PRIMARY KEY, value TEXT NOT NULL);");
+    store.db.exec(
+      "CREATE TABLE IF NOT EXISTS tasks (id TEXT PRIMARY KEY, value TEXT NOT NULL); CREATE INDEX IF NOT EXISTS tasks_project ON tasks(json_extract(value, '$.projectId'));",
+    );
     this.limits = new HostLimits(store, now);
     this.limits.track(() =>
       Array.from(this.taskIndex().values()).flatMap((task) =>
@@ -462,7 +465,8 @@ export class HostTasks {
   private revisionCounter = 0;
   onChange?: () => void;
   private etagCache?: { revision: number; etag: string };
-  private listCache?: { revision: number; byId: Map<string, HostTask> };
+  private listCache?: { revision: number; byId: Map<string, HostTask>; tasks: HostTask[] };
+  private projectListCache = new Map<string, { revision: number; tasks: HostTask[] }>();
   /** Live task state for one scheduler pass, maintained by write/delete. */
   private schedulerTasks?: Map<string, HostTask>;
 
@@ -491,9 +495,25 @@ export class HostTasks {
   }
 
   /** Oldest first. */
-  list(): HostTask[] {
+  list(projectId?: string): HostTask[] {
+    if (projectId !== undefined && !this.schedulerTasks) {
+      const cached = this.projectListCache.get(projectId);
+      if (cached?.revision === this.revisionCounter) return cached.tasks.slice();
+      const tasks = this.store.db
+        .prepare("SELECT value FROM tasks WHERE json_extract(value, '$.projectId')=?")
+        .all(projectId)
+        .map((row) => this.withReviewNotes(JSON.parse(String(row.value)) as HostTask))
+        .sort((a, b) => a.createdAt - b.createdAt);
+      if (this.projectListCache.size >= 32) this.projectListCache.clear();
+      this.projectListCache.set(projectId, { revision: this.revisionCounter, tasks });
+      return tasks.slice();
+    }
+    if (!this.schedulerTasks && this.listCache?.revision === this.revisionCounter)
+      return this.listCache.tasks.slice();
     if (this.schedulerTasks)
-      return Array.from(this.schedulerTasks.values()).sort((a, b) => a.createdAt - b.createdAt);
+      return Array.from(this.schedulerTasks.values())
+        .filter((task) => projectId === undefined || task.projectId === projectId)
+        .sort((a, b) => a.createdAt - b.createdAt);
     const tasks = this.store.db
       .prepare("SELECT value FROM tasks")
       .all()
@@ -502,8 +522,8 @@ export class HostTasks {
       .sort((a, b) => a.createdAt - b.createdAt);
     const byId = new Map(tasks.map((task) => [task.id, task]));
     // Review-note backfills above can themselves bump the revision.
-    this.listCache = { revision: this.revisionCounter, byId };
-    return tasks;
+    this.listCache = { revision: this.revisionCounter, byId, tasks };
+    return tasks.slice();
   }
 
   /** Shared read-only index; task writes invalidate the revision cache. */
@@ -521,6 +541,7 @@ export class HostTasks {
       return this.store.transaction(operation);
     } catch (error) {
       this.listCache = undefined;
+      this.projectListCache.clear();
       if (pass && before) {
         pass.clear();
         for (const [id, task] of before) pass.set(id, task);
@@ -684,6 +705,8 @@ export class HostTasks {
     if (!canMoveTask(task.status, to))
       throw new Error(`A ${task.status} task cannot be moved to ${to}.`);
     const now = this.now();
+    if ((to === "queued" || to === "todo") && this.jobs.has(id))
+      throw new Error("The previous verification is still stopping. Retry after it finishes.");
     if (to === "queued" && !task.prompt.trim()) throw new Error(EMPTY_PROMPT_ERROR);
     if (to === "queued" && canTakeOverBlockedTask(task)) return this.queueTakeover(task, now);
     if (to === "queued" && taskRequiresInstructions(task)) throw new Error(TASK_INPUT_REQUIRED);
@@ -766,8 +789,8 @@ export class HostTasks {
     }
     if (to === "blocked") {
       if (task.status === "verifying") {
-        // A check command still running finishes unheard.
-        this.jobs.delete(id);
+        // Keep the job registered until its shell and descendants have exited.
+        this.jobControllers.get(id)?.abort();
         if (
           task.reviewer &&
           sessionRunState(this.store, task.reviewer, 0, now).state === "running"
@@ -914,6 +937,8 @@ export class HostTasks {
    * which removes that branch and its worktree. */
   async delete(id: string, discard = false): Promise<void> {
     const task = this.find(id);
+    if (this.jobs.has(id))
+      throw new Error("The previous verification is still stopping. Retry after it finishes.");
     if (task?.status === "running" || task?.status === "verifying")
       throw new Error("Stop this task before deleting it.");
     if (task && hasUnmergedBranch(task)) {
@@ -928,6 +953,7 @@ export class HostTasks {
     this.revisionCounter++;
     this.onChange?.();
     this.listCache = undefined;
+    this.projectListCache.clear();
     this.schedulerTasks?.delete(id);
   }
 
@@ -1022,6 +1048,8 @@ export class HostTasks {
    * with `reason`. Anything else is left as it is. */
   async cancel(id: string, reason: string): Promise<void> {
     const task = this.find(id);
+    if (this.jobs.has(id))
+      throw new Error("The previous verification is still stopping. Retry after it finishes.");
     if (task?.status === "running" || task?.status === "verifying") await this.move(id, "blocked");
     else if (
       task?.status === "queued" ||
@@ -1045,6 +1073,8 @@ export class HostTasks {
     const now = this.now();
     // Refresh once per tick, including persisted recovery edits made outside
     // this board. All later reads in this pass use the live index below.
+    this.listCache = undefined;
+    this.projectListCache.clear();
     const initial = this.list();
     const byId = this.listCache!.byId;
     this.schedulerTasks = byId;
@@ -1110,7 +1140,7 @@ export class HostTasks {
     for (const candidate of tasks) {
       // An awaited launch may have allowed edits/deletions to later tasks.
       let task = byId.get(candidate.id);
-      if (!task) continue;
+      if (!task || this.jobs.has(task.id)) continue;
       if (active.length >= maxRunningTasks) break;
       if (
         takeoverCandidates.has(task.id) &&
@@ -1284,6 +1314,7 @@ export class HostTasks {
     this.revisionCounter++;
     this.onChange?.();
     this.listCache = undefined;
+    this.projectListCache.clear();
     this.schedulerTasks?.set(task.id, task);
     return task;
   }
@@ -1745,6 +1776,9 @@ export class HostTasks {
    * runs the check command, then hands over to the reviewer or to review. */
   private verify(task: HostTask): void {
     const { id } = task;
+    if (this.jobs.has(id)) return;
+    const controller = new AbortController();
+    this.jobControllers.set(id, controller);
     /** The task, while this job still owns its verification. */
     const current = () => {
       const latest = this.jobs.get(id) === job ? this.find(id) : undefined;
@@ -1753,12 +1787,29 @@ export class HostTasks {
     const run = async () => {
       // Lets the job be registered before it first asks whether it owns the task.
       await null;
+      if (controller.signal.aborted) return;
       const project = this.store.project(task.projectId);
       const cwd = task.worktreeCwd ?? project.cwd;
       if (hasUnmergedBranch(task)) await commitLeftovers(cwd, task.branch!, task.title);
       const verification: TaskVerification = {};
       if (task.verifyCommand) {
-        const result = await runHostShell(cwd, task.verifyCommand, this.verifyTimeoutMs);
+        const result = await runHostShell(
+          cwd,
+          task.verifyCommand,
+          this.verifyTimeoutMs,
+          undefined,
+          controller.signal,
+          (message) => {
+            const latest = this.find(id);
+            if (latest?.status === "blocked")
+              this.write({
+                ...latest,
+                error: `The verification command tree could not be stopped. ${message} Inspect host diagnostics before retrying.`,
+                updatedAt: this.now(),
+              });
+          },
+        );
+        if (controller.signal.aborted) return;
         verification.command = {
           exitCode: result.exitCode,
           output: result.output.slice(-VERIFY_OUTPUT_LIMIT),
@@ -1851,7 +1902,10 @@ export class HostTasks {
       })
       .catch((error) => console.error("Could not verify a task:", errorMessage(error)))
       .finally(() => {
-        if (this.jobs.get(id) === job) this.jobs.delete(id);
+        if (this.jobs.get(id) === job) {
+          this.jobs.delete(id);
+          this.jobControllers.delete(id);
+        }
       });
     this.jobs.set(id, job);
   }
@@ -2368,14 +2422,8 @@ export class HostTasks {
         cwd = await resolveHostWorktreeAsync(project.cwd, task.deliveryCwd);
         if (!task.baseBranch) throw new Error("This task does not know which branch it left.");
         if (task.worktreeCwd) artifactPaths = await transferTaskArtifacts(task.worktreeCwd, cwd);
-        artifactHashes = Object.fromEntries(
-          artifactPaths.map((path) => [
-            path,
-            createHash("sha256")
-              .update(readFileSync(join(cwd, path)))
-              .digest("hex"),
-          ]),
-        );
+        for (const path of artifactPaths)
+          artifactHashes[path] = await hashTaskArtifact(join(cwd, path));
         await mergeTaskBranch(cwd, task.branch!, task.baseBranch);
       } catch (error) {
         const latest = this.find(task.id);

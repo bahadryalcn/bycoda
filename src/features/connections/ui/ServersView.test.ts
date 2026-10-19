@@ -14,7 +14,13 @@ import {
 } from "../model/serverInventory";
 import { applyRemoteConnection } from "../model/remoteHealth";
 
-vi.mock("./ServersConnectionTools", () => ({ ServersConnectionTools: () => null }));
+vi.mock("./ServersConnectionTools", async () => {
+  const { ServerOrganization } = await import("./ServerOrganization");
+  return {
+    ServersConnectionTools: ({ server }: { server: ServerRecord }) =>
+      createElement(ServerOrganization, { server }),
+  };
+});
 
 const fixture = vi.hoisted(() => ({
   machines: [] as RemoteMachine[],
@@ -23,6 +29,13 @@ const fixture = vi.hoisted(() => ({
   loading: false,
   error: undefined as string | undefined,
   refresh: vi.fn(),
+}));
+const terminalActions = vi.hoisted(() => ({
+  open: undefined as ReturnType<typeof vi.fn> | undefined,
+}));
+vi.mock("./ServersTerminalWorkspace", () => ({
+  useOpenServerTerminal: () => terminalActions.open,
+  useOpenQuickServerTerminal: () => undefined,
 }));
 vi.mock("../model/connections", () => ({
   useRemoteMachines: () => fixture,
@@ -67,6 +80,8 @@ beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   vi.clearAllMocks();
   resetRetainedState();
+  terminalActions.open = undefined;
+  fixture.extraServers = [];
   Object.assign(fixture, { machines: [machine], loaded: true, loading: false, error: undefined });
   container = document.createElement("div");
   document.body.append(container);
@@ -94,6 +109,51 @@ const search = async (value: string) => {
     input.dispatchEvent(new Event("input", { bubbles: true }));
   });
 };
+
+it("selects on a single click and opens the canonical SSH record once on double click", async () => {
+  terminalActions.open = vi.fn();
+  await render();
+  const row = container.querySelector<HTMLButtonElement>("[data-server-row]")!;
+  await act(async () => row.click());
+  expect(terminalActions.open).not.toHaveBeenCalled();
+  expect(container.querySelector('[aria-label="Server details"]')).toBeTruthy();
+  await act(async () =>
+    row.dispatchEvent(new MouseEvent("dblclick", { bubbles: true, button: 0, detail: 2 })),
+  );
+  expect(terminalActions.open).toHaveBeenCalledExactlyOnceWith(
+    expect.objectContaining({ id: "mac", machine }),
+  );
+});
+
+it("connects with Enter without repeating the connection and closes details back to the row", async () => {
+  terminalActions.open = vi.fn();
+  await render();
+  const row = container.querySelector<HTMLButtonElement>("[data-server-row]")!;
+  await act(async () => {
+    row.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }),
+    );
+    row.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Enter", repeat: true, bubbles: true, cancelable: true }),
+    );
+  });
+  expect(terminalActions.open).toHaveBeenCalledOnce();
+  await click("Close server details");
+  expect(container.querySelector('[aria-label="Server details"]')).toBeNull();
+  expect(document.activeElement).toBe(row);
+});
+
+it("does not launch SSH for a Host record with no SSH endpoint", async () => {
+  terminalActions.open = vi.fn();
+  fixture.machines = [{ ...machine, ssh: undefined, endpoint: "http://127.0.0.1:3776" }];
+  await render();
+  const row = container.querySelector<HTMLButtonElement>("[data-server-row]")!;
+  await act(async () =>
+    row.dispatchEvent(new MouseEvent("dblclick", { bubbles: true, button: 0, detail: 2 })),
+  );
+  expect(terminalActions.open).not.toHaveBeenCalled();
+  expect(row.hasAttribute("aria-keyshortcuts")).toBe(false);
+});
 
 it("selects canonical machines and delegates add, edit and reconnect to existing flows", async () => {
   await render();
@@ -230,7 +290,7 @@ it("edits an SSH-only endpoint with stable canonical ID and no password field", 
   vi.mocked(saveSshConnection).mockResolvedValue(sshServer);
   await render();
   await click("Personal SSH");
-  await click("Edit machine");
+  await click("Edit SSH server");
   const dialog = document.querySelector('[role="dialog"]')!;
   expect(dialog).toBeTruthy();
   expect(dialog.querySelectorAll('input[type="password"]')).toHaveLength(0);

@@ -13,6 +13,7 @@ import {
 // avoids syntax older macOS WebKit versions reject.
 import workerUrl from "pdfjs-dist/legacy/build/pdf.worker.min.mjs?url";
 import { Minus, Plus } from "../../../shared/ui/icons";
+import { PdfRasterBudget, pdfRasterSize } from "../model/pdfRasterBudget";
 import { documentErrorMessage } from "../model/documentViewer";
 import { DocumentMessage } from "./DocumentMessage";
 import {
@@ -25,6 +26,8 @@ import {
 import "./pdfTextLayer.css";
 
 GlobalWorkerOptions.workerSrc = workerUrl;
+
+const rasterBudget = new PdfRasterBudget();
 
 const MIN_SCALE = 0.25;
 const MAX_SCALE = 5;
@@ -92,8 +95,14 @@ function PdfPages({ doc }: { doc: PDFDocumentProxy }) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(0);
   const [zoom, setZoom] = useState<Zoom>(() => recalledZoom("pdf") ?? "fit");
-  const [current, setCurrent] = useState(1);
-  const [pageInput, setPageInput] = useState("1");
+  const [pageState, setPageState] = useState({ current: 1, input: "1" });
+  const { current, input: pageInput } = pageState;
+  const setCurrent = useCallback((current: number) => {
+    setPageState((previous) =>
+      previous.current === current ? previous : { current, input: String(current) },
+    );
+  }, []);
+  const setPageInput = (input: string) => setPageState((previous) => ({ ...previous, input }));
   // Unscaled page sizes; pages not yet measured borrow the first page's.
   const [sizes, setSizes] = useState<Record<number, Size>>({});
 
@@ -105,8 +114,6 @@ function PdfPages({ doc }: { doc: PDFDocumentProxy }) {
     setWidth(element.clientWidth);
     return () => observer.disconnect();
   }, []);
-
-  useEffect(() => setPageInput(String(current)), [current]);
 
   const first = sizes[1];
   const fitScale = first ? clampZoom((width - SIDE_PADDING) / first[0], MIN_SCALE, MAX_SCALE) : 1;
@@ -324,8 +331,7 @@ function PdfPage({
     return () => observer.disconnect();
   }, [root, number, onCenter]);
 
-  // The bitmap is only freed when the page leaves the window (or unmounts), not
-  // on a scale change: the old one stays up, stretched, until the new is drawn.
+  // Offscreen pages do not retain bitmap or text allocations.
   useEffect(() => {
     if (near) return;
     const canvas = canvasRef.current;
@@ -353,8 +359,12 @@ function PdfPage({
     let cancelled = false;
     let renderTask: { cancel: () => void } | null = null;
     let textLayer: TextLayer | null = null;
-    // Rendered off-screen and copied over in one step, so the visible canvas
-    // never goes blank while a page re-rasterises at a new scale.
+    const allocation = new AbortController();
+    let release: ((pixels?: number) => void) | undefined;
+    let rendering = false;
+    let copied = false;
+    // Resolution is budgeted independently of CSS/text zoom. Reserve both canvases
+    // before allocating, and release the temporary half as soon as copying ends.
     const buffer = document.createElement("canvas");
     const releaseBuffer = () => {
       buffer.width = 0;
@@ -368,9 +378,17 @@ function PdfPage({
       const natural = page.getViewport({ scale: 1 });
       onSize(number, [natural.width, natural.height]);
       const viewport = page.getViewport({ scale });
-      const ratio = window.devicePixelRatio || 1;
-      buffer.width = Math.floor(viewport.width * ratio);
-      buffer.height = Math.floor(viewport.height * ratio);
+      const raster = pdfRasterSize(viewport.width, viewport.height, window.devicePixelRatio);
+      const pixels = raster.width * raster.height;
+      release = await rasterBudget.reserve(pixels * 2, allocation.signal);
+      if (cancelled) {
+        release();
+        return;
+      }
+      const ratio = raster.ratio;
+      buffer.width = raster.width;
+      buffer.height = raster.height;
+      rendering = true;
       const task = page.render({
         canvas: buffer,
         viewport,
@@ -378,11 +396,14 @@ function PdfPage({
       });
       renderTask = task;
       await task.promise;
+      rendering = false;
       if (cancelled) return;
       canvas.width = buffer.width;
       canvas.height = buffer.height;
       canvas.getContext("2d")?.drawImage(buffer, 0, 0);
       releaseBuffer();
+      copied = true;
+      release(pixels);
       text.replaceChildren();
       textLayer = new TextLayer({
         textContentSource: page.streamTextContent(),
@@ -396,16 +417,29 @@ function PdfPage({
           return;
         canvas.width = 0;
         canvas.height = 0;
+        release?.();
         text.replaceChildren();
         setError(documentErrorMessage(cause));
       })
-      .finally(releaseBuffer);
+      .finally(() => {
+        rendering = false;
+        releaseBuffer();
+        // cancel() requests cancellation; the render promise owns the buffer
+        // until it actually settles. Keep its allocation charged meanwhile.
+        if (cancelled || !copied) release?.();
+      });
 
     return () => {
       cancelled = true;
+      allocation.abort();
       renderTask?.cancel();
       textLayer?.cancel();
-      releaseBuffer();
+      canvas.width = 0;
+      canvas.height = 0;
+      if (!rendering) {
+        releaseBuffer();
+        release?.();
+      }
     };
   }, [doc, number, scale, near, onSize, attempt]);
 

@@ -3355,6 +3355,9 @@
   "{p0} command": "{p0}命令",
   "{p0} commands": "{p0}命令",
   "Rate-limit details": "速率限制详细信息",
+  "Checked just now": "刚刚检查过",
+  "Checked {p0}m ago": "{p0} 分钟前检查",
+  "Checked {p0}h ago": "{p0} 小时前检查",
   "Updated just now": "刚刚更新了",
   "Updated {p0}m ago": "{p0} 分钟前更新",
   "Updated {p0}h ago": "{p0}小时前更新",
@@ -5413,5 +5416,15 @@
   "The upstream connection uses plain HTTP. Basic credentials require separate approval for each operation.": "上游连接使用明文HTTP。Basic凭据需要为每次操作单独批准。",
   "Abandon pending start": "放弃待启动项",
   "Review startup scripts": "审核启动脚本",
-  "Automatic startup reviews require trusted shell integration. Use Review startup scripts for other terminals.": "自动启动审核需要可信的shell集成。其他终端请使用审核启动脚本。"
+  "Automatic startup reviews require trusted shell integration. Use Review startup scripts for other terminals.": "自动启动审核需要可信的shell集成。其他终端请使用审核启动脚本。",
+  "Choose SSH key": "选择 SSH 密钥",
+  "SSH agent and default keys": "SSH 代理和默认密钥",
+  "Could not load SSH keys. Enter a path or retry.": "无法加载 SSH 密钥。请输入路径或重试。",
+  "Select a key for": "选择密钥的服务器",
+  "Use key": "使用密钥",
+  "Assign key": "分配密钥",
+  "Assigned": "已分配",
+  "Local SSH keys and known hosts.": "本地 SSH 密钥和已知主机。",
+  "Use SSH defaults": "使用 SSH 默认设置",
+  "SSH key": "SSH 密钥"
 }

@@ -9,6 +9,7 @@ import {
   base64ByteLength,
 } from "./attachmentData";
 import { hashBase64Prefix } from "./attachmentPrefix";
+import type { AttachmentOwnership } from "./attachmentOwnership";
 
 // Keep bytes in-flight bounded, and preserve ordered offsets within each file.
 const UPLOAD_CONCURRENCY = 2;
@@ -20,16 +21,34 @@ export async function uploadRemoteAttachments(
   options: {
     environmentId?: string;
     resumable?: boolean;
+    ownership?: AttachmentOwnership;
+    ownershipSource?: string;
     onProgress?: (id: string, offset: number, size: number) => void;
   } = {},
 ): Promise<RemoteAttachment[]> {
   if (attachments.length > 20) throw new Error("Too many attachments");
+  if (options.ownership) {
+    if (!options.ownershipSource) throw new Error("Missing attachment ownership source");
+    options.ownership.beginJob(options.ownershipSource);
+    try {
+      await options.ownership.acquire(
+        options.ownershipSource,
+        attachments.map((file) => file.id),
+      );
+    } catch (error) {
+      options.ownership.finishJob(options.ownershipSource);
+      throw error;
+    }
+  }
   const uploaded: RemoteAttachment[] = new Array(attachments.length);
   let next = 0;
   const worker = async () => {
     while (next < attachments.length) {
       const indexInBatch = next++;
       const file = attachments[indexInBatch]!;
+      const owner = options.ownership
+        ? { ownerId: options.ownership.ownerId, claimId: options.ownership.claimId(file.id) }
+        : {};
       if (file.hostEnvironmentId && file.hostEnvironmentId === options.environmentId) {
         const { id, name, mimeType, kind, size, browserAnnotation } = file;
         uploaded[indexInBatch] = {
@@ -79,7 +98,7 @@ export async function uploadRemoteAttachments(
         const status = await remoteRequest<{ offset: number; hash?: string }>(
           machineId,
           "attachments.status",
-          { id: file.id, size: file.size },
+          { id: file.id, size: file.size, ...owner },
         );
         if (!Number.isSafeInteger(status.offset) || status.offset < 0 || status.offset > file.size)
           throw new Error("Invalid upload status");
@@ -108,6 +127,7 @@ export async function uploadRemoteAttachments(
           offset: 0,
           size: file.size,
           data: "",
+          ...owner,
         });
         if (reply.offset !== 0) throw new Error("Invalid upload acknowledgement");
         options.onProgress?.(file.id, 0, 0);
@@ -119,6 +139,7 @@ export async function uploadRemoteAttachments(
           offset,
           size: file.size,
           data: chunk.data,
+          ...owner,
         });
         if (reply.offset !== chunk.offset || reply.offset > file.size)
           throw new Error("Invalid upload acknowledgement");
@@ -142,6 +163,9 @@ export async function uploadRemoteAttachments(
     Array.from({ length: Math.min(UPLOAD_CONCURRENCY, attachments.length) }, worker),
   );
   const failed = workers.find((result) => result.status === "rejected");
-  if (failed?.status === "rejected") throw failed.reason;
+  if (failed?.status === "rejected") {
+    if (options.ownershipSource) options.ownership?.finishJob(options.ownershipSource);
+    throw failed.reason;
+  }
   return uploaded;
 }

@@ -45,6 +45,20 @@ let listedSessions: Set<string> | null = null;
 /** Marks a row whose content differs from the cache, so the next write always goes out. */
 const STALE = "stale";
 let installed = false;
+const persistedListeners = new Set<
+  (sessionId: string, attachments: ComposerDraft["attachments"]) => void
+>();
+export function subscribePersistedComposerDrafts(
+  listener: (sessionId: string, attachments: ComposerDraft["attachments"]) => void,
+): () => void {
+  persistedListeners.add(listener);
+  return () => {
+    persistedListeners.delete(listener);
+  };
+}
+function notifyPersisted(sessionId: string, snapshot: ComposerDraft) {
+  for (const listener of persistedListeners) listener(sessionId, snapshot.attachments);
+}
 
 function sameDraft(a: ComposerDraft, b: ComposerDraft): boolean {
   return (
@@ -113,6 +127,7 @@ async function write(sessionId: string): Promise<void> {
         ? null
         : undefined;
     if (baseline === payload) {
+      notifyPersisted(sessionId, snapshot);
       if (sameDraft(snapshot, composerDraftOf(sessionId))) dirty.delete(sessionId);
       return;
     }
@@ -121,6 +136,7 @@ async function write(sessionId: string): Promise<void> {
       draft: payload === null ? null : JSON.parse(payload),
     });
     written.set(sessionId, payload);
+    notifyPersisted(sessionId, snapshot);
     if (sameDraft(snapshot, composerDraftOf(sessionId))) dirty.delete(sessionId);
   })();
   inFlight.set(sessionId, pending);

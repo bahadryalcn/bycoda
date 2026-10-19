@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.36]
+
+### Reliability and workspace
+
+- Preserve attachment ownership across remote reconnects, closed windows and host recovery.
+- Protect unsaved editor changes during file and window close; bound PDF rendering memory.
+- Improve SSH identity handling, server tools, forwards and remote session recovery.
+- Stabilize Windows host diagnostics and service shutdown, provider limits and response timers.
+- Refine terminal search, task previews, social interactions and shared inline editing.
+
+### Release builds
+
+- Prepare shared optimized Rust dependency caches on the default branch so release tags can reuse them.
+- Verify Windows host diagnostics and upgrade recovery before building release packages.
+
 ## [0.6.35]
 
 ### Reliability and recovery

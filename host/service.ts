@@ -112,6 +112,25 @@ const systemdEnvironment = (uid: number): NodeJS.ProcessEnv => {
 
 type Run = (command: string, args: string[], env?: NodeJS.ProcessEnv) => Promise<unknown>;
 
+/** Only a confirmed exited PID can bypass an unavailable shutdown endpoint. */
+export async function stopWindowsHostForUninstall(
+  pid: number,
+  stop: () => Promise<void>,
+  probe: (pid: number) => unknown = (id) => process.kill(id, 0),
+): Promise<boolean> {
+  try {
+    await stop();
+    return true;
+  } catch (cause) {
+    try {
+      probe(pid);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ESRCH") return false;
+    }
+    throw cause;
+  }
+}
+
 const commandOutput = (result: unknown): string =>
   typeof result === "object" && result !== null && "stdout" in result ? String(result.stdout) : "";
 

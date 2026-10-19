@@ -24,6 +24,16 @@ import type {
   PlanBuildTarget,
 } from "../../sessions/model/session";
 import { uploadRemoteAttachments } from "../model/remoteAttachments";
+import {
+  ATTACHMENT_OWNERSHIP_CAPABILITY,
+  attachmentOwnerId,
+  attachmentOwnershipScope,
+  retryAttachmentOwnershipReleases,
+  retireClosedAttachmentOwners,
+} from "../model/attachmentOwnership";
+import { desktopAttachmentInventory } from "../model/desktopAttachmentInventory";
+import { getComposerAttachments, subscribeComposerDrafts } from "../../sessions/model/draftCache";
+import { subscribePersistedComposerDrafts } from "../../sessions/data/composerDraftStore";
 import { snapshotWeight } from "../model/snapshotWeight";
 import {
   deleteRemotePageCache,
@@ -86,7 +96,7 @@ import {
   type RemoteQueueDraft,
 } from "../model/remoteQueue";
 import { remoteTurnInterrupted } from "../model/remoteRecovery";
-import { forgetRemoteQueue } from "../model/useRemoteQueue";
+import { forgetRemoteQueue, subscribePersistedRemoteQueues } from "../model/useRemoteQueue";
 import { useSharedRemoteQueue } from "../model/useSharedRemoteQueue";
 import { useRemoteRecovery } from "../model/useRemoteRecovery";
 import { reportRemoteConnection, subscribeRemoteRecovered } from "../model/remoteHealth";
@@ -312,7 +322,46 @@ function ConnectedRemoteSession({
   const [descriptor, setDescriptor] = useState<HostDescriptor | undefined>(() =>
     cachedDescriptors.get(machine.id),
   );
+  const [attachmentOwner] = useState(() => attachmentOwnerId("desktop-composer", shell.id));
+  const ownsAttachments = !!descriptor?.capabilities.includes(ATTACHMENT_OWNERSHIP_CAPABILITY);
+  const ownership = useMemo(
+    () =>
+      ownsAttachments
+        ? attachmentOwnershipScope(
+            machine.id,
+            machine.environmentId,
+            attachmentOwner,
+            (method, params) => remoteRequest(machine.id, method, params),
+          )
+        : undefined,
+    [ownsAttachments, machine.id, machine.environmentId, attachmentOwner],
+  );
+  useEffect(() => {
+    if (!ownership) return;
+    // Restored drafts keep their references even before a new disk write occurs.
+    void ownership
+      .acquire(
+        "draft",
+        getComposerAttachments(shell.id).map((file) => file.id),
+      )
+      .catch(console.warn);
+    return subscribeComposerDrafts((id) => {
+      if (id === shell.id)
+        void ownership
+          .acquire(
+            "draft-live",
+            getComposerAttachments(shell.id).map((file) => file.id),
+          )
+          .catch(console.warn);
+    });
+  }, [ownership, shell.id]);
   const [online, setOnline] = useState(false);
+  useEffect(() => {
+    if (ownership && online)
+      void retryAttachmentOwnershipReleases(machine.id, machine.environmentId, (method, params) =>
+        remoteRequest(machine.id, method, params),
+      ).catch(console.warn);
+  }, [ownership, online, machine.id, machine.environmentId]);
   const connection = useRemoteConnection(project.key);
   const [error, setError] = useState("");
   const [sessionId, setSessionId] = useState(() => remoteSessionFor(shell.id));
@@ -518,6 +567,70 @@ function ConnectedRemoteSession({
     machine.environmentId,
     sharedQueueEnabled,
   );
+  useEffect(() => {
+    if (!ownership || !online || !queue.loaded) return;
+    let stopped = false;
+    let chain = Promise.resolve();
+    let draftIds = "";
+    let queueIds = "";
+    const reconcile = () => {
+      chain = chain
+        .catch(() => {})
+        .then(async () => {
+          if (stopped) return;
+          const sources = await desktopAttachmentInventory(
+            ownership,
+            machine.id,
+            machine.environmentId,
+            shell.id,
+            project.key,
+            sharedQueueEnabled ? undefined : activeSessionId,
+          );
+          if (stopped) return;
+          await ownership.reconcileDurable(sources);
+          await retireClosedAttachmentOwners(
+            machine.id,
+            machine.environmentId,
+            ownership,
+            sources,
+            (method, params) => remoteRequest(machine.id, method, params),
+          );
+        });
+      void chain.catch(console.warn);
+    };
+    const releaseDraft = subscribePersistedComposerDrafts((id, files) => {
+      const next = JSON.stringify(files.map((file) => file.id).sort());
+      if (id === shell.id && draftIds !== next) {
+        draftIds = next;
+        reconcile();
+      }
+    });
+    const releaseQueue = subscribePersistedRemoteQueues((key, value) => {
+      const next = JSON.stringify(
+        value.messages.flatMap((row) => row.attachments.map((file) => file.id)).sort(),
+      );
+      if (key === activeSessionId && queueIds !== next) {
+        queueIds = next;
+        reconcile();
+      }
+    });
+    reconcile();
+    return () => {
+      stopped = true;
+      releaseDraft();
+      releaseQueue();
+    };
+  }, [
+    ownership,
+    online,
+    queue.loaded,
+    machine.id,
+    machine.environmentId,
+    shell.id,
+    project.key,
+    sharedQueueEnabled,
+    activeSessionId,
+  ]);
   const reservedFollowUp = useRef<RemoteQueueDraft | undefined>(undefined);
   const followUpGeneration = useRef(0);
   const remoteCanSteer =
@@ -1143,6 +1256,12 @@ function ConnectedRemoteSession({
           );
         }
         clearPendingRemoteCommand(project.key, machine.environmentId, command.commandId);
+        const handedOff =
+          command.type === "create" ? command.firstTurn?.commandId : command.commandId;
+        if (handedOff && ownership) {
+          ownership.finishJob(`submit:${handedOff}`);
+          void ownership.replaceDurable(`submit:${handedOff}`, []).catch(console.warn);
+        }
         if (alive.current && version === bindingVersion.current) {
           if (command.type === "create" && !preparingTurn.current) openSession(receipt.sessionId);
           setStarting((current) =>
@@ -1175,6 +1294,12 @@ function ConnectedRemoteSession({
         if (version === bindingVersion.current) openSession(receipt.sessionId);
       }
       clearPendingRemoteCommand(project.key, machine.environmentId, command.commandId);
+      const handedOff =
+        command.type === "create" ? command.firstTurn?.commandId : command.commandId;
+      if (handedOff && ownership) {
+        ownership.finishJob(`submit:${handedOff}`);
+        void ownership.replaceDurable(`submit:${handedOff}`, []).catch(console.warn);
+      }
       if (!alive.current || version !== bindingVersion.current) return receipt;
       if (receipt.runId) {
         setUnseenSend((current) =>
@@ -1251,6 +1376,9 @@ function ConnectedRemoteSession({
       setError(message.replace(/^Error: /, ""));
       return undefined;
     } finally {
+      ownership?.finishJob(
+        `submit:${command.type === "create" ? command.firstTurn?.commandId : command.commandId}`,
+      );
       if (sendingOwner.current === owner) {
         sendingOwner.current = undefined;
         sendingRef.current = false;
@@ -1338,6 +1466,8 @@ function ConnectedRemoteSession({
       ? []
       : (uploaded ??
         (await uploadRemoteAttachments(machine.id, turn.attachments, {
+          ownership,
+          ownershipSource: `submit:${turn.commandId}`,
           environmentId: machine.environmentId,
           resumable: descriptor?.capabilities.includes("attachments.resume"),
           onProgress: (_id, offset, size) => {
@@ -1353,8 +1483,10 @@ function ConnectedRemoteSession({
       !alive.current ||
       version !== bindingVersion.current ||
       generation !== submissionGeneration.current
-    )
+    ) {
+      ownership?.finishJob(`submit:${turn.commandId}`);
       return undefined;
+    }
     setUploadProgress(undefined);
     return run(
       turn.draft
@@ -1385,6 +1517,9 @@ function ConnectedRemoteSession({
     const version = bindingVersion.current;
     try {
       const uploaded = await uploadRemoteAttachments(machine.id, turn.attachments, {
+        environmentId: machine.environmentId,
+        ownership,
+        ownershipSource: `submit:${turn.commandId}`,
         resumable: descriptor?.capabilities.includes("attachments.resume"),
         onProgress: (_id, offset, size) => {
           if (
@@ -1502,6 +1637,7 @@ function ConnectedRemoteSession({
         setStarting({ ...turn, failed: true });
       }
     } finally {
+      ownership?.finishJob(`submit:${turn.commandId}`);
       if (generation === submissionGeneration.current) {
         preparingRef.current = false;
         preparingTurn.current = undefined;
@@ -1797,8 +1933,11 @@ function ConnectedRemoteSession({
       };
       preparingRef.current = true;
       void (async () => {
+        const commandId = crypto.randomUUID();
         try {
           const files = await uploadRemoteAttachments(machine.id, attachments, {
+            ownership,
+            ownershipSource: `submit:${commandId}`,
             environmentId: machine.environmentId,
             resumable: descriptor?.capabilities.includes("attachments.resume"),
           });
@@ -1810,7 +1949,6 @@ function ConnectedRemoteSession({
             if (alive.current && version === bindingVersion.current) holdFollowUp();
             return;
           }
-          const commandId = crypto.randomUUID();
           const receipt = await run({
             type: "steer",
             commandId,
@@ -1836,6 +1974,7 @@ function ConnectedRemoteSession({
             setError(`Could not deliver the follow-up: ${String(reason)}`);
           }
         } finally {
+          ownership?.finishJob(`submit:${commandId}`);
           if (reservedFollowUp.current === unsent) reservedFollowUp.current = undefined;
           if (submission === submissionGeneration.current) preparingRef.current = false;
         }

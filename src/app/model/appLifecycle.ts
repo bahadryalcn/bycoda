@@ -3,7 +3,9 @@ import { PRODUCT_IDENTITY } from "../../shared/lib/productIdentity";
 import { serverTerminalRestoreState } from "../../features/connections/model/serverTerminalRestoreState";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { ask } from "@tauri-apps/plugin-dialog";
+import { ask, message } from "@tauri-apps/plugin-dialog";
+import { prepareEditorsToClose } from "../../features/files/model/editorClose";
+import { confirmCloseTerminals } from "../../features/terminal/model/terminalClose";
 import {
   bindHarnessSession,
   forgetHarnessSession,
@@ -137,6 +139,10 @@ export async function handleQuitRequested(): Promise<boolean> {
     liveWorkspace.flush();
     quitting = true;
     try {
+      if (!(await prepareWindowToClose(liveWorkspace.tabs(), liveWorkspace.projectTerminals()))) {
+        quitting = false;
+        return false;
+      }
       await persistQuitState(
         liveWorkspace.sessions(),
         liveWorkspace.tabs(),
@@ -149,8 +155,9 @@ export async function handleQuitRequested(): Promise<boolean> {
         liveWorkspace.keepTab,
       );
       return true;
-    } catch {
+    } catch (error) {
       quitting = false;
+      await reportCloseFailure(error);
       return false;
     }
   }
@@ -664,8 +671,7 @@ async function confirmAndCloseWindow(
   if (quitDialogOpen) return;
   quitDialogOpen = true;
   try {
-    const refs = inFlightRefs(sessions, tabs);
-    if (refs.length > 0) {
+    if (hasInFlightSessions(sessions)) {
       const ok = await ask(
         t("Close this window and stop its running chats? Other windows will stay open."),
         {
@@ -680,6 +686,10 @@ async function confirmAndCloseWindow(
     }
     quitting = true;
     try {
+      if (!(await prepareWindowToClose(tabs, projectTerminals))) {
+        quitting = false;
+        return;
+      }
       await persistQuitState(
         sessions,
         tabs,
@@ -693,12 +703,41 @@ async function confirmAndCloseWindow(
       );
       await reapWindowRuntime(sessions, tabs, projectTerminals, false);
       await closeCurrentWindow();
-    } catch {
+    } catch (error) {
       quitting = false;
+      await reportCloseFailure(error);
     }
   } finally {
     quitDialogOpen = false;
   }
+}
+
+async function prepareWindowToClose(
+  tabs: WorkspaceTab[],
+  docks: ProjectTerminalDock[],
+): Promise<boolean> {
+  const files = [
+    ...tabs.flatMap((tab) =>
+      [...tab.editorPanes, ...(tab.terminalPanes ?? [])].flatMap((pane) => pane.files),
+    ),
+    ...docks.flatMap((dock) => dock.pane.files),
+  ];
+  const unique = [
+    ...new Map(files.filter((file) => file.terminal).map((file) => [file.id, file])).values(),
+  ];
+  if (!(await confirmCloseTerminals(unique))) return false;
+  return prepareEditorsToClose();
+}
+
+async function reportCloseFailure(error: unknown): Promise<void> {
+  console.warn("Persisting close state failed", error);
+  await message(
+    t("Could not save before closing. The window remains open. Retry closing to try again.\n\n{p0}", { p0: String(error) }),
+    {
+      title: appName(),
+      kind: "error",
+    },
+  ).catch((dialogError) => console.warn("Showing close failure failed", dialogError));
 }
 
 export async function reapWindowRuntime(

@@ -43,3 +43,34 @@ it("rejects malformed base64 and non PNG data", async () => {
     }),
   ).rejects.toThrow("valid base64 PNG");
 });
+
+it.each([-1, 0, 1])("uses the remote attachment boundary end to end (%i bytes)", async (delta) => {
+  const { MAX_REMOTE_ATTACHMENT_BYTES, readAttachmentChunk } = await import("./attachments");
+  const { HostStore } = await import("./store");
+  const directory = await mkdtemp(join(tmpdir(), "host-image-limit-"));
+  directories.push(directory);
+  const bytes = Buffer.alloc(MAX_REMOTE_ATTACHMENT_BYTES + delta);
+  Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]).copy(bytes);
+  if (delta > 0) {
+    await expect(
+      saveHostGeneratedImage(directory, { data: bytes.toString("base64"), name: "large" }),
+    ).rejects.toThrow("remote attachment limit");
+    return;
+  }
+  const asset = await saveHostGeneratedImage(directory, {
+    data: bytes.toString("base64"),
+    name: "large",
+  });
+  // The same metadata returned by generation is accepted by the session chunk reader.
+  const store = {
+    attachmentDir: directory,
+    session: () => ({ session: { blocks: [{ id: "image", image: asset }] } }),
+  } as unknown as InstanceType<typeof HostStore>;
+  const result = await readAttachmentChunk(store, {
+    sessionId: "session",
+    id: "image",
+    offset: asset.size - 17,
+  });
+  expect(Buffer.from(result.data, "base64")).toEqual(bytes.subarray(-17));
+  expect(result.offset).toBe(asset.size);
+});

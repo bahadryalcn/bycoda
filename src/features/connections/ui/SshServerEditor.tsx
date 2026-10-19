@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { SshCertificateInspection } from "./SshCertificateInspection";
+import { SshIdentityField } from "./SshIdentityField";
 import { useRetainedState } from "../../../shared/hooks/useRetainedState";
 import { SshJumpPolicyEditor } from "./SshJumpPolicyEditor";
 import { Switch } from "../../../shared/ui/Switch";
@@ -157,15 +158,8 @@ export function SshServerEditor({
         }}
       >
         <TextField
-          label={t("Name")}
-          value={name}
-          required={!onConnect || saveConnection}
-          maxLength={200}
-          onChange={(event) => setName(event.target.value)}
-          disabled={saving}
-        />
-        <TextField
           label={t("Host")}
+          placeholder="server.example.com"
           value={host}
           required
           maxLength={253}
@@ -191,22 +185,36 @@ export function SshServerEditor({
             disabled={saving}
           />
         </div>
+        <TextField
+          label={t("Name")}
+          value={name}
+          required={!onConnect || saveConnection}
+          maxLength={200}
+          onChange={(event) => setName(event.target.value)}
+          disabled={saving}
+        />
+        <details className="text-xs text-(--ui-text-muted)">
+          <summary className="cursor-pointer py-1">{t("Connection help")}</summary>
+          <p className="mbs-2">
+            {t(
+              "Enter the server address and SSH user. Connect opens a terminal; Save adds it to your servers.",
+            )}
+          </p>
+          <p className="mbs-2">{t("Leave empty to use your SSH agent and default identities.")}</p>
+        </details>
         {!onConnect && valid && endpoint.httpProxy ? (
           <p className="break-all text-xs text-(--ui-text-muted)">
             {endpoint.httpProxy.scheme === "https" ? "HTTPS CONNECT" : "HTTP CONNECT"}:{" "}
             {sshEndpointPreview(endpoint.httpProxy)}
           </p>
         ) : null}
-        <details className="text-xs text-(--ui-text-muted)">
+        <details open={Boolean(server?.sshEndpoint?.identityFile)} className="text-xs text-(--ui-text-muted)">
           <summary className="cursor-pointer py-1">{t("Authentication and jump host")}</summary>
           <div className="mbs-2 flex flex-col gap-3">
-            <TextField
-              label={t("Identity file")}
+            <SshIdentityField
               value={identityFile}
-              maxLength={4096}
-              onChange={(event) => setIdentityFile(event.target.value)}
+              onChange={setIdentityFile}
               disabled={saving}
-              description={t("Leave empty to use your SSH agent and default identities.")}
             />
             <TextField
               label={t("Public SSH certificate file")}

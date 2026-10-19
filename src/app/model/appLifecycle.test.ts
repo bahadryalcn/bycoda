@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
-import { ask } from "@tauri-apps/plugin-dialog";
+import { ask, message } from "@tauri-apps/plugin-dialog";
+import { flushComposerDrafts } from "../../features/sessions/data/composerDraftStore";
 import { forgetHarnessSession } from "../../integrations/harness/core/registry";
 import { killAllChildren } from "../../integrations/harness/core/child";
 import { newSession } from "../../features/sessions/model/session";
@@ -10,6 +11,7 @@ import {
   closeBusyWindow,
   commitQuit,
   confirmReload,
+  handleQuitRequested as handleCurrentWorkspaceQuit,
   reportQuitPoll,
   setQuitWorkspace,
 } from "./appLifecycle";
@@ -30,6 +32,7 @@ vi.mock("@tauri-apps/api/core", () => ({
 }));
 vi.mock("@tauri-apps/plugin-dialog", () => ({
   ask: vi.fn().mockResolvedValue(true),
+  message: vi.fn().mockResolvedValue("Save"),
 }));
 vi.mock("./windowTransferBootstrap", () => ({
   loadWindowTransfer: vi.fn().mockResolvedValue(null),
@@ -52,6 +55,10 @@ vi.mock("../../integrations/harness/core/registry", () => ({
 vi.mock("../../integrations/harness/core/child", () => ({
   killAllChildren: vi.fn().mockResolvedValue(undefined),
 }));
+vi.mock("../../features/sessions/data/composerDraftStore", async (original) => {
+  const actual = await original<typeof import("../../features/sessions/data/composerDraftStore")>();
+  return { ...actual, flushComposerDrafts: vi.fn(actual.flushComposerDrafts) };
+});
 
 describe("project choices through lifecycle saves", () => {
   beforeEach(() => {
@@ -525,4 +532,110 @@ it("paints transferred tabs without waiting for sidebar history", async () => {
     historyCwd: null,
   });
   expect(listSessionsByProject).not.toHaveBeenCalled();
+});
+
+describe("destructive window close safeguards", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(ask).mockResolvedValue(true);
+    vi.mocked(invoke).mockResolvedValue(undefined);
+  });
+  function workspace(options: { inboxAsk?: boolean; busy?: boolean; terminal?: boolean } = {}) {
+    const session = newSession("cursor", "C:/safeguards");
+    session.blocks = [{ id: "question", role: "user", text: "work" }];
+    session.busy = !!options.busy;
+    session.inboxAsk = options.inboxAsk;
+    const tab = newTab(session.id);
+    if (options.terminal)
+      tab.terminalPanes = [
+        {
+          id: "term-pane",
+          activeFileId: "term",
+          files: [{ id: "term", path: "Terminal", cwd: session.cwd, terminal: true }],
+        },
+      ];
+    return setQuitWorkspace(
+      () => [session],
+      () => [tab],
+      () => tab.id,
+      () => session.cwd,
+      () => [],
+      () => new Map(),
+      vi.fn(),
+    );
+  }
+  it.each([true, false])("confirms non-resumable busy work (Inbox Ask: %s)", async (inboxAsk) => {
+    const release = workspace({ busy: true, inboxAsk });
+    vi.mocked(ask).mockResolvedValue(false);
+    try {
+      await closeBusyWindow();
+      expect(ask).toHaveBeenCalledOnce();
+      expect(invoke).not.toHaveBeenCalledWith("destroy_window");
+      expect(forgetHarnessSession).not.toHaveBeenCalled();
+    } finally {
+      release();
+    }
+  });
+  it.each(["session_upsert", "workspace_set_snapshot", "composer"])(
+    "keeps the window open after %s failure and closes once on retry",
+    async (command) => {
+      const release = workspace();
+      if (command === "composer")
+        vi.mocked(flushComposerDrafts).mockRejectedValueOnce(new Error("disk full"));
+      else
+        vi.mocked(invoke).mockImplementationOnce((name) =>
+          name === command ? Promise.reject(new Error("disk full")) : Promise.resolve(undefined),
+        );
+      // The workspace snapshot is written after the session write.
+      if (command === "workspace_set_snapshot")
+        vi.mocked(invoke).mockImplementation((name) =>
+          name === command ? Promise.reject(new Error("disk full")) : Promise.resolve(undefined),
+        );
+      try {
+        await closeBusyWindow();
+        expect(invoke).not.toHaveBeenCalledWith("destroy_window");
+        expect(message).toHaveBeenCalledWith(
+          expect.stringContaining("Retry closing"),
+          expect.objectContaining({ kind: "error" }),
+        );
+        vi.mocked(invoke).mockResolvedValue(undefined);
+        await closeBusyWindow();
+        expect(
+          vi.mocked(invoke).mock.calls.filter(([name]) => name === "destroy_window"),
+        ).toHaveLength(1);
+      } finally {
+        release();
+      }
+    },
+  );
+  it.each(["npm", null, "unknown"])(
+    "protects terminal process %s during close and quit",
+    async (foreground) => {
+      const release = workspace({ terminal: true });
+      vi.mocked(invoke).mockImplementation((name) =>
+        name === "pty_status"
+          ? Promise.resolve(
+              foreground === "unknown"
+                ? { foreground: null, supported: false }
+                : { foreground, supported: true },
+            )
+          : Promise.resolve(undefined),
+      );
+      vi.mocked(ask).mockResolvedValue(false);
+      try {
+        await closeBusyWindow();
+        if (foreground === null) {
+          expect(ask).not.toHaveBeenCalled();
+          expect(invoke).toHaveBeenCalledWith("destroy_window");
+        } else {
+          expect(ask).toHaveBeenCalledOnce();
+          expect(invoke).not.toHaveBeenCalledWith("destroy_window");
+          expect(await handleCurrentWorkspaceQuit()).toBe(false);
+          expect(invoke).not.toHaveBeenCalledWith("pty_kill", expect.anything());
+        }
+      } finally {
+        release();
+      }
+    },
+  );
 });

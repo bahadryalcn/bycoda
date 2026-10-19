@@ -39,6 +39,11 @@ export type ProviderRateLimits = {
   updatedAt: number;
   error: string | null;
   status: RateLimitStatus;
+  /**
+   * Claude's local access token expired and awaits renewal by the CLI. Reading
+   * it again is local-only, so the cache checks back sooner than its backoff.
+   */
+  renewalPending?: boolean;
 };
 
 export const SESSION_WINDOW_MINUTES = 300;

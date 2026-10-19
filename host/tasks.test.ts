@@ -2961,3 +2961,57 @@ describe("host work limits", () => {
     expect(tasks.limits.usedMinutes()).toBeGreaterThan(4);
   });
 });
+
+it("caches unchanged lists and filters projects before JSON parsing", () => {
+  const { store, tasks, input } = setup();
+  tasks.save(input());
+  const other = store.addProject(join(tmpdir(), "other-task-list"), "Other");
+  tasks.save(input({ id: "other", projectId: other.id }));
+  const parse = vi.spyOn(JSON, "parse");
+  const first = tasks.list();
+  parse.mockClear();
+  expect(tasks.list()).toEqual(first);
+  expect(parse).not.toHaveBeenCalled();
+  const filtered = tasks.list(first[0].projectId);
+  expect(filtered).toHaveLength(1);
+  expect(parse).toHaveBeenCalledTimes(1);
+  parse.mockClear();
+  filtered.pop();
+  expect(tasks.list(first[0].projectId)).toHaveLength(1);
+  expect(parse).not.toHaveBeenCalled();
+  parse.mockRestore();
+  tasks.save(input({ title: "Changed" }));
+  expect(tasks.list(first[0].projectId)[0].title).toBe("Changed");
+});
+
+it(
+  "stops a real verification tree and holds retry/delete until it exits",
+  async () => {
+    const { tasks, run, turns, settled, store, task } = setup();
+    const started = await run({ verifyCommand: 'node "check.cjs"' });
+    const cwd = store.project(started.projectId).cwd;
+    const output = join(cwd, "writes.txt");
+    writeFileSync(
+      join(cwd, "writer.cjs"),
+      `setInterval(() => require('node:fs').appendFileSync(${JSON.stringify(output)}, 'x'), 20);`,
+    );
+    writeFileSync(
+      join(cwd, "check.cjs"),
+      `require('node:child_process').spawn(process.execPath, ['writer.cjs'], { stdio: 'inherit', windowsHide: true }); setInterval(() => {}, 1000);`,
+    );
+    turns[0].finish();
+    await settled(started.sessionId!);
+    await tasks.tick();
+    await vi.waitFor(() => expect(existsSync(output)).toBe(true), { timeout: 15000 });
+    expect(task().status).toBe("verifying");
+    await tasks.move("main", "blocked");
+    await expect(tasks.move("main", "queued")).rejects.toThrow("still stopping");
+    await expect(tasks.delete("main", true)).rejects.toThrow("still stopping");
+    await tasks.idle();
+    const stopped = readFileSync(output, "utf8");
+    await new Promise((done) => setTimeout(done, 200));
+    expect(readFileSync(output, "utf8")).toBe(stopped);
+    expect((await tasks.move("main", "queued")).status).toBe("queued");
+  },
+  SHELL_TEST_MS,
+);

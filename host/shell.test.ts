@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync, readFileSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { SendTurnInput } from "../src/integrations/harness/core/types";
@@ -195,3 +195,49 @@ describe("runHostShell", () => {
     expect(result).toMatchObject({ exitCode: null, timedOut: true });
   }, 20_000);
 });
+
+it("abort stops the real command tree before resolving and a retry cannot overlap it", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "shell-abort-"));
+  cleanups.push(() => rmSync(directory, { recursive: true, force: true }));
+  const output = join(directory, "writes.txt");
+  const writer = join(directory, "writer.cjs");
+  const launcher = join(directory, "launcher.cjs");
+  writeFileSync(
+    writer,
+    `setInterval(() => require('node:fs').appendFileSync(${JSON.stringify(output)}, 'x'), 20);`,
+  );
+  writeFileSync(
+    launcher,
+    `require('node:child_process').spawn(process.execPath, [${JSON.stringify(writer)}], { stdio: 'inherit', windowsHide: true }); setInterval(() => {}, 1000);`,
+  );
+  const command =
+    process.platform === "win32"
+      ? `& '${process.execPath.replaceAll("'", "''")}' '${launcher.replaceAll("'", "''")}'`
+      : `'${process.execPath}' '${launcher}'`;
+  const controller = new AbortController();
+  const profile =
+    process.platform === "win32"
+      ? {
+          id: "test",
+          name: "PowerShell",
+          kind: "powershell",
+          path: join(
+            process.env.SystemRoot ?? "C:/Windows",
+            "System32/WindowsPowerShell/v1.0/powershell.exe",
+          ),
+        }
+      : { id: "test", name: "sh", kind: "sh", path: "/bin/sh" };
+  const running = runHostShell(directory, command, 20000, profile, controller.signal);
+  try {
+    await vi.waitFor(() => expect(existsSync(output)).toBe(true), { timeout: 15000 });
+  } finally {
+    controller.abort();
+  }
+  expect((await running).exitCode).toBeNull();
+  const stopped = readFileSync(output, "utf8");
+  await new Promise((done) => setTimeout(done, 200));
+  expect(readFileSync(output, "utf8")).toBe(stopped);
+  const retry = runHostShell(directory, command, 20000, profile, controller.signal);
+  expect((await retry).exitCode).toBeNull();
+  expect(readFileSync(output, "utf8")).toBe(stopped);
+}, 30000);

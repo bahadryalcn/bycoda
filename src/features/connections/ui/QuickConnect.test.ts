@@ -11,6 +11,12 @@ vi.mock("./ServersTerminalWorkspace", () => ({
   useOpenServerTerminal: () => callbacks.saved,
 }));
 vi.mock("../model/serverInventory", () => ({ saveSshConnection: vi.fn() }));
+vi.mock("@tauri-apps/api/core", () => ({
+  invoke: vi.fn(async (command: string) => {
+    if (command === "ssh_public_keys_list") return [];
+    throw new Error(`Unexpected command: ${command}`);
+  }),
+}));
 let root: Root;
 let container: HTMLDivElement;
 beforeEach(() => {

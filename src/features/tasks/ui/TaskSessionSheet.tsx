@@ -19,7 +19,9 @@ export function TaskSessionSheet({
   onClose: () => void;
   onOpen: (target: BackgroundSessionTarget) => void | Promise<void>;
 }) {
-  const [session, setSession] = useState<HostSession>();
+  const targetKey = `${target.machineId}:${target.sessionId}`;
+  const [sessionState, setSessionState] = useState<{ key: string; value: HostSession }>();
+  const session = sessionState?.key === targetKey ? sessionState.value : undefined;
   const [error, setError] = useState("");
   const [revision, setRevision] = useState(0);
   const [opening, setOpening] = useState(false);
@@ -27,16 +29,20 @@ export function TaskSessionSheet({
   useEffect(() => {
     let alive = true;
     let timer: ReturnType<typeof setTimeout>;
+    let known: HostSession | undefined;
     const load = async () => {
       try {
         const next = await remoteRequest<HostSession | null>(target.machineId, "sessions.get", {
           sessionId: target.sessionId,
+          preview: true,
+          revision: known?.revision,
         });
         if (!alive) return;
-        if (!next?.session) throw new Error(t("This session is no longer available."));
-        setSession(next);
+        if (next) known = next;
+        if (!known?.session) throw new Error(t("This session is no longer available."));
+        if (next) setSessionState({ key: `${target.machineId}:${target.sessionId}`, value: next });
         setError("");
-        if (next.status === "running") timer = setTimeout(load, 3000);
+        if (known.status === "running") timer = setTimeout(load, 3000);
       } catch (reason) {
         if (alive) setError(reason instanceof Error ? reason.message : String(reason));
       }

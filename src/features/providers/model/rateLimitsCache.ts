@@ -126,15 +126,17 @@ export function loadRateLimits(
     }
     if (generations.get(key) !== generation) return result;
     if (result.status === "error") {
+      const renewalPending = result.renewalPending === true;
       // A failed request (a 429, a dropped connection) says nothing about the
       // usage itself: the last windows stay, dated when they were read.
       if (cached && hasWindows(cached)) {
         result = {
           ...errorRateLimits(provider, result.error ?? "", cached),
           updatedAt: cached.updatedAt,
+          ...(renewalPending ? { renewalPending } : {}),
         };
       }
-      scheduleRetry(provider, accountId, canRetry, background);
+      scheduleRetry(provider, accountId, canRetry, background, renewalPending);
     } else {
       retryAttempts.delete(key);
     }
@@ -165,6 +167,11 @@ function hasWindows(limits: ProviderRateLimits): boolean {
 
 /** Waits between automatic retries of a failed read; the last one repeats. */
 const RETRY_DELAYS_MS = [60_000, 3 * 60_000, 10 * 60_000, 15 * 60_000];
+/**
+ * Re-read interval while a Claude token awaits CLI renewal. That read only
+ * checks the local credential, so usage appears soon after the CLI renews it.
+ */
+const RENEWAL_CHECK_MS = 15_000;
 const retryAttempts = new Map<string, number>();
 const retryTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
@@ -180,10 +187,12 @@ function scheduleRetry(
   accountId: string,
   canRetry: () => boolean,
   background: boolean,
+  renewalPending = false,
 ): void {
   const key = keyFor(provider, accountId);
   const attempt = retryAttempts.get(key) ?? 0;
-  retryAttempts.set(key, attempt + 1);
+  // A local renewal check does not count towards the network backoff.
+  if (!renewalPending) retryAttempts.set(key, attempt + 1);
   cancelRetry(key);
   retryTimers.set(
     key,
@@ -192,11 +201,15 @@ function scheduleRetry(
         retryTimers.delete(key);
         // The account may have been removed while waiting.
         if (snapshots.has(key)) {
-          if (canRetry()) void loadRateLimits(provider, accountId, true, canRetry, background);
-          else scheduleRetry(provider, accountId, canRetry, background);
+          // Renewal checks repeat quietly instead of flashing a loading state.
+          if (canRetry())
+            void loadRateLimits(provider, accountId, true, canRetry, background || renewalPending);
+          else scheduleRetry(provider, accountId, canRetry, background, renewalPending);
         }
       },
-      RETRY_DELAYS_MS[Math.min(attempt, RETRY_DELAYS_MS.length - 1)],
+      renewalPending
+        ? RENEWAL_CHECK_MS
+        : RETRY_DELAYS_MS[Math.min(attempt, RETRY_DELAYS_MS.length - 1)],
     ),
   );
 }

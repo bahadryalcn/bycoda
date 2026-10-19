@@ -2,9 +2,11 @@ import { useEffect, useId, useRef, useState } from "react";
 import type { Terminal } from "@xterm/xterm";
 import { SearchAddon } from "@xterm/addon-search";
 import { Button } from "../../../shared/ui/Button";
+import { Badge } from "../../../shared/ui/Badge";
 import { Switch } from "../../../shared/ui/Switch";
 import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
 import { SplitButton } from "../../../shared/ui/SplitButton";
+import { Popover } from "../../../shared/ui/Popover";
 import { SearchInput } from "../../../shared/ui/SearchInput";
 import { TextField } from "../../../shared/ui/TextField";
 import {
@@ -14,6 +16,7 @@ import {
   Search,
   Terminal as TerminalIcon,
   X,
+  Info,
 } from "../../../shared/ui/icons";
 import { t, useLocale } from "../../../shared/i18n";
 import { isSingleLineCommand, terminalSuggestions } from "../model/terminalSuggestions";
@@ -52,6 +55,8 @@ export function TerminalTools({
   const [alternate, setAlternate] = useState(false);
   const [reviewingStartup, setReviewingStartup] = useState(false);
   const startupPending = useRef(false);
+  const [helpOpen, setHelpOpen] = useState(false);
+  const helpAnchor = useRef<HTMLButtonElement>(null);
   const searchRef = useRef<SearchAddon | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const commandRef = useRef<HTMLInputElement>(null);
@@ -193,6 +198,7 @@ export function TerminalTools({
             onClick={() => onModeChange("search")}
           >
             <Search size={14} />
+            {t("Find in terminal")}
           </Button>
         )}
         {suggestionsAllowed && (
@@ -286,6 +292,27 @@ export function TerminalTools({
             <CheckList size={14} />
           </Button>
         ) : null}
+        {onEnableShellIntegration ? (
+          <Button
+            ref={helpAnchor}
+            variant="ghost"
+            size="sm"
+            iconOnly
+            label={t("About shell suggestions")}
+            aria-expanded={helpOpen}
+            aria-haspopup="dialog"
+            onClick={() => setHelpOpen(!helpOpen)}
+          >
+            <Info aria-hidden size={14} />
+          </Button>
+        ) : null}
+        {ready ? (
+          <span className="ms-auto inline-flex items-center">
+            <Badge tone="success" size="sm" title={t("Terminal process is running.")}>
+              {t("Running")}
+            </Badge>
+          </span>
+        ) : null}
         {mode && (
           <Button
             variant="ghost"
@@ -298,20 +325,28 @@ export function TerminalTools({
           </Button>
         )}
       </div>
-      {onEnableShellIntegration ? (
-        <details className="px-2 py-1 text-xs text-(--ui-text-muted)">
-          <summary className="cursor-pointer">{t("Shell suggestions")}</summary>
-          <p className="mbs-2">
-            {t(
-              "Windows PowerShell suggestions require PowerShell 7+ and PSReadLine 2.4+. A new session starts with -NoProfile; custom profile key bindings and history settings are not loaded.",
-            )}
-          </p>
-          <p className="mbs-2">
-            {t(
-              "Accepting an app suggestion inserts one line only; press Enter to run. Raw multiline paste follows PowerShell behavior and can execute commands.",
-            )}
-          </p>
-        </details>
+      {onEnableShellIntegration && helpOpen ? (
+        <Popover
+          anchor={helpAnchor}
+          align="end"
+          role="dialog"
+          aria-label={t("About shell suggestions")}
+          width={340}
+          onDismiss={() => setHelpOpen(false)}
+        >
+          <div className="p-3 text-xs text-(--ui-text-muted)">
+            <p className="mbs-2">
+              {t(
+                "Windows PowerShell suggestions require PowerShell 7+ and PSReadLine 2.4+. A new session starts with -NoProfile; custom profile key bindings and history settings are not loaded.",
+              )}
+            </p>
+            <p className="mbs-2">
+              {t(
+                "Accepting an app suggestion inserts one line only; press Enter to run. Raw multiline paste follows PowerShell behavior and can execute commands.",
+              )}
+            </p>
+          </div>
+        </Popover>
       ) : null}
       {remoteShell ? (
         <details className="px-2 py-1 text-xs text-(--ui-text-muted)">

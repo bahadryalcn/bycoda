@@ -344,6 +344,7 @@ export type RemoteMachine = {
   localHost?: boolean;
   ssh?: {
     target: string;
+    identityFile?: string | null;
     port?: number | null;
     remotePort: number;
     /** A second address for the same machine (such as its Tailscale one);

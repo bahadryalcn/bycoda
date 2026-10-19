@@ -1,5 +1,13 @@
 import { persistableQueue } from "../../sessions/model/queuePersistence";
-import { remoteRequest } from "./connections";
+import { cachedRemoteCapabilities, remoteRequest } from "./connections";
+import {
+  ATTACHMENT_OWNERSHIP_CAPABILITY,
+  attachmentOwnerId,
+  attachmentOwnershipScope,
+  retireClosedAttachmentOwners,
+  type AttachmentOwnership,
+} from "./attachmentOwnership";
+import { globalDesktopAttachmentInventory } from "./desktopAttachmentInventory";
 import { uploadRemoteAttachments } from "./remoteAttachments";
 import { mergeQueueChange, sameQueueValue, type SharedQueue } from "./sharedQueue";
 import type { RemoteQueue } from "./remoteQueue";
@@ -22,6 +30,21 @@ export class SharedQueueClient {
   };
   private readonly storageKey: string;
   private recovery?: string;
+  private attachmentScope?: AttachmentOwnership;
+  private recoveredAttachmentOwners = false;
+  private recoveredSources: Record<string, string[]> = {};
+  private attachmentWrites = Promise.resolve();
+  private attachmentFingerprint?: string;
+  private attachments() {
+    if (!cachedRemoteCapabilities(this.environmentId)?.includes(ATTACHMENT_OWNERSHIP_CAPABILITY))
+      return undefined;
+    return (this.attachmentScope ??= attachmentOwnershipScope(
+      this.machineId,
+      this.environmentId,
+      attachmentOwnerId("desktop-queue", this.sessionId),
+      this.request,
+    ));
+  }
   constructor(
     readonly machineId: string,
     readonly environmentId: string,
@@ -94,6 +117,56 @@ export class SharedQueueClient {
       }),
     );
     this.hasBaseline = true;
+    if (this.attachmentScope) {
+      const scope = this.attachmentScope;
+      const savedSources = {
+        queue: this.desired.messages.flatMap((row) => row.attachments.map((file) => file.id)),
+        cache: this.base.messages.flatMap((row) => row.attachments.map((file) => file.id)),
+      };
+      this.attachmentWrites = this.attachmentWrites
+        .catch(() => {})
+        .then(async () => {
+          const fingerprint = JSON.stringify(
+            Object.values(savedSources).map((ids) => [...new Set(ids)].sort()),
+          );
+          if (
+            this.attachmentFingerprint === fingerprint &&
+            !Object.values(this.recoveredSources).some((ids) => ids.length)
+          ) {
+            await scope.retry();
+            return;
+          }
+          if (
+            !this.recoveredAttachmentOwners ||
+            Object.values(this.recoveredSources).some((ids) => ids.length)
+          ) {
+            const global = await globalDesktopAttachmentInventory(
+              this.sessionId,
+              this.environmentId,
+            );
+            const recovered = Object.fromEntries(
+              Object.entries(global).map(([key, ids]) => [`recovered:${key}`, ids]),
+            );
+            if (!this.recoveredAttachmentOwners) {
+              const retired = await retireClosedAttachmentOwners(
+                this.machineId,
+                this.environmentId,
+                scope,
+                recovered,
+                this.request,
+              );
+              this.recoveredSources =
+                retired || scope.sourceNames().some((source) => source.startsWith("recovered:"))
+                  ? recovered
+                  : {};
+              this.recoveredAttachmentOwners = true;
+            } else this.recoveredSources = recovered;
+          }
+          await scope.reconcileDurable({ ...savedSources, ...this.recoveredSources });
+          this.attachmentFingerprint = fingerprint;
+        });
+      void this.attachmentWrites.catch(() => {});
+    }
   }
   update(change: (queue: RemoteQueue) => RemoteQueue, takeOwnership = false): boolean {
     if (!this.state.loaded || this.conflict || this.base.claim) return false;
@@ -200,17 +273,37 @@ export class SharedQueueClient {
       this.emit(this.state.loaded, String(error).replace(/^Error: /, ""));
     }
   }
-  private call<T>(action: string, params: Record<string, unknown> = {}) {
-    return this.request<T>(`sessions.queue.${action}`, {
+  private async call<T>(action: string, params: Record<string, unknown> = {}): Promise<T> {
+    const scope = this.attachments();
+    const claimId = scope?.cacheClaimId();
+    const result = await this.request<T>(`sessions.queue.${action}`, {
       sessionId: this.sessionId,
       clientId: this.clientId,
+      ...(scope ? { ownerId: scope.ownerId, claimId } : {}),
       ...params,
+    }).catch((error) => {
+      this.attachmentFingerprint = undefined;
+      throw error;
     });
+    if (scope && claimId)
+      await scope
+        .adoptClaimed(
+          "cache",
+          (result as SharedQueue).messages.flatMap((row) => row.attachments.map((file) => file.id)),
+          claimId,
+        )
+        .catch((error) => {
+          this.attachmentFingerprint = undefined;
+          throw error;
+        });
+    return result;
   }
   private async wire(queue: RemoteQueue): Promise<RemoteQueue> {
     const messages = [];
     for (const row of queue.messages) {
       const refs = await this.upload(this.machineId, row.attachments, {
+        ownership: this.attachments(),
+        ownershipSource: `queue-upload:${row.id}`,
         environmentId: this.environmentId,
         resumable: true,
       });
@@ -245,6 +338,8 @@ export class SharedQueueClient {
             this.desired = mergeQueueChange(value, pending);
             this.base = value;
             if (ownership) this.takeOwnership = false;
+            for (const row of after.messages)
+              this.attachmentScope?.finishJob(`queue-upload:${row.id}`);
             this.persist();
             this.emit(true);
           }

@@ -2,7 +2,40 @@ import { expect, it } from "vitest";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { launchAgent, systemdUnit, uninstallService, stopHostWithServicePolicy } from "./service";
+import {
+  launchAgent,
+  systemdUnit,
+  uninstallService,
+  stopHostWithServicePolicy,
+  stopWindowsHostForUninstall,
+} from "./service";
+
+it("recovers an unavailable shutdown endpoint only for a confirmed exited host", async () => {
+  const failure = new Error("fetch failed");
+  const stop = async () => {
+    throw failure;
+  };
+  await expect(
+    stopWindowsHostForUninstall(123, stop, () => {
+      throw Object.assign(new Error("gone"), { code: "ESRCH" });
+    }),
+  ).resolves.toBe(false);
+  await expect(stopWindowsHostForUninstall(123, stop, () => true)).rejects.toBe(failure);
+  await expect(
+    stopWindowsHostForUninstall(123, stop, () => {
+      throw Object.assign(new Error("access denied"), { code: "EPERM" });
+    }),
+  ).rejects.toBe(failure);
+  await expect(
+    stopWindowsHostForUninstall(
+      123,
+      async () => {},
+      () => {
+        throw new Error("should not probe after successful shutdown");
+      },
+    ),
+  ).resolves.toBe(true);
+});
 
 it("keeps paths and environment content from injecting service configuration", () => {
   const options = {

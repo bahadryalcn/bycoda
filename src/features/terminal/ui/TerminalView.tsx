@@ -44,6 +44,7 @@ import type { SshEndpoint } from "../../connections/model/serverInventory";
 import { useSshShellIntegration } from "../model/sshShellIntegration";
 import { Modal } from "../../../shared/ui/Modal";
 import { Button } from "../../../shared/ui/Button";
+import { Alert } from "../../../shared/ui/Alert";
 import { t } from "../../../shared/i18n";
 
 const ServerSnippets = lazy(() =>
@@ -73,6 +74,7 @@ type Props = {
   /** Explicit local ssh-keygen in a private PTY; never restored or replayed. */
   keyGenerationPath?: string;
   active: boolean;
+  onReturnToServers?: () => void;
   onMetaChange?: (patch: TerminalMetaPatch) => void;
 };
 
@@ -238,6 +240,7 @@ export function TerminalView({
   onEnableShellIntegration,
   keyGenerationPath,
   active,
+  onReturnToServers,
   onMetaChange,
 }: Props) {
   const privateTerminal = Boolean(sshConnectionId || sshEndpoint || keyGenerationPath);
@@ -289,6 +292,7 @@ export function TerminalView({
   const [tool, setTool] = useState<TerminalTool>(null);
   const [shellReady, setShellReady] = useState(false);
   const [inputError, setInputError] = useState<string | null>(null);
+  const [exitCode, setExitCode] = useState<number | null | undefined>(undefined);
   const resumeInputRef = useRef<() => void>(() => {});
   const spawned = useRef(false);
   const applySizeRef = useRef<() => void>(() => {});
@@ -321,6 +325,7 @@ export function TerminalView({
     setTerminal(term);
     setShellReady(false);
     setInputError(null);
+    setExitCode(undefined);
     setTool(null);
     let closed = false;
 
@@ -430,6 +435,8 @@ export function TerminalView({
           exited = true;
           spawned.current = false;
           setShellReady(false);
+          setExitCode(code ?? null);
+          term.options.disableStdin = true;
           runningProcessRef.current = null;
           if (!privateTerminal) {
             onMetaChangeRef.current?.({
@@ -511,6 +518,7 @@ export function TerminalView({
       },
     );
     resumeInputRef.current = () => {
+      if (closed || exited) return;
       input.resume();
       term.options.disableStdin = false;
       setInputError(null);
@@ -787,6 +795,8 @@ export function TerminalView({
   useEffect(() => {
     if (!active) return;
     applySizeRef.current();
+    // Keyboard tab navigation owns focus until the user enters the panel.
+    if (document.activeElement?.matches('[role="tab"]:focus-visible')) return;
     termRef.current?.focus();
   }, [active]);
 
@@ -901,20 +911,55 @@ export function TerminalView({
           </Suspense>
         </Modal>
       ) : null}
-      {inputError !== null ? (
-        <div
-          role="alert"
-          className="flex flex-wrap items-center gap-2 px-2 text-xs text-(--ui-text)"
-        >
-          <span>
-            {t(
-              "Input paused. Some input may not have reached the terminal. Check the shell before continuing.",
-            )}{" "}
-            {inputError}
-          </span>
-          <Button size="sm" variant="ghost" onClick={() => resumeInputRef.current()}>
-            {t("Resume input")}
-          </Button>
+      {exitCode !== undefined ? (
+        <div className="shrink-0 px-3 py-2">
+          <Alert
+            tone={exitCode === 0 ? "info" : "warning"}
+            role={exitCode === 0 ? "status" : "alert"}
+          >
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <span className="text-xs font-medium">
+                {t("Terminal closed")}
+                {exitCode != null ? ` · ${t("Exit code")}: ${exitCode}` : ""}
+              </span>
+              {onReturnToServers ? (
+                <Button size="sm" variant="secondary" onClick={onReturnToServers}>
+                  {t("Back to servers")}
+                </Button>
+              ) : null}
+            </div>
+            {inputError ? (
+              <details className="mbs-2 text-xs">
+                <summary className="cursor-pointer">{t("Connection details")}</summary>
+                <p className="mbs-2 break-words">
+                  {t(
+                    "Input paused. Some input may not have reached the terminal. Check the shell before continuing.",
+                  )}{" "}
+                  {inputError}
+                </p>
+              </details>
+            ) : null}
+          </Alert>
+        </div>
+      ) : inputError !== null ? (
+        <div className="shrink-0 px-3 py-2">
+          <Alert tone="warning" role="alert">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <span className="text-xs font-medium">{t("Input paused")}</span>
+              <Button size="sm" variant="secondary" onClick={() => resumeInputRef.current()}>
+                {t("Resume input")}
+              </Button>
+            </div>
+            <p className="mbs-1 text-xs">
+              {t(
+                "Input paused. Some input may not have reached the terminal. Check the shell before continuing.",
+              )}
+            </p>
+            <details className="mbs-2 text-xs">
+              <summary className="cursor-pointer">{t("Connection details")}</summary>
+              <p className="mbs-2 break-words">{inputError}</p>
+            </details>
+          </Alert>
         </div>
       ) : null}
       <div ref={hostRef} className="bycoda-terminal-host min-h-0 min-w-0 flex-1 overflow-hidden" />
