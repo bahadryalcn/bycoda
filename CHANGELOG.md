@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.38]
+
+### SSH identities
+
+- Choose private SSH key files directly with Finder or File Explorer in server, group and jump-host settings.
+- Search discovered keys by name or full path, distinguish matching filenames and inspect public key details.
+- Refresh available keys without losing edits, return to SSH defaults, and recover from file-picker errors with manual path entry.
+
 ## [0.6.37]
 
 ### Servers and SSH

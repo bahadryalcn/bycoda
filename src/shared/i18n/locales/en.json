@@ -5671,5 +5671,12 @@
   "No known hosts yet.": "No known hosts yet.",
   "Inherited fields": "Inherited fields",
   "Manage SSH": "Manage SSH",
-  "Each jump host uses its own identity and host-key verification. Configure per-hop SSH policies to choose a different key for each hop.": "Each jump host uses its own identity and host-key verification. Configure per-hop SSH policies to choose a different key for each hop."
+  "Each jump host uses its own identity and host-key verification. Configure per-hop SSH policies to choose a different key for each hop.": "Each jump host uses its own identity and host-key verification. Configure per-hop SSH policies to choose a different key for each hop.",
+  "Choose private SSH key": "Choose private SSH key",
+  "Could not open the file picker. Enter a key path or try again.": "Could not open the file picker. Enter a key path or try again.",
+  "Refresh SSH keys": "Refresh SSH keys",
+  "Choose key file…": "Choose key file…",
+  "Uses your SSH agent and default identities.": "Uses your SSH agent and default identities.",
+  "Key details": "Key details",
+  "Key type": "Key type"
 }

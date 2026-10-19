@@ -5683,5 +5683,12 @@
   "No known hosts yet.": "Henüz bilinen sunucu yok.",
   "Inherited fields": "Devralınan alanlar",
   "Manage SSH": "SSH'yi yönet",
-  "Each jump host uses its own identity and host-key verification. Configure per-hop SSH policies to choose a different key for each hop.": "Her ara sunucu kendi kimlik ve sunucu anahtarı doğrulamasını kullanır. Her adımda farklı anahtar seçmek için ara sunucu SSH ilkelerini yapılandırın."
+  "Each jump host uses its own identity and host-key verification. Configure per-hop SSH policies to choose a different key for each hop.": "Her ara sunucu kendi kimlik ve sunucu anahtarı doğrulamasını kullanır. Her adımda farklı anahtar seçmek için ara sunucu SSH ilkelerini yapılandırın.",
+  "Choose private SSH key": "Özel SSH anahtarı seç",
+  "Could not open the file picker. Enter a key path or try again.": "Dosya seçici açılamadı. Anahtar yolunu girin veya yeniden deneyin.",
+  "Refresh SSH keys": "SSH anahtarlarını yenile",
+  "Choose key file…": "Anahtar dosyası seç…",
+  "Uses your SSH agent and default identities.": "SSH aracısı ve varsayılan anahtarlar kullanılır.",
+  "Key details": "Anahtar ayrıntıları",
+  "Key type": "Anahtar türü"
 }
