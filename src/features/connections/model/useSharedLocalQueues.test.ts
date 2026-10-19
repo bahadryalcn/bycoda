@@ -17,6 +17,7 @@ vi.mock("@tauri-apps/api/core", () => ({
   ],
 }));
 vi.mock("./connections", () => ({
+  cachedRemoteCapabilities: () => ["sessions.queue"],
   loadRemoteCapabilities: async () => ["sessions.queue"],
   remoteRequest: (...args: unknown[]) => mocks.request(...args),
 }));
