@@ -660,7 +660,9 @@ mod tests {
             let end = bytes
                 .windows(4)
                 .position(|part| part == b"\r\n\r\n")
-                .expect("complete response headers");
+                .unwrap_or_else(|| {
+                    panic!("complete response headers for {method} {path}: {bytes:?}")
+                });
             let header = std::str::from_utf8(&bytes[..end]).unwrap();
             let length = header
                 .lines()
@@ -684,12 +686,12 @@ mod tests {
         socket
             .set_read_timeout(Some(Duration::from_secs(3)))
             .unwrap();
-        write!(
-            socket,
+        let request = format!(
             "{method} {path} HTTP/1.1\r\nHost: 127.0.0.1:{}\r\n{extra}\r\n",
             gateway.port
-        )
-        .unwrap();
+        );
+        socket.write_all(request.as_bytes()).unwrap();
+        socket.shutdown(std::net::Shutdown::Write).unwrap();
         let mut bytes = Vec::new();
         let result = socket.read_to_end(&mut bytes);
         (bytes, result)

@@ -337,7 +337,12 @@ fn drop_interrupts_unauthenticated_helper_and_never_opens_upstream_relay() {
         .set_read_timeout(Some(Duration::from_secs(1)))
         .unwrap();
     let mut byte = [0];
-    assert_eq!(local.read(&mut byte).unwrap(), 0);
+    // Closing an unauthenticated connection with unread input can send RST on macOS.
+    // Both EOF and reset prove cancellation; receiving any relay byte is a failure.
+    match local.read(&mut byte) {
+        Ok(length) => assert_eq!(length, 0),
+        Err(error) => assert_eq!(error.kind(), std::io::ErrorKind::ConnectionReset),
+    }
     assert_eq!(
         upstream.accept().unwrap_err().kind(),
         std::io::ErrorKind::WouldBlock

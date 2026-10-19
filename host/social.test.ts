@@ -40,14 +40,22 @@ const owner: SocialPrincipal = {
 };
 function seedThreadCopies(store: HostStore, source: SocialThread, count: number, offset = 0) {
   const insert = store.db.prepare("INSERT INTO social_records VALUES ('thread',?,?)");
-  for (let index = offset; index < offset + count; index++) {
-    const thread = {
-      ...source,
-      id: `page-thread-${index}`,
-      platformThreadId: `remote-${index}`,
-      lastInboundAt: index + 1,
-    };
-    insert.run(thread.id, JSON.stringify(thread));
+  // Seed history together so the query-count regression does not measure disk flushes.
+  store.db.exec("BEGIN");
+  try {
+    for (let index = offset; index < offset + count; index++) {
+      const thread = {
+        ...source,
+        id: `page-thread-${index}`,
+        platformThreadId: `remote-${index}`,
+        lastInboundAt: index + 1,
+      };
+      insert.run(thread.id, JSON.stringify(thread));
+    }
+    store.db.exec("COMMIT");
+  } catch (error) {
+    store.db.exec("ROLLBACK");
+    throw error;
   }
 }
 function fixture(generateText?: import("./social-generation").SocialTextGenerator) {
