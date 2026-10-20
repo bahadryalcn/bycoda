@@ -193,6 +193,28 @@ html.appearance-word-wrap .agent-markdown [data-streamdown="code-block-body"] co
   --ui-tone-accent-disabled-fg: var(--ui-control-disabled-fg);
   --ui-tone-accent-disabled-surface: var(--ui-control-disabled-surface);
   --ui-tone-accent-disabled-border: var(--ui-control-disabled-border);
+  /* Editor readability roles follow status/custom-theme colors in both themes. */
+  --ui-code-error: var(--color-danger);
+  --ui-code-warning: var(--color-warning);
+  --ui-code-info: var(--color-info);
+  --ui-code-success: var(--color-success);
+  --ui-code-hint: var(--ui-text-secondary);
+  --ui-code-bracket-0: var(--color-warning);
+  --ui-code-bracket-1: var(--color-info);
+  --ui-code-bracket-2: var(--color-feature);
+  --ui-code-bracket-3: var(--color-success);
+  --ui-code-indent-border: color-mix(in srgb, var(--color-content) 16%, transparent);
+  --ui-code-ruler: color-mix(in srgb, var(--color-content) 6%, transparent);
+  --ui-code-ruler-line: linear-gradient(var(--ui-code-ruler), var(--ui-code-ruler));
+  --ui-code-indent-0: color-mix(in srgb, var(--ui-code-bracket-0) 7%, transparent);
+  --ui-code-indent-1: color-mix(in srgb, var(--ui-code-bracket-1) 7%, transparent);
+  --ui-code-indent-2: color-mix(in srgb, var(--ui-code-bracket-2) 7%, transparent);
+  --ui-code-indent-3: color-mix(in srgb, var(--ui-code-bracket-3) 7%, transparent);
+  --ui-code-annotation: color-mix(in srgb, var(--color-warning) 16%, transparent);
+  --ui-code-log-error: color-mix(in srgb, var(--color-danger) 7%, transparent);
+  --ui-code-log-warning: color-mix(in srgb, var(--color-warning) 7%, transparent);
+  --ui-code-log-info: color-mix(in srgb, var(--color-info) 5%, transparent);
+  --ui-code-log-success: color-mix(in srgb, var(--color-success) 7%, transparent);
   --ui-tone-info-fg: var(--color-info);
   --ui-tone-info-solid: var(--color-info);
   --ui-tone-info-on-solid: var(--ui-tone-status-on-solid);

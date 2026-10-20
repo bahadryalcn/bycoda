@@ -1,5 +1,147 @@
 import { expect, test } from "@playwright/test";
 
+for (const mode of ["file", "inline", "split"]) {
+  test(`readability preserves drafts and visible structure in ${mode}`, async ({ page }, info) => {
+    await page.goto(`/tests/browser/editor-selection.html?readability=code&search=${mode}`);
+    const editors = page.locator(".cm-editor");
+    await expect(editors).toHaveCount(mode === "split" ? 2 : 1);
+    for (const editor of await editors.all()) {
+      await expect(editor.locator(".cm-commentAnnotation").first()).toContainText("TODO");
+      await expect(editor.locator(".cm-indentBand-0").first()).toBeVisible();
+      await expect(editor.locator(".cm-rainbowBracket-0").first()).toBeVisible();
+      await expect(editor.locator(".cm-content")).not.toHaveCSS("background-image", "none");
+      await expect(
+        editor.locator('[class*="cm-rainbowBracket-"]').filter({ hasText: "not a bracket" }),
+      ).toHaveCount(0);
+    }
+    const content = editors.last().locator(".cm-content");
+    await content.click();
+    await page.keyboard.press("Control+End");
+    await page.keyboard.type("// unsaved draft");
+    for (const light of [false, true]) {
+      await page.evaluate(
+        (light) => document.documentElement.classList.toggle("theme-light", light),
+        light,
+      );
+      const band = editors.last().locator(".cm-indentBand-0").first();
+      await expect(band).not.toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
+      await expect(content).toContainText("// unsaved draft");
+      const alert = editors.last().locator(".cm-readability-error").first();
+      const alertText = alert.locator("span").first();
+      const expectedColor = await alert.evaluate((element) => {
+        const probe = document.createElement("span");
+        probe.style.color = "var(--ui-code-error)";
+        element.append(probe);
+        const value = getComputedStyle(probe).color;
+        probe.remove();
+        return value;
+      });
+      await expect((await alertText.count()) ? alertText : alert).toHaveCSS("color", expectedColor);
+      await editors
+        .last()
+        .screenshot({ path: info.outputPath(`${mode}-${light ? "light" : "dark"}.png`) });
+    }
+  });
+}
+
+test("CSS color previews and variable completion work with unsaved declarations", async ({
+  page,
+}) => {
+  await page.goto("/tests/browser/editor-selection.html?readability=css");
+  const editor = page.locator(".cm-editor");
+  await expect(editor.locator(".cm-colorSwatch")).toHaveCount(3);
+  await expect(editor.locator('.cm-colorSwatch[title="#aabbcc"]')).toHaveCSS(
+    "background-color",
+    "rgb(170, 187, 204)",
+  );
+  const line = editor.locator(".cm-line").filter({ hasText: "color: var(--br)" });
+  await line.click();
+  await page.keyboard.press("End");
+  await page.keyboard.press("ArrowLeft");
+  await page.keyboard.press("ArrowLeft");
+  await page.keyboard.press("Control+Space");
+  await expect(editor.getByRole("option").filter({ hasText: "--brand" })).toHaveCount(1);
+  await expect(editor.getByRole("option").filter({ hasText: "--brand" })).toBeVisible();
+  // This is a deliberate CodeMirror interaction guard, rather than a network
+  // or render wait: acceptance/navigation is disabled for 75ms after opening.
+  await page.waitForTimeout(100);
+  await page.keyboard.press("ArrowDown");
+  await expect(editor.getByRole("option").filter({ hasText: "--brand" })).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
+  await page.keyboard.press("Enter");
+  await expect(editor.locator(".cm-content")).toContainText("var(--brand)");
+});
+
+test("embedded CSS excludes HTML examples and matching tags remain interactive", async ({
+  page,
+}) => {
+  await page.goto("/tests/browser/editor-selection.html?readability=html");
+  const editor = page.locator(".cm-editor");
+  await editor.locator(".cm-content").click();
+  await page.keyboard.press("Control+Home");
+  await page.keyboard.press("ArrowRight");
+  await page.keyboard.press("ArrowRight");
+  await expect(editor.locator(".cm-matchingBracket")).toHaveText(["div", "div"]);
+  const line = editor.locator(".cm-line").filter({ hasText: "color: var(--re)" });
+  await line.click();
+  await page.keyboard.press("Home");
+  // The caret is between the e and ) in var(--re).
+  for (let i = 0; i < 19; i++) await page.keyboard.press("ArrowRight");
+  await page.keyboard.press("Control+Space");
+  await expect(editor.getByRole("option").filter({ hasText: "--real" })).toHaveCount(1);
+  await expect(editor.getByRole("option").filter({ hasText: /--fake|--outside/ })).toHaveCount(0);
+});
+
+test("split originals stay read-only and edited text supports undo", async ({ page }) => {
+  await page.goto("/tests/browser/editor-selection.html?readability=code&search=split");
+  const editors = page.locator(".cm-editor");
+  await expect(editors).toHaveCount(2);
+  const original = editors.first().locator(".cm-content");
+  const text = await original.textContent();
+  await original.click();
+  await page.keyboard.type("SHOULD_NOT_CHANGE");
+  await expect(original).toHaveText(text!);
+  const current = editors.last().locator(".cm-content");
+  await current.click();
+  await page.keyboard.press("Control+End");
+  await page.keyboard.type("// undo this");
+  await expect(current).toContainText("// undo this");
+  await page.keyboard.press("Control+z");
+  await expect(current).not.toContainText("// undo this");
+  await expect(original).toHaveText(text!);
+});
+
+test("readability follows long-file scrolling in narrow reduced-motion layouts", async ({
+  page,
+}) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.setViewportSize({ width: 390, height: 700 });
+  await page.goto("/tests/browser/editor-selection.html?readability=large");
+  const editor = page.locator(".cm-editor");
+  await editor.locator(".cm-content").click();
+  await page.keyboard.press("Control+End");
+  await expect(editor.locator(".cm-content")).toContainText("block299");
+  await expect(editor.locator(".cm-commentAnnotation").last()).toHaveText("TODO:");
+  await expect(editor.locator(".cm-indentBand").last()).toBeVisible();
+  await expect(editor.locator(".cm-rainbowBracket-1").last()).toBeVisible();
+  await page.keyboard.press("Control+Home");
+  await expect(editor.locator(".cm-content")).toContainText("block0");
+  await expect(editor.locator(".cm-commentAnnotation").first()).toHaveText("TODO:");
+});
+
+test("output severity and asynchronous inline errors are visible", async ({ page }) => {
+  await page.goto("/tests/browser/editor-selection.html?readability=log");
+  await expect(page.locator(".cm-logLine-error")).toContainText("ERROR");
+  await expect(page.locator(".cm-logLine-warning")).toContainText("WARN");
+  await page.goto("/tests/browser/editor-selection.html");
+  await page.locator(".cm-content").click();
+  await page.keyboard.press("Control+End");
+  await page.keyboard.type("const broken = ;");
+  await expect(page.locator(".cm-diagnosticLabel")).toContainText("error:");
+});
+
 test("code themes update open editors without replacing unsaved text", async ({ page }) => {
   await page.goto("/tests/browser/editor-selection.html");
   const content = page.locator(".cm-content").last();

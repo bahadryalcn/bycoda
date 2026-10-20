@@ -20,6 +20,7 @@ import { t, useLocale } from "../../../shared/i18n/git";
 import { useColorScheme } from "../../../shared/hooks/useColorScheme";
 import { isLightScheme } from "../../settings/model/appearance";
 import { languageForPath, schemeExtensions } from "../../files/editor/editorChrome";
+import { editorReadability } from "../../files/editor/editorReadability";
 import {
   conflictReplacement,
   findConflictBlocks,
@@ -464,6 +465,7 @@ function ConflictSourcePane({
         editorSearch,
         scheme.current.of(schemeExtensions(isLightScheme() ? "light" : "dark")),
         language.of([]),
+        editorReadability(path),
         decorations.current.of(
           EditorView.decorations.of(
             sourceDecorations(doc, source, controlsRef.current?.state.active ?? 0),

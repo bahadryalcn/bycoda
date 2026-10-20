@@ -4,6 +4,7 @@ import {
   getIndentUnit,
   indentOnInput,
   indentUnit,
+  language,
   syntaxTree,
 } from "@codemirror/language";
 import { Facet, Prec, StateField, type EditorState, type Extension } from "@codemirror/state";
@@ -11,7 +12,20 @@ import { Decoration, EditorView, keymap, type DecorationSet } from "@codemirror/
 import type { SyntaxNode } from "@lezer/common";
 import { basename } from "../../../platform/tauri/fs";
 
-export const editorMatching: Extension = [bracketMatching(), matchingTags()];
+export const editorMatching: Extension = [
+  bracketMatching({
+    renderMatch(match, state) {
+      // HTML already exposes native tag handles. Let our tag field own tag
+      // presentation so async language loads refresh it without duplicate marks.
+      if (match.matched && tagPairAt(state, match.start.from)) return [];
+      const decoration = match.matched ? matchingMark : nonmatchingMark;
+      const ranges = [decoration.range(match.start.from, match.start.to)];
+      if (match.end) ranges.push(decoration.range(match.end.from, match.end.to));
+      return ranges;
+    },
+  }),
+  matchingTags(),
+];
 
 export function editorTyping(path: string): Extension {
   const syntax = syntaxForPath(path);
@@ -288,12 +302,18 @@ const NAME_NODES = new Set([
 ]);
 
 const matchingMark = Decoration.mark({ class: "cm-matchingBracket" });
+const nonmatchingMark = Decoration.mark({ class: "cm-nonmatchingBracket" });
 
 function matchingTags(): Extension {
   return StateField.define<DecorationSet>({
     create: (state) => tagDecorations(state),
     update(value, transaction) {
-      if (!transaction.docChanged && !transaction.selection) return value;
+      if (
+        !transaction.docChanged &&
+        !transaction.selection &&
+        syntaxTree(transaction.state) === syntaxTree(transaction.startState)
+      )
+        return value;
       return tagDecorations(transaction.state);
     },
     provide: (field) => EditorView.decorations.from(field),
@@ -302,12 +322,16 @@ function matchingTags(): Extension {
 
 function tagDecorations(state: EditorState): DecorationSet {
   const ranges = [];
+  const seen = new Set<number>();
   for (const range of state.selection.ranges) {
     if (!range.empty) continue;
     const pair = tagPairAt(state, range.head);
     if (!pair) continue;
-    ranges.push(matchingMark.range(pair.open.from, pair.open.to));
-    ranges.push(matchingMark.range(pair.close.from, pair.close.to));
+    for (const name of [pair.open, pair.close]) {
+      if (seen.has(name.from)) continue;
+      seen.add(name.from);
+      ranges.push(matchingMark.range(name.from, name.to));
+    }
   }
   return Decoration.set(ranges, true);
 }
@@ -325,6 +349,11 @@ function tagPairAt(state: EditorState, pos: number) {
   const openName = nameChild(open);
   const closeName = nameChild(close);
   if (!openName || !closeName) return null;
+  const opening = state.sliceDoc(openName.from, openName.to);
+  const closing = state.sliceDoc(closeName.from, closeName.to);
+  const caseInsensitive = ["html", "markdown"].includes(state.facet(language)?.name ?? "");
+  if (caseInsensitive ? opening.toLowerCase() !== closing.toLowerCase() : opening !== closing)
+    return null;
   return { open: openName, close: closeName };
 }
 

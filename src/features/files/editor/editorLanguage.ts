@@ -8,6 +8,7 @@ import type { Extension } from "@codemirror/state";
 import { tagHighlighter, tags, type Highlighter } from "@lezer/highlight";
 import type { ColorScheme } from "../../settings/model/appearance";
 import { basename } from "../../../platform/tauri/fs";
+import { cssVariableCompletions } from "./editorAutocomplete";
 
 const HIGHLIGHT_TAGS = {
   keyword: [
@@ -150,12 +151,13 @@ export async function languageForPath(path: string): Promise<Extension | null> {
     return legacyLanguage(json);
   }
   if (extension === ".css") {
-    const { css } = await import("@codemirror/lang-css");
-    return css();
+    const { css, cssLanguage } = await import("@codemirror/lang-css");
+    return [css(), cssLanguage.data.of({ autocomplete: cssVariableCompletions })];
   }
   if ([".html", ".htm"].includes(extension)) {
     const { html } = await import("@codemirror/lang-html");
-    return html();
+    const { cssLanguage } = await import("@codemirror/lang-css");
+    return [html(), cssLanguage.data.of({ autocomplete: cssVariableCompletions })];
   }
   if ([".md", ".mdx", ".markdown"].includes(extension)) {
     const { markdown } = await import("@codemirror/lang-markdown");

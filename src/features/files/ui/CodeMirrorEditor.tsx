@@ -59,13 +59,14 @@ import { editorAutocomplete } from "../editor/editorAutocomplete";
 import { editorBlame, refreshBlame } from "../editor/editorBlame";
 import { conflictBlocks, editorConflicts, stepConflict } from "../editor/editorConflicts";
 import { languageForPath, schemeExtensions } from "../editor/editorChrome";
+import { editorReadability } from "../editor/editorReadability";
 import {
   preserveEditorViewport,
   replaceEditorDoc,
   scrollLineToTop,
   topVisibleLine,
 } from "../editor/editorDoc";
-import { editorMatching, editorTyping, tryExpandEmmet } from "../editor/editorEditing";
+import { editorTyping, tryExpandEmmet } from "../editor/editorEditing";
 import { EditorSelectionMenu, type EditorSelectionTarget } from "./EditorSelectionMenu";
 import { editorCodeSelection, formatEditorSelectionReference } from "../model/editorSelection";
 import { requestAddToChat } from "../../sessions/model/quoteDraft";
@@ -510,7 +511,7 @@ function StandardCodeMirrorEditor({
       wrappedLineIndent,
       language.of([]),
       editorScheme.of(schemeExtensions(isLightScheme() ? "light" : "dark")),
-      editorMatching,
+      editorReadability(path),
       editorTyping(path),
       editorAutocomplete,
       editorLint(path, (count) => onErrorCountChangeRef.current(count)),
@@ -616,6 +617,7 @@ function StandardCodeMirrorEditor({
         originalExtensions: [
           editorZoom(),
           minimalSetup,
+          editorReadability(path),
           editorNavigation(cwd, path, (...args) => onOpenFileRef.current?.(...args)),
           lineNumbers(),
           EditorView.lineWrapping,

@@ -15,6 +15,7 @@ import { Button } from "../../../shared/ui/Button";
 import { Search } from "../../../shared/ui/icons";
 import { useColorScheme } from "../../../shared/hooks/useColorScheme";
 import { languageForPath, schemeExtensions } from "../../files/editor/editorChrome";
+import { editorReadability } from "../../files/editor/editorReadability";
 import { editorSearch } from "../../files/editor/editorSearch";
 import { editorZoom } from "../../files/editor/editorZoom";
 import { hasConflictMarkers } from "../model/conflictMarkers";
@@ -107,6 +108,7 @@ export function MergeConflictEditor(props: MergeConflictEditorProps) {
         mergeResolutionHistory,
         theme.current.of(schemeExtensions(schemeRef.current)),
         language.of([]),
+        editorReadability(path),
         editability.current.of([
           EditorState.readOnly.of(!!propsRef.current.disabled),
           mergeActionsDisabled.of(!!propsRef.current.disabled),
