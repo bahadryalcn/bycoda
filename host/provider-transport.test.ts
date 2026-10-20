@@ -47,6 +47,8 @@ readline.createInterface({input: process.stdin}).on('line', line => {
     return;
   }
   if (request.method === 'initialize') send({id: request.id, result: {}});
+  if (request.method === 'config/read') send({id: request.id, result: {config: {skills: {config: []}}}});
+  if (request.method === 'skills/list') send({id: request.id, result: {data: []}});
   if (request.method === 'account/read') send({id: request.id, result: {account: {type: 'fixture'}, requiresOpenaiAuth: false}});
   if (request.method === 'model/list') send({id: request.id, result: {data: [{model: 'fixture-model', displayName: 'Fixture model', supportedReasoningEfforts: ['low', 'high']}], nextCursor: null}});
   if (request.method === 'thread/start' || request.method === 'thread/resume') {
@@ -59,7 +61,7 @@ readline.createInterface({input: process.stdin}).on('line', line => {
     send({id: request.id, result: {thread: {id: 'fixture-thread', turns}}});
   }
   if (request.method === 'turn/start') {
-    record({codexEffort: request.params.effort ?? null, fixtureTurn: request.params.input?.some(item => item.text === 'hello')});
+    record({codexEffort: request.params.effort ?? null, fixtureTurn: request.params.input?.some(item => typeof item.text === 'string' && item.text.trimEnd().endsWith('hello'))});
     send({id: request.id, result: {turn: {id: 'fixture-turn'}}});
     setTimeout(() => {
       if (JSON.stringify(request.params.input).includes('generate-fixture-image')) send({method: 'item/completed', params: {threadId: 'fixture-thread', turnId: 'fixture-turn', item: {id: 'generated-image', type: 'imageGeneration', result: 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl6lX8AAAAASUVORK5CYII='}}});
