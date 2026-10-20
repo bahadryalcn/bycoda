@@ -174,7 +174,7 @@ it("keeps autosaving the draft after deletion fails", async () => {
   expect(stored.find((note) => note.sourceSessionId === sessionId)?.body).toBe(
     "Keep this draft and the next edit",
   );
-  expect(button("Delete note").disabled).toBe(false);
+  expect(button("Retry").disabled).toBe(false);
 });
 
 it("creates no blank documents on open or StrictMode remount until explicitly requested", async () => {
