@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.56]
+
+### Termius migration
+
+- Import local Termius desktop servers from the Servers actions menu with searchable previews and bulk selection.
+- Preserve names, addresses, users, ports, groups and tags, and skip connections already present in the inventory.
+- Optionally migrate linked SSH private keys into protected local files without exposing their contents to the interface or logs.
+- Show unsupported routing settings for review. Saved passwords, port forwards and snippets are not imported.
+
 ## [0.6.51]
 
 ### Editor tabs

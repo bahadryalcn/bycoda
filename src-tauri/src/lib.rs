@@ -82,6 +82,10 @@ mod ssh_terminal;
 mod ssh_window_lifecycle;
 mod terminal_completion;
 mod terminal_profiles;
+mod termius_import;
+mod termius_keys;
+mod termius_reader;
+mod termius_transfer;
 mod trackpad_zoom;
 mod tray;
 mod turn_probe;
@@ -381,6 +385,9 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             remote::remote_machines,
             server_inventory::server_inventory_list,
+            termius_import::termius_import_preview,
+            termius_import::termius_import_apply,
+            termius_import::termius_import_forget,
             server_inventory::server_ssh_save,
             server_inventory::server_ssh_identity_set,
             server_inventory::server_metadata_update,

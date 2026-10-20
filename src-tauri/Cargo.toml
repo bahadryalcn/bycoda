@@ -26,6 +26,10 @@ sha2 = "0.10"
 unicode-normalization = "0.1"
 uuid = { version = "1", features = ["v4"] }
 base64 = "0.22"
+chromium-storage-indexeddb-core = "=0.2.0"
+leveldb-core = "=0.1.2"
+crypto_secretbox = "=0.1.1"
+zeroize = "1"
 tauri-plugin-dialog = "2"
 tauri-plugin-fs = "2"
 rusqlite = { version = "0.40.2", features = ["bundled", "hooks"], default-features = false }
@@ -48,6 +52,8 @@ portable-pty = { version = "0.9", path = "../vendor/portable-pty" }
 windows-sys = { version = "0.61", features = [
   "Win32_Foundation",
   "Win32_Security",
+  "Win32_Security_Credentials",
+  "Win32_Security_Authorization",
   "Win32_Storage_FileSystem",
   "Win32_System_JobObjects",
   "Win32_System_Threading",

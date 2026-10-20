@@ -391,3 +391,13 @@ it("searches and displays the effective SSH destination while preserving the edi
   expect(server.sshEndpoint).toEqual({ host: "target.invalid", user: "local-user", port: 22 });
   expect(terminalActions.open).not.toHaveBeenCalled();
 });
+
+
+it("opens Termius migration from the server actions menu", async () => {
+  await render();
+  await click("More actions");
+  const action = document.querySelector<HTMLButtonElement>('[role="menuitem"][aria-label="Import from Termius"]');
+  expect(action).toBeTruthy();
+  await act(async () => action!.click());
+  expect(document.querySelector('[role="dialog"]')?.textContent).toContain("Scan this computer");
+});

@@ -9,12 +9,14 @@ import { Alert } from "../../../shared/ui/Alert";
 import { Badge } from "../../../shared/ui/Badge";
 import { Button } from "../../../shared/ui/Button";
 import { Popover } from "../../../shared/ui/Popover";
+import { DropdownMenu } from "../../../shared/ui/DropdownMenu";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import { Switch } from "../../../shared/ui/Switch";
 import { QuickConnect } from "./QuickConnect";
 import { useOpenQuickServerTerminal, useOpenServerTerminal } from "./ServersTerminalWorkspace";
 import { SshServerEditor } from "./SshServerEditor";
 import { SshSettings } from "./SshSettings";
+import { TermiusImportDialog } from "./TermiusImportDialog";
 import { ServersConnectionTools } from "./ServersConnectionTools";
 import { useServerInventory, type ServerRecord } from "../model/serverInventory";
 import { SearchInput } from "../../../shared/ui/SearchInput";
@@ -28,6 +30,7 @@ import {
   X,
   Lock,
   Pencil,
+  MoreHorizontal,
 } from "../../../shared/ui/icons";
 import {
   requestMachineEdit,
@@ -135,6 +138,9 @@ export function ServersView({
   };
   const [quickConnect, setQuickConnect] = useState(false);
   const [sshSettings, setSshSettings] = useState(false);
+  const [termiusImport, setTermiusImport] = useState(false);
+  const [actionsOpen, setActionsOpen] = useState(false);
+  const actionsAnchor = useRef<HTMLButtonElement>(null);
   const [editor, setEditor] = useState<ServerRecord | "new" | undefined>();
   const [filtersOpen, setFiltersOpen] = useState(false);
   const filtersAnchor = useRef<HTMLButtonElement>(null);
@@ -308,6 +314,29 @@ export function ServersView({
             <Plus aria-hidden className="size-3.5" />
             {t("Add machine")}
           </Button>
+          <Button
+            ref={actionsAnchor}
+            variant="ghost"
+            iconOnly
+            label={t("More actions")}
+            aria-expanded={actionsOpen}
+            aria-haspopup="menu"
+            onClick={() => setActionsOpen(!actionsOpen)}
+          >
+            <MoreHorizontal aria-hidden className="size-3.5" />
+          </Button>
+          {actionsOpen ? (
+            <DropdownMenu
+              anchor={actionsAnchor}
+              label={t("More actions")}
+              items={[{ kind: "item", id: "import-termius", label: t("Import from Termius") }]}
+              onClose={() => setActionsOpen(false)}
+              onPick={() => {
+                setActionsOpen(false);
+                setTermiusImport(true);
+              }}
+            />
+          ) : null}
         </div>
       </div>
       {error ? (
@@ -568,6 +597,7 @@ export function ServersView({
         ) : null}
       </div>
       {quickConnect ? <QuickConnect onClose={() => setQuickConnect(false)} /> : null}
+      {termiusImport ? <TermiusImportDialog servers={servers} onClose={() => setTermiusImport(false)} /> : null}
       {sshSettings ? (
         <SshSettings
           servers={servers}
