@@ -32,7 +32,9 @@ export function ServerTerminalRestorePreview({
         {t("SSH terminals")} ({restore.tabs.length})
       </summary>
       <p className="mbs-2 text-(--ui-text-muted)">
-        {t("Restored tabs reconnect only when you choose Connect.")}
+        {t(
+          "Restored tabs reconnect only when you choose Connect. This opens a new shell; previous commands are not replayed.",
+        )}
       </p>
       {error ? (
         <p className="mbs-2 text-(--ui-tone-danger-fg)" role="alert">

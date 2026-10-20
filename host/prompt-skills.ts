@@ -1,18 +1,46 @@
 import { open } from "node:fs/promises";
 import { homedir } from "node:os";
-import { listHostSkills } from "./skills";
+import { listHostSkillCandidates } from "./skills";
 import { skillInvocationTokens } from "../src/features/skills/model/skillTokens";
 import { SKILL_INVOCATION_GUIDANCE } from "../src/integrations/harness/core/skillGuidance";
+import { readSkillPolicy } from "./skill-policy";
+import {
+  assertSkillInvocationsEnabled,
+  skillDisabled,
+} from "../src/integrations/harness/core/skillPolicy";
+import {
+  getReportedCommands,
+  reportedSkillRestrictions,
+} from "../src/integrations/harness/core/reportedCommands";
 
 /** Resolve on the host at send time; never send client paths or cache skill bodies. */
 export async function prepareHostSkillPrompt(
   text: string,
   cwd: string,
   home = homedir(),
+  sessionId?: string,
 ): Promise<string> {
+  const policy = readSkillPolicy(home);
+  const native = reportedSkillRestrictions(getReportedCommands(sessionId));
+  assertSkillInvocationsEnabled(text, policy);
+  assertSkillInvocationsEnabled(text, native);
   const names = new Set(skillInvocationTokens(text).map((token) => token.name));
   if (!names.size) return text;
-  const picked = listHostSkills(cwd, home).filter((skill) => names.has(skill.name));
+  const named = listHostSkillCandidates(cwd, home).skills.filter((skill) => names.has(skill.name));
+  const picked = [
+    ...new Map(
+      named
+        .filter((skill) => !skillDisabled(policy, skill) && !skillDisabled(native, skill))
+        .reverse()
+        .map((skill) => [skill.name, skill]),
+    ).values(),
+  ];
+  for (const name of names)
+    if (named.some((skill) => skill.name === name) && !picked.some((skill) => skill.name === name))
+      throw new Error(`Skill "${name}" is disabled for this conversation.`);
+  for (const skill of picked)
+    if (skill.userInvocable === false)
+      throw new Error(`Skill "${skill.name}" does not allow user invocation.`);
   if (!picked.length) return text;
   const blocks = await Promise.all(
     picked.map(async (skill) => {

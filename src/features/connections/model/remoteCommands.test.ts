@@ -34,6 +34,31 @@ beforeEach(() => {
   invokeLocal.mockReset();
 });
 
+it("stores restrictions on the owning machine and migrates only that machine's legacy paths", async () => {
+  const policy = { disabledNames: ["good-css"], disabledPaths: [] };
+  remoteRequest.mockResolvedValue(policy);
+  expect(
+    await runMachineCommand("env", "skill_policy_get", {
+      cwd: "",
+      legacyDisabledPaths: [
+        "C:/local/skills/good-css/SKILL.md",
+        "remote://other/skills/other/SKILL.md",
+        "remote://env/skills/good-css/SKILL.md",
+      ],
+    }),
+  ).toEqual(policy);
+  expect(remoteRequest).toHaveBeenLastCalledWith("machine", "workspace.run", {
+    command: "skill_policy_get",
+    args: { cwd: "", legacyDisabledPaths: ["/skills/good-css/SKILL.md"] },
+  });
+  await runMachineCommand("env", "skill_policy_set", { cwd: "", name: "good-css", enabled: false });
+  expect(remoteRequest).toHaveBeenLastCalledWith("machine", "workspace.run", {
+    command: "skill_policy_set",
+    args: { cwd: "", name: "good-css", enabled: false },
+  });
+  expect(invokeLocal).not.toHaveBeenCalled();
+});
+
 it("routes slash-command discovery to the host and preserves command metadata", async () => {
   const commands = [
     {

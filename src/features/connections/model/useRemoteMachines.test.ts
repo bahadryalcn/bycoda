@@ -44,3 +44,30 @@ it("distinguishes a failed initial load and retains canonical IDs after a failed
     vi.unstubAllGlobals();
   }
 });
+
+it("retries an initial machine inventory failure automatically without opening connections", async () => {
+  vi.useFakeTimers();
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  vi.mocked(invoke)
+    .mockReset()
+    .mockRejectedValueOnce(new Error("temporarily unavailable"))
+    .mockResolvedValue([]);
+  const root = createRoot(document.createElement("div"));
+  let latest!: ReturnType<typeof useRemoteMachines>;
+  function Probe() {
+    latest = useRemoteMachines();
+    return null;
+  }
+  try {
+    await act(async () => root.render(createElement(Probe)));
+    expect(latest.error).toContain("unavailable");
+    await act(async () => vi.advanceTimersByTimeAsync(6_000));
+    expect(latest.error).toBeUndefined();
+    expect(latest.loaded).toBe(true);
+    expect(vi.mocked(invoke).mock.calls.every((call) => call[0] === "remote_machines")).toBe(true);
+  } finally {
+    act(() => root.unmount());
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  }
+});

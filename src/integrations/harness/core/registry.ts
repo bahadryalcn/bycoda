@@ -18,6 +18,8 @@ import type { PrContent } from "../../../features/source-control/model/gitText";
 import { hasLiveCatalog } from "../../../features/sessions/model/models";
 import type { UserQuestionReply } from "../../../features/sessions/model/userQuestion";
 import type { NativeCommandProvider } from "./nativeCommands";
+import { loadSkillRestrictions } from "../../../features/skills/model/skillPreferences";
+import { withSkillPolicy } from "./skillPolicy";
 import type {
   ApprovalDecision,
   CompactContextInput,
@@ -346,14 +348,25 @@ export function sendHarnessTurn(input: SendTurnInput & { harness: HarnessId }) {
           throw new Error("Turn cancelled before it started");
         const owner = beginAdapterOperation(input.sessionId, adapter);
         try {
+          const restricted = withSkillPolicy(
+            input.harness,
+            input,
+            await loadSkillRestrictions(input.cwd),
+          );
+          if ((cancellationEpoch.get(input.sessionId) ?? 0) !== epoch)
+            throw new Error("Turn cancelled before it started");
           await adapter.sendTurn({
-            ...input,
+            ...restricted,
             ...(input.harness === "codex"
               ? {
                   runtimeInstructions:
-                    [input.runtimeInstructions, hint].filter(Boolean).join("\n\n") || undefined,
+                    [restricted.runtimeInstructions, hint].filter(Boolean).join("\n\n") ||
+                    undefined,
                 }
-              : { text }),
+              : {
+                  text: withSkillPolicy(input.harness, { ...input, text }, restricted.skillPolicy!)
+                    .text,
+                }),
             onAccepted: () => {
               accepted();
               input.onAccepted?.();
@@ -400,7 +413,10 @@ export function compactHarnessContext(
     cancelIdlePark(input.sessionId);
     const owner = beginAdapterOperation(input.sessionId, adapter);
     try {
-      await adapter.compactContext(input);
+      await adapter.compactContext({
+        ...input,
+        skillPolicy: await loadSkillRestrictions(input.cwd),
+      });
       forgetRuntimeHint(input.sessionId);
     } finally {
       await finishAdapterOperation(input.sessionId, owner);
@@ -431,7 +447,12 @@ export function rewindHarnessLastTurn(
     cancelIdlePark(input.sessionId);
     const owner = beginAdapterOperation(input.sessionId, adapter);
     try {
-      const result = await adapter.rewindLastTurn(input);
+      const policy = await loadSkillRestrictions(input.cwd);
+      const result = await adapter.rewindLastTurn(
+        input.text === undefined
+          ? { ...input, skillPolicy: policy }
+          : withSkillPolicy(input.harness, { ...input, text: input.text }, policy),
+      );
       // The removed turn may have carried the hint; resend it next turn.
       forgetRuntimeHint(input.sessionId);
       return result;
@@ -452,7 +473,9 @@ export function steerHarnessTurn(input: SteerTurnInput & { harness: HarnessId })
       throw new Error(`${input.harness} is not connected yet`);
     }
     cancelIdlePark(input.sessionId);
-    await adapter.steerTurn(input);
+    await adapter.steerTurn(
+      withSkillPolicy("steer", input, await loadSkillRestrictions(input.cwd)),
+    );
   });
 }
 

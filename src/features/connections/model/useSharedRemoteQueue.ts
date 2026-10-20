@@ -1,4 +1,6 @@
-import { useEffect, useMemo, useSyncExternalStore } from "react";
+import { useEffect, useMemo, useRef, useSyncExternalStore } from "react";
+import { subscribeRemoteRecovered } from "./remoteHealth";
+import { remoteBackoffDelay } from "./remotePollingPolicy";
 import { loadStoredQueue, setSessionQueue } from "../../sessions/data/sessionStore";
 import type { Attachment } from "../../sessions/model/session";
 import { SharedQueueClient } from "./sharedQueueClient";
@@ -32,24 +34,76 @@ export function useSharedRemoteQueue(
     client?.subscribe ?? (() => () => {}),
     client?.snapshot ?? (() => empty),
   );
+  const initializeRef = useRef<(() => Promise<void>) | undefined>(undefined);
   useEffect(() => {
     if (!client || !key) return;
     let stopped = false;
+    let initializing: Promise<void> | undefined;
+    let polling: Promise<void> | undefined;
+    let wakePending = false;
+    let failures = 0;
+    let timer: ReturnType<typeof setTimeout> | undefined;
     const storedKey = sharedQueueStorageId(environmentId, key);
-    void loadStoredQueue(storedKey)
-      .then(async (messages) => (messages.length ? messages : loadStoredQueue(key)))
-      .then((messages) => {
-        if (!stopped) return client.initialize({ messages, status: "restored" });
-      })
-      .catch((error) => {
-        if (!stopped) client.hold(error);
-      });
-    const timer = setInterval(() => {
-      if (!stopped && client.snapshot().loaded) void client.sync().catch(() => {});
-    }, 1500);
+    const initialize = (): Promise<void> => {
+      if (stopped) return Promise.resolve();
+      if (initializing) return initializing;
+      const request = loadStoredQueue(storedKey)
+        .then(async (messages) => (messages.length ? messages : loadStoredQueue(key)))
+        .then(async (messages) => {
+          if (!stopped) await client.initialize({ messages, status: "restored" });
+        })
+        .finally(() => {
+          if (initializing === request) initializing = undefined;
+        });
+      initializing = request;
+      return request;
+    };
+    initializeRef.current = initialize;
+    const poll = () => {
+      if (stopped) return;
+      if (polling) {
+        wakePending = true;
+        return;
+      }
+      const request = client.snapshot().loaded ? client.sync() : initialize();
+      polling = request
+        .catch((error) => {
+          if (!stopped) client.hold(error);
+        })
+        .finally(() => {
+          polling = undefined;
+          if (stopped) return;
+          failures = client.snapshot().error ? Math.min(4, failures + 1) : 0;
+          timer = setTimeout(
+            poll,
+            wakePending ? 0 : failures ? remoteBackoffDelay(failures) : 1500,
+          );
+          wakePending = false;
+        });
+    };
+    const wake = () => {
+      if (stopped) return;
+      clearTimeout(timer);
+      poll();
+    };
+    const visible = () => {
+      if (!document.hidden) wake();
+    };
+    const stopRecovered = subscribeRemoteRecovered((recovered) => {
+      if (!recovered || recovered === environmentId) wake();
+    });
+    window.addEventListener("focus", wake);
+    window.addEventListener("online", wake);
+    document.addEventListener("visibilitychange", visible);
+    poll();
     return () => {
       stopped = true;
-      clearInterval(timer);
+      clearTimeout(timer);
+      stopRecovered();
+      window.removeEventListener("focus", wake);
+      window.removeEventListener("online", wake);
+      document.removeEventListener("visibilitychange", visible);
+      if (initializeRef.current === initialize) initializeRef.current = undefined;
     };
   }, [client, key, environmentId]);
   useEffect(() => {
@@ -82,9 +136,7 @@ export function useSharedRemoteQueue(
     retry: () => {
       const retry = state.loaded
         ? client.retry()
-        : loadStoredQueue(sharedQueueStorageId(environmentId, key!))
-            .then(async (messages) => (messages.length ? messages : loadStoredQueue(key!)))
-            .then((messages) => client.initialize({ messages, status: "restored" }));
+        : (initializeRef.current?.() ?? Promise.resolve());
       void retry.catch((error) => client.hold(error));
     },
     enqueue: (message: RemoteQueueDraft) =>

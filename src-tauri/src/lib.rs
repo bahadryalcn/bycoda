@@ -685,6 +685,8 @@ pub fn run() {
             fs::claude_shell_commands,
             fs::write_text_file,
             skills::list_skills,
+            skills::skill_policy_get,
+            skills::skill_policy_set,
             skills::skill_export,
             skills::skill_delete,
             skills::skill_import,

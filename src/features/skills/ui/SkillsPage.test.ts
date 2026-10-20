@@ -101,6 +101,8 @@ beforeEach(() => {
   vi.mocked(ask).mockReset();
   vi.mocked(ask).mockResolvedValue(false);
   vi.mocked(invoke).mockImplementation(async (command) => {
+    if (command === "skill_policy_get")
+      return { disabledNames: [], disabledPaths: loadDisabledSkillPaths() };
     if (command === "list_skills") return skills;
     if (command === "read_text_file") return markdown;
     throw new Error(`Unexpected command: ${command}`);
@@ -118,6 +120,30 @@ afterEach(() => {
 });
 
 describe("Settings skill preview", () => {
+  it("persists owner restrictions before updating the toggle, and keeps it off when save fails", async () => {
+    const named = { ...skills[0], name: "project-guide" };
+    const policy = { disabledNames: [named.name], disabledPaths: [] as string[] };
+    const original = vi.mocked(invoke).getMockImplementation()!;
+    vi.mocked(invoke).mockImplementation(async (command, args) => {
+      if (command === "skill_policy_set") return policy;
+      if (command === "list_skills") return [named];
+      return original(command, args);
+    });
+    await render();
+    const toggle = () =>
+      container.querySelector<HTMLButtonElement>('[aria-label="Enable project-guide in bycoda"]')!;
+    await act(async () => toggle().click());
+    expect(invoke).toHaveBeenCalledWith("skill_policy_set", {
+      cwd: "",
+      name: named.name,
+      enabled: false,
+    });
+    expect(toggle().getAttribute("aria-checked")).toBe("false");
+    vi.mocked(invoke).mockRejectedValueOnce(new Error("disk unavailable"));
+    await act(async () => toggle().click());
+    expect(toggle().getAttribute("aria-checked")).toBe("false");
+    expect(container.textContent).toContain("disk unavailable");
+  });
   function edit(text: string) {
     const view = EditorView.findFromDOM(container.querySelector(".cm-editor")!)!;
     act(() => view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: text } }));
@@ -620,7 +646,7 @@ describe("Settings skill preview", () => {
     expect(loadDisabledSkillPaths()).toEqual([skills[1].path]);
     expect(
       container
-        .querySelector('[aria-label="Include Personal guide in bycoda catalog"]')
+        .querySelector('[aria-label="Enable Personal guide in bycoda"]')
         ?.getAttribute("aria-checked"),
     ).toBe("false");
     await click("Actions for Personal guide");
@@ -666,6 +692,8 @@ describe("Skills on connected machines", () => {
   ) {
     hostCalls = [];
     vi.mocked(invoke).mockImplementation(async (command, args) => {
+      if (command === "skill_policy_get")
+        return { disabledNames: [], disabledPaths: loadDisabledSkillPaths() };
       const input = (args ?? {}) as Record<string, unknown>;
       if (command === "remote_machines") return machines;
       if (command === "list_skills") return [skills[1]];
@@ -715,7 +743,9 @@ describe("Skills on connected machines", () => {
     connect([machine("mac", "Mac mini")], () => macSkills);
     await renderLocalProject();
 
-    expect(hostCalls).toMatchObject([{ command: "list_skills", args: { cwd: "" } }]);
+    expect(hostCalls).toContainEqual(
+      expect.objectContaining({ command: "list_skills", args: { cwd: "" } }),
+    );
     const text = container.textContent ?? "";
     expect(text).toContain("This computer");
     expect(text).toContain("Mac mini");

@@ -3,8 +3,10 @@ import { remoteBackoffDelay, withBackoffJitter } from "./remotePollingPolicy";
 import { remoteRequest } from "./connections";
 import { startPerformanceSpan } from "../../../shared/lib/performanceTrace";
 import { subscribeRemoteRecovered } from "./remoteHealth";
+import { environmentForMachine, subscribeConnectionInvalidated } from "./remoteLifecycle";
 
 export type MachineChannelDemand = {
+  active?: { projectId: string; sessionId: string; lastActiveAt: number };
   inlineSync?: boolean;
   sessions?: readonly { sessionId: string; revision: number }[];
   projects?: readonly { projectId: string; known?: string }[];
@@ -26,6 +28,9 @@ type Channel = {
   instanceId?: string;
   polling: boolean;
   subscriptionId: string;
+  epoch: number;
+  refreshPending: boolean;
+  recentProjects: Map<string, number>;
 };
 const channels = new Map<string, Channel>();
 /** Git cursors a host answers per poll. */
@@ -35,8 +40,15 @@ let stopWake: (() => void) | undefined;
 
 function startWake() {
   if (stopWake) return;
-  const wake = () => {
+  const wake = (environmentId?: string, reset = false) => {
     for (const [machineId, channel] of channels) {
+      const environment = environmentForMachine(machineId);
+      if (environmentId && environment && environment !== environmentId) continue;
+      if (reset) {
+        channel.epoch++;
+        channel.refreshPending = true;
+      }
+      channel.failures = 0;
       if (channel.timer) clearTimeout(channel.timer);
       channel.timer = undefined;
       schedule(machineId, channel);
@@ -45,17 +57,22 @@ function startWake() {
   const onVisibility = () => {
     if (!document.hidden) wake();
   };
-  const unsubscribe = subscribeRemoteRecovered(wake);
+  const unsubscribe = subscribeRemoteRecovered((environmentId) => wake(environmentId, true));
+  const stopInvalidation = subscribeConnectionInvalidated((environmentId) =>
+    wake(environmentId, true),
+  );
+  const onWake = () => wake();
   if (typeof window !== "undefined") {
-    window.addEventListener("focus", wake);
-    window.addEventListener("online", wake);
+    window.addEventListener("focus", onWake);
+    window.addEventListener("online", onWake);
     document.addEventListener("visibilitychange", onVisibility);
   }
   stopWake = () => {
     unsubscribe();
+    stopInvalidation();
     if (typeof window !== "undefined") {
-      window.removeEventListener("focus", wake);
-      window.removeEventListener("online", wake);
+      window.removeEventListener("focus", onWake);
+      window.removeEventListener("online", onWake);
       document.removeEventListener("visibilitychange", onVisibility);
     }
     stopWake = undefined;
@@ -68,8 +85,17 @@ function mergedDemand(channel: Channel): MachineChangesRequest {
   const git = new Map<string, string | undefined>();
   const taskEtags = new Set<string>();
   let inlineSync = false;
+  const activeSessions = new Map<string, number>();
   for (const { demand: source } of channel.subscribers) {
     const demand = typeof source === "function" ? source() : source;
+    if (demand.active) {
+      const { projectId, sessionId, lastActiveAt } = demand.active;
+      channel.recentProjects.set(
+        projectId,
+        Math.max(channel.recentProjects.get(projectId) ?? 0, lastActiveAt),
+      );
+      activeSessions.set(sessionId, Math.max(activeSessions.get(sessionId) ?? 0, lastActiveAt));
+    }
     inlineSync ||= demand.inlineSync === true;
     for (const session of demand.sessions ?? [])
       sessions.set(
@@ -89,25 +115,43 @@ function mergedDemand(channel: Channel): MachineChangesRequest {
   }
   return {
     subscriptionId: channel.subscriptionId,
+    ...(activeSessions.size
+      ? {
+          activeSessions: [...activeSessions].map(([sessionId, lastActiveAt]) => ({
+            sessionId,
+            lastActiveAt,
+          })),
+        }
+      : {}),
+    ...(channel.recentProjects.size
+      ? {
+          activeProjects: [...channel.recentProjects]
+            .filter(([id]) => projects.has(id))
+            .map(([projectId, lastActiveAt]) => ({ projectId, lastActiveAt })),
+        }
+      : {}),
     ...(inlineSync ? { inlineSync: true } : {}),
-    ...(channel.instanceId ? { instanceId: channel.instanceId } : {}),
+    ...(channel.instanceId && !channel.refreshPending ? { instanceId: channel.instanceId } : {}),
     sessions: [...sessions].map(([sessionId, revision]) => ({
       sessionId,
-      revision,
+      revision: channel.refreshPending ? 0 : revision,
     })),
     projects: [...projects].map(([projectId, known]) => ({
       projectId,
-      ...(known ? { known } : {}),
+      ...(known && !channel.refreshPending ? { known } : {}),
     })),
     ...(git.size
       ? {
           // Past the host's limit the rest keep their own refresh triggers.
-          git: [...git]
-            .slice(0, GIT_CURSOR_LIMIT)
-            .map(([cwd, known]) => ({ cwd, ...(known ? { known } : {}) })),
+          git: [...git].slice(0, GIT_CURSOR_LIMIT).map(([cwd, known]) => ({
+            cwd,
+            ...(known && !channel.refreshPending ? { known } : {}),
+          })),
         }
       : {}),
-    ...(taskEtags.size ? { tasksKnown: taskEtags.size === 1 ? [...taskEtags][0] : "" } : {}),
+    ...(taskEtags.size
+      ? { tasksKnown: !channel.refreshPending && taskEtags.size === 1 ? [...taskEtags][0] : "" }
+      : {}),
     waitMs: 20_000,
   };
 }
@@ -123,6 +167,8 @@ function schedule(machineId: string, channel: Channel, delay = 0) {
 async function poll(machineId: string, channel: Channel) {
   if (channel.stopped || channel.polling || !channel.subscribers.size) return;
   channel.polling = true;
+  const epoch = channel.epoch;
+  const refreshing = channel.refreshPending;
   const done = startPerformanceSpan("remote-control");
   let delay = 0;
   try {
@@ -131,7 +177,7 @@ async function poll(machineId: string, channel: Channel) {
       "machine.changes",
       mergedDemand(channel),
     );
-    if (channel.stopped) return;
+    if (channel.stopped || epoch !== channel.epoch) return;
     if (
       !changes ||
       typeof changes.instanceId !== "string" ||
@@ -140,19 +186,37 @@ async function poll(machineId: string, channel: Channel) {
     )
       throw new Error("Invalid machine changes response");
     const reset =
-      changes.reset || (!!channel.instanceId && channel.instanceId !== changes.instanceId);
+      refreshing ||
+      changes.reset ||
+      (!!channel.instanceId && channel.instanceId !== changes.instanceId);
     channel.instanceId = changes.instanceId;
     channel.failures = 0;
+    channel.refreshPending = false;
     const delivered = reset && !changes.reset ? { ...changes, reset: true } : changes;
+    const checkedSessions = changes.checkedSessions && new Set(changes.checkedSessions);
+    const checkedProjects = changes.checkedProjects && new Set(changes.checkedProjects);
     for (const subscriber of [...channel.subscribers]) {
       try {
+        if (!reset && checkedSessions && checkedProjects) {
+          const demand =
+            typeof subscriber.demand === "function" ? subscriber.demand() : subscriber.demand;
+          const hasDemand = demand.sessions?.length || demand.projects?.length;
+          if (
+            hasDemand &&
+            demand.tasksKnown === undefined &&
+            !demand.git?.length &&
+            !demand.sessions?.some(({ sessionId }) => checkedSessions.has(sessionId)) &&
+            !demand.projects?.some(({ projectId }) => checkedProjects.has(projectId))
+          )
+            continue;
+        }
         subscriber.listener(delivered);
       } catch {
         /* one consumer cannot interrupt others */
       }
     }
   } catch (error) {
-    if (channel.stopped) return;
+    if (channel.stopped || epoch !== channel.epoch) return;
     for (const subscriber of [...channel.subscribers]) {
       try {
         subscriber.onError?.(error);
@@ -165,7 +229,7 @@ async function poll(machineId: string, channel: Channel) {
   } finally {
     done();
     channel.polling = false;
-    schedule(machineId, channel, delay || 100);
+    schedule(machineId, channel, epoch !== channel.epoch ? 0 : delay || 100);
   }
 }
 
@@ -183,6 +247,9 @@ export function subscribeRemoteMachineChannel(
       stopped: false,
       failures: 0,
       polling: false,
+      epoch: 0,
+      refreshPending: false,
+      recentProjects: new Map(),
       subscriptionId: `renderer-${++channelSequence}-${Math.random().toString(36).slice(2)}`,
     };
     channels.set(machineId, channel);

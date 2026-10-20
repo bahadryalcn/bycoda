@@ -50,6 +50,32 @@ afterEach(() => {
 });
 
 describe("fetchGitIndex", () => {
+  it("shares a slow pending read after the completed-result freshness window", async () => {
+    const gate = deferred<unknown>();
+    api.files.mockReturnValue(gate.promise);
+    const first = fetchGitIndex("/r");
+    vi.advanceTimersByTime(GIT_INDEX_FRESH_MS + 1);
+    const second = fetchGitIndex("/r");
+    gate.resolve(index("current"));
+    expect(await first).toBe(await second);
+    expect(api.files).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not let an earlier read replace an explicitly newer refresh", async () => {
+    const older = deferred<unknown>();
+    const newer = deferred<unknown>();
+    api.files.mockReturnValueOnce(older.promise).mockReturnValueOnce(newer.promise);
+    const first = fetchGitIndex("/r");
+    vi.advanceTimersByTime(1);
+    const second = fetchGitIndex("/r", { since: Date.now() });
+    newer.resolve(index("new"));
+    await second;
+    older.resolve(index("old"));
+    await first;
+    expect(await fetchGitIndex("/r")).toMatchObject({ head: "new" });
+    expect(api.files).toHaveBeenCalledTimes(2);
+  });
+
   it("runs one command for requests made while it is in flight", async () => {
     const gate = deferred<unknown>();
     api.files.mockReturnValue(gate.promise);

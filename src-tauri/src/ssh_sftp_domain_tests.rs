@@ -43,6 +43,9 @@ fn real_production_transfer_recovery_domain_flow() {
     let root = fixture.join(format!("domain-{}", uuid::Uuid::new_v4()));
     fs::create_dir(&root).unwrap();
     let owner = format!("domain-owner-{}", uuid::Uuid::new_v4());
+    // Production operations capture a window registered by the app lifecycle.
+    crate::ssh_window_lifecycle::register(&owner).unwrap();
+    crate::ssh_window_lifecycle::register("different-domain-owner").unwrap();
     let context = TransferContext {
         app: None,
         root: root.join("recoveries"),
@@ -352,4 +355,6 @@ fn real_production_transfer_recovery_domain_flow() {
         .to_string_lossy()
         .starts_with("domain-"));
     fs::remove_dir_all(root).unwrap();
+    crate::ssh_window_lifecycle::close(&owner);
+    crate::ssh_window_lifecycle::close("different-domain-owner");
 }

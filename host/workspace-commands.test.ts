@@ -14,6 +14,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { WorkspaceCommands } from "./workspace-commands";
 import { hostWorktrees } from "./git-worktrees";
+import * as workspace from "./workspace";
+import * as gitActions from "./git-actions";
 
 vi.mock("./git-worktrees", () => ({ hostWorktrees: vi.fn() }));
 const roots: string[] = [];
@@ -35,6 +37,62 @@ async function setup() {
   );
   return { root, projects, commands };
 }
+
+it("routes file and summary requests to the lightweight index, including conflict counts", async () => {
+  const { projects, commands } = await setup();
+  const cwd = projects[104].cwd;
+  const value = {
+    files: [],
+    conflicts: [{ relative: "conflict.txt" }],
+    additions: 2,
+    deletions: 1,
+  } as never;
+  const read = vi.spyOn(workspace, "hostGitIndex").mockResolvedValue(value);
+  try {
+    await commands.run("git_diff_files", { cwd });
+    expect(read).toHaveBeenLastCalledWith(await realpath(cwd), false);
+    expect(await commands.run("git_diff_stats", { cwd })).toEqual({
+      files: 1,
+      additions: 2,
+      deletions: 1,
+    });
+    expect(read).toHaveBeenLastCalledWith(await realpath(cwd), false);
+    await commands.run("git_diff_index", { cwd });
+    expect(read).toHaveBeenLastCalledWith(await realpath(cwd), true);
+  } finally {
+    read.mockRestore();
+  }
+});
+
+it("dispatches local staging while fetch is pending without bypassing the repository queues", async () => {
+  const { projects, commands } = await setup();
+  const cwd = projects[104].cwd;
+  await mkdir(join(cwd, ".git"));
+  let releaseFetch!: () => void;
+  let started!: () => void;
+  const ready = new Promise<void>((resolve) => {
+    started = resolve;
+  });
+  const fetch = vi.spyOn(gitActions, "runGitAction").mockImplementation(async () => {
+    started();
+    await new Promise<void>((resolve) => {
+      releaseFetch = resolve;
+    });
+  });
+  const stage = vi.spyOn(workspace, "hostGitAction").mockResolvedValue(undefined);
+  let pending: Promise<unknown> | undefined;
+  try {
+    pending = commands.run("git_fetch", { cwd });
+    await ready;
+    await commands.run("git_stage_all", { cwd });
+    expect(stage).toHaveBeenCalled();
+  } finally {
+    releaseFetch?.();
+    await pending;
+    fetch.mockRestore();
+    stage.mockRestore();
+  }
+});
 
 it("passes disabled skill copies to host discovery before deduplication", async () => {
   const { projects, commands } = await setup();

@@ -24,6 +24,8 @@ import { ServerForwards } from "../../src/features/connections/ui/ServerForwards
 import { useServerInventory } from "../../src/features/connections/model/serverInventory";
 import { setLanguagePreference } from "../../src/shared/i18n";
 import { Button } from "../../src/shared/ui/Button";
+import { startRemoteAutoRecovery } from "../../src/features/connections/model/remoteReconnect";
+import { recordFeatureHealth } from "../../src/features/connections/model/remoteLifecycle";
 import "../../src/styles/index.css";
 
 // Memory-only native bridge. No real endpoint, DB or credential access.
@@ -46,6 +48,8 @@ const emitFixtureEvent = (event: string, payload: unknown) => {
     if (name === event) callbacks.get(id)?.({ event, id, payload });
 };
 let finishTransfer: (() => void) | undefined;
+let recoveryMode: "offline" | "pending" | "ready" = "offline";
+let finishRecovery: ((value: unknown) => void) | undefined;
 const forwardStatuses = new Map<string, Record<string, unknown>>();
 let workspaceSnapshot: unknown = params.has("serverRestoreFixture")
   ? {
@@ -184,6 +188,12 @@ const machines = Array.from({ length: params.has("emptyServers") ? 0 : 35 }, (_,
       : { target: `fixture@server-${index}.example.invalid`, port: 2222, remotePort: 3774 },
 }));
 Object.assign(window, {
+  serversFixtureRecovery: (mode: "offline" | "pending" | "ready") => {
+    recoveryMode = mode;
+  },
+  serversFixtureFinishRecovery: () =>
+    finishRecovery?.({ environmentId: "environment-0", capabilities: [] }),
+  serversFixtureFilesReady: (ok: boolean) => recordFeatureHealth("environment-0", "files", ok),
   serversFixtureTerminalOutput: (id: string, text: string) => {
     const bytes = new TextEncoder().encode(text);
     emitFixtureEvent("pty-data", { id, data: btoa(String.fromCharCode(...bytes)) });
@@ -587,6 +597,18 @@ Object.assign(window, {
         listeners.delete(Number(input.eventId));
         return;
       }
+      if (command === "remote_request" && params.has("recoveryFixture")) {
+        if (input.machineId !== "fixture-0" || recoveryMode === "ready")
+          return {
+            environmentId: machines.find((machine) => machine.id === input.machineId)
+              ?.environmentId,
+            capabilities: [],
+          };
+        if (recoveryMode === "pending")
+          return new Promise((resolve) => {
+            finishRecovery = resolve;
+          });
+      }
       if (command === "remote_request")
         throw new Error("Machine is unreachable: connection refused");
       if (command.includes("is_maximized") || command.includes("is_fullscreen")) return false;
@@ -609,6 +631,7 @@ function ForwardFixture() {
 function Fixture() {
   useEffect(() => {
     if (params.has("queueFixture")) void refreshSshRunbookQueue();
+    if (params.has("recoveryFixture")) return startRemoteAutoRecovery();
   }, []);
   const [active, setActive] = useState<WorkspaceToolId>("servers");
   const [visible, setVisible] = useState(true);

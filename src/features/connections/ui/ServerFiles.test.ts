@@ -253,6 +253,52 @@ const proxyEndpoint = {
   port: 22,
   httpProxy: { host: "proxy.invalid", port: 3128 },
 };
+it("cancels a pending proxy approval without starting the late directory request", async () => {
+  let approve!: (ticket: string) => void;
+  approval.request.mockImplementationOnce(
+    () =>
+      new Promise<string>((resolve) => {
+        approve = resolve;
+      }),
+  );
+  const context = await setup([], proxyEndpoint);
+  try {
+    await act(async () =>
+      context.host
+        .querySelector("form")!
+        .dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })),
+    );
+    await act(async () => context.button("Cancel").click());
+    await act(async () => approve("late-ticket"));
+    expect(native.invoke).toHaveBeenCalledWith("ssh_sftp_cancel", expect.anything());
+    expect(native.invoke).not.toHaveBeenCalledWith("ssh_sftp_list", expect.anything());
+  } finally {
+    await context.cleanup();
+  }
+});
+
+it("cancels a pending download picker without starting the late transfer", async () => {
+  const context = await setup([]);
+  let choose!: (path: string) => void;
+  native.save.mockImplementationOnce(
+    () =>
+      new Promise<string>((resolve) => {
+        choose = resolve;
+      }),
+  );
+  try {
+    await context.list();
+    await act(async () =>
+      context.host.querySelector<HTMLButtonElement>('button[title="Download"]')!.click(),
+    );
+    await act(async () => context.button("Cancel").click());
+    await act(async () => choose("C:/late-download.txt"));
+    expect(native.invoke).not.toHaveBeenCalledWith("ssh_sftp_download", expect.anything());
+  } finally {
+    await context.cleanup();
+  }
+});
+
 it("binds explicit SFTP list/download/upload to one approved operation and cancels without remote IO", async () => {
   approval.request.mockResolvedValueOnce(null).mockResolvedValue("one-operation-ticket");
   native.invoke.mockImplementation(async (command: string) =>

@@ -4,6 +4,23 @@ import { dirname, join, resolve } from "node:path";
 
 const active = new AsyncLocalStorage<string>();
 const tails = new Map<string, Promise<unknown>>();
+export type GitMutationScope = "local" | "fetch" | "exclusive";
+const LOCAL_MUTATIONS = new Set([
+  "git_commit",
+  "git_stage_file",
+  "git_stage_files",
+  "git_stage_contents",
+  "git_stage_all",
+  "git_unstage_file",
+  "git_unstage_files",
+  "git_unstage_all",
+]);
+
+/** Only index writes/commit can overlap fetch; ref/worktree changes fence both. */
+export function gitMutationScope(command: string): GitMutationScope {
+  if (command === "git_fetch") return "fetch";
+  return LOCAL_MUTATIONS.has(command) ? "local" : "exclusive";
+}
 // Serialize only admission, not work. This preserves request order even when
 // resolving a junction/worktree path is slower than resolving the next request.
 let admission: Promise<unknown> = Promise.resolve();
@@ -40,11 +57,13 @@ async function repositoryKey(cwd: string): Promise<string> {
 }
 
 /** Serialize complete mutations across API clients and repository aliases.
+ * Fetch and index/commit have separate lanes; exclusive work fences both.
  * Nested calls (sync -> push, command dispatch -> stage) retain the same lease. */
 export async function withHostGitMutation<T>(
   cwd: string,
   work: () => Promise<T>,
   queueTimeoutMs = 120_000,
+  scope: GitMutationScope = "exclusive",
 ): Promise<T> {
   const admitted = admission.then(async () => {
     const key = await repositoryKey(cwd);
@@ -66,10 +85,15 @@ export async function withHostGitMutation<T>(
       if (expired) throw timeoutError();
       return active.run(key, work);
     };
-    const pending = (tails.get(key) ?? Promise.resolve()).then(run, run);
-    tails.set(key, pending);
+    const lanes =
+      scope === "exclusive" ? [key, `${key}\0fetch`] : [scope === "fetch" ? `${key}\0fetch` : key];
+    const previous = Promise.all(
+      lanes.map((lane) => (tails.get(lane) ?? Promise.resolve()).catch(() => undefined)),
+    );
+    const pending = previous.then(run);
+    for (const lane of lanes) tails.set(lane, pending);
     const release = () => {
-      if (tails.get(key) === pending) tails.delete(key);
+      for (const lane of lanes) if (tails.get(lane) === pending) tails.delete(lane);
     };
     void pending.then(release, release);
     return { pending: Promise.race([pending, waiting]) };

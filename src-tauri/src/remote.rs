@@ -97,6 +97,16 @@ impl StoredMachine {
     }
 }
 
+/// A response belongs to the exact saved route and credential it started with.
+/// Renaming a machine is harmless; replacing/removing its route is not.
+fn same_request_route(started: &StoredMachine, current: &StoredMachine) -> bool {
+    started.id == current.id
+        && started.environment_id == current.environment_id
+        && started.endpoint == current.endpoint
+        && started.token == current.token
+        && serde_json::to_value(&started.ssh).ok() == serde_json::to_value(&current.ssh).ok()
+}
+
 pub(crate) fn public_inventory_machine(record: &Value) -> Result<Machine, String> {
     serde_json::from_value::<StoredMachine>(record.clone())
         .map(|machine| machine.public())
@@ -260,6 +270,8 @@ fn rpc_timeout(method: &str, params: &Value) -> std::time::Duration {
     const GIT_MUTATION: std::time::Duration = std::time::Duration::from_secs(450);
     match method {
         "browser.setup" | "devices.setup" => std::time::Duration::from_secs(1230),
+        // Pi/OMP discovery can use 45 seconds, plus binary resolution and teardown.
+        "models.list" => std::time::Duration::from_secs(60),
         "devices.start" => std::time::Duration::from_secs(60),
         "devices.boot" => std::time::Duration::from_secs(240),
         "devices.action" => std::time::Duration::from_secs(180),
@@ -473,6 +485,8 @@ fn rpc_operation(method: &str, params: &Value) -> String {
                     | "skill_delete"
                     | "skill_export"
                     | "skill_import"
+                    | "skill_policy_get"
+                    | "skill_policy_set"
                     | "stat_files"
                     | "write_text_file"
             ) {
@@ -933,14 +947,33 @@ pub fn remote_request(
             machine.id,
             machine.environment_id,
             machine.token,
+            machine.endpoint,
+            machine.ssh,
             method,
             params
         ]))
         .map_err(|_| "Invalid remote read")?;
-        state.reads.request(key, || send(params))
+        state.reads.request(
+            key,
+            rpc_timeout(&method, &params) + std::time::Duration::from_secs(5),
+            || send(params),
+        )
     } else {
         send(params)
     };
+    {
+        let _guard = state
+            .store
+            .lock()
+            .map_err(|_| "Connection store is locked")?;
+        let current = read(&store_path(&app)?)?;
+        if !current
+            .iter()
+            .any(|saved| same_request_route(&machine, saved))
+        {
+            return Err("Connection changed while the request was running. Its outcome is unknown; refresh before retrying an action.".into());
+        }
+    }
     let result = response?;
     if method == "environment.describe"
         && result.get("environmentId").and_then(Value::as_str)
@@ -1827,6 +1860,24 @@ pub fn remote_ssh_cancel(
 #[cfg(test)]
 mod tests {
     #[test]
+    fn request_results_belong_to_the_original_saved_route() {
+        let started = saved("route", "me@original");
+        let mut current = started.clone();
+        current.name = "Renamed".into();
+        assert!(same_request_route(&started, &current));
+        current.endpoint = "https://replacement.test".into();
+        assert!(!same_request_route(&started, &current));
+        let mut current = started.clone();
+        current.token.push_str("-rotated");
+        assert!(!same_request_route(&started, &current));
+        let mut current = started.clone();
+        current.ssh.as_mut().unwrap().target = "me@replacement".into();
+        assert!(!same_request_route(&started, &current));
+        let mut current = started.clone();
+        current.environment_id.push_str("-replacement");
+        assert!(!same_request_route(&started, &current));
+    }
+    #[test]
     fn conversation_machine_requests_do_not_use_a_stale_saved_ssh_endpoint() {
         let state = super::RemoteConnections::default();
         let mut machine = saved("mac", "me@192.168.1.20");
@@ -2065,6 +2116,11 @@ mod tests {
             rpc_timeout("environment.describe", &none),
             DEFAULT_RPC_TIMEOUT
         );
+    }
+
+    #[test]
+    fn model_catalog_outlasts_provider_discovery() {
+        assert!(rpc_timeout("models.list", &json!({})) > std::time::Duration::from_secs(45));
     }
 
     #[test]

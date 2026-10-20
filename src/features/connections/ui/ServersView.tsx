@@ -32,15 +32,19 @@ import {
   Pencil,
   MoreHorizontal,
 } from "../../../shared/ui/icons";
-import {
-  requestMachineEdit,
-  requestMachineReconnect,
-  useRemoteMachineOnline,
-} from "../model/connections";
+import { requestMachineEdit, useRemoteMachineOnline } from "../model/connections";
 import { requestMachineAdd } from "../model/machineAdd";
 import type { RemoteMachine } from "../model/protocol";
 import { connectionIndicator, needsSignIn } from "../model/remoteConnection";
 import { readRemoteConnection, subscribeChanges } from "../model/remoteHealth";
+import {
+  isReconnecting,
+  subscribeReconnecting,
+  reconnectRemoteMachine,
+  cancelRemoteReconnect,
+} from "../model/remoteReconnect";
+import { useRemoteLifecycle } from "../model/remoteLifecycle";
+import { RemoteConnectionDetails } from "./RemoteConnectionDetails";
 
 /** Display addresses without URL credentials or query strings. Records stay native-owned. */
 function machineAddress(machine: RemoteMachine) {
@@ -66,9 +70,17 @@ function MachineStatus({
     () => readRemoteConnection(machine.environmentId),
     () => readRemoteConnection(machine.environmentId),
   );
-  const indicator = connectionIndicator(state, false);
-  const label =
-    state.status === "host-key"
+  const reconnecting = useSyncExternalStore(
+    subscribeReconnecting,
+    () => isReconnecting(machine.environmentId),
+    () => false,
+  );
+  const lifecycle = useRemoteLifecycle(machine.environmentId);
+  const degraded = Object.values(lifecycle.features).some((feature) => feature.status !== "ready");
+  const indicator = connectionIndicator(state, reconnecting);
+  const label = reconnecting
+    ? t("Reconnecting")
+    : state.status === "host-key"
       ? t("Review required")
       : state.status === "needs-auth"
         ? t("Authentication required")
@@ -78,7 +90,7 @@ function MachineStatus({
             ? t("Not connected")
             : indicator.tone === "connecting"
               ? t("Connecting")
-              : t("Connected");
+              : t(degraded ? "Refresh pending" : "Connected");
   const badge = (
     <Badge
       size="sm"
@@ -86,7 +98,7 @@ function MachineStatus({
       tone={
         needsSignIn(state.status)
           ? "warning"
-          : indicator.tone === "connected"
+          : indicator.tone === "connected" && !degraded
             ? "success"
             : "neutral"
       }
@@ -107,7 +119,45 @@ function MachineStatus({
           <p className="mbs-1 break-words leading-relaxed">{state.error}</p>
         </details>
       ) : null}
+      <RemoteConnectionDetails environmentId={machine.environmentId} />
     </div>
+  );
+}
+
+function ReconnectAction({ machine }: { machine: RemoteMachine }) {
+  const reconnecting = useSyncExternalStore(
+    subscribeReconnecting,
+    () => isReconnecting(machine.environmentId),
+    () => false,
+  );
+  const state = useSyncExternalStore(
+    subscribeChanges,
+    () => readRemoteConnection(machine.environmentId),
+    () => readRemoteConnection(machine.environmentId),
+  );
+  return (
+    <>
+      <Button
+        variant="ghost"
+        iconOnly
+        label={t("Reconnect")}
+        loading={reconnecting}
+        disabled={state.status === "identity-mismatch"}
+        onClick={() => void reconnectRemoteMachine(machine.environmentId, { signIn: true })}
+      >
+        <RefreshCw aria-hidden className="size-3.5" />
+      </Button>
+      {reconnecting ? (
+        <Button
+          variant="ghost"
+          iconOnly
+          label={t("Cancel reconnect")}
+          onClick={() => cancelRemoteReconnect(machine.environmentId)}
+        >
+          <X aria-hidden className="size-3.5" />
+        </Button>
+      ) : null}
+    </>
   );
 }
 
@@ -519,16 +569,7 @@ export function ServersView({
                   <Pencil aria-hidden className="size-3.5" />
                 </Button>
               ) : null}
-              {selected.kind === "host" ? (
-                <Button
-                  variant="ghost"
-                  iconOnly
-                  label={t("Reconnect")}
-                  onClick={() => requestMachineReconnect(selected.id)}
-                >
-                  <RefreshCw aria-hidden className="size-3.5" />
-                </Button>
-              ) : null}
+              {selected.machine ? <ReconnectAction machine={selected.machine} /> : null}
               <Button
                 variant="ghost"
                 iconOnly
@@ -597,7 +638,9 @@ export function ServersView({
         ) : null}
       </div>
       {quickConnect ? <QuickConnect onClose={() => setQuickConnect(false)} /> : null}
-      {termiusImport ? <TermiusImportDialog servers={servers} onClose={() => setTermiusImport(false)} /> : null}
+      {termiusImport ? (
+        <TermiusImportDialog servers={servers} onClose={() => setTermiusImport(false)} />
+      ) : null}
       {sshSettings ? (
         <SshSettings
           servers={servers}

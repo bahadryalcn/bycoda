@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => ({
   subscribe: vi.fn(),
   listSkills: vi.fn(),
   readTextFile: vi.fn(),
+  getSkillPolicy: vi.fn(),
 }));
 
 vi.mock("../../../integrations/harness/core/registry", () => ({
@@ -31,6 +32,7 @@ vi.mock("../../../platform/tauri/fs", () => ({
   createPath: vi.fn(),
   homeDir: vi.fn(),
   listSkills: mocks.listSkills,
+  getSkillPolicy: mocks.getSkillPolicy,
   readTextFile: mocks.readTextFile,
   writeTextFile: vi.fn(),
 }));
@@ -86,12 +88,15 @@ beforeEach(() => {
   mocks.subscribe.mockReset();
   mocks.listSkills.mockReset();
   mocks.readTextFile.mockReset();
+  mocks.getSkillPolicy.mockReset().mockResolvedValue({ disabledNames: [], disabledPaths: [] });
   mocks.discoverPiSkills.mockResolvedValue([piSkill("architect")]);
   mocks.listSkills.mockResolvedValue([]);
 });
 
+afterEach(() => vi.unstubAllGlobals());
+
 describe("provider-aware skill catalog", () => {
-  it("passes remote disabled identities before resolution and preserves personal fallback", async () => {
+  it("uses the current remote policy and ignores stale desktop restrictions after re-enable", async () => {
     const storage = new Map<string, string>();
     vi.stubGlobal("localStorage", {
       getItem: (key: string) => storage.get(key) ?? null,
@@ -116,12 +121,12 @@ describe("provider-aware skill catalog", () => {
     saveDisabledSkillPaths([]);
     expect((await loadSkills(context))[0].path).toBe(projectPath);
     saveDisabledSkillPaths([projectPath]);
-    expect((await loadSkills(context))[0].path).toBe(personalPath);
-    expect(mocks.listSkills).toHaveBeenLastCalledWith(context.cwd, [projectPath]);
-    saveDisabledSkillPaths([projectPath, personalPath]);
+    mocks.getSkillPolicy.mockResolvedValue({ disabledNames: ["review"], disabledPaths: [projectPath] });
     expect(await loadSkills(context)).toEqual([]);
-    saveDisabledSkillPaths([personalPath]);
-    expect((await loadSkills(context))[0].path).toBe(projectPath);
+    expect(mocks.listSkills).toHaveBeenLastCalledWith(context.cwd, [projectPath]);
+    mocks.getSkillPolicy.mockResolvedValue({ disabledNames: [], disabledPaths: [] });
+    expect((await loadSkills(context, { refresh: true }))[0].path).toBe(projectPath);
+    expect(loadDisabledSkillPaths()).toEqual([projectPath]);
     saveDisabledSkillPaths([]);
     vi.unstubAllGlobals();
   });
@@ -135,6 +140,7 @@ describe("provider-aware skill catalog", () => {
     };
     const first = loadSkills(context);
     const second = loadSkills({ ...context, sessionId: "two" });
+    await vi.waitFor(() => expect(mocks.listSkills).toHaveBeenCalled());
     expect(mocks.discoverOmpCommands).not.toHaveBeenCalled();
     expect(mocks.listSkills).toHaveBeenCalledExactlyOnceWith(context.cwd, []);
     pending.resolve([
@@ -308,6 +314,7 @@ describe("provider-aware skill catalog", () => {
     const first = loadSkills({ harness: "pi", cwd: "/repo/" });
     const second = loadSkills({ harness: "pi", cwd: "/repo" });
     const claude = loadSkills({ harness: "claude", cwd: "/repo" });
+    await vi.waitFor(() => expect(mocks.discoverPiSkills).toHaveBeenCalled());
 
     expect(mocks.discoverPiSkills).toHaveBeenCalledTimes(1);
     expect(skillCatalogKey({ harness: "pi", cwd: "/repo/" })).toBe(
@@ -415,11 +422,12 @@ describe("file skill visibility preferences", () => {
 
   it("does not inject hidden skill content into a submitted turn", async (): Promise<void> => {
     saveDisabledSkillPaths([path]);
-    const result = await applySkillsToTurn("/review inspect this", {
-      harness: "claude",
-      cwd: "/repo",
-    });
-    expect(result).toBe("/review inspect this");
+    await expect(
+      applySkillsToTurn("/review inspect this", {
+        harness: "claude",
+        cwd: "/repo",
+      }),
+    ).rejects.toThrow("disabled");
   });
 
   it("leaves provider-owned native catalogs intact", async (): Promise<void> => {
@@ -475,34 +483,27 @@ describe("file skill visibility preferences", () => {
 
     // 1. Start discovery while project skill is enabled
     const oldScan = loadSkills(context);
+    await vi.waitFor(() => expect(mocks.listSkills).toHaveBeenCalledTimes(1));
 
     // 2. Disable the project winner during the scan
     saveDisabledSkillPaths([projectPath]);
 
-    // 3. Complete a fresh scan that selects the personal file fallback
+    // A stale or lower-priority copy cannot bypass the disabled logical name.
     mocks.listSkills.mockResolvedValueOnce([personalSkill]);
     await loadSkills(context);
-    expect(peekSkills(context)?.find((s) => s.name === "review")).toMatchObject({
-      name: "review",
-      path: personalPath,
-      scope: "user",
-    });
+    expect(peekSkills(context)?.find((s) => s.name === "review")).toBeUndefined();
 
     // 4. Resolve older scan with the obsolete project candidate
     pending.resolve([projectSkill]);
     await oldScan;
 
-    // Assert that the personal fallback remains active
-    expect(peekSkills(context)?.find((s) => s.name === "review")).toMatchObject({
-      name: "review",
-      path: personalPath,
-      scope: "user",
-    });
+    expect(peekSkills(context)?.find((s) => s.name === "review")).toBeUndefined();
 
     // 5. Cover re-enabling during a scan:
     const reEnablePending = deferred<DiscoveredSkill[]>();
     mocks.listSkills.mockReturnValueOnce(reEnablePending.promise);
     const inFlightPersonalScan = loadSkills(context, { refresh: true });
+    await vi.waitFor(() => expect(mocks.listSkills).toHaveBeenCalledTimes(3));
 
     // Re-enable project winner during the scan
     saveDisabledSkillPaths([]);
@@ -528,7 +529,7 @@ describe("file skill visibility preferences", () => {
     });
   });
 
-  it("falls back to same-name personal skill when project skill is disabled, and injects its content", async (): Promise<void> => {
+  it("blocks same-name alternatives after disabling and restores the project winner on re-enable", async (): Promise<void> => {
     const projectSkillPath = "/repo/.agents/skills/review/SKILL.md";
     const personalSkillPath = "/home/user/.agents/skills/review/SKILL.md";
     const context = { harness: "claude", cwd: "/repo" } satisfies Parameters<typeof loadSkills>[0];
@@ -579,18 +580,12 @@ describe("file skill visibility preferences", () => {
     const initialTurn = await applySkillsToTurn("/review inspect this", context);
     expect(initialTurn).toContain("Project review instructions");
 
-    // 2. Disabling only the project file makes the personal file the active result
+    // Disabling the logical skill must not fall through to another provider/copy.
     saveDisabledSkillPaths([projectSkillPath]);
     const fallbackSkills = await loadSkills(context);
     const fallbackReview = fallbackSkills.find((s) => s.name === "review");
-    expect(fallbackReview).toMatchObject({
-      name: "review",
-      path: personalSkillPath,
-      scope: "user",
-    });
-    const fallbackTurn = await applySkillsToTurn("/review inspect this", context);
-    expect(fallbackTurn).toContain("Personal review instructions");
-    expect(fallbackTurn).not.toContain("Project review instructions");
+    expect(fallbackReview).toBeUndefined();
+    await expect(applySkillsToTurn("/review inspect this", context)).rejects.toThrow("disabled");
 
     // 3. Re-enabling the project file restores it as the winner
     saveDisabledSkillPaths([]);
@@ -604,21 +599,16 @@ describe("file skill visibility preferences", () => {
     const restoredTurn = await applySkillsToTurn("/review inspect this", context);
     expect(restoredTurn).toContain("Project review instructions");
 
-    // 4. Disabling lower-priority candidate does not affect enabled winner
+    // Legacy disabled paths migrate to logical names as well.
     saveDisabledSkillPaths([personalSkillPath]);
     const winnerSkills = await loadSkills(context);
     const winnerReview = winnerSkills.find((s) => s.name === "review");
-    expect(winnerReview).toMatchObject({
-      name: "review",
-      path: projectSkillPath,
-      scope: "project",
-    });
+    expect(winnerReview).toBeUndefined();
 
     // 5. Disabling both files removes that file skill from the active catalog
     saveDisabledSkillPaths([projectSkillPath, personalSkillPath]);
     const disabledSkills = await loadSkills(context);
     expect(disabledSkills.find((s) => s.name === "review")).toBeUndefined();
-    const disabledTurn = await applySkillsToTurn("/review inspect this", context);
-    expect(disabledTurn).toBe("/review inspect this");
+    await expect(applySkillsToTurn("/review inspect this", context)).rejects.toThrow("disabled");
   });
 });

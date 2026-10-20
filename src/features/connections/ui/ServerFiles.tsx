@@ -67,7 +67,19 @@ export function ServerFiles({
   const [review, setReview] = useState<SftpRecovery>();
   const [resumeOverwrite, setResumeOverwrite] = useState(false);
   const operation = useRef<string | null>(null);
+  const cancelledOperation = useRef<string | null>(null);
   const mounted = useRef(true);
+  const canContinue = (id: string) =>
+    mounted.current && operation.current === id && cancelledOperation.current !== id;
+  const cancel = () => {
+    const id = operation.current;
+    if (!id) return;
+    // Native work may not exist yet while a picker or approval is pending.
+    cancelledOperation.current = id;
+    void cancelSftp(id).catch((reason) => {
+      if (mounted.current) setError(String(reason));
+    });
+  };
 
   useEffect(() => {
     mounted.current = true;
@@ -93,6 +105,7 @@ export function ServerFiles({
     if (operation.current) return;
     const id = crypto.randomUUID();
     operation.current = id;
+    cancelledOperation.current = null;
     setBusy(true);
     setError("");
     setStatus("");
@@ -115,7 +128,7 @@ export function ServerFiles({
   const load = (next: string) =>
     act(async (id) => {
       const ticket = await approve({ kind: "sftpList", operationId: id, path: next });
-      if (ticket === null || !mounted.current) return;
+      if (ticket === null || !canContinue(id)) return;
       const result = await listSftp(connectionId, next, id, ticket);
       if (!mounted.current) return;
       setEntries(result);
@@ -125,7 +138,7 @@ export function ServerFiles({
       setFileSearch("");
     });
   const close = () => {
-    if (operation.current) void cancelSftp(operation.current).catch(() => undefined);
+    cancel();
     onClose();
   };
 
@@ -184,13 +197,7 @@ export function ServerFiles({
               {t("Upload")}
             </Button>
             {busy ? (
-              <Button
-                variant="ghost"
-                onClick={() => {
-                  if (operation.current)
-                    void cancelSftp(operation.current).catch((reason) => setError(String(reason)));
-                }}
-              >
+              <Button variant="ghost" onClick={cancel}>
                 {t("Cancel")}
               </Button>
             ) : null}
@@ -260,7 +267,7 @@ export function ServerFiles({
                         remotePath,
                         overwriteConfirmed: overwrite,
                       });
-                      if (ticket === null || !mounted.current) return;
+                      if (ticket === null || !canContinue(id)) return;
                       const bytes = await uploadSftp(
                         connectionId,
                         upload.localPath,
@@ -334,7 +341,7 @@ export function ServerFiles({
                             operationId: id,
                             recoveryId: item.id,
                           });
-                          if (ticket === null || !mounted.current) return;
+                          if (ticket === null || !canContinue(id)) return;
                           await discardSftp(connectionId, item.id, id, ticket);
                           if (mounted.current && review?.id === item.id) setReview(undefined);
                         })
@@ -381,7 +388,7 @@ export function ServerFiles({
                         recoveryId: review.id,
                         overwriteConfirmed: resumeOverwrite,
                       });
-                      if (ticket === null || !mounted.current) return;
+                      if (ticket === null || !canContinue(id)) return;
                       await resumeSftp(connectionId, review.id, resumeOverwrite, id, ticket);
                       if (mounted.current) {
                         setReview(undefined);
@@ -460,7 +467,7 @@ export function ServerFiles({
                           defaultPath: entry.name,
                           title: t("Download to a new filename"),
                         });
-                        if (!destination || !mounted.current) return;
+                        if (!destination || !canContinue(id)) return;
                         const remotePath = sftpPath(path, entry.name);
                         const ticket = await approve({
                           kind: "sftpDownload",
@@ -468,7 +475,7 @@ export function ServerFiles({
                           remotePath,
                           localPath: destination,
                         });
-                        if (ticket === null || !mounted.current) return;
+                        if (ticket === null || !canContinue(id)) return;
                         await downloadSftp(connectionId, remotePath, destination, id, ticket);
                         if (mounted.current) setStatus(t("Downloaded"));
                       })

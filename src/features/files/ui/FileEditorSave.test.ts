@@ -7,6 +7,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { FILE_EDITOR_AUTOSAVE_DELAY_MS, FileEditor } from "./FileEditor";
 import { invalidateWatchedFiles } from "../model/fileWatch";
+import { saveAutosave } from "../../settings/model/settings";
 
 const bridge = vi.hoisted(() => ({ invoke: vi.fn() }));
 vi.mock("@tauri-apps/api/core", async (original) => ({
@@ -63,8 +64,20 @@ async function render(active = true, path = "/repo/save.txt") {
 }
 
 function saveButton() {
-  return [...container.querySelectorAll("button")].find((button) => button.textContent === "Save")!;
+  return container.querySelector<HTMLButtonElement>('button[aria-label="Save"]')!;
 }
+
+it("saves an already dirty buffer when autosave is enabled from settings", async () => {
+  const view = await render();
+  act(() => view.dispatch({ changes: { from: 0, insert: "automatic " } }));
+  expect(disk).toBe("original\r\n");
+  await act(async () => {
+    saveAutosave(true);
+    await new Promise((resolve) => setTimeout(resolve, FILE_EDITOR_AUTOSAVE_DELAY_MS + 100));
+  });
+  expect(disk).toBe("automatic original\r\n");
+  expect(onDirtyChange).toHaveBeenLastCalledWith("/repo/save.txt", false);
+});
 
 it.each(["/repo/renamed.txt", "/repo/moved/save.txt", "/renamed-repo/save.txt"])(
   "preserves unsaved document and undo across relocation to %s, then saves at its new path",

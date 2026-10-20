@@ -6,6 +6,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { AddRemoteProjectDialog } from "./AddRemoteProjectDialog";
 import { remoteProjectFor } from "../model/remoteProjects";
 import { isLocalProject, looksLikeProject } from "../../projects/model/recents";
+import { notifyRemoteRecovered } from "../model/remoteHealth";
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
 
@@ -65,6 +66,46 @@ afterEach(() => {
   vi.unstubAllGlobals();
   localStorage.clear();
 });
+
+it.each(["online", "recovered"])(
+  "recovers a folder listing on %s without replacing a typed path or opening a project",
+  async (event) => {
+    const original = vi.mocked(invoke).getMockImplementation()!;
+    let offline = true;
+    vi.mocked(invoke).mockImplementation(async (command, input) => {
+      if (offline && (input as { method?: string } | undefined)?.method === "projects.browse")
+        throw new Error("Machine is unreachable");
+      return original(command, input);
+    });
+    await render();
+    expect(document.body.textContent).toContain("Data has not been verified");
+    const input = document.body.querySelector<HTMLInputElement>(
+      'input[aria-label="Folder path on the machine"]',
+    )!;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
+        input,
+        "/my/unsaved/path",
+      );
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    offline = false;
+    await act(async () => {
+      if (event === "online") window.dispatchEvent(new Event("online"));
+      else notifyRemoteRecovered("env");
+    });
+    expect(document.body.textContent).not.toContain("Data has not been verified");
+    expect(input.value).toBe("/my/unsaved/path");
+    expect(opened).toEqual([]);
+    expect(
+      vi
+        .mocked(invoke)
+        .mock.calls.filter(
+          (call) => (call[1] as { method?: string } | undefined)?.method === "projects.open",
+        ),
+    ).toHaveLength(0);
+  },
+);
 
 async function render(onCancel = vi.fn()) {
   // The app runs in StrictMode, which remounts components in development.

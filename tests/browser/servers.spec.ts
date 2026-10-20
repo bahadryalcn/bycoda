@@ -967,7 +967,7 @@ for (const theme of ["light", "dark"]) {
     const beforeNavigationWrites = (await requests()).filter(
       (r) => r.command === "pty_write",
     ).length;
-    for (const key of ["ArrowUp", "ArrowDown", "Tab", "Control+r"]) await page.keyboard.press(key);
+    for (const key of ["ArrowUp", "ArrowDown", "Tab", "Enter", "Control+r"]) await page.keyboard.press(key);
     await expect(input).toBeFocused();
     await expect
       .poll(async () =>
@@ -976,10 +976,10 @@ for (const theme of ["light", "dark"]) {
           .slice(beforeNavigationWrites)
           .map((r) => r.input.data),
       )
-      .toEqual(["\u0012"]);
+      .toEqual(["\u001b[A", "\u001b[B", "\t", "\r", "\u0012"]);
     expect(
       (await requests()).filter((r) => r.command === "ssh_terminal_suggestion_accept"),
-    ).toHaveLength(1);
+    ).toHaveLength(0);
     await page.waitForTimeout(350);
     expect(await count()).toBe(beforeNavigation);
     await expect(preview).toBeHidden();
@@ -992,7 +992,7 @@ for (const theme of ["light", "dark"]) {
         async () =>
           (await requests()).filter((r) => r.command === "ssh_terminal_suggestion_accept").length,
       )
-      .toBe(2);
+      .toBe(1);
     expect((await requests()).filter((r) => r.command === "pty_write")).toHaveLength(beforeAccept);
     await expect(input).toBeFocused();
     await page.keyboard.press("Control+Space");
@@ -1021,7 +1021,7 @@ for (const theme of ["light", "dark"]) {
     await input.dispatchEvent("compositionend", { data: "日" });
     await page.keyboard.type("x");
     await expect(preview).toBeVisible();
-    const folder = "temp/verification/2026-10-18-termius-goal-review-fixes/autocomplete-browser";
+    const folder = "temp/verification/2026-10-21-ssh-reliability/autocomplete-browser";
     await mkdir(folder, { recursive: true });
     await page.screenshot({ path: `${folder}/${theme}-390-passive.png` });
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(

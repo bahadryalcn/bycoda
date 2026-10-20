@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, it } from "vitest";
-import { isHostGitMutation, withHostGitMutation } from "./git-mutations";
+import { gitMutationScope, isHostGitMutation, withHostGitMutation } from "./git-mutations";
 
 const roots: string[] = [];
 afterEach(() => {
@@ -68,6 +68,19 @@ it("releases a failed operation and follows linked worktree gitdir pointers", as
 });
 
 it("queues mutations while leaving polling and diff reads independent", () => {
+  expect(gitMutationScope("git_fetch")).toBe("fetch");
+  for (const command of ["git_commit", "git_stage_files", "git_stage_contents", "git_unstage_all"])
+    expect(gitMutationScope(command)).toBe("local");
+  for (const command of [
+    "git_reset",
+    "git_checkout",
+    "git_rebase",
+    "git_pull",
+    "git_sync",
+    "git_remote_remove",
+    "git_worktree_create",
+  ])
+    expect(gitMutationScope(command)).toBe("exclusive");
   for (const command of [
     "git_commit",
     "git_pull",
@@ -89,6 +102,73 @@ it("queues mutations while leaving polling and diff reads independent", () => {
     "list_dir",
   ])
     expect(isHostGitMutation(command)).toBe(false);
+});
+
+it("allows fetch beside local index work but fences exclusive operations and subsequent work", async () => {
+  const root = repo();
+  const events: string[] = [];
+  let releaseFetch!: () => void;
+  let fetchStarted!: () => void;
+  const ready = new Promise<void>((resolve) => {
+    fetchStarted = resolve;
+  });
+  const fetch = withHostGitMutation(
+    root,
+    async () => {
+      events.push("fetch");
+      fetchStarted();
+      await new Promise<void>((resolve) => {
+        releaseFetch = resolve;
+      });
+    },
+    1000,
+    "fetch",
+  );
+  await ready;
+  await withHostGitMutation(
+    root,
+    async () => {
+      events.push("commit");
+    },
+    1000,
+    "local",
+  );
+  let releaseExclusive!: () => void;
+  let exclusiveStarted!: () => void;
+  const exclusiveReady = new Promise<void>((resolve) => {
+    exclusiveStarted = resolve;
+  });
+  const exclusive = withHostGitMutation(root, async () => {
+    events.push("checkout");
+    exclusiveStarted();
+    await new Promise<void>((resolve) => {
+      releaseExclusive = resolve;
+    });
+  });
+  const nextLocal = withHostGitMutation(
+    root,
+    async () => {
+      events.push("stage");
+    },
+    1000,
+    "local",
+  );
+  const nextFetch = withHostGitMutation(
+    root,
+    async () => {
+      events.push("fetch2");
+    },
+    1000,
+    "fetch",
+  );
+  expect(events).toEqual(["fetch", "commit"]);
+  releaseFetch();
+  await fetch;
+  await exclusiveReady;
+  expect(events).toEqual(["fetch", "commit", "checkout"]);
+  releaseExclusive();
+  await Promise.all([exclusive, nextLocal, nextFetch]);
+  expect(events.slice(3).sort()).toEqual(["fetch2", "stage"]);
 });
 
 it("expires a waiting operation without executing it later or blocking subsequent work", async () => {

@@ -1,5 +1,6 @@
 // @vitest-environment happy-dom
 import { act, createElement } from "react";
+import { notifyRemoteRecovered } from "./remoteHealth";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { mergeQueueChange, type SharedQueue } from "./sharedQueue";
@@ -42,8 +43,33 @@ beforeEach(async () => {
 });
 afterEach(() => {
   act(() => root.unmount());
+  vi.useRealTimers();
   vi.unstubAllGlobals();
 });
+
+it.each(["timer", "online", "recovered"])(
+  "recovers an initial queue-load failure on %s without sending or resuming it",
+  async (event) => {
+    await act(async () => root.unmount());
+    vi.useFakeTimers();
+    mocks.request.mockRejectedValueOnce(new Error("Machine is unreachable"));
+    root = createRoot(document.createElement("div"));
+    await act(async () => root.render(createElement(Probe)));
+    expect(current.loaded).toBe(false);
+    expect(current.error).toContain("unreachable");
+    mocks.request.mockClear();
+    await act(async () => {
+      if (event === "timer") await vi.advanceTimersByTimeAsync(6_000);
+      else if (event === "online") window.dispatchEvent(new Event("online"));
+      else notifyRemoteRecovered("host");
+    });
+    expect(current.loaded).toBe(true);
+    expect(current.error).toBeUndefined();
+    expect(saved.status).toBe("paused");
+    expect(saved.messages).toHaveLength(1);
+    expect(mocks.request.mock.calls.every((call) => call[1] === "sessions.queue.get")).toBe(true);
+  },
+);
 
 it("waits for durable ownership before confirming Resume", async () => {
   await act(async () => {

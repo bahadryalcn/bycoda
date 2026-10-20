@@ -101,6 +101,8 @@ export const HOST_COMMANDS = new Set([
   "git_submodules",
   "search_project",
   "list_skills",
+  "skill_policy_get",
+  "skill_policy_set",
   "list_claude_commands",
   "skill_export",
   "skill_delete",
@@ -136,7 +138,7 @@ export function runRemoteCommand(command: string, args: Record<string, unknown>)
 
 /** Skill commands that need no project path: a machine's personal skills are
  * addressed by the machine alone (an empty `cwd` means "no project"). */
-const MACHINE_COMMANDS = new Set(["list_skills", "skill_export", "skill_import", "skill_delete"]);
+const MACHINE_COMMANDS = new Set(["list_skills", "skill_export", "skill_import", "skill_delete", "skill_policy_get", "skill_policy_set"]);
 
 /** Runs a skill command on a given machine without a project path, with the
  * same argument and result translation as `runRemoteCommand`. */
@@ -187,6 +189,12 @@ async function runOnMachine(
       return parsed?.environmentId === env ? [parsed.hostPath] : [];
     });
   }
+  if (command === "skill_policy_get" && Array.isArray(args.legacyDisabledPaths)) {
+    hostArgs.legacyDisabledPaths = args.legacyDisabledPaths.flatMap((value) => {
+      const parsed = typeof value === "string" ? parseRemotePath(value) : undefined;
+      return parsed?.environmentId === env ? [parsed.hostPath] : [];
+    });
+  }
   const machine = await remoteMachineFor(env);
   if (!machine) throw new Error("This project’s machine isn’t connected on this computer.");
   let result: unknown;
@@ -209,6 +217,10 @@ async function runOnMachine(
     throw reason;
   }
   const fromHost = (path: string) => remotePath(env, path);
+  if ((command === "skill_policy_get" || command === "skill_policy_set") && result && typeof result === "object") {
+    const policy = result as { disabledNames: string[]; disabledPaths: string[] };
+    return { ...policy, disabledPaths: Array.isArray(policy.disabledPaths) ? policy.disabledPaths.map(fromHost) : policy.disabledPaths };
+  }
   if (
     ["session_checkpoint_status", "session_checkpoint_undo", "session_checkpoint_keep"].includes(
       command,

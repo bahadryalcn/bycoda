@@ -36,6 +36,25 @@ const sides = (next: GitDiffIndex) =>
   next.files.map((entry) => [entry.relative, entry.status, entry.staged, entry.unstaged]);
 
 describe("applyIndexAction", () => {
+  it("updates only a selected set in one pass, preserving partial staged data on discard", () => {
+    const start = index([file("a.ts"), file("b.ts", { staged: true }), file("c.ts")]);
+    const paths = new Set(["a.ts", "b.ts"]);
+    const staged = applyIndexAction(start, "stage", paths);
+    expect(sides(staged)).toEqual([
+      ["a.ts", "modified", true, false],
+      ["b.ts", "modified", true, false],
+      ["c.ts", "modified", false, true],
+    ]);
+    const discarded = applyIndexAction(start, "discard", paths);
+    expect(sides(discarded)).toEqual([
+      ["b.ts", "modified", true, false],
+      ["c.ts", "modified", false, true],
+    ]);
+    expect(discarded.additions).toBe(4);
+    expect(discarded.deletions).toBe(2);
+    expect(start.files).toHaveLength(3);
+  });
+
   it("stages one file and leaves the others", () => {
     const next = applyIndexAction(index([file("a.ts"), file("b.ts")]), "stage", "a.ts");
     expect(sides(next)).toEqual([

@@ -8,6 +8,8 @@ export type ReportedCommand = {
   description?: string;
   /** Where the skill lives, when the CLI says so (Codex needs it to invoke). */
   path?: string;
+  enabled?: boolean;
+  disabledBy?: "bycoda" | "provider";
 };
 
 const reported = new Map<string, ReportedCommand[]>();
@@ -23,6 +25,29 @@ export function getReportedCommands(sessionId: string | undefined) {
 }
 
 const EMPTY: ReportedCommand[] = [];
+
+/** Native path disables must not disable another copy the provider explicitly allows. */
+export function reportedSkillRestrictions(commands: readonly ReportedCommand[]) {
+  const disabled = commands.filter(
+    (entry) => entry.kind === "skill" && entry.enabled === false && entry.disabledBy !== "bycoda",
+  );
+  return {
+    disabledNames: [
+      ...new Set(
+        disabled
+          .filter(
+            (entry) =>
+              !commands.some(
+                (other) =>
+                  other.kind === "skill" && other.name === entry.name && other.enabled === true,
+              ),
+          )
+          .map((entry) => entry.name),
+      ),
+    ],
+    disabledPaths: disabled.flatMap((entry) => (entry.path ? [entry.path] : [])),
+  };
+}
 
 export function subscribeReportedCommands(
   sessionId: string | undefined,

@@ -9,6 +9,7 @@ import {
 import { PiRpc } from "./piClient";
 import { PI_FLAVOR, OMP_FLAVOR, type PiFlavor } from "./piFlavor";
 import { nativeCommandInvocation, type NativeCommand } from "../../core/nativeCommands";
+import { skillDisabled, type SkillPolicy } from "../../core/skillPolicy";
 import {
   asRecord,
   buildPiSpawnArgs,
@@ -69,6 +70,43 @@ async function discoverCommands(flavor: PiFlavor, cwd: string, command: string):
     await killChild(childId).catch(() => undefined);
     releaseBridge();
   }
+}
+
+/** Preserve the provider's configured/package skills; never reconstruct its catalog from our disk scan. */
+export async function allowedPiSkillPaths(
+  flavor: PiFlavor,
+  cwd: string,
+  policy: SkillPolicy,
+): Promise<string[]> {
+  const data = await discoverCommands(
+    flavor,
+    cwd,
+    flavor.id === "omp" ? "get_available_commands" : "get_commands",
+  );
+  return allowedPiSkillPathsFromData(data, policy);
+}
+
+export function allowedPiSkillPathsFromData(data: unknown, policy: SkillPolicy): string[] {
+  const commands = asRecord(data)?.commands;
+  if (!Array.isArray(commands))
+    throw new Error(
+      "Provider did not report its skill catalog; cannot apply bycoda skill restrictions.",
+    );
+  const paths: string[] = [];
+  for (const value of commands) {
+    const command = asRecord(value);
+    if (command?.source !== "skill") continue;
+    const name = typeof command.name === "string" ? command.name.replace(/^skill:/, "") : "";
+    const path = asRecord(command.sourceInfo)?.path ?? command.path;
+    if (skillDisabled(policy, { name, path: typeof path === "string" ? path : undefined }))
+      continue;
+    if (!name || typeof path !== "string" || !path || path.startsWith("-"))
+      throw new Error(
+        "This provider version does not report skill paths. Update it before using bycoda skill restrictions.",
+      );
+    paths.push(path);
+  }
+  return [...new Set(paths)];
 }
 
 export function ompCommandsFromRpcData(data: unknown): NativeCommand[] {

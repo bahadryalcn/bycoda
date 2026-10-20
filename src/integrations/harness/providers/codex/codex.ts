@@ -22,12 +22,14 @@ import {
 } from "../../core/child";
 import { additionalDirsFor } from "../../core/additionalDirs";
 import { reportSessionCommands } from "../../core/reportedCommands";
+import { skillDisabled, skillPathKey, skillPolicyInstructions } from "../../core/skillPolicy";
 import {
   asRecord,
   buildThreadStartParams,
   buildTurnStartParams,
   buildTurnSteerParams,
   codexSkillsFromList,
+  codexSkillStatesFromList,
   isRecoverableThreadResumeError,
   mapApprovalRequest,
   codexSubagentStates,
@@ -140,6 +142,8 @@ type Live = {
   usageLimited: boolean;
   /** Skill name to SKILL.md path, so a `$name` can be sent as a skill input. */
   skills: Map<string, string>;
+  skillPolicyKey?: string;
+  skillPolicy?: HarnessSessionInput["skillPolicy"];
   skillsLoading?: Promise<void>;
 };
 
@@ -475,7 +479,8 @@ async function ensureLive(input: HarnessSessionInput): Promise<Live> {
     existing &&
     existing.cwd === input.cwd &&
     sameProviderAccountId(existing.providerAccountId, input.providerAccountId) &&
-    existing.controlsAgents === controlsAgents
+    existing.controlsAgents === controlsAgents &&
+    existing.skillPolicyKey === JSON.stringify(input.skillPolicy)
   ) {
     existing.onEvent = input.onEvent;
     return existing;
@@ -616,6 +621,29 @@ async function ensureLive(input: HarnessSessionInput): Promise<Live> {
     });
     await rpc.notify("initialized", undefined);
 
+    let skillConfig: Record<string, unknown> | undefined;
+    if (input.skillPolicy) {
+      const effective = asRecord(await rpc.request("config/read", { includeLayers: false }));
+      const configured = asRecord(asRecord(effective?.config)?.skills)?.config;
+      const entries = Array.isArray(configured) ? [...configured] : [];
+      const inventory = await rpc.request("skills/list", { cwds: [input.cwd], forceReload: true });
+      for (const path of input.skillPolicy.disabledPaths) {
+        if (!entries.some((entry) => asRecord(entry)?.path === path))
+          entries.push({ path, enabled: false });
+      }
+      for (const skill of codexSkillStatesFromList(inventory)) {
+        if (!skillDisabled(input.skillPolicy, skill)) continue;
+        const existingIndex = entries.findIndex((entry) => {
+          const path = asRecord(entry)?.path;
+          return typeof path === "string" && skillPathKey(path) === skillPathKey(skill.path);
+        });
+        const override = { path: skill.path, enabled: false };
+        if (existingIndex < 0) entries.push(override);
+        else entries[existingIndex] = override;
+      }
+      skillConfig = { "skills.config": entries };
+    }
+
     const model = nativeModelId(input.model);
     const serviceTier = input.modelSettings?.serviceTier;
 
@@ -632,6 +660,7 @@ async function ensureLive(input: HarnessSessionInput): Promise<Live> {
             // Bycoda already owns the transcript. Avoid retransmitting the
             // full history (including base64 images); Codex keeps its context.
             excludeTurns: true,
+            ...(skillConfig ? { config: skillConfig } : {}),
             ...buildThreadStartParams({
               cwd: input.cwd,
               runtimeMode: input.runtimeMode,
@@ -655,14 +684,17 @@ async function ensureLive(input: HarnessSessionInput): Promise<Live> {
     if (!threadId) {
       const opened = await rpc.request<{ thread?: { id?: string }; model?: string }>(
         "thread/start",
-        buildThreadStartParams({
-          cwd: input.cwd,
-          runtimeMode: input.runtimeMode,
-          controlsAgents: input.controlsAgents,
-          model,
-          serviceTier,
-          additionalDirs: additionalDirsFor(input.sessionId),
-        }),
+        {
+          ...(skillConfig ? { config: skillConfig } : {}),
+          ...buildThreadStartParams({
+            cwd: input.cwd,
+            runtimeMode: input.runtimeMode,
+            controlsAgents: input.controlsAgents,
+            model,
+            serviceTier,
+            additionalDirs: additionalDirsFor(input.sessionId),
+          }),
+        },
       );
       threadId = opened.thread?.id?.trim();
       threadModel = opened.model?.trim() || model;
@@ -708,6 +740,8 @@ async function ensureLive(input: HarnessSessionInput): Promise<Live> {
       rateLimits: new Map(),
       usageLimited: false,
       skills: new Map(),
+      skillPolicy: input.skillPolicy,
+      skillPolicyKey: JSON.stringify(input.skillPolicy),
     };
     liveRef.current = live;
     liveByThread.set(input.sessionId, live);
@@ -742,16 +776,27 @@ function loadCodexSkills(live: Live, sessionId: string): Promise<void> {
 
 async function refreshCodexSkills(live: Live, sessionId: string): Promise<void> {
   try {
-    const skills = codexSkillsFromList(
-      await live.rpc.request("skills/list", {
-        cwds: [live.cwd],
-        forceReload: true,
-      }),
+    const response = await live.rpc.request("skills/list", {
+      cwds: [live.cwd],
+      forceReload: true,
+    });
+    const skills = codexSkillsFromList(response).filter(
+      (skill) => !live.skillPolicy || !skillDisabled(live.skillPolicy, skill),
     );
     live.skills = new Map(skills.map((skill) => [skill.name, skill.path]));
     reportSessionCommands(
       sessionId,
-      skills.map((skill) => ({ ...skill, kind: "skill" as const })),
+      codexSkillStatesFromList(response).map((skill) => ({
+        ...skill,
+        kind: "skill" as const,
+        enabled: skill.enabled && (!live.skillPolicy || !skillDisabled(live.skillPolicy, skill)),
+        disabledBy:
+          live.skillPolicy && skillDisabled(live.skillPolicy, skill)
+            ? ("bycoda" as const)
+            : !skill.enabled
+              ? ("provider" as const)
+              : undefined,
+      })),
     );
   } catch {
     // The menu falls back to skills found on disk.
@@ -775,6 +820,7 @@ async function runTurn(live: Live, input: SendTurnInput): Promise<void> {
       [input.runtimeInstructions, input.text].filter(Boolean).join("\n\n").trim() || undefined,
     attachments: input.attachments,
     skills: live.skills,
+    skillInstructions: input.skillPolicy ? skillPolicyInstructions(input.skillPolicy) : undefined,
     model,
     effort,
     serviceTier,

@@ -9,7 +9,7 @@ import type {
   NativeCommand,
   NativeCommandProvider,
 } from "../../core/nativeCommands";
-import { discoverOmpCommands, ompCommandsFromRpcData } from "./piSkills";
+import { allowedPiSkillPaths, discoverOmpCommands, ompCommandsFromRpcData } from "./piSkills";
 import { OMP_FLAVOR } from "./piFlavor";
 import { killChild, spawnChild, unwatchChild, watchChild, writeChild } from "../../core/child";
 import type { PiFlavor } from "./piFlavor";
@@ -79,6 +79,7 @@ type InFlightTool = {
 };
 
 type Live = {
+  skillPolicyKey?: string;
   rpc: PiRpc;
   cwd: string;
   providerSessionId: string;
@@ -408,7 +409,12 @@ async function ensureLive(flavor: PiFlavor, input: HarnessSessionInput): Promise
   const { liveByThread, resumeByThread } = stateFor(flavor);
   const existing = liveByThread.get(input.sessionId);
   const wantPlanning = input.intent === "plan";
-  if (existing && existing.cwd === input.cwd && existing.planning === wantPlanning) {
+  if (
+    existing &&
+    existing.cwd === input.cwd &&
+    existing.planning === wantPlanning &&
+    existing.skillPolicyKey === JSON.stringify(input.skillPolicy)
+  ) {
     existing.onEvent = input.onEvent;
     await applyModel(flavor, existing, input);
     return existing;
@@ -457,6 +463,7 @@ async function startLive(
   );
 
   const live: Live = {
+    skillPolicyKey: JSON.stringify(input.skillPolicy),
     rpc,
     cwd: input.cwd,
     providerSessionId: resume ?? "",
@@ -522,6 +529,10 @@ async function startLive(
       resume,
       model: modelRef ? native : undefined,
       plan: input.intent === "plan",
+      ...(input.skillPolicy &&
+      (input.skillPolicy.disabledNames.length || input.skillPolicy.disabledPaths.length)
+        ? { skillPaths: await allowedPiSkillPaths(flavor, input.cwd, input.skillPolicy) }
+        : {}),
     }),
     input.cwd,
     undefined,

@@ -88,16 +88,25 @@ vi.mock("@xterm/xterm", () => ({
 import { TerminalView } from "./TerminalView";
 import { queueTerminalCommand } from "../model/terminalLaunchCommand";
 import { takeTerminalCommand } from "../model/terminalLaunchCommand";
-import { APPEARANCE_DEFAULTS, saveAppearancePreferences } from "../../settings/model/appearancePreferences";
+import {
+  APPEARANCE_DEFAULTS,
+  saveAppearancePreferences,
+} from "../../settings/model/appearancePreferences";
 
 it("zooms only the hovered terminal, clamps size and applies saved typography without respawning", async () => {
   localStorage.clear();
   const { host, root } = setup();
   try {
-    await act(async () => root.render(createElement("div", null,
-      createElement(TerminalView, { id: "zoom-first", cwd: "", active: true }),
-      createElement(TerminalView, { id: "zoom-second", cwd: "", active: true }),
-    )));
+    await act(async () =>
+      root.render(
+        createElement(
+          "div",
+          null,
+          createElement(TerminalView, { id: "zoom-first", cwd: "", active: true }),
+          createElement(TerminalView, { id: "zoom-second", cwd: "", active: true }),
+        ),
+      ),
+    );
     const first = xterm.instances[0];
     const second = xterm.instances[1];
     const pane = host.querySelector(".bycoda-terminal-host")!;
@@ -117,13 +126,23 @@ it("zooms only the hovered terminal, clamps size and applies saved typography wi
     expect(first.options).toMatchObject({ fontSize: 8 });
     for (let i = 0; i < 60; i++) wheel(true, -100);
     expect(first.options).toMatchObject({ fontSize: 40 });
-    await act(async () => saveAppearancePreferences({ ...APPEARANCE_DEFAULTS,
-      codeSize: 18, terminalSize: 20, terminalWeight: 600,
-      terminalFont: "JetBrains Mono", terminalLineHeight: 1.35,
-    }));
-    for (const instance of [first, second]) expect(instance.options).toMatchObject({
-      fontSize: 20, fontWeight: 600, fontFamily: '"JetBrains Mono", monospace', lineHeight: 1.35,
-    });
+    await act(async () =>
+      saveAppearancePreferences({
+        ...APPEARANCE_DEFAULTS,
+        codeSize: 18,
+        terminalSize: 20,
+        terminalWeight: 600,
+        terminalFont: "JetBrains Mono",
+        terminalLineHeight: 1.35,
+      }),
+    );
+    for (const instance of [first, second])
+      expect(instance.options).toMatchObject({
+        fontSize: 20,
+        fontWeight: 600,
+        fontFamily: '"JetBrains Mono", monospace',
+        lineHeight: 1.35,
+      });
     expect(pty.spawnPty).toHaveBeenCalledTimes(2);
     expect(pty.killPty).not.toHaveBeenCalled();
     expect(xterm.instances).toHaveLength(2);
@@ -464,6 +483,9 @@ it("shows the native exit status and returns to servers without offering input r
       ),
     );
     await act(async () => exit(255));
+    expect(assistance.suspendAutomatic).toHaveBeenCalled();
+    await act(async () => xterm.instances.at(-1)!.dataHandler!("must-not-replay\r"));
+    expect(pty.writePty).not.toHaveBeenCalled();
     expect(host.querySelector('[role="alert"]')?.textContent).toContain("Terminal closed");
     expect(host.querySelector('[role="alert"]')?.textContent).toContain("255");
     expect(
@@ -479,6 +501,77 @@ it("shows the native exit status and returns to servers without offering input r
     );
     expect(back).toHaveBeenCalledOnce();
     expect(native.invoke.mock.calls).toHaveLength(calls);
+  } finally {
+    await act(async () => root.unmount());
+    host.remove();
+  }
+});
+
+it("reconnects closed SSH only explicitly and prevents duplicate requests or input replay", async () => {
+  const { host, root } = setup();
+  let exit!: (code: number | null) => void;
+  let finish!: () => void;
+  const reconnect = vi.fn(
+    () =>
+      new Promise<void>((resolve) => {
+        finish = resolve;
+      }),
+  );
+  pty.subscribePty.mockImplementationOnce((...args: unknown[]) => {
+    exit = args[2] as typeof exit;
+    return () => {};
+  });
+  try {
+    await act(async () =>
+      root.render(
+        createElement(TerminalView, {
+          id: "explicit-reconnect",
+          cwd: "",
+          active: true,
+          sshConnectionId: "server",
+          onReconnect: reconnect,
+        }),
+      ),
+    );
+    await act(async () => exit(255));
+    expect(reconnect).not.toHaveBeenCalled();
+    const button = [...host.querySelectorAll("button")].find(
+      (item) => item.textContent === "Reconnect",
+    )!;
+    await act(async () => {
+      button.click();
+      button.click();
+    });
+    expect(reconnect).toHaveBeenCalledOnce();
+    await act(async () => xterm.instances.at(-1)!.dataHandler!("old-command\r"));
+    expect(pty.writePty).not.toHaveBeenCalled();
+    await act(async () => finish());
+  } finally {
+    await act(async () => root.unmount());
+    host.remove();
+  }
+});
+
+it("shows failed SSH startup as a closed terminal and discards pending input", async () => {
+  const { host, root } = setup();
+  native.invoke.mockRejectedValueOnce(new Error("SSH authentication failed"));
+  try {
+    await act(async () =>
+      root.render(
+        createElement(TerminalView, {
+          id: "failed-start",
+          cwd: "",
+          active: true,
+          sshConnectionId: "server",
+        }),
+      ),
+    );
+    expect(host.querySelector('[role="alert"]')?.textContent).toContain("Terminal closed");
+    expect(host.querySelector('[role="alert"]')?.textContent).toContain(
+      "SSH authentication failed",
+    );
+    await act(async () => xterm.instances.at(-1)!.dataHandler!("late\r"));
+    expect(pty.writePty).not.toHaveBeenCalled();
   } finally {
     await act(async () => root.unmount());
     host.remove();

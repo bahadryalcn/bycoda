@@ -239,7 +239,9 @@ describe("harness registry", () => {
     expect(texts[0]).toBe("/compact");
     expect(texts[1]).toContain("runtime_logs_read");
     expect(texts[2]).toContain("runtime_logs_read");
-    expect(texts[3]).toBe("second");
+    expect(texts[3]).toContain("second");
+    expect(texts[3]).not.toContain("runtime_logs_read");
+    expect(texts[3]).toContain("current owner settings");
     runtimeLogsBridgeMock.mockReset().mockResolvedValue(null);
   });
   it("gives CLI-only providers runtime log access instructions without credentials", async () => {

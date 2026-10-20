@@ -6,6 +6,7 @@ import type { LayoutPreset } from "../../../features/workspace/model/layoutPrese
 import type { SettingsAnchor } from "../../../features/settings/ui/SettingsView";
 import {
   loadAutosave,
+  subscribeAutosave,
   loadKeybindingOverrides,
   type SettingsSectionId,
 } from "../../../features/settings/model/settings";
@@ -74,10 +75,14 @@ export function useWorkspaceActions(handlers: WorkspaceActions): WorkspaceAction
 
   useEffect(() => {
     if (!IS_MAC) return;
-    void invoke("autosave_set_enabled", { enabled: loadAutosave() }).catch(console.error);
+    const sync = () => {
+      void invoke("autosave_set_enabled", { enabled: loadAutosave() }).catch(console.error);
+    };
+    sync();
     void invoke("keybindings_set_overrides", {
       overrides: loadKeybindingOverrides(),
     }).catch(console.error);
+    return subscribeAutosave(sync);
   }, []);
 
   return { actions, run };

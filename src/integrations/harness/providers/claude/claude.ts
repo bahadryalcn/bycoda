@@ -2089,7 +2089,7 @@ function settingsKeyFor(input: HarnessSessionInput): string {
     runtimeMode: input.runtimeMode,
     hooks: loadClaudeHooks(),
     // Folders are fixed at launch, so a change needs a fresh process.
-  })}:${additionalDirsFor(input.sessionId).join("|")}`;
+  })}:${additionalDirsFor(input.sessionId).join("|")}:${JSON.stringify(input.skillPolicy)}`;
 }
 
 function launchOptions(
@@ -2107,6 +2107,7 @@ function launchOptions(
   sessionId?: string;
   settings?: ClaudeCliSettings;
   additionalDirs: string[];
+  disabledSkills?: string[];
 } {
   const native = nativeModelId(input.model);
   const effortRaw = input.modelSettings?.effort;
@@ -2126,6 +2127,7 @@ function launchOptions(
   }
   Object.assign(settings, claudeAutoCompactSettings(input.modelSettings));
   return {
+    disabledSkills: input.skillPolicy?.disabledNames,
     model: resolveClaudeApiModelId(native, context),
     advisor: input.modelSettings?.advisor,
     subagentModel: input.modelSettings?.subagentModel,

@@ -309,7 +309,8 @@ async function applyAdoptedSnapshot(
   if (!merged && adoptedLocalAhead(before, host)) {
     // The host only lags turns run here and catches up from the desktop copy.
     // Replacing them with its older transcript would move them to a copy.
-    if (before.adoptedSyncConflict) deps.apply({ ...before, adoptedSyncConflict: undefined }, before);
+    if (before.adoptedSyncConflict)
+      deps.apply({ ...before, adoptedSyncConflict: undefined }, before);
     deps.mirrored.set(sessionId, host.revision);
     return false;
   }
@@ -385,6 +386,8 @@ export async function mirrorAdoptedSessions(deps: AdoptedMirrorDeps): Promise<Se
         // The host has yet to catch up with turns run here. Judged at this
         // revision; its next change is fetched and compared again.
         if (adoptedLocalAhead(current, host)) {
+          if (deps.autoRefreshConflicts && current.adoptedSyncConflict)
+            deps.apply({ ...current, adoptedSyncConflict: undefined }, current);
           deps.mirrored.set(entry.id, host.revision);
           continue;
         }

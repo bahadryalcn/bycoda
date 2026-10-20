@@ -44,6 +44,7 @@ vi.mock("../../../platform/tauri/fs", () => ({
   gitPull: vi.fn(async () => {}),
   gitPush: vi.fn(async () => {}),
   gitSync: vi.fn(async () => {}),
+  gitFetch: vi.fn(async () => {}),
   gitCommit: vi.fn(async () => {}),
   gitHeadMessage: vi.fn(async () => ""),
   gitStageAll: vi.fn(async () => {}),
@@ -82,6 +83,7 @@ import {
   gitBranches,
   gitCheckout,
   gitCommit,
+  gitFetch,
   gitDiffIndex,
   gitTrustRepository,
   gitPrCreate,
@@ -240,6 +242,7 @@ beforeEach(() => {
   );
   vi.mocked(gitDiffIndex).mockReset();
   vi.mocked(gitPull).mockReset();
+  vi.mocked(gitFetch).mockReset().mockResolvedValue(undefined);
   vi.mocked(generateCommitMessage).mockReset();
   vi.mocked(gitStageFile).mockReset().mockResolvedValue(undefined);
   vi.mocked(gitStageFiles).mockReset().mockResolvedValue(undefined);
@@ -610,6 +613,38 @@ async function openBranchMenu() {
 }
 
 describe("GitChangesPanel action feedback", () => {
+  it("allows commit while an automatic fetch is still waiting on the network", async () => {
+    localStorage.setItem("bycoda.gitAutoFetch", "1");
+    const cwd = "/repo-background-fetch";
+    const staged = changedFile("file.ts", { staged: true, unstaged: false });
+    vi.mocked(gitDiffIndex).mockResolvedValue(index({ remote: "origin", files: [staged] }));
+    let finishFetch!: () => void;
+    vi.mocked(gitFetch).mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          finishFetch = resolve;
+        }),
+    );
+    vi.mocked(gitCommit).mockClear().mockResolvedValue(undefined);
+    await renderPanel(cwd);
+    await fillCommitMessage("Commit during fetch");
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5 * 60_000);
+    });
+    expect(gitFetch).toHaveBeenCalledTimes(1);
+    const commit = [...container.querySelectorAll<HTMLButtonElement>("button")].find(
+      (button) => button.textContent?.trim() === "Commit",
+    )!;
+    expect(commit.disabled).toBe(false);
+    await act(async () => {
+      commit.click();
+    });
+    expect(gitCommit).toHaveBeenCalledWith(cwd, "Commit during fetch", false, false);
+    await act(async () => {
+      finishFetch();
+    });
+  });
+
   it("removes committed files without showing a success notification", async () => {
     const cwd = "/repo-silent-commit";
     vi.mocked(gitDiffIndex).mockResolvedValue(

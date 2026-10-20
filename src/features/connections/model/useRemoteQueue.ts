@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { loadStoredQueue, setSessionQueue } from "../../sessions/data/sessionStore";
+import { remoteBackoffDelay } from "./remotePollingPolicy";
 import type { Attachment } from "../../sessions/model/session";
 import {
   EMPTY_REMOTE_QUEUE,
@@ -62,15 +63,33 @@ export function useRemoteQueue(key: string | undefined) {
   entryRef.current = entry;
   const written = useRef(new Map<string, RemoteQueue>());
   const [loadAttempt, setLoadAttempt] = useState(0);
+  const failures = useRef({ key, count: 0 });
   // Follow the session this pane shows; its own queue is loaded, never shared.
   useEffect(() => {
     const next = initial(key);
     setEntry((current) => (current.key === key && !current.error ? current : next));
     if (!key || next.loaded) return;
+    if (failures.current.key !== key) failures.current = { key, count: 0 };
     let disposed = false;
+    let reading = true;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const wake = () => {
+      if (
+        !disposed &&
+        !reading &&
+        !document.hidden &&
+        entryRef.current.key === key &&
+        !entryRef.current.loaded
+      )
+        setLoadAttempt((value) => value + 1);
+    };
+    window.addEventListener("focus", wake);
+    window.addEventListener("online", wake);
+    document.addEventListener("visibilitychange", wake);
     void loadStoredQueue(key)
       .then((messages) => {
         if (disposed) return;
+        failures.current.count = 0;
         const queue: RemoteQueue =
           messages.length > 0 ? { messages, status: "restored" } : EMPTY_REMOTE_QUEUE;
         // What was saved is what is on disk; nothing to write back yet.
@@ -81,17 +100,28 @@ export function useRemoteQueue(key: string | undefined) {
       })
       .catch((reason) => {
         if (disposed) return;
-        // An unread queue is never an empty queue. Keep writes and mutations
-        // held until the owner explicitly retries the storage read.
+        // An unread queue is never empty. Retry only the storage read;
+        // writes, sends and queue activation remain held until it succeeds.
         setEntry({
           key,
           queue: EMPTY_REMOTE_QUEUE,
           loaded: false,
           error: String(reason).replace(/^Error: /, "") || "Could not read the saved queue.",
         });
+        failures.current.count = Math.min(4, failures.current.count + 1);
+        timer = setTimeout(() => {
+          if (!disposed) setLoadAttempt((value) => value + 1);
+        }, remoteBackoffDelay(failures.current.count));
+      })
+      .finally(() => {
+        reading = false;
       });
     return () => {
       disposed = true;
+      clearTimeout(timer);
+      window.removeEventListener("focus", wake);
+      window.removeEventListener("online", wake);
+      document.removeEventListener("visibilitychange", wake);
     };
   }, [key, loadAttempt]);
 

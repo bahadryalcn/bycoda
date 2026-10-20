@@ -16,21 +16,21 @@ import {
 /** How long a finished result still answers a request that names no age. */
 export const GIT_INDEX_FRESH_MS = 300;
 
-type Result = { value: GitDiffIndex; full: boolean; at: number };
+type Result = { value: GitDiffIndex; full: boolean; at: number; request: number };
 type Flight = {
   promise: Promise<GitDiffIndex>;
   full: boolean;
   gen: number;
   startedAt: number;
 };
-type Entry = { gen: number; result: Result | null; flight: Flight | null };
+type Entry = { gen: number; request: number; result: Result | null; flight: Flight | null };
 
 const entries = new Map<string, Entry>();
 
 function entryFor(cwd: string): Entry {
   let entry = entries.get(cwd);
   if (!entry) {
-    entry = { gen: 0, result: null, flight: null };
+    entry = { gen: 0, request: 0, result: null, flight: null };
     entries.set(cwd, entry);
   }
   return entry;
@@ -64,19 +64,25 @@ export function fetchGitIndex(
   if (result && result.at >= floor && (result.full || !full)) {
     return Promise.resolve(result.value);
   }
-  if (flight && flight.gen === entry.gen && flight.startedAt >= floor && (flight.full || !full)) {
+  if (
+    flight &&
+    flight.gen === entry.gen &&
+    (since === undefined || flight.startedAt >= since) &&
+    (flight.full || !full)
+  ) {
     return flight.promise;
   }
   const gen = entry.gen;
+  const request = ++entry.request;
   const startedAt = Date.now();
   const started: Flight = {
     promise: (full ? gitDiffIndex(cwd) : gitDiffFiles(cwd))
       .then((value) => {
         const known = entry.result;
-        // A mutation since the request began makes the answer unfit to keep,
-        // and a full result that finished meanwhile is worth more.
-        if (entry.gen === gen && !(known?.full && !full && known.at > startedAt)) {
-          entry.result = { value, full, at: Date.now() };
+        // Completion order is not request order. Invalidation and a newer
+        // accepted refresh both make this answer unfit to keep.
+        if (entry.gen === gen && (!known || known.request < request)) {
+          entry.result = { value, full, at: Date.now(), request };
         }
         return value;
       })

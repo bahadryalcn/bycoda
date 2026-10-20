@@ -210,6 +210,8 @@ export async function browseDirectory(path: string, containing = false): Promise
 }
 
 export type DiscoveredSkill = {
+  modelInvocable?: false;
+  userInvocable?: false;
   name: string;
   description: string;
   path: string;
@@ -237,6 +239,20 @@ export function listSkills(
     cwd,
     disabledPaths: disabledPaths ?? null,
   });
+}
+
+export function getSkillPolicy(cwd = "", legacyDisabledPaths: string[] = []) {
+  return invoke<import("../../integrations/harness/core/skillPolicy").SkillPolicy>(
+    "skill_policy_get",
+    { cwd, legacyDisabledPaths },
+  );
+}
+
+export function setSkillEnabled(cwd: string, name: string, enabled: boolean) {
+  return invoke<import("../../integrations/harness/core/skillPolicy").SkillPolicy>(
+    "skill_policy_set",
+    { cwd, name, enabled },
+  );
 }
 
 export type SkillFile = { path: string; data: string };

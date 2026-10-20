@@ -417,9 +417,12 @@ async function ensureLive(input: HarnessSessionInput): Promise<Live> {
   const existing = liveByThread.get(input.sessionId);
   if (existing && existing.cwd === input.cwd) {
     existing.onEvent = input.onEvent;
-    if (existing.runtimeMode !== input.runtimeMode) {
+    if (existing.runtimeMode !== input.runtimeMode || input.skillPolicy) {
       await existing.client.updateSession(existing.openCodeSessionId, {
-        permission: buildOpenCodePermissionRules(input.runtimeMode),
+        permission: buildOpenCodePermissionRules(
+          input.runtimeMode,
+          input.skillPolicy?.disabledNames,
+        ),
       });
     }
     existing.runtimeMode = input.runtimeMode;
@@ -500,6 +503,7 @@ async function ensureLive(input: HarnessSessionInput): Promise<Live> {
       resume: canResume ? resume : undefined,
       runtimeMode: input.runtimeMode,
       cwd: input.cwd,
+      disabledSkills: input.skillPolicy?.disabledNames,
     });
     if (canResume) {
       await repairUnsupportedFileTurn(client, openCodeSession.id).catch((error: unknown) =>
@@ -608,18 +612,19 @@ async function resolveSession(
     resume?: Resume;
     runtimeMode: RuntimeMode;
     cwd: string;
+    disabledSkills?: string[];
   },
 ) {
-  const permission = buildOpenCodePermissionRules(input.runtimeMode);
+  const permission = buildOpenCodePermissionRules(input.runtimeMode, input.disabledSkills);
   if (input.resume) {
     try {
       const adopted = await client.getSession(input.resume.sessionId);
       if (!adopted.directory || sameDirectory(adopted.directory, input.cwd)) {
-        await client.updateSession(adopted.id, { permission }).catch(() => undefined);
+        await client.updateSession(adopted.id, { permission });
         return adopted;
       }
       const forked = await client.forkSession(adopted.id, input.cwd);
-      await client.updateSession(forked.id, { permission }).catch(() => undefined);
+      await client.updateSession(forked.id, { permission });
       return forked;
     } catch (error) {
       if (!isOpenCodeNotFound(error) && !isHttpNotFound(error) && !isEmptySessionFork(error))

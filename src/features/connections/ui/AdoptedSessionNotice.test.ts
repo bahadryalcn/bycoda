@@ -89,6 +89,48 @@ it("shows a connection failure and allows a successful retry", async () => {
   expect(container.textContent).not.toContain("Check the connection and try again");
 });
 
+it("removes an obsolete Retry warning when automatic reconciliation clears the conflict", async () => {
+  const onRefresh = vi.fn().mockRejectedValue(new Error("offline"));
+  act(() => root.render(createElement(AdoptedSessionNotice, { session, onRefresh })));
+  await act(async () => button().click());
+  expect(buttonText()).toBe("Retry refresh");
+  act(() =>
+    root.render(
+      createElement(AdoptedSessionNotice, {
+        session: { ...session, adoptedSyncConflict: undefined },
+        onRefresh,
+      }),
+    ),
+  );
+  expect(button()).toBeNull();
+  expect(container.textContent).not.toContain("Check the connection and try again");
+  expect(container.textContent).toContain("New messages appear automatically");
+});
+
+it("does not leave a different conversation busy or show an old refresh failure", async () => {
+  let fail!: (reason: unknown) => void;
+  const onRefresh = vi.fn(
+    () =>
+      new Promise<boolean>((_resolve, reject) => {
+        fail = reject;
+      }),
+  );
+  act(() => root.render(createElement(AdoptedSessionNotice, { session, onRefresh })));
+  await act(async () => {
+    button().click();
+  });
+  const other = {
+    ...session,
+    id: "other",
+    adoptedSyncConflict: undefined,
+    continuingElsewhere: undefined,
+  };
+  act(() => root.render(createElement(AdoptedSessionNotice, { session: other, onRefresh })));
+  expect(container.textContent).toBe("");
+  await act(async () => fail(new Error("offline")));
+  expect(container.textContent).toBe("");
+});
+
 it("blocks refresh during a local turn", () => {
   const onRefresh = vi.fn();
   act(() =>

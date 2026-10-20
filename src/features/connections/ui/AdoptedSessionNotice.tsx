@@ -14,35 +14,55 @@ export function AdoptedSessionNotice({
   onRefresh?: RefreshAdoptedSession;
 }) {
   useLocale();
-  const pending = useRef(false);
-  const [refreshing, setRefreshing] = useState(false);
-  const [feedback, setFeedback] = useState<{ error: boolean; text: string }>();
+  const pending = useRef<{ sessionId: string } | undefined>(undefined);
+  const [refreshingId, setRefreshingId] = useState<string>();
+  const refreshing = refreshingId === session.id;
+  const [storedFeedback, setFeedback] = useState<{
+    sessionId: string;
+    conflicted: boolean;
+    error: boolean;
+    text: string;
+  }>();
+  const feedback =
+    storedFeedback?.sessionId === session.id &&
+    (!storedFeedback.error || !storedFeedback.conflicted || session.adoptedSyncConflict)
+      ? storedFeedback
+      : undefined;
   useEffect(() => {
-    if (!feedback || feedback.error) return;
-    const timer = setTimeout(() => setFeedback(undefined), 6_000);
+    if (!storedFeedback || feedback?.error) return;
+    const timer = setTimeout(() => setFeedback(undefined), feedback ? 6_000 : 0);
     return () => clearTimeout(timer);
-  }, [feedback]);
+  }, [feedback, storedFeedback]);
   const refresh = async () => {
-    if (!onRefresh || pending.current) return;
-    pending.current = true;
-    setRefreshing(true);
+    if (!onRefresh || pending.current?.sessionId === session.id) return;
+    const attempt = { sessionId: session.id };
+    pending.current = attempt;
+    setRefreshingId(session.id);
     setFeedback(undefined);
     try {
       const preserved = await onRefresh(session.id);
+      if (pending.current !== attempt) return;
       setFeedback({
+        sessionId: session.id,
+        conflicted: !!session.adoptedSyncConflict,
         error: false,
         text: preserved
           ? 'Conversation synced. Your previous version is saved in project history as "(local copy)".'
           : "Conversation synced.",
       });
     } catch {
+      if (pending.current !== attempt) return;
       setFeedback({
+        sessionId: session.id,
+        conflicted: !!session.adoptedSyncConflict,
         error: true,
         text: "Could not sync the conversation. Your messages were kept. Check the connection and try again.",
       });
     } finally {
-      pending.current = false;
-      setRefreshing(false);
+      if (pending.current === attempt) {
+        pending.current = undefined;
+        setRefreshingId(undefined);
+      }
     }
   };
   // An attached live turn already has a working indicator and Stop control.

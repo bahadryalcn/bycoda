@@ -32,14 +32,17 @@ export function applyCommit(index: GitDiffIndex, all: boolean): GitDiffIndex {
 export function applyIndexAction(
   index: GitDiffIndex,
   action: IndexAction,
-  relative?: string,
+  relative?: string | ReadonlySet<string>,
 ): GitDiffIndex {
   let additions = index.additions;
   let deletions = index.deletions;
   const files: GitChangedFile[] = [];
   for (const file of index.files) {
     const targeted =
-      (relative === undefined || file.relative === relative) &&
+      (relative === undefined ||
+        (typeof relative === "string"
+          ? file.relative === relative
+          : relative.has(file.relative))) &&
       (action === "unstage" ? file.staged : file.unstaged);
     if (!targeted) {
       files.push(file);

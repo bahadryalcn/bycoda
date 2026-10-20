@@ -184,6 +184,8 @@ export type ApprovalDecision = "allow" | "deny";
 export class TurnNotReadyError extends Error {}
 
 export type HarnessSessionInput = {
+  /** Current machine restrictions; never grants provider enablement. */
+  skillPolicy?: import("./skillPolicy").SkillPolicy;
   sessionId: string;
   cwd: string;
   model: string;
@@ -214,6 +216,7 @@ export type SendTurnInput = HarnessSessionInput & {
 export type CompactContextInput = HarnessSessionInput;
 
 export type SteerTurnInput = {
+  skillPolicy?: import("./skillPolicy").SkillPolicy;
   sessionId: string;
   cwd: string;
   model: string;

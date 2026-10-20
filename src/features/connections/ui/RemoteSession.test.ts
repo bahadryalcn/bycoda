@@ -743,12 +743,12 @@ async function render(session = shell(), extra: Partial<SessionPaneProps> = {}) 
   await settle();
 }
 let remoteOverrides: RemoteSessionOverrides;
-async function renderRemoteProbe() {
+async function renderRemoteProbe(visible = true) {
   await act(async () =>
     root.render(
       createElement(RemoteSession, {
         shell: shell(),
-        visible: true,
+        visible,
         onOpenFile: vi.fn(),
         onOpenDiff: vi.fn(),
         onOpenPlan: vi.fn(),
@@ -1890,9 +1890,36 @@ it("does not poll transcript content for a hidden machine.changes session", asyn
   expect(
     vi.mocked(invoke).mock.calls.some(([, input]) => {
       const method = (input as { method?: string } | undefined)?.method;
-      return method === "sessions.sync" || method === "sessions.page";
+      return method === "sessions.sync" || method === "sessions.page" || method === "models.list";
     }),
   ).toBe(false);
+});
+
+it("uses ready models while discovery continues and stops catalog polling when hidden", async () => {
+  catalog = { models: { codex: [gpt] }, errors: {}, pending: ["pi"] };
+  await renderRemoteProbe();
+  const requests = () =>
+    vi
+      .mocked(invoke)
+      .mock.calls.filter(
+        ([, input]) => (input as { method?: string } | undefined)?.method === "models.list",
+      );
+  expect(requests().at(-1)?.[1]).toMatchObject({ params: { progressive: true } });
+  expect(remoteOverrides).toBeDefined();
+  await renderRemoteProbe(false);
+  const hidden = requests().length;
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 1100));
+  });
+  expect(requests()).toHaveLength(hidden);
+  catalog = { models: { codex: [gpt] }, errors: {} };
+  await renderRemoteProbe(true);
+  expect(requests().length).toBeGreaterThan(hidden);
+  const completed = requests().length;
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 1100));
+  });
+  expect(requests()).toHaveLength(completed);
 });
 
 it("shows loading until the initial owner tail is verified", async () => {
@@ -2325,9 +2352,11 @@ it("shows host activity alongside a preserved local conversation conflict", asyn
     blocks: [{ id: "u", role: "user", text: "local edit" } as Block],
   };
   await render(session);
-  expect([...container.querySelectorAll('[role="status"]')].some(
-    (status) => status.textContent?.includes("running in the background"),
-  )).toBe(true);
+  expect(
+    [...container.querySelectorAll('[role="status"]')].some((status) =>
+      status.textContent?.includes("running in the background"),
+    ),
+  ).toBe(true);
   expect(container.querySelector('[role="alert"]')?.textContent).toContain(
     "Your messages were kept",
   );

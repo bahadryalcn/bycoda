@@ -21,7 +21,13 @@ vi.mock("./connections", () => ({
 }));
 
 import { saveRemoteAutoReconnect } from "../../settings/model/settings";
-import { reconnectRemoteMachine, startRemoteAutoRecovery } from "./remoteReconnect";
+import {
+  reconnectRemoteMachine,
+  startRemoteAutoRecovery,
+  isReconnecting,
+  cancelRemoteReconnect,
+} from "./remoteReconnect";
+import { invalidateConnection, readRemoteLifecycle } from "./remoteLifecycle";
 import {
   applyRemoteConnection,
   readRemoteConnection,
@@ -79,8 +85,8 @@ describe("automatic recovery", () => {
     expect(request).toHaveBeenCalledTimes(3);
     expect(readRemoteConnection("env").status).toBe("connected");
     expect(recovered).toHaveBeenCalledTimes(1);
-    // Background attempts never ask for a fresh tunnel or a prompt.
-    expect(request.mock.calls.every((call) => call[3] === false)).toBe(true);
+    // Coalesced recovery bypasses native cached failures without prompting.
+    expect(request.mock.calls.every((call) => call[3] === true)).toBe(true);
     await vi.advanceTimersByTimeAsync(120_000);
     expect(request).toHaveBeenCalledTimes(3);
     unsubscribe();
@@ -189,6 +195,47 @@ describe("a dropped tunnel", () => {
 });
 
 describe("reconnectRemoteMachine", () => {
+  it("ignores a late recovery after the route changes, without ending the replacement attempt", async () => {
+    const finishes: ((value: unknown) => void)[] = [];
+    request.mockImplementation(() => new Promise((resolve) => finishes.push(resolve)));
+    const old = reconnectRemoteMachine("env");
+    await vi.advanceTimersByTimeAsync(0);
+    invalidateConnection("env");
+    const replacement = reconnectRemoteMachine("env");
+    await vi.advanceTimersByTimeAsync(0);
+    finishes[0]({});
+    expect((await old).ok).toBe(false);
+    expect(isReconnecting("env")).toBe(true);
+    expect(readRemoteConnection("env").status).not.toBe("connected");
+    finishes[1]({});
+    expect(await replacement).toEqual({ ok: true });
+    expect(isReconnecting("env")).toBe(false);
+  });
+
+  it("cancels quiet recovery without accepting its late success or restarting retries", async () => {
+    let finish!: (value: unknown) => void;
+    request.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    recordRemoteConnection("env", down);
+    const pending = reconnectRemoteMachine("env");
+    await vi.advanceTimersByTimeAsync(0);
+    cancelRemoteReconnect("env");
+    finish({});
+    expect((await pending).ok).toBe(false);
+    expect(isReconnecting("env")).toBe(false);
+    expect(readRemoteLifecycle("env").phase).toBe("waiting");
+    await vi.advanceTimersByTimeAsync(120_000);
+    window.dispatchEvent(new Event("online"));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(request).toHaveBeenCalledTimes(1);
+    expect(readRemoteConnection("env").status).toBe("unreachable");
+    request.mockResolvedValue({});
+    expect(await reconnectRemoteMachine("env")).toEqual({ ok: true });
+  });
   it("asks for a fresh tunnel and reports success", async () => {
     recordRemoteConnection("env", down);
     request.mockResolvedValue({});

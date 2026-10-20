@@ -26,8 +26,31 @@ beforeEach(() => {
 });
 afterEach(() => {
   act(() => root.unmount());
+  vi.useRealTimers();
   vi.unstubAllGlobals();
 });
+
+it.each(["timer", "focus", "online"])(
+  "recovers an unread saved queue on %s without writing or releasing it",
+  async (event) => {
+    vi.useFakeTimers();
+    const stored = [{ id: "old", text: "saved draft", attachments: [] }];
+    vi.mocked(loadStoredQueue)
+      .mockRejectedValueOnce(new Error("storage unavailable"))
+      .mockResolvedValue(stored);
+    await act(async () => root.render(createElement(Probe, { owner: "saved" })));
+    expect(queue.loaded).toBe(false);
+    await act(async () => {
+      if (event === "timer") await vi.advanceTimersByTimeAsync(6_000);
+      else window.dispatchEvent(new Event(event));
+    });
+    expect(queue.loaded).toBe(true);
+    expect(queue.error).toBeUndefined();
+    expect(queue.queue.status).toBe("restored");
+    expect(queue.queue.messages).toEqual(stored);
+    expect(setSessionQueue).not.toHaveBeenCalled();
+  },
+);
 
 it("holds a failed storage read without overwriting the unread queue and recovers on retry", async () => {
   vi.mocked(loadStoredQueue).mockRejectedValueOnce(new Error("storage unavailable"));

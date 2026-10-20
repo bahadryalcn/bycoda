@@ -14,6 +14,8 @@ import { remoteProjectMachines } from "../model/localSync";
 import { openRemoteProject } from "../model/remoteProjects";
 import type { HostDirectory } from "../model/protocol";
 import { RemoteDataStatus } from "./RemoteDataStatus";
+import { subscribeRemoteRecovered } from "../model/remoteHealth";
+import { connectionOutcome } from "../model/remoteConnection";
 
 /** Adds a project whose folder is on a connected machine. Sessions in it run
  * on that machine; the project otherwise behaves like any other in the rail. */
@@ -46,6 +48,7 @@ export function AddRemoteProjectDialog({
   const alive = useRef(true);
   const requestVersion = useRef(0);
   const requestedPath = useRef<string | undefined>(undefined);
+  const browsing = useRef(false);
   const [browseError, setBrowseError] = useState("");
   const [verifiedAt, setVerifiedAt] = useState<number>();
   const cancel = () => {
@@ -64,14 +67,17 @@ export function AddRemoteProjectDialog({
     };
   }, []);
 
-  const browse = async (next?: string) => {
-    if (!machine) return;
+  const browse = async (next?: string, userInitiated = true) => {
+    if (!machine || (!userInitiated && browsing.current)) return;
     const version = ++requestVersion.current;
+    browsing.current = true;
     requestedPath.current = next;
     setLoading(true);
-    setNewName(null);
-    setOpening(false);
-    setError("");
+    if (userInitiated) {
+      setNewName(null);
+      setOpening(false);
+      setError("");
+    }
     setBrowseError("");
     try {
       const value = await remoteRequest<HostDirectory>(
@@ -79,17 +85,22 @@ export function AddRemoteProjectDialog({
         "projects.browse",
         { path: next },
         false,
-        true,
+        userInitiated,
       );
       if (!alive.current || version !== requestVersion.current) return;
       setDirectory(value);
-      setPath(value.path);
+      setPath((current) =>
+        userInitiated || !current.trim() || current === next ? value.path : current,
+      );
       setVerifiedAt(Date.now());
     } catch (reason) {
       if (alive.current && version === requestVersion.current)
         setBrowseError(String(reason).replace(/^Error: /, ""));
     } finally {
-      if (alive.current && version === requestVersion.current) setLoading(false);
+      if (version === requestVersion.current) {
+        browsing.current = false;
+        if (alive.current) setLoading(false);
+      }
     }
   };
 
@@ -102,6 +113,34 @@ export function AddRemoteProjectDialog({
     setVerifiedAt(undefined);
     if (machine) void browse();
   }, [machine?.id]);
+
+  useEffect(() => {
+    if (!machine || !browseError || loading) return;
+    const status = connectionOutcome(browseError).status;
+    if (
+      status !== "unreachable" &&
+      status !== "host-not-running" &&
+      !/RPC_TIMEOUT/.test(browseError)
+    )
+      return;
+    const wake = () => {
+      if (!document.hidden) void browse(requestedPath.current, false);
+    };
+    const stopRecovered = subscribeRemoteRecovered((environmentId) => {
+      if (!environmentId || environmentId === machine.environmentId) wake();
+    });
+    const timer = setTimeout(wake, 5_000);
+    window.addEventListener("online", wake);
+    window.addEventListener("focus", wake);
+    document.addEventListener("visibilitychange", wake);
+    return () => {
+      clearTimeout(timer);
+      stopRecovered();
+      window.removeEventListener("online", wake);
+      window.removeEventListener("focus", wake);
+      document.removeEventListener("visibilitychange", wake);
+    };
+  }, [machine?.id, machine?.environmentId, browseError, loading]);
 
   const open = async () => {
     if (!machine || !path.trim() || opening || creating || loading || browseError || machinesError)

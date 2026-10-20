@@ -9,9 +9,164 @@ use crate::fs::expand_home;
 const MAX_SKILLS: usize = 5_000;
 const MAX_FRONTMATTER_BYTES: usize = 16 * 1024;
 
+#[derive(Serialize, Deserialize, Clone, Debug, Default)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct SkillPolicy {
+    pub disabled_names: Vec<String>,
+    pub disabled_paths: Vec<String>,
+}
+
+static SKILL_POLICY_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+struct SkillPolicyFileLock(PathBuf);
+impl Drop for SkillPolicyFileLock {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(&self.0);
+    }
+}
+fn lock_policy(file: &Path) -> Result<SkillPolicyFileLock, String> {
+    let parent = file.parent().ok_or("Invalid skill policy location")?;
+    std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    let path = parent.join("skill-policy.lock");
+    std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&path)
+        .map_err(|_| {
+            "Another skill preference save is in progress. Try again after it finishes."
+        })?;
+    Ok(SkillPolicyFileLock(path))
+}
+
+fn policy_file() -> Result<PathBuf, String> {
+    Ok(
+        PathBuf::from(dirs_home().ok_or("Home directory is unavailable")?)
+            .join(".bycoda-host")
+            .join("skill-policy.json"),
+    )
+}
+
+fn read_policy(file: &Path) -> Result<SkillPolicy, String> {
+    match std::fs::read(file) {
+        Ok(bytes) => {
+            let policy: SkillPolicy = serde_json::from_slice(&bytes)
+                .map_err(|_| "Could not read bycoda skill restrictions")?;
+            validate_policy(&policy)?;
+            Ok(policy)
+        }
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(SkillPolicy::default()),
+        Err(_) => Err("Could not read bycoda skill restrictions".into()),
+    }
+}
+
+fn validate_policy(policy: &SkillPolicy) -> Result<(), String> {
+    if policy.disabled_names.len() > 5000
+        || policy.disabled_paths.len() > 5000
+        || policy.disabled_names.iter().any(|n| {
+            n.is_empty()
+                || n.len() > 300
+                || !n
+                    .chars()
+                    .all(|c| c.is_ascii_alphanumeric() || "_.:-".contains(c))
+        })
+        || policy
+            .disabled_paths
+            .iter()
+            .any(|p| p.is_empty() || p.len() > 4096)
+    {
+        return Err("Invalid skill policy".into());
+    }
+    Ok(())
+}
+
+fn legacy_skill_name(path: &str) -> Option<String> {
+    let normalized = path.replace('\\', "/");
+    let fallback = Path::new(&normalized).parent()?.file_name()?.to_str()?;
+    Some(if normalized.to_lowercase().ends_with("/skill.md") {
+        read_prefix(Path::new(path), MAX_FRONTMATTER_BYTES)
+            .ok()
+            .map(|bytes| parse_frontmatter(&String::from_utf8_lossy(&bytes), fallback).0)
+            .unwrap_or_else(|| fallback.to_owned())
+    } else {
+        fallback.to_owned()
+    })
+}
+
+fn write_policy(file: &Path, policy: &SkillPolicy) -> Result<(), String> {
+    validate_policy(policy)?;
+    let parent = file.parent().ok_or("Invalid skill policy location")?;
+    std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    let temporary = parent.join(format!("skill-policy-{}.tmp", uuid::Uuid::new_v4()));
+    std::fs::write(
+        &temporary,
+        serde_json::to_vec(policy).map_err(|e| e.to_string())?,
+    )
+    .map_err(|e| e.to_string())?;
+    std::fs::rename(&temporary, file).map_err(|e| e.to_string())
+}
+
+/// Owner UI only. Never expose mutation through conversation tools.
+#[tauri::command(async)]
+pub fn skill_policy_get(legacy_disabled_paths: Option<Vec<String>>) -> Result<SkillPolicy, String> {
+    let _guard = SKILL_POLICY_LOCK.lock().map_err(|e| e.to_string())?;
+    let file = policy_file()?;
+    if file.exists() {
+        return read_policy(&file);
+    }
+    let _file_guard = lock_policy(&file)?;
+    if file.exists() {
+        return read_policy(&file);
+    }
+    let paths: Vec<String> = legacy_disabled_paths
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|p| !p.starts_with("remote://"))
+        .collect();
+    let mut names: Vec<String> = paths.iter().filter_map(|p| legacy_skill_name(p)).collect();
+    names.sort();
+    names.dedup();
+    let policy = SkillPolicy {
+        disabled_names: names,
+        disabled_paths: paths,
+    };
+    write_policy(&file, &policy)?;
+    Ok(policy)
+}
+
+#[tauri::command(async)]
+pub fn skill_policy_set(name: String, enabled: bool) -> Result<SkillPolicy, String> {
+    if name.is_empty()
+        || name.len() > 300
+        || !name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || "_.:-".contains(c))
+    {
+        return Err("Invalid skill name".into());
+    }
+    let _guard = SKILL_POLICY_LOCK.lock().map_err(|e| e.to_string())?;
+    let file = policy_file()?;
+    let _file_guard = lock_policy(&file)?;
+    let mut policy = read_policy(&file)?;
+    policy.disabled_names.retain(|n| n != &name);
+    if enabled {
+        policy
+            .disabled_paths
+            .retain(|p| legacy_skill_name(p).as_deref() != Some(name.as_str()));
+    } else {
+        policy.disabled_names.push(name);
+    }
+    policy.disabled_names.sort();
+    write_policy(&file, &policy)?;
+    Ok(policy)
+}
+
 #[derive(Serialize, Clone, Debug, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct DiscoveredSkill {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub model_invocable: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub user_invocable: Option<bool>,
     pub name: String,
     pub description: String,
     pub path: String,
@@ -410,7 +565,10 @@ fn scan_root(root: &Path, scope: &str, source: &str) -> Vec<DiscoveredSkill> {
         if name.is_empty() {
             continue;
         }
+        let (model_invocable, user_invocable) = skill_invocation_flags(&text);
         out.push(DiscoveredSkill {
+            model_invocable,
+            user_invocable,
             name,
             description,
             path: crate::fs::path_to_js(&skill_md),
@@ -509,6 +667,34 @@ fn parse_frontmatter(text: &str, fallback: &str) -> (String, String) {
     let folder = fallback.to_string();
     let name = name.filter(|n| is_valid_skill_name(n)).unwrap_or(folder);
     (name, description.trim().to_string())
+}
+
+fn skill_invocation_flags(text: &str) -> (Option<bool>, Option<bool>) {
+    let mut lines = text.trim_start_matches('\u{feff}').lines();
+    if lines.next() != Some("---") {
+        return (None, None);
+    }
+    let mut model = None;
+    let mut user = None;
+    for line in lines.take_while(|line| *line != "---") {
+        if line.starts_with(' ') || line.starts_with('\t') {
+            continue;
+        }
+        let value = line.split('#').next().unwrap_or("").trim();
+        if value
+            .strip_prefix("disable-model-invocation:")
+            .is_some_and(|v| v.trim() == "true")
+        {
+            model = Some(false);
+        }
+        if value
+            .strip_prefix("user-invocable:")
+            .is_some_and(|v| v.trim() == "false")
+        {
+            user = Some(false);
+        }
+    }
+    (model, user)
 }
 
 pub(crate) fn yaml_value(line: &str, key: &str) -> Option<String> {
@@ -991,6 +1177,61 @@ mod tests {
         let dir = root.join(folder);
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(dir.join("SKILL.md"), body).unwrap();
+    }
+
+    #[test]
+    fn skill_policy_round_trips_and_replaces_existing_state() {
+        let root = tmp("policy");
+        let file = root.0.join("settings/skill-policy.json");
+        assert!(read_policy(&file).unwrap().disabled_names.is_empty());
+        write_policy(
+            &file,
+            &SkillPolicy {
+                disabled_names: vec!["good-css".into()],
+                disabled_paths: vec![],
+            },
+        )
+        .unwrap();
+        assert_eq!(read_policy(&file).unwrap().disabled_names, vec!["good-css"]);
+        write_policy(&file, &SkillPolicy::default()).unwrap();
+        assert!(read_policy(&file).unwrap().disabled_names.is_empty());
+        std::fs::write(&file, "broken").unwrap();
+        assert!(read_policy(&file).is_err());
+        assert!(write_policy(
+            &file,
+            &SkillPolicy {
+                disabled_names: vec!["*".into()],
+                disabled_paths: vec![]
+            }
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn skill_policy_migration_uses_declared_name() {
+        let root = tmp("policy-name");
+        write_skill(&root.0, "folder-alias", "---\nname: actual-name\n---\nbody");
+        let path = root.0.join("folder-alias/SKILL.md");
+        assert_eq!(
+            legacy_skill_name(&path.to_string_lossy()).as_deref(),
+            Some("actual-name")
+        );
+    }
+
+    #[test]
+    fn invocation_flags_are_separate_from_enablement_and_ignore_description_text() {
+        assert_eq!(
+            skill_invocation_flags(
+                "---\ndisable-model-invocation: true\nuser-invocable: false\n---\nbody"
+            ),
+            (Some(false), Some(false))
+        );
+        assert_eq!(
+            skill_invocation_flags(
+                "---\ndescription: |\n  disable-model-invocation: true\n---\nuser-invocable: false"
+            ),
+            (None, None)
+        );
     }
 
     #[test]

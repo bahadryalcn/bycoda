@@ -1,5 +1,5 @@
 import { execFileAsync as exec } from "../src/shared/lib/processExecution.node";
-import { isHostGitMutation, withHostGitMutation } from "./git-mutations";
+import { gitMutationScope, isHostGitMutation, withHostGitMutation } from "./git-mutations";
 import { relative, sep } from "node:path";
 import { realpath } from "node:fs/promises";
 import {
@@ -9,7 +9,7 @@ import {
   hostUnmerged,
   unmergedMessage,
 } from "./git-conflicts";
-import { safeGitPath } from "./workspace";
+import { invalidateHostGitIndex, safeGitPath } from "./workspace";
 
 /** Source-control commands beyond staging and committing: branches, tags,
  * remotes, stashes, history rewriting, conflicts, blame. They take the same
@@ -452,7 +452,9 @@ export async function runGitAction(
   input: Record<string, unknown>,
 ): Promise<unknown> {
   const run = () => runGitActionSerialized(command, root, input);
-  return isHostGitMutation(command) ? withHostGitMutation(root, run) : run();
+  return isHostGitMutation(command)
+    ? withHostGitMutation(root, run, undefined, gitMutationScope(command))
+    : run();
 }
 
 async function runGitActionSerialized(
@@ -481,6 +483,7 @@ async function runGitActionSerialized(
   try {
     return await runGitActionUncached(command, root, input);
   } finally {
+    if (isHostGitMutation(command)) invalidateHostGitIndex(root);
     // Checkout, commit, reset, rebase... may have moved any checkout's HEAD.
     if (!HEAD_PRESERVING.has(command)) branchCache.clear();
   }

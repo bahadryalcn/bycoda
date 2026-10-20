@@ -134,9 +134,15 @@ export function buildPiSpawnArgs(
     /** Titles and other one-shot prompts: no tools, skills, or project context. */
     isolated?: boolean;
     plan?: boolean;
+    /** Authoritative enabled native paths; an empty array intentionally disables all skills. */
+    skillPaths?: readonly string[];
   },
 ): string[] {
   const args = ["--mode", "rpc"];
+  if (!input.isolated && input.skillPaths) {
+    args.push("--no-skills");
+    for (const path of input.skillPaths) args.push("--skill", path);
+  }
   if (input.isolated || input.noSession) args.push("--no-session");
   if (input.isolated || input.noExtensions) args.push("--no-extensions");
   if (input.isolated) {

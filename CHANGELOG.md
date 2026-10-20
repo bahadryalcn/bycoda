@@ -9,6 +9,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.6.56]
 
+### Connections and workspace reliability
+
+- Improve remote session discovery, reconnection, adopted-session recovery and shared request queues.
+- Show connection recovery progress and feature-specific errors in Servers and remote sessions.
+- Improve editor save handling, remote file operations and SFTP transfer recovery.
+
+### Source control
+
+- Improve Git mutation ordering and selected-file staging, including index-state refresh and optimistic updates.
+- Keep source-control panels synchronized after focus changes and file operations.
+
+### Skills and providers
+
+- Add per-provider skill policy controls and preferences with consistent provider capability reporting.
+- Improve skill discovery, CLI command catalogs and model catalog caching.
+
+### Editor and terminal
+
+- Add workspace editor preferences and improve terminal suggestions, restoration and workspace tab behavior.
+
 ### Termius migration
 
 - Import local Termius desktop servers from the Servers actions menu with searchable previews and bulk selection.

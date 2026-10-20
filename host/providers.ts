@@ -34,6 +34,8 @@ import {
 } from "../src/integrations/harness/providers/pi/piTitle";
 import { PI_FLAVOR, OMP_FLAVOR } from "../src/integrations/harness/providers/pi/piFlavor";
 import { respondQuestion as respondPiQuestion } from "../src/integrations/harness/providers/pi/piFamily";
+import { readSkillPolicy } from "./skill-policy";
+import { withSkillPolicy } from "../src/integrations/harness/core/skillPolicy";
 
 export interface HostProvider {
   send(input: SendTurnInput): Promise<void>;
@@ -53,7 +55,7 @@ export interface HostProvider {
   generateBranchName?(cwd: string, message: string): Promise<string | null>;
 }
 
-export const hostProviders: Record<RemoteProvider, HostProvider> = {
+const providers: Record<RemoteProvider, HostProvider> = {
   acp: {
     send: genericAcp.sendGenericAcpTurn,
     cancel: genericAcp.cancelGenericAcpTurn,
@@ -177,6 +179,41 @@ export const hostProviders: Record<RemoteProvider, HostProvider> = {
     answer: unsupportedQuestion,
   },
 };
+
+/** Every host entry point, including unattended tasks and follow-ups, uses machine settings. */
+export const hostProviders = Object.fromEntries(
+  Object.entries(providers).map(([id, provider]) => [
+    id,
+    {
+      ...provider,
+      send: (input: SendTurnInput) => provider.send(withSkillPolicy(id, input, readSkillPolicy())),
+      ...(provider.compact
+        ? {
+            compact: (input: CompactContextInput) =>
+              provider.compact!({ ...input, skillPolicy: readSkillPolicy() }),
+          }
+        : {}),
+      ...(provider.rewind
+        ? {
+            rewind: (input: RewindLastTurnInput) => {
+              const policy = readSkillPolicy();
+              return provider.rewind!(
+                input.text === undefined
+                  ? { ...input, skillPolicy: policy }
+                  : withSkillPolicy(id, { ...input, text: input.text }, policy),
+              );
+            },
+          }
+        : {}),
+      ...(provider.steer
+        ? {
+            steer: (input: SteerTurnInput) =>
+              provider.steer!(withSkillPolicy("steer", input, readSkillPolicy())),
+          }
+        : {}),
+    },
+  ]),
+) as Record<RemoteProvider, HostProvider>;
 
 function unsupportedQuestion(): never {
   throw new Error("This provider does not support questions");

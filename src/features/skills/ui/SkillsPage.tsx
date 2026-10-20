@@ -5,6 +5,7 @@ import { TextField } from "../../../shared/ui/TextField";
 import { useRetainedState } from "../../../shared/hooks/useRetainedState";
 import { pathKey } from "../../../shared/lib/paths";
 import { Button } from "../../../shared/ui/Button";
+import { Badge } from "../../../shared/ui/Badge";
 import { NoteMarkdownEditor } from "../../notes/ui/NoteMarkdownEditor";
 import type { EditorView } from "@codemirror/view";
 import styles from "./SkillsPage.module.css";
@@ -34,6 +35,8 @@ import {
   exportSkill,
   deleteSkill,
   listSkills,
+  getSkillPolicy,
+  setSkillEnabled,
   readTextFile,
   writeTextFile,
   type DiscoveredSkill,
@@ -53,6 +56,13 @@ import { classifyRemoteError } from "../../connections/model/remoteFailure";
 import { listMachineSkills } from "../model/machineSkills";
 import { canDeleteSkill } from "../model/deleteSkill";
 import { AdvancedSettings, Segmented, Toggle } from "../../settings/ui/settingsControls";
+import { cacheSkillPolicy, cachedSkillPolicy } from "../model/skillPreferences";
+import {
+  parseSkillPolicy,
+  skillDisabled,
+  type SkillPolicy,
+} from "../../../integrations/harness/core/skillPolicy";
+import { runMachineCommand } from "../../connections/model/remoteCommands";
 
 /** A connected machine whose skills are listed: `cwd` is its open project
  * (a `remote://` path), or empty for its personal skills only. */
@@ -70,7 +80,7 @@ function machineFailure(machine: Machine, error: unknown): string {
   return failure.message;
 }
 
-/** Inspect and manage file skills without modifying provider-owned catalogs. */
+/** Owner skill preferences apply to every bycoda provider on the selected machine. */
 export function SkillsPage({ cwd, header }: { cwd: string; header?: ReactNode }): ReactNode {
   useLocale();
   const lockOverscroll = useLockOverscroll<HTMLDivElement>();
@@ -122,6 +132,9 @@ export function SkillsPage({ cwd, header }: { cwd: string; header?: ReactNode })
   const [createError, setCreateError] = useState<string | null>(null);
   const [reload, setReload] = useState(0);
   const [disabledPaths, setDisabledPaths] = useState<string[]>(() => loadDisabledSkillPaths());
+  const [policies, setPolicies] = useState<Record<string, SkillPolicy>>({});
+  const [policySaving, setPolicySaving] = useState(false);
+  const policyPending = useRef(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const [actionResult, setActionResult] = useState("");
   // Path of the skill being copied to the other machine, if any.
@@ -300,10 +313,55 @@ export function SkillsPage({ cwd, header }: { cwd: string; header?: ReactNode })
   }, [machinesKey, reload]);
 
   useEffect(() => {
-    const onChange = (): void => setDisabledPaths(loadDisabledSkillPaths());
+    const onChange = (): void => {
+      setDisabledPaths(loadDisabledSkillPaths());
+      setPolicies((current) => ({ ...current, local: cachedSkillPolicy() }));
+    };
     window.addEventListener(SKILLS_CHANGE_EVENT, onChange);
-    return () => window.removeEventListener(SKILLS_CHANGE_EVENT, onChange);
+    window.addEventListener("storage", onChange);
+    const onFocus = () => setReload((value) => value + 1);
+    window.addEventListener("focus", onFocus);
+    return () => {
+      window.removeEventListener(SKILLS_CHANGE_EVENT, onChange);
+      window.removeEventListener("storage", onChange);
+      window.removeEventListener("focus", onFocus);
+    };
   }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    const settle = (key: string, value: unknown) => {
+      const policy = parseSkillPolicy(value);
+      if (!cancelled) {
+        setPolicies((current) => ({ ...current, [key]: policy }));
+        if (key === "local") {
+          cacheSkillPolicy(policy);
+          setDisabledPaths(policy.disabledPaths);
+          invalidateSkills();
+        }
+      }
+    };
+    void getSkillPolicy("", loadDisabledSkillPaths())
+      .then((value) => settle("local", value))
+      .catch((error: unknown) => {
+        if (!cancelled) setActionError(String(error));
+      });
+    for (const machine of machines) {
+      void runMachineCommand(machine.environmentId, "skill_policy_get", {
+        cwd: machine.cwd,
+        legacyDisabledPaths: loadDisabledSkillPaths(),
+      })
+        .then((value) => settle(machine.environmentId, value))
+        .catch((error: unknown) => {
+          if (!cancelled) setActionError(machineFailure(machine, error));
+        });
+    }
+    return () => {
+      cancelled = true;
+    };
+    // Machine identity and cwd are represented by machinesKey.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [machinesKey, reload]);
 
   const needle = query.trim().toLowerCase();
   const matches = (list: DiscoveredSkill[] | null) =>
@@ -327,15 +385,39 @@ export function SkillsPage({ cwd, header }: { cwd: string; header?: ReactNode })
   const shownCount =
     filtered.length + machineShown.reduce((sum, entry) => sum + entry.shown.length, 0);
 
-  const onToggle = (path: string, enabled: boolean): void => {
+  const onToggle = async (
+    skill: DiscoveredSkill,
+    enabled: boolean,
+    machine: Machine | null,
+  ): Promise<void> => {
+    if (policyPending.current) return;
+    policyPending.current = true;
+    setPolicySaving(true);
     setActionResult("");
-    const next = enabled ? disabledPaths.filter((item) => item !== path) : [...disabledPaths, path];
     try {
-      saveDisabledSkillPaths(next);
+      const policy = parseSkillPolicy(
+        machine
+          ? await runMachineCommand(machine.environmentId, "skill_policy_set", {
+              cwd: machine.cwd,
+              name: skill.name,
+              enabled,
+            })
+          : await setSkillEnabled("", skill.name, enabled),
+      );
+      setPolicies((current) => ({ ...current, [machine?.environmentId ?? "local"]: policy }));
+      if (!machine) {
+        cacheSkillPolicy(policy);
+        setDisabledPaths(policy.disabledPaths);
+        invalidateSkills();
+        window.dispatchEvent(new Event(SKILLS_CHANGE_EVENT));
+      }
       setActionError(null);
-      setActionResult(t("Catalog preference saved on this computer."));
-    } catch {
-      setActionError("Could not save the skill preference. Try again.");
+      setActionResult(t("Skill preference saved for all providers on this machine."));
+    } catch (error) {
+      setActionError(`Could not save the skill preference. ${String(error)}`);
+    } finally {
+      policyPending.current = false;
+      setPolicySaving(false);
     }
   };
 
@@ -470,7 +552,8 @@ export function SkillsPage({ cwd, header }: { cwd: string; header?: ReactNode })
   };
 
   const renderRow = (skill: DiscoveredSkill, machine: Machine | null = null) => {
-    const disabled = disabledPaths.includes(skill.path);
+    const policy = policies[machine?.environmentId ?? "local"];
+    const disabled = policy ? skillDisabled(policy, skill) : disabledPaths.includes(skill.path);
     const selected = previewSkill?.path === skill.path;
     const modified = drafts[skill.path] !== undefined;
     return (
@@ -491,14 +574,24 @@ export function SkillsPage({ cwd, header }: { cwd: string; header?: ReactNode })
             <span className={styles.truncate}>{skill.name}</span>
             {modified ? <span title={t("Draft")}>·</span> : null}
           </Button>
-          {!machine ? (
+          {skill.modelInvocable === false || skill.userInvocable === false ? (
+            <Badge size="sm">
+              {skill.modelInvocable === false
+                ? skill.userInvocable === false
+                  ? t("Invocation disabled")
+                  : t("Manual only")
+                : t("Automatic only")}
+            </Badge>
+          ) : null}
+          {policy ? (
             <Toggle
-              label={t("Include {p0} in {p1} catalog", {
+              label={t("Enable {p0} in {p1}", {
                 p0: skill.name,
                 p1: PRODUCT_IDENTITY.displayName,
               })}
               on={!disabled}
-              onChange={(enabled) => onToggle(skill.path, enabled)}
+              disabled={policySaving}
+              onChange={(enabled) => void onToggle(skill, enabled, machine)}
             />
           ) : null}
         </div>
@@ -700,7 +793,7 @@ export function SkillsPage({ cwd, header }: { cwd: string; header?: ReactNode })
             </details>
           ))}
           <AdvancedSettings
-            title={t("Advanced: catalog visibility and skill folders")}
+            title={t("Advanced: skill controls and folders")}
             settingIds={["skill-folders"]}
           >
             <p
@@ -710,8 +803,18 @@ export function SkillsPage({ cwd, header }: { cwd: string; header?: ReactNode })
               className={styles.message}
             >
               {t(
-                "Hidden skills stay on disk and are excluded from {p0}'s file-skill catalog. Provider-managed skills and native commands are unaffected. Project skills live in {p1}, personal skills in {p2}; harness folders are also included.",
+                "Disabled skills stay on disk. {p0} blocks their names across all sources on the selected machine, including search, reads and explicit invocations. Project skills live in {p1}, personal skills in {p2}; harness folders are also included.",
                 { p0: PRODUCT_IDENTITY.displayName, p1: ".agents/skills", p2: "~/.agents/skills" },
+              )}
+            </p>
+            <p className={styles.message}>
+              {t(
+                "Changes apply to subsequent turns. Running turns and previously loaded context cannot be erased. Enabling in bycoda does not override provider restrictions.",
+              )}
+            </p>
+            <p className={styles.message}>
+              {t(
+                "Native skill controls: Codex, Claude, OpenCode, Pi and OMP. Cursor, Grok, FX, Hermes, Antigravity, Gemini and generic ACP receive current restrictions as instructions; their native skill loading cannot be controlled individually through the connected protocol.",
               )}
             </p>
           </AdvancedSettings>

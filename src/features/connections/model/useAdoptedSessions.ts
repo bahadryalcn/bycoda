@@ -24,6 +24,7 @@ import { isLocalSyncMachine } from "./localSync";
 import type { HostProject, RemoteMachine } from "./protocol";
 import type { LocalHostSessionTarget } from "./openLocalHostSession";
 import { loadRecents, sameProjectPath } from "../../projects/model/recents";
+import { subscribeRemoteRecovered } from "./remoteHealth";
 
 const MACHINE_RECHECK_MS = 15_000;
 
@@ -49,6 +50,7 @@ export function useAdoptedSessions(
     let stopped = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
     let running: Promise<boolean | undefined> | undefined;
+    let wakeRequested = false;
     const refreshes = new Map<string, Promise<boolean>>();
     const mirrored = new Map<string, number>();
     let known: RemoteMachine | undefined;
@@ -102,8 +104,9 @@ export function useAdoptedSessions(
           },
           local: () => (stopped ? [] : sessionsRef.current),
           mirrored,
-          // Polling must never split a conversation or replace divergent local
-          // messages. The explicit refresh action preserves them before syncing.
+          // Automatic recovery uses the same backup-before-replacement path as
+          // explicit refresh. A failed backup leaves the original untouched.
+          autoRefreshConflicts: true,
           preserve: async (copy) => {
             if (stopped || !(await upsertSession(copy))) return false;
             window.dispatchEvent(
@@ -213,7 +216,12 @@ export function useAdoptedSessions(
       running = next;
       void next
         .finally(() => {
-          if (running === next) running = undefined;
+          if (running !== next) return;
+          running = undefined;
+          if (wakeRequested && !stopped) {
+            wakeRequested = false;
+            onWake();
+          }
         })
         .catch(() => undefined);
       return next;
@@ -231,6 +239,7 @@ export function useAdoptedSessions(
 
     const schedule = () => {
       if (stopped) return;
+      if (timer !== undefined) clearTimeout(timer);
       timer = setTimeout(
         () => {
           void pass().finally(schedule);
@@ -238,16 +247,38 @@ export function useAdoptedSessions(
         document.visibilityState === "hidden" ? ADOPTED_POLL_HIDDEN_MS : ADOPTED_POLL_VISIBLE_MS,
       );
     };
-    const onFocus = () => {
-      void pass();
+    const onWake = () => {
+      if (stopped) return;
+      known = undefined;
+      knownAt = 0;
+      if (timer !== undefined) clearTimeout(timer);
+      timer = undefined;
+      if (running) {
+        wakeRequested = true;
+        return;
+      }
+      void pass().finally(schedule);
     };
-    window.addEventListener("focus", onFocus);
+    const onVisible = () => {
+      if (document.visibilityState !== "hidden") onWake();
+    };
+    const stopRecovered = subscribeRemoteRecovered((environmentId) => {
+      if (!environmentId || !known || known.environmentId === environmentId) onWake();
+    });
+    window.addEventListener("focus", onWake);
+    window.addEventListener("online", onWake);
+    window.addEventListener("bycoda:remote-machines", onWake);
+    document.addEventListener("visibilitychange", onVisible);
     void pass().finally(schedule);
     return () => {
       stopped = true;
       if (refreshRef?.current === refresh) refreshRef.current = undefined;
       if (timer !== undefined) clearTimeout(timer);
-      window.removeEventListener("focus", onFocus);
+      stopRecovered();
+      window.removeEventListener("focus", onWake);
+      window.removeEventListener("online", onWake);
+      window.removeEventListener("bycoda:remote-machines", onWake);
+      document.removeEventListener("visibilitychange", onVisible);
     };
   }, [sessionsRef, setSessions, loadRunning, refreshRef]);
   return hostReachable;

@@ -152,6 +152,7 @@ export function buildTurnSteerParams(input: {
 }
 
 export function buildTurnStartParams(input: {
+  skillInstructions?: string;
   threadId: string;
   runtimeMode: RuntimeMode;
   controlsAgents?: boolean;
@@ -166,7 +167,9 @@ export function buildTurnStartParams(input: {
   skills?: ReadonlyMap<string, string>;
 }): Record<string, unknown> {
   if (input.intent === "plan" && !input.model?.trim()) {
-    throw new Error("Codex did not report its active model. Select a model before starting plan mode.");
+    throw new Error(
+      "Codex did not report its active model. Select a model before starting plan mode.",
+    );
   }
   const runtimeConfig = withWritableRoots(
     runtimeModeToCodexConfig(input.runtimeMode, input.controlsAgents),
@@ -197,7 +200,7 @@ export function buildTurnStartParams(input: {
             settings: {
               model: input.model.trim(),
               reasoning_effort: input.effort ?? null,
-              developer_instructions: null,
+              developer_instructions: input.skillInstructions ?? null,
             },
           },
         }
@@ -262,6 +265,17 @@ export function codexSkillsFromList(
   response: unknown,
 ): Array<{ name: string; description: string; path: string }> {
   const out = new Map<string, { name: string; description: string; path: string }>();
+  for (const skill of codexSkillStatesFromList(response)) {
+    if (skill.enabled && !out.has(skill.name))
+      out.set(skill.name, { name: skill.name, description: skill.description, path: skill.path });
+  }
+  return [...out.values()];
+}
+
+export function codexSkillStatesFromList(
+  response: unknown,
+): Array<{ name: string; description: string; path: string; enabled: boolean }> {
+  const out: Array<{ name: string; description: string; path: string; enabled: boolean }> = [];
   const entries = asRecord(response)?.data;
   for (const entry of Array.isArray(entries) ? entries : []) {
     const skills = asRecord(entry)?.skills;
@@ -269,10 +283,11 @@ export function codexSkillsFromList(
       const skill = asRecord(raw);
       const name = stringField(skill, "name");
       const path = stringField(skill, "path");
-      if (!name || !path || skill?.enabled === false || out.has(name)) continue;
-      out.set(name, {
+      if (!name || !path) continue;
+      out.push({
         name,
         path,
+        enabled: skill?.enabled !== false,
         description:
           stringField(asRecord(skill?.interface), "shortDescription") ??
           stringField(skill, "shortDescription") ??
@@ -281,7 +296,7 @@ export function codexSkillsFromList(
       });
     }
   }
-  return [...out.values()];
+  return out;
 }
 
 export function isRecoverableThreadResumeError(error: unknown): boolean {

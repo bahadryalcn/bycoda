@@ -195,9 +195,17 @@ export function isOpenCodeNotFound(cause: unknown): boolean {
   return false;
 }
 
-export function buildOpenCodePermissionRules(runtimeMode: RuntimeMode): OpenCodePermissionRule[] {
+export function buildOpenCodePermissionRules(
+  runtimeMode: RuntimeMode,
+  disabledSkills: readonly string[] = [],
+): OpenCodePermissionRule[] {
+  const denied: OpenCodePermissionRule[] = disabledSkills.map((name) => ({
+    permission: "skill",
+    pattern: name,
+    action: "deny",
+  }));
   if (runtimeMode === "full-access") {
-    return [{ permission: "*", pattern: "*", action: "allow" }];
+    return [{ permission: "*", pattern: "*", action: "allow" }, ...denied];
   }
   const rules: OpenCodePermissionRule[] = [
     { permission: "*", pattern: "*", action: "ask" },
@@ -209,7 +217,7 @@ export function buildOpenCodePermissionRules(runtimeMode: RuntimeMode): OpenCode
   if (runtimeMode === "auto") {
     rules.push({ permission: "read", pattern: "*", action: "allow" });
   }
-  return rules;
+  return [...rules, ...denied];
 }
 
 export function toOpenCodeV2PermissionRules(

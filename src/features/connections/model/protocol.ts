@@ -51,7 +51,11 @@ export type HostProjectGroup = {
 export type HostProjectDirectory = {
   version: 1;
   privacyReady: boolean;
-  projects: (HostProject & { groupId?: string; registered: boolean; sessionLayout?: HostSessionLayout })[];
+  projects: (HostProject & {
+    groupId?: string;
+    registered: boolean;
+    sessionLayout?: HostSessionLayout;
+  })[];
   groups: HostProjectGroup[];
 };
 /** Sent only by the local desktop heartbeat; protected paths never reach the phone. */
@@ -72,6 +76,8 @@ export type HostDirectory = {
 export type HostModelCatalog = {
   models: Partial<Record<RemoteProvider, AgentModel[]>>;
   errors: Partial<Record<RemoteProvider, string>>;
+  /** Providers still being discovered; available models remain usable. */
+  pending?: RemoteProvider[];
 };
 export type HostWorktree = {
   path: string;
@@ -201,6 +207,9 @@ export function applySessionSync(known: HostSession | undefined, sync: SessionSy
 /** Machine-level invalidations share one authenticated control lane. Revisions
  * recover state through sessions.sync; notifications need no unbounded replay log. */
 export type MachineChangesRequest = {
+  /** Local scheduling hints; native strips these before contacting the host. */
+  activeProjects?: { projectId: string; lastActiveAt: number }[];
+  activeSessions?: { sessionId: string; lastActiveAt: number }[];
   inlineSync?: boolean;
   /** Native per-window registration token, not a host identity. */
   subscriptionId?: string;
@@ -213,6 +222,9 @@ export type MachineChangesRequest = {
   waitMs?: number;
 };
 export type MachineChanges = {
+  /** Native scheduling scope; absent on older transports that check all demand. */
+  checkedSessions?: string[];
+  checkedProjects?: string[];
   tasks?: { etag: string };
   instanceId: string;
   reset: boolean;

@@ -1078,7 +1078,7 @@ export class HostEngine {
                         : file,
                     ),
                   );
-                  const prompt = await prepareHostSkillPrompt(command.text, value.session.cwd);
+                  const prompt = await prepareHostSkillPrompt(command.text, value.session.cwd, undefined, value.session.id);
                   if (
                     active.cancelled ||
                     active.ending ||
@@ -1592,7 +1592,7 @@ export class HostEngine {
               const preparedPrompt =
                 /(^|\s)[/$][A-Za-z0-9][A-Za-z0-9_.:-]*(?=\s|$)/.test(prompt) &&
                 !(session.harness === "codex" && /^\s*\/goal(?:\s|$)/.test(prompt))
-                  ? await prepareHostSkillPrompt(prompt, session.cwd)
+                  ? await prepareHostSkillPrompt(prompt, session.cwd, undefined, session.id)
                   : prompt;
               if (this.closing || active.cancelled) throw new Error("Turn cancelled");
               const thread = {

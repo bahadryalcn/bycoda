@@ -15,6 +15,7 @@ import {
 import { homedir } from "node:os";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import type { DiscoveredSkill } from "../src/platform/tauri/fs";
+import { skillInvocationFlags } from "../src/integrations/harness/core/skillPolicy";
 
 /**
  * The file skills on this machine for a project, found the way the desktop
@@ -25,6 +26,18 @@ import type { DiscoveredSkill } from "../src/platform/tauri/fs";
 const MAX_SKILLS = 300;
 const MAX_CANDIDATES = 1000;
 const MAX_FRONTMATTER_BYTES = 16 * 1024;
+
+/** Migration only: recover the declared name rather than assuming its folder name. */
+export function skillNameForPath(path: string): string {
+  const normalized = path.replace(/\\/g, "/");
+  const fallback = normalized.split("/").at(-2) ?? "";
+  if (!/\/skill\.md$/i.test(normalized)) return fallback;
+  try {
+    return parseFrontmatter(readPrefix(path, MAX_FRONTMATTER_BYTES), fallback).name;
+  } catch {
+    return fallback;
+  }
+}
 
 const HARNESS_DIRS: [string, string][] = [
   [".claude/skills", "claude"],
@@ -152,6 +165,7 @@ function scanRoot(root: string, scope: string, source: string): DiscoveredSkill[
     const { name, description } = parseFrontmatter(text, fallback);
     if (!name) continue;
     out.push({
+      ...skillInvocationFlags(text),
       name,
       description,
       path: file.replace(/\\/g, "/"),

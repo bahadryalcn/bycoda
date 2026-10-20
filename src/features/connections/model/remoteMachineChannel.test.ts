@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 import { afterEach, expect, it, vi } from "vitest";
 import { notifyRemoteRecovered } from "./remoteHealth";
+import { bindMachineEnvironment } from "./remoteLifecycle";
 import { remoteRequest } from "./connections";
 import {
   resetRemoteMachineChannelsForTests,
@@ -8,6 +9,123 @@ import {
 } from "./remoteMachineChannel";
 
 vi.mock("./connections", () => ({ remoteRequest: vi.fn() }));
+
+it("does not verify a subscriber omitted from the current native scheduling round", async () => {
+  vi.useFakeTimers();
+  vi.mocked(remoteRequest).mockResolvedValue({
+    instanceId: "boot",
+    reset: false,
+    sessions: [],
+    projects: [],
+    checkedSessions: ["active"],
+    checkedProjects: [],
+  });
+  const active = vi.fn();
+  const background = vi.fn();
+  const stopActive = subscribeRemoteMachineChannel(
+    "scope",
+    { sessions: [{ sessionId: "active", revision: 1 }] },
+    active,
+  );
+  const stopBackground = subscribeRemoteMachineChannel(
+    "scope",
+    { projects: [{ projectId: "background" }] },
+    background,
+  );
+  await vi.advanceTimersByTimeAsync(0);
+  expect(active).toHaveBeenCalledOnce();
+  expect(background).not.toHaveBeenCalled();
+  vi.mocked(remoteRequest).mockResolvedValue({
+    instanceId: "boot",
+    reset: true,
+    sessions: [],
+    projects: [],
+    checkedSessions: ["active"],
+    checkedProjects: [],
+  });
+  await vi.advanceTimersByTimeAsync(100);
+  expect(background).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ reset: true }));
+  stopActive();
+  stopBackground();
+});
+
+it("remembers recently active projects after their visible session unsubscribes", async () => {
+  vi.useFakeTimers();
+  vi.mocked(remoteRequest).mockResolvedValue({
+    instanceId: "boot",
+    reset: false,
+    sessions: [],
+    projects: [],
+  });
+  const rail = subscribeRemoteMachineChannel("recent", { projects: [{ projectId: "p" }] }, vi.fn());
+  const tab = subscribeRemoteMachineChannel(
+    "recent",
+    {
+      sessions: [{ sessionId: "s", revision: 1 }],
+      active: { projectId: "p", sessionId: "s", lastActiveAt: 20 },
+    },
+    vi.fn(),
+  );
+  await vi.advanceTimersByTimeAsync(0);
+  expect(remoteRequest).toHaveBeenLastCalledWith(
+    "recent",
+    "machine.changes",
+    expect.objectContaining({
+      activeSessions: [{ sessionId: "s", lastActiveAt: 20 }],
+      activeProjects: [{ projectId: "p", lastActiveAt: 20 }],
+    }),
+  );
+  tab();
+  await vi.advanceTimersByTimeAsync(100);
+  expect(remoteRequest).toHaveBeenLastCalledWith(
+    "recent",
+    "machine.changes",
+    expect.objectContaining({
+      sessions: [],
+      activeProjects: [{ projectId: "p", lastActiveAt: 20 }],
+    }),
+  );
+  const last = vi.mocked(remoteRequest).mock.calls.at(-1)?.[2];
+  expect(last).not.toHaveProperty("activeSessions");
+  rail();
+});
+
+it("discards an in-flight pre-recovery poll and requests a snapshot without starting a second poll", async () => {
+  vi.useFakeTimers();
+  bindMachineEnvironment("snapshot", "snapshot-env");
+  const finishes: ((value: unknown) => void)[] = [];
+  vi.mocked(remoteRequest).mockImplementation(
+    () => new Promise((resolve) => finishes.push(resolve)),
+  );
+  const listener = vi.fn();
+  const stop = subscribeRemoteMachineChannel(
+    "snapshot",
+    {
+      sessions: [{ sessionId: "s", revision: 10 }],
+      projects: [{ projectId: "p", known: "old" }],
+    },
+    listener,
+  );
+  await vi.advanceTimersByTimeAsync(0);
+  notifyRemoteRecovered("unrelated-env");
+  notifyRemoteRecovered("snapshot-env");
+  expect(remoteRequest).toHaveBeenCalledTimes(1);
+  finishes[0]({ instanceId: "old", sessions: [], projects: [], reset: false });
+  await vi.advanceTimersByTimeAsync(0);
+  expect(listener).not.toHaveBeenCalled();
+  expect(remoteRequest).toHaveBeenLastCalledWith(
+    "snapshot",
+    "machine.changes",
+    expect.objectContaining({
+      sessions: [{ sessionId: "s", revision: 0 }],
+      projects: [{ projectId: "p" }],
+    }),
+  );
+  finishes[1]({ instanceId: "new", sessions: [], projects: [], reset: false });
+  await vi.advanceTimersByTimeAsync(0);
+  expect(listener).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ reset: true }));
+  stop();
+});
 
 it.each(["recovered", "focus", "online", "visibilitychange"])(
   "wakes a failed control channel on %s without waiting for backoff",

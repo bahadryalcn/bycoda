@@ -143,6 +143,7 @@ import {
   useGitPanelState,
   setGitFeedback,
   withGitOperation,
+  withGitBackgroundFetch,
 } from "../model/gitPanelState";
 import { useLegacyConflictStatus } from "../hooks/useLegacyConflictStatus";
 import { confirmNative, confirmDiscardFile } from "../model/gitConfirmation";
@@ -323,7 +324,7 @@ export function GitChangesPanel({
     const timer = window.setInterval(() => {
       if (document.hidden || !remotePollDue(cwd) || gitPanelRuntime(cwd).state.busy) return;
       // Quiet: a failed background fetch should not interrupt with a dialog.
-      void withGitOperation(cwd, "Fetching…", () => gitFetch(cwd)).then(
+      void withGitBackgroundFetch(cwd, () => gitFetch(cwd)).then(
         () => {
           setFetchError(null);
           reload();
@@ -980,10 +981,9 @@ function ChangedFiles({
     setBusy(action);
     setPending(ACTION_LABEL[action]);
     if (index) {
-      let nextIndex = index;
-      for (const file of selectedFiles)
-        nextIndex = applyIndexAction(nextIndex, action, file.relative);
-      showOptimistic(nextIndex);
+      showOptimistic(
+        applyIndexAction(index, action, new Set(selectedFiles.map((file) => file.relative))),
+      );
     }
     const task = queue.tail.then(async () => {
       try {

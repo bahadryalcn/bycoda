@@ -4,7 +4,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { ServersView } from "./ServersView";
 import { resetRetainedState } from "../../../shared/hooks/useRetainedState";
-import { requestMachineEdit, requestMachineReconnect } from "../model/connections";
+import { requestMachineEdit, requestMachineReconnect, remoteRequest } from "../model/connections";
 import { requestMachineAdd } from "../model/machineAdd";
 import type { RemoteMachine } from "../model/protocol";
 import {
@@ -12,7 +12,9 @@ import {
   updateServerMetadata,
   type ServerRecord,
 } from "../model/serverInventory";
-import { applyRemoteConnection } from "../model/remoteHealth";
+import { applyRemoteConnection, resetRemoteHealth } from "../model/remoteHealth";
+import { recordFeatureHealth } from "../model/remoteLifecycle";
+import { reconnectRemoteMachine } from "../model/remoteReconnect";
 
 vi.mock("./ServersConnectionTools", async () => {
   const { ServerOrganization } = await import("./ServerOrganization");
@@ -42,6 +44,12 @@ vi.mock("../model/connections", () => ({
   useRemoteMachineOnline: () => undefined,
   requestMachineEdit: vi.fn(),
   requestMachineReconnect: vi.fn(),
+  knownRemoteMachine: (environmentId: string) =>
+    fixture.machines.find((machine) => machine.environmentId === environmentId),
+  remoteMachineFor: async (environmentId: string) =>
+    fixture.machines.find((machine) => machine.environmentId === environmentId),
+  remoteRequest: vi.fn(),
+  recordRemoteCapabilities: vi.fn(),
 }));
 vi.mock("../model/serverInventory", () => ({
   useServerInventory: () => ({
@@ -80,6 +88,8 @@ beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   vi.clearAllMocks();
   resetRetainedState();
+  resetRemoteHealth();
+  vi.mocked(remoteRequest).mockResolvedValue({});
   terminalActions.open = undefined;
   fixture.extraServers = [];
   Object.assign(fixture, { machines: [machine], loaded: true, loading: false, error: undefined });
@@ -109,6 +119,47 @@ const search = async (value: string) => {
     input.dispatchEvent(new Event("input", { bubbles: true }));
   });
 };
+
+it("opens Termius migration from the server actions menu", async () => {
+  await render();
+  await click("More actions");
+  const action = document.querySelector<HTMLButtonElement>('[role="menuitem"][aria-label="Import from Termius"]');
+  expect(action).toBeTruthy();
+  await act(async () => action!.click());
+  expect(document.querySelector('[role="dialog"]')?.textContent).toContain("Scan this computer");
+});
+
+it("shows real recovery progress and keeps degraded features visible after Host recovery", async () => {
+  let finish!: (value: unknown) => void;
+  vi.mocked(remoteRequest).mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+  );
+  await render();
+  await click("Home Mac");
+  let recovery!: Promise<unknown>;
+  await act(async () => {
+    recovery = reconnectRemoteMachine(machine.environmentId);
+  });
+  expect(container.querySelector("[data-server-row]")?.textContent).toContain("Reconnecting");
+  expect(container.querySelector('button[aria-label="Reconnect"]')?.getAttribute("aria-busy")).toBe(
+    "true",
+  );
+  expect(container.querySelector('button[aria-label="Cancel reconnect"]')).toBeTruthy();
+  await act(async () => {
+    recordFeatureHealth(machine.environmentId, "files", false);
+    finish({});
+    await recovery;
+  });
+  expect(container.querySelector("[data-server-row]")?.textContent).toContain("Refresh pending");
+  expect(container.querySelector('[aria-label="Server details"]')?.textContent).toContain(
+    "Unavailable",
+  );
+  await act(async () => recordFeatureHealth(machine.environmentId, "files", true));
+  expect(container.querySelector("[data-server-row]")?.textContent).toContain("Connected");
+});
 
 it("selects on a single click and opens the canonical SSH record once on double click", async () => {
   terminalActions.open = vi.fn();
@@ -164,7 +215,8 @@ it("selects canonical machines and delegates add, edit and reconnect to existing
   await click("Edit machine");
   expect(requestMachineEdit).toHaveBeenCalledWith("mac");
   await click("Reconnect");
-  expect(requestMachineReconnect).toHaveBeenCalledWith("mac");
+  expect(remoteRequest).toHaveBeenCalledWith("mac", "environment.describe", {}, true);
+  expect(requestMachineReconnect).not.toHaveBeenCalled();
   await click("Add machine");
   expect(requestMachineAdd).toHaveBeenCalledOnce();
 });
@@ -172,7 +224,7 @@ it("selects canonical machines and delegates add, edit and reconnect to existing
 it("filters names and addresses and distinguishes no matches from an empty inventory", async () => {
   await render();
   await search("ME@HOME");
-  expect(container.querySelectorAll("li")).toHaveLength(1);
+  expect(container.querySelectorAll("[data-server-row]")).toHaveLength(1);
   await search("absent");
   expect(container.textContent).toContain("No matching servers.");
   expect(container.textContent).not.toContain("No machines connected.");
@@ -189,7 +241,7 @@ it("keeps the last list and selection visible when refresh fails and allows retr
   expect(container.querySelector('[role="alert"]')?.textContent).toContain(
     "Showing last loaded data",
   );
-  expect(container.querySelectorAll("li")).toHaveLength(1);
+  expect(container.querySelectorAll("[data-server-row]")).toHaveLength(1);
   expect(container.querySelector('[aria-label="Server details"]')).toBeTruthy();
   await click("Retry");
   expect(fixture.refresh).toHaveBeenCalledOnce();
@@ -275,7 +327,7 @@ it("lists SSH-only endpoints without calling host health or offering host instal
   fixture.extraServers = [sshServer];
   await render();
   await search("linux");
-  expect(container.querySelectorAll("li")).toHaveLength(1);
+  expect(container.querySelectorAll("[data-server-row]")).toHaveLength(1);
   await click("Personal SSH");
   const details = container.querySelector('[aria-label="Server details"]')!;
   expect(details.textContent).toContain("alice@remote.example");
@@ -357,7 +409,7 @@ it("filters favorites without clearing hidden selection and resets inside the po
     '[role="switch"][aria-label="Favorites only"]',
   ) as HTMLButtonElement;
   await act(async () => favorites.click());
-  expect(container.querySelectorAll("li")).toHaveLength(1);
+  expect(container.querySelectorAll("[data-server-row]")).toHaveLength(1);
   expect(container.querySelector("li")?.textContent).toContain("Personal SSH");
   expect(container.querySelector('[aria-label="Server details"]')?.textContent).toContain(
     "Home Mac",
@@ -366,7 +418,7 @@ it("filters favorites without clearing hidden selection and resets inside the po
     button.textContent?.includes("Reset filters"),
   )!;
   await act(async () => reset.click());
-  expect(container.querySelectorAll("li")).toHaveLength(2);
+  expect(container.querySelectorAll("[data-server-row]")).toHaveLength(2);
   expect(container.querySelector('[aria-pressed="true"]')?.textContent).toContain("Home Mac");
 });
 
@@ -390,14 +442,4 @@ it("searches and displays the effective SSH destination while preserving the edi
   expect(details.textContent).toContain("2200");
   expect(server.sshEndpoint).toEqual({ host: "target.invalid", user: "local-user", port: 22 });
   expect(terminalActions.open).not.toHaveBeenCalled();
-});
-
-
-it("opens Termius migration from the server actions menu", async () => {
-  await render();
-  await click("More actions");
-  const action = document.querySelector<HTMLButtonElement>('[role="menuitem"][aria-label="Import from Termius"]');
-  expect(action).toBeTruthy();
-  await act(async () => action!.click());
-  expect(document.querySelector('[role="dialog"]')?.textContent).toContain("Scan this computer");
 });

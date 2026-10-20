@@ -26,12 +26,33 @@ const MAX_GENERATED_IMAGE_BYTES: u64 = 25 * 1024 * 1024;
 const MAX_GENERATED_IMAGE_DATA_BYTES: u64 = MAX_GENERATED_IMAGE_BYTES * 4 / 3 + 4;
 const GENERATED_IMAGE_DIR: &str = "generated-images";
 
-static GIT_MUTATIONS: Mutex<Option<HashMap<PathBuf, Weak<Mutex<()>>>>> = Mutex::new(None);
+#[derive(Default)]
+struct GitMutationLocks {
+    local: Mutex<()>,
+    fetch: Mutex<()>,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum GitMutationScope {
+    Local,
+    Fetch,
+    Exclusive,
+}
+
+static GIT_MUTATIONS: Mutex<Option<HashMap<PathBuf, Weak<GitMutationLocks>>>> = Mutex::new(None);
 
 /// Hold the checkout lease for the whole operation, including safety reads and
 /// compound commands. Git's own lock still coordinates external processes.
 pub(crate) fn with_git_mutation<T>(
     root: &Path,
+    work: impl FnOnce() -> Result<T, String>,
+) -> Result<T, String> {
+    with_git_mutation_scope(root, GitMutationScope::Exclusive, work)
+}
+
+fn with_git_mutation_scope<T>(
+    root: &Path,
+    scope: GitMutationScope,
     work: impl FnOnce() -> Result<T, String>,
 ) -> Result<T, String> {
     let git_dir = find_git_dir(root).unwrap_or_else(|| root.to_path_buf());
@@ -48,13 +69,34 @@ pub(crate) fn with_git_mutation<T>(
         if let Some(lock) = locks.get(&key).and_then(Weak::upgrade) {
             lock
         } else {
-            let lock = Arc::new(Mutex::new(()));
+            let lock = Arc::new(GitMutationLocks::default());
             locks.insert(key, Arc::downgrade(&lock));
             lock
         }
     };
-    let _lease = lock.lock().map_err(|e| e.to_string())?;
+    // Always acquire in this order. A fetch touches remote refs; only local
+    // index writes/commit may overlap it. Checkout/rebase/reset fence both.
+    let _local = if scope != GitMutationScope::Fetch {
+        Some(lock.local.lock().map_err(|e| e.to_string())?)
+    } else {
+        None
+    };
+    let _fetch = if scope != GitMutationScope::Local {
+        Some(lock.fetch.lock().map_err(|e| e.to_string())?)
+    } else {
+        None
+    };
     work()
+}
+
+fn spawn_git_local_mutation<T: Send + 'static>(
+    cwd: String,
+    work: impl FnOnce(&Path) -> Result<T, String> + Send + 'static,
+) -> tauri::async_runtime::JoinHandle<Result<T, String>> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let root = expand_home(&cwd);
+        with_git_mutation_scope(&root, GitMutationScope::Local, || work(&root))
+    })
 }
 
 pub(crate) fn spawn_git_mutation<T: Send + 'static>(
@@ -1317,7 +1359,7 @@ pub async fn git_commit_file_diff(
 /// Stage a changed file (`git add`).
 #[tauri::command]
 pub async fn git_stage_file(cwd: String, relative: String) -> Result<(), String> {
-    spawn_git_mutation(cwd, move |root| git_stage_file_for(root, &relative))
+    spawn_git_local_mutation(cwd, move |root| git_stage_file_for(root, &relative))
         .await
         .map_err(|e| e.to_string())?
 }
@@ -1325,14 +1367,14 @@ pub async fn git_stage_file(cwd: String, relative: String) -> Result<(), String>
 /// Stage an explicit selection in one index transaction.
 #[tauri::command]
 pub async fn git_stage_files(cwd: String, relatives: Vec<String>) -> Result<(), String> {
-    spawn_git_mutation(cwd, move |root| git_index_files_for(root, &relatives, true))
+    spawn_git_local_mutation(cwd, move |root| git_index_files_for(root, &relatives, true))
         .await
         .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
 pub async fn git_unstage_files(cwd: String, relatives: Vec<String>) -> Result<(), String> {
-    spawn_git_mutation(cwd, move |root| {
+    spawn_git_local_mutation(cwd, move |root| {
         git_index_files_for(root, &relatives, false)
     })
     .await
@@ -1347,7 +1389,7 @@ pub async fn git_stage_contents(
     contents: String,
     expected_original: Option<String>,
 ) -> Result<(), String> {
-    spawn_git_mutation(cwd, move |root| {
+    spawn_git_local_mutation(cwd, move |root| {
         git_stage_contents_for(
             root,
             &relative,
@@ -1362,7 +1404,7 @@ pub async fn git_stage_contents(
 /// Unstage a file (`git restore --staged`).
 #[tauri::command]
 pub async fn git_unstage_file(cwd: String, relative: String) -> Result<(), String> {
-    spawn_git_mutation(cwd, move |root| git_unstage_file_for(root, &relative))
+    spawn_git_local_mutation(cwd, move |root| git_unstage_file_for(root, &relative))
         .await
         .map_err(|e| e.to_string())?
 }
@@ -1396,7 +1438,7 @@ pub async fn git_discard_all(cwd: String) -> Result<(), String> {
 /// Stage every changed file in the repo.
 #[tauri::command]
 pub async fn git_stage_all(cwd: String) -> Result<(), String> {
-    spawn_git_mutation(cwd, git_stage_all_for)
+    spawn_git_local_mutation(cwd, git_stage_all_for)
         .await
         .map_err(|e| e.to_string())?
 }
@@ -1404,7 +1446,7 @@ pub async fn git_stage_all(cwd: String) -> Result<(), String> {
 /// Unstage every staged file.
 #[tauri::command]
 pub async fn git_unstage_all(cwd: String) -> Result<(), String> {
-    spawn_git_mutation(cwd, git_unstage_all_for)
+    spawn_git_local_mutation(cwd, git_unstage_all_for)
         .await
         .map_err(|e| e.to_string())?
 }
@@ -1434,7 +1476,7 @@ pub async fn git_commit(
     amend: bool,
     signoff: Option<bool>,
 ) -> Result<(), String> {
-    spawn_git_mutation(cwd, move |root| {
+    spawn_git_local_mutation(cwd, move |root| {
         let mut extra = Vec::new();
         if amend {
             extra.push("--amend");
@@ -2304,9 +2346,14 @@ fn git_trust_repository_for(root: &Path, confirmed: bool) -> Result<(), String> 
 /// Fetch every remote, and with `prune` drop tracking branches deleted there.
 #[tauri::command]
 pub async fn git_fetch(cwd: String, prune: Option<bool>) -> Result<(), String> {
-    spawn_git_mutation(cwd, move |root| git_fetch_for(root, prune.unwrap_or(false)))
-        .await
-        .map_err(|e| e.to_string())?
+    tauri::async_runtime::spawn_blocking(move || {
+        let root = expand_home(&cwd);
+        with_git_mutation_scope(&root, GitMutationScope::Fetch, || {
+            git_fetch_for(&root, prune.unwrap_or(false))
+        })
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 /// Create a branch at a local or remote branch and switch to it.
@@ -10247,6 +10294,69 @@ mod tests {
         }
         assert!(with_git_mutation(&dir.0, || Err::<(), _>("expected failure".into())).is_err());
         with_git_mutation(&dir.0, || Ok(())).unwrap();
+    }
+
+    #[test]
+    fn git_reliability_fetch_overlaps_local_but_not_exclusive_mutations() {
+        let dir = tmp("git-fetch-lanes");
+        std::fs::create_dir_all(dir.0.join(".git")).unwrap();
+        std::fs::create_dir_all(dir.0.join("sub")).unwrap();
+        let (fetch_started, ready) = mpsc::channel();
+        let (release_fetch, fetch_release) = mpsc::channel();
+        let root = dir.0.clone();
+        let fetch = thread::spawn(move || {
+            with_git_mutation_scope(&root, GitMutationScope::Fetch, || {
+                fetch_started.send(()).unwrap();
+                fetch_release.recv().unwrap();
+                Ok(())
+            })
+            .unwrap();
+        });
+        ready.recv_timeout(Duration::from_secs(5)).unwrap();
+
+        let (local_done, local_ready) = mpsc::channel();
+        let root = dir.0.join("sub");
+        let local = thread::spawn(move || {
+            with_git_mutation_scope(&root, GitMutationScope::Local, || Ok(())).unwrap();
+            local_done.send(()).unwrap();
+        });
+        local_ready.recv_timeout(Duration::from_secs(5)).unwrap();
+        local.join().unwrap();
+
+        let (exclusive_started, exclusive_ready) = mpsc::channel();
+        let (release_exclusive, exclusive_release) = mpsc::channel();
+        let root = dir.0.clone();
+        let exclusive = thread::spawn(move || {
+            with_git_mutation(&root, || {
+                exclusive_started.send(()).unwrap();
+                exclusive_release.recv().unwrap();
+                Ok(())
+            })
+            .unwrap();
+        });
+        assert!(exclusive_ready
+            .recv_timeout(Duration::from_millis(50))
+            .is_err());
+        release_fetch.send(()).unwrap();
+        fetch.join().unwrap();
+        exclusive_ready
+            .recv_timeout(Duration::from_secs(5))
+            .unwrap();
+
+        let (next_started, next_ready) = mpsc::channel();
+        let root = dir.0.clone();
+        let next = thread::spawn(move || {
+            with_git_mutation_scope(&root, GitMutationScope::Fetch, || {
+                next_started.send(()).unwrap();
+                Ok(())
+            })
+            .unwrap();
+        });
+        assert!(next_ready.recv_timeout(Duration::from_millis(50)).is_err());
+        release_exclusive.send(()).unwrap();
+        exclusive.join().unwrap();
+        next_ready.recv_timeout(Duration::from_secs(5)).unwrap();
+        next.join().unwrap();
     }
 
     #[test]

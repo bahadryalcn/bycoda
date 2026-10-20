@@ -101,6 +101,7 @@ import {
   Regex as LucideRegex,
   Replace as LucideReplace,
   RotateCcw as LucideRotateCcw,
+  Save as LucideSave,
   Search as LucideSearch,
   Settings as LucideSettings,
   Share as LucideShare,
@@ -256,6 +257,7 @@ export const RefreshCw = wrap(LucideRefreshCw, "RefreshCw");
 export const Regex = wrap(LucideRegex, "Regex");
 export const Replace = wrap(LucideReplace, "Replace");
 export const RotateCcw = wrap(LucideRotateCcw, "RotateCcw");
+export const Save = wrap(LucideSave, "Save");
 export const Search = wrap(LucideSearch, "Search");
 export const Settings = wrap(LucideSettings, "Settings");
 export const Share = wrap(LucideShare, "Share");

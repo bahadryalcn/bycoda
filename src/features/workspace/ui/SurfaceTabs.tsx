@@ -601,6 +601,7 @@ export function SurfaceTabs({
                 type="button"
                 role="tab"
                 aria-selected={active}
+                aria-description={dirty ? t("Unsaved changes") : undefined}
                 data-file-tab-id={closing ? undefined : file.id}
                 tabIndex={!closing && file.id === entryFileId ? 0 : -1}
                 aria-keyshortcuts="Delete Shift+F10 F2"
@@ -655,7 +656,7 @@ export function SurfaceTabs({
                   onSelectFile(next);
                   focusFileTab(next);
                 }}
-                title={appendProblems(tooltip, errors)}
+                title={appendProblems(dirty ? `${tooltip} (${t("Unsaved changes")})` : tooltip, errors)}
                 onClick={() => {
                   if (sortable.consumeClick()) return;
                   onSelectFile(file.id);
@@ -683,13 +684,6 @@ export function SurfaceTabs({
                 >
                   {label}
                 </TabLabel>
-                {dirty ? (
-                  <span
-                    className="size-1.5 shrink-0 rounded-full bg-content/70"
-                    title={t("Unsaved changes")}
-                    aria-label={t("Unsaved changes")}
-                  />
-                ) : null}
               </Button>
               <Button
                 iconOnly
@@ -706,9 +700,14 @@ export function SurfaceTabs({
                   event.stopPropagation();
                   onCloseFile(file.id);
                 }}
-                className={`absolute right-1 top-1/2 grid size-5 -translate-y-1/2 place-items-center ${active ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}
+                className={`absolute end-1 inset-y-0 my-auto grid size-5 place-items-center ${active || dirty ? "opacity-100" : "opacity-0 group-hover:opacity-100 focus-visible:opacity-100"}`}
               >
-                <X className="size-3" strokeWidth={1.75} />
+                {dirty ? (
+                  <>
+                    <span className="size-2 rounded-full bg-[var(--ui-text-secondary)] group-hover:hidden group-focus-within:hidden" aria-label={t("Unsaved changes")} />
+                    <X className="hidden size-3 group-hover:block group-focus-within:block" strokeWidth={1.75} />
+                  </>
+                ) : <X className="size-3" strokeWidth={1.75} />}
               </Button>
             </div>
           );

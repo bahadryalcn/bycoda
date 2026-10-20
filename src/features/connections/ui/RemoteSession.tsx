@@ -719,9 +719,11 @@ function ConnectedRemoteSession({
             sessionId &&
             !unsubscribeChannel
           ) {
+            const lastActiveAt = Date.now();
             unsubscribeChannel = subscribeRemoteMachineChannel(
               machine.id,
               () => ({
+                active: { projectId: project.projectId, sessionId, lastActiveAt },
                 sessions: [{ sessionId, revision: snapshotRef.current?.revision ?? 0 }],
                 inlineSync:
                   host.capabilities.includes("machine.changes.inlineSync") &&
@@ -1097,24 +1099,30 @@ function ConnectedRemoteSession({
   );
 
   useEffect(() => {
-    if (!descriptor) return;
+    if (!descriptor || !visible) return;
     let disposed = false;
-    void remoteRequest<HostModelCatalog>(machine.id, "models.list", {
-      projectId: project.projectId,
-    })
-      .then((value) => {
-        if (disposed) return;
-        boundedSet(cachedCatalogs, catalogKey(machine.id, project.projectId), value);
-        setCatalog(value);
-        setCatalogError("");
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const load = () =>
+      void remoteRequest<HostModelCatalog>(machine.id, "models.list", {
+        projectId: project.projectId,
+        progressive: true,
       })
-      .catch((reason) => {
-        if (!disposed) setCatalogError(String(reason));
-      });
+        .then((value) => {
+          if (disposed) return;
+          boundedSet(cachedCatalogs, catalogKey(machine.id, project.projectId), value);
+          setCatalog(value);
+          setCatalogError("");
+          if (value.pending?.length) timer = setTimeout(load, 1000);
+        })
+        .catch((reason) => {
+          if (!disposed) setCatalogError(String(reason));
+        });
+    load();
     return () => {
       disposed = true;
+      clearTimeout(timer);
     };
-  }, [machine.id, descriptor?.environmentId, project.projectId, catalogRefresh]);
+  }, [machine.id, descriptor?.environmentId, project.projectId, catalogRefresh, visible]);
 
   const providers = useMemo(
     () => (descriptor?.providers ?? []).filter(isRemoteProvider),

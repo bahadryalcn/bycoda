@@ -17,6 +17,7 @@ import {
 import type { HostSession } from "./protocol";
 import type { AdoptedEntry } from "./adoptedSessions";
 import { bindHarnessSession, isLiveHarness } from "../../../integrations/harness/core/registry";
+import { notifyRemoteRecovered } from "./remoteHealth";
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
 vi.mock("./connections", () => ({
@@ -225,7 +226,7 @@ it("preserves a conflict in history, updates the open session, and retains the c
   }
 });
 
-it("keeps conflicts and drafts through polling without creating history copies", async () => {
+it("keeps conflicts and drafts when the automatic history backup fails, then retries", async () => {
   const initial = {
     ...newSession("claude", "/repo"),
     id: "s1",
@@ -247,16 +248,110 @@ it("keeps conflicts and drafts through polling without creating history copies",
   setComposerAttachments("s1", attachments);
   vi.mocked(upsertSession)
     .mockClear()
-    .mockResolvedValue({ id: "backup" } as never);
+    .mockResolvedValue(null as never);
   await act(async () => vi.advanceTimersByTimeAsync(5_000));
   expect(current.blocks).toEqual(initial.blocks);
   expect(current.adoptedSyncConflict).toBe(true);
   expect(current.continuingElsewhere).toBe(true);
-  expect(upsertSession).not.toHaveBeenCalled();
+  expect(upsertSession).toHaveBeenCalledTimes(1);
   expect(getComposerDraft("s1")).toBe("unsent draft");
   expect(getComposerAttachments("s1")).toEqual(attachments);
   await act(async () => vi.advanceTimersByTimeAsync(10_000));
+  expect(upsertSession).toHaveBeenCalledTimes(3);
+  vi.mocked(upsertSession).mockResolvedValue({ id: "backup" } as never);
+  await act(async () => vi.advanceTimersByTimeAsync(5_000));
+  expect(current.blocks).toEqual(remote.blocks);
+  expect(current.adoptedSyncConflict).toBeUndefined();
+  expect(current.continuingElsewhere).toBe(true);
+  expect(getComposerDraft("s1")).toBe("unsent draft");
+  expect(getComposerAttachments("s1")).toEqual(attachments);
+  vi.mocked(upsertSession).mockClear();
+  await act(async () => vi.advanceTimersByTimeAsync(15_000));
   expect(upsertSession).not.toHaveBeenCalled();
+});
+
+it("automatically preserves divergence and follows the host without a Sync click", async () => {
+  const initial = {
+    ...newSession("claude", "/repo"),
+    id: "s1",
+    adoptedSyncConflict: true,
+    providerSessionId: "local-thread",
+    automationId: "local-automation",
+    blocks: [{ id: "u", role: "user" as const, text: "local" }],
+  };
+  const remote = { ...initial, blocks: [{ id: "u", role: "user" as const, text: "host" }] };
+  setComposerDraft("s1", "unsent draft");
+  vi.mocked(upsertSession).mockResolvedValue({ id: "backup" } as never);
+  vi.mocked(loadRemoteSession).mockResolvedValue({
+    session: remote,
+    projectId: "p",
+    revision: 5,
+    status: "running",
+    updatedAt: 10,
+  });
+  await act(async () => root.render(createElement(Probe, { initial })));
+  expect(upsertSession).toHaveBeenCalledOnce();
+  const copy = vi.mocked(upsertSession).mock.calls[0][0];
+  expect(copy.blocks).toEqual(initial.blocks);
+  expect(copy.providerSessionId).toBeUndefined();
+  expect(copy.automationId).toBeUndefined();
+  expect(copy.queuedMessages).toBeUndefined();
+  expect(current.blocks).toEqual(remote.blocks);
+  expect(current.adoptedSyncConflict).toBeUndefined();
+  expect(current.continuingElsewhere).toBe(true);
+  expect(getComposerDraft("s1")).toBe("unsent draft");
+});
+
+it.each(["focus", "online", "visibilitychange", "recovered"])(
+  "automatically retries adopted conversations on %s instead of waiting for the poll timer",
+  async (event) => {
+    const initial = { ...newSession("claude", "/repo"), id: "s1" };
+    vi.mocked(remoteRequest).mockRejectedValueOnce(new Error("offline"));
+    vi.mocked(loadRemoteSession).mockResolvedValue({
+      session: initial,
+      projectId: "p",
+      revision: 5,
+      status: "idle",
+      updatedAt: 10,
+    });
+    await act(async () => root.render(createElement(Probe, { initial })));
+    expect(loadRemoteSession).not.toHaveBeenCalled();
+    await act(async () => {
+      if (event === "recovered") notifyRemoteRecovered("env");
+      else if (event === "visibilitychange") document.dispatchEvent(new Event(event));
+      else window.dispatchEvent(new Event(event));
+    });
+    expect(loadRemoteSession).toHaveBeenCalledOnce();
+  },
+);
+
+it("coalesces recovery events during an in-flight mirror and retries once afterwards", async () => {
+  const initial = { ...newSession("claude", "/repo"), id: "s1" };
+  let fail!: (reason: unknown) => void;
+  vi.mocked(remoteRequest).mockImplementationOnce(
+    () =>
+      new Promise((_resolve, reject) => {
+        fail = reject;
+      }),
+  );
+  vi.mocked(loadRemoteSession).mockResolvedValue({
+    session: initial,
+    projectId: "p",
+    revision: 5,
+    status: "idle",
+    updatedAt: 10,
+  });
+  await act(async () => root.render(createElement(Probe, { initial })));
+  expect(remoteRequest).toHaveBeenCalledOnce();
+  await act(async () => {
+    window.dispatchEvent(new Event("online"));
+    window.dispatchEvent(new Event("focus"));
+    notifyRemoteRecovered("env");
+  });
+  expect(remoteRequest).toHaveBeenCalledOnce();
+  await act(async () => fail(new Error("stale disconnected poll")));
+  expect(remoteRequest).toHaveBeenCalledTimes(2);
+  expect(loadRemoteSession).toHaveBeenCalledOnce();
 });
 
 it("queues an explicit refresh behind automatic polling and deduplicates repeated requests", async () => {

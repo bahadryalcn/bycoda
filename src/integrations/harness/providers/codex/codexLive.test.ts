@@ -106,6 +106,7 @@ async function startTurn(
     text?: string;
     model?: string;
     resolvedModel?: string;
+    skillPolicy?: { disabledNames: string[]; disabledPaths: string[] };
   } = {},
 ) {
   const events: HarnessEvent[] = [];
@@ -117,6 +118,7 @@ async function startTurn(
     cwd: "/repo",
     model: options.model ?? "codex:gpt-5.4",
     modelSettings: {},
+    skillPolicy: options.skillPolicy,
     providerAccountId: options.providerAccountId,
     runtimeMode: options.runtimeMode ?? "supervised",
     controlsAgents: options.controlsAgents,
@@ -129,6 +131,23 @@ async function startTurn(
 
   await waitFor(() => parse().some((m) => m.method === "initialize"), "initialize");
   reply(parse().find((m) => m.method === "initialize")!.id as number, {});
+  if (options.skillPolicy) {
+    await waitFor(() => parse().some((m) => m.method === "config/read"), "skill configuration");
+    reply(parse().find((m) => m.method === "config/read")!.id as number, {
+      config: { skills: { config: [{ path: "/skills/owner-off/SKILL.md", enabled: false }] } },
+    });
+    await waitFor(() => parse().some((m) => m.method === "skills/list"), "policy skill list");
+    reply(parse().find((m) => m.method === "skills/list")!.id as number, {
+      data: [
+        {
+          skills: [
+            { name: "good-css", path: "/skills/good-css/SKILL.md", enabled: true },
+            { name: "review", path: "/skills/review/SKILL.md", enabled: true },
+          ],
+        },
+      ],
+    });
+  }
   const threadMethod = (options.expectResume ?? options.resume) ? "thread/resume" : "thread/start";
   await waitFor(() => parse().some((m) => m.method === threadMethod), threadMethod);
   await options.beforeThreadReply?.();
@@ -169,8 +188,35 @@ async function startTurn(
 }
 
 describe("codex live turn sequence", () => {
+  it.each([true, false])(
+    "applies current bycoda skill restrictions (%s) on resume without removing native owner disables",
+    async (disabled) => {
+      const { turn } = await startTurn("codex-policy", {
+        resume: true,
+        skillPolicy: { disabledNames: disabled ? ["good-css"] : [], disabledPaths: [] },
+      });
+      const params = parse().find((entry) => entry.method === "thread/resume")!.params as Record<
+        string,
+        unknown
+      >;
+      expect(params.config).toEqual({
+        "skills.config": [
+          { path: "/skills/owner-off/SKILL.md", enabled: false },
+          ...(disabled ? [{ path: "/skills/good-css/SKILL.md", enabled: false }] : []),
+        ],
+      });
+      expect(parse().some((entry) => entry.method === "skills/config/write")).toBe(false);
+      notify("turn/completed", { threadId: "thr_1", turn: { id: "turn_1", status: "completed" } });
+      await turn;
+    },
+  );
+
   it("uses the server-resolved model for native plan mode when selection is empty", async () => {
-    const { turn } = await startTurn("native-plan-model", { model: "", resolvedModel: "native-configured-model", intent: "plan" });
+    const { turn } = await startTurn("native-plan-model", {
+      model: "",
+      resolvedModel: "native-configured-model",
+      intent: "plan",
+    });
     expect(parse().find((m) => m.method === "turn/start")?.params).toMatchObject({
       collaborationMode: { mode: "plan", settings: { model: "native-configured-model" } },
       sandboxPolicy: { type: "readOnly" },

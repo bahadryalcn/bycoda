@@ -144,7 +144,7 @@ it("refuses acceptance in a full-screen alternate buffer and keeps Ctrl+C interr
   }
 });
 
-it("automatic preview keeps typing focus and navigates from the terminal without submission", async () => {
+it("automatic preview preserves typing, history and Enter while accepting only explicit completion", async () => {
   const context = await setup(false, false, "bash", false);
   try {
     const preview = context.host.querySelector('[aria-label="Remote suggestion preview"]')!;
@@ -162,10 +162,14 @@ it("automatic preview keeps typing focus and navigates from the terminal without
     };
     expect((await key("g")).defaultPrevented).toBe(false);
     expect((await key("Enter", { isComposing: true })).defaultPrevented).toBe(false);
-    await key("ArrowDown");
-    expect(context.host.querySelector('[aria-selected="true"]')?.textContent).toBe("git diff");
+    for (const value of ["ArrowDown", "ArrowUp", "ArrowLeft", "Enter", "Tab"]) {
+      const extra = value === "Tab" ? { shiftKey: true } : {};
+      expect((await key(value, extra)).defaultPrevented).toBe(false);
+    }
+    expect(context.shell.accept).not.toHaveBeenCalled();
+    expect(context.host.querySelector('[aria-selected="true"]')?.textContent).toBe("git status");
     await key("Tab");
-    expect(context.shell.accept).toHaveBeenCalledExactlyOnceWith("git diff");
+    expect(context.shell.accept).toHaveBeenCalledExactlyOnceWith("git status");
     expect(context.terminal.input).not.toHaveBeenCalled();
   } finally {
     await context.cleanup();

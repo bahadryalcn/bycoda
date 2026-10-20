@@ -1,5 +1,50 @@
-import { beforeEach, expect, it } from "vitest";
-import { gitPanelRuntime, resetGitPanelState, withGitOperation } from "./gitPanelState";
+import { beforeEach, expect, it, vi } from "vitest";
+import {
+  gitPanelRuntime,
+  resetGitPanelState,
+  withGitOperation,
+  withGitBackgroundFetch,
+} from "./gitPanelState";
+
+it("shares background fetch without blocking or clearing an active local operation", async () => {
+  resetGitPanelState();
+  let releaseFetch!: () => void;
+  let releaseLocal!: () => void;
+  const fetchWork = vi.fn(
+    () =>
+      new Promise<void>((resolve) => {
+        releaseFetch = resolve;
+      }),
+  );
+  const first = withGitBackgroundFetch("/repo", fetchWork);
+  const second = withGitBackgroundFetch("/repo", fetchWork);
+  expect(gitPanelRuntime("/repo").state.busy).toBeNull();
+  const local = withGitOperation(
+    "/repo",
+    "Staging…",
+    () =>
+      new Promise<void>((resolve) => {
+        releaseLocal = resolve;
+      }),
+  );
+  await Promise.resolve();
+  expect(fetchWork).toHaveBeenCalledTimes(1);
+  releaseFetch();
+  await Promise.all([first, second]);
+  expect(gitPanelRuntime("/repo").state.busy).toBe("Staging…");
+  releaseLocal();
+  await local;
+});
+
+it("allows background fetch to retry after failure", async () => {
+  await expect(
+    withGitBackgroundFetch("/repo", async () => {
+      throw new Error("offline");
+    }),
+  ).rejects.toThrow("offline");
+  await expect(withGitBackgroundFetch("/repo", async () => "recovered")).resolves.toBe("recovered");
+  expect(gitPanelRuntime("/repo").state.busy).toBeNull();
+});
 beforeEach(resetGitPanelState);
 it("rejects overlapping operations on the same Windows checkout, but permits other checkouts", async () => {
   let finish!: () => void;

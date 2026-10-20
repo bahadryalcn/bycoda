@@ -17,6 +17,19 @@ import { isCliCommandText } from "./cliCommands";
 import { SKILL_INVOCATION_GUIDANCE } from "../../../integrations/harness/core/skillGuidance";
 import { REMOTE_PATH_PREFIX } from "../../../shared/lib/remotePaths";
 import { CREATE_SKILL_BODY, CREATE_SKILL_DESCRIPTION, CREATE_SKILL_NAME } from "./createSkill";
+import {
+  cachedSkillPolicy,
+  DISABLED_SKILL_PATHS_KEY,
+  loadSkillRestrictions,
+} from "./skillPreferences";
+import {
+  assertSkillInvocationsEnabled,
+  skillDisabled,
+} from "../../../integrations/harness/core/skillPolicy";
+import {
+  getReportedCommands,
+  reportedSkillRestrictions,
+} from "../../../integrations/harness/core/reportedCommands";
 
 export {
   dollarTokenAt,
@@ -25,8 +38,6 @@ export {
   slashTokenAt,
   type SlashToken,
 } from "./slashCommands";
-
-const DISABLED_SKILL_PATHS_KEY = "bycoda.disabledSkillPaths";
 
 /** Fired on `window` when a skill is enabled or disabled in Settings. */
 export const SKILLS_CHANGE_EVENT = "bycoda:skills-change";
@@ -83,6 +94,8 @@ type SkillCommon = {
 };
 
 export type FileSkill = SkillCommon & {
+  modelInvocable?: false;
+  userInvocable?: false;
   kind: "file";
   path: string;
   scope: Exclude<SkillScope, "builtin">;
@@ -174,10 +187,12 @@ export function subscribeSkills(
     getHarness(context.harness)?.commands?.subscribe?.(context, (commands) => {
       const key = skillCatalogKey(context);
       const previous = catalogEntries.get(key);
-      const skills: Skill[] = commands.map((command) => ({
-        ...command,
-        kind: "native",
-      }));
+      const skills: Skill[] = commands
+        .filter((command) => !skillDisabled(cachedSkillPolicy(), command))
+        .map((command) => ({
+          ...command,
+          kind: "native",
+        }));
       catalogEntries.set(key, {
         cwd: normalizeProjectPath(context.cwd),
         skills,
@@ -279,7 +294,8 @@ function startCatalogLoad(
       entry.retryAt = 0;
       return skills;
     })
-    .catch(() => {
+    .catch((error: unknown) => {
+      if (String(error).includes("Could not load skill restrictions")) throw error;
       if (catalogEntries.get(key) !== entry || entry.generation !== generation) {
         return catalogEntries.get(key)?.skills ?? [];
       }
@@ -306,29 +322,39 @@ function startCatalogLoad(
 }
 
 async function loadCatalog(context: SkillCatalogContext): Promise<Skill[]> {
+  const policy = await loadSkillRestrictions(context.cwd);
   if (context.cwd.startsWith(REMOTE_PATH_PREFIX)) {
-    const disabled = disabledSkillPathSet();
-    const discovered = await listSkills(context.cwd, loadDisabledSkillPaths());
-    return discovered.filter((skill) => !disabled.has(skill.path)).map(asSkill);
+    const discovered = await listSkills(context.cwd, policy.disabledPaths);
+    return discovered
+      .filter((skill) => skill.userInvocable !== false && !skillDisabled(policy, skill))
+      .map(asSkill);
   }
   const provider = getHarness(context.harness)?.commands;
   if (provider) {
     const commands = await provider.discover(context);
-    return commands.map((command): NativeSkill => ({
-      kind: "native",
-      ...command,
-    }));
+    return commands
+      .filter((command) => !skillDisabled(policy, command))
+      .map((command): NativeSkill => ({
+        kind: "native",
+        ...command,
+      }));
   }
   const disabledPaths = loadDisabledSkillPaths();
   const discovered = await listSkills(context.cwd, disabledPaths);
   const disabled = disabledSkillPathSet();
-  return mergeCatalog(discovered.filter((skill) => !disabled.has(skill.path)));
+  return mergeCatalog(
+    discovered.filter(
+      (skill) =>
+        skill.userInvocable !== false && !disabled.has(skill.path) && !skillDisabled(policy, skill),
+    ),
+  );
 }
 
 export function mergeCatalog(discovered: DiscoveredSkill[]): Skill[] {
   const out = new Map<string, Skill>();
   const add = (skill: Skill) => {
     if (!skill.name || out.has(skill.name)) return;
+    if (skill.kind === "file" && skill.userInvocable === false) return;
     out.set(skill.name, skill);
   };
   for (const skill of discovered) {
@@ -343,6 +369,8 @@ export function mergeCatalog(discovered: DiscoveredSkill[]): Skill[] {
 
 function asSkill(skill: DiscoveredSkill): FileSkill {
   return {
+    ...(skill.modelInvocable === false ? { modelInvocable: false as const } : {}),
+    ...(skill.userInvocable === false ? { userInvocable: false as const } : {}),
     kind: "file",
     name: skill.name,
     description: skill.description,
@@ -413,17 +441,26 @@ export async function applySkillsToTurn(
   text: string,
   context: SkillCatalogContext,
 ): Promise<string> {
+  const policy = await loadSkillRestrictions(context.cwd);
+  const native = reportedSkillRestrictions(getReportedCommands(context.sessionId));
+  assertSkillInvocationsEnabled(text, policy);
+  assertSkillInvocationsEnabled(text, native);
   if (hasNativeCommands(context.harness)) return text;
   const names = skillNamesInText(text);
   if (names.length === 0) return text;
-  const catalog = await loadSkills(
-    context,
-    context.harness === "codex" ? { refresh: true } : undefined,
-  );
+  const catalog = native.disabledPaths.length
+    ? mergeCatalog(
+        (
+          await listSkills(context.cwd, [...loadDisabledSkillPaths(), ...native.disabledPaths])
+        ).filter((skill) => !skillDisabled(policy, skill)),
+      )
+    : await loadSkills(context, context.harness === "codex" ? { refresh: true } : undefined);
   const picked: Array<FileSkill | BuiltinSkill> = [];
   for (const name of names) {
     const skill = catalog.find((item) => item.name === name);
     if (skill?.kind === "file" || skill?.kind === "builtin") {
+      if (skillDisabled(native, skill))
+        throw new Error(`Skill "${name}" is disabled by the provider.`);
       picked.push(skill);
     }
   }
@@ -449,6 +486,12 @@ export function warmNativeSkills(
 
 export async function readSkillBody(skill: FileSkill | BuiltinSkill): Promise<string> {
   if (skill.kind === "builtin") return CREATE_SKILL_BODY;
+  if (skill.userInvocable === false)
+    throw new Error(`Skill "${skill.name}" does not allow user invocation.`);
+  const policy = skill.path.startsWith(REMOTE_PATH_PREFIX)
+    ? await loadSkillRestrictions(skill.path)
+    : cachedSkillPolicy();
+  if (skillDisabled(policy, skill)) throw new Error(`Skill "${skill.name}" is disabled in bycoda.`);
   try {
     return await readTextFile(skill.path);
   } catch {

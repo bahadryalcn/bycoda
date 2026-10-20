@@ -34,7 +34,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react
 import { useColorScheme } from "../../../shared/hooks/useColorScheme";
 import { useLockOverscroll } from "../../../shared/hooks/useLockOverscroll";
 import { isLightScheme } from "../../settings/model/appearance";
-import { loadAutosave, loadFormatOnSave } from "../../settings/model/settings";
+import { loadAutosave, loadFormatOnSave, subscribeAutosave } from "../../settings/model/settings";
 import { formatProjectText } from "../../../shared/lib/format";
 import {
   gitBlame,
@@ -681,8 +681,10 @@ function StandardCodeMirrorEditor({
       }
     });
 
+    const unsubscribeAutosave = subscribeAutosave(scheduleAutosave);
     return () => {
       disposed = true;
+      unsubscribeAutosave();
       window.clearTimeout(autosaveTimer);
       window.clearTimeout(blameTimer);
       unsubscribeGit();

@@ -12,6 +12,14 @@ import {
   type RemoteConnectionState,
 } from "./remoteConnection";
 import { parseRemotePath } from "./remoteProjects";
+import {
+  invalidateConnection,
+  markRemoteFeaturesStale,
+  recordFeatureHealth,
+  resetRemoteLifecyclesForTests,
+  SUPERSEDED_CONNECTION,
+} from "./remoteLifecycle";
+import { remoteErrorText } from "./remoteFailure";
 
 /** What the views of a remote project last learned about its machine. Each view
  * reports the outcome of its loads under its own `source` ("changes", "graph",
@@ -25,7 +33,7 @@ const unreachable = new Map<string, { count: number; at: number }>();
 /** One connection state per machine, fed by the outcome of every load. */
 const connections = new Map<string, RemoteConnectionState>();
 const changeListeners = new Set<() => void>();
-const recoveredListeners = new Set<() => void>();
+const recoveredListeners = new Set<(environmentId?: string) => void>();
 
 const environmentOf = (cwd: string) => parseRemotePath(cwd)?.environmentId;
 const keyFor = (environmentId: string, source: string) => `${environmentId}\n${source}`;
@@ -38,11 +46,14 @@ export function applyRemoteConnection(environmentId: string, event: RemoteConnec
   const next = reduceConnection(previous, event);
   if (next === previous) return;
   connections.set(environmentId, next);
+  if (next.status !== previous.status && next.status !== "connected")
+    markRemoteFeaturesStale(environmentId);
   if (next.status !== previous.status || next.error !== previous.error) emit();
 }
 
 /** Records one outcome of a request to a machine, from a view that has no cwd. */
 export function recordRemoteConnection(environmentId: string, error?: unknown): void {
+  if (error !== undefined && remoteErrorText(error) === SUPERSEDED_CONNECTION) return;
   applyRemoteConnection(
     environmentId,
     error === undefined
@@ -61,8 +72,15 @@ export function readRemoteConnection(environmentId: string): RemoteConnectionSta
 
 /** Records one load: `error` undefined means it succeeded. */
 export function reportRemoteLoad(cwd: string, source: string, error?: unknown): void {
+  if (error !== undefined && remoteErrorText(error) === SUPERSEDED_CONNECTION) return;
   const environmentId = environmentOf(cwd);
   if (!environmentId) return;
+  const feature = /git|graph|changes/.test(source)
+    ? "git"
+    : /file|tree|search/.test(source)
+      ? "files"
+      : "sessions";
+  recordFeatureHealth(environmentId, feature, error === undefined);
   recordRemoteConnection(environmentId, error);
   const key = keyFor(environmentId, source);
   if (error === undefined) {
@@ -110,12 +128,13 @@ export function notifyRemoteRecovered(environmentId?: string): void {
     if (failure.kind === "unreachable" && (!environmentId || key.startsWith(`${environmentId}\n`)))
       failures.delete(key);
   emit();
-  recoveredListeners.forEach((listener) => listener());
+  recoveredListeners.forEach((listener) => listener(environmentId));
 }
 
 /** A machine's address was edited: forget that it was unreachable and let the
  * next attempt, to the new address, speak for itself. */
 export function resetRemoteConnection(environmentId: string): void {
+  invalidateConnection(environmentId);
   unreachable.delete(environmentId);
   for (const key of [...failures.keys()])
     if (
@@ -132,7 +151,7 @@ function recover(environmentId: string): void {
     if (key.startsWith(`${environmentId}\n`) && failure.kind === "unreachable")
       failures.delete(key);
   emit();
-  recoveredListeners.forEach((listener) => listener());
+  recoveredListeners.forEach((listener) => listener(environmentId));
 }
 
 /** Whether a background poll of this project should run now. Always true
@@ -144,7 +163,7 @@ export function remotePollDue(cwd: string): boolean {
   return !state || Date.now() - state.at >= unreachablePollDelay(state.count);
 }
 
-export function subscribeRemoteRecovered(listener: () => void): () => void {
+export function subscribeRemoteRecovered(listener: (environmentId?: string) => void): () => void {
   recoveredListeners.add(listener);
   return () => recoveredListeners.delete(listener);
 }
@@ -163,6 +182,7 @@ export function useRemoteLoadFailure(cwd: string, source: string): RemoteFailure
 
 /** For tests: forget everything. */
 export function resetRemoteHealth(): void {
+  resetRemoteLifecyclesForTests();
   failures.clear();
   unreachable.clear();
   connections.clear();

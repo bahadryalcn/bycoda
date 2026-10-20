@@ -79,6 +79,7 @@ type Props = {
   keyGenerationPath?: string;
   active: boolean;
   onReturnToServers?: () => void;
+  onReconnect?: () => Promise<void>;
   onMetaChange?: (patch: TerminalMetaPatch) => void;
 };
 
@@ -256,6 +257,7 @@ export function TerminalView({
   keyGenerationPath,
   active,
   onReturnToServers,
+  onReconnect,
   onMetaChange,
 }: Props) {
   const typographyRef = useRef({ fontSize, lineHeight });
@@ -318,6 +320,8 @@ export function TerminalView({
   const [shellReady, setShellReady] = useState(false);
   const [inputError, setInputError] = useState<string | null>(null);
   const [exitCode, setExitCode] = useState<number | null | undefined>(undefined);
+  const [reconnecting, setReconnecting] = useState(false);
+  const reconnectPending = useRef(false);
   const resumeInputRef = useRef<() => void>(() => {});
   const spawned = useRef(false);
   const applySizeRef = useRef<() => void>(() => {});
@@ -343,9 +347,7 @@ export function TerminalView({
       scrollback: 5000,
       allowTransparency: true,
       smoothScrollDuration: 0,
-      theme: terminalTheme(
-        isLightScheme(), outer, Boolean(typographyRef.current.lineHeight),
-      ),
+      theme: terminalTheme(isLightScheme(), outer, Boolean(typographyRef.current.lineHeight)),
       macOptionIsMeta: IS_MAC,
       linkHandler: { activate: activateTerminalLink },
     });
@@ -464,6 +466,10 @@ export function TerminalView({
           if (closed) return;
           exited = true;
           spawned.current = false;
+          ++editRevisionRef.current;
+          remoteShellRef.current.suspendAutomatic();
+          setTool(null);
+          input.dispose();
           setShellReady(false);
           setExitCode(code ?? null);
           term.options.disableStdin = true;
@@ -528,6 +534,12 @@ export function TerminalView({
         spawned.current = false;
         if (!closed) {
           const message = error instanceof Error ? error.message : String(error);
+          exited = true;
+          term.options.disableStdin = true;
+          remoteShellRef.current.suspendAutomatic();
+          setShellReady(false);
+          setExitCode(null);
+          setInputError(message);
           term.writeln(`\x1b[31m${message}\x1b[0m`);
         }
         throw error;
@@ -543,6 +555,8 @@ export function TerminalView({
       (error) => {
         if (closed) return;
         term.options.disableStdin = true;
+        remoteShellRef.current.suspendAutomatic();
+        setTool(null);
         const message = error instanceof Error ? error.message : String(error);
         setInputError(message);
       },
@@ -572,6 +586,7 @@ export function TerminalView({
           integrated &&
           textEdit &&
           !closed &&
+          !exited &&
           revision === editRevisionRef.current &&
           activeRef.current &&
           onScreenRef.current &&
@@ -626,7 +641,9 @@ export function TerminalView({
 
     const onSchemeChange = () => {
       term.options.theme = terminalTheme(
-        isLightScheme(), outer, Boolean(typographyRef.current.lineHeight),
+        isLightScheme(),
+        outer,
+        Boolean(typographyRef.current.lineHeight),
       );
     };
     window.addEventListener(SCHEME_CHANGE_EVENT, onSchemeChange);
@@ -640,7 +657,8 @@ export function TerminalView({
       if (next.terminalSize !== preferences.terminalSize) zoomSizeRef.current = null;
       preferences = next;
       term.options.fontFamily = monoFont();
-      term.options.fontSize = zoomSizeRef.current ?? typographyRef.current.fontSize ?? next.terminalSize;
+      term.options.fontSize =
+        zoomSizeRef.current ?? typographyRef.current.fontSize ?? next.terminalSize;
       term.options.fontWeight = next.terminalWeight;
       term.options.lineHeight = typographyRef.current.lineHeight ?? next.terminalLineHeight;
       applySizeRef.current();
@@ -683,7 +701,8 @@ export function TerminalView({
         remoteShellRef.current.suspendAutomatic();
       }
       applyTerminalChrome(term, outer, next);
-      if (!next) resetGridStretch(term, typographyRef.current.lineHeight ?? preferences.terminalLineHeight);
+      if (!next)
+        resetGridStretch(term, typographyRef.current.lineHeight ?? preferences.terminalLineHeight);
       lastCols = 0;
       lastRows = 0;
       schedule();
@@ -691,7 +710,12 @@ export function TerminalView({
 
     const applySize = () => {
       if (closed) return;
-      const next = fitTerminal(term, host, fitMode(), typographyRef.current.lineHeight ?? preferences.terminalLineHeight);
+      const next = fitTerminal(
+        term,
+        host,
+        fitMode(),
+        typographyRef.current.lineHeight ?? preferences.terminalLineHeight,
+      );
       if (!next) return;
       const { cols, rows } = next;
       if (cols === lastCols && rows === lastRows) return;
@@ -985,20 +1009,41 @@ export function TerminalView({
                 {t("Terminal closed")}
                 {exitCode != null ? ` · ${t("Exit code")}: ${exitCode}` : ""}
               </span>
-              {onReturnToServers ? (
+              {onReconnect ? (
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  loading={reconnecting}
+                  onClick={async () => {
+                    if (reconnectPending.current) return;
+                    reconnectPending.current = true;
+                    setReconnecting(true);
+                    try {
+                      await onReconnect();
+                    } catch (reason) {
+                      setInputError(String(reason));
+                    } finally {
+                      reconnectPending.current = false;
+                      setReconnecting(false);
+                    }
+                  }}
+                >
+                  {t("Reconnect")}
+                </Button>
+              ) : onReturnToServers ? (
                 <Button size="sm" variant="secondary" onClick={onReturnToServers}>
                   {t("Back to servers")}
                 </Button>
               ) : null}
             </div>
+            {inputError ? <p className="mbs-2 break-words text-xs">{inputError}</p> : null}
             {inputError ? (
               <details className="mbs-2 text-xs">
                 <summary className="cursor-pointer">{t("Connection details")}</summary>
                 <p className="mbs-2 break-words">
                   {t(
                     "Input paused. Some input may not have reached the terminal. Check the shell before continuing.",
-                  )}{" "}
-                  {inputError}
+                  )}
                 </p>
               </details>
             ) : null}

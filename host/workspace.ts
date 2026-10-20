@@ -635,20 +635,26 @@ let gitIndexGeneration = 0;
 export function invalidateHostGitIndex(root?: string): void {
   gitIndexGeneration++;
   if (root === undefined) gitIndexInflight.clear();
-  else gitIndexInflight.delete(root);
+  else {
+    gitIndexInflight.delete(root);
+    gitIndexInflight.delete(`${root}\0files`);
+  }
 }
 
-/** Concurrent callers for one root share a single refresh. */
-export function hostGitIndex(root: string): Promise<GitDiffIndex> {
-  const running = gitIndexInflight.get(root);
-  if (running && running.generation === gitIndexGeneration) return running.value;
+/** Concurrent callers share a refresh when it supplies all requested fields. */
+export function hostGitIndex(root: string, full = true): Promise<GitDiffIndex> {
+  const fullRead = gitIndexInflight.get(root);
+  if (fullRead?.generation === gitIndexGeneration) return fullRead.value;
+  const key = full ? root : `${root}\0files`;
+  const running = gitIndexInflight.get(key);
+  if (running?.generation === gitIndexGeneration) return running.value;
   const entry = {
     generation: gitIndexGeneration,
-    value: readHostGitIndex(root),
+    value: readHostGitIndex(root, full),
   };
-  gitIndexInflight.set(root, entry);
+  gitIndexInflight.set(key, entry);
   const done = () => {
-    if (gitIndexInflight.get(root) === entry) gitIndexInflight.delete(root);
+    if (gitIndexInflight.get(key) === entry) gitIndexInflight.delete(key);
   };
   entry.value.then(done, done);
   return entry.value;
@@ -713,7 +719,7 @@ async function countLines(path: string): Promise<number> {
   return lines + Number(bytes[bytes.length - 1] !== 10);
 }
 
-async function readHostGitIndex(root: string): Promise<GitDiffIndex> {
+async function readHostGitIndex(root: string, full: boolean): Promise<GitDiffIndex> {
   // An ordinary folder has an empty Changes view, just as it does locally.
   const repository = await git(root, ["rev-parse", "--is-inside-work-tree"]).catch((error) => {
     if (String(error).includes("not a git repository")) return "";
@@ -775,13 +781,27 @@ async function readHostGitIndex(root: string): Promise<GitDiffIndex> {
         "--",
       ]),
     ),
-    git(root, ["remote", "get-url", "origin"]).catch(() => ""),
-    git(root, ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}"]).catch(() => ""),
-    git(root, ["rev-list", "--left-right", "--count", "@{upstream}...HEAD"]).catch(() => ""),
-    git(root, ["symbolic-ref", "--quiet", "--short", "refs/remotes/origin/HEAD"]).catch(() => ""),
+    full ? git(root, ["remote", "get-url", "origin"]).catch(() => "") : "",
+    full
+      ? git(root, ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}"]).catch(
+          () => "",
+        )
+      : "",
+    full
+      ? git(root, ["rev-list", "--left-right", "--count", "@{upstream}...HEAD"]).catch(() => "")
+      : "",
+    full
+      ? git(root, ["symbolic-ref", "--quiet", "--short", "refs/remotes/origin/HEAD"]).catch(
+          () => "",
+        )
+      : "",
     hostUnmerged(root),
     hostOperationState(root),
-    git(root, ["for-each-ref", "--count=1", "--contains", "HEAD", "refs/remotes"]).catch(() => ""),
+    full
+      ? git(root, ["for-each-ref", "--count=1", "--contains", "HEAD", "refs/remotes"]).catch(
+          () => "",
+        )
+      : "",
   ]);
   let [behind, ahead] = countsText.trim().split(/\s+/).map(Number);
   let defaultBranch = defaultText.trim().replace(/^origin\//, "");
@@ -999,14 +1019,30 @@ export async function hostGitAction(
       ? retryIndexLock(execute)
       : execute();
   };
-  return withHostGitMutation(root, async () => {
-    try {
-      return await run();
-    } finally {
-      invalidateHostFilePaths(root);
-      invalidateHostGitIndex(root);
-    }
-  });
+  return withHostGitMutation(
+    root,
+    async () => {
+      try {
+        return await run();
+      } finally {
+        invalidateHostFilePaths(root);
+        invalidateHostGitIndex(root);
+      }
+    },
+    undefined,
+    [
+      "stage",
+      "unstage",
+      "stageFiles",
+      "unstageFiles",
+      "stageAll",
+      "unstageAll",
+      "stageContents",
+      "commit",
+    ].includes(String(action))
+      ? "local"
+      : "exclusive",
+  );
 }
 
 async function runHostGitAction(

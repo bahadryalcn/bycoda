@@ -18,6 +18,8 @@ const events = vi.hoisted(() => ({ mounted: [] as string[], unmounted: [] as str
 const configuration = vi.hoisted(() => ({ preview: vi.fn() }));
 const proxy = vi.hoisted(() => ({ request: vi.fn() }));
 const startup = vi.hoisted(() => ({ request: vi.fn(async () => {}) }));
+const native = vi.hoisted(() => ({ invoke: vi.fn() }));
+vi.mock("@tauri-apps/api/core", () => native);
 vi.mock("../model/sshRunbookQueue", () => ({
   requestSshStartupReviews: startup.request,
   useSshRunbookQueue: () => ({ intents: [], error: "" }),
@@ -40,6 +42,7 @@ vi.mock("../../terminal/ui/TerminalView", () => ({
     onEnableShellIntegration,
     onSshPromptReady,
     onStartupReview,
+    onReconnect,
   }: {
     id: string;
     sshConnectionId?: string;
@@ -53,6 +56,7 @@ vi.mock("../../terminal/ui/TerminalView", () => ({
     onEnableShellIntegration?: (shell?: "bash" | "zsh" | "powershell") => void;
     onSshPromptReady?: () => void;
     onStartupReview?: () => Promise<void>;
+    onReconnect?: () => Promise<void>;
   }) => {
     const target =
       sshConnectionId ??
@@ -76,6 +80,9 @@ vi.mock("../../terminal/ui/TerminalView", () => ({
         "data-proxy-ticket": httpProxyTicketId,
       },
       sshConnectionId,
+      onReconnect
+        ? createElement("button", { onClick: onReconnect }, "Reconnect closed SSH")
+        : null,
       createElement("button", { onClick: onSshPromptReady }, "Native ready prompt"),
       createElement("button", { onClick: onStartupReview }, "Review startup scripts"),
       onEnableShellIntegration
@@ -154,7 +161,9 @@ it("requests startup review once for explicit live terminals and never for resto
     );
   const prompt = async () =>
     act(async () =>
-      container.querySelector<HTMLButtonElement>('[data-integration="bash"] button')!.click(),
+      [...container.querySelectorAll<HTMLButtonElement>('[data-integration="bash"] button')]
+        .find((button) => button.textContent === "Native ready prompt")!
+        .click(),
     );
   await act(async () =>
     root.render(createElement(ServersTerminalWorkspace, { children: createElement(Inventory) })),
@@ -378,6 +387,43 @@ it("does not create or restore a proxy terminal before approval and keeps its ti
   expect(JSON.stringify(serverTerminalRestoreState.getSnapshot())).not.toContain(
     "one-use-proxy-ticket",
   );
+});
+
+it("reconnects with a fresh canonical target, proxy approval and raw PTY without startup replay", async () => {
+  await act(async () =>
+    root.render(createElement(ServersTerminalWorkspace, { children: createElement(Inventory) })),
+  );
+  await act(async () =>
+    [...container.querySelectorAll("button")]
+      .find((button) => button.textContent === "Open explicit SSH")!
+      .click(),
+  );
+  const oldId = container.querySelector("[data-terminal-id]")!.getAttribute("data-terminal-id");
+  const current = {
+    ...server,
+    sshEndpoint: { host: "changed.test", port: 22, httpProxy: { host: "proxy.test", port: 3128 } },
+  };
+  native.invoke.mockResolvedValueOnce([current]);
+  proxy.request.mockResolvedValueOnce("fresh-reconnect-ticket");
+  await act(async () =>
+    [...container.querySelectorAll("button")]
+      .find((button) => button.textContent === "Reconnect closed SSH")!
+      .click(),
+  );
+  expect(native.invoke).toHaveBeenCalledWith("server_inventory_list");
+  expect(proxy.request).toHaveBeenLastCalledWith(
+    expect.objectContaining({ endpoint: current.sshEndpoint }),
+  );
+  const fresh = container.querySelector('[data-active="true"][data-terminal-id]')!;
+  expect(fresh.getAttribute("data-terminal-id")).not.toBe(oldId);
+  expect(fresh.getAttribute("data-proxy-ticket")).toBe("fresh-reconnect-ticket");
+  expect(fresh.hasAttribute("data-integration")).toBe(false);
+  await act(async () =>
+    [...fresh.querySelectorAll("button")]
+      .find((button) => button.textContent === "Native ready prompt")!
+      .click(),
+  );
+  expect(startup.request).not.toHaveBeenCalled();
 });
 
 it("generates a key only after the explicit action and does not restore keygen on remount", async () => {

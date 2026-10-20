@@ -1,5 +1,5 @@
 import { execFileAsync as exec } from "../src/shared/lib/processExecution.node";
-import { isHostGitMutation, withHostGitMutation } from "./git-mutations";
+import { gitMutationScope, isHostGitMutation, withHostGitMutation } from "./git-mutations";
 import { constants } from "node:fs";
 import { createHash, randomUUID } from "node:crypto";
 import {
@@ -36,6 +36,7 @@ import { browseHostFolder } from "./browse";
 import { formatWorkspaceText } from "./editor-format";
 import { listHostClaudeCommands } from "./claude-commands";
 import { deleteHostSkill, exportHostSkill, importHostSkill, listHostSkills } from "./skills";
+import { migrateSkillPolicy, setSkillEnabled } from "./skill-policy";
 import {
   createHostPath,
   existingPath,
@@ -44,6 +45,7 @@ import {
   hostGitIndex,
   indexHostFiles,
   invalidateHostFilePaths,
+  invalidateHostGitIndex,
   listHostFiles,
   searchHostContent,
   workspacePath,
@@ -60,6 +62,8 @@ export const WORKSPACE_COMMANDS = [
   "session_checkpoint_undo",
   "session_checkpoint_keep",
   "list_dir",
+  "skill_policy_get",
+  "skill_policy_set",
   "browse_dir",
   "list_project_files",
   "read_text_file",
@@ -166,7 +170,18 @@ export class WorkspaceCommands {
         : {};
     if (isHostGitMutation(command as string)) {
       return this.gitRoot(input.cwd).then((root) =>
-        withHostGitMutation(root, () => this.runCommand(command as WorkspaceCommand, input)),
+        withHostGitMutation(
+          root,
+          async () => {
+            try {
+              return await this.runCommand(command as WorkspaceCommand, input);
+            } finally {
+              invalidateHostGitIndex(root);
+            }
+          },
+          undefined,
+          gitMutationScope(command as string),
+        ),
       );
     }
     return this.runCommand(command as WorkspaceCommand, input);
@@ -219,11 +234,12 @@ export class WorkspaceCommands {
       case "move_path":
         return this.move(input.from, input.destParent);
       case "git_diff_index":
-      case "git_diff_files":
         return this.gitIndex(input.cwd);
+      case "git_diff_files":
+        return this.gitIndex(input.cwd, false);
       case "git_diff_stats":
-        return this.gitIndex(input.cwd).then((index) => ({
-          files: index.files.length,
+        return this.gitIndex(input.cwd, false).then((index) => ({
+          files: index.files.length + (index.conflicts?.length ?? 0),
           additions: index.additions,
           deletions: index.deletions,
         }));
@@ -302,6 +318,10 @@ export class WorkspaceCommands {
         return this.searchProject(input.options);
       case "list_skills":
         return this.listSkills(input.cwd, input.disabledPaths);
+      case "skill_policy_get":
+        return Promise.resolve().then(() => migrateSkillPolicy(input.legacyDisabledPaths));
+      case "skill_policy_set":
+        return Promise.resolve().then(() => setSkillEnabled(input.name, input.enabled));
       case "list_claude_commands":
         return this.existing(input.cwd, true).then(({ path }) => listHostClaudeCommands(path));
       case "skill_export":
@@ -794,8 +814,8 @@ export class WorkspaceCommands {
     return searchHostContent(await this.gitRoot(options.cwd), options);
   }
 
-  private async gitIndex(input: unknown) {
-    return hostGitIndex(await this.gitRoot(input));
+  private async gitIndex(input: unknown, full = true) {
+    return hostGitIndex(await this.gitRoot(input), full);
   }
 
   private async gitFileDiff(cwd: unknown, relative: unknown, staged: unknown) {

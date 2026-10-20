@@ -26,6 +26,7 @@ impl Reads {
     pub(super) fn request(
         &self,
         key: String,
+        timeout: Duration,
         send: impl FnOnce() -> Result<Value, String>,
     ) -> Result<Value, String> {
         let (entry, leader) = {
@@ -45,7 +46,7 @@ impl Reads {
             let state = entry.result.lock().map_err(|_| "Read sharing is locked")?;
             let (result, timeout) = entry
                 .changed
-                .wait_timeout_while(state, Duration::from_secs(35), |result| result.is_none())
+                .wait_timeout_while(state, timeout, |result| result.is_none())
                 .map_err(|_| "Read sharing is locked")?;
             if timeout.timed_out() {
                 return Err("Shared remote read timed out".into());
@@ -150,10 +151,32 @@ impl Changes {
                 .clone()
                 .unwrap_or_else(|| Err("Remote control request ended".into()));
         }
-        let request = union(state.windows.values().map(|(value, _)| value))?;
+        let request = scheduled_request(
+            union(state.windows.values().map(|(value, _)| value))?,
+            state.generation,
+        )?;
+        let checked_sessions = request["sessions"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|entry| entry["sessionId"].clone())
+            .collect::<Vec<_>>();
+        let checked_projects = request["projects"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|entry| entry["projectId"].clone())
+            .collect::<Vec<_>>();
         state.running = true;
         drop(state);
-        let result = send(request);
+        let result = send(request).and_then(|mut response| {
+            let object = response
+                .as_object_mut()
+                .ok_or("Invalid machine changes response")?;
+            object.insert("checkedSessions".into(), json!(checked_sessions));
+            object.insert("checkedProjects".into(), json!(checked_projects));
+            Ok(response)
+        });
         let mut state = entry.state.lock().map_err(|_| "Control lane is locked")?;
         state.running = false;
         state.generation += 1;
@@ -170,7 +193,27 @@ fn union<'a>(requests: impl Iterator<Item = &'a Value>) -> Result<Value, String>
     let mut instances = Vec::new();
     let mut tasks: Option<String> = None;
     let mut inline_sync = false;
+    let mut active_projects: HashMap<String, u64> = HashMap::new();
+    let mut active_sessions: HashMap<String, u64> = HashMap::new();
     for request in requests {
+        for (key, id, priorities) in [
+            ("activeProjects", "projectId", &mut active_projects),
+            ("activeSessions", "sessionId", &mut active_sessions),
+        ] {
+            for hint in request
+                .get(key)
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+            {
+                if let (Some(id), Some(at)) = (hint[id].as_str(), hint["lastActiveAt"].as_u64()) {
+                    priorities
+                        .entry(id.to_owned())
+                        .and_modify(|previous| *previous = (*previous).max(at))
+                        .or_insert(at);
+                }
+            }
+        }
         inline_sync |= request.get("inlineSync").and_then(Value::as_bool) == Some(true);
         if let Some(known) = request.get("tasksKnown").and_then(Value::as_str) {
             match &mut tasks {
@@ -243,9 +286,6 @@ fn union<'a>(requests: impl Iterator<Item = &'a Value>) -> Result<Value, String>
                 .or_insert(known);
         }
     }
-    if sessions.len() > 64 || projects.len() > 32 {
-        return Err("Too many remote subscriptions".into());
-    }
     // Git watching is an optimization: past the host's limit, the rest keep
     // their own refresh triggers instead of failing the whole lane.
     let mut git: Vec<_> = git.into_iter().collect();
@@ -263,6 +303,21 @@ fn union<'a>(requests: impl Iterator<Item = &'a Value>) -> Result<Value, String>
             if let Some(known)=known {project["known"]=Value::String(known);}
             project
         }).collect::<Vec<_>>() });
+    for (key, id, priorities) in [
+        ("activeProjects", "projectId", active_projects),
+        ("activeSessions", "sessionId", active_sessions),
+    ] {
+        if !priorities.is_empty() {
+            result[key] = json!(priorities
+                .into_iter()
+                .map(|(value, at)| {
+                    let mut hint = json!({"lastActiveAt":at});
+                    hint[id] = json!(value);
+                    hint
+                })
+                .collect::<Vec<_>>());
+        }
+    }
     if inline_sync {
         result["inlineSync"] = Value::Bool(true);
     }
@@ -285,9 +340,124 @@ fn union<'a>(requests: impl Iterator<Item = &'a Value>) -> Result<Value, String>
     Ok(result)
 }
 
+// Keep visible sessions and recently active projects in the frequent lane. A
+// bounded rotating share guarantees older subscriptions still get verified.
+fn scheduled_request(mut request: Value, generation: u64) -> Result<Value, String> {
+    let mut overflow = false;
+    let has_sessions = request["sessions"]
+        .as_array()
+        .is_some_and(|v| !v.is_empty());
+    for (key, hints, id, limit, hot_limit) in [
+        ("sessions", "activeSessions", "sessionId", 64, 48),
+        (
+            "projects",
+            "activeProjects",
+            "projectId",
+            if has_sessions { 8 } else { 32 },
+            4,
+        ),
+    ] {
+        let priorities: HashMap<String, u64> = request
+            .get(hints)
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter_map(|hint| {
+                Some((
+                    hint[id].as_str()?.to_owned(),
+                    hint["lastActiveAt"].as_u64()?,
+                ))
+            })
+            .collect();
+        let values = request[key].as_array_mut().ok_or("Invalid subscriptions")?;
+        values.sort_by(|a, b| {
+            let a = a[id].as_str().unwrap_or_default();
+            let b = b[id].as_str().unwrap_or_default();
+            priorities
+                .get(b)
+                .unwrap_or(&0)
+                .cmp(priorities.get(a).unwrap_or(&0))
+                .then_with(|| a.cmp(b))
+        });
+        if values.len() > limit {
+            overflow = true;
+            let hot = values
+                .iter()
+                .take_while(|value| priorities.contains_key(value[id].as_str().unwrap_or_default()))
+                .count()
+                .min(hot_limit);
+            let rest = &values[hot..];
+            let slots = limit - hot;
+            let start = (generation as usize % rest.len()) * slots % rest.len();
+            let selected = values[..hot]
+                .iter()
+                .cloned()
+                .chain(rest.iter().cycle().skip(start).take(slots).cloned())
+                .collect();
+            *values = selected;
+        }
+        request.as_object_mut().unwrap().remove(hints);
+    }
+    if overflow {
+        request["waitMs"] = json!(1000);
+    }
+    Ok(request)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn visible_sessions_and_recent_projects_are_frequent_without_starving_older_entries() {
+        let request = json!({"instanceId":"boot","inlineSync":true,"tasksKnown":"tasks","waitMs":10000,
+            "activeSessions":[{"sessionId":"s69","lastActiveAt":20}],
+            "activeProjects":[{"projectId":"p69","lastActiveAt":20},{"projectId":"p68","lastActiveAt":10}],
+            "sessions":(0..70).map(|i| json!({"sessionId":format!("s{i}"),"revision":i})).collect::<Vec<_>>(),
+            "projects":(0..70).map(|i| json!({"projectId":format!("p{i}"),"known":"old"})).collect::<Vec<_>>()});
+        let mut sessions = std::collections::HashSet::new();
+        let mut projects = std::collections::HashSet::new();
+        for generation in 0..70 {
+            let batch = scheduled_request(request.clone(), generation).unwrap();
+            assert_eq!(batch["sessions"][0]["sessionId"], "s69");
+            assert_eq!(batch["projects"][0]["projectId"], "p69");
+            assert_eq!(batch["projects"][1]["projectId"], "p68");
+            assert_eq!(batch["sessions"].as_array().unwrap().len(), 64);
+            assert_eq!(batch["projects"].as_array().unwrap().len(), 8);
+            assert_eq!(batch["waitMs"], 1000);
+            assert_eq!(batch["tasksKnown"], "tasks");
+            assert_eq!(batch["inlineSync"], true);
+            assert_eq!(batch["instanceId"], "boot");
+            assert!(batch.get("activeSessions").is_none());
+            assert!(batch.get("activeProjects").is_none());
+            sessions.extend(
+                batch["sessions"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .map(|s| s["sessionId"].as_str().unwrap().to_owned()),
+            );
+            projects.extend(
+                batch["projects"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .map(|s| s["projectId"].as_str().unwrap().to_owned()),
+            );
+        }
+        assert_eq!(sessions.len(), 70);
+        assert_eq!(projects.len(), 70);
+    }
+
+    #[test]
+    fn small_demands_keep_long_poll_and_background_only_demands_rotate_at_host_limit() {
+        let request = json!({"sessions":[],"projects":[{"projectId":"p"}],"waitMs":10000});
+        assert_eq!(scheduled_request(request.clone(), 0).unwrap(), request);
+        let request = json!({"sessions":[],"projects":(0..70).map(|i| json!({"projectId":format!("p{i}")})).collect::<Vec<_>>()});
+        let first = scheduled_request(request.clone(), 0).unwrap();
+        let next = scheduled_request(request, 1).unwrap();
+        assert_eq!(first["projects"].as_array().unwrap().len(), 32);
+        assert_ne!(first["projects"], next["projects"]);
+    }
     #[test]
     fn inline_sync_survives_window_union_with_the_minimum_revision() {
         let a =
@@ -330,17 +500,21 @@ mod tests {
         let first = reads.clone();
         let entered = barrier.clone();
         let worker = std::thread::spawn(move || {
-            first.request("same".into(), || {
+            first.request("same".into(), Duration::from_secs(35), || {
                 entered.wait();
                 std::thread::sleep(Duration::from_millis(100));
                 Ok(json!(1))
             })
         });
         barrier.wait();
-        let shared = reads.request("same".into(), || panic!("duplicate content read"));
+        let shared = reads.request("same".into(), Duration::from_secs(35), || {
+            panic!("duplicate content read")
+        });
         assert_eq!(shared.unwrap(), worker.join().unwrap().unwrap());
         assert_eq!(
-            reads.request("same".into(), || Ok(json!(2))).unwrap(),
+            reads
+                .request("same".into(), Duration::from_secs(35), || Ok(json!(2)))
+                .unwrap(),
             json!(2)
         );
         assert!(reads.entries.lock().unwrap().is_empty());

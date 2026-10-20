@@ -1,5 +1,5 @@
 import { t, useLocale } from "../../../shared/i18n/technical";
-import { AlertCircle, Folder, RotateCcw } from "../../../shared/ui/icons";
+import { AlertCircle, Folder, RotateCcw, Save } from "../../../shared/ui/icons";
 import { Button } from "../../../shared/ui/Button";
 import { hasActiveOverlay } from "../../../shared/ui/overlay";
 import { isImeComposition } from "../../../shared/lib/keyboard";
@@ -563,22 +563,20 @@ export function FileEditor({
     <Button
       size="sm"
       variant="ghost"
+      iconOnly
+      label={t("Save")}
       tooltip={`${t("Save")} (${IS_MAC ? "⌘S" : "Ctrl+S"})`}
+      disabled={!dirty && saveState.status !== "error"}
       loading={saveState.status === "saving"}
       loadingLabel={t("Saving…")}
       onClick={() => void requestSave()}
     >
-      {t("Save")}
+      <Save className="size-3" />
     </Button>
   );
 
   return (
     <div ref={editorRootRef} className="flex h-full min-h-0 min-w-0 flex-col">
-      {markdown || svg || html ? null : (
-        <div className="flex shrink-0 items-center justify-end border-b border-stroke px-2 py-1">
-          {saveAction}
-        </div>
-      )}
       {showDiff && gitDiff?.eolOnly && (
         <p
           role="status"
@@ -592,7 +590,6 @@ export function FileEditor({
         <MarkdownViewShell
           mode={mode}
           onModeChange={setMode}
-          actions={saveAction}
           preview={
             markdown ? (
               <PreviewSelection
@@ -709,6 +706,7 @@ export function FileEditor({
           </Button>
         ) : null}
         <InlineBlameToggle reason={footerBlameReason} />
+        {saveAction}
         <span
           role="status"
           aria-live="polite"
@@ -725,7 +723,7 @@ export function FileEditor({
               {saveState.message}
             </span>
           ) : dirty ? (
-            <span>{t("Unsaved changes")}</span>
+            <span className="sr-only">{t("Unsaved changes")}</span>
           ) : null}
         </span>
       </footer>

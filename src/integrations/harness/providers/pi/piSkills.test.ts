@@ -45,7 +45,36 @@ import {
   discoverOmpCommands,
   ompCommandsFromRpcData,
   piSkillsFromRpcData,
+  allowedPiSkillPathsFromData,
 } from "./piSkills";
+
+it("keeps enabled native/package skills and refuses an incomplete restricted catalog", () => {
+  const policy = { disabledNames: ["good-css"], disabledPaths: [] };
+  expect(
+    allowedPiSkillPathsFromData(
+      {
+        commands: [
+          { source: "extension", name: "review" },
+          {
+            source: "skill",
+            name: "skill:good-css",
+            sourceInfo: { path: "/skills/good-css/SKILL.md" },
+          },
+          {
+            source: "skill",
+            name: "skill:review",
+            sourceInfo: { path: "/package/review/SKILL.md" },
+          },
+        ],
+      },
+      policy,
+    ),
+  ).toEqual(["/package/review/SKILL.md"]);
+  expect(() =>
+    allowedPiSkillPathsFromData({ commands: [{ source: "skill", name: "skill:review" }] }, policy),
+  ).toThrow("does not report skill paths");
+  expect(() => allowedPiSkillPathsFromData({}, policy)).toThrow("cannot apply");
+});
 
 type Deferred<T> = {
   promise: Promise<T>;

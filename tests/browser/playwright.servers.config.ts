@@ -1,7 +1,12 @@
 import { defineConfig } from "@playwright/test";
 export default defineConfig({
   testDir: ".",
-  testMatch: ["servers.spec.ts", "ssh-key-binding.spec.ts", "servers-workspace.spec.ts"],
+  testMatch: [
+    "servers.spec.ts",
+    "ssh-key-binding.spec.ts",
+    "servers-workspace.spec.ts",
+    "server-recovery.spec.ts",
+  ],
   workers: 1,
   timeout: 30000,
   outputDir: "../../temp/test-results/servers",

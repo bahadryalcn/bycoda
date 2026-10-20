@@ -387,11 +387,24 @@ fn save(app: &TransferContext, record: &Recovery) -> Result<(), String> {
     let path = record_path(app, &record.id)?;
     let data = serde_json::to_vec(record).map_err(|_| "Cannot encode transfer recovery")?;
     let temporary = path.with_extension(format!("{}.tmp", uuid::Uuid::new_v4()));
-    fs::write(&temporary, data).map_err(|_| "Cannot save transfer recovery")?;
-    if path.exists() {
-        fs::remove_file(&path).map_err(|_| "Cannot update transfer recovery")?;
+    let mut file = fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&temporary)
+        .map_err(|_| "Cannot save transfer recovery")?;
+    let result = (|| {
+        file.write_all(&data)
+            .and_then(|_| file.sync_all())
+            .map_err(|_| "Cannot save transfer recovery")?;
+        drop(file);
+        // Replace in one filesystem operation. Removing the previous checkpoint
+        // first loses recovery if publication fails or the process stops here.
+        fs::rename(&temporary, path).map_err(|_| "Cannot publish transfer recovery")
+    })();
+    if result.is_err() {
+        let _ = fs::remove_file(&temporary);
     }
-    fs::rename(&temporary, path).map_err(|_| "Cannot publish transfer recovery".into())
+    result.map_err(String::from)
 }
 fn remove(app: &TransferContext, id: &str) -> Result<(), String> {
     fs::remove_file(record_path(app, id)?).map_err(|_| "Cannot remove transfer recovery".into())
@@ -1249,6 +1262,58 @@ mod tests {
             hash_checked(Path::new("does-not-exist"), None, Some(&operation)).unwrap_err(),
             "SFTP operation cancelled"
         );
+    }
+    #[test]
+    #[cfg(windows)]
+    fn failed_checkpoint_replacement_preserves_previous_recovery() {
+        use std::os::windows::fs::OpenOptionsExt;
+        let root = scratch();
+        let context = TransferContext {
+            app: None,
+            root: root.clone(),
+            observer: None,
+        };
+        let id = uuid::Uuid::new_v4().to_string();
+        let mut record = Recovery {
+            id: id.clone(),
+            owner: "owner".into(),
+            connection_id: "server".into(),
+            endpoint_hash: "hash".into(),
+            direction: "download".into(),
+            local_path: "/downloads/result.txt".into(),
+            remote_path: "/remote/source.txt".into(),
+            staging_path: staging_path(
+                "download",
+                &id,
+                "/downloads/result.txt",
+                "/remote/source.txt",
+            )
+            .unwrap(),
+            partial_bytes: 0,
+            partial_hash: None,
+            source_hash: None,
+            total_bytes: None,
+            publication: None,
+        };
+        save(&context, &record).unwrap();
+        let path = record_path(&context, &id).unwrap();
+        let previous = fs::read(&path).unwrap();
+        // An antivirus/indexer or another reader may temporarily deny rename.
+        let lock = fs::OpenOptions::new()
+            .read(true)
+            .share_mode(1)
+            .open(&path)
+            .unwrap();
+        record.partial_bytes = 42;
+        assert!(save(&context, &record).is_err());
+        assert_eq!(fs::read(&path).unwrap(), previous);
+        assert_eq!(fs::read_dir(&root).unwrap().count(), 1);
+        drop(lock);
+        save(&context, &record).unwrap();
+        let updated: Recovery = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+        assert_eq!(updated.partial_bytes, 42);
+        fs::remove_file(path).unwrap();
+        fs::remove_dir(root).unwrap();
     }
     #[test]
     fn recovery_staging_cannot_delete_a_user_path_or_escape_target() {

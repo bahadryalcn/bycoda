@@ -1,4 +1,5 @@
 import { createContext, useContext, useRef, useState, type ReactNode } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import { TerminalView } from "../../terminal/ui/TerminalView";
 import { ToolHeader } from "../../../app/shell/ToolNavigation";
 import { WindowControls } from "../../../app/shell/WindowControls";
@@ -306,6 +307,30 @@ export function ServersTerminalWorkspace({
                       id={terminal.id}
                       cwd=""
                       onReturnToServers={() => setActive(null)}
+                      onReconnect={
+                        terminal.server && !terminal.agentForwardingReviewId
+                          ? async () => {
+                              // Resolve current policy and request fresh approvals. A reconnect
+                              // creates a raw PTY, never reuses input, tickets or startup scripts.
+                              const servers = await invoke<ServerRecord[]>("server_inventory_list");
+                              const server = servers.find(
+                                (item) => item.id === terminal.server!.id,
+                              );
+                              if (!server) throw new Error(t("Server not found"));
+                              if (server.metadata.sshInheritance)
+                                setConfigurationReview({ server, startupEligible: false });
+                              else
+                                await launch(
+                                  server,
+                                  undefined,
+                                  undefined,
+                                  undefined,
+                                  server.name,
+                                  false,
+                                );
+                            }
+                          : undefined
+                      }
                       sshConnectionId={terminal.server?.id}
                       sshEndpoint={terminal.endpoint}
                       shellIntegration={terminal.shellIntegration}

@@ -34,6 +34,7 @@ function createEntry() {
     } as PanelState,
     listeners: new Set<() => void>(),
     generateAbort: { current: null as AbortController | null },
+    backgroundFetch: null as Promise<unknown> | null,
     fileActions: {
       current: { tail: Promise.resolve(), size: 0, paths: [] as string[] },
     },
@@ -59,6 +60,19 @@ export function setGitFeedback(cwd: string, feedback: GitOperationFeedback | nul
   const entry = gitPanelRuntime(cwd);
   entry.state = { ...entry.state, feedback };
   entry.listeners.forEach((listener) => listener());
+}
+
+/** A remote-ref refresh does not own the local index/commit UI lease. */
+export function withGitBackgroundFetch<T>(cwd: string, work: () => Promise<T>): Promise<T> {
+  const entry = gitPanelRuntime(cwd);
+  if (entry.backgroundFetch) return entry.backgroundFetch as Promise<T>;
+  const pending = Promise.resolve()
+    .then(work)
+    .finally(() => {
+      if (entry.backgroundFetch === pending) entry.backgroundFetch = null;
+    });
+  entry.backgroundFetch = pending;
+  return pending;
 }
 
 /** Synchronous checkout-wide lease, also used by graph, stash and diff actions. */

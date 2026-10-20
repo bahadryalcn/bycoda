@@ -53,13 +53,11 @@ export function RemoteShellSuggestions({
   const previewKeys = useRef<(event: KeyboardEvent) => void>(() => {});
   const handlePreviewKey = (event: KeyboardEvent) => {
     if (event.isComposing || event.ctrlKey || event.metaKey || event.altKey) return;
-    if ((event.key === "ArrowDown" || event.key === "ArrowUp") && suggestions.length) {
-      setSelected(
-        (value) =>
-          (value + (event.key === "ArrowDown" ? 1 : -1) + suggestions.length) % suggestions.length,
-      );
-    } else if (
-      ((event.key === "Tab" && !event.shiftKey) || event.key === "Enter") &&
+    // Passive previews must not take over shell history or submission. Explicit
+    // selection mode below owns those keys only after the owner opens it.
+    if (
+      !event.shiftKey &&
+      (event.key === "Tab" || event.key === "ArrowRight") &&
       suggestions[choice]
     ) {
       void accept(suggestions[choice]);
@@ -170,7 +168,7 @@ export function RemoteShellSuggestions({
         {t(
           selectionMode
             ? "↑/↓ select · Tab/Enter insert only · Esc returns to the shell. Press Enter in the terminal to run."
-            : "Tab to complete. Enter to insert. Run with Enter in the terminal.",
+            : "Tab/→ complete · Enter runs the typed command · ↑/↓ browse shell history.",
         )}
       </p>
     </div>

@@ -921,6 +921,14 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
       "extras advisor subagent effort thinking reasoning fast service tier model picker composer",
   },
   {
+    id: "auto-save",
+    section: "workspace",
+    get label() {
+      return t("Autosave");
+    },
+    keywords: "autosave auto save automatic saving editor file files unsaved otomatik kaydet",
+  },
+  {
     id: "format-on-save",
     section: "workspace",
     get label() {
@@ -1370,7 +1378,7 @@ const SETTINGS_CONTROL_LABELS: Record<string, readonly string[]> = {
     "Hyperspeed",
     "Letter glitch",
   ],
-  "format-on-save": ["Advanced editor settings", "Prettier"],
+  "format-on-save": ["Editor", "Advanced editor settings", "Prettier"],
   "diff-view": ["Editor", "Unified", "Code review"],
   "agent-clis": [
     "Agent CLIs",

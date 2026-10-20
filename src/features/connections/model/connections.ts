@@ -15,6 +15,16 @@ import { remoteProjectFor } from "./remoteProjects";
 import type { RemoteRailSession } from "./remoteRailSessions";
 import { blocksSending } from "./remoteConnection";
 import {
+  bindMachineEnvironment,
+  captureConnectionGeneration,
+  invalidateConnection,
+  readRemoteLifecycle,
+  recordFeatureHealth,
+  remoteFeatureForMethod,
+  setConnectionPhase,
+  SUPERSEDED_CONNECTION,
+} from "./remoteLifecycle";
+import {
   notifyRemoteRecovered,
   readRemoteConnection,
   recordRemoteConnection,
@@ -48,6 +58,17 @@ let cachedMachines: RemoteMachine[] = [];
 let machinesLoaded = false;
 /** The inventory projects the same native records; health/host consumers keep one cache. */
 export function adoptRemoteMachineInventory(machines: RemoteMachine[]) {
+  machines.forEach((machine) => bindMachineEnvironment(machine.id, machine.environmentId));
+  for (const previous of cachedMachines) {
+    const next = machines.find((entry) => entry.id === previous.id);
+    if (
+      !next ||
+      next.environmentId !== previous.environmentId ||
+      next.endpoint !== previous.endpoint ||
+      JSON.stringify(next.ssh) !== JSON.stringify(previous.ssh)
+    )
+      resetRemoteConnection(previous.environmentId);
+  }
   cachedMachines = machines;
   machinesLoaded = true;
 }
@@ -224,14 +245,16 @@ export {
  * background polls fail fast instead. A machine not known to be down (nothing
  * has failed yet, such as at startup) is still connected on first use. */
 export function mayStartTunnel(machineId: string, fresh: boolean, userInitiated: boolean): boolean {
-  if (fresh || userInitiated || loadRemoteAutoReconnect()) return true;
+  if (fresh || userInitiated) return true;
   const environmentId = cachedMachines.find((entry) => entry.id === machineId)?.environmentId;
+  if (environmentId && readRemoteLifecycle(environmentId).paused) return false;
+  if (loadRemoteAutoReconnect()) return true;
   return !environmentId || !blocksSending(readRemoteConnection(environmentId).status);
 }
 
 /** `fresh` makes a dropped SSH tunnel be restarted now instead of answering
- * with the error of an attempt that failed moments ago; for a reconnect the
- * user asked for. `userInitiated` marks a request that exists because the user
+ * with the error of an attempt that failed moments ago; used by the coalesced
+ * recovery coordinator and manual reconnect. `userInitiated` marks a request that exists because the user
  * acted (sending, opening a project), as opposed to a background poll. */
 export function remoteRequest<T>(
   machineId: string,
@@ -240,13 +263,39 @@ export function remoteRequest<T>(
   fresh = false,
   userInitiated = false,
 ): Promise<T> {
+  const machine = cachedMachines.find((entry) => entry.id === machineId);
+  if (machine) bindMachineEnvironment(machine.id, machine.environmentId);
+  const generation = machine ? captureConnectionGeneration(machine.environmentId) : undefined;
+  const current = () =>
+    !machine ||
+    (cachedMachines.some(
+      (entry) => entry.id === machineId && entry.environmentId === machine.environmentId,
+    ) &&
+      readRemoteLifecycle(machine.environmentId).generation === generation);
+  const feature = remoteFeatureForMethod(method, params);
   return invoke<T>("remote_request", {
     machineId,
     method,
     params,
     ...(fresh ? { fresh } : {}),
     ...(mayStartTunnel(machineId, fresh, userInitiated) ? {} : { allowConnect: false }),
-  });
+  }).then(
+    (result) => {
+      if (!current()) throw new Error(SUPERSEDED_CONNECTION);
+      if (machine && feature) {
+        recordFeatureHealth(machine.environmentId, feature, true, generation);
+        if (feature === "host" && readRemoteLifecycle(machine.environmentId).phase === "idle")
+          setConnectionPhase(machine.environmentId, "ready");
+      }
+      return result;
+    },
+    (reason: unknown) => {
+      if (!current()) throw new Error(SUPERSEDED_CONNECTION);
+      if (machine && feature)
+        recordFeatureHealth(machine.environmentId, feature, false, generation);
+      throw reason;
+    },
+  );
 }
 
 const pendingSessionSyncs = new Map<string, Promise<SessionSync>>();
@@ -586,8 +635,7 @@ export async function remoteMachineFor(environmentId: string): Promise<RemoteMac
   const known = knownRemoteMachine(environmentId);
   if (known || machinesLoaded) return known;
   const value = await invoke<RemoteMachine[]>("remote_machines");
-  cachedMachines = Array.isArray(value) ? value : [];
-  machinesLoaded = true;
+  adoptRemoteMachineInventory(Array.isArray(value) ? value : []);
   return knownRemoteMachine(environmentId);
 }
 
@@ -601,7 +649,10 @@ export async function connectMachine(
     url,
     token,
   });
-  cachedMachines = [...cachedMachines.filter((entry) => entry.id !== machine.id), machine];
+  adoptRemoteMachineInventory([
+    ...cachedMachines.filter((entry) => entry.id !== machine.id),
+    machine,
+  ]);
   invalidateRemoteCapabilities(machine.environmentId);
   machinesLoaded = true;
   window.dispatchEvent(new Event(CHANGE));
@@ -630,7 +681,9 @@ export async function updateMachine(
     remotePort: edit.remotePort ?? null,
     alternate: edit.alternate ?? null,
   });
-  cachedMachines = cachedMachines.map((entry) => (entry.id === saved.id ? saved : entry));
+  adoptRemoteMachineInventory(
+    cachedMachines.map((entry) => (entry.id === saved.id ? saved : entry)),
+  );
   invalidateRemoteCapabilities(saved.environmentId);
   if (reconnect) {
     machineOnline.delete(saved.id);
@@ -644,6 +697,7 @@ export async function disconnectMachine(machineId: string): Promise<void> {
   await invoke("remote_disconnect", { machineId });
   const environmentId = cachedMachines.find((entry) => entry.id === machineId)?.environmentId;
   if (environmentId) invalidateRemoteCapabilities(environmentId);
+  if (environmentId) invalidateConnection(environmentId);
   cachedMachines = cachedMachines.filter((entry) => entry.id !== machineId);
   window.dispatchEvent(new Event(CHANGE));
 }
@@ -667,14 +721,19 @@ export function useRemoteMachines(enabled = true): {
     if (!enabled) return;
     let disposed = false;
     let version = 0;
+    let pending = false;
+    let failures = 0;
+    let retryTimer: ReturnType<typeof setTimeout> | undefined;
     const refresh = () => {
+      clearTimeout(retryTimer);
+      pending = true;
       const requestVersion = ++version;
       setState((previous) => ({ ...previous, loading: true }));
       void invoke<RemoteMachine[]>("remote_machines")
         .then((value) => {
           if (!disposed && requestVersion === version) {
-            cachedMachines = Array.isArray(value) ? value : [];
-            machinesLoaded = true;
+            failures = 0;
+            adoptRemoteMachineInventory(Array.isArray(value) ? value : []);
             setState({
               machines: cachedMachines,
               loaded: true,
@@ -685,20 +744,36 @@ export function useRemoteMachines(enabled = true): {
         .catch((reason) => {
           // A temporary connection failure should not blank every remote
           // panel while a fresh machine list is requested.
-          if (!disposed && requestVersion === version)
+          if (!disposed && requestVersion === version) {
             setState((previous) => ({
               ...previous,
               machines: cachedMachines,
               loading: false,
               error: String(reason).replace(/^Error: /, ""),
             }));
+            failures = Math.min(4, failures + 1);
+            retryTimer = setTimeout(refresh, remoteBackoffDelay(failures));
+          }
+        })
+        .finally(() => {
+          if (requestVersion === version) pending = false;
         });
+    };
+    const wake = () => {
+      if (!disposed && !pending && !document.hidden) refresh();
     };
     refresh();
     window.addEventListener(CHANGE, refresh);
+    window.addEventListener("focus", wake);
+    window.addEventListener("online", wake);
+    document.addEventListener("visibilitychange", wake);
     return () => {
       disposed = true;
+      clearTimeout(retryTimer);
       window.removeEventListener(CHANGE, refresh);
+      window.removeEventListener("focus", wake);
+      window.removeEventListener("online", wake);
+      document.removeEventListener("visibilitychange", wake);
     };
   }, [enabled, refreshVersion]);
   return { ...state, refresh: refreshMachines };
@@ -736,22 +811,35 @@ function watchMachineStatus(machineId: string): () => void {
     statusWatchers.set(machineId, watcher);
     let failures = 0;
     const poll = async () => {
+      const machine = cachedMachines.find((entry) => entry.id === machineId);
+      const generation = machine ? captureConnectionGeneration(machine.environmentId) : undefined;
+      const current = () =>
+        statusWatchers.get(machineId) === watcher &&
+        (!machine ||
+          (cachedMachines.some(
+            (entry) => entry.id === machineId && entry.environmentId === machine.environmentId,
+          ) &&
+            readRemoteLifecycle(machine.environmentId).generation === generation));
       try {
         const host = await remoteRequest<{
           environmentId?: string;
           capabilities?: unknown;
         }>(machineId, "environment.describe");
-        if (host?.environmentId) recordRemoteCapabilities(host.environmentId, host.capabilities);
-        failures = 0;
-        reportRemoteMachineStatus(machineId, true);
+        if (current()) {
+          if (host?.environmentId) recordRemoteCapabilities(host.environmentId, host.capabilities);
+          failures = 0;
+          reportRemoteMachineStatus(machineId, true);
+        }
       } catch (reason) {
-        failures = Math.min(4, failures + 1);
-        reportRemoteMachineStatus(machineId, false, reason);
+        if (current()) {
+          failures = Math.min(4, failures + 1);
+          reportRemoteMachineStatus(machineId, false, reason);
+        }
       }
       if (statusWatchers.get(machineId) === watcher)
         watcher.timer = setTimeout(
           () => void poll(),
-          failures ? remoteBackoffDelay(failures) : 15_000,
+          !current() ? 0 : failures ? remoteBackoffDelay(failures) : 15_000,
         );
     };
     void poll();

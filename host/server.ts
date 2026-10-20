@@ -1,3 +1,4 @@
+import { ModelCatalogCache } from "./model-catalog-cache";
 import { inlineSessionSync } from "./inlineSessionSync";
 import { HostCrews } from "./crews";
 import { probeNativeCodexImageCapability } from "./social-images";
@@ -6,6 +7,7 @@ import { sessionConversationPage } from "../src/features/agent-app/model/session
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { McpHttp } from "./mcp-http";
 import { readHarnessSkill, searchHarnessSkills } from "./harness-skills";
+import { skillInvocationTokens } from "../src/features/skills/model/skillTokens";
 import { hostname, homedir } from "node:os";
 import { RuntimeTerminalLogs } from "./runtime-terminal-logs";
 import { HostTerminals } from "./terminals";
@@ -13,7 +15,6 @@ import { createHash } from "node:crypto";
 import { realpath, stat } from "node:fs/promises";
 import {
   HOST_PROTOCOL_VERSION,
-  type HostModelCatalog,
   type HostSession,
   type HostSessionSummary,
   type RemoteProvider,
@@ -143,7 +144,6 @@ import { resolveGeminiBinary } from "../src/integrations/harness/core/child";
 import { discoverGeminiModels } from "../src/integrations/harness/providers/gemini/geminiCatalog";
 
 // Providers also add models server-side, without a CLI update.
-const CATALOG_MAX_AGE_MS = 5 * 60_000;
 const resolveBinary: Record<RemoteProvider, () => Promise<{ path: string }>> = {
   codex: () => resolveCodexBinary(),
   claude: () => resolveClaudeBinary(),
@@ -304,6 +304,9 @@ export function createHostServer(
     if (snapshot) return snapshot;
     return engine.store.session(id);
   };
+  const explicitSkillNames = (id: string) => skillInvocationTokens(
+    featureSession(id).session.blocks.filter((block) => block.role === "user").at(-1)?.text ?? "",
+  ).map((token) => token.name.replace(/^skill:/, ""));
   const xBrowser = new XBrowserSessions(join(featureDirectory, "social"));
   const social =
     socialOverride ??
@@ -495,10 +498,24 @@ export function createHostServer(
       /* the desktop is mid-turn; serve the host copy */
     }
   };
-  const catalogs = new Map<
-    string,
-    { binaries: string; probed: number; catalog: Promise<HostModelCatalog> }
-  >();
+  const catalogs = new ModelCatalogCache(
+    [...new Set([...providers, "acp" as const])],
+    () => providerBinaries(providers),
+    async (provider, cwd) => {
+      const discovered =
+        provider === "acp"
+          ? (await genericAcp.list()).map((config) => ({
+              id: `acp:${config.id}`,
+              nativeId: config.id,
+              harness: "acp" as const,
+              name: config.name,
+              contextWindow: config.contextWindow,
+            }))
+          : await discoverModels[provider](cwd);
+      if (discovered.length || provider === "acp") setHarnessModels(provider, discovered);
+      return discovered;
+    },
+  );
   const transfers = new SyncTransfers();
   const desktopRecheckMs = (id: string): number => {
     const hosted = engine.store.sessionStateMetadata(id);
@@ -519,53 +536,11 @@ export function createHostServer(
     (projectId, action) => engine.withIdleProject(projectId, action),
     engine.checkpoints,
   );
-  const models = async (projectId?: unknown) => {
-    const acpModels = (await genericAcp.list()).map((config) => ({
-      id: `acp:${config.id}`,
-      nativeId: config.id,
-      harness: "acp" as const,
-      name: config.name,
-      contextWindow: config.contextWindow,
-    }));
-    setHarnessModels("acp", acpModels);
-    const cwd = typeof projectId === "string" ? engine.store.project(projectId).cwd : homedir();
-    const binaries = await providerBinaries(providers);
-    const cached = catalogs.get(cwd);
-    let catalog =
-      cached?.binaries === binaries && Date.now() - cached.probed < CATALOG_MAX_AGE_MS
-        ? cached.catalog
-        : undefined;
-    if (!catalog) {
-      catalog = (async () => {
-        const result: HostModelCatalog = { models: {}, errors: {} };
-        await Promise.all(
-          providers.map(async (provider) => {
-            try {
-              const discovered = await discoverModels[provider](cwd);
-              result.models[provider] = discovered;
-              if (discovered.length) setHarnessModels(provider, discovered);
-            } catch (error) {
-              result.errors[provider] = error instanceof Error ? error.message : String(error);
-            }
-          }),
-        );
-        return result;
-      })().then(
-        (result) => {
-          if (Object.keys(result.errors).length && catalogs.get(cwd)?.catalog === catalog)
-            catalogs.delete(cwd);
-          return result;
-        },
-        (error) => {
-          if (catalogs.get(cwd)?.catalog === catalog) catalogs.delete(cwd);
-          throw error;
-        },
-      );
-      catalogs.set(cwd, { binaries, probed: Date.now(), catalog });
-    }
-    const result = await catalog;
-    return { ...result, models: { ...result.models, acp: acpModels } };
-  };
+  const models = (projectId?: unknown, progressive = false) =>
+    catalogs.read(
+      typeof projectId === "string" ? engine.store.project(projectId).cwd : homedir(),
+      progressive,
+    );
   let imageCapability: { at: number; value: Promise<boolean> } | undefined;
   const crews = new HostCrews(engine.store, engine, tasks, (projectId) => models(projectId), Date.now,
     async (candidate, capability) => {
@@ -873,6 +848,9 @@ export function createHostServer(
             result = searchHarnessSkills(
               sessionWorkCwd(featureSession(conversationPrincipal.sessionId).session),
               args,
+              undefined,
+              conversationPrincipal.sessionId,
+              explicitSkillNames(conversationPrincipal.sessionId),
             );
           else if (action === "skills.read")
             result = await readHarnessSkill(
@@ -884,6 +862,9 @@ export function createHostServer(
                 offset: args.offset as number | undefined,
                 maxChars: args.maxChars as number | undefined,
               },
+              undefined,
+              conversationPrincipal.sessionId,
+              explicitSkillNames(conversationPrincipal.sessionId),
             );
           else if (action.startsWith("crews."))
             result = await crews.call(action, args, projectId, conversationPrincipal);
@@ -1586,7 +1567,7 @@ export function createHostServer(
             result = listShellProfiles();
             break;
           case "models.list":
-            result = await models(params.projectId);
+            result = await models(params.projectId, params.progressive === true);
             break;
           case "sessions.list": {
             const projectId = String(params.projectId ?? "");

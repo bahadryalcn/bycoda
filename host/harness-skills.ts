@@ -1,6 +1,22 @@
 import { open } from "node:fs/promises";
 import { homedir } from "node:os";
 import { listHostSkillCandidates } from "./skills";
+import { readSkillPolicy } from "./skill-policy";
+import { skillDisabled } from "../src/integrations/harness/core/skillPolicy";
+import {
+  getReportedCommands,
+  reportedSkillRestrictions,
+} from "../src/integrations/harness/core/reportedCommands";
+
+function effectivePolicy(home: string, sessionId?: string) {
+  const policy = readSkillPolicy(home);
+  const native = reportedSkillRestrictions(getReportedCommands(sessionId));
+  return {
+    ...policy,
+    disabledNames: [...new Set([...policy.disabledNames, ...native.disabledNames])],
+    disabledPaths: [...new Set([...policy.disabledPaths, ...native.disabledPaths])],
+  };
+}
 
 const STOP_WORDS = new Set(["a", "an", "and", "for", "in", "of", "on", "or", "the", "to", "with"]);
 const words = (text: string) =>
@@ -18,11 +34,20 @@ export function searchHarnessSkills(
   cwd: string,
   input: { query?: string; offset?: number; limit?: number },
   home = homedir(),
+  sessionId?: string,
+  explicitNames: readonly string[] = [],
 ) {
   const query = (input.query ?? "").trim().toLowerCase();
   const terms = [...new Set(words(query))];
   const { skills: candidates, truncated } = listHostSkillCandidates(cwd, home);
+  const policy = effectivePolicy(home, sessionId);
   const matches = candidates
+    .filter(
+      (skill) =>
+        !skillDisabled(policy, skill) &&
+        (skill.modelInvocable !== false ||
+          (skill.userInvocable !== false && explicitNames.includes(skill.name))),
+    )
     .map((skill) => {
       const name = skill.name.toLowerCase();
       const nameWords = new Set(words(name));
@@ -59,6 +84,12 @@ export function searchHarnessSkills(
   const limit = Math.min(50, Math.max(1, Math.trunc(input.limit ?? 20)));
   const skills = matches.slice(offset, offset + limit).map(({ skill, matched }) => ({
     ...skill,
+    enabled: true,
+    providerEnabled: getReportedCommands(sessionId).some(
+      (entry) => entry.kind === "skill" && entry.name === skill.name && entry.enabled === true,
+    )
+      ? "enabled"
+      : "unknown",
     description: skill.description.slice(0, 1000),
     ...(terms.length ? { matchedTerms: matched, queryTerms: terms.length } : {}),
   }));
@@ -68,7 +99,7 @@ export function searchHarnessSkills(
     nextOffset: offset + skills.length < matches.length ? offset + skills.length : null,
     truncated,
     availability:
-      "installed; active=false is a same-name copy that /name does not resolve to; provider enablement must be checked separately",
+      "bycoda-disabled skills are excluded; active=false means a same-name alternative, not disabled; provider enablement is not established by this inventory",
   };
 }
 
@@ -77,20 +108,32 @@ export async function readHarnessSkill(
   cwd: string,
   input: { name: string; source?: string; scope?: string; offset?: number; maxChars?: number },
   home = homedir(),
+  sessionId?: string,
+  explicitNames: readonly string[] = [],
 ) {
   // Without a selector, read the copy that /name resolves to.
   const named = listHostSkillCandidates(cwd, home).skills.filter(
     (entry) => entry.name === input.name,
   );
-  const skill =
-    input.source || input.scope
-      ? named.find(
-          (entry) =>
-            (!input.source || entry.source === input.source) &&
-            (!input.scope || entry.scope === input.scope),
-        )
-      : (named.find((entry) => entry.active) ?? named[0]);
-  if (!skill) throw new Error(`Skill "${input.name}" is not installed for this project.`);
+  const matches = named.filter(
+    (entry) =>
+      (!input.source || entry.source === input.source) &&
+      (!input.scope || entry.scope === input.scope),
+  );
+  const policy = effectivePolicy(home, sessionId);
+  const allowed = matches.filter(
+    (entry) =>
+      !skillDisabled(policy, entry) &&
+      (entry.modelInvocable !== false ||
+        (entry.userInvocable !== false && explicitNames.includes(entry.name))),
+  );
+  const skill = allowed.find((entry) => entry.active) ?? allowed[0];
+  if (!skill)
+    throw new Error(
+      matches.length
+        ? `Skill "${input.name}" is disabled for this conversation.`
+        : `Skill "${input.name}" is not installed for this project.`,
+    );
   const file = await open(skill.path, "r");
   let body: string;
   try {

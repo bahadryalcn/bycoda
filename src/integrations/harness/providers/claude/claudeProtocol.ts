@@ -68,6 +68,7 @@ export type ClaudeMappedLine = {
 };
 
 export type ClaudeCliSettings = {
+  skillOverrides?: Record<string, "off">;
   env?: Record<string, string>;
   alwaysThinkingEnabled?: boolean;
   fastMode?: boolean;
@@ -244,8 +245,11 @@ export function buildClaudeSpawnArgs(input: {
   isolated?: boolean;
   /** Folders beyond the cwd the session may read and edit. */
   additionalDirs?: readonly string[];
+  disabledSkills?: readonly string[];
 }): string[] {
   const args = ["--output-format", "stream-json", "--verbose", "--input-format", "stream-json"];
+  if (input.disabledSkills?.length)
+    args.push("--disallowedTools", ...input.disabledSkills.map((name) => `Skill(${name})`));
   if (!input.isolated) {
     args.push("--permission-prompt-tool", "stdio");
   }
@@ -263,6 +267,13 @@ export function buildClaudeSpawnArgs(input: {
   if (input.advisor === "off") env.CLAUDE_CODE_DISABLE_ADVISOR_TOOL = "1";
   const settings: ClaudeCliSettings = {
     ...input.settings,
+    ...(input.disabledSkills?.length
+      ? {
+          skillOverrides: Object.fromEntries(
+            input.disabledSkills.map((name) => [name, "off" as const]),
+          ),
+        }
+      : {}),
     ...(Object.keys(env).length ? { env } : {}),
     ...(input.isolated ? { disableAllHooks: true } : {}),
   };
