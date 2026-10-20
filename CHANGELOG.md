@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.51]
+
+### Editor tabs
+
+- Add context-menu actions to close tabs to the left or right of the selected editor tab.
+- Keep close and close-others actions together, disable unavailable directions, and preserve unsaved-file and terminal confirmations.
+
+### Editor readability
+
+- Add indentation and bracket guides, comment annotations, color swatches and inline diagnostics to code and conflict editors.
+- Improve CSS variable completion and tag matching, with expanded editor selection coverage.
+
 ## [0.6.50]
 
 ### Crews
