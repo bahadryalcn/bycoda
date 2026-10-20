@@ -51,11 +51,11 @@ it("places recovery beside Search and Working below Inbox, preserving navigation
     const preview = container.querySelector('[data-live-agents-preview="full"]')!;
     const inbox = container.querySelector('button[aria-label="Inbox"]')!;
     const recovery = container.querySelector('button[aria-label="Recovered sessions (28)"]')!;
-    expect(search.closest(".bycoda-rail-brand")?.contains(recovery)).toBe(true);
+    expect(recovery.closest(".bycoda-rail-status")).not.toBeNull();
     expect(
       search.compareDocumentPosition(recovery) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
-    expect(recovery.compareDocumentPosition(inbox) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(inbox.compareDocumentPosition(recovery) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(inbox.compareDocumentPosition(preview) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(inbox.closest('[role="toolbar"]')?.hasAttribute("data-full-width")).toBe(true);
     expect(container.querySelectorAll('[data-live-agents-preview="full"]')).toHaveLength(1);

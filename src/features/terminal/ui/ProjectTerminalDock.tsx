@@ -14,14 +14,12 @@ import {
   SplitSquare,
   Terminal,
   Trash2,
-  Wrench,
   X,
 } from "../../../shared/ui/icons";
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { ExplorerMenu } from "../../files/ui/ExplorerMenu";
 import "./terminal.css";
 import { IconButton } from "../../../app/shell/TitleBar";
-import { SessionHostTools, type ConversationTools } from "../../host-tools/SessionHostTools";
 import {
   clampDockSize,
   dockTerminalGroup,
@@ -46,7 +44,6 @@ const TerminalView = lazySurface(async () => {
 });
 
 type Props = {
-  tools?: ConversationTools;
   dock: ProjectTerminalDock;
   focused: boolean;
   onFocus: () => void;
@@ -125,7 +122,6 @@ export function ProjectTerminalDock({
   onCloseOtherTerminals,
   onReorderTerminals,
   onTerminalMetaChange,
-  tools,
 }: Props) {
   useLocale();
   const vertical = isVerticalDock(dock.side);
@@ -138,8 +134,6 @@ export function ProjectTerminalDock({
     initial: 200,
   });
   const [dragging, setDragging] = useState(false);
-  const [toolsOpen, setToolsOpen] = useState(false);
-  const showingTools = toolsOpen && !!tools;
   const [menu, setMenu] = useState<HTMLElement | null>(null);
   const [profileMenu, setProfileMenu] = useState<HTMLElement | null>(null);
   const [terminalMenu, setTerminalMenu] = useState<{
@@ -162,7 +156,6 @@ export function ProjectTerminalDock({
   const HideIcon = hideIcon(dock.side);
   const visibleIds = dockTerminalGroup(dock, dock.pane.activeFileId);
   const splitTerminal = (id: string) => {
-    setToolsOpen(false);
     onSplitTerminal?.(id);
   };
 
@@ -273,40 +266,11 @@ export function ProjectTerminalDock({
         }}
       />
       <header className="terminal-header">
-        <div className="terminal-context-tabs">
-          <Button
-            variant="ghost"
-            motion="none"
-            type="button"
-            className="terminal-context-tab"
-            aria-label={t("Terminal")}
-            aria-pressed={!showingTools}
-            onClick={() => setToolsOpen(false)}
-          >
-            <Terminal className="terminal-context-icon size-3.5 shrink-0" />
-            <span>{t("Terminal")}</span>
-          </Button>
-          {tools ? (
-            <Button
-              variant="ghost"
-              motion="none"
-              type="button"
-              className="terminal-tools-button terminal-context-tab"
-              aria-label={t("Conversation tools")}
-              aria-pressed={showingTools}
-              onClick={() => setToolsOpen((value) => !value)}
-            >
-              <Wrench className="size-3.5 shrink-0" />
-              <span>{t("Conversation tools")}</span>
-            </Button>
-          ) : null}
-        </div>
         <div className="terminal-toolbar">
           <div className="flex min-w-0 items-center gap-0.5">
             <IconButton
               label={t("New Terminal ({p0}`)", { p0: MOD })}
               onClick={() => {
-                setToolsOpen(false);
                 onAddTerminal();
               }}
             >
@@ -369,14 +333,13 @@ export function ProjectTerminalDock({
                   id={`terminal-tab-${file.id}`}
                   type="button"
                   role="tab"
-                  aria-selected={!showingTools && file.id === dock.pane.activeFileId}
+                  aria-selected={file.id === dock.pane.activeFileId}
                   aria-controls={`terminal-panel-${file.id}`}
                   tabIndex={file.id === dock.pane.activeFileId ? 0 : -1}
                   className="terminal-list-item"
                   title={`${terminalTabLabel(file)} — ${file.cwd}`}
                   draggable
                   onClick={() => {
-                    setToolsOpen(false);
                     onSelectTerminal(file.id);
                   }}
                   onAuxClick={(event) => {
@@ -404,7 +367,6 @@ export function ProjectTerminalDock({
                               : null;
                     if (next !== null) {
                       event.preventDefault();
-                      setToolsOpen(false);
                       onSelectTerminal(files[next].id);
                       document.getElementById(`terminal-tab-${files[next].id}`)?.focus();
                     }
@@ -488,33 +450,24 @@ export function ProjectTerminalDock({
               id={`terminal-panel-${file.id}`}
               role="tabpanel"
               aria-labelledby={`terminal-tab-${file.id}`}
-              aria-hidden={showingTools || !visibleIds.includes(file.id)}
+              aria-hidden={!visibleIds.includes(file.id)}
               onMouseDown={() => onSelectTerminal(file.id)}
               style={{
                 gridColumn: visibleIds.indexOf(file.id) + 1,
                 borderInlineStart:
                   visibleIds.indexOf(file.id) > 0 ? "1px solid var(--terminal-border)" : undefined,
               }}
-              className={
-                !showingTools && visibleIds.includes(file.id) ? "terminal-split-pane" : "hidden"
-              }
+              className={visibleIds.includes(file.id) ? "terminal-split-pane" : "hidden"}
             >
               <TerminalView
                 id={file.id}
                 cwd={file.cwd}
                 profile={file.shellProfile}
-                active={focused && !showingTools && file.id === dock.pane.activeFileId}
+                active={focused && file.id === dock.pane.activeFileId}
                 onMetaChange={(patch) => onTerminalMetaChange?.(file.id, patch)}
               />
             </div>
           ))}
-          {showingTools && tools ? (
-            <SessionHostTools
-              key={`${tools.cwd}:${tools.sessionId}`}
-              {...tools}
-              onPresented={onHide}
-            />
-          ) : null}
         </div>
       </div>
       {terminalMenu ? (
@@ -600,7 +553,6 @@ export function ProjectTerminalDock({
             if (id === "default") onSelectDefaultProfile?.();
             else if (id === "split") splitTerminal(dock.pane.activeFileId);
             else if (id.startsWith("profile:")) {
-              setToolsOpen(false);
               onAddTerminalWithProfile?.(id.slice("profile:".length));
             }
           }}

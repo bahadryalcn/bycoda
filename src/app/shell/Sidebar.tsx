@@ -29,6 +29,8 @@ import {
 } from "../../features/source-control/model/worktreeFocus";
 import { SidebarWorktreeSwitcher } from "../../features/source-control/ui/SidebarWorktreeSwitcher";
 import { OrchestrationSidebarAgents } from "../../features/orchestration/ui/OrchestrationSidebarAgents";
+import { CrewSidebar } from "../../features/crews/ui/CrewSessions";
+import type { BackgroundSessionTarget } from "../../features/tasks/model/backgroundSession";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import {
   Archive,
@@ -389,6 +391,7 @@ type Props = {
   liveAgents?: LiveAgent[];
   onSelectAgent?: (sessionId: string) => void;
   onPreviewSession?: (sessionId: string, options?: { keepOpen?: boolean }) => void;
+  onOpenCrewSession?: (target: BackgroundSessionTarget) => void | Promise<void>;
   recentSessions?: RecentSessionsSource;
   onSelectProject?: (path: string) => void;
   onOpenProject?: () => void;
@@ -529,6 +532,7 @@ function SidebarComponent({
   inboxUnseen = false,
   linkedSessionUpdateIds = EMPTY_IDS,
   settingsOpen = false,
+  onOpenCrewSession,
   settingsSection = "general",
   onOpenSettings,
   onOpenNotificationSettings,
@@ -845,13 +849,17 @@ function SidebarComponent({
   }, []);
   const deferredSearchQuery = useDeferredValue(searchQuery);
   const now = useMinuteNow(tab === "sessions" && sessionFilters.time !== "all");
+  const [crewManaged, setCrewManaged] = useState<{ cwd: string; ids: Set<string> }>({ cwd: "", ids: new Set() });
+  const onCrewManagedChange = useCallback((path: string, ids: string[]) => {
+    setCrewManaged((previous) => previous.cwd === path && previous.ids.size === ids.length && ids.every((id) => previous.ids.has(id)) ? previous : { cwd: path, ids: new Set(ids) });
+  }, []);
   const { listedSessions, visibleSessions } = useMemo(() => {
     const listedSessions = mergeFolderSessionSummaries(
       projectSessions,
       remoteProject ? [] : openSessions,
       sessionFolders,
     ).filter(
-      (session) => !session.orchestrationLeadId && inWorktreeFocus(session, focusedWorktree),
+      (session) => !session.orchestrationLeadId && !(crewManaged.cwd === cwd && crewManaged.ids.has(session.id)) && inWorktreeFocus(session, focusedWorktree),
     );
     const visibleSessions = [
       ...filterSessionsByQuery(
@@ -875,6 +883,8 @@ function SidebarComponent({
     return { listedSessions, visibleSessions };
   }, [
     projectSessions,
+    crewManaged,
+    cwd,
     remoteProject,
     openSessions,
     sessionFolders,
@@ -2866,6 +2876,7 @@ function SidebarComponent({
             <p className="px-3 py-2 text-[12px] text-content/50">{t("No project folder")}</p>
           ) : (
             <div>
+              {onOpenCrewSession && <CrewSidebar key={cwd} cwd={cwd} query={searchQuery} onOpen={onOpenCrewSession} onManagedChange={onCrewManagedChange} onSettings={() => { onSelectSettingsSection?.("crews"); onOpenSettings?.(); }} />}
               {/* Loading and errors precede empty results, so an unfinished
                   request never claims this project has no conversations. */}
               {remoteProject &&

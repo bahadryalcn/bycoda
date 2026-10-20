@@ -2,6 +2,104 @@ import { expect, it, vi } from "vitest";
 import type { HostSessionSummary } from "../src/features/connections/model/protocol";
 import { RemoteChanges } from "./remoteChanges";
 
+it("reads unchanged metadata only once for a non-waiting request", async () => {
+  const changes = new RemoteChanges();
+  const project = vi.fn(async () => ({ etag: "p1", sessions: [] }));
+  const tasks = vi.fn(async () => "t1");
+  const git = vi.fn(async () => ({ etag: "1.1", watching: true }));
+  await changes.read(
+    {
+      instanceId: changes.instanceId,
+      sessions: [],
+      projects: [{ projectId: "p", known: "p1" }],
+      tasksKnown: "t1",
+      git: [{ cwd: "/repo", known: "1.1" }],
+      waitMs: 0,
+    },
+    () => undefined,
+    project,
+    undefined,
+    tasks,
+    git,
+  );
+  expect(project).toHaveBeenCalledTimes(1);
+  expect(tasks).toHaveBeenCalledTimes(1);
+  expect(git).toHaveBeenCalledTimes(1);
+});
+
+it("does not repeat metadata IO after a long poll reaches its deadline", async () => {
+  vi.useFakeTimers();
+  try {
+    const changes = new RemoteChanges();
+    const project = vi.fn(async () => ({ etag: "p1", sessions: [] }));
+    const pending = changes.read(
+      {
+        instanceId: changes.instanceId,
+        sessions: [],
+        projects: [{ projectId: "p", known: "p1" }],
+        waitMs: 100,
+      },
+      () => undefined,
+      project,
+    );
+    await vi.advanceTimersByTimeAsync(100);
+    expect((await pending).projects).toEqual([]);
+    // Initial read and one deadline check; no third, identical read.
+    expect(project).toHaveBeenCalledTimes(2);
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it("overlaps project IO with a bounded pool and preserves response order", async () => {
+  const changes = new RemoteChanges();
+  let active = 0;
+  let peak = 0;
+  const releases: Array<() => void> = [];
+  const project = vi.fn(async (id: string) => {
+    active++;
+    peak = Math.max(peak, active);
+    await new Promise<void>((resolve) => releases.push(resolve));
+    active--;
+    return { etag: id, sessions: [] };
+  });
+  const ids = ["p0", "p1", "p2", "p3", "p4", "p5"];
+  const pending = changes.read(
+    { sessions: [], projects: ids.map((projectId) => ({ projectId })) },
+    () => undefined,
+    project,
+  );
+  expect(project).toHaveBeenCalledTimes(4);
+  for (let i = 0; i < ids.length; i++) {
+    await vi.waitFor(() => expect(releases[i]).toBeTypeOf("function"));
+    releases[i]();
+  }
+  const result = await pending;
+  expect(peak).toBe(4);
+  expect(result.projects.map((entry) => entry.projectId)).toEqual(ids);
+});
+
+it("shares in-flight project reads across clients and retries failed reads", async () => {
+  const changes = new RemoteChanges();
+  const input = { sessions: [], projects: [{ projectId: "p" }] };
+  let reject!: (error: Error) => void;
+  const project = vi.fn(
+    () =>
+      new Promise<{ etag: string; sessions: HostSessionSummary[] }>((_, fail) => {
+        reject = fail;
+      }),
+  );
+  const first = changes.read(input, () => undefined, project);
+  const second = changes.read(input, () => undefined, project);
+  const results = Promise.allSettled([first, second]);
+  expect(project).toHaveBeenCalledTimes(1);
+  reject(new Error("read failed"));
+  expect((await results).map((result) => result.status)).toEqual(["rejected", "rejected"]);
+  project.mockResolvedValue({ etag: "recovered", sessions: [] });
+  expect((await changes.read(input, () => undefined, project)).projects[0].etag).toBe("recovered");
+  expect(project).toHaveBeenCalledTimes(2);
+});
+
 it("returns reset cursors on a new host instance and only changed cursors later", async () => {
   const changes = new RemoteChanges();
   const sessions = new Map([["s", 4]]);

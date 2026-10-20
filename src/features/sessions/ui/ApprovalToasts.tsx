@@ -195,7 +195,11 @@ export function ApprovalToasts({
   return (
     <>
       <Button
+        iconOnly
+        label={t("Notifications")}
         variant="ghost"
+        motion="none"
+        className="relative size-7"
         ref={trigger}
         type="button"
         title={t("Notifications")}
@@ -212,7 +216,7 @@ export function ApprovalToasts({
         {count > 0 ? (
           <span
             id={`${panelId}-count`}
-            className="rounded bg-(--ui-tone-warning-subtle) px-1 text-[10px] font-semibold tabular-nums text-(--ui-tone-warning-fg)"
+            className="absolute inset-e-0 inset-bs-0 rounded bg-(--ui-tone-warning-subtle) px-1 text-[10px] font-semibold tabular-nums text-(--ui-tone-warning-fg)"
           >
             {count}
           </span>

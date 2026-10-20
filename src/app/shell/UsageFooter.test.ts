@@ -38,7 +38,7 @@ describe("UsageFooter terminal control", () => {
       }),
     );
 
-    expect(markup).toContain(">Terminal</span>");
+    expect(markup).toContain('aria-label="New Terminal');
     expect(markup.match(/<button/g)).toHaveLength(1);
   });
 
@@ -51,9 +51,20 @@ describe("UsageFooter terminal control", () => {
       }),
     );
 
-    const tools = markup.indexOf(">Conversation tools</span>");
+    const tools = markup.indexOf('aria-label="Conversation tools"');
     expect(tools).toBeGreaterThan(-1);
-    expect(tools).toBeLessThan(markup.indexOf(">Terminal</span>"));
+    expect(tools).toBeLessThan(markup.indexOf('aria-label="New Terminal'));
+  });
+
+  it("keeps an unavailable terminal visible and explains why", () => {
+    const reason = "Open this project on its machine to use the terminal.";
+    const markup = renderToStaticMarkup(
+      createElement(UsageFooter, { providers: [], terminalUnavailableReason: reason }),
+    );
+    expect(markup.match(/<button/g)).toHaveLength(1);
+    expect(markup).toContain('disabled=""');
+    expect(markup).toContain(`title="${reason}"`);
+    expect(markup).toContain('aria-label="Terminal"');
   });
 
   it("does not highlight a saved terminal while its panel is hidden", () => {

@@ -4,6 +4,8 @@ import { createRoot } from "react-dom/client";
 import { SessionRecoveryPanel } from "../../src/app/shell/SessionRecoveryPanel";
 import { SessionRecoveryControl } from "../../src/app/shell/SessionRecoveryControl";
 import { Sidebar } from "../../src/app/shell/Sidebar";
+import { ProjectRail } from "../../src/app/shell/ProjectRail";
+import { WorkspaceControls } from "../../src/app/shell/WorkspaceControls";
 import { newSession } from "../../src/features/sessions/model/session";
 import { markTurnInterrupted } from "../../src/features/sessions/model/inFlight";
 import { newTab } from "../../src/features/workspace/model/layout";
@@ -54,6 +56,51 @@ const recovery = captureSessionRecovery(
   null,
   collectWorkspaceSnapshot(tabs, sessions, tabs[0].id, sessions[0].cwd, new Map()),
 )!;
+function RailFixture() {
+  const [open, setOpen] = useState(false);
+  const [count, setCount] = useState(128);
+  const [settings, setSettings] = useState("");
+  return (
+    <main className="flex h-dvh bg-background-base text-content">
+      <ProjectRail
+        cwd="/fixture"
+        recents={[]}
+        onSelectProject={() => {}}
+        onOpenProject={() => {}}
+        onSearch={() => {}}
+        onTogglePanel={() => {}}
+        onOpenSettings={() => setSettings("general")}
+        recoveryControl={
+          <SessionRecoveryControl
+            count={count}
+            onOpen={() => setOpen(true)}
+            onClear={async () => setCount(0)}
+          />
+        }
+      />
+      <output data-testid="settings-destination" className="sr-only">
+        {settings}
+      </output>
+      <div className="fixed [inset-block-end:0] [inset-inline-end:0]">
+        <WorkspaceControls
+          onHiddenGroups={() => setSettings("groupLock")}
+          onPullRequests={() => {}}
+          onUsage={() => {}}
+        />
+      </div>
+      {open ? (
+        <SessionRecoveryPanel
+          recovery={recovery}
+          sessions={sessions}
+          remoteSessions={[]}
+          onClose={() => setOpen(false)}
+          onOpen={async () => {}}
+          onRemove={async () => {}}
+        />
+      ) : null}
+    </main>
+  );
+}
 function SidebarFixture() {
   const [recoveredCount, setRecoveredCount] = useState(40);
   const [tab, setTab] = useState<"sessions" | "files" | "changes" | "inbox">("sessions");
@@ -114,5 +161,11 @@ function Fixture() {
   );
 }
 createRoot(document.getElementById("root")!).render(
-  new URLSearchParams(location.search).has("sidebar") ? <SidebarFixture /> : <Fixture />,
+  new URLSearchParams(location.search).has("rail") ? (
+    <RailFixture />
+  ) : new URLSearchParams(location.search).has("sidebar") ? (
+    <SidebarFixture />
+  ) : (
+    <Fixture />
+  ),
 );

@@ -38,6 +38,7 @@ export const SETTINGS_SECTION_ICONS: Record<SettingsSectionId, IconComponent> = 
   terminal: Terminal,
   chat: MessageSquare,
   providers: Bot,
+  crews: Bot,
   usage: UsageIcon as IconComponent,
   limits: SlidersHorizontal,
   mcp: Globe,

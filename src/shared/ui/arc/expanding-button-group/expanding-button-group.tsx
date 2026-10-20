@@ -55,8 +55,9 @@ export interface ExpandingButtonGroupProps {
   fit?: boolean;
   /** Fill the container and distribute spare space across the actions. */
   fullWidth?: boolean;
-  /** Id of the action whose label shows at rest, usually the primary one. Defaults to the first enabled action: one action is always
-   *  expanded. Pointing at or focusing another moves the expansion there, and it returns here when the pointer and focus leave. */
+  /** Id of the action whose label shows at rest. Defaults to the first enabled action.
+   * Pass null to keep all labels collapsed at rest. Pointer intent or keyboard focus
+   * reveals a label; it returns to the resting state when the pointer and focus leave. */
   defaultExpanded?: string | null;
   /** Called with the item id whenever an action runs, before its own onSelect. */
   onAction?: (id: string) => void;
@@ -359,7 +360,7 @@ export function ExpandingButtonGroup({
   items,
   label,
   size = "md",
-  defaultExpanded = null,
+  defaultExpanded,
   onAction,
   confirmDuration = 1400,
   className,
@@ -402,12 +403,13 @@ export function ExpandingButtonGroup({
     };
   }, []);
 
-  const has = (id: string | null) => !!id && items.some((item) => item.id === id);
-  // One action is always expanded: the resting one is defaultExpanded, else the first enabled action.
+  const has = (id: string | null | undefined) => !!id && items.some((item) => item.id === id);
+  // An explicit null opts into an icon-only resting state.
   const firstEnabled = items.find((item) => !item.disabled)?.id ?? items[0]?.id ?? null;
-  const restId = has(defaultExpanded) ? defaultExpanded : firstEnabled;
+  const restId =
+    defaultExpanded === null ? null : has(defaultExpanded) ? defaultExpanded : firstEnabled;
   const expandedId = busy ?? (has(intent) ? intent : restId);
-  const tabStop = has(focused) ? focused : restId;
+  const tabStop = has(focused) ? focused : (restId ?? firstEnabled);
 
   // A tap outside closes a label opened by a first tap.
   useEffect(() => {

@@ -2325,9 +2325,9 @@ it("shows host activity alongside a preserved local conversation conflict", asyn
     blocks: [{ id: "u", role: "user", text: "local edit" } as Block],
   };
   await render(session);
-  expect(container.querySelector('[role="status"]')?.textContent).toContain(
-    "running in the background",
-  );
+  expect([...container.querySelectorAll('[role="status"]')].some(
+    (status) => status.textContent?.includes("running in the background"),
+  )).toBe(true);
   expect(container.querySelector('[role="alert"]')?.textContent).toContain(
     "Your messages were kept",
   );

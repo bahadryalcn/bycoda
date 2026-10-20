@@ -3,6 +3,11 @@
   min-inline-size: 0;
 }
 
+.connections-settings {
+  inline-size: 100%;
+  max-inline-size: 64rem;
+}
+
 .connections-view {
   display: flex;
   flex-direction: column;
@@ -30,4 +35,83 @@
 
 .connection-details[open] > summary {
   margin-block-end: 0.5rem;
+}
+
+.connection-sync {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25rem 0.5rem;
+  margin-block-start: 0.25rem;
+  font-size: 12px;
+}
+
+.connection-sync-error {
+  min-inline-size: 0;
+  flex: 1 1 12rem;
+  color: var(--ui-tone-danger-fg);
+}
+
+.connection-sync-error summary,
+.connection-disclosure summary {
+  cursor: pointer;
+  font-weight: 500;
+}
+
+.connection-sync-error p {
+  margin-block-start: 0.5rem;
+  overflow-wrap: anywhere;
+}
+
+.connection-disclosure {
+  border-block-start: 1px solid var(--color-stroke);
+  padding-block-start: 1rem;
+  font-size: 12px;
+  color: var(--ui-text-muted);
+}
+
+.connection-disclosure[open] > summary {
+  margin-block-end: 0.75rem;
+}
+
+.connection-url-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  max-inline-size: 36rem;
+}
+
+.connection-url-form > button {
+  align-self: start;
+}
+
+.phone-pairing-content {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  padding: 1rem;
+}
+
+.phone-pairing-code {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.phone-pairing-instructions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  text-align: center;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.phone-pairing-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: start;
+  gap: 0.5rem;
 }

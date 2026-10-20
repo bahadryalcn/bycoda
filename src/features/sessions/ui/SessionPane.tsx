@@ -19,6 +19,7 @@ import { Composer } from "./Composer";
 import type { NewSessionOptions } from "../model/newSessionCommand";
 import "./session-notes-layout.css";
 import { ProjectQuickActions } from "../../projects/ui/ProjectQuickActions";
+import { ExpandingButtonGroup } from "../../../shared/ui/ExpandingButtonGroup";
 import type { ProjectAction } from "../../projects/model/projectActions";
 import type { OpenFileFn } from "../../search/model/search";
 import {
@@ -1216,22 +1217,27 @@ const LocalSessionPane = memo(function LocalSessionPane({
   const closeShortcut = useKeybindingShortcut("Pane: Close");
   const notesButton =
     notesEnabled && visible && focused && !showNotesPanel ? (
-      <Button
-        variant="ghost"
-        size="sm"
-        label={t("Open notes panel")}
-        motion="none"
-        tooltip={t("Open notes panel")}
-        shortcut={notesShortcut}
-        aria-label={t("Open notes panel")}
+      <span
         data-no-drag
         onPointerDown={(event) => event.stopPropagation()}
         onMouseDown={(event) => event.stopPropagation()}
-        onClick={toggleNotesPanel}
       >
-        <File className="size-3.5" strokeWidth={1.75} />
-        {t("Notes")}
-      </Button>
+        <ExpandingButtonGroup
+          label={t("Notes")}
+          size="sm"
+          defaultExpanded={null}
+          items={[
+            {
+              id: "notes",
+              label: t("Notes"),
+              ariaLabel: t("Open notes panel"),
+              shortcut: notesShortcut,
+              icon: <File className="size-3.5" strokeWidth={1.75} />,
+              onSelect: toggleNotesPanel,
+            },
+          ]}
+        />
+      </span>
     ) : null;
 
   const pane = (

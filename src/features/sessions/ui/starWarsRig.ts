@@ -6,6 +6,7 @@ type PartName =
   | "body"
   | "head"
   | "arm"
+  | "forearm"
   | "weapon"
   | "force-arm"
   | "jedi-arm"
@@ -30,6 +31,8 @@ export type StarWarsRig = {
   layers: Layer[];
   head: Pivot;
   arm: Pivot;
+  /** Elbow of a two-segment arm; absent when the artwork's arm is a single piece. */
+  forearm?: Pivot;
   jediArm: Pivot;
 };
 const rigs = new Map<StarWarsIdentity, StarWarsRig>();
@@ -134,6 +137,7 @@ export function loadStarWarsRigs(): Promise<void> {
         layers: orderedLayers,
         head: layers.find((layer) => layer.part === "head")!.pivot,
         arm: layers.find((layer) => layer.part === "arm")?.pivot ?? { x: 80, y: 150 },
+        forearm: layers.find((layer) => layer.part === "forearm")?.pivot,
         jediArm: layers.find((layer) => layer.part === "jedi-arm")?.pivot ?? { x: 100, y: 151 },
       });
     }),
@@ -223,11 +227,14 @@ function paintLayers(
     c.globalAlpha *= alpha;
     if (layer.part === "head" || layer.follow === "head")
       rotate(c, rig.head, motion.headAngle, motion.headX, 0, motion.headScaleX);
+    const forearm = layer.part === "forearm" || layer.follow === "forearm";
     if (
-      (layer.part === "arm" || layer.follow === "arm") &&
+      (layer.part === "arm" || layer.follow === "arm" || forearm) &&
       !(rig.id === "yoda" && layer.mode === "rest")
     )
       rotate(c, rig.arm, motion.armAngle, 0, motion.armY);
+    // The elbow pivot is carried by the upper arm, so the forearm bends after the shoulder turns.
+    if (forearm && rig.forearm) rotate(c, rig.forearm, motion.forearmAngle);
     if (layer.part === "force-arm") rotate(c, layer.pivot, motion.forceAngle);
     if (layer.part === "jedi-arm" || layer.follow === "jedi-arm")
       rotate(c, rig.jediArm, motion.armAngle, 0, motion.armY);

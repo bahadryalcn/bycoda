@@ -6,6 +6,7 @@ import { ProjectTerminalDock } from "../../../features/terminal/ui/ProjectTermin
 import { ApprovalToasts } from "../../../features/sessions/ui/ApprovalToasts";
 import { UsageFooter } from "../../shell/UsageFooter";
 import { WorkspaceControls } from "../../shell/WorkspaceControls";
+import { t } from "../../../shared/i18n";
 import type { WorkspaceNoticesProps } from "./WorkspaceNotices";
 
 type UsageFooterProps = ComponentProps<typeof UsageFooter>;
@@ -24,7 +25,6 @@ export interface WorkspaceFooterProps {
   pullRequestsOnly: boolean;
   setPullRequestsOnly: Dispatch<SetStateAction<boolean>>;
   onOpenInbox: () => void;
-  onOpenSettings: ComponentProps<typeof WorkspaceControls>["onSettings"];
   openSettings: WorkspaceNoticesProps["openSettings"];
   // Usage and project terminal
   active: Session | undefined;
@@ -61,7 +61,6 @@ export function WorkspaceFooter({
   pullRequestsOnly,
   setPullRequestsOnly,
   onOpenInbox,
-  onOpenSettings,
   openSettings,
   active,
   projectCwd,
@@ -104,6 +103,13 @@ export function WorkspaceFooter({
           onToggleTerminal={onToggleRunningTerminal}
           onNewTerminal={canOpenTerminalIn(projectCwd) ? onNewTerminal : undefined}
           onShowTerminal={canOpenTerminalIn(projectCwd) ? onShowProjectTerminal : undefined}
+          terminalUnavailableReason={
+            canOpenTerminalIn(projectCwd)
+              ? undefined
+              : t(
+                  "The terminal panel is available for local folders. Open this project on its machine to use it.",
+                )
+          }
           projectTerminalActive={!!currentProjectDock && currentProjectDock.pane.files.length > 0}
           projectTerminalVisible={dockVisible}
           tools={conversationTools ? { ...conversationTools, onOpenFile } : undefined}
@@ -116,7 +122,7 @@ export function WorkspaceFooter({
             ? settingsSection === "usage"
             : !searchViewOpen && !notesViewOpen && !serversViewOpen && !automationsViewOpen)
         }
-        onSettings={onOpenSettings}
+        onHiddenGroups={() => openSettings("groupLock")}
         onPullRequests={() => {
           onOpenInbox();
           setPullRequestsOnly(true);
@@ -126,7 +132,9 @@ export function WorkspaceFooter({
           settingsOpen
             ? settingsSection === "usage"
               ? "usage"
-              : "settings"
+              : settingsSection === "groupLock"
+                ? "hiddenGroups"
+                : undefined
             : inboxViewOpen && pullRequestsOnly
               ? "pullRequests"
               : undefined

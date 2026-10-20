@@ -4,6 +4,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { EditorPane, LayoutNode } from "../model/layout";
 import { PaneTree } from "./PaneTree";
+import { newSession } from "../../sessions/model/session";
 
 vi.mock("../../files/ui/FilePane", async () => {
   const { createElement } = await import("react");
@@ -13,7 +14,18 @@ vi.mock("../../files/ui/FilePane", async () => {
   };
 });
 
-vi.mock("../../sessions/ui/SessionPane", () => ({ SessionPane: () => null }));
+vi.mock("../../sessions/ui/SessionPane", () => ({
+  SessionPane: () =>
+    createElement(
+      "button",
+      {
+        "data-session-action": true,
+        onPointerDown: (event: { stopPropagation: () => void }) => event.stopPropagation(),
+        onKeyDown: (event: { stopPropagation: () => void }) => event.stopPropagation(),
+      },
+      "Session action",
+    ),
+}));
 
 let container: HTMLDivElement;
 let root: Root;
@@ -47,7 +59,11 @@ function split(dir: "right" | "down", ...children: LayoutNode[]): LayoutNode {
   };
 }
 
-function render(layout: LayoutNode, ids: string[]) {
+function render(
+  layout: LayoutNode,
+  ids: string[],
+  overrides: Partial<ComponentProps<typeof PaneTree>> = {},
+) {
   const noop = vi.fn();
   const props: ComponentProps<typeof PaneTree> = {
     visible: true,
@@ -92,6 +108,7 @@ function render(layout: LayoutNode, ids: string[]) {
     onMovePane: noop,
     onDetachPane: noop,
     onNewTerminal: noop,
+    ...overrides,
   };
   act(() => root.render(createElement(PaneTree, props)));
 }
@@ -104,6 +121,23 @@ function enterFrom(id: string) {
 }
 
 describe("pane enter animation", () => {
+  it.each(["pointerdown", "keydown"])(
+    "focuses a session from %s even when its action stops propagation",
+    (type) => {
+      const onFocus = vi.fn();
+      const onSessionInteraction = vi.fn();
+      render(split("right", leaf("a"), leaf("b")), ["a"], {
+        sessions: [{ ...newSession("claude", "/project"), id: "b" }],
+        onFocus,
+        onSessionInteraction,
+      });
+      const action = container.querySelector("[data-session-action]")!;
+      act(() => action.dispatchEvent(new Event(type, { bubbles: true })));
+      expect(onFocus).toHaveBeenCalledWith("b");
+      expect(onSessionInteraction).toHaveBeenCalledWith("b");
+    },
+  );
+
   it("leaves panes alone on mount", () => {
     render(split("right", leaf("a"), leaf("b")), ["a", "b"]);
     expect(container.querySelector("[data-pane-enter]")).toBeNull();

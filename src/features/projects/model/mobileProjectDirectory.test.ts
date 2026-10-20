@@ -2,10 +2,38 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { projectKey } from "../../../shared/lib/paths";
 import { saveTabGroupLabel, saveAutoTabGroupLabel } from "../../workspace/model/tabGroups";
-import { projectMobileDirectory } from "./mobileProjectDirectory";
+import { buildMobileProjectDirectory, projectMobileDirectory } from "./mobileProjectDirectory";
+import { archiveProject, rememberProject, saveProjectRailOrder } from "./recents";
+import { saveSessionFolders } from "../../sessions/model/sessionFolders";
+import { saveSessionOrder } from "../../sessions/model/sessionOrder";
 beforeEach(() => localStorage.clear());
 
 describe("mobile desktop projection", () => {
+  it("does not resurrect forgotten projects from stale group assignments", () => {
+    const result = projectMobileDirectory({ paths: ["/visible"], groups: [{ id: "work", name: "Work", collapsed: false }],
+      assignments: { "/visible": "work", "/forgotten": "work" },
+      lock: { lockedGroupIds: new Set(), lockedProjectKeys: new Set() } });
+    expect(result.projects.map((project) => project.cwd)).toEqual(["/visible"]);
+    expect(result.projects[0]?.groupId).toBe("work");
+  });
+  it("exports nested session folders and manual order only for visible projects", () => {
+    const folders = [{ id: "f", name: "Work", sessionIds: ["one"], collapsed: false },
+      { id: "child", name: "Details", parentId: "f", sessionIds: ["two"], collapsed: true, ordered: true }];
+    saveSessionFolders("/work", folders);
+    saveSessionOrder("/work", { loose: ["three", "four"] });
+    saveSessionFolders("/private", [{ id: "secret", name: "Secret", sessionIds: ["private-session"], collapsed: false }]);
+    const result = projectMobileDirectory({ paths: ["/work", "/private"], groups: [], assignments: {},
+      lock: { lockedGroupIds: new Set(), lockedProjectKeys: new Set(["/private"]) } });
+    expect(result.projects[0]?.sessionLayout).toMatchObject({ folders, order: { loose: ["three", "four"] } });
+    expect(JSON.stringify(result.projects)).not.toContain("Secret");
+    expect(JSON.stringify(result.projects)).not.toContain("private-session");
+  });
+  it("matches saved desktop rail order and omits archives even when a session remains open", () => {
+    rememberProject("/one"); rememberProject("/two"); rememberProject("/archived");
+    archiveProject("/archived");
+    saveProjectRailOrder(["/two", "/one"]);
+    expect(buildMobileProjectDirectory(["/archived"]).projects.map((project) => project.cwd)).toEqual(["/two", "/one"]);
+  });
   it("exports current rail names and updates them without changing project identity", () => {
     const path = "G:/Projects/monocode";
     const input = {

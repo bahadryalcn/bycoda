@@ -1,4 +1,5 @@
 import { Button } from "../../../shared/ui/Button";
+import { CrewsSettings } from "../../crews/ui/CrewsSettings";
 import { t, useLocale } from "../../../shared/i18n";
 import { ConnectionsSettings } from "../../connections/ui/ConnectionsSettings";
 
@@ -396,6 +397,7 @@ export function SettingsView({
                     description={settingsSectionDescription(section)}
                   />
                   {section === "general" ? <GeneralPage onOpenWhatsNew={onOpenWhatsNew} /> : null}
+                  {section === "crews" ? <CrewsSettings cwd={cwd} /> : null}
                   {section === "connections" ? (
                     <>
                       <ConnectionsSettings />

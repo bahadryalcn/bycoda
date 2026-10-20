@@ -378,28 +378,43 @@ export function TerminalTools({
       ) : (
         <div className={styles.menuTrigger}>
           <Button
-            ref={menuAnchor}
             variant="ghost"
             size="sm"
             iconOnly
-            label={`${t("Terminal")} · ${t("More actions")}`}
-            aria-expanded={menuOpen}
-            aria-haspopup="dialog"
-            onClick={() => setMenuOpen(!menuOpen)}
+            label={t("Find in terminal")}
+            shortcut="Ctrl/Cmd+F"
+            disabled={!terminal}
+            onClick={() => changeMode("search")}
           >
-            <MoreHorizontal size={14} />
+            <Search size={14} />
           </Button>
-          {menuOpen ? (
-            <Popover
-              anchor={menuAnchor}
-              align="end"
-              width={360}
-              role="dialog"
-              aria-label={`${t("Terminal")} · ${t("More actions")}`}
-              onDismiss={() => setMenuOpen(false)}
-            >
-              {controls}
-            </Popover>
+          {remoteShell || onEnableShellIntegration || onSavedCommands || onStartupReview ? (
+            <>
+              <Button
+                ref={menuAnchor}
+                variant="ghost"
+                size="sm"
+                iconOnly
+                label={`${t("Terminal")} · ${t("More actions")}`}
+                aria-expanded={menuOpen}
+                aria-haspopup="dialog"
+                onClick={() => setMenuOpen(!menuOpen)}
+              >
+                <MoreHorizontal size={14} />
+              </Button>
+              {menuOpen ? (
+                <Popover
+                  anchor={menuAnchor}
+                  align="end"
+                  width={360}
+                  role="dialog"
+                  aria-label={`${t("Terminal")} · ${t("More actions")}`}
+                  onDismiss={() => setMenuOpen(false)}
+                >
+                  {controls}
+                </Popover>
+              ) : null}
+            </>
           ) : null}
         </div>
       )}

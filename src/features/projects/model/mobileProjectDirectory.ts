@@ -10,7 +10,9 @@ import {
   projectGroupWorkspaceRoot,
   type ProjectGroup,
 } from "./projectGroups";
-import { isLocalProject, knownProjectPaths } from "./recents";
+import { isLocalProject, loadArchivedProjects, loadRecents, projectRailItems } from "./recents";
+import { loadSessionFolders } from "../../sessions/model/sessionFolders";
+import { loadSessionOrder } from "../../sessions/model/sessionOrder";
 
 /** Projects the desktop can already show; this does not unlock or change any group. */
 export function projectMobileDirectory(input: {
@@ -33,7 +35,6 @@ export function projectMobileDirectory(input: {
   const projects: DesktopProjectDirectory["projects"] = [];
   const paths = [
     ...input.paths,
-    ...Object.keys(input.assignments),
     ...groups.flatMap((group) => {
       const root = projectGroupWorkspaceRoot(group);
       return root ? [root] : [];
@@ -44,10 +45,14 @@ export function projectMobileDirectory(input: {
     if (!isLocalProject(cwd) || seen.has(key) || input.lock.lockedProjectKeys.has(key)) continue;
     seen.add(key);
     const assigned = input.assignments[key] ?? workspaceGroups.get(key);
+    const folders = loadSessionFolders(cwd).map(({ id, name, sessionIds, collapsed, ordered, parentId, pinned }) =>
+      ({ id, name, sessionIds, collapsed, ordered, parentId, pinned }));
+    const order = loadSessionOrder(cwd);
     projects.push({
       cwd,
       name: projectDisplayName(cwd, labels),
       ...(assigned && groupIds.has(assigned) ? { groupId: assigned } : {}),
+      ...(folders.length || order.loose?.length || order.pinned?.length ? { sessionLayout: { folders, order } } : {}),
     });
   }
   return {
@@ -68,10 +73,13 @@ export function buildMobileProjectDirectory(
   currentPaths: readonly string[] = [],
 ): DesktopProjectDirectory {
   const view = getGroupLockView();
-  return projectMobileDirectory({
-    paths: [...knownProjectPaths(), ...currentPaths],
+  const archived = new Set(loadArchivedProjects().map((project) => pathKey(project.path)));
+  const rail = projectRailItems(loadRecents(), "").map((project) => project.path);
+  const directory = projectMobileDirectory({
+    paths: [...rail, ...currentPaths].filter((path) => !archived.has(pathKey(path))),
     groups: view.groups,
     assignments: loadProjectGroupAssignments(view.groups),
     lock: view.lock,
   });
+  return { ...directory, projects: directory.projects.filter((project) => !archived.has(pathKey(project.cwd))) };
 }

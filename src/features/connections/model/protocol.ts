@@ -28,6 +28,19 @@ export type HostDescriptor = {
   platform?: "win32" | "darwin" | "linux";
 };
 export type HostProject = { id: string; cwd: string; name: string };
+/** Read-only desktop organization, scoped to an already visible project. */
+export type HostSessionLayout = {
+  folders: {
+    id: string;
+    name: string;
+    sessionIds: string[];
+    collapsed: boolean;
+    ordered?: boolean;
+    parentId?: string;
+    pinned?: boolean;
+  }[];
+  order: { loose?: string[]; pinned?: string[] };
+};
 export type HostProjectGroup = {
   id: string;
   name: string;
@@ -38,13 +51,13 @@ export type HostProjectGroup = {
 export type HostProjectDirectory = {
   version: 1;
   privacyReady: boolean;
-  projects: (HostProject & { groupId?: string; registered: boolean })[];
+  projects: (HostProject & { groupId?: string; registered: boolean; sessionLayout?: HostSessionLayout })[];
   groups: HostProjectGroup[];
 };
 /** Sent only by the local desktop heartbeat; protected paths never reach the phone. */
 export type DesktopProjectDirectory = {
   version: 1;
-  projects: { cwd: string; name: string; groupId?: string }[];
+  projects: { cwd: string; name: string; groupId?: string; sessionLayout?: HostSessionLayout }[];
   groups: HostProjectGroup[];
   excludedPaths: string[];
   excludedGroupIds: string[];

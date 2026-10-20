@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.50]
+
+### Crews
+
+- Add reusable crews with coordinator, specialist and reviewer conversations, host-managed assignments and independent review.
+- Configure member models, capabilities, budgets and project scopes, and inspect requests and assignment state from Sessions and Tasks.
+
+### Connections and synchronization
+
+- Improve desktop connection state, remote change refresh and automatic recovery controls.
+- Reduce large synchronization outbox processing overhead and avoid redundant persistence for unchanged pull results.
+
+### Workspace
+
+- Refine workspace actions, terminal controls, project navigation and shared expanding action groups.
+- Improve working-session indicators, approval notices and Star Wars crew animation.
+
 ## [0.6.46]
 
 ### Remote communication and recovery

@@ -126,6 +126,27 @@ mockIPC(
       if (command === "local_host_bundle_status") return { state: "current" };
       if (command === "remote_request") {
         const machine = machines.find((entry) => entry.id === args.machineId)!;
+        if (args.method === "mobile.access.status") {
+          const mode = (args.params as { mode?: string })?.mode ?? "lan";
+          return mode === "lan"
+            ? {
+                mode,
+                state: "ready",
+                endpoint: "http://192.168.1.20:3777",
+                lanKey: "ab".repeat(32),
+                addresses: ["192.168.1.20"],
+              }
+            : { state: "ready", endpoint: "https://fixture.tail123.ts.net" };
+        }
+        if (args.method === "mobile.pairing.create")
+          return {
+            pairingId: "fixture-pair",
+            ticket: "a".repeat(43),
+            expiresAt: new Date(Date.now() + 120_000).toISOString(),
+            environmentId: machine.environmentId,
+          };
+        if (args.method === "mobile.pairing.status") return { state: "pending" };
+        if (args.method === "mobile.pairing.cancel") return {};
         if (args.method === "environment.describe")
           return {
             environmentId: machine.environmentId,

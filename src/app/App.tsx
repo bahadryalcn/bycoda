@@ -2810,6 +2810,7 @@ function Workspace({
                   liveAgents={liveAgents}
                   onSelectAgent={sidebarActions.onSelectAgent}
                   onPreviewSession={sidebarActions.onPreviewSession}
+                  onOpenCrewSession={onOpenBackgroundSession}
                   recentSessions={recentSessions}
                   onSelectProject={sidebarActions.onSelectProject}
                   onOpenProject={sidebarActions.onOpenProject}
@@ -2914,8 +2915,6 @@ function Workspace({
                     dockGridRef={dockGridRef}
                     projectCwd={projectCwd}
                     projectTerminals={projectTerminals}
-                    conversationTools={conversationTools}
-                    onOpenFile={onOpenFile}
                     projectTerminalFocused={projectTerminalFocused}
                     focusProjectTerminal={focusProjectTerminal}
                     onHideProjectTerminal={onHideProjectTerminal}
@@ -3090,7 +3089,6 @@ function Workspace({
                   pullRequestsOnly={pullRequestsOnly}
                   setPullRequestsOnly={setPullRequestsOnly}
                   onOpenInbox={onOpenInbox}
-                  onOpenSettings={onOpenSettings}
                   openSettings={openSettings}
                   active={active}
                   projectCwd={projectCwd}

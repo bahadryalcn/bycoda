@@ -206,6 +206,8 @@ export function markPulled(
   page?: { rev: number; complete: boolean },
 ): boolean {
   const state = load(machineId);
+  const previousRev = state.rev;
+  const previouslyPulled = state.pulled;
   for (const record of records) {
     state.recordRevs[recordKey(record.table, record.id)] = record.rev;
     state.recordValues[recordKey(record.table, record.id)] = canonicalJson(record.value);
@@ -213,6 +215,8 @@ export function markPulled(
   }
   if (page) state.rev = Math.max(state.rev, page.rev);
   state.pulled ||= page?.complete !== false;
+  if (!records.length && state.rev === previousRev && state.pulled === previouslyPulled)
+    return true;
   return save(machineId, state);
 }
 
@@ -228,35 +232,38 @@ export function applyPushResult(
   sent: SyncOp[],
 ): SyncRecord[] {
   const state = load(machineId);
+  // Index once: scanning and rebuilding the entire outbox for each accepted
+  // record makes a large sync quadratic on the renderer thread.
+  const sentByKey = new Map(sent.map((op) => [recordKey(op.table, op.id), op]));
+  const pendingByKey = new Map(state.outbox.map((op) => [recordKey(op.table, op.id), op]));
   for (const entry of result.applied) {
     const key = recordKey(entry.table, entry.id);
-    const sentOp = sent.find((op) => op.table === entry.table && op.id === entry.id);
+    const sentOp = sentByKey.get(key);
     if (!sentOp) continue;
     const sentJson = canonicalJson(sentOp.value);
-    state.outbox = state.outbox.flatMap((item) => {
-      if (item.table !== entry.table || item.id !== entry.id) return [item];
-      if (canonicalJson(item.value) === sentJson) return [];
-      return [{ ...item, baseRev: entry.rev }];
-    });
+    const pending = pendingByKey.get(key);
+    if (pending) {
+      if (canonicalJson(pending.value) === sentJson) pendingByKey.delete(key);
+      else pendingByKey.set(key, { ...pending, baseRev: entry.rev });
+    }
     state.recordRevs[key] = entry.rev;
     state.recordValues[key] = sentJson;
   }
   const adopted: SyncRecord[] = [];
   for (const entry of result.rejected) {
     const key = recordKey(entry.table, entry.id);
-    const sentOp = sent.find((op) => op.table === entry.table && op.id === entry.id);
-    const pending = state.outbox.find((item) => item.table === entry.table && item.id === entry.id);
+    const sentOp = sentByKey.get(key);
+    const pending = pendingByKey.get(key);
     state.recordRevs[key] = entry.current.rev;
     state.recordValues[key] = canonicalJson(entry.current.value);
     if (pending && sentOp && canonicalJson(pending.value) !== canonicalJson(sentOp.value)) {
-      state.outbox = state.outbox.map((item) =>
-        item === pending ? { ...item, baseRev: entry.current.rev } : item,
-      );
+      pendingByKey.set(key, { ...pending, baseRev: entry.current.rev });
       continue;
     }
-    state.outbox = state.outbox.filter((item) => item !== pending);
+    pendingByKey.delete(key);
     adopted.push(entry.current);
   }
+  state.outbox = [...pendingByKey.values()];
   save(machineId, state);
   return adopted;
 }

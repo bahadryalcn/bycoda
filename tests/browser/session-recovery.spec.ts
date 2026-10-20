@@ -1,5 +1,65 @@
 import { expect, test } from "@playwright/test";
 
+for (const theme of ["dark", "light"]) {
+  test(`rail header keeps search and recovery readable in ${theme}`, async ({ page }) => {
+    await page.addInitScript(() => {
+      localStorage.clear();
+      localStorage.setItem("bycoda.language", "en");
+      Object.assign(window, {
+        __TAURI_EVENT_PLUGIN_INTERNALS__: { unregisterListener: () => {} },
+        __TAURI_INTERNALS__: {
+          metadata: { currentWebview: { label: "fixture" }, currentWindow: { label: "fixture" } },
+          transformCallback: () => 1,
+          unregisterCallback: () => {},
+          invoke: async (command: string) =>
+            command === "plugin:window|is_fullscreen" ? false : [],
+        },
+      });
+    });
+    await page.goto(`/tests/browser/session-recovery.html?rail&theme=${theme}`);
+    const rail = page.locator('[data-side-pane="rail"]');
+    const search = rail.getByRole("button", { name: "Search", exact: true });
+    const recovery = rail.getByRole("button", { name: "Recovered sessions (128)", exact: true });
+    const footer = page.getByRole("navigation", { name: "Workspace controls", exact: true });
+    await expect(footer).toBeVisible();
+    const footerBox = (await footer.boundingBox())!;
+    expect(footerBox.x + footerBox.width).toBe(page.viewportSize()!.width);
+    for (const width of [112, 140, 220, 300, 440]) {
+      await rail.evaluate((element, width) => {
+        (element as HTMLElement).style.width = `${width}px`;
+      }, width);
+      await expect(search).toBeVisible();
+      await expect(recovery.locator(".recovery-rail-count")).toBeVisible();
+      const bounds = await rail.boundingBox();
+      for (const control of [search, recovery]) {
+        const box = (await control.boundingBox())!;
+        expect(box.width).toBeGreaterThanOrEqual(24);
+        expect(box.x + box.width).toBeLessThanOrEqual(bounds!.x + bounds!.width);
+      }
+      const label = search.locator("[data-rail-search-label]");
+      if (await label.isVisible()) {
+        expect(await label.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(
+          true,
+        );
+      }
+      const settings = rail
+        .locator('nav[aria-label="Workspace tools"]:visible')
+        .getByRole("button", { name: "Settings", exact: true });
+      await expect(settings).toBeVisible();
+      await settings.focus();
+      await page.keyboard.press("Enter");
+      await expect(page.getByTestId("settings-destination")).toHaveText("general");
+      await page.screenshot({
+        path: `temp/verification/2026-10-20-rail-header/${theme}-${width}.png`,
+      });
+    }
+    await page.getByRole("button", { name: "Manage hidden groups", exact: true }).click();
+    await expect(page.getByTestId("settings-destination")).toHaveText("groupLock");
+    await recovery.click();
+    await expect(page.getByRole("dialog", { name: "Recovered sessions" })).toBeVisible();
+  });
+}
+
 test("all recovered projects remain searchable, selectable and reopenable", async ({ page }) => {
   await page.goto("/tests/browser/session-recovery.html");
   const dialog = page.getByRole("dialog", { name: "Recovered sessions" });

@@ -42,6 +42,7 @@ describe("Star Wars character motion", () => {
       headX: 0,
       headScaleX: 1,
       armAngle: 0,
+      forearmAngle: 0,
       armY: 0,
       weaponAngle: 0,
       forceAngle: 0,
@@ -178,6 +179,7 @@ describe("Star Wars character motion", () => {
             expect(pose.headScaleX).toBeGreaterThan(0.75);
             expect(pose.headScaleX).toBeLessThanOrEqual(1);
             expect(Math.abs(pose.armAngle)).toBeLessThan(100);
+            expect(Math.abs(pose.forearmAngle)).toBeLessThan(120);
             expect(Math.abs(pose.weaponAngle)).toBeLessThanOrEqual(180);
             expect(Math.abs(pose.forceAngle)).toBeLessThan(100);
             expect(Math.abs(pose.armY)).toBeLessThan(15);

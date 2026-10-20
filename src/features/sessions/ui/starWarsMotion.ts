@@ -10,6 +10,8 @@ export type StarWarsMotion = {
   headX: number;
   headScaleX: number;
   armAngle: number;
+  /** Elbow bend relative to the upper arm; only two-segment artwork uses it. */
+  forearmAngle: number;
   armY: number;
   weaponAngle: number;
   forceAngle: number;
@@ -29,6 +31,7 @@ const rest = (): StarWarsMotion => ({
   headX: 0,
   headScaleX: 1,
   armAngle: 0,
+  forearmAngle: 0,
   armY: 0,
   weaponAngle: 0,
   forceAngle: 0,
@@ -65,6 +68,107 @@ function track(seconds: number, keys: Track): number {
   return keys[keys.length - 1][1];
 }
 
+/** Smooth through every key: velocity carries across a pose and only settles at its extremes. */
+function spline(seconds: number, keys: Track): number {
+  const last = keys.length - 1;
+  if (seconds <= keys[0][0]) return keys[0][1];
+  if (seconds >= keys[last][0]) return keys[last][1];
+  let i = 1;
+  while (keys[i][0] < seconds) i++;
+  const slope = (k: number) => {
+    if (k <= 0 || k >= last) return 0;
+    const [before, value, after] = [keys[k - 1][1], keys[k][1], keys[k + 1][1]];
+    if ((value - before) * (after - value) <= 0) return 0;
+    return (after - before) / (keys[k + 1][0] - keys[k - 1][0]);
+  };
+  const [start, from] = keys[i - 1];
+  const [end, to] = keys[i];
+  const span = end - start;
+  const t = (seconds - start) / span;
+  const t2 = t * t,
+    t3 = t2 * t;
+  return (
+    (2 * t3 - 3 * t2 + 1) * from +
+    (t3 - 2 * t2 + t) * span * slope(i - 1) +
+    (-2 * t3 + 3 * t2) * to +
+    (t3 - t2) * span * slope(i)
+  );
+}
+
+/** Wrap a joint rotation into one turn; a full revolution leaves the joint where it started. */
+const turn180 = (degrees: number) => ((((degrees + 180) % 360) + 360) % 360) - 180 || 0;
+
+type JointPerformance = {
+  period: number;
+  shoulder: Track;
+  elbow: Track;
+  /** Blade direction in the stage, relative to its guard; the wrist makes up the difference. */
+  blade: Track;
+  lean: Track;
+  shift: Track;
+};
+
+/** Shoulder and elbow carry the swing; the blade follows through and climbs back to guard. */
+const lukeSwing: JointPerformance = {
+  period: 9200,
+  shoulder: [
+    [0, 0],
+    [1, 0],
+    [1.7, -74],
+    [2, -78],
+    [2.22, -30],
+    [2.42, 19],
+    [2.75, 15],
+    [3.3, 8],
+    [3.9, 2],
+    [4.3, 0],
+  ],
+  elbow: [
+    [0, 0],
+    [1, 0],
+    [1.7, -92],
+    [2, -96],
+    [2.22, -20],
+    [2.42, 66],
+    [2.75, 60],
+    [3.3, 30],
+    [3.9, 6],
+    [4.3, 0],
+  ],
+  // Recovery unwinds below the hand, so the blade never sweeps back across the face.
+  blade: [
+    [0, 0],
+    [1, 0],
+    [1.7, 34],
+    [2, 30],
+    [2.22, 97],
+    [2.42, 237],
+    [2.75, 228],
+    [3.3, 150],
+    [3.9, 30],
+    [4.3, 0],
+  ],
+  lean: [
+    [0, 0],
+    [1, 0],
+    [1.7, -3],
+    [2, -4],
+    [2.22, 3],
+    [2.42, 6],
+    [2.85, 4],
+    [4.3, 0],
+  ],
+  shift: [
+    [0, 0],
+    [1, 0],
+    [1.7, 2],
+    [2, 2.5],
+    [2.3, -3],
+    [2.85, -2.5],
+    [4.3, 0],
+  ],
+};
+
 const saberPerformances = {
   "obi-wan": {
     period: 11200,
@@ -97,41 +201,6 @@ const saberPerformances = {
       [3.48, 5],
       [4, 3],
       [5, 0],
-    ],
-  },
-  luke: {
-    period: 9200,
-    // Fast diagonal cut and a second return sweep.
-    weapon: [
-      [0, 0],
-      [1, 0],
-      [1.65, 30],
-      [1.96, -98],
-      [2.25, -85],
-      [2.65, 24],
-      [3.02, -78],
-      [3.5, -62],
-      [4.35, 0],
-    ],
-    arm: [
-      [0, 0],
-      [1, 0],
-      [1.65, -20],
-      [1.96, 13],
-      [2.25, 10],
-      [2.65, -16],
-      [3.02, 14],
-      [3.5, 7],
-      [4.35, 0],
-    ],
-    lean: [
-      [0, 0],
-      [1, 0],
-      [1.65, -4],
-      [1.96, 6],
-      [2.65, -3],
-      [3.02, 5],
-      [4.35, 0],
     ],
   },
   "darth-vader": {
@@ -267,8 +336,26 @@ export function starWarsMotionAt(
   motion.mouth = talk * 0.85;
 
   switch (character) {
+    case "luke": {
+      const performance = lukeSwing;
+      const seconds = (time % performance.period) / 1000;
+      const energy = 0.9 + strength * 0.1;
+      const shoulder = spline(seconds, performance.shoulder) * energy;
+      const elbow = spline(seconds, performance.elbow) * energy;
+      const lean = spline(seconds, performance.lean);
+      motion.action = cue(time % performance.period, 800, 4000);
+      motion.armAngle = shoulder - gesture * 3;
+      motion.forearmAngle = elbow;
+      motion.weaponAngle = turn180(spline(seconds, performance.blade) - shoulder - elbow);
+      motion.bodyAngle += lean - emphasis;
+      motion.bodyX = spline(seconds, performance.shift);
+      motion.armY = -motion.action * strength - emphasis;
+      // The head follows the torso lean and weight shift, so the whole figure commits to the cut.
+      motion.headAngle += thought * 3 + lean * 0.6;
+      motion.headX += spline(seconds, performance.shift) * 0.4;
+      break;
+    }
     case "obi-wan":
-    case "luke":
     case "darth-vader": {
       const performance = saberPerformances[character];
       const phase = time % performance.period;

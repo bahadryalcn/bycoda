@@ -277,7 +277,7 @@ it("invalidates confirmation when another project joins the group", async () => 
   expect(loadProjectGroups()).toHaveLength(1);
 });
 
-it("removes hidden group names and pinned projects, then restores from the privacy shortcut", async () => {
+it("removes hidden group names and pinned projects while retaining settings access and restoration", async () => {
   saveProjectGroups([{ id: "private-hidden", name: "Secret group", collapsed: false }]);
   saveProjectGroupAssignments({ [pathKey("/work/personal")]: "private-hidden" });
   savePinnedProjects(["/work/personal"]);
@@ -304,9 +304,8 @@ it("removes hidden group names and pinned projects, then restores from the priva
   expect(container.textContent).not.toContain("Secret group");
   expect(container.querySelector('button[aria-label="personal"]')).toBeNull();
   expect(loadProjectGroupAssignments()[pathKey("/work/personal")]).toBe("private-hidden");
-  act(() => button("Manage hidden groups").click());
+  act(() => button("Settings").click());
   expect(openSettings).toHaveBeenCalledOnce();
-  expect(selectSection).toHaveBeenCalledWith("groupLock");
   act(() => restoreHiddenGroup("private-hidden"));
   expect(container.textContent).toContain("Secret group");
   expect(button("personal")).toBeDefined();

@@ -595,8 +595,16 @@ function PaneTreeComponent({
             data-pane-id={hidden ? undefined : leaf.id}
             data-pane-active={focusedId === leaf.id ? "true" : undefined}
             // User interaction keeps a browsing tab; automatic composer focus does not.
-            onPointerDownCapture={() => session && onSessionInteraction?.(session.id)}
-            onKeyDownCapture={() => session && onSessionInteraction?.(session.id)}
+            onPointerDownCapture={() => {
+              if (!session) return;
+              if (focusedId !== session.id) onFocus(session.id);
+              onSessionInteraction?.(session.id);
+            }}
+            onKeyDownCapture={() => {
+              if (!session) return;
+              if (focusedId !== session.id) onFocus(session.id);
+              onSessionInteraction?.(session.id);
+            }}
             onKeyUpCapture={(event) => {
               if (event.key === "Tab" && session) onSessionInteraction?.(session.id);
             }}

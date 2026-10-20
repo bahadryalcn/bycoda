@@ -17,7 +17,7 @@ import { PhoneConnectionPanel } from "./PhoneConnectionPanel";
 import { ExternalTunnelsPanel } from "./ExternalTunnelsPanel";
 import { RemoteDataStatus } from "./RemoteDataStatus";
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
-import { Internet, Loader, Pencil, Plus, Trash2 } from "../../../shared/ui/icons";
+import { Internet, Loader, Pencil, Plus, RefreshCw, Trash2 } from "../../../shared/ui/icons";
 import {
   connectMachine,
   disconnectMachine,
@@ -94,20 +94,29 @@ function SyncLine({ machineId }: { machineId: string }) {
   const sync = useSyncStatus(machineId);
   const failed = sync.state === "error";
   return (
-    <div className="mt-1 flex items-center gap-2 text-[12px]">
-      <span
-        className={`min-w-0 truncate ${failed ? "text-danger" : "text-(--ui-text-muted)"}`}
-        title={sync.lastError}
-      >
-        {describeSyncStatus(sync, Date.now())}
-      </span>
+    <div className="connection-sync">
+      {failed ? (
+        <details className="connection-sync-error">
+          <summary>
+            {t("Sync needs attention")}
+            {sync.pendingOps > 0 ? ` · ${t("{p0} pending changes", { p0: sync.pendingOps })}` : ""}
+          </summary>
+          <p>{describeSyncStatus(sync, Date.now())}</p>
+        </details>
+      ) : (
+        <span className="min-w-0 text-(--ui-text-muted)">
+          {describeSyncStatus(sync, Date.now())}
+        </span>
+      )}
       <Button
-        disabled={sync.state === "syncing"}
+        loading={sync.state === "syncing"}
         onClick={() => void syncNow(machineId)}
-        variant="secondary"
+        variant="ghost"
+        iconOnly
+        label={t("Sync now")}
         type="button"
       >
-        {t("Sync now")}
+        <RefreshCw className="size-3.5" />
       </Button>
     </div>
   );
@@ -514,30 +523,44 @@ ${t("The new address is saved. Edit it again, or choose Reconnect to retry.")}`
         </p>
       ) : null}
       <div className="connections-view" hidden={view !== "machines"}>
-        <RemoteDataStatus
-          label={t("machines")}
-          state={{
-            phase: loading
-              ? machines.length
-                ? "refreshing"
-                : "loading"
-              : loadError
-                ? "error"
-                : machines.length
-                  ? "ready"
-                  : "empty",
-            error: loadError,
-          }}
-          onRefresh={refresh}
-        />
+        {loading || loadError ? (
+          <RemoteDataStatus
+            label={t("machines")}
+            state={{
+              phase: loading
+                ? machines.length
+                  ? "refreshing"
+                  : "loading"
+                : loadError
+                  ? "error"
+                  : machines.length
+                    ? "ready"
+                    : "empty",
+              error: loadError,
+            }}
+            onRefresh={refresh}
+          />
+        ) : null}
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div className="min-w-0">
-            <h2 className="text-[13px] font-semibold text-content">{t("Your machines")}</h2>
+            <h2 className="text-[14px] font-medium text-content">
+              {t("Your machines")}{" "}
+              <span className="text-(--ui-text-muted)">· {machines.length}</span>
+            </h2>
             <p className="mt-1 text-[12px] leading-relaxed text-(--ui-text-muted)">
               {t("Manage the computers where your agents run.")}
             </p>
           </div>
-          <div className="flex flex-col items-end gap-1.5">
+          <div className="flex items-center gap-2">
+            <Button
+              iconOnly
+              label={t("Refresh machines")}
+              variant="ghost"
+              disabled={busy || loading}
+              onClick={() => void refresh()}
+            >
+              <RefreshCw className="size-4" />
+            </Button>
             <Button disabled={busy} onClick={startAdd} variant="primary" type="button">
               <Plus className="size-4" />
               {t(" Add machine")}
@@ -866,22 +889,22 @@ ${t("The new address is saved. Edit it again, or choose Reconnect to retry.")}`
                 >
                   <Internet className="size-5 shrink-0 text-(--ui-text-muted)" />
                   <div className="min-w-0 flex-1 basis-48">
-                    <div className="flex min-w-0 items-center gap-2">
+                    <div className="flex min-w-0 flex-wrap items-center gap-2">
                       <span className="truncate text-[13px] font-medium">{machine.name}</span>
                       {isLocalSyncMachine(machine) ? (
                         <span className="shrink-0 rounded bg-(--ui-surface-raised) px-1.5 py-0.5 text-[10px] text-(--ui-text-muted)">
-                          {t("This computer")}
+                          {t("Local")}
                         </span>
                       ) : (
                         <span className="shrink-0 text-[11px] text-(--ui-text-muted)">
                           {t("Remote computer")}
                         </span>
                       )}
+                      <MachineConnectionLine
+                        environmentId={machine.environmentId}
+                        probed={status[machine.id]}
+                      />
                     </div>
-                    <MachineConnectionLine
-                      environmentId={machine.environmentId}
-                      probed={status[machine.id]}
-                    />
                     <SyncLine machineId={machine.id} />
                     <details className="connection-details">
                       <summary>{t("Connection details")}</summary>
@@ -1055,10 +1078,10 @@ ${t("The new address is saved. Edit it again, or choose Reconnect to retry.")}`
           </div>
         ) : null}
         {!adding && !removing ? (
-          <section className="text-[12px] text-(--ui-text-muted)">
-            <h3 className="">{t("Connect to an existing host by URL")}</h3>
+          <details className="connection-disclosure">
+            <summary>{t("Connect to an existing host by URL")}</summary>
             <form
-              className="mt-4 flex flex-col gap-3"
+              className="connection-url-form"
               onSubmit={(event) => {
                 event.preventDefault();
                 if (busy) return;
@@ -1108,7 +1131,7 @@ ${t("The new address is saved. Edit it again, or choose Reconnect to retry.")}`
                 {busy ? t("Connecting…") : error ? t("Retry connection") : t("Connect by URL")}
               </Button>
             </form>
-          </section>
+          </details>
         ) : null}
         <RemoteReconnectGroup />
       </div>

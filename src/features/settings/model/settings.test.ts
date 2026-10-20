@@ -650,8 +650,8 @@ describe("settings navigation", () => {
     expect(groups.map((group) => group.label)).toEqual(["App", "Workspace", "Agents", "About"]);
     expect(groups.at(-1)?.sections.map((section) => section.id)).toEqual(["policies"]);
     const ids = groups.flatMap((group) => group.sections.map((section) => section.id));
-    expect(ids).toHaveLength(18);
-    expect(new Set(ids).size).toBe(18);
+    expect(ids).toHaveLength(19);
+    expect(new Set(ids).size).toBe(19);
     expect([...ids].sort()).toEqual(SETTINGS_SECTIONS.map((section) => section.id).sort());
     for (const group of groups) {
       expect(group.sections.every((section) => section.group === group.id)).toBe(true);

@@ -1,4 +1,6 @@
 import { inlineSessionSync } from "./inlineSessionSync";
+import { HostCrews } from "./crews";
+import { probeNativeCodexImageCapability } from "./social-images";
 import { execFileAsync as exec } from "../src/shared/lib/processExecution.node";
 import { sessionConversationPage } from "../src/features/agent-app/model/sessionConversation";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
@@ -564,6 +566,16 @@ export function createHostServer(
     const result = await catalog;
     return { ...result, models: { ...result.models, acp: acpModels } };
   };
+  let imageCapability: { at: number; value: Promise<boolean> } | undefined;
+  const crews = new HostCrews(engine.store, engine, tasks, (projectId) => models(projectId), Date.now,
+    async (candidate, capability) => {
+      if (candidate.harness === "codex" && capability === "image-generation") {
+        if (!imageCapability || Date.now() - imageCapability.at > 60_000)
+          imageCapability = { at: Date.now(), value: probeNativeCodexImageCapability(join(featureDirectory, "crews")).then((result) => result.available) };
+        return imageCapability.value;
+      }
+      return undefined;
+    });
   const projectSessionList = async (projectId: string) => {
     const project = engine.store.project(projectId);
     const local = desktop.list(project.cwd, projectId, providers);
@@ -873,6 +885,8 @@ export function createHostServer(
                 maxChars: args.maxChars as number | undefined,
               },
             );
+          else if (action.startsWith("crews."))
+            result = await crews.call(action, args, projectId, conversationPrincipal);
           else if (isWorkspaceConversationTool(action))
             result = await conversationWorkspace.call(
               action,
@@ -953,7 +967,32 @@ export function createHostServer(
             );
           else if (action.startsWith("tasks.")) {
             const list = tasks.list().filter((task) => task.projectId === projectId);
-            if (action === "tasks.list") result = list;
+            if (action === "tasks.create") {
+              const own = featureSession(conversationPrincipal.sessionId).session;
+              const input = {
+                id: String(args.taskId), projectId, title: String(args.title), prompt: String(args.prompt),
+                harness: own.harness, model: own.model, modelSettings: own.modelSettings,
+                runtimeMode: own.runtimeMode, maxRunMinutes: 0, isolate: false,
+                review: !args.crewDefinitionId, autoMerge: false, continueUntilDone: false,
+                ...(args.crewDefinitionId ? { crewDefinitionId: String(args.crewDefinitionId) } : {}),
+                status: args.status === "queued" ? "queued" : "todo",
+              };
+              const key = `task-create:${projectId}:${input.id}`;
+              const fingerprint = createHash("sha256")
+                .update(JSON.stringify([conversationPrincipal.sessionId, input])).digest("hex");
+              result = engine.store.transaction(() => {
+                const receipt = engine.store.db.prepare("SELECT value FROM metadata WHERE key=?").get(key) as { value: string } | undefined;
+                const existing = tasks.get(input.id);
+                if (receipt || existing) {
+                  if (receipt?.value !== fingerprint || !existing || existing.projectId !== projectId)
+                    throw new Error("Task ID was reused or its task no longer exists.");
+                  return existing;
+                }
+                const created = tasks.save(input);
+                engine.store.db.prepare("INSERT INTO metadata(key,value) VALUES(?,?)").run(key, fingerprint);
+                return created;
+              });
+            } else if (action === "tasks.list") result = list;
             else {
               const task = list.find((task) => task.id === args.taskId);
               if (!task) throw new Error("Task is not in this project.");
@@ -1352,6 +1391,8 @@ export function createHostServer(
                 "projects.directory.v1",
                 "projects.createDirectory",
                 "models.list",
+                "crews.v1",
+                "crews.tasks.v1",
                 "approvals",
                 "questions",
                 "diff",
@@ -2120,6 +2161,7 @@ export function createHostServer(
                 sessionQueues.get(sessionId).messages.some((row) => row.id === queued.id)
               )
                 sessionQueues.consumed(sessionId, String(queued.id));
+              crews.ownerDirective(params);
               return receipt;
             });
             break;
@@ -2226,6 +2268,25 @@ export function createHostServer(
             break;
           case "automations.runNow":
             result = automations.runNow(String(params.automationId ?? ""));
+            break;
+          case "crews.list":
+          case "crews.schema":
+          case "crews.inspect":
+          case "crews.save":
+          case "crews.agent.save":
+          case "crews.start":
+          case "crews.get":
+          case "crews.assign":
+          case "crews.request":
+          case "crews.resolve":
+          case "crews.respond":
+          case "crews.answer":
+          case "crews.pause":
+          case "crews.stop":
+          case "crews.resume":
+          case "crews.accept":
+          case "crews.finish":
+            result = await crews.call(input.method, params, String(params.projectId ?? ""));
             break;
           case "tasks.list":
             if (params.projectId !== undefined) engine.store.project(String(params.projectId));
@@ -2550,12 +2611,14 @@ export function createHostServer(
   );
   // Cached read-only desktop connections would keep the files locked.
   server.on("listening", () => {
+    crews.start();
     perfMetrics.start();
     attachmentOwnership.start();
     void mobileLan.start().catch(() => {});
     social.start();
   });
   server.on("close", () => {
+    crews.stop();
     attachmentOwnership.close();
     void terminals.close();
     devServerAccess.close();

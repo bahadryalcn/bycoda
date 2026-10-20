@@ -1,5 +1,6 @@
 import { NO_VERDICT } from "./taskRules";
 import { parseTaskWorkspace, type TaskWorkspace } from "./taskWorkspace";
+import { parseCrewScopes } from "../../crews/model/crew";
 export {
   TASK_MOVES,
   canMoveTask,
@@ -81,6 +82,19 @@ export const TASK_SOURCES = ["manual", "goal", "steward"] as const;
 export type TaskSource = (typeof TASK_SOURCES)[number];
 
 export type HostTaskInput = {
+  /** Reusable team selected to execute this task. Its workers are separate tasks. */
+  crewDefinitionId?: string;
+  /** Host-owned Crew assignment and its independently selected reviewer. */
+  crewRunId?: string;
+  crewScopes?: string[];
+  /** Working-copy snapshot the independent crew reviewer inspected. */
+  crewReviewFingerprint?: string;
+  reviewerConfig?: {
+    harness: RemoteProvider;
+    model: string;
+    modelSettings: Record<string, string>;
+    instructions: string;
+  };
   id: string;
   title: string;
   prompt: string;
@@ -120,6 +134,8 @@ export type HostTaskInput = {
 };
 
 export type HostTask = HostTaskInput & {
+  /** Durable, host-owned identity of this task's current crew execution. */
+  crewExecutionId?: string;
   status: TaskStatus;
   sessionId?: string;
   /** The session turn this task started. */
@@ -284,6 +300,44 @@ const ID = /^[A-Za-z0-9_-]{1,64}$/;
 export function parseHostTask(input: unknown): HostTaskInput {
   if (!input || typeof input !== "object" || Array.isArray(input)) throw new Error("Invalid task");
   const v = input as Record<string, unknown>;
+  if (
+    v.crewDefinitionId !== undefined &&
+    (typeof v.crewDefinitionId !== "string" || !ID.test(v.crewDefinitionId))
+  )
+    throw new Error("Invalid task crew");
+  if (v.crewDefinitionId && v.crewRunId)
+    throw new Error("A crew assignment cannot start another team task.");
+  if (
+    v.crewDefinitionId &&
+    (v.isolate === true || v.workspace || v.autoMerge === true || v.continueUntilDone === true)
+  )
+    throw new Error("Crew tasks use the selected shared project and crew-managed review.");
+  if (v.crewRunId !== undefined && (typeof v.crewRunId !== "string" || !ID.test(v.crewRunId)))
+    throw new Error("Invalid crew run");
+  let reviewerConfig: HostTaskInput["reviewerConfig"];
+  if (v.reviewerConfig !== undefined) {
+    const r = v.reviewerConfig as Record<string, unknown>;
+    if (
+      !r ||
+      !isRemoteProvider(r.harness) ||
+      typeof r.model !== "string" ||
+      !r.model.trim() ||
+      r.model.length > 200 ||
+      typeof r.instructions !== "string" ||
+      r.instructions.length > 12000 ||
+      !r.modelSettings ||
+      typeof r.modelSettings !== "object" ||
+      Array.isArray(r.modelSettings) ||
+      Object.values(r.modelSettings).some((x) => typeof x !== "string")
+    )
+      throw new Error("Invalid crew reviewer");
+    reviewerConfig = {
+      harness: r.harness,
+      model: r.model,
+      modelSettings: r.modelSettings as Record<string, string>,
+      instructions: r.instructions,
+    };
+  }
   if (typeof v.id !== "string" || !ID.test(v.id)) throw new Error("Invalid task ID");
   if (typeof v.title !== "string" || !v.title.trim() || v.title.length > 200)
     throw new Error("Task title is required and must be under 200 characters.");
@@ -335,6 +389,10 @@ export function parseHostTask(input: unknown): HostTaskInput {
     throw new Error("Invalid task dependencies");
   return {
     id: v.id,
+    ...(typeof v.crewDefinitionId === "string" ? { crewDefinitionId: v.crewDefinitionId } : {}),
+    ...(typeof v.crewRunId === "string" ? { crewRunId: v.crewRunId } : {}),
+    ...(v.crewScopes === undefined ? {} : { crewScopes: parseCrewScopes(v.crewScopes) }),
+    ...(reviewerConfig ? { reviewerConfig } : {}),
     title: v.title.trim(),
     prompt: v.prompt,
     projectId: v.projectId,
@@ -343,11 +401,11 @@ export function parseHostTask(input: unknown): HostTaskInput {
     modelSettings: settings as Record<string, string>,
     runtimeMode: v.runtimeMode as RuntimeMode,
     maxRunMinutes: Number(limit),
-    isolate: v.isolate !== false,
+    isolate: v.crewDefinitionId ? false : v.isolate !== false,
     ...(workspace ? { workspace } : {}),
     ...(v.position !== undefined ? { position: Number(v.position) } : {}),
     ...(check.trim() ? { verifyCommand: check.trim() } : {}),
-    review: v.review !== false,
+    review: v.crewDefinitionId ? false : v.review !== false,
     ...(v.autoMerge === true ? { autoMerge: true } : {}),
     ...(v.continueUntilDone === true ? { continueUntilDone: true } : {}),
     ...(typeof v.goalId === "string" ? { goalId: v.goalId } : {}),

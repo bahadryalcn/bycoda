@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { parseSessionLayout } from "./session-layout";
 import type { Block, Session } from "../src/features/sessions/model/session";
 import type {
   DesktopProjectDirectory,
@@ -28,7 +29,7 @@ type LiveSession = {
   busy: boolean;
   pending: Block[];
   patch: Partial<Session>;
-  /** When `pending`/`patch` last changed: part of the watchers' revision. */
+  /** When running state or prompts last changed: part of the watchers' revision. */
   changedAt: number;
   fingerprint: string;
 };
@@ -92,10 +93,12 @@ export function parseDesktopProjectDirectory(input: unknown): DesktopProjectDire
       return;
     if (project.groupId !== undefined && (!text(project.groupId, 200) || !ids.has(project.groupId)))
       return;
+    const sessionLayout = parseSessionLayout(project.sessionLayout);
     projects.push({
       cwd: project.cwd,
       name: project.name,
       ...(typeof project.groupId === "string" ? { groupId: project.groupId } : {}),
+      ...(sessionLayout ? { sessionLayout } : {}),
     });
   }
   return {
@@ -177,7 +180,9 @@ export class DesktopLive {
         patch,
         fingerprint,
         changedAt:
-          previous && previous.fingerprint === fingerprint
+          previous &&
+          previous.fingerprint === fingerprint &&
+          previous.busy === (entry.busy === true)
             ? previous.changedAt
             : this.changeStamp(),
       });
@@ -197,11 +202,9 @@ export class DesktopLive {
           fingerprint: "[[],{}]",
           changedAt: this.changeStamp(),
         });
-    if (
+    let changed =
       [...next].some(([id, value]) => this.sessions.get(id)?.changedAt !== value.changedAt) ||
-      next.size !== this.sessions.size
-    )
-      this.onChange?.();
+      next.size !== this.sessions.size;
     this.sessions = next;
     // ACKs are scoped to the owner too, including retries sent by old clients.
     this.commands = this.commands.filter(
@@ -214,8 +217,14 @@ export class DesktopLive {
       this.clients.delete(id);
       this.directories.delete(id);
       for (const [sessionId, session] of this.sessions)
-        if (session.clientId === id) this.sessions.delete(sessionId);
+        if (session.clientId === id) {
+          this.sessions.delete(sessionId);
+          changed = true;
+        }
     }
+    // Watchers must read the committed sessions and heartbeat, including on the
+    // first beat. Signalling earlier can expose the previous running state.
+    if (changed) this.onChange?.();
     return {
       commands: this.commands.filter(
         (command) => this.sessions.get(command.sessionId)?.clientId === clientId,
@@ -255,29 +264,19 @@ export class DesktopLive {
       }
     }
     const projects: HostProjectDirectory["projects"] = [];
-    const registeredPaths = new Set<string>();
+    const registeredByPath = new Map<string, HostProject[]>();
     for (const project of registered) {
       const key = directoryPathKey(project.cwd);
-      if (excludedPaths.has(key)) continue;
-      const projection = paths.get(key);
-      if (projection?.groupId && excludedGroups.has(projection.groupId)) continue;
-      registeredPaths.add(key);
-      projects.push({
-        ...project,
-        name: projection?.name || project.name,
-        registered: true,
-        ...(projection?.groupId && groups.has(projection.groupId)
-          ? { groupId: projection.groupId }
-          : {}),
-      });
+      registeredByPath.set(key, [...(registeredByPath.get(key) ?? []), project]);
     }
-    for (const [key, project] of paths)
-      if (!registeredPaths.has(key))
-        projects.push({
-          ...project,
-          id: hostProjectId(environmentId, project.cwd),
-          registered: false,
-        });
+    // The desktop projection owns visibility and order; historical host records
+    // must not resurrect projects removed or archived from the desktop rail.
+    for (const [key, projection] of paths) {
+      const matches = registeredByPath.get(key) ?? [];
+      if (matches.length) {
+        for (const project of matches) projects.push({ ...project, ...projection, cwd: project.cwd, registered: true });
+      } else projects.push({ ...projection, id: hostProjectId(environmentId, projection.cwd), registered: false });
+    }
     return { version: 1, privacyReady: true, groups: [...groups.values()], projects };
   }
 

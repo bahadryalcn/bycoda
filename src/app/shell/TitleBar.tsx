@@ -603,10 +603,10 @@ export function DevModeLabel() {
 }
 
 /** Flex spacer that keeps the Development badge next to the visit arrows. */
-export function DevModeSlot() {
+export function DevModeSlot({ fill = true }: { fill?: boolean }) {
   useLocale();
   return (
-    <div className="flex min-w-0 flex-1 items-center justify-end">
+    <div className={`flex min-w-0 items-center justify-end ${fill ? "flex-1" : "shrink-0"}`}>
       <DevModeLabel />
     </div>
   );

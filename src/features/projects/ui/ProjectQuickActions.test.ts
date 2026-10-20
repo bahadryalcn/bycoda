@@ -3,6 +3,7 @@ import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { beforeEach, expect, it, vi } from "vitest";
 import { ProjectQuickActions } from "./ProjectQuickActions";
+import { NativePopupHost } from "../../../shared/ui/NativePopupHost";
 import { listExternalEditors, openInExternalEditor } from "../../../platform/tauri/fs";
 import { saveProjectActions } from "../model/projectActions";
 import { openUrl } from "@tauri-apps/plugin-opener";
@@ -25,6 +26,49 @@ beforeEach(() => {
       method === "devServers.list" ? { status: "ok", servers: [], scannedAt: 1 } : {},
     );
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+});
+
+it.each(["web", "native"])("opens the add-action dialog from the %s project menu without dragging the pane", async (surface) => {
+  const host = document.createElement("div");
+  const popupHost = document.createElement("div");
+  document.body.append(host);
+  document.body.append(popupHost);
+  const root = createRoot(host);
+  const drag = vi.fn();
+  try {
+    await act(async () =>
+      root.render(
+        createElement(
+          "div",
+          {
+            onPointerDown: (event: { target: EventTarget }) => {
+              if (!(event.target as HTMLElement).closest("[data-no-drag]")) drag();
+            },
+          },
+          createElement(
+            NativePopupHost.Provider,
+            { value: surface === "native" ? popupHost : null },
+            createElement(ProjectQuickActions, { cwd: "C:/project" }),
+          ),
+        ),
+      ),
+    );
+    await act(async () =>
+      host.querySelector<HTMLButtonElement>('[aria-label="Project actions"]')!.click(),
+    );
+    const add = document.querySelector<HTMLButtonElement>('[role="menuitem"]')!;
+    expect(add.textContent).toContain("Add action");
+    expect(host.contains(add)).toBe(false);
+    const icon = add.querySelector("svg")!;
+    await act(async () => icon.dispatchEvent(new MouseEvent("pointerdown", { bubbles: true, button: 0 })));
+    expect(drag).not.toHaveBeenCalled();
+    await act(async () => icon.dispatchEvent(new MouseEvent("click", { bubbles: true, button: 0 })));
+    expect(document.querySelector('[role="dialog"]')?.textContent).toContain("Add action");
+  } finally {
+    await act(async () => root.unmount());
+    host.remove();
+    popupHost.remove();
+  }
 });
 
 it("starts managed actions on the selected remote host without using a local terminal or browser", async () => {

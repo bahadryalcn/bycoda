@@ -1,11 +1,66 @@
 import { describe, expect, it } from "vitest";
 import { DesktopLive, DESKTOP_BEAT_STALE_MS } from "./desktopLive";
+import { ChangeSignal } from "./changeSignal";
+import { RemoteChanges } from "./remoteChanges";
 import type {
   DesktopProjectDirectory,
   HostProject,
 } from "../src/features/connections/model/protocol";
 
 describe("desktop window ownership", () => {
+  it("delivers a new machine cursor when an idle desktop session starts again", async () => {
+    const signal = new ChangeSignal();
+    const changes = new RemoteChanges(signal);
+    const live = new DesktopLive();
+    live.onChange = () => signal.notify();
+    live.beat({ clientId: "A", sessions: [{ id: "a", busy: true }] });
+    live.beat({ clientId: "A", sessions: [] });
+    const revision = live.overlay("a")!.changedAt;
+    const waiting = changes.read(
+      {
+        instanceId: changes.instanceId,
+        sessions: [{ sessionId: "a", revision }],
+        projects: [],
+        waitMs: 1000,
+      },
+      () => live.overlay("a")?.changedAt,
+      async () => ({ etag: "", sessions: [] }),
+    );
+    live.beat({ clientId: "A", sessions: [{ id: "a", busy: true }] });
+    const result = await waiting;
+    expect(result.sessions).toEqual([{ sessionId: "a", revision: live.overlay("a")!.changedAt }]);
+    expect(result.sessions[0]!.revision).toBeGreaterThan(revision);
+  });
+
+  it("publishes running transitions before notifying watchers, even without prompt changes", () => {
+    const live = new DesktopLive(() => 100);
+    const observed: { running: boolean; revision: number | undefined }[] = [];
+    live.onChange = () =>
+      observed.push({
+        running: live.running("a", false),
+        revision: live.overlay("a")?.changedAt,
+      });
+    live.beat({ clientId: "A", sessions: [{ id: "a", busy: false }] });
+    const idleRevision = live.overlay("a")!.changedAt;
+    live.beat({ clientId: "A", sessions: [{ id: "a", busy: true }] });
+    const runningRevision = live.overlay("a")!.changedAt;
+    expect(runningRevision).toBeGreaterThan(idleRevision);
+    expect(observed.at(-1)).toEqual({ running: true, revision: runningRevision });
+    live.beat({ clientId: "A", sessions: [{ id: "a", busy: true }] });
+    expect(observed).toHaveLength(2);
+    live.beat({ clientId: "A", sessions: [{ id: "a", busy: false }] });
+    const stoppedRevision = live.overlay("a")!.changedAt;
+    expect(stoppedRevision).toBeGreaterThan(runningRevision);
+    expect(observed.at(-1)).toEqual({ running: false, revision: stoppedRevision });
+    live.beat({ clientId: "A", sessions: [{ id: "a", busy: true }] });
+    expect(live.overlay("a")!.changedAt).toBeGreaterThan(stoppedRevision);
+    live.beat({ clientId: "A", sessions: [] });
+    expect(observed.at(-1)?.running).toBe(false);
+    const notifications = observed.length;
+    live.beat({ clientId: "A", sessions: [] });
+    expect(observed).toHaveLength(notifications);
+  });
+
   it("keeps other windows alive and routes cancel, approve and answer to their owner", () => {
     const live = new DesktopLive();
     live.beat({ clientId: "A", sessions: [{ id: "a", busy: true }] });
@@ -68,6 +123,21 @@ describe("desktop window ownership", () => {
 });
 
 describe("privacy-filtered project directory", () => {
+  it("uses desktop visibility and order while carrying read-only session organization", () => {
+    const live = new DesktopLive(() => 0);
+    const sessionLayout = { folders: [{ id: "f", name: "Work", sessionIds: ["s"], collapsed: false }], order: { loose: ["s"] } };
+    live.beat({ clientId: "desktop", sessions: [], projectDirectory: {
+      version: 1, groups: [], excludedPaths: [], excludedGroupIds: [],
+      projects: [{ cwd: "/second", name: "Second", sessionLayout }, { cwd: "/first", name: "First" }],
+    } });
+    const result = live.projectDirectory([
+      { id: "a", cwd: "/first", name: "First" }, { id: "ghost", cwd: "/removed", name: "Removed" },
+      { id: "b", cwd: "/second", name: "Second" },
+    ], "host");
+    expect(result.projects.map((project) => project.id)).toEqual(["b", "a"]);
+    expect(result.projects[0]?.sessionLayout).toEqual(sessionLayout);
+    expect(JSON.stringify(result)).not.toContain("Removed");
+  });
   const projection = (): DesktopProjectDirectory => ({
     version: 1,
     groups: [{ id: "work", name: "Work" }],
@@ -85,7 +155,9 @@ describe("privacy-filtered project directory", () => {
       cwd: index < 2 ? "g:/projects/shared" : `G:/Projects/${index}`,
       name: `P${index}`,
     }));
-    live.beat({ clientId: "desktop", sessions: [], projectDirectory: projection() });
+    live.beat({ clientId: "desktop", sessions: [], projectDirectory: {
+      ...projection(), projects: [...projection().projects, ...registered.slice(2).map(({ cwd, name }) => ({ cwd, name }))],
+    } });
     const result = live.projectDirectory(
       [...registered, { id: "private", cwd: "g:\\private", name: "Secret" }],
       "host",

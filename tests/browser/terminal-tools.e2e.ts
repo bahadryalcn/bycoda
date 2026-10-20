@@ -38,11 +38,10 @@ for (const theme of ["light", "dark"]) {
       await page.goto(`/tests/browser/terminal-tools.html?theme=${theme}`);
       const terminal = page.locator(".xterm-helper-textarea");
       await expect(page.locator("html")).toHaveAttribute("data-terminal-prompt", /^ready>\s*$/);
-      await expect(page.getByRole("button", { name: "Terminal · More actions" })).toBeVisible();
+      await expect(page.getByRole("button", { name: "Find in terminal" })).toBeVisible();
       await expect(page.getByRole("textbox", { name: "Find in terminal" })).toHaveCount(0);
       await expect(page.locator("[data-terminal-tools]")).toHaveCount(0);
-      await terminal.focus();
-      await terminal.press("Control+f");
+      await page.getByRole("button", { name: "Find in terminal" }).click();
       const search = page.getByRole("textbox", { name: "Find in terminal" });
       await expect(search).toBeFocused();
       await search.fill("target");

@@ -613,6 +613,12 @@ test("welcome and working labels stay readable in narrow panels and both themes"
   const footer = page.locator('footer[aria-label="Provider usage"]');
   const terminal = footer.getByRole("button", { name: /New Terminal/ });
   await expect(terminal).toBeInViewport();
+  for (const button of [terminal, footer.getByRole("button", { name: "Conversation tools", exact: true })]) {
+    const box = await button.boundingBox();
+    expect(box?.width).toBe(28);
+    expect(box?.height).toBe(28);
+    await expect(button.locator("svg")).toBeVisible();
+  }
   await expect(
     footer.getByRole("button", { name: "Conversation tools", exact: true }),
   ).toBeInViewport();

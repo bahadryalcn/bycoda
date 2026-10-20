@@ -16,6 +16,7 @@ import { Button } from "../../../shared/ui/Button";
 import { TextField } from "../../../shared/ui/TextField";
 import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
 import { TaskWorkspacePicker } from "./TaskWorkspacePicker";
+import { CrewTaskPicker } from "../../crews/ui/CrewTaskPicker";
 import { startTask, retargetTask, reorderTasks } from "../model/taskClient";
 import type { TaskWorkspace } from "../model/taskWorkspace";
 import { taskColumn } from "../model/hostTasks";
@@ -715,7 +716,7 @@ function TasksContent({
     setDraggedKey(null);
     setDropColumn(null);
     if (taskColumn(task.status) !== column) {
-      if (!canMoveTask(task.status, column)) return;
+      if (!canMoveTask(task.status, column, task.crewRunId ?? task.crewDefinitionId)) return;
       if (
         (column === "blocked" ||
           (column === "done" && hasUnmergedBranch(task)) ||
@@ -1453,7 +1454,11 @@ function TasksContent({
                         ((taskColumn(dragged.status) === status &&
                           dragged.workspaceControlsSupported &&
                           (status === "todo" || status === "queued")) ||
-                          canMoveTask(dragged.status, status))
+                          canMoveTask(
+                            dragged.status,
+                            status,
+                            dragged.crewRunId ?? dragged.crewDefinitionId,
+                          ))
                       ) {
                         event.preventDefault();
                         setDropColumn(status);
@@ -1486,7 +1491,13 @@ function TasksContent({
                             !task.stale &&
                             (task.status === "todo" ||
                               task.status === "queued" ||
-                              TASK_COLUMNS.some((column) => canMoveTask(task.status, column)))
+                              TASK_COLUMNS.some((column) =>
+                                canMoveTask(
+                                  task.status,
+                                  column,
+                                  task.crewRunId ?? task.crewDefinitionId,
+                                ),
+                              ))
                           }
                           onDragStart={(event) => {
                             if ((event.target as Element).closest("button,input,textarea,select")) {
@@ -1698,6 +1709,7 @@ function TaskCardBody({
         {task.stale ? t(" (offline, last known)") : ""}
       </p>
       <p className="mt-1 flex min-w-0 items-center gap-1 text-[11px] text-(--ui-text-secondary)">
+        {task.crewDefinitionId && <span>{t("Crew")} · </span>}
         <HarnessIcon harness={task.harness} className="size-3.5 shrink-0" />
         <span title={model.name} className="min-w-0 truncate">
           {model.name}
@@ -1844,7 +1856,8 @@ function TaskActions({
   onRecheckReview,
 }: { task: BoardTask } & TaskActionHandlers) {
   useLocale();
-  const can = (to: TaskStatus) => canMoveTask(task.status, to);
+  const can = (to: TaskStatus) =>
+    canMoveTask(task.status, to, task.crewRunId ?? task.crewDefinitionId);
   type Action = {
     id: string;
     label: string;
@@ -2522,6 +2535,7 @@ function TaskForm({
   useLocale();
   const [workspaceBusy, setWorkspaceBusy] = useState(false);
   const [workspaceValid, setWorkspaceValid] = useState(true);
+  const [crewValid, setCrewValid] = useState(true);
   const targetId = draft.machineId ?? backgroundMachineFor(machines, draft.cwd)?.id ?? "";
   const target = machines.find((entry) => entry.id === targetId);
   const lock = useLockSnapshot();
@@ -2549,8 +2563,8 @@ function TaskForm({
     onChange({ ...draft, [key]: value });
   const hasDescription = draft.prompt.trim().length > 0;
   const ready =
-    !workspaceBusy &&
-    workspaceValid &&
+    (!!draft.crewDefinitionId || (!workspaceBusy && workspaceValid)) &&
+    (!draft.crewDefinitionId || crewValid) &&
     draft.title.trim().length > 0 &&
     looksLikeProject(draft.cwd) &&
     draft.model.length > 0 &&
@@ -2596,6 +2610,7 @@ function TaskForm({
               onChange({
                 ...draft,
                 machineId: id,
+                crewDefinitionId: undefined,
                 workspace: undefined,
                 cwd:
                   recents.find(
@@ -2622,7 +2637,9 @@ function TaskForm({
               label: projectDisplayName(entry.path),
               keywords: entry.path,
             }))}
-            onChange={(cwd) => onChange({ ...draft, cwd, workspace: undefined })}
+            onChange={(cwd) =>
+              onChange({ ...draft, cwd, workspace: undefined, crewDefinitionId: undefined })
+            }
           />
         )}
         <ProjectDiscoveryStatus state={projectState} />
@@ -2660,37 +2677,69 @@ function TaskForm({
           focusOwner="group"
         />
       </div>
-      <details className="task-advanced-options">
-        <summary>{t("Working branch and worktree")}</summary>
-        <TaskExecutionMode
-          isolate={draft.isolate}
-          disabled={saving || draft.workspaceLocked}
-          onChange={(isolate) => update("isolate", isolate)}
-        />
-        <TaskWorkspacePicker
-          machine={target}
-          cwd={draft.cwd}
-          value={draft.workspace}
-          onChange={(workspace) => update("workspace", workspace)}
-          disabled={saving || draft.workspaceLocked}
-          branchName={draft.isolate}
-          isolate={draft.isolate}
-          onBusyChange={setWorkspaceBusy}
-          onValidityChange={setWorkspaceValid}
-        />
-      </details>
+      <CrewTaskPicker
+        cwd={draft.cwd}
+        machineId={targetId}
+        value={draft.crewDefinitionId}
+        disabled={saving || draft.workspaceLocked}
+        onChange={(crewDefinitionId) => onChange({ ...draft, crewDefinitionId })}
+        onValidityChange={setCrewValid}
+      />
+      {!draft.crewDefinitionId && (
+        <details className="task-advanced-options">
+          <summary>{t("Working branch and worktree")}</summary>
+          <TaskExecutionMode
+            isolate={draft.isolate}
+            disabled={saving || draft.workspaceLocked}
+            onChange={(isolate) => update("isolate", isolate)}
+          />
+          <TaskWorkspacePicker
+            machine={target}
+            cwd={draft.cwd}
+            value={draft.workspace}
+            onChange={(workspace) => update("workspace", workspace)}
+            disabled={saving || draft.workspaceLocked}
+            branchName={draft.isolate}
+            isolate={draft.isolate}
+            onBusyChange={setWorkspaceBusy}
+            onValidityChange={setWorkspaceValid}
+          />
+        </details>
+      )}
       <MachineConcurrency machineId={targetId} limits={limits} onChange={onChangeLimits} />
-      <Button
-        variant="ghost"
-        type="button"
-        aria-expanded={agentOpen}
-        onClick={() => setAgentOpen((open) => !open)}
-        className="mt-2"
-      >
-        {agentOpen ? <ChevronDown className="size-3" /> : <ChevronRight className="size-3" />}
-        {t("Agent settings")}
-      </Button>
-      {agentOpen ? (
+      {!draft.crewDefinitionId && (
+        <Button
+          variant="ghost"
+          type="button"
+          aria-expanded={agentOpen}
+          onClick={() => setAgentOpen((open) => !open)}
+          className="mt-2"
+        >
+          {agentOpen ? <ChevronDown className="size-3" /> : <ChevronRight className="size-3" />}
+          {t("Agent settings")}
+        </Button>
+      )}
+      {draft.crewDefinitionId ? (
+        <div className="flex flex-wrap items-center gap-2">
+          <AccessPicker
+            value={draft.runtimeMode}
+            onChange={(runtimeMode) => update("runtimeMode", runtimeMode)}
+          />
+          <SearchableSelect
+            variant="pill"
+            searchable={false}
+            label={t("Time limit")}
+            value={String(draft.maxRunMinutes)}
+            options={RUN_TIME_LIMIT_OPTIONS}
+            onChange={(value) => update("maxRunMinutes", Number(value))}
+          />
+          <TextField
+            label={t("Check command")}
+            value={draft.verifyCommand}
+            onChange={(event) => update("verifyCommand", event.target.value)}
+          />
+        </div>
+      ) : agentOpen ? (
         <div className="mt-1 space-y-2">
           <div className="flex flex-wrap items-center gap-1 rounded-md border border-(--ui-tone-neutral-border) bg-(--ui-surface-raised) px-2 py-2">
             <ModelPicker
@@ -2774,7 +2823,7 @@ function TaskForm({
               }
               onClick={() => onSubmit("queued")}
             >
-              {t("Add and start")}
+              {t(draft.crewDefinitionId ? "Start with crew" : "Add and start")}
             </Button>
             <Button variant="primary" type="submit" disabled={!canTodo || saving}>
               {saving ? <LoaderCircle className="size-3.5 animate-spin" /> : null}

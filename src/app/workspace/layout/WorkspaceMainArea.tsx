@@ -8,7 +8,6 @@ import { sameProjectPath } from "../../../features/projects/model/recents";
 import type { SettingsSectionId } from "../../../features/settings/model/settings";
 import type { Session } from "../../../features/sessions/model/session";
 import { hasPendingApproval } from "../../../features/sessions/model/session";
-import type { OpenFileFn } from "../../../features/search/model/search";
 import { LinkedWorkItemPanel } from "../surfaces/lazySurfaces";
 import type { LinkedWorkItemPanelState } from "../helpers/types";
 
@@ -55,8 +54,6 @@ export interface WorkspaceMainAreaProps {
   dockGridRef: RefObject<HTMLDivElement | null>;
   projectCwd: string;
   projectTerminals: ProjectTerminal[];
-  conversationTools: Omit<NonNullable<DockProps["tools"]>, "onOpenFile"> | null | undefined;
-  onOpenFile: OpenFileFn;
   projectTerminalFocused: boolean;
   focusProjectTerminal: DockProps["onFocus"];
   onHideProjectTerminal: DockProps["onHide"];
@@ -124,8 +121,6 @@ export function WorkspaceMainArea({
   dockGridRef,
   projectCwd,
   projectTerminals,
-  conversationTools,
-  onOpenFile,
   projectTerminalFocused,
   focusProjectTerminal,
   onHideProjectTerminal,
@@ -214,9 +209,6 @@ export function WorkspaceMainArea({
               >
                 <ProjectTerminalDock
                   dock={dock}
-                  tools={
-                    show && conversationTools ? { ...conversationTools, onOpenFile } : undefined
-                  }
                   focused={show && projectTerminalFocused}
                   onFocus={focusProjectTerminal}
                   onHide={onHideProjectTerminal}

@@ -13,6 +13,37 @@ const agent = (id: string, activity = "Working"): LiveAgent => ({
 });
 
 describe("cross-window working summaries", () => {
+  it("clears stale host notifications after the adopted owner has seen the session", () => {
+    const done = { ...agent("host-id", "Done"), done: true };
+    expect(
+      mergeWindowLiveAgents(
+        [done],
+        [
+          {
+            ownerWindowLabel: "window-2",
+            agents: [],
+            ownedSessionKeys: { "shell-id": "host-id" },
+          },
+        ],
+        "main",
+        {},
+      ),
+    ).toEqual([]);
+    expect(
+      mergeWindowLiveAgents(
+        [],
+        [
+          {
+            ownerWindowLabel: "window-2",
+            agents: [done],
+          },
+        ],
+        "main",
+        { "shell-id": "host-id" },
+      ),
+    ).toEqual([]);
+  });
+
   it("retains local ownership during acknowledged handoff and adds other owners", () => {
     const local = agent("local", "local activity");
     expect(

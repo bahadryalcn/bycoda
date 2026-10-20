@@ -1,7 +1,8 @@
 import { Alert } from "../../../shared/ui/Alert";
+import "./connections-settings.css";
 import { NativeSearchableSelect } from "../../../shared/ui/NativeSearchableSelect";
 import { Button } from "../../../shared/ui/Button";
-import { RadioGroup } from "../../../shared/ui/RadioGroup";
+import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { QRCodeSVG } from "qrcode.react";
 import { useRef, useState } from "react";
@@ -125,13 +126,11 @@ export function PhonePairingDialog({
       onClose={onClose}
       size="md"
     >
-      <div className="flex flex-col gap-5 p-4">
+      <div className="phone-pairing-content">
         {!fixedEndpoint ? (
-          <fieldset className="flex flex-col gap-2">
-            <legend className="text-[12px] text-(--ui-text-muted)">{t("Connection method")}</legend>
-            <RadioGroup
+          <div className="flex flex-col gap-2">
+            <SegmentedControl
               label={t("Connection method")}
-              compact
               value={localNetwork ? "lan" : "tailscale"}
               options={[
                 { value: "lan", label: t("Local network") },
@@ -139,14 +138,16 @@ export function PhonePairingDialog({
               ]}
               onValueChange={(value) => onMode?.(value as "lan" | "tailscale")}
             />
-            <p className="text-[12px] leading-relaxed text-(--ui-text-muted)">
-              {localNetwork
-                ? t(
-                    "Connect your phone and computer to the same Wi-Fi or local network. Tailscale is not required.",
-                  )
-                : t("Use Tailscale to connect from another network.")}
-            </p>
-          </fieldset>
+            {state.stage !== "qr" ? (
+              <p className="text-[12px] leading-relaxed text-(--ui-text-muted)">
+                {localNetwork
+                  ? t(
+                      "Connect your phone and computer to the same Wi-Fi or local network. Tailscale is not required.",
+                    )
+                  : t("Use Tailscale to connect from another network.")}
+              </p>
+            ) : null}
+          </div>
         ) : null}
         {machines.length > 1 ? (
           <label className="flex flex-col gap-1.5 text-[12px] text-(--ui-text-muted)">
@@ -270,7 +271,7 @@ export function PhonePairingDialog({
         ) : null}
 
         {state.stage === "qr" ? (
-          <div className="flex flex-col items-center gap-4">
+          <div className="phone-pairing-code">
             <div className="rounded-xl border border-stroke bg-on-solid p-2">
               <QRCodeSVG
                 value={JSON.stringify(state.session.code)}
@@ -281,7 +282,7 @@ export function PhonePairingDialog({
                 className="h-auto w-[min(260px,65vw)]"
               />
             </div>
-            <div className="flex flex-col gap-2 text-center text-[13px] leading-relaxed">
+            <div className="phone-pairing-instructions">
               <p className="font-medium text-content">
                 {t("Scan this code in bycoda on your phone")}
               </p>
@@ -308,8 +309,10 @@ export function PhonePairingDialog({
                 )}
               </Alert>
             ) : null}
-            <PhonePairingCopy key={state.session.pairingId} code={state.session.code} />
-            <SecondaryButton onClick={onRegenerate}>{t("Create a new code")}</SecondaryButton>
+            <div className="phone-pairing-actions">
+              <PhonePairingCopy key={state.session.pairingId} code={state.session.code} />
+              <SecondaryButton onClick={onRegenerate}>{t("Create a new code")}</SecondaryButton>
+            </div>
           </div>
         ) : null}
 
@@ -362,9 +365,12 @@ export function PhonePairingDialog({
         ) : null}
         {localNetwork &&
         (state.stage === "qr" || (state.stage === "access" && state.access.state === "ready")) ? (
-          <SecondaryButton onClick={onDisable}>
-            {t("Turn off local network access")}
-          </SecondaryButton>
+          <details className="connection-disclosure">
+            <summary>{t("Local network access")}</summary>
+            <SecondaryButton onClick={onDisable}>
+              {t("Turn off local network access")}
+            </SecondaryButton>
+          </details>
         ) : null}
       </div>
     </Modal>

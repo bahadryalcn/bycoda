@@ -28,12 +28,21 @@ export function mergeWindowLiveAgents(
     },
     ...snapshots.filter((snapshot) => snapshot.ownerWindowLabel !== currentWindowLabel),
   ];
+  // Ownership also applies when the owner has cleared a finished notification
+  // and no longer advertises an agent. Another window's stale summary must not
+  // bring that notification back.
+  const owners = new Map<string, (typeof candidates)[number]>();
+  for (const snapshot of candidates)
+    for (const key of Object.values(snapshot.ownedSessionKeys ?? {}))
+      if (!owners.has(key)) owners.set(key, snapshot);
   // An actual adopted session must outrank an unopened host summary, even
   // when that host summary is in this window's local list.
   for (const owned of [true, false])
     for (const snapshot of candidates) {
       for (const agent of snapshot.agents) {
         const key = snapshot.ownedSessionKeys?.[agent.id];
+        const owner = owners.get(key ?? agent.id);
+        if (owner && owner !== snapshot) continue;
         if (Boolean(key) !== owned) continue;
         if (!byId.has(key ?? agent.id)) {
           byId.set(

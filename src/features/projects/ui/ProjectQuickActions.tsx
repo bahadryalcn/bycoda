@@ -268,7 +268,13 @@ export function ProjectQuickActions({
   const selected = actions[0];
   const SelectedIcon = selected ? ICONS[selected.icon] : Play;
   return (
-    <div className="flex shrink-0 items-center gap-1" data-no-drag data-tauri-drag-region="false">
+    <div
+      className="flex shrink-0 items-center gap-1"
+      data-no-drag
+      data-tauri-drag-region="false"
+      // Portal menus still bubble through this React owner into the draggable header.
+      onPointerDown={(event) => event.stopPropagation()}
+    >
       {selected ? (
         <Button
           variant="ghost"

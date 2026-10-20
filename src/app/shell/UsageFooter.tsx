@@ -79,6 +79,7 @@ export function UsageFooter({
   onToggleTerminal,
   onNewTerminal,
   onShowTerminal,
+  terminalUnavailableReason,
   projectTerminalActive = false,
   projectTerminalVisible = projectTerminalActive,
   tools,
@@ -94,6 +95,7 @@ export function UsageFooter({
   onToggleTerminal?: (fileId: string) => void;
   onNewTerminal?: () => void;
   onShowTerminal?: () => void;
+  terminalUnavailableReason?: string;
   projectTerminalActive?: boolean;
   projectTerminalVisible?: boolean;
   tools?: ConversationTools;
@@ -285,10 +287,11 @@ export function UsageFooter({
   const showOpencodeChip = wantOpencode && opencode.status !== "unavailable";
   const showUsage = wantClaude || wantCodex || showOpencodeChip;
   const showTerminals = terminals.length > 0;
-  const showTerminalButton = Boolean(onNewTerminal || onShowTerminal);
-  const terminalLabel = projectTerminalActive
-    ? t("Terminal")
-    : t("New Terminal ({p0}`)", { p0: MOD });
+  const showTerminalButton = Boolean(onNewTerminal || onShowTerminal || terminalUnavailableReason);
+  const terminalLabel =
+    projectTerminalActive || terminalUnavailableReason
+      ? t("Terminal")
+      : t("New Terminal ({p0}`)", { p0: MOD });
   const onTerminalClick = projectTerminalActive
     ? (onShowTerminal ?? onNewTerminal)
     : (onNewTerminal ?? onShowTerminal);
@@ -381,18 +384,21 @@ export function UsageFooter({
             />
           ) : showTerminalButton ? (
             <Button
+              iconOnly
+              label={terminalLabel}
               variant="ghost"
               motion="none"
               type="button"
               size="sm"
-              className="shrink-0 gap-1.5 whitespace-nowrap"
+              className="size-7"
               aria-label={terminalLabel}
               aria-pressed={projectTerminalVisible}
-              title={terminalLabel}
+              title={terminalUnavailableReason ?? terminalLabel}
+              disabled={!!terminalUnavailableReason}
+              aria-description={terminalUnavailableReason}
               onClick={onTerminalClick}
             >
               <Terminal className="size-3.5" strokeWidth={1.75} aria-hidden />
-              <span className="@max-[40rem]/usage:hidden">{t("Terminal")}</span>
             </Button>
           ) : null}
         </div>
@@ -535,12 +541,14 @@ function RunningTerminalChip({
   return (
     <>
       <Button
+        iconOnly
+        label={ariaLabel}
         variant="ghost"
         motion="none"
         ref={root}
         type="button"
         size="sm"
-        className="min-w-0 max-w-[min(16rem,30cqi)] gap-1.5 whitespace-nowrap"
+        className="size-7"
         aria-label={ariaLabel}
         aria-pressed={panelOpen}
         aria-expanded={many && !panelOpen ? menuOpen : undefined}
@@ -556,9 +564,7 @@ function RunningTerminalChip({
         }}
       >
         <TerminalLiveMark />
-        <span className="truncate font-mono text-[10px] tabular-nums @max-[40rem]/usage:hidden">
-          {label}
-        </span>
+        <span className="sr-only">{label}</span>
       </Button>
       {menuOpen && many && !panelOpen ? (
         <Popover

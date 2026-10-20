@@ -170,6 +170,25 @@ describe("applyDesktopLiveCommand", () => {
 });
 
 describe("runDesktopLiveTick", () => {
+  it("publishes session folder and manual-order changes during an otherwise idle heartbeat", async () => {
+    let folderName = "Initial";
+    const deps = {
+      now: () => 100, beat: {}, request: vi.fn().mockResolvedValue({ commands: [] }), sessions: () => [],
+      projectDirectory: () => ({ version: 1 as const, groups: [], excludedPaths: [], excludedGroupIds: [], projects: [{
+        cwd: "/project", name: "Project", sessionLayout: { folders: [{ id: "f", name: folderName, sessionIds: ["s"], collapsed: false }], order: { loose: [folderName] } },
+      }] }),
+      handlers: { stop: vi.fn(), approve: vi.fn(), answer: vi.fn() }, unacked: new Set<string>(), handled: new Set<string>(),
+    };
+    await runDesktopLiveTick(deps);
+    await runDesktopLiveTick(deps);
+    expect(deps.request).toHaveBeenCalledTimes(1);
+    folderName = "Renamed";
+    await runDesktopLiveTick(deps);
+    expect(deps.request).toHaveBeenCalledTimes(2);
+    expect(deps.request.mock.lastCall?.[0].projectDirectory.projects[0].sessionLayout).toMatchObject({
+      folders: [{ name: "Renamed" }], order: { loose: ["Renamed"] },
+    });
+  });
   it("publishes a changed directory privacy snapshot without waiting for the idle heartbeat", async () => {
     let now = 0;
     let excludedPaths: string[] = [];

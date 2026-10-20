@@ -25,6 +25,7 @@ export const APP_UI_SETTINGS = [
   "terminal",
   "chat",
   "providers",
+  "crews",
   "usage",
   "mcp",
   "skills",

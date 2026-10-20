@@ -79,7 +79,11 @@ export function ConversationToolsButton({ tools }: { tools: ConversationTools })
   return (
     <>
       <Button
+        iconOnly
+        label={t("Conversation tools")}
         variant="ghost"
+        motion="none"
+        className="size-7"
         size="sm"
         ref={trigger}
         type="button"
@@ -92,7 +96,6 @@ export function ConversationToolsButton({ tools }: { tools: ConversationTools })
         onClick={() => setOpen((value) => !value)}
       >
         <Wrench className="size-3.5" strokeWidth={1.75} aria-hidden />
-        <span className="@max-[40rem]/usage:hidden">{t("Conversation tools")}</span>
       </Button>
       {open ? (
         <Popover

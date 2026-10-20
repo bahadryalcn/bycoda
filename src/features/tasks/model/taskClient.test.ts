@@ -1,4 +1,22 @@
 import { describe, expect, it } from "vitest";
+
+it("serializes reusable crews as parent tasks without branch or continuation settings", () => {
+  const draft = {
+    ...newTaskDraft("G:/app", "codex", "codex:test"),
+    title: "Crew task",
+    crewDefinitionId: "crew",
+    isolate: true,
+    autoMerge: true,
+    review: true,
+  };
+  const input = hostTaskFromDraft(draft, "parent", "project");
+  expect(input).toMatchObject({ crewDefinitionId: "crew", isolate: false, review: false });
+  expect(input.autoMerge).toBeUndefined();
+  expect(input.continueUntilDone).toBeUndefined();
+  expect(parseHostTask(input)).toMatchObject({ crewDefinitionId: "crew" });
+  expect(() => parseHostTask({ ...input, crewRunId: "run" })).toThrow();
+  expect(() => parseHostTask({ ...input, isolate: true })).toThrow();
+});
 import { LOCAL_SYNC_MACHINE_NAME } from "../../connections/model/localSync";
 import type { RemoteMachine } from "../../connections/model/protocol";
 import {
@@ -190,6 +208,13 @@ describe("task board", () => {
 });
 
 describe("host task rules", () => {
+  it("keeps crew completion out of board moves while preserving retry and stop", () => {
+    expect(canMoveTask("review", "done", "crew-run")).toBe(false);
+    expect(canMoveTask("todo", "done", "crew-run")).toBe(false);
+    expect(canMoveTask("review", "queued", "crew-run")).toBe(true);
+    expect(canMoveTask("running", "blocked", "crew-run")).toBe(true);
+    expect(canMoveTask("review", "done")).toBe(true);
+  });
   it("allows exactly the moves the board offers", () => {
     const allowed = TASK_STATUSES.flatMap((from) =>
       TASK_STATUSES.filter((to) => canMoveTask(from, to)).map((to) => `${from}>${to}`),

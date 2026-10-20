@@ -16,6 +16,22 @@ import {
 
 const principal = { kind: "session" as const, projectId: "p", sessionId: "s", provider: "codex" };
 describe("Conversation Tools boundary", () => {
+  it("allows task-backed crews without caller-selected identity or permission overrides", () => {
+    const input = {
+      taskId: "task",
+      title: "Deliver",
+      prompt: "Implement",
+      crewDefinitionId: "crew",
+      status: "queued",
+    };
+    expect(() => validateConversationTool("tasks.create", input)).not.toThrow();
+    expect(
+      conversationToolCatalog().find((tool) => tool.action === "tasks.create")?.annotations
+        .readOnlyHint,
+    ).toBe(false);
+    for (const extra of [{ projectId: "other" }, { runtimeMode: "auto" }, { approved: true }])
+      expect(() => validateConversationTool("tasks.create", { ...input, ...extra })).toThrow();
+  });
   it("accepts a bounded log stream generation so cursors can recover across host restarts", () => {
     expect(() =>
       validateConversationTool("logs.read", { after: 10, streamId: "previous-host" }),

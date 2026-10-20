@@ -5,9 +5,11 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
 import { ConnectionsSettings } from "./ConnectionsSettings";
 import { requestMachineAdd } from "../model/machineAdd";
+import { useSyncStatus } from "../../sync/model/useSyncStatus";
 import { REMOTE_PROVIDERS, type RemoteMachine, type SshSetup } from "../model/protocol";
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
+vi.mock("../../sync/model/useSyncStatus", () => ({ useSyncStatus: vi.fn() }));
 let container: HTMLDivElement;
 let root: Root;
 let state: SshSetup;
@@ -20,6 +22,7 @@ const machine: RemoteMachine = {
   ssh: { target: "me@home", remotePort: 3774 },
 };
 beforeEach(() => {
+  vi.mocked(useSyncStatus).mockReturnValue({ state: "idle", pendingOps: 0 });
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   vi.useFakeTimers();
   machines = [];
@@ -73,6 +76,22 @@ async function render() {
   await act(async () => root.render(createElement(ConnectionsSettings)));
 }
 
+it("keeps sync diagnostics available behind a short error summary", async () => {
+  machines = [machine];
+  vi.mocked(useSyncStatus).mockReturnValue({
+    state: "error",
+    lastError: "RPC_HOST_UNAVAILABLE: connection closed; reconnect before retrying",
+    pendingOps: 2,
+  });
+  await render();
+  const diagnostics = container.querySelector<HTMLDetailsElement>(".connection-sync-error")!;
+  expect(diagnostics.open).toBe(false);
+  expect(diagnostics.querySelector("summary")?.textContent).toContain("Sync needs attention");
+  expect(diagnostics.querySelector("p")?.textContent).toContain("RPC_HOST_UNAVAILABLE");
+  expect(diagnostics.querySelector("p")?.textContent).toContain("2 pending");
+  expect(container.querySelector('button[aria-label="Sync now"]')).toBeTruthy();
+});
+
 it("opens the existing add editor for a Servers request made before Settings mounts", async () => {
   requestMachineAdd();
   await render();
@@ -103,11 +122,14 @@ it("keeps a machine draft when moving between connection views", async () => {
 
 it("does not label an untouched URL connection as unsaved", async () => {
   await render();
-  const details = container.querySelectorAll("section");
+  const details = container.querySelectorAll("details.connection-disclosure");
   const url = [...details].find((item) =>
-    item.querySelector(":scope > h3")?.textContent?.includes("Connect to an existing host by URL"),
+    item
+      .querySelector(":scope > summary")
+      ?.textContent?.includes("Connect to an existing host by URL"),
   )!;
   expect(url.textContent).not.toContain("Unsaved changes");
+  expect(url.hasAttribute("open")).toBe(false);
   expect(url.querySelector('input[type="url"]')).toBeTruthy();
 });
 async function fill(selector: string, value: string) {
@@ -131,9 +153,14 @@ async function poll() {
 
 it("keeps the existing-host form open and preserves URL and token when connection fails", async () => {
   await render();
-  const disclosure = [...container.querySelectorAll("section")].find((item) =>
-    item.querySelector(":scope > h3")?.textContent?.includes("Connect to an existing host by URL"),
+  const disclosure = [
+    ...container.querySelectorAll<HTMLDetailsElement>("details.connection-disclosure"),
+  ].find((item) =>
+    item
+      .querySelector(":scope > summary")
+      ?.textContent?.includes("Connect to an existing host by URL"),
   )!;
+  disclosure.open = true;
   await fill('input[type="url"]', "https://remote.example.com");
   await fill('input[type="password"]', "device-token");
   const credential = container.querySelector<HTMLInputElement>('input[type="password"]')!;
@@ -162,7 +189,7 @@ it("keeps the existing-host form open and preserves URL and token when connectio
   });
   await act(async () => button("Connect by URL").click());
   expect(disclosure.isConnected).toBe(true);
-  expect(disclosure.querySelector("details")).toBeNull();
+  expect(disclosure.open).toBe(true);
   expect(container.querySelector<HTMLInputElement>('input[type="url"]')?.value).toBe(
     "https://remote.example.com",
   );

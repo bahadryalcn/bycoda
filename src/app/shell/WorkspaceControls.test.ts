@@ -17,7 +17,7 @@ vi.mock("@tauri-apps/api/window", () => ({
 it("opens each destination and refreshes without reloading the app", async () => {
   const host = document.createElement("div");
   const root = createRoot(host);
-  const onSettings = vi.fn(),
+  const onHiddenGroups = vi.fn(),
     onPullRequests = vi.fn(),
     onUsage = vi.fn(),
     reload = vi.fn();
@@ -26,19 +26,33 @@ it("opens each destination and refreshes without reloading the app", async () =>
     await act(async () =>
       root.render(
         createElement(WorkspaceControls, {
-          onSettings,
+          onHiddenGroups,
           onPullRequests,
           onUsage,
           active: "usage",
         }),
       ),
     );
-    for (const label of ["Settings", "Pull requests", "Usage", "Refresh current view"]) {
+    expect(
+      [...host.querySelectorAll("button")].map((button) => button.getAttribute("aria-label")),
+    ).toEqual([
+      "Pull requests",
+      "Usage",
+      "Manage hidden groups",
+      "Refresh current view",
+      "Full screen",
+    ]);
+    for (const label of [
+      "Manage hidden groups",
+      "Pull requests",
+      "Usage",
+      "Refresh current view",
+    ]) {
       await act(async () =>
         host.querySelector<HTMLButtonElement>(`[aria-label="${label}"]`)!.click(),
       );
     }
-    expect(onSettings).toHaveBeenCalledOnce();
+    expect(onHiddenGroups).toHaveBeenCalledOnce();
     expect(onPullRequests).toHaveBeenCalledOnce();
     expect(onUsage).toHaveBeenCalledOnce();
     expect(reload).toHaveBeenCalledOnce();
@@ -49,7 +63,7 @@ it("opens each destination and refreshes without reloading the app", async () =>
     await act(async () =>
       root.render(
         createElement(WorkspaceControls, {
-          onSettings,
+          onHiddenGroups,
           onPullRequests,
           onUsage,
           canRefresh: false,

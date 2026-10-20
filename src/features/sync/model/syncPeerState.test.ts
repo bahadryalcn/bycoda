@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   applyPushResult,
   hasPendingOp,
@@ -33,6 +33,57 @@ describe("syncPeerState", () => {
   it("starts at revision 0 with an empty outbox", () => {
     expect(peerRev(MACHINE)).toBe(0);
     expect(takeOutbox(MACHINE)).toEqual([]);
+  });
+
+  it("does not rewrite durable state on unchanged polls but persists cursor advances", () => {
+    markPulled(MACHINE, [], { rev: 7, complete: true });
+    const write = vi.spyOn(localStorage, "setItem");
+    try {
+      expect(markPulled(MACHINE, [], { rev: 7, complete: false })).toBe(true);
+      expect(write).not.toHaveBeenCalled();
+      expect(markPulled(MACHINE, [], { rev: 8, complete: false })).toBe(true);
+      expect(write).toHaveBeenCalledTimes(1);
+      expect(peerRev(MACHINE)).toBe(8);
+    } finally {
+      write.mockRestore();
+    }
+  });
+
+  it("settles a batch while preserving newer edits and unsent records in queue order", () => {
+    for (const id of ["a", "b", "c", "d"])
+      queueLocalChange(MACHINE, "group", id, { id, name: "sent" });
+    const sent = takeOutbox(MACHINE);
+    queueLocalChange(MACHINE, "group", "a", { id: "a", name: "newer" });
+    queueLocalChange(MACHINE, "group", "c", { id: "c", name: "newer" });
+    queueLocalChange(MACHINE, "group", "e", { id: "e", name: "unsent" });
+    const current = (id: string, rev: number) => ({
+      table: "group" as const,
+      id,
+      rev,
+      value: { id, name: "host" },
+    });
+    const adopted = applyPushResult(
+      MACHINE,
+      {
+        rev: 14,
+        applied: [
+          { table: "group", id: "b", rev: 11 },
+          { table: "group", id: "a", rev: 12 },
+        ],
+        rejected: [
+          { table: "group", id: "c", current: current("c", 13) },
+          { table: "group", id: "d", current: current("d", 14) },
+        ],
+      },
+      sent,
+    );
+    expect(adopted).toEqual([current("d", 14)]);
+    expect(takeOutbox(MACHINE)).toEqual([
+      { table: "group", id: "a", baseRev: 12, value: { id: "a", name: "newer" } },
+      { table: "group", id: "c", baseRev: 13, value: { id: "c", name: "newer" } },
+      { table: "group", id: "e", baseRev: 0, value: { id: "e", name: "unsent" } },
+    ]);
+    expect(peerRev(MACHINE)).toBe(0);
   });
 
   it("queues a local change with baseRev 0 for a record never seen before", () => {

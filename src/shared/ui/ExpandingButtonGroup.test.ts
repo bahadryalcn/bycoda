@@ -53,6 +53,30 @@ async function renderHoverActions() {
   );
 }
 
+it("can rest as icons while preserving hover, keyboard and click access", async () => {
+  vi.useFakeTimers();
+  const open = vi.fn();
+  await act(async () =>
+    root.render(
+      createElement(ExpandingButtonGroup, {
+        label: "Notes",
+        defaultExpanded: null,
+        items: [
+          { id: "notes", label: "Notes", ariaLabel: "Open notes panel", icon, onSelect: open },
+        ],
+      }),
+    ),
+  );
+  expect(button("notes").dataset.expanded).toBeUndefined();
+  expect(button("notes").tabIndex).toBe(0);
+  expect(button("notes").getAttribute("aria-label")).toBe("Open notes panel");
+  await moveTo("notes");
+  await act(async () => vi.advanceTimersByTime(250));
+  expect(button("notes").dataset.expanded).toBeDefined();
+  await act(async () => button("notes").click());
+  expect(open).toHaveBeenCalledOnce();
+});
+
 it("ignores passing hover, waits for aim, and tolerates a brief pointer exit", async () => {
   await renderHoverActions();
   await moveTo("chat");
@@ -82,6 +106,7 @@ it("does not expand a target that moved away or override keyboard focus with pen
   await act(async () => vi.advanceTimersByTime(250));
   expect(button("copy").dataset.expanded).toBeDefined();
   await moveTo("chat", 50);
+  document.dispatchEvent(new KeyboardEvent("keydown", { key: "Tab", bubbles: true }));
   await act(async () => button("link").focus());
   await act(async () => vi.advanceTimersByTime(250));
   expect(button("link").dataset.expanded).toBeDefined();

@@ -6,6 +6,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { ask } from "@tauri-apps/plugin-dialog";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { SettingsView } from "./SettingsView";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { setHarnessModels, resetHarnessModelOverlays } from "../../sessions/model/models";
 import { providerSessionDefaults } from "../../sessions/model/providerSessionDefaults";
 import { rememberNotificationProjects } from "../../notifications/model/notificationProjects";
@@ -60,6 +61,7 @@ vi.mock("../../../integrations/harness/core/availability", () => ({
 
 let container: HTMLDivElement;
 let root: Root;
+let queryClient: QueryClient;
 let onSelectSection: ReturnType<typeof vi.fn>;
 
 function mockLocalStorage() {
@@ -82,7 +84,7 @@ async function render(
 ) {
   await act(async () =>
     root.render(
-      createElement(SettingsView, {
+      createElement(QueryClientProvider, { client: queryClient }, createElement(SettingsView, {
         section,
         cwd: "/repo",
         sessions: [],
@@ -93,7 +95,7 @@ async function render(
         onDeleteSession: vi.fn(),
         onOpenWhatsNew: vi.fn(),
         ...options,
-      }),
+      })),
     ),
   );
 }
@@ -112,12 +114,14 @@ beforeEach(() => {
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
+  queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   onSelectSection = vi.fn();
   vi.mocked(invoke).mockReset().mockResolvedValue(undefined);
 });
 
 afterEach(async () => {
   await act(async () => root.unmount());
+  queryClient.clear();
   container.remove();
   clearCachedRateLimits();
   localStorage.clear();

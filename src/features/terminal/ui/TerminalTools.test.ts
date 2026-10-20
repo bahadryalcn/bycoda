@@ -132,26 +132,32 @@ it("opens PowerShell suggestions only from an explicit alternative without termi
   }
 });
 
-it("keeps the search and command composer out of the terminal until requested", async () => {
+it("opens search directly without an intermediate local terminal menu", async () => {
   const host = document.createElement("div");
   document.body.append(host);
   const root = createRoot(host);
+  const onModeChange = vi.fn();
+  const terminal = {
+    buffer: { active: { type: "normal" }, onBufferChange: () => ({ dispose() {} }) },
+  } as unknown as Terminal;
   try {
     await act(async () =>
       root.render(
         createElement(TerminalTools, {
-          terminal: null,
+          terminal,
           mode: null,
-          ready: false,
-          onModeChange: vi.fn(),
+          ready: true,
+          onModeChange,
         }),
       ),
     );
-    expect(document.querySelector("input")).toBeNull();
-    expect(host.textContent).not.toContain("Find in terminal");
+    expect(host.querySelector("input")).toBeNull();
     expect(host.querySelector("[data-terminal-tools]")).toBeNull();
-    await openTools(host);
-    expect(document.querySelector('[aria-label="Find in terminal"]')).not.toBeNull();
+    expect(host.querySelector('[aria-label="Terminal · More actions"]')).toBeNull();
+    await act(async () =>
+      host.querySelector<HTMLButtonElement>('[aria-label="Find in terminal"]')!.click(),
+    );
+    expect(onModeChange).toHaveBeenCalledExactlyOnceWith("search");
   } finally {
     await act(async () => root.unmount());
     host.remove();

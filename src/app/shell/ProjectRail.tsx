@@ -19,7 +19,6 @@ import {
   AlertCircle,
   Archive,
   Globe,
-  EyeOff,
   BellOff,
   Check,
   ChevronDown,
@@ -271,7 +270,6 @@ export function ProjectRail({
   recentSessions,
   settingsOpen = false,
   onOpenSettings,
-  onSelectSettingsSection,
   onOpenNotificationSettings,
   onCloseSettings,
   updateNotice = null,
@@ -284,6 +282,7 @@ export function ProjectRail({
   const notesShortcut = useKeybindingShortcut("App: Open Notes");
   const automationsShortcut = useKeybindingShortcut("App: Open Automations");
   const tasksShortcut = useKeybindingShortcut("App: Open Tasks");
+  const settingsShortcut = useKeybindingShortcut("App: Settings");
   const resize = useDragResize({
     min: railMin,
     max: () => sidePaneMaxWidth("rail", PROJECT_RAIL_WIDTH_MAX, 0.35, railMin),
@@ -616,7 +615,7 @@ export function ProjectRail({
       <img src={PRODUCT_IDENTITY.logoSrc} alt={PRODUCT_IDENTITY.displayName} />
       {settingsOpen ? null : (
         <div
-          className={`min-w-0 flex-1 ${IS_MAC ? "@max-[140px]/rail:w-full @max-[140px]/rail:flex-none" : ""}`}
+          className={`bycoda-rail-search-slot min-w-0 flex-1 ${IS_MAC ? "@max-[140px]/rail:w-full @max-[140px]/rail:flex-none" : ""}`}
         >
           <RailSearch
             label={t("Search")}
@@ -627,7 +626,6 @@ export function ProjectRail({
           />
         </div>
       )}
-      {settingsOpen ? null : recoveryControl}
     </div>
   );
   const renderProjectGroup = (
@@ -792,7 +790,7 @@ export function ProjectRail({
       >
         {IS_MAC ? <div className="w-[78px] shrink-0" /> : null}
         {IS_MAC ? null : brand}
-        <DevModeSlot />
+        <DevModeSlot fill={IS_MAC} />
         {/* Icon-only, just the panel toggle fits; in settings nothing does. */}
         <div
           className={`shrink-0 ${
@@ -945,6 +943,14 @@ export function ProjectRail({
                         },
                       ]
                     : []),
+                  {
+                    id: "settings",
+                    label: t("Settings"),
+                    icon: <Settings />,
+                    shortcut: settingsShortcut,
+                    onSelect: onOpenSettings,
+                    disabled: !onOpenSettings,
+                  },
                 ]}
               />
             </nav>
@@ -1013,8 +1019,15 @@ export function ProjectRail({
                   ariaLabel="Tasks"
                 />
               </WorkspaceFeatureGate>
+              <RailAction
+                label={t("Settings")}
+                icon={Settings}
+                onClick={onOpenSettings}
+                command="App: Settings"
+              />
             </nav>
             <div className="bycoda-rail-status shrink-0">
+              {recoveryControl}
               <div className="shrink-0 @max-[140px]/rail:hidden">
                 <LiveAgentsPreview
                   agents={visibleLiveAgents}
@@ -1088,30 +1101,7 @@ export function ProjectRail({
                 <GithubStarPrompt />
               </div>
               <div className="flex items-center gap-1 @max-[140px]/rail:flex-col">
-                <RailAction
-                  label={t("Settings")}
-                  icon={Settings}
-                  onClick={onOpenSettings}
-                  command="App: Settings"
-                />
                 <SidebarUpdateFooter />
-                <Button
-                  iconOnly
-                  label={t("Manage hidden groups")}
-                  variant="ghost"
-                  motion="none"
-                  type="button"
-                  aria-label={t("Manage hidden groups")}
-                  title={t("Manage hidden groups")}
-                  disabled={!onOpenSettings || !onSelectSettingsSection}
-                  onClick={() => {
-                    onOpenSettings?.();
-                    onSelectSettingsSection?.("groupLock");
-                  }}
-                  className="flex size-8 shrink-0 items-center justify-center focus-visible:-outline-offset-2"
-                >
-                  <EyeOff className="size-4" strokeWidth={1.75} />
-                </Button>
               </div>
             </div>
           </>

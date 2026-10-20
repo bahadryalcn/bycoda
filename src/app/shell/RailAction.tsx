@@ -112,6 +112,7 @@ export function RailSearch({
   const shortcut = command ? currentShortcut : fallbackShortcut;
   return (
     <Button
+      data-rail-search
       selected={active}
       variant="item"
       motion="none"
@@ -124,11 +125,18 @@ export function RailSearch({
       className={`relative flex w-full items-center gap-2 @max-[140px]/rail:justify-center`}
     >
       <Icon className="size-4 shrink-0 opacity-70" strokeWidth={1.75} />
-      <span className="min-w-0 flex-1 truncate text-sm font-medium leading-tight @max-[140px]/rail:hidden">
+      <span
+        data-rail-search-label
+        className="min-w-0 flex-1 truncate text-sm font-medium leading-tight @max-[140px]/rail:hidden"
+      >
         {label}
       </span>
       {shortcut ? (
-        <span aria-hidden className="shrink-0 text-[11px] text-content/40 @max-[200px]/rail:hidden">
+        <span
+          data-rail-search-shortcut
+          aria-hidden
+          className="shrink-0 text-[11px] text-content/40 @max-[200px]/rail:hidden"
+        >
           {shortcut}
         </span>
       ) : null}

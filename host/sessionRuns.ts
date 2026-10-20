@@ -12,6 +12,8 @@ export type SessionRunEngine = Pick<HostEngine, "command" | "updateSession">;
 
 /** What an unattended run needs to start: one prompt in a fresh session. */
 export type SessionRunSpec = {
+  /** Optional durable launch identity; explicit retries reuse host receipts. */
+  requestId?: string;
   projectId: string;
   harness: RemoteProvider;
   model: string;
@@ -53,7 +55,7 @@ export function launchSessionRun(
   try {
     sessionId = engine.command({
       type: "create",
-      commandId: randomUUID(),
+      commandId: spec.requestId ? `${spec.requestId}:create` : randomUUID(),
       projectId: spec.projectId,
       ...(spec.worktreeCwd ? { worktreeCwd: spec.worktreeCwd } : {}),
       harness: spec.harness,
@@ -64,7 +66,7 @@ export function launchSessionRun(
     engine.updateSession(sessionId, { title: spec.title });
     engine.command({
       type: "send",
-      commandId: randomUUID(),
+      commandId: spec.requestId ? `${spec.requestId}:send` : randomUUID(),
       sessionId,
       text: spec.prompt,
     });

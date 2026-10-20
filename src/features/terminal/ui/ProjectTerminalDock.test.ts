@@ -268,7 +268,7 @@ it("splits the targeted row and keeps both canvases visible while changing focus
   }
 });
 
-it("opens conversation tools in the dock and returns to the existing terminal", async () => {
+it("keeps the dock focused on terminals without duplicate footer navigation", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   const host = document.createElement("div");
   const root = createRoot(host);
@@ -297,27 +297,12 @@ it("opens conversation tools in the dock and returns to the existing terminal", 
     onCloseTerminal: vi.fn(),
     onCloseOtherTerminals: vi.fn(),
     onReorderTerminals: vi.fn(),
-    tools: { cwd: "/project", sessionId: "session-one", title: "Conversation" },
   };
   try {
     await act(async () => root.render(createElement(ProjectTerminalDock, props)));
     expect(host.querySelector("[data-tools-session]")).toBeNull();
-    await act(async () => host.querySelector<HTMLButtonElement>(".terminal-tools-button")!.click());
-    expect(host.querySelector("[data-tools-session]")?.getAttribute("data-tools-session")).toBe(
-      "session-one",
-    );
-    expect(host.querySelector('[role="tabpanel"]')?.getAttribute("aria-hidden")).toBe("true");
-    await act(async () =>
-      root.render(
-        createElement(ProjectTerminalDock, {
-          ...props,
-          tools: { ...props.tools, sessionId: "session-two" },
-        }),
-      ),
-    );
-    expect(host.querySelector("[data-tools-session]")?.getAttribute("data-tools-session")).toBe(
-      "session-two",
-    );
+    expect(host.querySelector('[aria-label="Conversation tools"]')).toBeNull();
+    expect(host.querySelector('[aria-label="Terminal"]')).toBeNull();
     await act(async () => host.querySelector<HTMLButtonElement>('[role="tab"]')!.click());
     expect(onSelectTerminal).toHaveBeenCalledWith("one");
     expect(host.querySelector("[data-tools-session]")).toBeNull();

@@ -1,4 +1,5 @@
 import { Alert } from "../../../shared/ui/Alert";
+import "./connections-settings.css";
 import { PasswordField } from "../../../shared/ui/PasswordField";
 import { Button } from "../../../shared/ui/Button";
 import { TextField } from "../../../shared/ui/TextField";
@@ -207,12 +208,15 @@ export function TunnelControls({
       className="external-tunnel-controls"
       aria-busy={state.pending || state.phase === "loading"}
     >
-      <p className="external-tunnel-machine">{t("Tunnel runs on: {p0}", { p0: machineLabel })}</p>
-      <p>
-        {t(
-          "Provider CLI and authentication must be available on the selected computer. Local URLs and ports refer to that computer.",
-        )}
-      </p>
+      <details className="connection-disclosure">
+        <summary>{t("Tunnel setup")}</summary>
+        <p className="external-tunnel-machine">{t("Tunnel runs on: {p0}", { p0: machineLabel })}</p>
+        <p>
+          {t(
+            "Provider CLI and authentication must be available on the selected computer. Local URLs and ports refer to that computer.",
+          )}
+        </p>
+      </details>
       <div className="external-tunnel-actions">
         <SecondaryButton disabled={state.pending} onClick={() => void controller.refresh(true)}>
           {t("Check again")}
@@ -269,8 +273,8 @@ export function TunnelControls({
             <option value="host">{t("bycoda host access")}</option>
           </NativeSelect>
         </label>
-        <label htmlFor={`${id}-url`} className="external-tunnel-wide">
-          {t("Local URL or port on the selected computer")}
+        <label htmlFor={`${id}-url`}>
+          {t("Local URL or port")}
           <TextField
             id={`${id}-url`}
             value={target === "host" ? (overview?.hostLocalUrl ?? "") : localUrl}

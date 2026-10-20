@@ -350,6 +350,11 @@ function codexImages(directory: string): SocialImageAdapter {
   };
 }
 
+/** Shared runtime probe. Calling this does not generate an image or enable a feature. */
+export async function probeNativeCodexImageCapability(directory: string) {
+  return codexImages(directory).capability();
+}
+
 export function createSocialImageAdapters(
   directory: string,
   env: NodeJS.ProcessEnv = process.env,

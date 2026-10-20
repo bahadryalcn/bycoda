@@ -499,8 +499,21 @@ html.theme-light .bycoda-workspace-tabs {
   inline-size: 24px;
   block-size: 24px;
 }
+.bycoda-rail-search-slot {
+  container: rail-search / inline-size;
+  min-inline-size: var(--ui-control-height-sm);
+}
+@container rail-search (inline-size < 110px) {
+  [data-rail-search-label],
+  [data-rail-search-shortcut] {
+    display: none;
+  }
+  [data-rail-search] {
+    justify-content: center;
+  }
+}
 @container rail (width < 340px) {
-  .bycoda-rail-brand--title button > span[aria-hidden] {
+  .bycoda-rail-brand--title [data-rail-search-shortcut] {
     display: none;
   }
 }

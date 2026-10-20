@@ -338,6 +338,18 @@ describe("scoped Conversation Tools RPC", () => {
       ).value.error,
     ).toContain("protected");
   });
+  it("creates tasks with inherited permissions and rejects changed idempotency requests", async () => {
+    const s = await sessionTools();
+    const input = { taskId: "created-task", title: "New work", prompt: "Implement", status: "todo" };
+    const first = (await s.tool("tasks.create", input)).value.result;
+    expect(first).toMatchObject({ id: input.taskId, projectId: s.project.id, runtimeMode: "supervised", model: "gpt", status: "todo" });
+    expect((await s.tool("tasks.create", input)).value.result).toEqual(first);
+    expect((await s.tool("tasks.create", { ...input, status: "queued" })).value.error).toContain("reused");
+    expect((await s.tool("tasks.create", { ...input, prompt: "Changed" })).value.error).toContain("reused");
+    expect((await s.tool("tasks.create", { ...input, runtimeMode: "auto" })).value.error).toBeTruthy();
+    await s.call("tasks.delete", { taskId: first.id });
+    expect((await s.tool("tasks.create", input)).value.error).toBeTruthy();
+  });
   it("filters tasks and rejects cross-project recovery, completion, and changes to its own task", async () => {
     const s = await sessionTools();
     const other = s.store.addProject(join(s.project.cwd, "other"), "Other");

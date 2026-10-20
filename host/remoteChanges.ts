@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { ChangeSignal } from "./changeSignal";
+import { forEachConcurrent } from "../src/shared/lib/concurrent";
 import type { HostSessionSummary, SessionSync } from "../src/features/connections/model/protocol";
 
 export type SessionRef = {
@@ -48,6 +49,10 @@ export class RemoteChanges {
   private active = 0;
   private sessionCache = new Map<string, { at: number; revision: number | undefined }>();
   private projectBaselines = new Map<string, Map<string, HostSessionSummary[]>>();
+  private projectReads = new Map<
+    string,
+    Promise<{ etag: string; sessions: HostSessionSummary[] }>
+  >();
 
   async read(
     input: RemoteChangesInput,
@@ -121,8 +126,25 @@ export class RemoteChanges {
         return reset || current !== revision ? [{ sessionId, revision: current }] : [];
       });
       const projectValues: ProjectRef[] = [];
+      // Independent project reads may touch transcripts. Bound IO concurrency
+      // while keeping the response in subscription order.
+      const projectSnapshots = new Map<string, Awaited<ReturnType<typeof readProject>>>();
+      await forEachConcurrent(
+        [...new Set(projects.map(({ projectId }) => projectId))],
+        4,
+        async (projectId) => {
+          let pending = this.projectReads.get(projectId);
+          if (!pending) {
+            pending = readProject(projectId).finally(() => {
+              if (this.projectReads.get(projectId) === pending) this.projectReads.delete(projectId);
+            });
+            this.projectReads.set(projectId, pending);
+          }
+          projectSnapshots.set(projectId, await pending);
+        },
+      );
       for (const { projectId, known } of projects) {
-        const value = await readProject(projectId);
+        const value = projectSnapshots.get(projectId)!;
         this.rememberProject(projectId, value.etag, value.sessions);
         if (reset || known !== value.etag) {
           const previous =
@@ -222,18 +244,20 @@ export class RemoteChanges {
       cancelled()
     )
       return first;
-    if (this.active >= 64) return first;
+    if (this.active >= 64 || !(Number(input.waitMs) > 0)) return first;
     this.active++;
     const deadline = Date.now() + Math.min(10_000, Math.max(0, Number(input.waitMs) || 0));
+    let latest = first;
     try {
       while (!cancelled() && Date.now() < deadline) {
         await this.signal.wait(Math.min(deadline, Date.now() + recheckMs()), cancelled, version);
         version = this.signal.version;
         this.sessionCache.clear();
-        const next = await changed();
-        if (next.sessions.length || next.projects.length || next.tasks || next.git) return next;
+        latest = await changed();
+        if (latest.sessions.length || latest.projects.length || latest.tasks || latest.git)
+          return latest;
       }
-      return await changed();
+      return latest;
     } finally {
       this.active--;
     }

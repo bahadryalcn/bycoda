@@ -16,22 +16,19 @@
     <path d="M49 146H106L105 157H49Z" fill="#111d2b"/><rect x="72" y="146" width="15" height="12" rx="2" fill="#b8b5a4"/><path d="M76 149H84V155H76Z" fill="#415063"/>
     <path d="M49 98L32 119L29 151L46 157L57 115" fill="url(#cloth)"/>
     </g>
-    <g data-part="arm" data-pivot-x="104" data-pivot-y="109">
-    <path d="M104 99L121 122L127 154L109 159L97 117" fill="url(#cloth)"/>
-    </g>
     <g data-part="body">
     <path d="M30 147L46 149L45 164L29 163" fill="#283445"/>
-    </g>
-    <g data-part="arm" data-pivot-x="104" data-pivot-y="109">
-    <path d="M108 150L125 148L130 164L112 169" fill="#283445"/>
-    </g>
-    <g data-part="body">
     <path d="M32 162Q27 171 33 177Q43 179 45 168L43 162" fill="url(#skin)"/>
     </g>
-    <g data-part="arm" data-pivot-x="104" data-pivot-y="109">
+    <g data-part="arm" data-pivot-x="104" data-pivot-y="108">
+    <path d="M111.2 104.4L123.7 130.6A7.5 7.5 0 0 1 110.3 137.4L96.8 111.6A8 8 0 0 1 111.2 104.4Z" fill="url(#cloth)"/>
+    </g>
+    <g data-part="forearm" data-follow="arm" data-pivot-x="117" data-pivot-y="134">
+    <path d="M124.5 133.4L127.5 151.3L109.5 152.7L109.5 134.6A7.5 7.5 0 0 1 124.5 133.4Z" fill="url(#cloth)"/>
+    <path d="M108 150L125 148L130 164L112 169" fill="#283445"/>
     <path d="M113 164Q112 176 121 177L130 174L129 163Z" fill="#1d2b3d"/>
     </g>
-    <g data-part="weapon" data-follow="arm" data-pivot-x="120" data-pivot-y="167">
+    <g data-part="weapon" data-follow="forearm" data-pivot-x="120" data-pivot-y="167">
     <path d="M119 161L142 58" stroke="#82faac" stroke-width="11" opacity=".18"/><path d="M119 161L142 58" stroke="#8cf7af" stroke-width="5"/><path d="M119 161L142 58" stroke="#f2fff2" stroke-width="2"/>
     <path d="M116 176L121 157" stroke="#152131" stroke-width="8"/><path d="M117 173L120 161" stroke="#d1dedc" stroke-width="4"/>
     </g>

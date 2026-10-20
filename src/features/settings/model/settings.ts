@@ -48,6 +48,7 @@ export type SettingsSectionId =
   | "terminal"
   | "chat"
   | "providers"
+  | "crews"
   | "usage"
   | "limits"
   | "mcp"
@@ -185,7 +186,7 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
       return t("Connections");
     },
     get description() {
-      return t("Connect your machines and run agents remotely through SSH.");
+      return t("Manage your computers, phone access, and tunnels.");
     },
     keywords: "ssh remote host machine server environment always on",
   },
@@ -223,6 +224,12 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
       return t("Projects and conversations you have archived.");
     },
     keywords: "archived restore delete hidden",
+  },
+  {
+    id: "crews", group: "agents",
+    get label() { return t("Crews"); },
+    get description() { return t("Reusable agent teams, project crews and model allocation policies."); },
+    keywords: "crew team coordinator specialist reviewer advisor orchestration model cost quality capability",
   },
   {
     id: "chat",

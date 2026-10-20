@@ -22,6 +22,7 @@ import {
 import { machineProjects, machineCapabilities } from "../../automations/model/machineSnapshot";
 import type { HarnessId, RuntimeMode } from "../../sessions/model/session";
 import { HOST_TASK_WORKSPACES, type TaskWorkspace } from "./taskWorkspace";
+import { HOST_CREW_TASKS } from "../../crews/model/crew";
 import {
   HOST_TASKS,
   HOST_TASKS_TODO,
@@ -52,6 +53,7 @@ export type BoardTask = HostTask & {
 
 /** What the task form edits. A draft with an ID edits that task. */
 export type TaskDraft = {
+  crewDefinitionId?: string;
   workspaceLocked?: boolean;
   workspace?: TaskWorkspace;
   id?: string;
@@ -156,6 +158,7 @@ export function newTaskDraft(cwd: string, harness: HarnessId, model: string): Ta
 
 export function draftFromTask(task: BoardTask): TaskDraft {
   return {
+    ...(task.crewDefinitionId ? { crewDefinitionId: task.crewDefinitionId } : {}),
     id: task.id,
     machineId: task.machineId,
     status: task.status,
@@ -205,6 +208,7 @@ export function hostTaskFromDraft(draft: TaskDraft, id: string, projectId: strin
   if (!isRemoteProvider(draft.harness)) throw new Error(TASK_AGENT_ERROR);
   return {
     id,
+    ...(draft.crewDefinitionId ? { crewDefinitionId: draft.crewDefinitionId } : {}),
     title: draft.title,
     prompt: draft.prompt,
     projectId,
@@ -213,12 +217,12 @@ export function hostTaskFromDraft(draft: TaskDraft, id: string, projectId: strin
     modelSettings: draft.modelSettings,
     runtimeMode: draft.runtimeMode,
     maxRunMinutes: draft.maxRunMinutes,
-    isolate: draft.isolate,
-    ...(draft.workspace ? { workspace: draft.workspace } : {}),
+    isolate: draft.crewDefinitionId ? false : draft.isolate,
+    ...(!draft.crewDefinitionId && draft.workspace ? { workspace: draft.workspace } : {}),
     ...(draft.verifyCommand.trim() ? { verifyCommand: draft.verifyCommand.trim() } : {}),
-    review: draft.review,
-    ...(draft.continueUntilDone ? { continueUntilDone: true } : {}),
-    ...(draft.autoMerge && draft.isolate ? { autoMerge: true } : {}),
+    review: draft.crewDefinitionId ? false : draft.review,
+    ...(!draft.crewDefinitionId && draft.continueUntilDone ? { continueUntilDone: true } : {}),
+    ...(!draft.crewDefinitionId && draft.autoMerge && draft.isolate ? { autoMerge: true } : {}),
   };
 }
 
@@ -443,8 +447,10 @@ export async function saveTask(
   status: "todo" | "queued" = "queued",
 ): Promise<BoardTask> {
   const machine = taskMachineFor(machines, draft.cwd, draft.machineId);
-  await requireTaskContinuation(machine, draft.continueUntilDone);
-  await requireTaskWorkspaces(machine, Boolean(draft.workspace));
+  if (draft.crewDefinitionId && !(await machineCapabilities(machine)).includes(HOST_CREW_TASKS))
+    throw new Error("Update this project's host to run tasks with a crew.");
+  await requireTaskContinuation(machine, !draft.crewDefinitionId && draft.continueUntilDone);
+  await requireTaskWorkspaces(machine, !draft.crewDefinitionId && Boolean(draft.workspace));
   if (status === "todo" && !draft.id) {
     // An older host would queue the item and start it.
     const advertised = await machineCapabilities(machine);

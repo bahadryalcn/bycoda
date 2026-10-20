@@ -278,8 +278,9 @@ async function runSyncCycleInner(machineId: string, request: SyncRequest): Promi
 
   duringSyncWrite(() => {
     captureLocalProjectChanges(machineId);
-    captureLocalGroupChanges(machineId, localProjectIdsByPath());
-    captureLocalAppearanceChanges(machineId, localProjectIdsByPath());
+    const projectIds = localProjectIdsByPath();
+    captureLocalGroupChanges(machineId, projectIds);
+    captureLocalAppearanceChanges(machineId, projectIds);
     captureLocalLockChanges(machineId);
   });
 

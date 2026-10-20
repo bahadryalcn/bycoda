@@ -16,8 +16,8 @@ export const TASK_MOVES: Record<TaskStatus, readonly TaskStatus[]> = {
   blocked: ["queued", "todo"],
 };
 
-export function canMoveTask(from: TaskStatus, to: TaskStatus): boolean {
-  return TASK_MOVES[from].includes(to);
+export function canMoveTask(from: TaskStatus, to: TaskStatus, crewRunId?: string): boolean {
+  return !(crewRunId && to === "done") && TASK_MOVES[from].includes(to);
 }
 
 /** A task can be edited while nothing has run or is running for it. */

@@ -83,7 +83,7 @@ export function FullscreenButton() {
         aria-pressed={fullscreen}
         data-tauri-drag-region="false"
         onClick={() => void toggle()}
-        className="grid place-items-center"
+        className="size-7"
       >
         <Icon className="size-3.5" strokeWidth={1.75} />
       </Button>
