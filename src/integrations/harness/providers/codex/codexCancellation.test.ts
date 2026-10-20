@@ -5,6 +5,7 @@ const mock = vi.hoisted(() => ({
   onLine: undefined as ((line: string) => void) | undefined,
   bridge: vi.fn(async (_sessionId: string) => null),
   kill: vi.fn(async () => undefined),
+  policyRead: false,
 }));
 vi.mock("@tauri-apps/api/core", () => ({ isTauri: () => false, invoke: vi.fn() }));
 vi.mock("../../core/socialBridge", () => ({
@@ -22,6 +23,14 @@ vi.mock("../../core/child", () => ({
   },
   writeChild: async (_id: string, line: string) => {
     mock.lines.push(line);
+    const frame = JSON.parse(line);
+    const policyInventory = frame.method === "skills/list" && mock.policyRead;
+    if (frame.method === "config/read" || policyInventory) {
+      mock.policyRead = frame.method === "config/read";
+      const result =
+        frame.method === "config/read" ? { config: { skills: { config: [] } } } : { data: [] };
+      queueMicrotask(() => mock.onLine?.(JSON.stringify({ id: frame.id, result })));
+    }
   },
 }));
 vi.mock("../../../../platform/tauri/fs", () => ({
@@ -74,6 +83,7 @@ describe("Codex native commands and cancellation ownership", () => {
   beforeEach(() => {
     mock.lines.length = 0;
     mock.onLine = undefined;
+    mock.policyRead = false;
     mock.kill.mockClear();
     mock.bridge.mockReset().mockResolvedValue(null);
     codex.__codexTestReset();

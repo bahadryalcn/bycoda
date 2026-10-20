@@ -1014,6 +1014,7 @@ describe("Composer question focus", () => {
     invalidateProjectFiles();
     const cwd = "remote://composer-host/work/repo";
     const runner = vi.fn(async (command: string) => {
+      if (command === "skill_policy_get") return { disabledNames: [], disabledPaths: [] };
       if (command === "list_skills")
         return [
           {
@@ -1079,6 +1080,7 @@ describe("Composer question focus", () => {
     await type("/goal");
     expect(option("/goal")).toBeDefined();
     expect(runner.mock.calls.filter(([command]) => command === "list_skills")).toHaveLength(1);
+    expect(runner.mock.calls.filter(([command]) => command === "skill_policy_get")).toHaveLength(1);
     expect(runner.mock.calls.filter(([command]) => command === "list_project_files")).toHaveLength(
       1,
     );
