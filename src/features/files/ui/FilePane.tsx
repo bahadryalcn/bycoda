@@ -78,7 +78,7 @@ type Props = {
   onFocus: (paneId: string) => void;
   onSelectFile: (paneId: string, fileId: string) => void;
   onCloseFile: (paneId: string, fileId: string) => void;
-  onCloseOtherFiles: (paneId: string, fileId: string) => void;
+  onCloseOtherFiles: (paneId: string, fileId: string, direction?: "left" | "right") => void;
   onOpenInNewWindow?: (paneId: string, fileId: string, position?: WindowMovePosition) => void;
   onPinFile?: (fileId: string) => void;
   onDirtyChange: (fileId: string, dirty: boolean) => void;
@@ -147,7 +147,7 @@ function FilePaneComponent({
           fileErrorCounts={fileErrorCounts}
           onSelectFile={(fileId) => onSelectFile(pane.id, fileId)}
           onCloseFile={(fileId) => onCloseFile(pane.id, fileId)}
-          onCloseOtherFiles={(fileId) => onCloseOtherFiles(pane.id, fileId)}
+          onCloseOtherFiles={(fileId, direction) => onCloseOtherFiles(pane.id, fileId, direction)}
           onOpenInNewWindow={
             onOpenInNewWindow
               ? (fileId, position) => onOpenInNewWindow(pane.id, fileId, position)

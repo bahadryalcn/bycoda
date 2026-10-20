@@ -88,7 +88,7 @@ type Shared = {
   onRefreshAdoptedSession?: SessionPaneProps["onRefreshAdoptedSession"];
   onSelectFile: (paneId: string, fileId: string) => void;
   onCloseFile: (paneId: string, fileId: string) => void;
-  onCloseOtherFiles: (paneId: string, fileId: string) => void;
+  onCloseOtherFiles: (paneId: string, fileId: string, direction?: "left" | "right") => void;
   onOpenInNewWindow?: (paneId: string, fileId: string, position?: WindowMovePosition) => void;
   onPinFile?: (fileId: string) => void;
   onReorderFiles: (paneId: string, ids: string[]) => void;

@@ -40,10 +40,10 @@ export interface EditorFileCloseDeps {
 
 export interface EditorFileClose {
   onCloseFile: (paneId: string, fileId: string, opts?: { skipConfirm?: boolean }) => void;
-  onCloseOtherFiles: (paneId: string, fileId: string) => void;
+  onCloseOtherFiles: (paneId: string, fileId: string, direction?: "left" | "right") => void;
 }
 
-/** Closes one editor file, or every other file in its pane. */
+/** Closes one editor file, or other files in its pane (optionally on one side). */
 export function useEditorFileClose(deps: EditorFileCloseDeps): EditorFileClose {
   const {
     activeTabId,
@@ -214,13 +214,17 @@ export function useEditorFileClose(deps: EditorFileCloseDeps): EditorFileClose {
     [activeTabId, onCloseTab, projectCwd, tabCloseScope],
   );
 
-  const onCloseOtherFiles = useCallback((paneId: string, fileId: string) => {
+  const onCloseOtherFiles = useCallback((paneId: string, fileId: string, direction?: "left" | "right") => {
     if (isMovingPane(paneId)) return;
     const tab = tabsRef.current.find((entry) => findSurfacePane(entry, paneId));
     if (!tab) return;
     const found = findSurfacePane(tab, paneId);
-    if (!found?.pane.files.some((file) => file.id === fileId)) return;
-    const closingFiles = found.pane.files.filter((file) => file.id !== fileId);
+    if (!found) return;
+    const index = found.pane.files.findIndex((file) => file.id === fileId);
+    if (index < 0) return;
+    const closingFiles = found.pane.files.filter((file, fileIndex) =>
+      direction === "left" ? fileIndex < index : direction === "right" ? fileIndex > index : file.id !== fileId,
+    );
     if (closingFiles.length === 0) return;
     const closingIds = new Set(closingFiles.map((file) => file.id));
     const unsaved = closingFiles.filter(

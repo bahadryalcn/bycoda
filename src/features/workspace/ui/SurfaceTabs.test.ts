@@ -87,6 +87,8 @@ describe("surfaceTabMenuItems", () => {
         "Copy File Name",
         "Close",
         "Close Others",
+        "Close Tabs to the Right",
+        "Close Tabs to the Left",
       ]);
     }
   });
@@ -110,13 +112,15 @@ describe("surfaceTabMenuItems", () => {
           label: "Close Others",
           disabled: false,
         },
+        { kind: "item", id: "close-right", label: "Close Tabs to the Right", disabled: true },
+        { kind: "item", id: "close-left", label: "Close Tabs to the Left", disabled: true },
       ]);
     }
   });
 
   it("disables Close Others when there are no sibling tabs", () => {
     const items = surfaceTabMenuItems(newFileTab("/repo/src/app.ts", "/repo"), false);
-    expect(items.at(-1)).toEqual({
+    expect(items.find((item) => item.kind === "item" && item.id === "close-others")).toEqual({
       kind: "item",
       id: "close-others",
       label: "Close Others",

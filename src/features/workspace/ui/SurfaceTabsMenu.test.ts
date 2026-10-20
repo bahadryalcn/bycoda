@@ -162,6 +162,21 @@ describe("file tab context menu", () => {
     );
   });
 
+  it.each(["left", "right"] as const)("closes tabs to the %s of the clicked tab", async (direction) => {
+    props = { ...props, files: [...files, { id: "third", path: "/repo/third.ts", cwd: "/repo" }] };
+    render();
+    await pick(direction === "left" ? "Close Tabs to the Left" : "Close Tabs to the Right");
+    expect(props.onCloseOtherFiles).toHaveBeenCalledWith("second", direction);
+    expect(props.onCloseFile).not.toHaveBeenCalled();
+  });
+
+  it("disables only the side without neighboring tabs", () => {
+    const menu = openSecondMenu();
+    const items = Array.from(menu.querySelectorAll<HTMLButtonElement>('[role="menuitem"]'));
+    expect(items.find((item) => item.textContent === "Close Tabs to the Right")?.disabled).toBe(true);
+    expect(items.find((item) => item.textContent === "Close Tabs to the Left")?.disabled).toBe(false);
+  });
+
   it("disables Close Others when the selected tab is the only tab", () => {
     props = { ...props, files: [files[0]], activeFileId: "first" };
     render();
@@ -177,6 +192,10 @@ describe("file tab context menu", () => {
       (button) => button.textContent === "Close Others",
     );
     expect(item?.disabled).toBe(true);
+    const sides = Array.from(document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]'))
+      .filter((button) => button.textContent?.startsWith("Close Tabs to the"));
+    expect(sides).toHaveLength(2);
+    expect(sides.every((button) => button.disabled)).toBe(true);
   });
 });
 

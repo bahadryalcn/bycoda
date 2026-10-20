@@ -52,7 +52,7 @@ type Props = {
   fileErrorCounts: Map<string, number>;
   onSelectFile: (fileId: string) => void;
   onCloseFile: (fileId: string) => void;
-  onCloseOtherFiles: (fileId: string) => void;
+  onCloseOtherFiles: (fileId: string, direction?: "left" | "right") => void;
   /** Moves the file into its own window; omitted where that is unsupported. */
   onOpenInNewWindow?: (fileId: string, position?: WindowMovePosition) => void;
   /** Double-click makes a preview tab permanent. */
@@ -94,6 +94,7 @@ export function surfaceTabMenuItems(
   file: FilePaneTab,
   canCloseOthers = true,
   newWindow?: { dirty: boolean },
+  sides: { left: boolean; right: boolean } = { left: false, right: false },
 ): ExplorerMenuItem[] {
   const close: ExplorerMenuItem = {
     kind: "item",
@@ -110,8 +111,28 @@ export function surfaceTabMenuItems(
     },
     disabled: !canCloseOthers,
   };
+  const closeActions: ExplorerMenuItem[] = [
+    close,
+    closeOthers,
+    {
+      kind: "item",
+      id: "close-right",
+      get label() {
+        return t("Close Tabs to the Right");
+      },
+      disabled: !sides.right,
+    },
+    {
+      kind: "item",
+      id: "close-left",
+      get label() {
+        return t("Close Tabs to the Left");
+      },
+      disabled: !sides.left,
+    },
+  ];
   if (!isFilesystemTab(file) || isChangesTab(file)) {
-    return [close, closeOthers];
+    return closeActions;
   }
 
   return [
@@ -167,8 +188,7 @@ export function surfaceTabMenuItems(
       },
     },
     { kind: "sep" },
-    close,
-    closeOthers,
+    ...closeActions,
   ];
 }
 
@@ -418,6 +438,7 @@ export function SurfaceTabs({
   );
   const { displayed, setTabNode, finishMotion } = useTabCloseMotion(files);
   const menuFile = menu ? files.find((file) => file.id === menu.fileId) : undefined;
+  const menuFileIndex = menuFile ? files.indexOf(menuFile) : -1;
 
   const onMenuPick = (id: string) => {
     if (!menuFile) return;
@@ -429,6 +450,10 @@ export function SurfaceTabs({
     }
     if (id === "close-others") {
       onCloseOtherFiles(menuFile.id);
+      return;
+    }
+    if (id === "close-left" || id === "close-right") {
+      onCloseOtherFiles(menuFile.id, id === "close-left" ? "left" : "right");
       return;
     }
     if (id === "new-window") {
@@ -723,6 +748,7 @@ export function SurfaceTabs({
             menuFile,
             files.length > 1,
             onOpenInNewWindow ? { dirty: dirtyFileIds.has(menuFile.id) } : undefined,
+            { left: menuFileIndex > 0, right: menuFileIndex < files.length - 1 },
           )}
           ariaLabel="File tab actions"
           onPick={onMenuPick}
