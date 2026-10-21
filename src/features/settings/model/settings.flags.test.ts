@@ -73,7 +73,7 @@ describe.each([
     false,
     settings.KEEP_AWAKE_SCREEN_CHANGE_EVENT,
   ],
-  ["bycoda.closeToTray", settings.loadCloseToTray, settings.saveCloseToTray, true, undefined],
+  ["bycoda.closeToTray", settings.loadCloseToTray, settings.saveCloseToTray, true, "bycoda:close-to-tray-change"],
   [
     "bycoda.crewSceneEnabled",
     settings.loadCrewSceneEnabled,
@@ -81,7 +81,7 @@ describe.each([
     true,
     "bycoda:crew-scene-enabled-change",
   ],
-  ["bycoda.claudeHooks", settings.loadClaudeHooks, settings.saveClaudeHooks, true, undefined],
+  ["bycoda.claudeHooks", settings.loadClaudeHooks, settings.saveClaudeHooks, true, "bycoda:claude-hooks-change"],
   ["bycoda.resumeAtReset", settings.loadResumeAtReset, settings.saveResumeAtReset, true, undefined],
   [
     "bycoda.autoContinueInterrupted",
@@ -144,9 +144,12 @@ describe.each([
   it.each([false, true])("persists %s before notifying listeners", (value) => {
     const dispatch = vi.spyOn(window, "dispatchEvent");
     const listener = vi.fn((event: Event) => {
-      expect((event as CustomEvent<boolean | string>).detail).toBe(
-        key === "bycoda.bodyGlass" ? key : value,
-      );
+      expect(event.type).toBe(eventName);
+      if (key !== "bycoda.closeToTray") {
+        expect((event as CustomEvent<boolean | string>).detail).toBe(
+          key === "bycoda.bodyGlass" ? key : value,
+        );
+      }
       expect(load()).toBe(value);
     });
     if (eventName) window.addEventListener(eventName, listener);
@@ -176,7 +179,7 @@ describe.each([
       expect(dispatch).toHaveBeenCalledWith(
         expect.objectContaining({
           type: eventName,
-          detail: key === "bycoda.bodyGlass" ? key : value,
+          ...(key === "bycoda.closeToTray" ? {} : { detail: key === "bycoda.bodyGlass" ? key : value }),
         }),
       );
     }
