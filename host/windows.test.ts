@@ -14,6 +14,7 @@ import {
   runPowerShell,
   windowsTaskScript,
   windowsServiceRunner,
+  windowsNodeSetupScript,
   windowsUninstallScript,
 } from "./windows";
 
@@ -26,6 +27,38 @@ const temporary = () => {
   directories.push(dir);
   return dir;
 };
+
+it.skipIf(process.platform !== "win32")(
+  "reuses the firewall executable across releases, replaces Node atomically and restores older engines",
+  async () => {
+    const directory = temporary();
+    const first = join(directory, "first-node.exe");
+    const second = join(directory, "second-node.exe");
+    const stable = join(directory, "engine", "node.exe");
+    writeFileSync(first, "engine one");
+    writeFileSync(second, "engine two");
+    await runPowerShell(windowsNodeSetupScript(first, directory));
+    // Identical Node bytes must be reusable even while a process locks the file.
+    const result = await runPowerShell(`
+$lock = [IO.File]::Open(${psQuote(stable)}, 'Open', 'Read', 'Read')
+try {
+  ${windowsNodeSetupScript(first, directory)}
+  try {
+    ${windowsNodeSetupScript(second, directory)}
+    throw 'Unexpected engine replacement'
+  } catch {
+    if ($_.Exception.Message -eq 'Unexpected engine replacement') { throw }
+  }
+  [IO.File]::ReadAllText(${psQuote(stable)})
+} finally { $lock.Dispose() }
+`);
+    expect(result.trim()).toBe("engine one");
+    await runPowerShell(windowsNodeSetupScript(second, directory));
+    expect(readFileSync(stable, "utf8")).toBe("engine two");
+    await runPowerShell(windowsNodeSetupScript(first, directory));
+    expect(readFileSync(stable, "utf8")).toBe("engine one");
+  },
+);
 
 it.skipIf(process.platform !== "win32").each([0, 23])(
   "keeps a host alive after stderr diagnostics and preserves exit code %s",
@@ -176,6 +209,7 @@ ${windowsTaskScript({ directory, entry, executable: process.execPath, port: 3776
 `);
       const runner = join(directory, "service.ps1");
       expect(readFileSync(runner, "utf8")).toContain(entry);
+      expect(readFileSync(runner, "utf8")).toContain(join(directory, "engine", "node.exe"));
       execFileSync(powershell(), powershellArgs(`& ${psQuote(runner)}; exit $LASTEXITCODE`), {
         windowsHide: true,
         timeout: 15_000,

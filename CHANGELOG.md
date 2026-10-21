@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.61]
+
+### Providers
+
+- Stop background model discovery from launching the legacy Gemini CLI, which could repeatedly open a browser sign-in on Windows, macOS and Linux. Hosts without Gemini sessions no longer probe it; individual Google accounts continue to use Antigravity CLI.
+- Orchestration and provider settings no longer start Gemini CLI automatically; its models load when the model list is opened.
+
+### Host and connections
+
+- Run host services from a stable Node engine path so firewall identity survives host updates, with safe replacement and rollback.
+- Share project colors, icons and logos with mobile and remote clients after privacy filtering.
+- Improve the local update installer's engine handling and regression coverage.
+
 ## [0.6.60]
 
 ### Session and host reliability

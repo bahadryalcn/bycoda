@@ -27,7 +27,19 @@ export type HostDescriptor = {
   capabilities: string[];
   platform?: "win32" | "darwin" | "linux";
 };
-export type HostProject = { id: string; cwd: string; name: string };
+export type HostProject = {
+  id: string;
+  cwd: string;
+  name: string;
+  appearance?: HostProjectAppearance;
+};
+/** Display-only identity, exported after desktop privacy filtering. No file paths. */
+export type HostProjectAppearance = {
+  color?: string;
+  icon?: { path: string; highlight: string };
+  /** Bounded PNG thumbnail; never an arbitrary URL or local asset path. */
+  logo?: string;
+};
 /** Read-only desktop organization, scoped to an already visible project. */
 export type HostSessionLayout = {
   folders: {
@@ -46,6 +58,7 @@ export type HostProjectGroup = {
   name: string;
   color?: string;
   collapsed?: boolean;
+  appearance?: HostProjectAppearance;
 };
 /** A privacy-filtered directory. Each registered host ID remains a separate row. */
 export type HostProjectDirectory = {
@@ -61,7 +74,13 @@ export type HostProjectDirectory = {
 /** Sent only by the local desktop heartbeat; protected paths never reach the phone. */
 export type DesktopProjectDirectory = {
   version: 1;
-  projects: { cwd: string; name: string; groupId?: string; sessionLayout?: HostSessionLayout }[];
+  projects: {
+    cwd: string;
+    name: string;
+    groupId?: string;
+    sessionLayout?: HostSessionLayout;
+    appearance?: HostProjectAppearance;
+  }[];
   groups: HostProjectGroup[];
   excludedPaths: string[];
   excludedGroupIds: string[];

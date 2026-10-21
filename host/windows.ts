@@ -73,6 +73,34 @@ export type WindowsServiceOptions = {
   entry: string;
 };
 
+/** Keep the listening executable's firewall identity independent of host releases.
+ * Never overwrite it in place: a locked engine must fail without damaging the
+ * previous installation. The caller has already stopped the service. */
+export function windowsNodeSetupScript(executable: string, directory: string): string {
+  const engine = join(directory, "engine");
+  const node = join(engine, "node.exe");
+  return `
+$sourceNode = ${psQuote(executable)}
+$stableNode = ${psQuote(node)}
+$sourceHash = (Get-FileHash -LiteralPath $sourceNode -Algorithm SHA256).Hash
+if (-not [IO.File]::Exists($stableNode) -or (Get-FileHash -LiteralPath $stableNode -Algorithm SHA256).Hash -ne $sourceHash) {
+  [IO.Directory]::CreateDirectory(${psQuote(engine)}) | Out-Null
+  $stagedNode = Join-Path ${psQuote(engine)} ('node-' + [Guid]::NewGuid().ToString('N') + '.tmp')
+  try {
+    [IO.File]::Copy($sourceNode, $stagedNode)
+    if ((Get-FileHash -LiteralPath $stagedNode -Algorithm SHA256).Hash -ne $sourceHash) { throw 'The staged host engine checksum changed.' }
+    if ([IO.File]::Exists($stableNode)) {
+      [IO.File]::Replace($stagedNode, $stableNode, [Management.Automation.Language.NullString]::Value)
+    } else {
+      [IO.File]::Move($stagedNode, $stableNode)
+    }
+  } finally {
+    if ([IO.File]::Exists($stagedNode)) { [IO.File]::Delete($stagedNode) }
+  }
+}
+`;
+}
+
 export function windowsServiceRunner(options: WindowsServiceOptions, path: string): string {
   // Windows PowerShell 5.1 treats redirected native stderr as ErrorRecords.
   // A provider diagnostic must be logged without terminating the host pipeline.
@@ -84,7 +112,8 @@ export function windowsServiceRunner(options: WindowsServiceOptions, path: strin
  * interactive token preserves this user's normal network/credential access.
  * S4U cannot access network or encrypted files and is unsuitable for agents. */
 export function windowsTaskScript(options: WindowsServiceOptions, path: string): string {
-  const runner = windowsServiceRunner(options, path);
+  const executable = join(options.directory, "engine", "node.exe");
+  const runner = windowsServiceRunner({ ...options, executable }, path);
   const runnerPath = join(options.directory, "service.ps1");
   const launcher = `$ErrorActionPreference = 'Stop'; try { & ([ScriptBlock]::Create([IO.File]::ReadAllText(${psQuote(runnerPath)}))) } catch { [Console]::Error.WriteLine($_.Exception.Message); exit 1 }`;
   const launcherPath = join(options.directory, "service-launcher-v3.exe");
@@ -110,7 +139,11 @@ if ($null -ne $task -and $task.State -eq 'Running') {
   if (-not [IO.File]::Exists(${psQuote(runnerPath)}) -or [IO.File]::ReadAllText(${psQuote(runnerPath)}) -ne $runner) {
     throw 'Stop the existing host before changing its service runtime.'
   }
+  if ((Get-FileHash -LiteralPath ${psQuote(executable)} -Algorithm SHA256).Hash -ne (Get-FileHash -LiteralPath ${psQuote(options.executable)} -Algorithm SHA256).Hash) {
+    throw 'Stop the existing host before changing its Node engine.'
+  }
 } else {
+  ${windowsNodeSetupScript(options.executable, options.directory)}
   [IO.File]::WriteAllText(${psQuote(runnerPath)}, $runner, [Text.UTF8Encoding]::new($false))
 }
 if ($null -eq $task) {

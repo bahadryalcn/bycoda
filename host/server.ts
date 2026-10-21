@@ -511,9 +511,14 @@ export function createHostServer(
       /* the desktop is mid-turn; serve the host copy */
     }
   };
+  // Legacy Gemini CLI opens a browser sign-in from session/new when its cached
+  // OAuth is unusable, so it is discovered only for hosts that already run it.
+  // Individual Google accounts use Antigravity; turns still route to Gemini.
+  const usesGemini = engine.store.startupStates().some((state) => state.harness === "gemini");
+  const catalogProviders = providers.filter((provider) => provider !== "gemini" || usesGemini);
   const catalogs = new ModelCatalogCache(
-    [...new Set([...providers, "acp" as const])],
-    () => providerBinaries(providers),
+    [...new Set([...catalogProviders, "acp" as const])],
+    () => providerBinaries(catalogProviders),
     async (provider, cwd) => {
       const discovered =
         provider === "acp"

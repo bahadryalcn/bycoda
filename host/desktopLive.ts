@@ -1,5 +1,10 @@
 import { randomUUID } from "node:crypto";
 import { parseSessionLayout } from "./session-layout";
+import {
+  MAX_DIRECTORY_LOGO_LENGTH,
+  parseProjectAppearance,
+  projectIdentityColor,
+} from "../src/features/connections/model/projectAppearance";
 import type { Block, Session } from "../src/features/sessions/model/session";
 import type {
   DesktopProjectDirectory,
@@ -67,18 +72,28 @@ export function parseDesktopProjectDirectory(input: unknown): DesktopProjectDire
   )
     return;
   const groups: DesktopProjectDirectory["groups"] = [];
+  let logoBudget = MAX_DIRECTORY_LOGO_LENGTH;
+  const readAppearance = (input: unknown) => {
+    const appearance = parseProjectAppearance(input);
+    if (appearance?.logo) {
+      if (appearance.logo.length > logoBudget) delete appearance.logo;
+      else logoBudget -= appearance.logo.length;
+    }
+    return appearance;
+  };
   const ids = new Set<string>();
   for (const raw of value.groups) {
     if (!raw || typeof raw !== "object" || Array.isArray(raw)) return;
     const group = raw as Record<string, unknown>;
     if (!text(group.id, 200) || !text(group.name, 1000) || ids.has(group.id)) return;
     ids.add(group.id);
+    const color = projectIdentityColor(group.color);
+    const appearance = readAppearance(group.appearance);
     groups.push({
       id: group.id,
       name: group.name,
-      ...(typeof group.color === "string" && /^#[0-9a-f]{6}$/i.test(group.color)
-        ? { color: group.color }
-        : {}),
+      ...(color ? { color } : {}),
+      ...(appearance ? { appearance } : {}),
       ...(typeof group.collapsed === "boolean" ? { collapsed: group.collapsed } : {}),
     });
   }
@@ -95,11 +110,13 @@ export function parseDesktopProjectDirectory(input: unknown): DesktopProjectDire
     if (project.groupId !== undefined && (!text(project.groupId, 200) || !ids.has(project.groupId)))
       return;
     const sessionLayout = parseSessionLayout(project.sessionLayout);
+    const appearance = readAppearance(project.appearance);
     projects.push({
       cwd: project.cwd,
       name: project.name,
       ...(typeof project.groupId === "string" ? { groupId: project.groupId } : {}),
       ...(sessionLayout ? { sessionLayout } : {}),
+      ...(appearance ? { appearance } : {}),
     });
   }
   return {

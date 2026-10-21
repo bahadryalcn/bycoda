@@ -1,9 +1,17 @@
 import type { DesktopProjectDirectory } from "../../connections/model/protocol";
 import { getGroupLockView } from "../../group-lock/model/groupLock";
 import type { LockSnapshot } from "../../group-lock/model/lockState";
-import { pathKey } from "../../../shared/lib/paths";
+import { pathKey, projectKey, projectName } from "../../../shared/lib/paths";
 import { projectDisplayName } from "./projectNames";
-import { loadTabGroupLabels } from "../../workspace/model/tabGroups";
+import {
+  loadTabGroupLabels,
+  loadTabGroupColors,
+  loadTabGroupCustomColors,
+  loadTabGroupMascots,
+  resolveTabGroupColor,
+  resolveTabGroupMascot,
+} from "../../workspace/model/tabGroups";
+import { projectMascot } from "./projectMascots";
 import {
   loadProjectGroupAssignments,
   projectGroupColor,
@@ -23,6 +31,9 @@ export function projectMobileDirectory(input: {
   labels?: Record<string, string>;
 }): DesktopProjectDirectory {
   const labels = input.labels ?? loadTabGroupLabels();
+  const colors = loadTabGroupColors();
+  const customColors = loadTabGroupCustomColors();
+  const mascots = loadTabGroupMascots();
   const groups = input.groups.filter((group) => !input.lock.lockedGroupIds.has(group.id));
   const groupIds = new Set(groups.map((group) => group.id));
   const workspaceGroups = new Map(
@@ -45,14 +56,31 @@ export function projectMobileDirectory(input: {
     if (!isLocalProject(cwd) || seen.has(key) || input.lock.lockedProjectKeys.has(key)) continue;
     seen.add(key);
     const assigned = input.assignments[key] ?? workspaceGroups.get(key);
-    const folders = loadSessionFolders(cwd).map(({ id, name, sessionIds, collapsed, ordered, parentId, pinned }) =>
-      ({ id, name, sessionIds, collapsed, ordered, parentId, pinned }));
+    const folders = loadSessionFolders(cwd).map(
+      ({ id, name, sessionIds, collapsed, ordered, parentId, pinned }) => ({
+        id,
+        name,
+        sessionIds,
+        collapsed,
+        ordered,
+        parentId,
+        pinned,
+      }),
+    );
     const order = loadSessionOrder(cwd);
+    const seed = projectName(cwd);
+    const mascot = projectMascot(seed, resolveTabGroupMascot(projectKey(cwd), mascots));
     projects.push({
       cwd,
       name: projectDisplayName(cwd, labels),
+      appearance: {
+        color: resolveTabGroupColor(projectKey(cwd), colors, customColors, seed),
+        icon: { path: mascot.restPath, highlight: mascot.highlight },
+      },
       ...(assigned && groupIds.has(assigned) ? { groupId: assigned } : {}),
-      ...(folders.length || order.loose?.length || order.pinned?.length ? { sessionLayout: { folders, order } } : {}),
+      ...(folders.length || order.loose?.length || order.pinned?.length
+        ? { sessionLayout: { folders, order } }
+        : {}),
     });
   }
   return {
@@ -63,6 +91,17 @@ export function projectMobileDirectory(input: {
       name: group.name,
       color: projectGroupColor(group),
       collapsed: group.collapsed,
+      ...(group.mascot
+        ? {
+            appearance: {
+              color: projectGroupColor(group),
+              icon: {
+                path: projectMascot(group.id, group.mascot).restPath,
+                highlight: projectMascot(group.id, group.mascot).highlight,
+              },
+            },
+          }
+        : {}),
     })),
     excludedPaths: [...input.lock.lockedProjectKeys],
     excludedGroupIds: [...input.lock.lockedGroupIds],
@@ -81,5 +120,8 @@ export function buildMobileProjectDirectory(
     assignments: loadProjectGroupAssignments(view.groups),
     lock: view.lock,
   });
-  return { ...directory, projects: directory.projects.filter((project) => !archived.has(pathKey(project.cwd))) };
+  return {
+    ...directory,
+    projects: directory.projects.filter((project) => !archived.has(pathKey(project.cwd))),
+  };
 }

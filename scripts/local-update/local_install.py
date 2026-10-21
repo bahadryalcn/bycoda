@@ -93,6 +93,28 @@ def stop_windows_host():
             raise RuntimeError('Old host did not stop; service paths left unchanged')
     return state['port']
 
+
+def prepare_posix_node(runtime):
+    source = runtime / 'bin/node'
+    engine = BASE / 'engine'
+    node = engine / 'node'
+    expected = digest(source)
+    if node.exists() and digest(node) == expected:
+        return node
+    engine.mkdir(parents=True, exist_ok=True, mode=0o700)
+    fd, staged_path = tempfile.mkstemp(prefix='node-', suffix='.tmp', dir=engine)
+    os.close(fd)
+    staged = pathlib.Path(staged_path)
+    try:
+        shutil.copyfile(source, staged)
+        if digest(staged) != expected:
+            raise RuntimeError('The staged host engine checksum changed')
+        staged.chmod(0o700)
+        os.replace(staged, node)
+    finally:
+        staged.unlink(missing_ok=True)
+    return node
+
 def host_install(release, manifest, report):
     source = release / 'host'
     verify_tree(source, manifest['hostHashes'])
@@ -170,12 +192,15 @@ def host_install(release, manifest, report):
         plist = configs[-1]
         with plist.open('rb') as f:
             config = plistlib.load(f)
-        actual_previous = str(pathlib.Path(config['ProgramArguments'][0]).parent.parent)
+        # The executable now lives outside the versioned package. Derive the
+        # previous package from host.mjs, never from engine/node.
+        actual_previous = str(pathlib.Path(config['ProgramArguments'][1]).parent)
         config['ProgramArguments'] = [arg.replace(actual_previous, str(runtime)) for arg in config['ProgramArguments']]
         config['EnvironmentVariables']['PATH'] = config['EnvironmentVariables']['PATH'].replace(actual_previous, str(runtime))
         domain = f'gui/{os.getuid()}'
         run(['launchctl', 'bootout', domain, str(plist)])
         try:
+            config['ProgramArguments'][0] = str(prepare_posix_node(runtime))
             with plist.open('wb') as f:
                 plistlib.dump(config, f)
             (BASE / 'runtime-path').write_text(str(runtime)+'\n')
@@ -188,9 +213,32 @@ def host_install(release, manifest, report):
                 pass
             for path in configs:
                 shutil.copy2(rollback / path.name, path)
+            # A legacy plist may still point at its packaged Node. Restoring the
+            # engine is required when the previous plist used the stable path.
+            with plist.open('rb') as f:
+                restored = plistlib.load(f)
+            if restored['ProgramArguments'][0] == str(BASE / 'engine/node'):
+                prepare_posix_node(pathlib.Path(previous))
             run(['launchctl', 'bootstrap', domain, str(plist)])
             raise
     report('installed', runtime=str(runtime))
+
+def verify_windows_host_process(runtime, pid):
+    path = ps(f'(Get-Process -Id {pid}).Path')
+    executable = pathlib.Path(path).resolve()
+    # Archived packages still launch their own Node. New hosts retain a stable
+    # firewall identity, but must run the selected package with matching bytes.
+    if executable not in ((runtime / 'node.exe').resolve(),
+                          (BASE / 'engine/node.exe').resolve()):
+        raise RuntimeError('Unexpected host runtime process')
+    if digest(executable) != digest(runtime / 'node.exe'):
+        raise RuntimeError('Unexpected host Node engine checksum')
+    command = ps(f'(Get-CimInstance Win32_Process -Filter "ProcessId = {pid}").CommandLine')
+    entry = re.escape(str(runtime / 'host.mjs'))
+    if not re.search(r'(?:^|\s)(?:"' + entry + r'"|' + entry + r')(?=\s|$)',
+                     command, re.IGNORECASE):
+        raise RuntimeError('Unexpected host entry point')
+
 
 def verify_host(runtime):
     deadline = time.monotonic() + 30
@@ -200,9 +248,7 @@ def verify_host(runtime):
             if not alive(pid):
                 raise RuntimeError('Host PID exited')
             if os.name == 'nt':
-                path = ps(f'(Get-Process -Id {pid}).Path')
-                if pathlib.Path(path).resolve() != (runtime / 'node.exe').resolve():
-                    raise RuntimeError('Unexpected host runtime process')
+                verify_windows_host_process(runtime, pid)
             else:
                 command = run(['ps', '-p', str(pid), '-o', 'command='])
                 if str(runtime / 'host.mjs') not in command:

@@ -93,6 +93,19 @@ one template. On macOS, update the existing LaunchAgent runtime paths. Verify th
 new process path, health, and SQLite integrity; restore the previous configuration
 if a service swap fails.
 
+Host services use a stable executable: `~/.bycoda-host/engine/node.exe` on Windows
+and `~/.bycoda-host/engine/node` on macOS and Linux. `host.mjs` stays in its
+versioned package. Service setup and the macOS local updater reuse identical
+Node bytes and atomically replace changed engines after unloading the service.
+The macOS updater restores the previous engine along with its service definition
+if health checks fail. Windows also refuses to overwrite a locked engine.
+
+This preserves the executable path used by application firewall rules across
+bycoda updates. The first migration from a versioned Node path may prompt once.
+Changing Node itself can still trigger OS checks on its signature or identity;
+the stable path does not bypass macOS privacy permissions, Gatekeeper, or Linux
+security policies. No firewall rules or OS permissions are added or broadened.
+
 The shared Windows runner logs native stderr diagnostics without treating them as
 termination requests; the host's exit code controls crash recovery. Runtime upgrades
 regenerate this runner from the packaged host code. Normal CI covers the Windows

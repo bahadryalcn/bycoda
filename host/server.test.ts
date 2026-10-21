@@ -26,6 +26,12 @@ vi.mock("../src/integrations/harness/providers/codex/codexCatalog", () => ({
   discoverCodexModels: modelProbe,
   refreshCodexCatalog: async () => {},
 }));
+const geminiProbe = vi.hoisted(() => vi.fn());
+vi.mock("../src/integrations/harness/providers/gemini/geminiCatalog", () => ({
+  discoverGeminiModels: geminiProbe,
+  refreshGeminiCatalog: async () => {},
+  loginGemini: async () => {},
+}));
 // Catalog tests point the host at a stand-in provider CLI.
 const binaries: { codex?: string } = {};
 configureChildBackend(new HostChildBackend(binaries));
@@ -1587,6 +1593,14 @@ describe("remote host API", () => {
     const second = await s.call("models.list", { projectId: s.project.id });
     expect(second.value.result.models.codex).toEqual([{ id: "codex:test", name: "Test" }]);
     expect(modelProbe).toHaveBeenCalledTimes(2);
+  });
+  it("does not spawn legacy Gemini CLI for model discovery without Gemini sessions", async () => {
+    const s = await setup(["codex", "gemini"]);
+    modelProbe.mockResolvedValueOnce([{ id: "codex:test", name: "Test" }]);
+    const result = (await s.call("models.list", { projectId: s.project.id })).value.result;
+    expect(result.models.codex).toEqual([{ id: "codex:test", name: "Test" }]);
+    expect(result.models.gemini).toBeUndefined();
+    expect(geminiProbe).not.toHaveBeenCalled();
   });
   it("advertises newer providers only to desktops that request them", async () => {
     const s = await setup(["codex", "cursor"]);

@@ -154,6 +154,46 @@ describe("desktop window ownership", () => {
 });
 
 describe("privacy-filtered project directory", () => {
+  it("carries saved identity through host IDs, replacements, and privacy exclusions", () => {
+    const live = new DesktopLive(() => 0);
+    const projection = {
+      version: 1 as const,
+      projects: [
+        {
+          cwd: "/work",
+          name: "Work",
+          appearance: {
+            color: "hsl(120 100% 50%)",
+            logo: "data:image/png;base64,iVBORw0KGgoAAA==",
+            icon: { path: "M1 1h10v10z", highlight: "#aabbcc" },
+          },
+        },
+      ],
+      groups: [],
+      excludedPaths: [],
+      excludedGroupIds: [],
+    };
+    live.beat({ clientId: "desktop", sessions: [], projectDirectory: projection });
+    expect(
+      live.projectDirectory([{ id: "registered", cwd: "/work", name: "old" }], "host").projects[0],
+    ).toMatchObject({
+      id: "registered",
+      name: "Work",
+      appearance: { ...projection.projects[0].appearance, color: "#00ff00" },
+    });
+    live.beat({
+      clientId: "desktop",
+      sessions: [],
+      projectDirectory: { ...projection, projects: [{ cwd: "/work", name: "Work" }] },
+    });
+    expect(live.projectDirectory([], "host").projects[0].appearance).toBeUndefined();
+    live.beat({
+      clientId: "desktop",
+      sessions: [],
+      projectDirectory: { ...projection, excludedPaths: ["/work"] },
+    });
+    expect(live.projectDirectory([], "host").projects).toEqual([]);
+  });
   it("uses desktop visibility and order while carrying read-only session organization", () => {
     const live = new DesktopLive(() => 0);
     const sessionLayout = {

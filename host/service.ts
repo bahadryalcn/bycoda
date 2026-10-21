@@ -3,6 +3,7 @@ import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { homedir, userInfo } from "node:os";
 import { join } from "node:path";
 import { runPowerShell, windowsTaskScript, windowsUninstallScript } from "./windows";
+import { preparePosixNode } from "./node-engine";
 
 const LABEL = "com.bycoda.host";
 type ServiceOptions = {
@@ -349,7 +350,8 @@ export async function installService(
       await run("launchctl", ["enable", `${domain}/${LABEL}`]);
       await run("launchctl", ["kickstart", `${domain}/${LABEL}`]);
     } else {
-      await writeFile(file, launchAgent(options, path), { mode: 0o600 });
+      const executable = await preparePosixNode(options.executable, options.directory);
+      await writeFile(file, launchAgent({ ...options, executable }, path), { mode: 0o600 });
       await run("launchctl", ["enable", `${domain}/${LABEL}`]);
       await run("launchctl", ["bootstrap", domain, file]);
     }
@@ -374,8 +376,10 @@ export async function installService(
     const file = join(folder, "bycoda-host.service");
     try {
       await readFile(file);
-    } catch {
-      await writeFile(file, systemdUnit(options, path), { mode: 0o600 });
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+      const executable = await preparePosixNode(options.executable, options.directory);
+      await writeFile(file, systemdUnit({ ...options, executable }, path), { mode: 0o600 });
     }
     await run("systemctl", ["--user", "daemon-reload"], env);
     await run("systemctl", ["--user", "enable", "--now", "bycoda-host.service"], env);

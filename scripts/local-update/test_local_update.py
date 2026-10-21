@@ -17,10 +17,95 @@ from unittest.mock import patch
 
 from local_update import UPDATER_FEED, archive_package, dependency_action, dependency_key, fingerprint, sync_source, queue_install, validate_versions, validate_product_identity, finish_build, host_key, install_job_active, snapshot
 from local_update_lib import backup, count, safe_child, write_json, read_json, alive, digest, windows_binary_digest, PRODUCT_IDENTITY, package_identity
-from local_install import wait_idle, stop_windows_host, host_install
+from local_install import wait_idle, stop_windows_host, host_install, verify_windows_host_process
 from local_install import app_install, windows_app_process_filter, desktop_db, mac_app_update_paths
 
 class LocalUpdateTests(unittest.TestCase):
+    def test_mac_update_migrates_legacy_and_stable_services_and_restores_engine_on_failure(self):
+        for stable_service in (False, True):
+            for fail in (False, True):
+                with self.subTest(stable=stable_service, fail=fail), tempfile.TemporaryDirectory() as folder:
+                    home = pathlib.Path(folder)
+                    base = home / '.bycoda-host'
+                    previous = base / 'runtime/previous'
+                    (previous / 'bin').mkdir(parents=True)
+                    (previous / 'bin/node').write_bytes(b'old node')
+                    (base / 'host.db').touch()
+                    (base / 'runtime-path').write_text(str(previous))
+                    (base / 'engine').mkdir()
+                    engine = base / 'engine/node'
+                    engine.write_bytes(b'old node')
+                    plist = home / 'Library/LaunchAgents/com.bycoda.host.plist'
+                    plist.parent.mkdir(parents=True)
+                    original = {
+                        'ProgramArguments': [str(engine if stable_service else previous / 'bin/node'),
+                                             str(previous / 'host.mjs'), 'serve', '--port', '3776'],
+                        'EnvironmentVariables': {'PATH': str(previous / 'bin') + ':/usr/bin'},
+                    }
+                    with plist.open('wb') as f:
+                        plistlib.dump(original, f)
+                    release = home / 'release'
+                    (release / 'host/bin').mkdir(parents=True)
+                    (release / 'host/bin/node').write_bytes(b'new node')
+                    (release / 'host/host.mjs').write_text('new host')
+                    system = SimpleNamespace(name='posix', getuid=lambda: 501,
+                                             close=os.close, replace=os.replace)
+                    health = RuntimeError('simulated health failure') if fail else None
+                    with patch('local_install.BASE', base), patch('local_install.os', system), \
+                         patch('local_install.pathlib.Path.home', return_value=home), \
+                         patch('local_install.verify_tree'), patch('local_install.wait_idle'), \
+                         patch('local_install.backup'), patch('local_install.run'), \
+                         patch('local_install.verify_host', side_effect=health):
+                        install = lambda: host_install(release, {'version': '0.6.60', 'platform': 'darwin-arm64',
+                                                                'id': 'fixture', 'hostHashes': {}}, lambda *a, **kw: None)
+                        if fail:
+                            with self.assertRaisesRegex(RuntimeError, 'simulated health failure'):
+                                install()
+                        else:
+                            install()
+                    with plist.open('rb') as f:
+                        installed = plistlib.load(f)
+                    if fail:
+                        self.assertEqual(installed, original)
+                        self.assertEqual((base / 'runtime-path').read_text(), str(previous))
+                        if stable_service:
+                            self.assertEqual(engine.read_bytes(), b'old node')
+                    else:
+                        selected = base / 'runtime/0.6.60-darwin-arm64-fixture'
+                        self.assertEqual(installed['ProgramArguments'][0], str(engine))
+                        self.assertEqual(installed['ProgramArguments'][1], str(selected / 'host.mjs'))
+                        self.assertEqual(engine.read_bytes(), b'new node')
+                        self.assertEqual((base / 'runtime-path').read_text().strip(), str(selected))
+
+    def test_windows_host_verifies_stable_engine_and_selected_entry(self):
+        with tempfile.TemporaryDirectory() as folder:
+            base = pathlib.Path(folder)
+            runtime = base / 'runtime/new-package'
+            runtime.mkdir(parents=True)
+            (runtime / 'node.exe').write_bytes(b'expected node')
+            stable = base / 'engine/node.exe'
+            stable.parent.mkdir()
+            stable.write_bytes(b'expected node')
+            entry = runtime / 'host.mjs'
+            for executable in (stable, runtime / 'node.exe'):
+                with self.subTest(executable=executable), \
+                     patch('local_install.BASE', base), \
+                     patch('local_install.ps', side_effect=[str(executable), f'"{executable}" "{entry}" serve']):
+                    verify_windows_host_process(runtime, 123)
+            with patch('local_install.BASE', base):
+                with patch('local_install.ps', side_effect=[str(stable), f'node {entry} serve']):
+                    verify_windows_host_process(runtime, 123)
+                with patch('local_install.ps', side_effect=[str(stable), f'node "{base / "runtime/old-package/host.mjs"}" serve']):
+                    with self.assertRaisesRegex(RuntimeError, 'entry point'):
+                        verify_windows_host_process(runtime, 123)
+                stable.write_bytes(b'wrong node')
+                with patch('local_install.ps', return_value=str(stable)):
+                    with self.assertRaisesRegex(RuntimeError, 'checksum'):
+                        verify_windows_host_process(runtime, 123)
+                with patch('local_install.ps', return_value=str(base / 'unrelated/node.exe')):
+                    with self.assertRaisesRegex(RuntimeError, 'runtime process'):
+                        verify_windows_host_process(runtime, 123)
+
     @unittest.skipUnless(os.name == 'nt', 'Windows installation recovery')
     def test_windows_failed_update_restores_complete_installation(self):
         for failure in ('installer', 'version', 'hash'):

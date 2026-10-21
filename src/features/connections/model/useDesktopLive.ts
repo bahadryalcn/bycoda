@@ -14,6 +14,7 @@ import { loadRemoteCapabilities, remoteRequest } from "./connections";
 import { isLocalSyncMachine } from "./localSync";
 import type { RemoteMachine } from "./protocol";
 import { buildMobileProjectDirectory } from "../../projects/model/mobileProjectDirectory";
+import { withMobileProjectLogos } from "../../projects/model/mobileProjectLogos";
 
 const MACHINE_RECHECK_MS = 15_000;
 // One identity per WebView, stable across StrictMode effect remounts.
@@ -66,7 +67,9 @@ export function useDesktopLive(
             remoteRequest<DesktopLiveResult>(id, "sessions.desktopLive", payload),
           sessions: () => sessionsRef.current,
           projectDirectory: () =>
-            buildMobileProjectDirectory(sessionsRef.current.map((session) => session.cwd)),
+            withMobileProjectLogos(
+              buildMobileProjectDirectory(sessionsRef.current.map((session) => session.cwd)),
+            ),
           handlers: {
             delete: (sessionId, cwd) => {
               const handler = handlersRef.current.delete;

@@ -796,7 +796,8 @@ export function ProviderRow({
     : [];
 
   useEffect(() => {
-    if (!available || hasLiveCatalog(harness)) return;
+    // Gemini discovery may start a browser sign-in; it loads when the model list is opened.
+    if (!available || harness === "gemini" || hasLiveCatalog(harness)) return;
     void refreshHarnessCatalogs([harness]);
   }, [available, harness]);
 
