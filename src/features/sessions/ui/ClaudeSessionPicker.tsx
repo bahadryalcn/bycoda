@@ -16,21 +16,24 @@ type Props = {
 export function ClaudeSessionPicker({ cwd, providerAccountId, onPick, onClose }: Props) {
   useLocale();
   const [sessions, setSessions] = useState<ClaudeSessionSummary[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [retry, setRetry] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
+    setSessions(null);
+    setError(null);
     claudeSessions(cwd, providerAccountId)
       .then((list) => {
         if (!cancelled) setSessions(list);
       })
-      .catch(() => {
-        // A project Claude Code has never run in simply has nothing to show.
-        if (!cancelled) setSessions([]);
+      .catch((reason: unknown) => {
+        if (!cancelled) setError(reason instanceof Error ? reason.message : String(reason));
       });
     return () => {
       cancelled = true;
     };
-  }, [cwd, providerAccountId]);
+  }, [cwd, providerAccountId, retry]);
 
   return (
     <ModalPanel
@@ -39,7 +42,17 @@ export function ClaudeSessionPicker({ cwd, providerAccountId, onPick, onClose }:
       description={t("Picked up from where Claude Code left off in this project.")}
       fitViewport
     >
-      {sessions === null ? (
+      {error ? (
+        <div
+          role="alert"
+          className="flex flex-wrap items-center gap-2 px-1 py-3 text-sm text-danger"
+        >
+          <span>{error}</span>
+          <Button variant="secondary" onClick={() => setRetry((value) => value + 1)}>
+            {t("Retry")}
+          </Button>
+        </div>
+      ) : sessions === null ? (
         <p className="px-1 py-6 text-center text-sm opacity-60">{t("Reading…")}</p>
       ) : sessions.length === 0 ? (
         <p className="px-1 py-6 text-center text-sm opacity-60">

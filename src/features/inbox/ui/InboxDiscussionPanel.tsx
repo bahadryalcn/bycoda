@@ -72,9 +72,8 @@ export function InboxDiscussionPanel({
       className="relative flex min-h-0 shrink-0 flex-col border-l border-(--ui-tone-neutral-border) max-[1100px]:absolute max-[1100px]:inset-0 max-[1100px]:z-10 max-[1100px]:!w-auto max-[1100px]:bg-(--ui-surface)"
     >
       <div
-        role="separator"
+        {...resize.separatorProps}
         aria-label={t("Resize discussion")}
-        aria-orientation="vertical"
         onPointerDown={resize.onPointerDown}
         onDoubleClick={resize.onDoubleClick}
         className="absolute inset-y-0 -left-1 z-20 w-2 cursor-col-resize max-[1100px]:hidden"

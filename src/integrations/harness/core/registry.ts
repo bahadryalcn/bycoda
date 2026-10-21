@@ -473,9 +473,9 @@ export function steerHarnessTurn(input: SteerTurnInput & { harness: HarnessId })
       throw new Error(`${input.harness} is not connected yet`);
     }
     cancelIdlePark(input.sessionId);
-    await adapter.steerTurn(
-      withSkillPolicy("steer", input, await loadSkillRestrictions(input.cwd)),
-    );
+    const prepared = withSkillPolicy("steer", input, await loadSkillRestrictions(input.cwd));
+    input.onReady?.();
+    await adapter.steerTurn(prepared);
   });
 }
 

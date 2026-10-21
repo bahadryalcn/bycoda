@@ -1,9 +1,4 @@
-import {
-  useCallback,
-  type Dispatch,
-  type MutableRefObject,
-  type SetStateAction,
-} from "react";
+import { useCallback, type Dispatch, type MutableRefObject, type SetStateAction } from "react";
 import {
   closeTerminalInDock,
   findProjectTerminal,
@@ -37,7 +32,12 @@ export interface ProjectTerminalDockActionDeps {
   terminalCwd: string;
   focusProjectTerminal: () => void;
   openProjectTerminal: (cwd: string, profile?: string) => boolean;
-  onOpenTerminal: (cwd: string, asWorkspaceTab?: boolean, occupySessionId?: string, profile?: string) => void;
+  onOpenTerminal: (
+    cwd: string,
+    asWorkspaceTab?: boolean,
+    occupySessionId?: string,
+    profile?: string,
+  ) => void;
   activeTabIdRef: MutableRefObject<string>;
   tabsRef: MutableRefObject<WorkspaceTab[]>;
   setActiveTabId: (id: string) => void;
@@ -61,12 +61,8 @@ export function useProjectTerminalDockActions(deps: ProjectTerminalDockActionDep
     setComposerFocused,
     setTabs,
   } = deps;
-  const {
-    setProjectTerminals,
-    setProjectTerminalFocused,
-    setLastDockSide,
-    projectTerminalsRef,
-  } = dock;
+  const { setProjectTerminals, setProjectTerminalFocused, setLastDockSide, projectTerminalsRef } =
+    dock;
 
   const onToggleProjectTerminal = useCallback(() => {
     if (!canOpenTerminalIn(projectCwd)) return;
@@ -132,14 +128,13 @@ export function useProjectTerminalDockActions(deps: ProjectTerminalDockActionDep
   }, []);
 
   const onCloseProjectTerminal = useCallback((fileId: string) => {
-    const dock = findProjectTerminal(projectTerminalsRef.current, projectCwdRef.current);
+    const projectPath = projectCwdRef.current;
+    const dock = findProjectTerminal(projectTerminalsRef.current, projectPath);
     const file = dock?.pane.files.find((entry) => entry.id === fileId);
     if (!file) return;
     const finishClose = () => {
       setProjectTerminals((prev) =>
-        mapProjectTerminal(prev, projectCwdRef.current, (entry) =>
-          closeTerminalInDock(entry, fileId),
-        ),
+        mapProjectTerminal(prev, projectPath, (entry) => closeTerminalInDock(entry, fileId)),
       );
     };
     void confirmCloseTerminal(file).then((ok) => ok && finishClose());

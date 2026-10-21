@@ -15,6 +15,7 @@ import type { HostTask } from "../../tasks/model/hostTasks";
 import {
   HOST_CREWS,
   HOST_CREW_TASKS,
+  HOST_CREW_DELETE,
   type CrewDefinition,
   type CrewRun,
   type SavedCrewAgent,
@@ -26,6 +27,8 @@ export type CrewRunView = CrewRun & {
 };
 export type ProjectCrews = {
   taskExecutionSupported?: boolean;
+  /** Older hosts keep every saved crew; delete needs this host capability. */
+  deleteSupported?: boolean;
   machine: RemoteMachine;
   project: HostProject;
   definitions: CrewDefinition[];
@@ -52,12 +55,14 @@ export function useProjectCrews(cwd: string, enabled = true) {
         ),
         remoteRequest<HostModelCatalog>(machine.id, "models.list", { projectId: project.id }),
       ]);
+      const capabilities = await machineCapabilities(machine);
       return {
         machine,
         project,
         ...state,
         catalog,
-        taskExecutionSupported: (await machineCapabilities(machine)).includes(HOST_CREW_TASKS),
+        taskExecutionSupported: capabilities.includes(HOST_CREW_TASKS),
+        deleteSupported: capabilities.includes(HOST_CREW_DELETE),
       };
     },
     staleTime: 3000,

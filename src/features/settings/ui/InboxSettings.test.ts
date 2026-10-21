@@ -139,6 +139,41 @@ it("separates a Linear team read failure from saved credentials and offers retry
   expect(container.querySelector('[role="alert"]')).toBeNull();
 });
 
+it.each([false, true])(
+  "ignores an old Linear account refresh after reconnect (failure=%s)",
+  async (failure) => {
+    let reads = 0;
+    let settle!: () => void;
+    vi.mocked(invoke).mockImplementation(async (command, args) => {
+      if (command === "linear_status") return { connected: true };
+      if (command === "linear_set_token") return { connected: !!(args as { token: string }).token };
+      if (command === "linear_list_teams") {
+        reads += 1;
+        if (reads === 2)
+          return new Promise((resolve, reject) => {
+            settle = () =>
+              failure
+                ? reject(new Error("Old account unavailable"))
+                : resolve([{ id: "old", key: "OLD", name: "Old account team" }]);
+          });
+        return [
+          { id: "current", key: "NEW", name: reads > 2 ? "New account team" : "Initial team" },
+        ];
+      }
+      throw new Error(`Unexpected command: ${command}`);
+    });
+    await act(async () => root.render(createElement(LinearSettings)));
+    await click("Refresh teams");
+    await click("Disconnect");
+    await fill("Linear API key", "replacement-test-key");
+    await click("Save and test connection");
+    expect(container.textContent).toContain("New account team");
+    await act(async () => settle());
+    expect(container.textContent).toContain("New account team");
+    expect(container.textContent).not.toContain("Old account");
+  },
+);
+
 it("preserves drafts across provider tabs, supports keyboard navigation, and reveals searched providers", async () => {
   vi.mocked(invoke).mockResolvedValue({
     connected: false,

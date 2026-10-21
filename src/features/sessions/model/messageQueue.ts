@@ -52,7 +52,11 @@ export function holdUndeliveredFollowUp(
       ? session.blocks.filter((block) => block.id !== userBlockId)
       : session.blocks,
     queuedMessages: session.queuedMessages?.some((entry) => entry.id === message.id)
-      ? session.queuedMessages
+      ? session.queuedMessages.map((entry) =>
+          entry.id === message.id && message.deliveryUnknown
+            ? { ...entry, deliveryUnknown: true }
+            : entry,
+        )
       : [...(session.queuedMessages ?? []), message],
     queueStatus: "paused",
   };
@@ -137,6 +141,7 @@ export function canDispatchQueuedHead(session: Session): boolean {
   }
   const head = queuedHead(session);
   if (!head) return false;
+  if (head.deliveryUnknown) return false;
   if (hasMissingAttachment(head)) return false;
   if (isEditingQueuedHead(session)) return false;
   if (isPreparingHandoff(session)) return false;
@@ -150,7 +155,7 @@ export function queuedMessageForSubmit(
   mode: "dispatch" | "steer",
 ): QueuedMessage | undefined {
   const message = session.queuedMessages?.find((entry) => entry.id === messageId);
-  if (!message || hasMissingAttachment(message)) return undefined;
+  if (!message || message.deliveryUnknown || hasMissingAttachment(message)) return undefined;
   if (mode === "steer") {
     if (session.busy && (message.intent === "plan" || message.intent === "orchestrate"))
       return undefined;

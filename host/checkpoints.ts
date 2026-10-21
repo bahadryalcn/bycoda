@@ -38,6 +38,8 @@ type Record = {
     modes?: { [path: string]: number };
     claimed?: string[];
   };
+  /** Exact completed lease eligible for cleanup after a crash before release. */
+  settledTurnId?: string;
   shared: boolean;
   error?: string;
   noGit?: boolean;
@@ -287,6 +289,7 @@ export class HostCheckpoints {
     try {
       if (record.noGit) {
         record.shared ||= await this.leases.shared(session, turn);
+        record.settledTurnId = turn;
         delete record.active;
         await this.save(session, record);
         await this.leases.release(session, turn);
@@ -346,6 +349,7 @@ export class HostCheckpoints {
       record.error = errorText(e);
     }
     record.shared ||= await this.leases.shared(session, turn);
+    record.settledTurnId = turn;
     delete record.active;
     await this.save(session, record);
     await this.leases.release(session, turn);
@@ -586,6 +590,8 @@ export class HostCheckpoints {
     return this.queue(async () => {
       const record = await this.load(session);
       if (record?.active) await this.finishNow(session, cwd, record.active.id, true);
+      else if (record?.settledTurnId && record.cwd === (await realpath(cwd)))
+        await this.leases.release(session, record.settledTurnId);
     });
   }
 }

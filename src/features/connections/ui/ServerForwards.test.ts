@@ -48,7 +48,27 @@ afterEach(() => {
   act(() => root.unmount());
   container.remove();
   vi.unstubAllGlobals();
+  vi.useRealTimers();
 });
+
+it.each([false, true])(
+  "clears recovered poll errors while retaining unrelated action failures (action=%s)",
+  async (actionFailure) => {
+    vi.useFakeTimers();
+    mocks.list.mockRejectedValueOnce(new Error("Status read unavailable"));
+    await render();
+    expect(container.textContent).toContain("Couldn’t read forwarding status.");
+    if (actionFailure) {
+      mocks.start.mockRejectedValueOnce(new Error("SSH start failed"));
+      await click("Start");
+      expect(container.textContent).toContain("SSH start failed");
+    }
+    await act(async () => vi.advanceTimersByTimeAsync(1500));
+    expect(container.textContent).not.toContain("Couldn’t read forwarding status.");
+    if (actionFailure) expect(container.textContent).toContain("SSH start failed");
+    else expect(container.querySelector('[role="alert"]')).toBeNull();
+  },
+);
 const render = async () => {
   await act(async () => root.render(createElement(ServerForwards, { server })));
 };

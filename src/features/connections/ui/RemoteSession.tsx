@@ -136,6 +136,7 @@ export type RemoteSessionOverrides = Partial<SessionPaneProps> & {
   remoteSessionLoading: boolean;
   remoteSessionStarted: boolean;
   workingMachine?: string;
+  headerStatus?: ReactNode;
   /** The host recorded that this chat's last turn was lost; Continue is offered. */
   interruptedTurn: boolean;
   sendBlockedReason?: string;
@@ -2778,6 +2779,19 @@ function ConnectedRemoteSession({
     }
   };
   const overrides: RemoteSessionOverrides = {
+    headerStatus: (
+      <RemoteDataStatus
+        presentation="indicator"
+        state={remoteDataState}
+        onRefresh={refreshOwnerContent}
+        label={t("conversation")}
+        disabled={remoteDeleted}
+        connectionIssueHandled={
+          connection.status !== "connected" &&
+          (connection.status !== "connecting" || connection.reconnecting)
+        }
+      />
+    ),
     workingMachine:
       online && hostSession && snapshot?.status === "running" ? machine.name : undefined,
     session,
@@ -2945,7 +2959,7 @@ function ConnectedRemoteSession({
       };
     },
     interruptedTurn,
-    onUsageLimitResume: noop,
+    onUsageLimitResume: undefined,
     onUsageLimitResumeAtReset: (_, enabled) => usageLimit(enabled ? "arm" : "disarm"),
     onUsageLimitDismiss: () => usageLimit("dismiss"),
     onOpenPlan: (_, blockId) => onOpenPlan(shell.id, blockId),
@@ -2981,6 +2995,7 @@ function ConnectedRemoteSession({
         ) : null}
         <RemoteConnectionBanner cwd={project.key} stale={!!hostSession} />
         <RemoteDataStatus
+          presentation="notice"
           state={remoteDataState}
           onRefresh={refreshOwnerContent}
           label={t("conversation")}

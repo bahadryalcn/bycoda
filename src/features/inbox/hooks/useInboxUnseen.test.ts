@@ -4,7 +4,12 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { InboxItem } from "../model/githubTasks";
 import { inboxItemKey } from "../model/githubTasks";
-import { isInboxEntryUnseen, markInboxItemSeen, seedInboxSeenIfNeeded } from "../model/inboxSeen";
+import {
+  inboxSeenIsSeeded,
+  isInboxEntryUnseen,
+  markInboxItemSeen,
+  seedInboxSeenIfNeeded,
+} from "../model/inboxSeen";
 import { updateNotificationPreferences } from "../../notifications/model/notificationPreferences";
 import type { SessionSummary } from "../../sessions/data/sessionStore";
 import { markLinkedSessionUpdateSeen } from "../model/linkedSessionSeen";
@@ -70,6 +75,23 @@ async function mount() {
     root.render(createElement(Harness));
   });
 }
+
+it("waits for a complete initial snapshot before seeding recovered older items as seen", async () => {
+  vi.useFakeTimers();
+  vi.setSystemTime(new Date("2026-09-14T12:00:00Z"));
+  const older = { ...remote, number: 41, updatedAt: "2026-09-12T12:00:00Z" };
+  listInboxItems
+    .mockResolvedValueOnce({ items: [remote], errors: { github: "Partial read" } })
+    .mockResolvedValue({ items: [remote, older], errors: {} });
+  await mount();
+  expect(inboxSeenIsSeeded()).toBe(false);
+  expect(activity.unseen).toBe(false);
+  await act(async () => vi.advanceTimersByTimeAsync(POLL_MS));
+  expect(inboxSeenIsSeeded()).toBe(true);
+  expect(isInboxEntryUnseen({ key: inboxItemKey(older), updatedAt: older.updatedAt })).toBe(false);
+  expect(activity.unseen).toBe(false);
+  expect(playCue).not.toHaveBeenCalled();
+});
 
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);

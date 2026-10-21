@@ -132,12 +132,16 @@ it("opens PowerShell suggestions only from an explicit alternative without termi
   }
 });
 
-it("opens search directly without an intermediate local terminal menu", async () => {
+it("opens search directly and offers local view actions without writing shell input", async () => {
   const host = document.createElement("div");
   document.body.append(host);
   const root = createRoot(host);
   const onModeChange = vi.fn();
   const terminal = {
+    clear: vi.fn(),
+    scrollToBottom: vi.fn(),
+    focus: vi.fn(),
+    input: vi.fn(),
     buffer: { active: { type: "normal" }, onBufferChange: () => ({ dispose() {} }) },
   } as unknown as Terminal;
   try {
@@ -153,11 +157,24 @@ it("opens search directly without an intermediate local terminal menu", async ()
     );
     expect(host.querySelector("input")).toBeNull();
     expect(host.querySelector("[data-terminal-tools]")).toBeNull();
-    expect(host.querySelector('[aria-label="Terminal · More actions"]')).toBeNull();
+    expect(host.querySelector('[aria-label="Terminal · More actions"]')).not.toBeNull();
     await act(async () =>
       host.querySelector<HTMLButtonElement>('[aria-label="Find in terminal"]')!.click(),
     );
     expect(onModeChange).toHaveBeenCalledExactlyOnceWith("search");
+    await openTools(host);
+    const clear = [...document.querySelectorAll<HTMLButtonElement>("button")].find(
+      (button) => button.textContent === "Clear terminal",
+    )!;
+    await act(async () => clear.click());
+    expect(terminal.clear).toHaveBeenCalledOnce();
+    await openTools(host);
+    const bottom = [...document.querySelectorAll<HTMLButtonElement>("button")].find(
+      (button) => button.textContent === "Scroll to bottom",
+    )!;
+    await act(async () => bottom.click());
+    expect(terminal.scrollToBottom).toHaveBeenCalledOnce();
+    expect(terminal.input).not.toHaveBeenCalled();
   } finally {
     await act(async () => root.unmount());
     host.remove();

@@ -94,16 +94,18 @@ function setup(verifyTimeoutMs?: number) {
   const clock = { now: new Date("2026-10-05T08:00:00").getTime() };
   const tasks = new HostTasks(store, engine, () => clock.now, verifyTimeoutMs);
   const providersStarted = async () => {
-    await vi.waitFor(
-      () => {
-        for (const value of store.sessions().filter((entry) => entry.status === "running")) {
+    // Checkpoint capture is serialized across sessions. Each run gets the
+    // existing readiness budget instead of sharing one deadline with all peers.
+    for (const value of store.sessions().filter((entry) => entry.status === "running")) {
+      await vi.waitFor(
+        () => {
           expect(turns.findLast((turn) => turn.input.sessionId === value.session.id)?.runId).toBe(
             value.runId,
           );
-        }
-      },
-      { timeout: 10_000 },
-    );
+        },
+        { timeout: 10_000 },
+      );
+    }
   };
   const tick = tasks.tick.bind(tasks);
   vi.spyOn(tasks, "tick").mockImplementation(async () => {
@@ -119,8 +121,10 @@ function setup(verifyTimeoutMs?: number) {
   });
   cleanups.push(async () => {
     for (const turn of turns) turn.finish();
-    await tasks.idle();
+    // Close first so a queued checkpoint cannot launch a new unresolved mock
+    // provider after the finish loop. Shutdown must not assert startup readiness.
     await engine.close();
+    await idle();
     store.close();
     rmSync(directory, { recursive: true, force: true, maxRetries: 5 });
   });
@@ -216,6 +220,7 @@ function setup(verifyTimeoutMs?: number) {
     return task(started.id);
   };
   return {
+    directory,
     store,
     engine,
     provider,
@@ -237,6 +242,27 @@ function setup(verifyTimeoutMs?: number) {
 }
 
 describe("explicit task workspaces and owner controls", () => {
+  it("rejects stale configuration saves without replacing newer task instructions", () => {
+    const { tasks, input } = setup();
+    const opening = tasks.save(input({ status: "todo" }));
+    const newer = tasks.save({
+      ...input({ status: "todo", prompt: "Newer instructions" }),
+      expectedConfiguration: opening,
+    });
+    expect(() =>
+      tasks.save({
+        ...input({ status: "todo", title: "My new title" }),
+        expectedConfiguration: opening,
+      }),
+    ).toThrow("Configuration changed in another client");
+    expect(tasks.get(opening.id)).toEqual(newer);
+    expect(
+      tasks.save({
+        ...input({ status: "todo", prompt: newer.prompt, title: "Reconciled" }),
+        expectedConfiguration: newer,
+      }),
+    ).toMatchObject({ title: "Reconciled", prompt: "Newer instructions", status: "todo" });
+  });
   it("delivers into a selected integration checkout while preserving dirty main", async () => {
     const { addRepo, review, tasks, input } = setup();
     const repo = addRepo("selected");
@@ -328,6 +354,36 @@ describe("explicit task workspaces and owner controls", () => {
     expect(existsSync(checkout)).toBe(true);
     expect(git(checkout, "branch", "--show-current")).toBe("owner");
   }, 60_000);
+
+  it("closes a fixture before a queued checkpoint can start another provider", async () => {
+    const { directory, store, engine, provider, tasks, input } = setup();
+    let entered!: () => void;
+    let release!: () => void;
+    const capturing = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    const captured = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    vi.spyOn(engine.checkpoints, "begin").mockImplementation(async () => {
+      entered();
+      await captured;
+    });
+    // Schedule a real task, but keep its checkpoint pending before provider.send.
+    vi.mocked(tasks.tick).mockRestore();
+    const saved = tasks.save(input());
+    await tasks.tick();
+    await capturing;
+    expect(store.session(tasks.get(saved.id)!.sessionId!).status).toBe("running");
+    expect(provider.send).not.toHaveBeenCalled();
+    // Exercise the same registered cleanup used after a readiness assertion fails.
+    const cleanup = cleanups.pop()!;
+    const closing = cleanup();
+    release();
+    await closing;
+    expect(provider.send).not.toHaveBeenCalled();
+    expect(existsSync(directory)).toBe(false);
+  });
 
   it("runs six direct tasks on main without committing the shared changes", async () => {
     const { addRepo, input, tasks, turns, finish } = setup();

@@ -82,3 +82,16 @@ it("asks the composer to open its model picker", async () => {
   await act(async () => button("Switch model")!.click());
   expect(onSwitchModel).toHaveBeenCalledTimes(1);
 });
+
+it("offers supported message recovery when direct resume is unavailable", async () => {
+  await render({ limit: { resetsAt: Date.now() - 1000 } });
+  expect(button("Resume")).toBeUndefined();
+  expect(container.textContent).toContain("Send a message to continue.");
+});
+
+it("keeps the local direct resume action operational", async () => {
+  const onResume = vi.fn();
+  await render({ limit: {}, onResume });
+  await act(async () => button("Resume")!.click());
+  expect(onResume).toHaveBeenCalledOnce();
+});

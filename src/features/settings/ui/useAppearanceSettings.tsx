@@ -1,3 +1,4 @@
+import { useStoredPreferenceState } from "../../../shared/hooks/useStoredPreferenceState";
 import { useCallback, useEffect, useState } from "react";
 import {
   LIVE_BACKGROUND_DEFAULT,
@@ -101,6 +102,7 @@ import { IS_LINUX } from "../../../platform/tauri/platform";
 
 import {
   loadCollapsedProjectRailMode,
+  subscribeCollapsedProjectRailMode,
   saveCollapsedProjectRailMode,
   COLLAPSED_PROJECT_RAIL_MODE_DEFAULT,
   type CollapsedProjectRailMode,
@@ -172,7 +174,7 @@ export function useAppearanceSettings(
   const [chatBackgroundError, setChatBackgroundError] = useState<string | null>(null);
   const [uiScale, setUiScale] = useState(loadUiScale);
   const [storedCollapsedProjectRailMode, setStoredCollapsedProjectRailMode] =
-    useState<CollapsedProjectRailMode>(loadCollapsedProjectRailMode);
+    useStoredPreferenceState(loadCollapsedProjectRailMode, subscribeCollapsedProjectRailMode);
   const collapsedProjectRailMode =
     controlledCollapsedProjectRailMode ?? storedCollapsedProjectRailMode;
 

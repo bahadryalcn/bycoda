@@ -2,6 +2,8 @@ import { afterEach, expect, it } from "vitest";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { DatabaseSync } from "node:sqlite";
+import { execFileSync } from "node:child_process";
 import {
   migrateSkillPolicy,
   readSkillPolicy,
@@ -105,6 +107,50 @@ it("does not overwrite or remove another process's preference lock", () => {
   expect(() => setSkillEnabled("other", false, home)).toThrow("in progress");
   expect(readSkillPolicy(home).disabledNames).toEqual(["keep"]);
   expect(() => setSkillEnabled("keep", true, home)).toThrow("in progress");
+});
+
+it("preserves a live SQLite lock and recovers its initialized marker after the holder exits", () => {
+  const { home } = fixture();
+  saveSkillPolicy({ disabledNames: ["keep"], disabledPaths: [] }, home);
+  const dir = join(home, ".bycoda-host");
+  const database = new DatabaseSync(join(dir, "skill-policy-lock.sqlite3"));
+  database.exec("BEGIN IMMEDIATE");
+  writeFileSync(join(dir, "skill-policy.lock"), "bycoda-sqlite-policy-lock-v1\n");
+  try {
+    expect(() => setSkillEnabled("synthetic", false, home)).toThrow("in progress");
+    expect(readSkillPolicy(home).disabledNames).toEqual(["keep"]);
+  } finally {
+    database.close();
+  }
+  expect(setSkillEnabled("synthetic", false, home).disabledNames).toEqual(["keep", "synthetic"]);
+});
+
+it("recovers after an isolated process exits abruptly while holding the updated lock", () => {
+  const { home } = fixture();
+  saveSkillPolicy({ disabledNames: ["keep"], disabledPaths: [] }, home);
+  execFileSync(
+    process.execPath,
+    [
+      "--input-type=module",
+      "-e",
+      `
+    import { DatabaseSync } from 'node:sqlite';
+    import { writeFileSync, linkSync, unlinkSync } from 'node:fs';
+    import { join } from 'node:path';
+    const dir = process.argv[1];
+    const db = new DatabaseSync(join(dir, 'skill-policy-lock.sqlite3'));
+    db.exec('BEGIN IMMEDIATE');
+    const temp = join(dir, 'fixture-lock.tmp');
+    writeFileSync(temp, 'bycoda-sqlite-policy-lock-v1\\n');
+    linkSync(temp, join(dir, 'skill-policy.lock'));
+    unlinkSync(temp);
+    process.exit(0);
+  `,
+      join(home, ".bycoda-host"),
+    ],
+    { windowsHide: true, stdio: "pipe" },
+  );
+  expect(setSkillEnabled("synthetic", false, home).disabledNames).toEqual(["keep", "synthetic"]);
 });
 
 it("requires an owner invocation for manual-only skills and preserves automatic-only skills", async () => {

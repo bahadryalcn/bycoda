@@ -137,9 +137,9 @@ export function isInboxEntryUnseen(entry: InboxSeenEntry): boolean {
   return entryIsUnseen(entry, store.items);
 }
 
-export function markInboxItemSeen(entry: InboxSeenEntry) {
+export function markInboxItemSeen(entry: InboxSeenEntry): boolean {
   const store = loadInboxSeenStore();
-  saveInboxSeenStore({
+  return saveInboxSeenStore({
     ...store,
     items: mergeSeen(store.items, entry),
   });

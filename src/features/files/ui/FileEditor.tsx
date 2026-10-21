@@ -98,6 +98,8 @@ export function FileEditor({
   const [reloadKey, setReloadKey] = useState(0);
   const [draft, setDraft] = useState("");
   const [dirty, setDirty] = useState(false);
+  const [diskConflict, setDiskConflict] = useState(false);
+  const [editorRevision, setEditorRevision] = useState(0);
   const editorRootRef = useRef<HTMLDivElement>(null);
   const manualSaveRef = useRef(false);
   const [gitBase, setGitBase] = useState<{
@@ -191,6 +193,11 @@ export function FileEditor({
   const loadGeneration = useRef(0);
   const dirtyRef = useRef(false);
   const pendingDiskRef = useRef(false);
+  const diskChangeVersion = useRef(0);
+  const overwriteVersion = useRef<number | null>(null);
+  const editVersion = useRef(0);
+  const currentIdentity = useRef({ path, documentId });
+  currentIdentity.current = { path, documentId };
   /** The file's text as last read or written; tells real disk changes from no-op events. */
   const diskTextRef = useRef<string | null>(null);
   const eolRef = useRef<LineEnding>("\n");
@@ -218,24 +225,49 @@ export function FileEditor({
   const reloadFromDisk = useCallback(
     async (force = false) => {
       const generation = ++loadGeneration.current;
+      const edits = editVersion.current;
       try {
         const content = await readTextFile(path);
-        if (generation !== loadGeneration.current) return;
+        if (
+          generation !== loadGeneration.current ||
+          currentIdentity.current.path !== path ||
+          currentIdentity.current.documentId !== documentId
+        )
+          return;
+        // A reload choice applies only to the draft the owner saw when choosing it.
+        if (force && edits !== editVersion.current) return;
         if (dirtyRef.current && !force) {
           // Keep unsaved edits; only a real change on disk blocks saving over it.
           pendingDiskRef.current = content !== diskTextRef.current;
+          setDiskConflict(pendingDiskRef.current);
           return;
         }
         pendingDiskRef.current = false;
+        setDiskConflict(false);
         if (force && dirtyRef.current) {
           dirtyRef.current = false;
+          setDirty(false);
           onDirtyChangeRef.current(path, false);
+          setEditorRevision((value) => value + 1);
         }
         applyDiskContent(content);
       } catch (error: unknown) {
-        if (generation !== loadGeneration.current) return;
+        if (
+          generation !== loadGeneration.current ||
+          currentIdentity.current.path !== path ||
+          currentIdentity.current.documentId !== documentId
+        )
+          return;
         if (dirtyRef.current && !force) {
           pendingDiskRef.current = true;
+          setDiskConflict(true);
+          return;
+        }
+        if (force && dirtyRef.current) {
+          setSaveState({
+            status: "error",
+            message: error instanceof Error ? error.message : String(error),
+          });
           return;
         }
         setLoadState({
@@ -244,7 +276,7 @@ export function FileEditor({
         });
       }
     },
-    [applyDiskContent, path],
+    [applyDiskContent, documentId, path],
   );
 
   useEffect(() => {
@@ -252,6 +284,8 @@ export function FileEditor({
     if (loaded?.id === documentId && loaded.reloadKey === reloadKey) return;
     dirtyRef.current = false;
     pendingDiskRef.current = false;
+    setDiskConflict(false);
+    overwriteVersion.current = null;
     let cancelled = false;
     setLoadState({ status: "loading" });
     setSaveState({ status: "idle" });
@@ -396,6 +430,7 @@ export function FileEditor({
       if (dirtyRef.current) {
         // Block saving at once, then clear it if the text on disk is unchanged.
         pendingDiskRef.current = true;
+        diskChangeVersion.current += 1;
         void reloadFromDisk();
         return;
       }
@@ -413,15 +448,27 @@ export function FileEditor({
   const save = useCallback(
     async (content: string) => {
       const generation = ++saveGeneration.current;
+      const allowedOverwrite = overwriteVersion.current;
+      overwriteVersion.current = null;
+      // Do not let an older watcher read replace the baseline of this save.
+      loadGeneration.current += 1;
       setSaveState({ status: "saving" });
       const serializedContent = restoreLineEnding(content, eolRef.current);
-      const operation = saveQueue.current.then(() => writeTextFile(path, serializedContent));
+      const operation = saveQueue.current.then(() => {
+        if (pendingDiskRef.current && allowedOverwrite !== diskChangeVersion.current) {
+          setDiskConflict(true);
+          throw new Error("The file changed on disk. Choose reload or overwrite before saving.");
+        }
+        return writeTextFile(path, serializedContent);
+      });
       saveQueue.current = operation.catch((error) => {
         console.warn("FileEditor operation failed", error);
       });
       try {
         await operation;
         diskTextRef.current = serializedContent;
+        pendingDiskRef.current = false;
+        setDiskConflict(false);
         // Keep the reload prop at the saved baseline, so restoring the initial
         // text still changes it. CodeMirror preserves any newer dirty edits.
         setLoadState((current) =>
@@ -491,6 +538,10 @@ export function FileEditor({
     (count: number) => onErrorCountChange?.(path, count),
     [onErrorCountChange, path],
   );
+  const docChange = useCallback((content: string) => {
+    editVersion.current += 1;
+    setDraft(content);
+  }, []);
 
   const relativePath = path.startsWith(`${cwd}/`) ? path.slice(cwd.length + 1) : path;
   const footerBlameReason = useInlineBlameUnavailableReason(cwd, path);
@@ -577,6 +628,39 @@ export function FileEditor({
 
   return (
     <div ref={editorRootRef} className="flex h-full min-h-0 min-w-0 flex-col">
+      {diskConflict && (
+        <div
+          role="alert"
+          className="flex shrink-0 flex-wrap items-center gap-2 border-b border-stroke px-2.5 py-1 text-[12px] text-content"
+        >
+          <span className="min-w-0 flex-1">
+            {t(
+              "File changed on disk. Reload discards your edits; overwrite replaces the disk version.",
+            )}
+          </span>
+          <Button
+            size="sm"
+            variant="ghost"
+            disabled={saveState.status === "saving"}
+            onClick={() => void reloadFromDisk(true)}
+          >
+            {t("Reload from disk")}
+          </Button>
+          <Button
+            size="sm"
+            variant="secondary"
+            disabled={saveState.status === "saving"}
+            onClick={() => {
+              overwriteVersion.current = diskChangeVersion.current;
+              void requestSave().finally(() => {
+                overwriteVersion.current = null;
+              });
+            }}
+          >
+            {t("Overwrite disk version")}
+          </Button>
+        </div>
+      )}
       {showDiff && gitDiff?.eolOnly && (
         <p
           role="status"
@@ -616,7 +700,7 @@ export function FileEditor({
           source={
             <div className="flex h-full min-h-0 min-w-0 flex-col">
               <CodeMirrorEditor
-                key={`${documentId}:${reloadKey}`}
+                key={`${documentId}:${reloadKey}:${editorRevision}`}
                 path={path}
                 cwd={cwd}
                 commentPath={relativePath}
@@ -631,7 +715,7 @@ export function FileEditor({
                 saveRequestRef={saveRequestRef}
                 canAutosave={() => !pendingDiskRef.current}
                 onStageGit={showDiff && gitDiff?.kind === "unstaged" ? stageGit : undefined}
-                onDocChange={setDraft}
+                onDocChange={docChange}
                 onOpenFile={onOpenFile}
               />
             </div>
@@ -639,7 +723,7 @@ export function FileEditor({
         />
       ) : (
         <CodeMirrorEditor
-          key={`${documentId}:${reloadKey}`}
+          key={`${documentId}:${reloadKey}:${editorRevision}`}
           path={path}
           cwd={cwd}
           commentPath={relativePath}
@@ -652,6 +736,7 @@ export function FileEditor({
           onDirtyChange={dirtyChange}
           onErrorCountChange={errorCountChange}
           onSave={save}
+          onDocChange={docChange}
           canAutosave={() => !pendingDiskRef.current}
           onStageGit={showDiff && gitDiff?.kind === "unstaged" ? stageGit : undefined}
           onOpenFile={onOpenFile}

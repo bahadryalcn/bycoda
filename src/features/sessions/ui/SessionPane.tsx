@@ -13,6 +13,7 @@ import {
   useState,
   useSyncExternalStore,
   type CSSProperties,
+  type ReactNode,
   type PointerEvent as ReactPointerEvent,
 } from "react";
 import { Composer } from "./Composer";
@@ -139,7 +140,10 @@ import { useSession } from "../model/sessionsStore";
 import { isRemoteProjectPath } from "../../projects/model/recents";
 import type { HostSession } from "../../connections/model/protocol";
 import { ADOPTED_RUNNING_REASON } from "../../connections/model/adoptedSessions";
-import { AdoptedSessionNotice } from "../../connections/ui/AdoptedSessionNotice";
+import {
+  AdoptedSessionNotice,
+  BackgroundSessionIndicator,
+} from "../../connections/ui/AdoptedSessionNotice";
 import { SharedQueueRecoveryNotice } from "../../connections/ui/SharedQueueRecoveryNotice";
 import type { RefreshAdoptedSession } from "../../connections/model/useAdoptedSessions";
 
@@ -197,7 +201,7 @@ export type SessionPaneProps = {
     messageId: string,
   ) => import("../model/queueAction").QueueAction;
   onResumeQueue: (sessionId: string) => import("../model/queueAction").QueueAction;
-  onUsageLimitResume: (sessionId: string) => void;
+  onUsageLimitResume?: (sessionId: string) => void;
   onUsageLimitResumeAtReset: (sessionId: string, enabled: boolean) => void;
   onUsageLimitDismiss: (sessionId: string) => void;
   onSelectProviderAccount?: (
@@ -263,6 +267,7 @@ type Props = SessionPaneProps & {
   remoteSessionLoading?: boolean;
   remoteSessionStarted?: boolean;
   workingMachine?: string;
+  headerStatus?: ReactNode;
   /** A host chat whose last turn the host lost: shows Continue, as a quit turn does locally. */
   interruptedTurn?: boolean;
   /** Why a message to the host cannot be delivered now; Send still tries to reconnect. */
@@ -371,6 +376,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
   remoteSessionLoading = false,
   remoteSessionStarted = false,
   workingMachine,
+  headerStatus,
   interruptedTurn,
   sendBlockedReason,
   allowedModelHarnesses,
@@ -836,7 +842,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
     onSteerQueuedMessage(session.id, messageId),
   );
   const composerResumeQueue = useStableCallback(() => onResumeQueue(session.id));
-  const composerUsageLimitResume = useStableCallback(() => onUsageLimitResume(session.id));
+  const composerUsageLimitResume = useStableCallback(() => onUsageLimitResume?.(session.id));
   const composerUsageLimitResumeAtReset = useStableCallback((enabled: boolean) =>
     onUsageLimitResumeAtReset(session.id, enabled),
   );
@@ -1154,7 +1160,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
       onSteerQueuedMessage={composerSteerQueuedMessage}
       onResumeQueue={composerResumeQueue}
       usageLimit={session.usageLimit}
-      onUsageLimitResume={composerUsageLimitResume}
+      onUsageLimitResume={onUsageLimitResume ? composerUsageLimitResume : undefined}
       onUsageLimitResumeAtReset={composerUsageLimitResumeAtReset}
       onUsageLimitDismiss={composerUsageLimitDismiss}
       providerAccountId={
@@ -1302,6 +1308,8 @@ const LocalSessionPane = memo(function LocalSessionPane({
           </div>
           {workingBadge}
           <div className="session-pane-header-actions">
+            {headerStatus}
+            <BackgroundSessionIndicator key={session.id} session={session} />
             {projectActions}
             {!session.inboxAsk ? (
               <span ref={setFindTriggerContainer} className="flex" data-no-drag />
@@ -1338,6 +1346,8 @@ const LocalSessionPane = memo(function LocalSessionPane({
       ) : null}
       {!hasPaneHeader ? (
         <div className="absolute end-3 top-1.5 z-10 flex max-w-full flex-wrap items-center justify-end gap-1.5">
+          {headerStatus}
+          <BackgroundSessionIndicator key={session.id} session={session} />
           {projectActions}
           {notesButton}
         </div>

@@ -37,14 +37,19 @@ export function cachedSkillPolicy(): SkillPolicy {
 }
 
 export function cacheSkillPolicy(policy: SkillPolicy): void {
-  const remoteLegacy = cachedSkillPolicy().disabledPaths.filter((path) =>
-    path.startsWith("remote://"),
-  );
-  localStorage.setItem(
-    DISABLED_SKILL_PATHS_KEY,
-    JSON.stringify([...new Set([...remoteLegacy, ...policy.disabledPaths])]),
-  );
-  localStorage.setItem(DISABLED_SKILL_NAMES_KEY, JSON.stringify(policy.disabledNames));
+  try {
+    const remoteLegacy = cachedSkillPolicy().disabledPaths.filter((path) =>
+      path.startsWith("remote://"),
+    );
+    localStorage.setItem(
+      DISABLED_SKILL_PATHS_KEY,
+      JSON.stringify([...new Set([...remoteLegacy, ...policy.disabledPaths])]),
+    );
+    localStorage.setItem(DISABLED_SKILL_NAMES_KEY, JSON.stringify(policy.disabledNames));
+  } catch {
+    // This browser cache is optional. The caller still uses the authoritative
+    // host policy, including its restrictions, when storage is unavailable/full.
+  }
 }
 
 /** Load afresh at every send; the host, other windows and Settings share one machine file. */

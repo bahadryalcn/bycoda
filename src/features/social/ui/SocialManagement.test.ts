@@ -406,6 +406,44 @@ describe("Social management workflows", () => {
     });
     expect(schedule().disabled).toBe(true);
   });
+  it("submits the campaign revision opened for editing after a newer workspace snapshot arrives", async () => {
+    const value = snapshot();
+    const campaign = {
+      id: "campaign",
+      name: "Saved campaign",
+      projectIds: ["a"],
+      variants: [
+        { accountId: "account", text: "hello", media: [], factIds: [], scheduledAt: Date.now() },
+      ],
+      revision: 1,
+      paused: false,
+      createdAt: 1,
+    };
+    value.campaigns = [campaign];
+    await render(Campaigns, value);
+    await click("Saved campaign");
+    await click("Taslağı düzenle");
+    await change(control("Kampanya adı"), "Unsaved owner edit");
+    await render(Campaigns, {
+      ...value,
+      campaigns: [{ ...campaign, name: "Newer owner edit", revision: 2 }],
+    });
+    request.mockImplementation(async (action: string) => {
+      if (action === "policy.get") return { effective: { maxContentCharacters: 100 } };
+      if (action === "campaigns.create") throw new Error("Campaign changed in another client");
+      return {};
+    });
+    const editForm = container.querySelector<HTMLFormElement>(".social-composer form")!;
+    await act(async () =>
+      editForm.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })),
+    );
+    expect(request).toHaveBeenCalledWith(
+      "campaigns.create",
+      expect.objectContaining({ id: campaign.id, expectedRevision: 1, name: "Unsaved owner edit" }),
+    );
+    expect(control("Kampanya adı").value).toBe("Unsaved owner edit");
+  });
+
   it("can reopen editing for the same saved campaign after closing its form", async () => {
     const value = snapshot();
     value.campaigns = [

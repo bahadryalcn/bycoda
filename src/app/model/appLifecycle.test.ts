@@ -28,8 +28,14 @@ import {
 import { reconcileProjectReturn } from "../../features/projects/model/projectReturn";
 
 vi.mock("@tauri-apps/api/core", () => ({
-  invoke: vi.fn().mockResolvedValue(undefined),
+  invoke: vi.fn().mockImplementation((command: string) => nativeSuccess(command)),
 }));
+
+function nativeSuccess(command: string) {
+  return Promise.resolve(
+    command === "session_upsert" ? { harness: "cursor", updatedAt: 1 } : undefined,
+  );
+}
 vi.mock("@tauri-apps/plugin-dialog", () => ({
   ask: vi.fn().mockResolvedValue(true),
   message: vi.fn().mockResolvedValue("Save"),
@@ -282,6 +288,11 @@ describe("coordinated quit", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.mocked(ask).mockResolvedValue(true);
+    vi.mocked(invoke).mockImplementation((command) =>
+      Promise.resolve(
+        command === "session_upsert" ? { harness: "cursor", updatedAt: 1 } : undefined,
+      ),
+    );
   });
 
   function busyWorkspace() {
@@ -359,13 +370,60 @@ describe("coordinated quit", () => {
     vi.mocked(invoke).mockImplementation((command) =>
       command === "workspace_set_snapshot"
         ? Promise.reject(new Error("disk full"))
-        : Promise.resolve(undefined),
+        : Promise.resolve(
+            command === "session_upsert" ? { harness: "cursor", updatedAt: 1 } : undefined,
+          ),
     );
     try {
       await commitQuit(6);
       expect(invokedWith("quit_ready")).toEqual({ id: 6, persisted: false });
     } finally {
-      vi.mocked(invoke).mockResolvedValue(undefined);
+      vi.mocked(invoke).mockImplementation(nativeSuccess);
+      release();
+    }
+  });
+
+  it("refuses quit when a stale transcript write resolves without saving", async () => {
+    const session = newSession("cursor", "C:/test");
+    session.blocks = [{ id: "unique", role: "user", text: "Only in this renderer" }];
+    const tab = newTab(session.id);
+    const release = setQuitWorkspace(
+      () => [session],
+      () => [tab],
+      () => tab.id,
+      () => session.cwd,
+      () => [],
+      () => new Map(),
+      vi.fn(),
+    );
+    let finishWrite!: (value: null) => void;
+    vi.mocked(invoke).mockImplementation((command) =>
+      command === "session_upsert"
+        ? new Promise<null>((resolve) => {
+            finishWrite = resolve;
+          })
+        : Promise.resolve(undefined),
+    );
+    try {
+      const quitting = commitQuit(10);
+      await vi.waitFor(() => expect(finishWrite).toBeTypeOf("function"));
+      expect(invokedWith("quit_ready")).toBeUndefined();
+      finishWrite(null);
+      await quitting;
+      expect(invokedWith("quit_ready")).toEqual({ id: 10, persisted: false });
+      expect(invokedWith("workspace_set_snapshot")).toBeUndefined();
+      expect(message).toHaveBeenCalledWith(
+        expect.stringContaining("The window remains open"),
+        expect.objectContaining({ kind: "error" }),
+      );
+      expect(session.blocks).toEqual([
+        { id: "unique", role: "user", text: "Only in this renderer" },
+      ]);
+      expect(invoke).not.toHaveBeenCalledWith("destroy_window");
+      expect(killAllChildren).not.toHaveBeenCalled();
+      const { isAppQuitting } = await import("./appLifecycle");
+      expect(isAppQuitting()).toBe(false);
+    } finally {
       release();
     }
   });
@@ -538,7 +596,7 @@ describe("destructive window close safeguards", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.mocked(ask).mockResolvedValue(true);
-    vi.mocked(invoke).mockResolvedValue(undefined);
+    vi.mocked(invoke).mockImplementation(nativeSuccess);
   });
   function workspace(options: { inboxAsk?: boolean; busy?: boolean; terminal?: boolean } = {}) {
     const session = newSession("cursor", "C:/safeguards");
@@ -584,12 +642,12 @@ describe("destructive window close safeguards", () => {
         vi.mocked(flushComposerDrafts).mockRejectedValueOnce(new Error("disk full"));
       else
         vi.mocked(invoke).mockImplementationOnce((name) =>
-          name === command ? Promise.reject(new Error("disk full")) : Promise.resolve(undefined),
+          name === command ? Promise.reject(new Error("disk full")) : nativeSuccess(name),
         );
       // The workspace snapshot is written after the session write.
       if (command === "workspace_set_snapshot")
         vi.mocked(invoke).mockImplementation((name) =>
-          name === command ? Promise.reject(new Error("disk full")) : Promise.resolve(undefined),
+          name === command ? Promise.reject(new Error("disk full")) : nativeSuccess(name),
         );
       try {
         await closeBusyWindow();
@@ -598,7 +656,7 @@ describe("destructive window close safeguards", () => {
           expect.stringContaining("Retry closing"),
           expect.objectContaining({ kind: "error" }),
         );
-        vi.mocked(invoke).mockResolvedValue(undefined);
+        vi.mocked(invoke).mockImplementation(nativeSuccess);
         await closeBusyWindow();
         expect(
           vi.mocked(invoke).mock.calls.filter(([name]) => name === "destroy_window"),
@@ -619,7 +677,7 @@ describe("destructive window close safeguards", () => {
                 ? { foreground: null, supported: false }
                 : { foreground, supported: true },
             )
-          : Promise.resolve(undefined),
+          : nativeSuccess(name),
       );
       vi.mocked(ask).mockResolvedValue(false);
       try {

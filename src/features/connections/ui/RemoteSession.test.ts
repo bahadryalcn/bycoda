@@ -1934,7 +1934,7 @@ it("shows loading until the initial owner tail is verified", async () => {
   release();
   await vi.waitFor(() => expect(remoteDataPhase()).toBe("ready"));
   expect(
-    container.querySelector('[data-remote-data-state] [title^="Last verified"]'),
+    container.querySelector('[data-remote-data-state] [title*="Last verified"]'),
   ).not.toBeNull();
 });
 
@@ -2353,10 +2353,9 @@ it("shows host activity alongside a preserved local conversation conflict", asyn
   };
   await render(session);
   expect(
-    [...container.querySelectorAll('[role="status"]')].some((status) =>
-      status.textContent?.includes("running in the background"),
-    ),
-  ).toBe(true);
+    container.querySelector('button[aria-label*="running in the background"] svg'),
+  ).not.toBeNull();
+  expect(container.textContent).not.toContain("running in the background");
   expect(container.querySelector('[role="alert"]')?.textContent).toContain(
     "Your messages were kept",
   );

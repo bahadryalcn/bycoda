@@ -16,6 +16,7 @@ import { Button } from "../../../shared/ui/Button";
 import { TextField } from "../../../shared/ui/TextField";
 import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
 import { TaskWorkspacePicker } from "./TaskWorkspacePicker";
+import { HostModelSource } from "../../connections/ui/HostModelSource";
 import { CrewTaskPicker } from "../../crews/ui/CrewTaskPicker";
 import { startTask, retargetTask, reorderTasks } from "../model/taskClient";
 import type { TaskWorkspace } from "../model/taskWorkspace";
@@ -755,10 +756,17 @@ function TasksContent({
     setSaving(true);
     try {
       let saved = await saveTask(machines, draft, mode === "todo" ? "todo" : "queued");
-      if (mode === "queued" && saved.workspaceControlsSupported) saved = await startTask(saved);
+      // Creation already succeeded. Publish that identity and retire the creation
+      // draft before the separate start request, whose transport may fail even
+      // after the host accepted it. Recovery uses this task's board controls.
       putTask(saved);
       setTasks((current) => upsertBoardItem(current, saved));
       setDraft(null);
+      if (mode === "queued" && saved.workspaceControlsSupported) {
+        saved = await startTask(saved);
+        putTask(saved);
+        setTasks((current) => upsertBoardItem(current, saved));
+      }
       setError(null);
       void refresh();
     } catch (reason: unknown) {
@@ -873,7 +881,7 @@ function TasksContent({
     const isOpeningSession = (sessionId: string) =>
       openingSessions.has(JSON.stringify([task.machineId, sessionId]));
     return {
-      busy: acting === task.id,
+      busy: acting != null,
       onRecheckReview: () => void actOnTask(task, () => recheckTaskReview(task)),
       onMove: (to: TaskStatus) => onMove(task, to),
       onStart: () => void actOnTask(task, () => startTask(task)),
@@ -1175,20 +1183,34 @@ function TasksContent({
               {error}
             </Alert>
           ) : null}
-          <TaskForm
-            key={draft.id ?? "new"}
-            draft={draft}
-            recents={recents}
-            machines={machines}
-            machine={machineName(machines, draft.cwd, draft.machineId)}
-            todoUnsupported={todoUnsupportedMessage(machines, todoCapable, draft.cwd)}
-            saving={saving}
-            onChange={setDraft}
-            onCancel={() => setDraft(null)}
-            onSubmit={(mode) => void onSave(mode)}
-            limits={limits}
-            onChangeLimits={onChangeLimits}
-          />
+          <HostModelSource
+            machine={machines.find(
+              (entry) =>
+                entry.id === (draft.machineId ?? backgroundMachineFor(machines, draft.cwd)?.id),
+            )}
+            cwd={draft.cwd}
+            model={draft.model}
+            values={draft.modelSettings}
+          >
+            <TaskForm
+              key={draft.id ?? "new"}
+              draft={draft}
+              recents={recents}
+              machines={machines}
+              machine={machineName(machines, draft.cwd, draft.machineId)}
+              todoUnsupported={todoUnsupportedMessage(machines, todoCapable, draft.cwd)}
+              saving={saving}
+              onChange={(next) => {
+                if (!saving) setDraft(next);
+              }}
+              onCancel={() => {
+                if (!saving) setDraft(null);
+              }}
+              onSubmit={(mode) => void onSave(mode)}
+              limits={limits}
+              onChangeLimits={onChangeLimits}
+            />
+          </HostModelSource>
         </Modal>
       ) : null}
       {editingGoal ? (
@@ -1235,22 +1257,38 @@ function TasksContent({
               {error}
             </Alert>
           ) : null}
-          <GoalForm
-            draft={goalDraft}
-            recents={recents}
-            machines={goalCapable}
-            machine={
-              goalDraft.cwds[0]
-                ? machineName(goalCapable, goalDraft.cwds[0], goalDraft.machineId)
-                : undefined
-            }
-            saving={saving}
-            onChange={setGoalDraft}
-            onCancel={() => setGoalDraft(null)}
-            onSubmit={onCreateGoal}
-            limits={limits}
-            onChangeLimits={onChangeLimits}
-          />
+          <HostModelSource
+            machine={goalCapable.find(
+              (entry) =>
+                entry.id ===
+                (goalDraft.machineId ??
+                  backgroundMachineFor(goalCapable, goalDraft.cwds[0] ?? "")?.id),
+            )}
+            cwd={goalDraft.leadCwd || goalDraft.cwds[0] || "~"}
+            model={goalDraft.model}
+            values={goalDraft.modelSettings}
+          >
+            <GoalForm
+              draft={goalDraft}
+              recents={recents}
+              machines={goalCapable}
+              machine={
+                goalDraft.cwds[0]
+                  ? machineName(goalCapable, goalDraft.cwds[0], goalDraft.machineId)
+                  : undefined
+              }
+              saving={saving}
+              onChange={(next) => {
+                if (!saving) setGoalDraft(next);
+              }}
+              onCancel={() => {
+                if (!saving) setGoalDraft(null);
+              }}
+              onSubmit={onCreateGoal}
+              limits={limits}
+              onChangeLimits={onChangeLimits}
+            />
+          </HostModelSource>
         </Modal>
       ) : null}
       {deliveryTask ? (
@@ -1304,28 +1342,42 @@ function TasksContent({
         </Modal>
       ) : null}
       {stewardsOpen && stewardCapable.length > 0 ? (
-        <StewardsPanel
-          stewards={stewards}
-          draft={stewardDraft}
-          recents={recents}
-          machine={stewardDraft ? machineName(stewardCapable, stewardDraft.cwd) : undefined}
-          saving={saving}
-          acting={acting}
-          now={now}
-          onAdd={beginSteward}
-          onEdit={(steward) => {
-            setError(null);
-            setStewardDraft(draftFromSteward(steward));
-          }}
-          onChange={setStewardDraft}
-          onCancel={() => setStewardDraft(null)}
-          onSubmit={onSaveSteward}
-          onToggle={(steward) =>
-            void actOnSteward(steward, () => setStewardEnabled(steward, !steward.enabled))
+        <HostModelSource
+          machine={
+            stewardDraft ? backgroundMachineFor(stewardCapable, stewardDraft.cwd) : undefined
           }
-          onRunNow={(steward) => void actOnSteward(steward, () => runStewardNow(steward))}
-          onDelete={onDeleteSteward}
-        />
+          cwd={stewardDraft?.cwd ?? "~"}
+          model={stewardDraft?.model ?? ""}
+          values={stewardDraft?.modelSettings ?? {}}
+        >
+          <StewardsPanel
+            stewards={stewards}
+            draft={stewardDraft}
+            recents={recents}
+            machine={stewardDraft ? machineName(stewardCapable, stewardDraft.cwd) : undefined}
+            saving={saving}
+            acting={acting}
+            now={now}
+            onAdd={beginSteward}
+            onEdit={(steward) => {
+              if (saving) return;
+              setError(null);
+              setStewardDraft(draftFromSteward(steward));
+            }}
+            onChange={(next) => {
+              if (!saving) setStewardDraft(next);
+            }}
+            onCancel={() => {
+              if (!saving) setStewardDraft(null);
+            }}
+            onSubmit={onSaveSteward}
+            onToggle={(steward) =>
+              void actOnSteward(steward, () => setStewardEnabled(steward, !steward.enabled))
+            }
+            onRunNow={(steward) => void actOnSteward(steward, () => runStewardNow(steward))}
+            onDelete={onDeleteSteward}
+          />
+        </HostModelSource>
       ) : null}
       {goals.length > 0 ? (
         <ul
@@ -1343,7 +1395,7 @@ function TasksContent({
                   <GoalCard
                     goal={goal}
                     tasks={storedTasks.filter((task) => task.machineId === goal.machineId)}
-                    busy={acting === `goal:${key}`}
+                    busy={acting != null}
                     onApprove={() => void actOnGoal(goal, () => approveGoal(goal))}
                     onEdit={() => {
                       setGoalSettingsError(null);
@@ -1531,7 +1583,7 @@ function TasksContent({
                             goal={taskContext(task).goal}
                             waitingForText={JSON.stringify(taskContext(task).waitingFor)}
                             actionsFor={cardActions}
-                            busy={acting === task.id}
+                            busy={acting != null}
                             openingState={JSON.stringify(
                               [taskSessionIds(task).worker, taskSessionIds(task).review].map(
                                 (id) =>
@@ -2111,6 +2163,7 @@ function TaskDetail({
 
   const detailRoot = useRef<HTMLElement>(null);
   const overlayId = useOverlay(detailRoot, false, () => {
+    if (saving) return;
     if (editing) setEditing(false);
     else onClose();
   });
@@ -2156,6 +2209,7 @@ function TaskDetail({
           <Button
             iconOnly
             label={t("Close details")}
+            disabled={saving}
             variant="ghost"
             type="button"
             aria-label={t("Close details")}
@@ -2174,7 +2228,10 @@ function TaskDetail({
                 autoFocus
                 aria-label={t("Title")}
                 value={title}
-                onChange={(event) => setTitle(event.target.value)}
+                disabled={saving}
+                onChange={(event) => {
+                  if (!saving) setTitle(event.target.value);
+                }}
                 fieldClassName="w-full"
               />
               <TextareaField
@@ -2182,7 +2239,10 @@ function TaskDetail({
                 label=""
                 aria-label={t("Description")}
                 value={prompt}
-                onChange={(event) => setPrompt(event.target.value)}
+                disabled={saving}
+                onChange={(event) => {
+                  if (!saving) setPrompt(event.target.value);
+                }}
                 placeholder={t("Details, acceptance criteria, links…")}
                 rows={8}
                 fieldClassName="block w-full"
@@ -2193,7 +2253,12 @@ function TaskDetail({
                   {saving ? <LoaderCircle className="size-3.5 animate-spin" /> : null}
                   {t("Save")}
                 </Button>
-                <Button variant="secondary" type="button" onClick={() => setEditing(false)}>
+                <Button
+                  variant="secondary"
+                  type="button"
+                  disabled={saving}
+                  onClick={() => setEditing(false)}
+                >
                   {t("Cancel")}
                 </Button>
               </div>
@@ -2575,6 +2640,7 @@ function TaskForm({
   return (
     <form
       aria-label={draft.id ? t("Edit task") : t("New task")}
+      aria-busy={saving}
       onSubmit={(event) => {
         event.preventDefault();
         if (saving) return;
@@ -2584,254 +2650,256 @@ function TaskForm({
       }}
       className="shrink-0 border-b border-(--ui-tone-neutral-border) px-4 py-3"
     >
-      <div className="flex flex-wrap items-start gap-4">
-        <TextField
-          hideLabel
-          label=""
-          autoFocus
-          aria-label={t("Task title")}
-          value={draft.title}
-          onChange={(event) => update("title", event.target.value)}
-          placeholder={t("What should get done?")}
-          fieldClassName="task-title-field"
-        />
-      </div>
-      <div className="mt-2 flex min-w-0 flex-wrap items-center gap-2 text-[12px] text-(--ui-text-secondary)">
-        {!draft.id ? (
-          <SearchableSelect
-            variant="pill"
-            label={t("Machine")}
-            value={targetId}
-            options={machines.map((entry) => ({
-              value: entry.id,
-              label: isLocalSyncMachine(entry) ? t("This computer") : entry.name,
-            }))}
-            onChange={(id) => {
-              onChange({
-                ...draft,
-                machineId: id,
-                crewDefinitionId: undefined,
-                workspace: undefined,
-                cwd:
-                  recents.find(
-                    (entry) =>
-                      looksLikeProject(entry.path) &&
-                      !isProjectLockedIn(lock, entry.path) &&
-                      backgroundMachineFor(machines, entry.path)?.id === id,
-                  )?.path ?? "",
-              });
-            }}
-          />
-        ) : null}
-        {draft.id ? (
-          // A task stays in the project it was created for.
-          <span className="truncate">{projectDisplayName(draft.cwd)}</span>
-        ) : (
-          <SearchableSelect
-            variant="pill"
-            label={t("Project")}
-            placeholder={t("Choose project")}
-            value={draft.cwd}
-            options={targetRecents.map((entry) => ({
-              value: entry.path,
-              label: projectDisplayName(entry.path),
-              keywords: entry.path,
-            }))}
-            onChange={(cwd) =>
-              onChange({ ...draft, cwd, workspace: undefined, crewDefinitionId: undefined })
-            }
-          />
-        )}
-        <ProjectDiscoveryStatus state={projectState} />
-        <span aria-hidden className="h-3 w-px shrink-0 bg-(--ui-surface-raised)" />
-        {target && !looksLikeProject(draft.cwd) ? (
-          <span>{t("Choose project")}</span>
-        ) : machine ? (
-          <span className="truncate">
-            {t("Runs on ")}
-            {machine}
-          </span>
-        ) : (
-          <span role="alert" className="text-(--ui-tone-warning-fg)">
-            {TASK_MACHINE_ERROR}
-          </span>
-        )}
-        {!draft.id && todoUnsupported ? (
-          <span role="status" className="text-(--ui-tone-warning-fg)">
-            {todoUnsupported}
-          </span>
-        ) : null}
-      </div>
-      <div
-        data-ui-focus-group=""
-        data-task-prompt=""
-        className="relative mt-2 rounded-md border border-(--ui-tone-neutral-border) bg-(--ui-surface-raised) has-focus:border-(--ui-tone-neutral-border)"
-      >
-        <SkillPromptField
-          value={draft.prompt}
-          harness={draft.harness}
-          cwd={draft.cwd}
-          onChange={(prompt) => update("prompt", prompt)}
-          label={t("Description")}
-          placeholder={t("Details, acceptance criteria, links…")}
-          focusOwner="group"
-        />
-      </div>
-      <CrewTaskPicker
-        cwd={draft.cwd}
-        machineId={targetId}
-        value={draft.crewDefinitionId}
-        disabled={saving || draft.workspaceLocked}
-        onChange={(crewDefinitionId) => onChange({ ...draft, crewDefinitionId })}
-        onValidityChange={setCrewValid}
-      />
-      {!draft.crewDefinitionId && (
-        <details className="task-advanced-options">
-          <summary>{t("Working branch and worktree")}</summary>
-          <TaskExecutionMode
-            isolate={draft.isolate}
-            disabled={saving || draft.workspaceLocked}
-            onChange={(isolate) => update("isolate", isolate)}
-          />
-          <TaskWorkspacePicker
-            machine={target}
-            cwd={draft.cwd}
-            value={draft.workspace}
-            onChange={(workspace) => update("workspace", workspace)}
-            disabled={saving || draft.workspaceLocked}
-            branchName={draft.isolate}
-            isolate={draft.isolate}
-            onBusyChange={setWorkspaceBusy}
-            onValidityChange={setWorkspaceValid}
-          />
-        </details>
-      )}
-      <MachineConcurrency machineId={targetId} limits={limits} onChange={onChangeLimits} />
-      {!draft.crewDefinitionId && (
-        <Button
-          variant="ghost"
-          type="button"
-          aria-expanded={agentOpen}
-          onClick={() => setAgentOpen((open) => !open)}
-          className="mt-2"
-        >
-          {agentOpen ? <ChevronDown className="size-3" /> : <ChevronRight className="size-3" />}
-          {t("Agent settings")}
-        </Button>
-      )}
-      {draft.crewDefinitionId ? (
-        <div className="flex flex-wrap items-center gap-2">
-          <AccessPicker
-            value={draft.runtimeMode}
-            onChange={(runtimeMode) => update("runtimeMode", runtimeMode)}
-          />
-          <SearchableSelect
-            variant="pill"
-            searchable={false}
-            label={t("Time limit")}
-            value={String(draft.maxRunMinutes)}
-            options={RUN_TIME_LIMIT_OPTIONS}
-            onChange={(value) => update("maxRunMinutes", Number(value))}
-          />
+      <fieldset disabled={saving} inert={saving} className="min-w-0">
+        <div className="flex flex-wrap items-start gap-4">
           <TextField
-            label={t("Check command")}
-            value={draft.verifyCommand}
-            onChange={(event) => update("verifyCommand", event.target.value)}
+            hideLabel
+            label=""
+            autoFocus
+            aria-label={t("Task title")}
+            value={draft.title}
+            onChange={(event) => update("title", event.target.value)}
+            placeholder={t("What should get done?")}
+            fieldClassName="task-title-field"
           />
         </div>
-      ) : agentOpen ? (
-        <div className="mt-1 space-y-2">
-          <div className="flex flex-wrap items-center gap-1 rounded-md border border-(--ui-tone-neutral-border) bg-(--ui-surface-raised) px-2 py-2">
-            <ModelPicker
-              harness={draft.harness}
-              model={draft.model}
-              values={draft.modelSettings}
-              project={draft.cwd}
-              onChange={(harness, model) => onChange({ ...draft, harness, model })}
-              onSettingsChange={(modelSettings) => update("modelSettings", modelSettings)}
+        <div className="mt-2 flex min-w-0 flex-wrap items-center gap-2 text-[12px] text-(--ui-text-secondary)">
+          {!draft.id ? (
+            <SearchableSelect
+              variant="pill"
+              label={t("Machine")}
+              value={targetId}
+              options={machines.map((entry) => ({
+                value: entry.id,
+                label: isLocalSyncMachine(entry) ? t("This computer") : entry.name,
+              }))}
+              onChange={(id) => {
+                onChange({
+                  ...draft,
+                  machineId: id,
+                  crewDefinitionId: undefined,
+                  workspace: undefined,
+                  cwd:
+                    recents.find(
+                      (entry) =>
+                        looksLikeProject(entry.path) &&
+                        !isProjectLockedIn(lock, entry.path) &&
+                        backgroundMachineFor(machines, entry.path)?.id === id,
+                    )?.path ?? "",
+                });
+              }}
             />
-            {draft.harness !== "fx" ? (
-              <AccessPicker
-                value={draft.runtimeMode}
-                onChange={(runtimeMode) => update("runtimeMode", runtimeMode)}
-              />
-            ) : null}
-            <span className="ml-auto flex items-center gap-2 text-[11px] text-(--ui-text-secondary)">
-              {t("Time limit")}
-              <SearchableSelect
-                variant="pill"
-                searchable={false}
-                align="end"
-                label={t("Time limit")}
-                value={String(draft.maxRunMinutes)}
-                options={RUN_TIME_LIMIT_OPTIONS}
-                onChange={(value) => update("maxRunMinutes", Number(value))}
-              />
-            </span>
-          </div>
-          <div className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-2 text-[12px] text-(--ui-text-secondary)">
-            <label className="flex cursor-pointer items-center gap-1.5">
-              <Checkbox
-                checked={draft.review}
-                onChange={(event) => update("review", event.target.checked)}
-              />
-              {t("Review with a second agent")}
-            </label>
-            <AutoMergeField
-              checked={draft.autoMerge && draft.isolate}
-              disabled={!draft.isolate}
-              onChange={(checked) => update("autoMerge", checked)}
-            />
-            <ContinueUntilDoneField
-              checked={draft.continueUntilDone}
-              onChange={(checked) => update("continueUntilDone", checked)}
-            />
-            <label className="flex min-w-[220px] flex-1 items-center gap-2">
-              <span className="shrink-0">{t("Check command")}</span>
-              <TextField
-                hideLabel
-                label=""
-                aria-label={t("Check command")}
-                value={draft.verifyCommand}
-                onChange={(event) => update("verifyCommand", event.target.value)}
-                placeholder={"npm test"}
-                spellCheck={false}
-                fieldClassName="min-w-0 flex-1"
-                className="font-mono"
-              />
-            </label>
-          </div>
-        </div>
-      ) : null}
-      <div className="task-form-footer">
-        <Button variant="secondary" type="button" onClick={onCancel}>
-          {t("Cancel")}
-        </Button>
-        {draft.id ? (
-          <Button variant="primary" type="submit" disabled={!canSave || saving}>
-            {saving ? <LoaderCircle className="size-3.5 animate-spin" /> : null}
-            {t("Save")}
-          </Button>
-        ) : (
-          <>
-            <Button
-              variant="secondary"
-              type="button"
-              disabled={!ready || !hasDescription || saving}
-              title={
-                hasDescription ? undefined : t("Add a description to start this with an agent.")
+          ) : null}
+          {draft.id ? (
+            // A task stays in the project it was created for.
+            <span className="truncate">{projectDisplayName(draft.cwd)}</span>
+          ) : (
+            <SearchableSelect
+              variant="pill"
+              label={t("Project")}
+              placeholder={t("Choose project")}
+              value={draft.cwd}
+              options={targetRecents.map((entry) => ({
+                value: entry.path,
+                label: projectDisplayName(entry.path),
+                keywords: entry.path,
+              }))}
+              onChange={(cwd) =>
+                onChange({ ...draft, cwd, workspace: undefined, crewDefinitionId: undefined })
               }
-              onClick={() => onSubmit("queued")}
-            >
-              {t(draft.crewDefinitionId ? "Start with crew" : "Add and start")}
-            </Button>
-            <Button variant="primary" type="submit" disabled={!canTodo || saving}>
-              {saving ? <LoaderCircle className="size-3.5 animate-spin" /> : null}
-              {t("Add to To do")}
-            </Button>
-          </>
+            />
+          )}
+          <ProjectDiscoveryStatus state={projectState} />
+          <span aria-hidden className="h-3 w-px shrink-0 bg-(--ui-surface-raised)" />
+          {target && !looksLikeProject(draft.cwd) ? (
+            <span>{t("Choose project")}</span>
+          ) : machine ? (
+            <span className="truncate">
+              {t("Runs on ")}
+              {machine}
+            </span>
+          ) : (
+            <span role="alert" className="text-(--ui-tone-warning-fg)">
+              {TASK_MACHINE_ERROR}
+            </span>
+          )}
+          {!draft.id && todoUnsupported ? (
+            <span role="status" className="text-(--ui-tone-warning-fg)">
+              {todoUnsupported}
+            </span>
+          ) : null}
+        </div>
+        <div
+          data-ui-focus-group=""
+          data-task-prompt=""
+          className="relative mt-2 rounded-md border border-(--ui-tone-neutral-border) bg-(--ui-surface-raised) has-focus:border-(--ui-tone-neutral-border)"
+        >
+          <SkillPromptField
+            value={draft.prompt}
+            harness={draft.harness}
+            cwd={draft.cwd}
+            onChange={(prompt) => update("prompt", prompt)}
+            label={t("Description")}
+            placeholder={t("Details, acceptance criteria, links…")}
+            focusOwner="group"
+          />
+        </div>
+        <CrewTaskPicker
+          cwd={draft.cwd}
+          machineId={targetId}
+          value={draft.crewDefinitionId}
+          disabled={saving || draft.workspaceLocked}
+          onChange={(crewDefinitionId) => onChange({ ...draft, crewDefinitionId })}
+          onValidityChange={setCrewValid}
+        />
+        {!draft.crewDefinitionId && (
+          <details className="task-advanced-options">
+            <summary>{t("Working branch and worktree")}</summary>
+            <TaskExecutionMode
+              isolate={draft.isolate}
+              disabled={saving || draft.workspaceLocked}
+              onChange={(isolate) => update("isolate", isolate)}
+            />
+            <TaskWorkspacePicker
+              machine={target}
+              cwd={draft.cwd}
+              value={draft.workspace}
+              onChange={(workspace) => update("workspace", workspace)}
+              disabled={saving || draft.workspaceLocked}
+              branchName={draft.isolate}
+              isolate={draft.isolate}
+              onBusyChange={setWorkspaceBusy}
+              onValidityChange={setWorkspaceValid}
+            />
+          </details>
         )}
-      </div>
+        <MachineConcurrency machineId={targetId} limits={limits} onChange={onChangeLimits} />
+        {!draft.crewDefinitionId && (
+          <Button
+            variant="ghost"
+            type="button"
+            aria-expanded={agentOpen}
+            onClick={() => setAgentOpen((open) => !open)}
+            className="mt-2"
+          >
+            {agentOpen ? <ChevronDown className="size-3" /> : <ChevronRight className="size-3" />}
+            {t("Agent settings")}
+          </Button>
+        )}
+        {draft.crewDefinitionId ? (
+          <div className="flex flex-wrap items-center gap-2">
+            <AccessPicker
+              value={draft.runtimeMode}
+              onChange={(runtimeMode) => update("runtimeMode", runtimeMode)}
+            />
+            <SearchableSelect
+              variant="pill"
+              searchable={false}
+              label={t("Time limit")}
+              value={String(draft.maxRunMinutes)}
+              options={RUN_TIME_LIMIT_OPTIONS}
+              onChange={(value) => update("maxRunMinutes", Number(value))}
+            />
+            <TextField
+              label={t("Check command")}
+              value={draft.verifyCommand}
+              onChange={(event) => update("verifyCommand", event.target.value)}
+            />
+          </div>
+        ) : agentOpen ? (
+          <div className="mt-1 space-y-2">
+            <div className="flex flex-wrap items-center gap-1 rounded-md border border-(--ui-tone-neutral-border) bg-(--ui-surface-raised) px-2 py-2">
+              <ModelPicker
+                harness={draft.harness}
+                model={draft.model}
+                values={draft.modelSettings}
+                project={draft.cwd}
+                onChange={(harness, model) => onChange({ ...draft, harness, model })}
+                onSettingsChange={(modelSettings) => update("modelSettings", modelSettings)}
+              />
+              {draft.harness !== "fx" ? (
+                <AccessPicker
+                  value={draft.runtimeMode}
+                  onChange={(runtimeMode) => update("runtimeMode", runtimeMode)}
+                />
+              ) : null}
+              <span className="ml-auto flex items-center gap-2 text-[11px] text-(--ui-text-secondary)">
+                {t("Time limit")}
+                <SearchableSelect
+                  variant="pill"
+                  searchable={false}
+                  align="end"
+                  label={t("Time limit")}
+                  value={String(draft.maxRunMinutes)}
+                  options={RUN_TIME_LIMIT_OPTIONS}
+                  onChange={(value) => update("maxRunMinutes", Number(value))}
+                />
+              </span>
+            </div>
+            <div className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-2 text-[12px] text-(--ui-text-secondary)">
+              <label className="flex cursor-pointer items-center gap-1.5">
+                <Checkbox
+                  checked={draft.review}
+                  onChange={(event) => update("review", event.target.checked)}
+                />
+                {t("Review with a second agent")}
+              </label>
+              <AutoMergeField
+                checked={draft.autoMerge && draft.isolate}
+                disabled={!draft.isolate}
+                onChange={(checked) => update("autoMerge", checked)}
+              />
+              <ContinueUntilDoneField
+                checked={draft.continueUntilDone}
+                onChange={(checked) => update("continueUntilDone", checked)}
+              />
+              <label className="flex min-w-[220px] flex-1 items-center gap-2">
+                <span className="shrink-0">{t("Check command")}</span>
+                <TextField
+                  hideLabel
+                  label=""
+                  aria-label={t("Check command")}
+                  value={draft.verifyCommand}
+                  onChange={(event) => update("verifyCommand", event.target.value)}
+                  placeholder={"npm test"}
+                  spellCheck={false}
+                  fieldClassName="min-w-0 flex-1"
+                  className="font-mono"
+                />
+              </label>
+            </div>
+          </div>
+        ) : null}
+        <div className="task-form-footer">
+          <Button variant="secondary" type="button" onClick={onCancel}>
+            {t("Cancel")}
+          </Button>
+          {draft.id ? (
+            <Button variant="primary" type="submit" disabled={!canSave || saving}>
+              {saving ? <LoaderCircle className="size-3.5 animate-spin" /> : null}
+              {t("Save")}
+            </Button>
+          ) : (
+            <>
+              <Button
+                variant="secondary"
+                type="button"
+                disabled={!ready || !hasDescription || saving}
+                title={
+                  hasDescription ? undefined : t("Add a description to start this with an agent.")
+                }
+                onClick={() => onSubmit("queued")}
+              >
+                {t(draft.crewDefinitionId ? "Start with crew" : "Add and start")}
+              </Button>
+              <Button variant="primary" type="submit" disabled={!canTodo || saving}>
+                {saving ? <LoaderCircle className="size-3.5 animate-spin" /> : null}
+                {t("Add to To do")}
+              </Button>
+            </>
+          )}
+        </div>
+      </fieldset>
     </form>
   );
 }
@@ -3081,6 +3149,7 @@ function CustomDailyLimit({
 }) {
   useLocale();
   const [hours, setHours] = useState(String(entry.dailyAgentMinutes / 60));
+  const [saving, setSaving] = useState(false);
   useEffect(() => {
     setHours(String(entry.dailyAgentMinutes / 60));
   }, [entry.dailyAgentMinutes]);
@@ -3090,9 +3159,16 @@ function CustomDailyLimit({
     <form
       aria-label={t("Custom daily agent time on {p0}", { p0: entry.machineName })}
       className="flex items-center gap-2"
-      onSubmit={(event) => {
+      aria-busy={saving}
+      onSubmit={async (event) => {
         event.preventDefault();
-        if (valid) onChange(entry.machineId, { dailyAgentMinutes: minutes });
+        if (!valid || saving) return;
+        setSaving(true);
+        try {
+          await onChange(entry.machineId, { dailyAgentMinutes: minutes });
+        } finally {
+          setSaving(false);
+        }
       }}
     >
       <label className="flex items-center gap-2">
@@ -3105,11 +3181,14 @@ function CustomDailyLimit({
           step="any"
           aria-label={t("Daily agent hours on {p0}", { p0: entry.machineName })}
           value={hours}
-          onChange={(event) => setHours(event.target.value)}
+          disabled={saving}
+          onChange={(event) => {
+            if (!saving) setHours(event.target.value);
+          }}
           fieldClassName="w-24 max-w-24"
         />
       </label>
-      <Button variant="secondary" type="submit" disabled={!valid}>
+      <Button variant="secondary" type="submit" disabled={!valid || saving}>
         {t("Save")}
       </Button>
       <span className="text-[11px] text-(--ui-text-secondary)">{t("0 = no limit")}</span>
@@ -3610,6 +3689,7 @@ function GoalForm({
   return (
     <form
       aria-label={t("New goal")}
+      aria-busy={saving}
       onSubmit={(event) => {
         if (!valid || saving) {
           event.preventDefault();
@@ -3619,248 +3699,252 @@ function GoalForm({
       }}
       className="shrink-0 border-b border-(--ui-tone-neutral-border) px-4 py-3"
     >
-      <div className="flex flex-wrap items-start gap-4">
-        <TextField
-          hideLabel
-          label=""
-          autoFocus
-          aria-label={t("Goal title")}
-          value={draft.title}
-          onChange={(event) => update("title", event.target.value)}
-          placeholder={t("Name the main job")}
-          fieldClassName="task-title-field"
-        />
-        <div className="flex shrink-0 items-center gap-2">
-          <Button variant="secondary" type="button" onClick={onCancel}>
-            {t("Cancel")}
-          </Button>
-          <Button variant="primary" type="submit" disabled={!valid || saving}>
-            {saving ? <LoaderCircle className="size-3.5 animate-spin" /> : null}
-            {t("Plan it")}
-          </Button>
-        </div>
-      </div>
-      <div className="mt-2 flex min-w-0 flex-wrap items-center gap-1.5 text-[12px] text-(--ui-text-secondary)">
-        <SearchableSelect
-          variant="pill"
-          label={t("Machine")}
-          placeholder={t("Choose machine")}
-          value={targetId}
-          options={machines.map((entry) => ({
-            value: entry.id,
-            label: isLocalSyncMachine(entry) ? t("This computer") : entry.name,
-          }))}
-          onChange={(machineId) =>
-            onChange({ ...draft, machineId, cwds: [], leadCwd: "", workspaces: undefined })
-          }
-        />
-        <span aria-hidden className="h-3 w-px shrink-0 bg-(--ui-surface-raised)" />
-        <span className="shrink-0">{t("Projects")}</span>
-        {draft.cwds.map((cwd) => (
-          <span
-            key={cwd}
-            data-goal-project={cwd}
-            className="inline-flex h-6 max-w-[220px] items-center gap-1 rounded-full border border-(--ui-tone-neutral-border) pl-2 pr-1 text-[12px] text-(--ui-text-secondary)"
-          >
-            <span className="min-w-0 truncate">{projectDisplayName(cwd)}</span>
-            {cwd === lead ? (
-              <span className="shrink-0 text-[10px] text-(--ui-text-secondary)">{t("lead")}</span>
-            ) : null}
-            <Button
-              iconOnly
-              label={t("Remove {p0}", { p0: projectDisplayName(cwd) })}
-              variant="ghost"
-              type="button"
-              aria-label={t("Remove {p0}", { p0: projectDisplayName(cwd) })}
-              onClick={() => onChange(toggleGoalProject(draft, cwd))}
-              className="shrink-0"
-            >
-              <X className="size-3" />
+      <fieldset disabled={saving} inert={saving} className="min-w-0">
+        <div className="flex flex-wrap items-start gap-4">
+          <TextField
+            hideLabel
+            label=""
+            autoFocus
+            aria-label={t("Goal title")}
+            value={draft.title}
+            onChange={(event) => update("title", event.target.value)}
+            placeholder={t("Name the main job")}
+            fieldClassName="task-title-field"
+          />
+          <div className="flex shrink-0 items-center gap-2">
+            <Button variant="secondary" type="button" onClick={onCancel}>
+              {t("Cancel")}
             </Button>
-          </span>
-        ))}
-        {draft.cwds.length < MAX_GOAL_PROJECTS ? (
+            <Button variant="primary" type="submit" disabled={!valid || saving}>
+              {saving ? <LoaderCircle className="size-3.5 animate-spin" /> : null}
+              {t("Plan it")}
+            </Button>
+          </div>
+        </div>
+        <div className="mt-2 flex min-w-0 flex-wrap items-center gap-1.5 text-[12px] text-(--ui-text-secondary)">
           <SearchableSelect
             variant="pill"
-            label={t("Project")}
-            placeholder={t("Choose project")}
-            value=""
-            options={choices.map((entry) => ({
-              value: entry.path,
-              label: projectDisplayName(entry.path),
-              keywords: entry.path,
+            label={t("Machine")}
+            placeholder={t("Choose machine")}
+            value={targetId}
+            options={machines.map((entry) => ({
+              value: entry.id,
+              label: isLocalSyncMachine(entry) ? t("This computer") : entry.name,
             }))}
-            onChange={(cwd) => onChange(toggleGoalProject(draft, cwd))}
+            onChange={(machineId) =>
+              onChange({ ...draft, machineId, cwds: [], leadCwd: "", workspaces: undefined })
+            }
           />
-        ) : null}
-        <ProjectDiscoveryStatus state={projectState} />
-        {draft.cwds.length > 1 ? (
-          <span className="flex items-center gap-1.5">
-            <span aria-hidden className="h-3 w-px shrink-0 bg-(--ui-surface-raised)" />
-            {t("Lead")}
+          <span aria-hidden className="h-3 w-px shrink-0 bg-(--ui-surface-raised)" />
+          <span className="shrink-0">{t("Projects")}</span>
+          {draft.cwds.map((cwd) => (
+            <span
+              key={cwd}
+              data-goal-project={cwd}
+              className="inline-flex h-6 max-w-[220px] items-center gap-1 rounded-full border border-(--ui-tone-neutral-border) pl-2 pr-1 text-[12px] text-(--ui-text-secondary)"
+            >
+              <span className="min-w-0 truncate">{projectDisplayName(cwd)}</span>
+              {cwd === lead ? (
+                <span className="shrink-0 text-[10px] text-(--ui-text-secondary)">{t("lead")}</span>
+              ) : null}
+              <Button
+                iconOnly
+                label={t("Remove {p0}", { p0: projectDisplayName(cwd) })}
+                variant="ghost"
+                type="button"
+                aria-label={t("Remove {p0}", { p0: projectDisplayName(cwd) })}
+                onClick={() => onChange(toggleGoalProject(draft, cwd))}
+                className="shrink-0"
+              >
+                <X className="size-3" />
+              </Button>
+            </span>
+          ))}
+          {draft.cwds.length < MAX_GOAL_PROJECTS ? (
             <SearchableSelect
               variant="pill"
-              searchable={false}
-              label={t("Lead project")}
-              value={lead}
-              options={draft.cwds.map((cwd) => ({
-                value: cwd,
-                label: projectDisplayName(cwd),
+              label={t("Project")}
+              placeholder={t("Choose project")}
+              value=""
+              options={choices.map((entry) => ({
+                value: entry.path,
+                label: projectDisplayName(entry.path),
+                keywords: entry.path,
               }))}
-              onChange={(cwd) => update("leadCwd", cwd)}
-            />
-          </span>
-        ) : null}
-        <span aria-hidden className="h-3 w-px shrink-0 bg-(--ui-surface-raised)" />
-        {machine ? (
-          <span className="truncate">
-            {t("Runs on ")}
-            {machine}
-          </span>
-        ) : draft.cwds.length ? (
-          <span role="alert" className="text-(--ui-tone-warning-fg)">
-            {TASK_MACHINE_ERROR}
-          </span>
-        ) : (
-          <span>{t("Choose the projects the job may touch, all on one machine.")}</span>
-        )}
-      </div>
-      <div className="relative mt-2 rounded-md border border-(--ui-tone-neutral-border) bg-(--ui-surface-raised) has-focus:border-(--ui-tone-neutral-border)">
-        <TextareaField
-          hideLabel
-          label=""
-          aria-label={t("Main job")}
-          value={draft.prompt}
-          onChange={(event) => update("prompt", event.target.value)}
-          placeholder={t(
-            "Describe the whole job. A planner agent reads the projects and splits it into tasks, which agents then carry out.",
-          )}
-          rows={4}
-          fieldClassName="block w-full"
-          className="resize-y"
-        />
-        <div className="flex flex-wrap items-center gap-1 px-2 pb-2">
-          <ModelPicker
-            harness={draft.harness}
-            model={draft.model}
-            values={draft.modelSettings}
-            project={lead || "~"}
-            onChange={(harness, model) => onChange({ ...draft, harness, model })}
-            onSettingsChange={(modelSettings) => update("modelSettings", modelSettings)}
-          />
-          {draft.harness !== "fx" ? (
-            <AccessPicker
-              value={draft.runtimeMode}
-              onChange={(runtimeMode) => update("runtimeMode", runtimeMode)}
+              onChange={(cwd) => onChange(toggleGoalProject(draft, cwd))}
             />
           ) : null}
-          <span className="ml-auto flex items-center gap-2 text-[11px] text-(--ui-text-secondary)">
-            {t("Time limit")}
-            <SearchableSelect
-              variant="pill"
-              searchable={false}
-              align="end"
-              label={t("Time limit")}
-              value={String(draft.maxRunMinutes)}
-              options={RUN_TIME_LIMIT_OPTIONS}
-              onChange={(value) => update("maxRunMinutes", Number(value))}
+          <ProjectDiscoveryStatus state={projectState} />
+          {draft.cwds.length > 1 ? (
+            <span className="flex items-center gap-1.5">
+              <span aria-hidden className="h-3 w-px shrink-0 bg-(--ui-surface-raised)" />
+              {t("Lead")}
+              <SearchableSelect
+                variant="pill"
+                searchable={false}
+                label={t("Lead project")}
+                value={lead}
+                options={draft.cwds.map((cwd) => ({
+                  value: cwd,
+                  label: projectDisplayName(cwd),
+                }))}
+                onChange={(cwd) => update("leadCwd", cwd)}
+              />
+            </span>
+          ) : null}
+          <span aria-hidden className="h-3 w-px shrink-0 bg-(--ui-surface-raised)" />
+          {machine ? (
+            <span className="truncate">
+              {t("Runs on ")}
+              {machine}
+            </span>
+          ) : draft.cwds.length ? (
+            <span role="alert" className="text-(--ui-tone-warning-fg)">
+              {TASK_MACHINE_ERROR}
+            </span>
+          ) : (
+            <span>{t("Choose the projects the job may touch, all on one machine.")}</span>
+          )}
+        </div>
+        <div className="relative mt-2 rounded-md border border-(--ui-tone-neutral-border) bg-(--ui-surface-raised) has-focus:border-(--ui-tone-neutral-border)">
+          <TextareaField
+            hideLabel
+            label=""
+            aria-label={t("Main job")}
+            value={draft.prompt}
+            onChange={(event) => update("prompt", event.target.value)}
+            placeholder={t(
+              "Describe the whole job. A planner agent reads the projects and splits it into tasks, which agents then carry out.",
+            )}
+            rows={4}
+            fieldClassName="block w-full"
+            className="resize-y"
+          />
+          <div className="flex flex-wrap items-center gap-1 px-2 pb-2">
+            <ModelPicker
+              harness={draft.harness}
+              model={draft.model}
+              values={draft.modelSettings}
+              project={lead || "~"}
+              onChange={(harness, model) => onChange({ ...draft, harness, model })}
+              onSettingsChange={(modelSettings) => update("modelSettings", modelSettings)}
             />
+            {draft.harness !== "fx" ? (
+              <AccessPicker
+                value={draft.runtimeMode}
+                onChange={(runtimeMode) => update("runtimeMode", runtimeMode)}
+              />
+            ) : null}
+            <span className="ml-auto flex items-center gap-2 text-[11px] text-(--ui-text-secondary)">
+              {t("Time limit")}
+              <SearchableSelect
+                variant="pill"
+                searchable={false}
+                align="end"
+                label={t("Time limit")}
+                value={String(draft.maxRunMinutes)}
+                options={RUN_TIME_LIMIT_OPTIONS}
+                onChange={(value) => update("maxRunMinutes", Number(value))}
+              />
+            </span>
+          </div>
+        </div>
+        <div className="mt-2 flex min-w-0 flex-wrap items-center gap-x-4 gap-y-2 text-[12px] text-(--ui-text-secondary)">
+          <label
+            title={t("The planned tasks are created only once you approve the plan.")}
+            className="flex cursor-pointer items-center gap-1.5"
+          >
+            <Checkbox
+              checked={draft.approvePlan}
+              onChange={(event) => update("approvePlan", event.target.checked)}
+            />
+            {t("Review the plan before starting")}
+          </label>
+          <label className="flex cursor-pointer items-center gap-1.5">
+            <Checkbox
+              checked={draft.review}
+              onChange={(event) => update("review", event.target.checked)}
+            />
+            {t("Review each task with a second agent")}
+          </label>
+          <TaskExecutionMode
+            isolate={draft.isolate !== false}
+            disabled={saving}
+            onChange={(isolate) => update("isolate", isolate)}
+          />
+          <AutoMergeField
+            checked={draft.autoMerge && draft.isolate !== false}
+            disabled={draft.isolate === false}
+            onChange={(checked) => update("autoMerge", checked)}
+          />
+          <ContinueUntilDoneField
+            checked={draft.continueUntilDone}
+            onChange={(checked) => update("continueUntilDone", checked)}
+          />
+          <span className="text-[11px] text-(--ui-text-secondary)">
+            {draft.isolate === false
+              ? t(
+                  "Tasks work directly in the selected checkout. You review and commit the changes.",
+                )
+              : draft.autoMerge
+                ? t("Each task runs on its own branch.")
+                : t("Each task runs on its own branch and waits for you to merge it.")}
           </span>
         </div>
-      </div>
-      <div className="mt-2 flex min-w-0 flex-wrap items-center gap-x-4 gap-y-2 text-[12px] text-(--ui-text-secondary)">
-        <label
-          title={t("The planned tasks are created only once you approve the plan.")}
-          className="flex cursor-pointer items-center gap-1.5"
-        >
-          <Checkbox
-            checked={draft.approvePlan}
-            onChange={(event) => update("approvePlan", event.target.checked)}
-          />
-          {t("Review the plan before starting")}
-        </label>
-        <label className="flex cursor-pointer items-center gap-1.5">
-          <Checkbox
-            checked={draft.review}
-            onChange={(event) => update("review", event.target.checked)}
-          />
-          {t("Review each task with a second agent")}
-        </label>
-        <TaskExecutionMode
-          isolate={draft.isolate !== false}
-          disabled={saving}
-          onChange={(isolate) => update("isolate", isolate)}
-        />
-        <AutoMergeField
-          checked={draft.autoMerge && draft.isolate !== false}
-          disabled={draft.isolate === false}
-          onChange={(checked) => update("autoMerge", checked)}
-        />
-        <ContinueUntilDoneField
-          checked={draft.continueUntilDone}
-          onChange={(checked) => update("continueUntilDone", checked)}
-        />
-        <span className="text-[11px] text-(--ui-text-secondary)">
-          {draft.isolate === false
-            ? t("Tasks work directly in the selected checkout. You review and commit the changes.")
-            : draft.autoMerge
-              ? t("Each task runs on its own branch.")
-              : t("Each task runs on its own branch and waits for you to merge it.")}
-        </span>
-      </div>
-      <div className="flex flex-wrap items-center gap-3 text-[12px]">
-        <label>
-          {t("Start planned tasks")}
-          <SearchableSelect
-            label={t("Start planned tasks")}
-            searchable={false}
-            value={draft.manualStart ? "manual" : "automatic"}
-            options={[
-              { value: "automatic", label: t("Automatically when ready") },
-              { value: "manual", label: t("Manually from To do") },
-            ]}
-            onChange={(value) => update("manualStart", value === "manual")}
-          />
-        </label>
-        <label>
-          {t("Concurrent tasks in this goal")}
-          <SearchableSelect
-            label={t("Concurrent tasks in this goal")}
-            searchable={false}
-            value={String(draft.maxRunningTasks ?? 0)}
-            options={[
-              { value: "0", label: t("Use machine limit") },
-              ...Array.from({ length: MAX_RUNNING_TASKS_LIMIT }, (_, index) => ({
-                value: String(index + 1),
-                label: String(index + 1),
-              })),
-            ]}
-            onChange={(value) => update("maxRunningTasks", Number(value) || undefined)}
-          />
-        </label>
-        <MachineConcurrency machineId={targetId} limits={limits} onChange={onChangeLimits} />
-      </div>
-      {draft.cwds.map((cwd) => (
-        <div key={cwd}>
-          <p className="font-medium text-[12px]">{projectDisplayName(cwd)}</p>
-          <TaskWorkspacePicker
-            machine={target}
-            cwd={cwd}
-            isolate={draft.isolate !== false}
-            value={draft.workspaces?.[cwd]}
-            disabled={saving || workspaceBusy}
-            onBusyChange={setWorkspaceBusy}
-            onValidityChange={(valid) =>
-              setWorkspaceValidity((current) =>
-                current[cwd] === valid ? current : { ...current, [cwd]: valid },
-              )
-            }
-            onChange={(workspace) =>
-              update("workspaces", { ...draft.workspaces, [cwd]: workspace ?? {} })
-            }
-          />
+        <div className="flex flex-wrap items-center gap-3 text-[12px]">
+          <label>
+            {t("Start planned tasks")}
+            <SearchableSelect
+              label={t("Start planned tasks")}
+              searchable={false}
+              value={draft.manualStart ? "manual" : "automatic"}
+              options={[
+                { value: "automatic", label: t("Automatically when ready") },
+                { value: "manual", label: t("Manually from To do") },
+              ]}
+              onChange={(value) => update("manualStart", value === "manual")}
+            />
+          </label>
+          <label>
+            {t("Concurrent tasks in this goal")}
+            <SearchableSelect
+              label={t("Concurrent tasks in this goal")}
+              searchable={false}
+              value={String(draft.maxRunningTasks ?? 0)}
+              options={[
+                { value: "0", label: t("Use machine limit") },
+                ...Array.from({ length: MAX_RUNNING_TASKS_LIMIT }, (_, index) => ({
+                  value: String(index + 1),
+                  label: String(index + 1),
+                })),
+              ]}
+              onChange={(value) => update("maxRunningTasks", Number(value) || undefined)}
+            />
+          </label>
+          <MachineConcurrency machineId={targetId} limits={limits} onChange={onChangeLimits} />
         </div>
-      ))}
+        {draft.cwds.map((cwd) => (
+          <div key={cwd}>
+            <p className="font-medium text-[12px]">{projectDisplayName(cwd)}</p>
+            <TaskWorkspacePicker
+              machine={target}
+              cwd={cwd}
+              isolate={draft.isolate !== false}
+              value={draft.workspaces?.[cwd]}
+              disabled={saving || workspaceBusy}
+              onBusyChange={setWorkspaceBusy}
+              onValidityChange={(valid) =>
+                setWorkspaceValidity((current) =>
+                  current[cwd] === valid ? current : { ...current, [cwd]: valid },
+                )
+              }
+              onChange={(workspace) =>
+                update("workspaces", { ...draft.workspaces, [cwd]: workspace ?? {} })
+              }
+            />
+          </div>
+        ))}
+      </fieldset>
     </form>
   );
 }
@@ -3942,9 +4026,7 @@ function StewardsPanel({
   const menuSteward = menu
     ? stewards.find((steward) => `${steward.machineId}:${steward.id}` === menu.key)
     : undefined;
-  const menuBusy = menuSteward
-    ? acting === `steward:${menuSteward.machineId}:${menuSteward.id}`
-    : true;
+  const menuBusy = !menuSteward || acting != null;
   return (
     <section
       aria-label={t("Stewards")}
@@ -3974,7 +4056,7 @@ function StewardsPanel({
       ) : null}
       <ul aria-label={t("Steward list")} className="flex flex-col gap-1.5">
         {stewards.map((steward) => {
-          const busy = acting === `steward:${steward.machineId}:${steward.id}`;
+          const busy = acting != null;
           const running = steward.run != null;
           return (
             <li key={`${steward.machineId}:${steward.id}`}>
@@ -4160,132 +4242,140 @@ function StewardForm({
   return (
     <form
       aria-label={draft.id ? t("Edit steward") : t("New steward")}
+      aria-busy={saving}
       onSubmit={onSubmit}
       className="rounded-md border border-(--ui-tone-neutral-border) bg-(--ui-surface) px-3 py-2"
     >
-      <div className="flex min-w-0 flex-wrap items-center gap-2 text-[12px] text-(--ui-text-secondary)">
-        {draft.id ? (
-          // A steward stays with the project it was created for.
-          <span className="truncate">{projectDisplayName(draft.cwd)}</span>
-        ) : (
-          <SearchableProjectPicker
-            cwd={draft.cwd}
-            recents={recents}
-            onSelectProject={(cwd) => update("cwd", cwd)}
-          />
-        )}
-        <span aria-hidden className="h-3 w-px shrink-0 bg-(--ui-surface-raised)" />
-        {machine ? (
-          <span className="truncate">
-            {t("Runs on ")}
-            {machine}
-          </span>
-        ) : (
-          <span role="alert" className="text-(--ui-tone-warning-fg)">
-            {TASK_MACHINE_ERROR}
-          </span>
-        )}
-        <div className="ml-auto flex items-center gap-2">
-          <Button variant="secondary" type="button" onClick={onCancel}>
-            {t("Cancel")}
-          </Button>
-          <Button variant="primary" type="submit" disabled={!valid || saving}>
-            {saving ? <LoaderCircle className="size-3.5 animate-spin" /> : null}
-            {t("Save")}
-          </Button>
+      <fieldset disabled={saving} inert={saving} className="min-w-0">
+        <div className="flex min-w-0 flex-wrap items-center gap-2 text-[12px] text-(--ui-text-secondary)">
+          {draft.id ? (
+            // A steward stays with the project it was created for.
+            <span className="truncate">{projectDisplayName(draft.cwd)}</span>
+          ) : (
+            <SearchableProjectPicker
+              cwd={draft.cwd}
+              recents={recents}
+              onSelectProject={(cwd) => update("cwd", cwd)}
+            />
+          )}
+          <span aria-hidden className="h-3 w-px shrink-0 bg-(--ui-surface-raised)" />
+          {machine ? (
+            <span className="truncate">
+              {t("Runs on ")}
+              {machine}
+            </span>
+          ) : (
+            <span role="alert" className="text-(--ui-tone-warning-fg)">
+              {TASK_MACHINE_ERROR}
+            </span>
+          )}
+          <div className="ml-auto flex items-center gap-2">
+            <Button variant="secondary" type="button" onClick={onCancel}>
+              {t("Cancel")}
+            </Button>
+            <Button variant="primary" type="submit" disabled={!valid || saving}>
+              {saving ? <LoaderCircle className="size-3.5 animate-spin" /> : null}
+              {t("Save")}
+            </Button>
+          </div>
         </div>
-      </div>
-      <TextareaField
-        hideLabel
-        label=""
-        aria-label={t("Focus")}
-        value={draft.focus}
-        onChange={(event) => update("focus", event.target.value)}
-        placeholder={t(
-          "What should it look for? e.g. follow docs/ROADMAP.md, or find bugs and missing tests",
-        )}
-        rows={2}
-        fieldClassName="mt-2 block w-full"
-        className="resize-y"
-      />
-      <div className="mt-2 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2 text-[12px] text-(--ui-text-secondary)">
-        <span className="shrink-0">{t("Look")}</span>
-        <SearchableSelect
-          variant="pill"
-          searchable={false}
-          label={t("Schedule")}
-          value={draft.scheduleKind}
-          options={SCHEDULE_OPTIONS}
-          onChange={(value) => update("scheduleKind", value as StewardDraft["scheduleKind"])}
+        <TextareaField
+          hideLabel
+          label=""
+          aria-label={t("Focus")}
+          value={draft.focus}
+          onChange={(event) => update("focus", event.target.value)}
+          placeholder={t(
+            "What should it look for? e.g. follow docs/ROADMAP.md, or find bugs and missing tests",
+          )}
+          rows={2}
+          fieldClassName="mt-2 block w-full"
+          className="resize-y"
         />
-        {draft.scheduleKind === "weekly" ? (
+        <div className="mt-2 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2 text-[12px] text-(--ui-text-secondary)">
+          <span className="shrink-0">{t("Look")}</span>
           <SearchableSelect
             variant="pill"
             searchable={false}
-            label={t("Day of week")}
-            value={String(draft.dayOfWeek)}
-            options={AUTOMATION_WEEKDAYS.map((day, index) => ({
-              value: String(index),
-              label: day,
-            }))}
-            onChange={(value) => update("dayOfWeek", Number(value))}
+            label={t("Schedule")}
+            value={draft.scheduleKind}
+            options={SCHEDULE_OPTIONS}
+            onChange={(value) => update("scheduleKind", value as StewardDraft["scheduleKind"])}
           />
-        ) : null}
-        {draft.scheduleKind === "hourly" ? (
-          number("Minute", draft.minute, 59, "minute", 0)
-        ) : (
-          <TextField
-            hideLabel
-            label=""
-            type="time"
-            aria-label={t("Time")}
-            value={draft.time}
-            onChange={(event) => {
-              if (event.target.value) update("time", event.target.value);
-            }}
-          />
-        )}
-        <span className="text-[11px] text-(--ui-text-secondary)">
-          {automationScheduleLabel(scheduleOf(draft))}
-        </span>
-      </div>
-      <div className="mt-2 flex flex-wrap items-center gap-1 rounded-md border border-(--ui-tone-neutral-border) bg-(--ui-surface-raised) px-2 py-2">
-        <ModelPicker
-          harness={draft.harness}
-          model={draft.model}
-          values={draft.modelSettings}
-          project={draft.cwd}
-          onChange={(harness, model) => onChange({ ...draft, harness, model })}
-          onSettingsChange={(modelSettings) => update("modelSettings", modelSettings)}
-        />
-        {draft.harness !== "fx" ? (
-          <AccessPicker
-            value={draft.runtimeMode}
-            onChange={(runtimeMode) => update("runtimeMode", runtimeMode)}
-          />
-        ) : null}
-      </div>
-      <div className="mt-2 flex min-w-0 flex-wrap items-center gap-x-4 gap-y-2 text-[12px] text-(--ui-text-secondary)">
-        {number("Max suggestions per run", draft.maxProposals, MAX_PROPOSALS_LIMIT, "maxProposals")}
-        {number("Pause at open suggestions", draft.maxOpen, MAX_OPEN_LIMIT, "maxOpen")}
-        <label className="flex cursor-pointer items-center gap-1.5">
-          <Checkbox
-            checked={draft.autoStart}
-            onChange={(event) => update("autoStart", event.target.checked)}
-          />
-          {t("Start suggestions automatically")}
-        </label>
-        <AutoMergeField
-          checked={draft.autoMerge}
-          onChange={(checked) => update("autoMerge", checked)}
-        />
-        {draft.autoStart ? (
-          <span role="status" className="text-[11px] text-(--ui-tone-warning-fg)">
-            {t("Suggestions will run without you reviewing the idea first.")}
-            {draft.autoMerge ? "" : t(" Each still waits for your review before it is merged.")}
+          {draft.scheduleKind === "weekly" ? (
+            <SearchableSelect
+              variant="pill"
+              searchable={false}
+              label={t("Day of week")}
+              value={String(draft.dayOfWeek)}
+              options={AUTOMATION_WEEKDAYS.map((day, index) => ({
+                value: String(index),
+                label: day,
+              }))}
+              onChange={(value) => update("dayOfWeek", Number(value))}
+            />
+          ) : null}
+          {draft.scheduleKind === "hourly" ? (
+            number("Minute", draft.minute, 59, "minute", 0)
+          ) : (
+            <TextField
+              hideLabel
+              label=""
+              type="time"
+              aria-label={t("Time")}
+              value={draft.time}
+              onChange={(event) => {
+                if (event.target.value) update("time", event.target.value);
+              }}
+            />
+          )}
+          <span className="text-[11px] text-(--ui-text-secondary)">
+            {automationScheduleLabel(scheduleOf(draft))}
           </span>
-        ) : null}
-      </div>
+        </div>
+        <div className="mt-2 flex flex-wrap items-center gap-1 rounded-md border border-(--ui-tone-neutral-border) bg-(--ui-surface-raised) px-2 py-2">
+          <ModelPicker
+            harness={draft.harness}
+            model={draft.model}
+            values={draft.modelSettings}
+            project={draft.cwd}
+            onChange={(harness, model) => onChange({ ...draft, harness, model })}
+            onSettingsChange={(modelSettings) => update("modelSettings", modelSettings)}
+          />
+          {draft.harness !== "fx" ? (
+            <AccessPicker
+              value={draft.runtimeMode}
+              onChange={(runtimeMode) => update("runtimeMode", runtimeMode)}
+            />
+          ) : null}
+        </div>
+        <div className="mt-2 flex min-w-0 flex-wrap items-center gap-x-4 gap-y-2 text-[12px] text-(--ui-text-secondary)">
+          {number(
+            "Max suggestions per run",
+            draft.maxProposals,
+            MAX_PROPOSALS_LIMIT,
+            "maxProposals",
+          )}
+          {number("Pause at open suggestions", draft.maxOpen, MAX_OPEN_LIMIT, "maxOpen")}
+          <label className="flex cursor-pointer items-center gap-1.5">
+            <Checkbox
+              checked={draft.autoStart}
+              onChange={(event) => update("autoStart", event.target.checked)}
+            />
+            {t("Start suggestions automatically")}
+          </label>
+          <AutoMergeField
+            checked={draft.autoMerge}
+            onChange={(checked) => update("autoMerge", checked)}
+          />
+          {draft.autoStart ? (
+            <span role="status" className="text-[11px] text-(--ui-tone-warning-fg)">
+              {t("Suggestions will run without you reviewing the idea first.")}
+              {draft.autoMerge ? "" : t(" Each still waits for your review before it is merged.")}
+            </span>
+          ) : null}
+        </div>
+      </fieldset>
     </form>
   );
 }

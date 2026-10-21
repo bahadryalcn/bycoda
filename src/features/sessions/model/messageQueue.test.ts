@@ -21,6 +21,15 @@ function queued(id: string, text = id): QueuedMessage {
   return { id, text, attachments: [] };
 }
 
+it("holds unknown delivery for both explicit Steer and automatic dispatch", () => {
+  const session = chat({
+    queueStatus: "active",
+    queuedMessages: [{ ...queued("unknown"), deliveryUnknown: true }],
+  });
+  expect(canDispatchQueuedHead(session)).toBe(false);
+  expect(queuedMessageForSubmit(session, "unknown", "steer")).toBeUndefined();
+});
+
 function chat(patch: Partial<Session> = {}): Session {
   return {
     ...newSession("claude", "/tmp/project"),
@@ -248,9 +257,7 @@ describe("resolveFollowUpRoute", () => {
   });
 
   it("steers when background tasks are open and nothing asked for a queue", () => {
-    expect(resolveFollowUpRoute({ ...base, backgroundTaskCount: 1 })).toBe(
-      "steer",
-    );
+    expect(resolveFollowUpRoute({ ...base, backgroundTaskCount: 1 })).toBe("steer");
     expect(
       resolveFollowUpRoute({
         ...base,

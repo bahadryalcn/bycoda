@@ -1,4 +1,5 @@
 import { writeChild } from "./child";
+import { DeliveryUnknownError, type DeliverySettlement } from "../../../shared/lib/deliveryUnknown";
 
 type Pending = {
   resolve: (value: unknown) => void;
@@ -119,28 +120,62 @@ export class JsonRpcClient {
     if (this.closed) throw new Error("Harness process is not running");
     const id = this.nextId++;
     const key = String(id);
+    let timedOut = false;
+    let rejectWrite: ((error: Error) => void) | undefined;
+    let responseTimer: ReturnType<typeof setTimeout> | undefined;
+    let lateTimer: ReturnType<typeof setTimeout> | undefined;
+    let settleLate!: (value: DeliverySettlement) => void;
+    const settlement = new Promise<DeliverySettlement>((resolve) => {
+      settleLate = resolve;
+    });
     // Register before writing. A local harness can answer quickly enough for
     // Tauri to deliver its stdout event before harness_write resolves; adding
     // the pending entry after send() silently discarded that response.
     const response = new Promise<T>((resolve, reject) => {
-      const timer =
+      rejectWrite = reject;
+      const timer = (responseTimer =
         timeoutMs > 0
           ? setTimeout(() => {
-              this.pending.delete(key);
-              reject(
-                new Error(
-                  `${this.label} ${method} response timed out after ${timeoutMs} ms (session ${this.sessionId})`,
-                ),
-              );
+              const message = `${this.label} ${method} response timed out after ${timeoutMs} ms (session ${this.sessionId})`;
+              if (method === "turn/steer") {
+                timedOut = true;
+                // Keep a bounded reconciliation window. Expiry remains unknown,
+                // never permission to resend a request whose write may have landed.
+                lateTimer = setTimeout(() => {
+                  this.pending.delete(key);
+                  settleLate("unknown");
+                }, 5 * 60_000);
+                reject(new DeliveryUnknownError(message, settlement));
+              } else {
+                this.pending.delete(key);
+                reject(new Error(message));
+              }
             }, timeoutMs)
-          : undefined;
+          : undefined);
       this.pending.set(key, {
         resolve: (value) => {
           if (timer) clearTimeout(timer);
+          if (lateTimer) clearTimeout(lateTimer);
+          if (timedOut) {
+            settleLate("accepted");
+            return;
+          }
           resolve(value as T);
         },
         reject: (error) => {
           if (timer) clearTimeout(timer);
+          if (lateTimer) clearTimeout(lateTimer);
+          if (timedOut) {
+            settleLate(error instanceof JsonRpcResponseError ? "rejected" : "unknown");
+            return;
+          }
+          if (method === "turn/steer" && !(error instanceof JsonRpcResponseError)) {
+            // Process exit/Stop can race with an already accepted write. Losing
+            // the transport is not proof that this mutation never arrived.
+            settleLate("unknown");
+            reject(new DeliveryUnknownError(error.message, settlement));
+            return;
+          }
           reject(error);
         },
       });
@@ -162,8 +197,22 @@ export class JsonRpcClient {
     ).catch((error: unknown) => {
       const pending = this.pending.get(key);
       if (pending) {
-        this.pending.delete(key);
-        pending.reject(error instanceof Error ? error : new Error(String(error)));
+        const failure = error instanceof Error ? error : new Error(String(error));
+        if (method === "turn/steer") {
+          // A failed IPC write acknowledgement cannot prove the child did not receive it.
+          timedOut = true;
+          if (responseTimer) clearTimeout(responseTimer);
+          lateTimer ??= setTimeout(() => {
+            this.pending.delete(key);
+            settleLate("unknown");
+          }, 5 * 60_000);
+          // The pending reject now belongs to the late settlement; reject the
+          // caller through its original response promise below instead.
+          rejectWrite?.(new DeliveryUnknownError(failure.message, settlement));
+        } else {
+          this.pending.delete(key);
+          pending.reject(failure);
+        }
       }
     });
     return response;

@@ -65,11 +65,13 @@ export function validSshShellState(value: unknown, id: string): value is SshShel
 export type SshShellController = ReturnType<typeof useSshShellIntegration>;
 
 export function useSshShellIntegration(id: string, enabled: boolean) {
+  // A session explicitly launched with shell integration previews safe commands
+  // by default. Never inherit a previous session's history/path source.
   const [savedPreferences, updatePreferences] = useState({
     id,
     enabled,
     revision: 0,
-    automatic: false,
+    automatic: enabled,
     source: "commands" as RemoteSuggestionSource,
   });
   if (savedPreferences.id !== id || savedPreferences.enabled !== enabled) {
@@ -77,7 +79,7 @@ export function useSshShellIntegration(id: string, enabled: boolean) {
       id,
       enabled,
       revision: savedPreferences.revision + 1,
-      automatic: false,
+      automatic: enabled,
       source: "commands",
     });
   }

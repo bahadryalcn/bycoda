@@ -1,4 +1,5 @@
 import { runGitText } from "../src/shared/lib/processExecution.node";
+import { assertExpectedConfiguration } from "./configurationConflict";
 import { createHash, randomUUID } from "node:crypto";
 import { realpathSync, statSync } from "node:fs";
 import { lstat, readdir, readFile } from "node:fs/promises";
@@ -420,7 +421,14 @@ export class HostTasks {
   crewCanStart?: (task: HostTask) => boolean;
   crewRunner?: {
     validate: (task: HostTaskInput) => void;
-    start: (task: HostTask) => Promise<{ sessionId: string; harness: HostTask["harness"]; model: string; modelSettings: Record<string, string> }>;
+    start: (
+      task: HostTask,
+    ) => Promise<{
+      sessionId: string;
+      harness: HostTask["harness"];
+      model: string;
+      modelSettings: Record<string, string>;
+    }>;
     state: (task: HostTask) => { status: "active" | "paused" | "finished"; error?: string };
     stop: (task: HostTask) => Promise<void>;
   };
@@ -462,13 +470,30 @@ export class HostTasks {
 
   async acceptCrewTask(id: string): Promise<HostTask> {
     const task = this.find(id);
-    if (!task?.crewRunId || task.status !== "review" || task.verification?.review?.verdict !== "pass") throw new Error("Independent review must pass before acceptance");
+    if (
+      !task?.crewRunId ||
+      task.status !== "review" ||
+      task.verification?.review?.verdict !== "pass"
+    )
+      throw new Error("Independent review must pass before acceptance");
     const fingerprint = await this.workspaceFingerprint(task);
     const latest = this.find(id);
-    if (!latest || latest.updatedAt !== task.updatedAt || latest.status !== "review") throw new Error("Task changed while accepting it");
+    if (!latest || latest.updatedAt !== task.updatedAt || latest.status !== "review")
+      throw new Error("Task changed while accepting it");
     if (!fingerprint || fingerprint !== task.crewReviewFingerprint) {
-      const reason = "The working copy changed or its review snapshot cannot be verified. Recheck the independent review before accepting.";
-      this.block({ ...latest, verification: { ...latest.verification, review: { ...latest.verification!.review!, verdict: "fail", note: reason } } }, reason, this.now());
+      const reason =
+        "The working copy changed or its review snapshot cannot be verified. Recheck the independent review before accepting.";
+      this.block(
+        {
+          ...latest,
+          verification: {
+            ...latest.verification,
+            review: { ...latest.verification!.review!, verdict: "fail", note: reason },
+          },
+        },
+        reason,
+        this.now(),
+      );
       throw new Error(reason);
     }
     // Only this acceptance path may complete a crew assignment. Ordinary board
@@ -634,8 +659,11 @@ export class HostTasks {
       throw new Error("A new task starts as to do or queued.");
     const now = this.now();
     const previous = this.find(input.id);
+    assertExpectedConfiguration(raw, previous, parseHostTask);
     if (input.crewDefinitionId && previous && (previous.crewRunId || hasUnmergedBranch(previous)))
-      throw new Error("Create a separate crew task; this task already belongs to a crew or has retained branch work.");
+      throw new Error(
+        "Create a separate crew task; this task already belongs to a crew or has retained branch work.",
+      );
     if (!previous) {
       const status = requested ?? "queued";
       if (status === "queued" && !input.prompt.trim()) throw new Error(EMPTY_PROMPT_ERROR);
@@ -741,7 +769,9 @@ export class HostTasks {
     if (!task) throw new Error("Task not found.");
     if (!isTaskStatus(to)) throw new Error("Invalid task status");
     if ((task.crewRunId || task.crewDefinitionId) && to === "done")
-      throw new Error("Accept this assignment through its crew coordinator after independent review.");
+      throw new Error(
+        "Accept this assignment through its crew coordinator after independent review.",
+      );
     if (!canMoveTask(task.status, to))
       throw new Error(`A ${task.status} task cannot be moved to ${to}.`);
     const now = this.now();
@@ -1093,7 +1123,9 @@ export class HostTasks {
    * with `reason`. Anything else is left as it is. */
   async cancel(id: string, reason: string): Promise<void> {
     const task = this.find(id);
-    if (this.jobs.has(id))
+    // Active verification must reach Stop so its controller is aborted. The job
+    // stays registered during process-tree cleanup, retaining retry/delete gates.
+    if (this.jobs.has(id) && task?.status !== "running" && task?.status !== "verifying")
       throw new Error("The previous verification is still stopping. Retry after it finishes.");
     if (task?.status === "running" || task?.status === "verifying") await this.move(id, "blocked");
     else if (
@@ -1147,7 +1179,8 @@ export class HostTasks {
           this.canResumeAfterHostStop(task)
         )
           this.requeueInterrupted(task, now);
-        else if (task.status === "running" && task.crewDefinitionId) await this.settleCrew(task, now);
+        else if (task.status === "running" && task.crewDefinitionId)
+          await this.settleCrew(task, now);
         else if (task.status === "running") this.settle(task, now);
         else if (task.status === "verifying") await this.settleVerification(task, now);
         else if (
@@ -1183,7 +1216,10 @@ export class HostTasks {
     );
     // Coordinators wait for their workers; counting them as a worker slot
     // deadlocks a team on hosts configured to run one task at a time.
-    const active = tasks.filter((task) => !task.crewDefinitionId && (task.status === "running" || task.status === "verifying"));
+    const active = tasks.filter(
+      (task) =>
+        !task.crewDefinitionId && (task.status === "running" || task.status === "verifying"),
+    );
     const teams = tasks.filter((task) => task.crewDefinitionId && task.status === "running");
     const { maxRunningTasks } = this.limits.settings();
     for (const candidate of tasks) {
@@ -1577,10 +1613,15 @@ export class HostTasks {
     active: readonly HostTask[],
   ): Promise<HostTask> {
     if (task.crewDefinitionId) {
-      if (!this.crewRunner) return this.block(task, "Crew execution is unavailable on this host.", now);
-      const pending = task.crewExecutionId ? task : this.write({
-        ...task, crewExecutionId: randomUUID(), updatedAt: this.now(),
-      });
+      if (!this.crewRunner)
+        return this.block(task, "Crew execution is unavailable on this host.", now);
+      const pending = task.crewExecutionId
+        ? task
+        : this.write({
+            ...task,
+            crewExecutionId: randomUUID(),
+            updatedAt: this.now(),
+          });
       try {
         const coordinator = await this.crewRunner.start(pending);
         const latest = this.find(task.id);
@@ -1589,12 +1630,18 @@ export class HostTasks {
           return latest ?? task;
         }
         return this.write({
-          ...latest, ...coordinator, status: "running", startedAt: now, updatedAt: this.now(),
-          error: undefined, needsInput: undefined,
+          ...latest,
+          ...coordinator,
+          status: "running",
+          startedAt: now,
+          updatedAt: this.now(),
+          error: undefined,
+          needsInput: undefined,
         });
       } catch (error) {
         const latest = this.find(task.id);
-        if (!latest || latest.status !== "queued" || latest.updatedAt !== pending.updatedAt) return latest ?? task;
+        if (!latest || latest.status !== "queued" || latest.updatedAt !== pending.updatedAt)
+          return latest ?? task;
         return this.block(latest, errorMessage(error), this.now());
       }
     }
@@ -1806,8 +1853,18 @@ export class HostTasks {
     try {
       const run = this.crewRunner.state(task);
       if (run.status === "finished") {
-        this.write({ ...task, status: "done", completedAt: now, updatedAt: now, needsInput: undefined, error: undefined });
-      } else if (task.maxRunMinutes > 0 && now - (task.startedAt ?? now) >= task.maxRunMinutes * 60000) {
+        this.write({
+          ...task,
+          status: "done",
+          completedAt: now,
+          updatedAt: now,
+          needsInput: undefined,
+          error: undefined,
+        });
+      } else if (
+        task.maxRunMinutes > 0 &&
+        now - (task.startedAt ?? now) >= task.maxRunMinutes * 60000
+      ) {
         await this.crewRunner.stop(task);
         const latest = this.find(task.id);
         if (latest?.status === "running" && latest.crewExecutionId === task.crewExecutionId)
@@ -1815,7 +1872,12 @@ export class HostTasks {
       } else {
         const needsInput = run.status === "paused" || !!run.error;
         if (Boolean(task.needsInput) !== needsInput || task.error !== run.error)
-          this.write({ ...task, needsInput: needsInput || undefined, error: run.error, updatedAt: now });
+          this.write({
+            ...task,
+            needsInput: needsInput || undefined,
+            error: run.error,
+            updatedAt: now,
+          });
       }
     } catch (error) {
       this.block(task, errorMessage(error), now);
@@ -1963,7 +2025,9 @@ export class HostTasks {
       const latest = current();
       if (!latest) return;
       const now = this.now();
-      const crewReviewFingerprint = task.crewRunId ? await this.workspaceFingerprint(task) : undefined;
+      const crewReviewFingerprint = task.crewRunId
+        ? await this.workspaceFingerprint(task)
+        : undefined;
       if (task.crewRunId && current()?.updatedAt !== latest.updatedAt) return;
       if (task.crewRunId && !crewReviewFingerprint) {
         this.block(latest, "Cannot snapshot this crew assignment for independent review.", now);
@@ -1972,7 +2036,13 @@ export class HostTasks {
       const started = launchSessionRun(this.store, this.engine, {
         ...task,
         title: `Review: ${task.title}`.slice(0, 200),
-        ...(task.reviewerConfig ? { harness: task.reviewerConfig.harness, model: task.reviewerConfig.model, modelSettings: task.reviewerConfig.modelSettings } : {}),
+        ...(task.reviewerConfig
+          ? {
+              harness: task.reviewerConfig.harness,
+              model: task.reviewerConfig.model,
+              modelSettings: task.reviewerConfig.modelSettings,
+            }
+          : {}),
         prompt: `${task.reviewerConfig?.instructions ?? ""}\n${reviewPrompt(task)}`,
       });
       const reviewing = {
@@ -2092,9 +2162,8 @@ export class HostTasks {
         ? reviewFindings(reviewerReply(this.store.session(sessionId).session.blocks), review)
         : [];
     const previous = task.attemptHistory?.at(-1);
-    const workspaceFingerprint = task.continueUntilDone || task.crewRunId
-      ? await this.workspaceFingerprint(task)
-      : undefined;
+    const workspaceFingerprint =
+      task.continueUntilDone || task.crewRunId ? await this.workspaceFingerprint(task) : undefined;
     const currentReview = this.find(task.id);
     if (
       currentReview?.status !== "verifying" ||
@@ -2102,9 +2171,23 @@ export class HostTasks {
       currentReview.reviewer?.runId !== task.reviewer.runId
     )
       return;
-    if (task.crewRunId && (!workspaceFingerprint || workspaceFingerprint !== task.crewReviewFingerprint)) {
-      const reason = "The working copy changed during independent review. Recheck the review on the current result.";
-      this.block({ ...task, verification: { ...verification, review: { ...review, sessionId, verdict: "fail", note: reason } } }, reason, now);
+    if (
+      task.crewRunId &&
+      (!workspaceFingerprint || workspaceFingerprint !== task.crewReviewFingerprint)
+    ) {
+      const reason =
+        "The working copy changed during independent review. Recheck the review on the current result.";
+      this.block(
+        {
+          ...task,
+          verification: {
+            ...verification,
+            review: { ...review, sessionId, verdict: "fail", note: reason },
+          },
+        },
+        reason,
+        now,
+      );
       return;
     }
     // Repeating a broad finding while files are still changing is not itself
@@ -2477,12 +2560,22 @@ export class HostTasks {
           if (visited.size > 2000) return undefined;
           hash.update(name).update("\0");
           let info;
-          try { info = await lstat(join(cwd, name)); }
-          catch (error) { if ((error as NodeJS.ErrnoException).code === "ENOENT") { hash.update("missing\0"); continue; } throw error; }
+          try {
+            info = await lstat(join(cwd, name));
+          } catch (error) {
+            if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+              hash.update("missing\0");
+              continue;
+            }
+            throw error;
+          }
           if (info.isSymbolicLink()) return undefined;
           if (info.isDirectory()) {
             hash.update("directory\0");
-            const children = (await readdir(join(cwd, name))).filter((child) => ![".git", "node_modules", "temp"].includes(child)).sort().reverse();
+            const children = (await readdir(join(cwd, name)))
+              .filter((child) => ![".git", "node_modules", "temp"].includes(child))
+              .sort()
+              .reverse();
             pending.push(...children.map((child) => `${name}/${child}`));
           } else if (info.isFile()) {
             bytes += info.size;
@@ -2492,7 +2585,9 @@ export class HostTasks {
           } else return undefined;
         }
         return hash.digest("hex");
-      } catch { return undefined; }
+      } catch {
+        return undefined;
+      }
     }
     try {
       const tree = await git(cwd, ["rev-parse", "HEAD^{tree}"]);

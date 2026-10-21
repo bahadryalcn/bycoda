@@ -376,3 +376,50 @@ describe("host crews", () => {
     expect(saved.agents[1]!.candidates[0]!.capabilities["image-generation"]?.state).toBe("unknown");
   });
 });
+
+describe("crew deletion", () => {
+  it("lets only the owner delete a crew without active work and keeps run snapshots", async () => {
+    const f = setup();
+    await expect(
+      f.service.call("crews.delete", { definitionId: "crew" }, f.project.id, f.principal),
+    ).rejects.toThrow("owner");
+    await f.start();
+    await expect(
+      f.service.call("crews.delete", { definitionId: "crew" }, f.project.id),
+    ).rejects.toThrow("Stop");
+    await f.service.call("crews.stop", { runId: "run" }, f.project.id);
+    await f.service.call("crews.delete", { definitionId: "crew" }, f.project.id);
+    const view = f.service.list(f.project.id);
+    expect(view.definitions).toEqual([]);
+    expect(view.runs[0]!.definition.name).toBe("Crew");
+  });
+
+  it("refuses a crew that open tasks still use", async () => {
+    const f = setup();
+    f.rows.push({ id: "task", crewDefinitionId: "crew", status: "todo" } as never);
+    await expect(
+      f.service.call("crews.delete", { definitionId: "crew" }, f.project.id),
+    ).rejects.toThrow("Tasks");
+  });
+
+  it("does not recreate a deleted crew from a stale editor", async () => {
+    const f = setup();
+    const saved = f.service.list(f.project.id).definitions[0]!;
+    await f.service.call("crews.delete", { definitionId: "crew" }, f.project.id);
+    expect(() => f.service.save(saved, saved.updatedAt)).toThrow("deleted");
+  });
+
+  it("lets only the owner remove a library agent", async () => {
+    const f = setup();
+    await f.service.call(
+      "crews.agent.save",
+      { agent: { ...f.definition.agents[1]!, id: "saved", projectId: f.project.id } },
+      f.project.id,
+    );
+    await expect(
+      f.service.call("crews.agent.delete", { agentId: "saved" }, f.project.id, f.principal),
+    ).rejects.toThrow("owner");
+    await f.service.call("crews.agent.delete", { agentId: "saved" }, f.project.id);
+    expect(f.service.list(f.project.id).agents).toEqual([]);
+  });
+});

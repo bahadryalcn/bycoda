@@ -370,13 +370,13 @@ export function ExpandingSearch({
     onExpandedChange?.(true);
   }
 
-  function collapse(returnFocus: boolean) {
+  function collapse(returnFocus: boolean, clearQuery = false) {
     if (!open.current) return;
     open.current = false;
     flushSync(() => {
       setExpanded(false);
       setFocused(false);
-      setQuery("");
+      if (clearQuery) setQuery("");
       setActive(-1);
     });
     if (returnFocus) buttonRef.current?.focus({ preventScroll: true });
@@ -420,7 +420,7 @@ export function ExpandingSearch({
       : `${resultsLabel}: ${flat.length}`;
 
   function choose(item: ExpandingSearchItem) {
-    collapse(true);
+    collapse(true, true);
     onSelect?.(item);
   }
 

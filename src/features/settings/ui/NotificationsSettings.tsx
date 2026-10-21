@@ -1,3 +1,4 @@
+import { useStoredPreferenceState } from "../../../shared/hooks/useStoredPreferenceState";
 import { useEffect, useState } from "react";
 import { IS_MAC, IS_WIN } from "../../../platform/tauri/platform";
 import { t, useLocale } from "../../../shared/i18n";
@@ -5,6 +6,7 @@ import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
 import {
   DAILY_SUMMARY_TIMES,
   loadDailySummaryEnabled,
+  subscribeDailySummary,
   loadDailySummaryTime,
   saveDailySummaryEnabled,
   saveDailySummaryTime,
@@ -12,11 +14,13 @@ import {
 import {
   NOTIFICATION_EVENT_SETTINGS,
   loadNotificationEvents,
+  subscribeNotificationEvents,
   saveNotificationEvent,
 } from "../../notifications/model/notificationEvents";
 import {
   cachedNotificationPermission,
   loadNotificationsEnabled,
+  subscribeNotificationsEnabled,
   openNotificationSettings,
   probeNotificationPermission,
   requestNotificationPermission,
@@ -24,17 +28,17 @@ import {
   type NotificationPermission,
 } from "../../notifications/model/notifications";
 import { SecondaryButton } from "../../../shared/ui/SecondaryButton";
-import { loadSoundsEnabled, saveSoundsEnabled } from "../model/sounds";
+import { loadSoundsEnabled, saveSoundsEnabled, subscribeSoundsEnabled } from "../model/sounds";
 import { Group, Row, Select, Toggle, SettingsFeedback } from "./settingsControls";
 import "./NotificationsSettings.css";
 
 export function NotificationAlerts() {
   useLocale();
-  const [soundsEnabled, setSoundsEnabled] = useState(loadSoundsEnabled);
-  const [notificationsEnabled, setNotificationsEnabled] = useState(loadNotificationsEnabled);
-  const [notificationEvents, setNotificationEvents] = useState(loadNotificationEvents);
-  const [summaryEnabled, setSummaryEnabled] = useState(loadDailySummaryEnabled);
-  const [summaryTime, setSummaryTime] = useState(loadDailySummaryTime);
+  const [soundsEnabled, setSoundsEnabled] = useStoredPreferenceState(loadSoundsEnabled, subscribeSoundsEnabled);
+  const [notificationsEnabled, setNotificationsEnabled] = useStoredPreferenceState(loadNotificationsEnabled, subscribeNotificationsEnabled);
+  const [notificationEvents, setNotificationEvents] = useStoredPreferenceState(loadNotificationEvents, subscribeNotificationEvents);
+  const [summaryEnabled, setSummaryEnabled] = useStoredPreferenceState(loadDailySummaryEnabled, subscribeDailySummary);
+  const [summaryTime, setSummaryTime] = useStoredPreferenceState(loadDailySummaryTime, subscribeDailySummary);
   const [permissionPending, setPermissionPending] = useState(false);
   const [permissionError, setPermissionError] = useState(false);
   const [notificationPermission, setNotificationPermission] = useState<NotificationPermission>(

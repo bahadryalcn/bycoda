@@ -44,9 +44,53 @@ export function writeNotificationHistory(entries: NotificationHistoryEntry[]) {
       NOTIFICATION_HISTORY_KEY,
       JSON.stringify(entries.slice(0, MAX_NOTIFICATION_HISTORY)),
     );
+    return true;
   } catch {
     // History remains available in this window when storage is unavailable.
+    return false;
   }
+}
+
+/** Arrivals merge at write time, rather than replacing another window's newer
+ * list with component-local state. Explicit clear continues to replace it. */
+function withHistoryLock<T>(mutate: () => T): T | Promise<T> {
+  if (typeof navigator === "undefined" || !navigator.locks) return mutate();
+  let entered = false;
+  return navigator.locks
+    .request(NOTIFICATION_HISTORY_KEY, () => {
+      entered = true;
+      return mutate();
+    })
+    .catch((error: unknown) => {
+      // Unsupported/denied Web Locks retain the existing storage fallback. Never
+      // replay a mutation when a callback itself failed after entering the lock.
+      if (entered) throw error;
+      return mutate();
+    });
+}
+
+export function mergeNotificationHistory(
+  arrivals: NotificationHistoryEntry[],
+  existing: NotificationHistoryEntry[],
+): NotificationHistoryEntry[] {
+  // Request IDs may be reused after resolution: retain distinct arrivals.
+  return [...arrivals, ...existing]
+    .sort((a, b) => b.occurredAt - a.occurredAt)
+    .slice(0, MAX_NOTIFICATION_HISTORY);
+}
+
+export function appendNotificationHistory(
+  arrivals: NotificationHistoryEntry[],
+  local: NotificationHistoryEntry[] = [],
+): NotificationHistoryEntry[] | Promise<NotificationHistoryEntry[]> {
+  return withHistoryLock(() => {
+    const next = mergeNotificationHistory(arrivals, readNotificationHistory());
+    return writeNotificationHistory(next) ? next : mergeNotificationHistory(arrivals, local);
+  });
+}
+
+export function clearNotificationHistory(): boolean | Promise<boolean> {
+  return withHistoryLock(() => writeNotificationHistory([]));
 }
 
 export function historyEntry(

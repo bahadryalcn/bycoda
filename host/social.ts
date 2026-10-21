@@ -1984,7 +1984,7 @@ export class SocialService {
   ): SocialPublishingPlan {
     this.owner(p);
     exact(input, [
-      ...(updating ? ["id"] : []),
+      ...(updating ? ["id", "expectedRevision"] : []),
       "name",
       "accountId",
       "projectId",
@@ -1994,6 +1994,10 @@ export class SocialService {
     const previous = updating
       ? this.get<PublishingPlanRecord>("publishing-plan", str(input.id, "publishing plan"))
       : undefined;
+    if (previous && input.expectedRevision !== previous.revision)
+      throw new Error(
+        "Publishing plan changed in another client. Reopen it before saving; your edits have not been saved.",
+      );
     if (previous?.pendingJobId && this.job(previous.pendingJobId).status === "running")
       throw new Error("Wait for the active publication before editing the plan.");
     const accountId = str(input.accountId, "account");
@@ -2282,7 +2286,7 @@ export class SocialService {
     return facts.filter((fact) => factIds.includes(fact.id));
   }
   private createCampaign(p: SocialPrincipal, input: Record<string, unknown>): SocialCampaign {
-    exact(input, ["id", "name", "projectIds", "variants"]);
+    exact(input, ["id", "name", "projectIds", "variants", "expectedRevision"]);
     const projectIds = array(input.projectIds, "projects");
     if (!projectIds.length) throw new Error("Select at least one project.");
     projectIds.forEach((id) => this.store.project(id));
@@ -2357,6 +2361,10 @@ export class SocialService {
     if (new Set(variants.map((variant) => variant.accountId)).size !== variants.length)
       throw new Error("One variant per account is required.");
     const previous = input.id ? this.campaign(p, str(input.id, "campaign")) : undefined;
+    if (previous && input.expectedRevision !== previous.revision)
+      throw new Error(
+        "Campaign changed in another client. Reopen it before saving; your edits have not been saved.",
+      );
     if (
       previous &&
       this.jobs().some(
@@ -2540,10 +2548,14 @@ export class SocialService {
   }
   private updateDraft(p: SocialPrincipal, input: Record<string, unknown>): SocialDraft {
     this.owner(p);
-    exact(input, ["id", "text", "factIds", "media"]);
+    exact(input, ["id", "text", "factIds", "media", "expectedDraft"]);
     const draft = this.get<SocialDraft>("draft", str(input.id, "draft"));
     const account = this.access(p, draft.accountId, "draft");
     this.project(p, draft.projectId);
+    if (input.expectedDraft !== undefined && !isDeepStrictEqual(input.expectedDraft, draft))
+      throw new Error(
+        "Draft changed in another client. Reopen it before saving; your edits have not been saved.",
+      );
     if (draft.generation?.status === "running" || this.generationControllers.has(draft.id))
       throw new Error("Wait for AI generation to finish before editing this draft.");
     if (

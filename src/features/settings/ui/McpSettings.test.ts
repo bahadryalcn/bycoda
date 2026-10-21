@@ -68,6 +68,36 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 
+it("shows unsupported remote targets without local discovery or Add and permits choosing a local project", async () => {
+  await act(async () =>
+    root.render(
+      createElement(McpSettings, {
+        cwd: "remote://fixture-host/work/remote-project",
+        recents: [
+          { path: "/local-project", openedAt: 1 },
+          { path: "remote://fixture-host/work/other-remote", openedAt: 2 },
+        ],
+      }),
+    ),
+  );
+  expect(container.textContent).toContain("only available for projects on this computer");
+  expect(container.querySelector('[aria-label="Add MCP server"]')).toBeNull();
+  expect(invoke).not.toHaveBeenCalled();
+  const picker = container.querySelector<HTMLButtonElement>(
+    '[aria-label^="Switch project, current project"]',
+  )!;
+  await act(async () => picker.click());
+  const options = Array.from(
+    document.querySelectorAll<HTMLButtonElement>('[role="dialog"] button[title]'),
+  );
+  expect(options.some((option) => option.textContent?.includes("other-remote"))).toBe(false);
+  const local = options.find((option) => option.textContent?.includes("local-project"))!;
+  await act(async () => local.click());
+  expect(invoke).toHaveBeenCalledWith("mcp_discover", { cwd: "/local-project" });
+  expect(invoke.mock.calls.every(([, args]) => !args?.cwd?.startsWith("remote://"))).toBe(true);
+  expect(container.querySelector('[aria-label="Add MCP server"]')).not.toBeNull();
+});
+
 async function selectProject(path: string) {
   await act(async () =>
     container.querySelector<HTMLButtonElement>('[aria-label^="Switch project"]')!.click(),

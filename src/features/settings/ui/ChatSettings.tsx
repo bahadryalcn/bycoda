@@ -1,8 +1,11 @@
+import { useStoredPreferenceState } from "../../../shared/hooks/useStoredPreferenceState";
 import { useState } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
 import {
   loadTranscriptAnchor,
+  subscribeTranscriptAnchor,
+  subscribeTranscriptLayout,
   loadTranscriptLayout,
   saveTranscriptAnchor,
   saveTranscriptLayout,
@@ -11,6 +14,7 @@ import {
 import {
   loadAutoContinueInterrupted,
   loadModelControls,
+  subscribeModelControls,
   loadResumeAtReset,
   saveAutoContinueInterrupted,
   saveModelControls,
@@ -28,11 +32,11 @@ import "./ChatSettings.css";
 export function ChatPage({ appearance }: { appearance: AppearanceSettings }) {
   useLocale();
   const spelling = useComposerSpelling();
-  const [transcriptLayout, setTranscriptLayout] = useState<TranscriptLayout>(loadTranscriptLayout);
-  const [transcriptAnchor, setTranscriptAnchor] = useState(loadTranscriptAnchor);
+  const [transcriptLayout, setTranscriptLayout] = useStoredPreferenceState(loadTranscriptLayout, subscribeTranscriptLayout);
+  const [transcriptAnchor, setTranscriptAnchor] = useStoredPreferenceState(loadTranscriptAnchor, subscribeTranscriptAnchor);
   const [resumeAtReset, setResumeAtReset] = useState(loadResumeAtReset);
   const [autoContinue, setAutoContinue] = useState(loadAutoContinueInterrupted);
-  const [modelControls, setModelControls] = useState<ModelControls>(loadModelControls);
+  const [modelControls, setModelControls] = useStoredPreferenceState(loadModelControls, subscribeModelControls);
   const onTranscriptLayout = (next: TranscriptLayout) => {
     saveTranscriptLayout(next);
     setTranscriptLayout(next);

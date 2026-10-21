@@ -4,6 +4,43 @@ import { createRoot } from "react-dom/client";
 import { expect, it, vi } from "vitest";
 import { XMediaFields } from "./XMediaFields";
 import type { SocialClient } from "../model/socialClient";
+it("edits each image description while preserving other media metadata", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const element = document.createElement("div");
+  document.body.append(element);
+  const root = createRoot(element),
+    change = vi.fn();
+  const value = [
+    { kind: "image" as const, uploadId: "first", alt: "Original" },
+    { kind: "image" as const, uploadId: "second", alt: "Keep this" },
+  ];
+  try {
+    await act(async () =>
+      root.render(
+        createElement(XMediaFields, { value, client: {} as SocialClient, onChange: change }),
+      ),
+    );
+    const input = element.querySelector<HTMLInputElement>(
+      '[aria-label="Image alt text 1"], input:not([type="file"])',
+    )!;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
+        input,
+        "Updated description",
+      );
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    expect(change).toHaveBeenLastCalledWith([
+      { ...value[0], alt: "Updated description" },
+      value[1],
+    ]);
+    expect(input.maxLength).toBe(1000);
+  } finally {
+    await act(async () => root.unmount());
+    element.remove();
+    vi.unstubAllGlobals();
+  }
+});
 it("uploads selected images together, rejects mixed video and preserves existing media on failure", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   const element = document.createElement("div");

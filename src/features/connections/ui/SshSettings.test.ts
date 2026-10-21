@@ -37,6 +37,34 @@ afterEach(() => {
   container.remove();
   vi.unstubAllGlobals();
 });
+it("shows oversized known-host metadata as unavailable rather than empty while other SSH information remains usable", async () => {
+  const previous = native.invoke.getMockImplementation()!;
+  native.invoke.mockImplementation((command: string, ...args: unknown[]) =>
+    command === "ssh_known_hosts_list"
+      ? Promise.reject(
+          new Error(
+            "Known hosts metadata exceeds the 1 MiB display limit. The trust file is unchanged.",
+          ),
+        )
+      : previous(command, ...args),
+  );
+  await act(async () =>
+    root.render(
+      createElement(SshSettings, {
+        server,
+        servers: [server],
+        onClose: vi.fn(),
+        onAssigned: vi.fn(),
+      }),
+    ),
+  );
+  expect(document.body.textContent).toContain("1 MiB display limit");
+  expect(document.body.textContent).not.toContain("No known hosts yet.");
+  expect(
+    document.querySelector<HTMLButtonElement>('button[aria-label^="Assign key:"]')?.disabled,
+  ).toBe(false);
+});
+
 it("keeps discovered keys usable when the agent inventory fails and assigns once without connecting", async () => {
   const assigned = vi.fn();
   await act(async () =>

@@ -498,26 +498,44 @@ fn fingerprint(value: &str) -> Option<String> {
 }
 
 /// Read a bounded public file only; symlinks are intentionally not traversed.
-fn public_file(path: &std::path::Path) -> Result<Option<String>, String> {
+enum PublicFile {
+    Unavailable,
+    TooLarge,
+    Text(String),
+}
+fn public_file(path: &std::path::Path) -> Result<PublicFile, String> {
     let metadata = match fs::symlink_metadata(path) {
         Ok(value) => value,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            return Ok(PublicFile::Unavailable)
+        }
         Err(_) => return Err("Cannot inspect SSH public metadata".into()),
     };
-    if !metadata.is_file() || metadata.file_type().is_symlink() || metadata.len() > 1024 * 1024 {
-        return Ok(None);
+    if !metadata.is_file() || metadata.file_type().is_symlink() {
+        return Ok(PublicFile::Unavailable);
+    }
+    if metadata.len() > 1024 * 1024 {
+        return Ok(PublicFile::TooLarge);
     }
     fs::read_to_string(path)
-        .map(Some)
+        .map(PublicFile::Text)
         .map_err(|_| "Cannot read SSH public metadata".into())
 }
 
 #[tauri::command]
 pub fn ssh_known_hosts_list() -> Result<Vec<SshPublicMetadata>, String> {
-    let Some(content) = public_file(&ssh_dir()?.join("known_hosts"))? else {
-        return Ok(vec![]);
-    };
-    Ok(parse_known_hosts(&content))
+    known_hosts_at(&ssh_dir()?.join("known_hosts"))
+}
+
+fn known_hosts_at(path: &std::path::Path) -> Result<Vec<SshPublicMetadata>, String> {
+    match public_file(path)? {
+        PublicFile::Unavailable => Ok(vec![]),
+        PublicFile::TooLarge => Err(
+            "Known hosts metadata exceeds the 1 MiB display limit. The trust file is unchanged."
+                .into(),
+        ),
+        PublicFile::Text(content) => Ok(parse_known_hosts(&content)),
+    }
 }
 
 fn parse_known_hosts(content: &str) -> Vec<SshPublicMetadata> {
@@ -563,7 +581,7 @@ pub fn ssh_public_keys_list() -> Result<Vec<SshPublicMetadata>, String> {
         if path.extension().and_then(|value| value.to_str()) != Some("pub") {
             continue;
         }
-        let Some(content) = public_file(&path)? else {
+        let PublicFile::Text(content) = public_file(&path)? else {
             continue;
         };
         let mut fields = content.split_whitespace();
@@ -962,6 +980,25 @@ mod tests {
         assert_eq!(rows[0].marker.as_deref(), Some("@revoked"));
         assert!(rows[0].fingerprint.starts_with("SHA256:"));
         assert_eq!(rows[1].host_patterns.as_deref(), Some("|1|hashed|value"));
+    }
+
+    #[test]
+    fn known_hosts_oversized_metadata_is_not_reported_as_an_empty_file() {
+        let root =
+            std::env::temp_dir().join(format!("bycoda-known-hosts-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&root).unwrap();
+        let path = root.join("known_hosts");
+        assert!(known_hosts_at(&path).unwrap().is_empty());
+        std::fs::write(&path, "").unwrap();
+        assert!(known_hosts_at(&path).unwrap().is_empty());
+        std::fs::write(&path, vec![b'#'; 1024 * 1024 + 1]).unwrap();
+        assert!(known_hosts_at(&path)
+            .unwrap_err()
+            .contains("1 MiB display limit"));
+        assert_eq!(std::fs::metadata(&path).unwrap().len(), 1024 * 1024 + 1);
+        // Public-key enumeration still deliberately skips oversized files.
+        assert!(matches!(public_file(&path).unwrap(), PublicFile::TooLarge));
+        std::fs::remove_dir_all(root).unwrap();
     }
 
     #[test]

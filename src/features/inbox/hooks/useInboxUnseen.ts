@@ -254,7 +254,9 @@ export function useInboxActivity(
             projectPath: item.projectPath,
           })),
         );
-        seedInboxSeenIfNeeded(entries);
+        // A partial first snapshot cannot define the existing-item baseline:
+        // recovered older items must not become false new-activity badges.
+        if (failedProviders.length === 0) seedInboxSeenIfNeeded(entries);
         const selfAuthoredEntries = entries.filter((entry) => selfAuthoredKeys.has(entry.key));
         if (selfAuthoredEntries.length > 0) {
           markInboxItemsSeen(selfAuthoredEntries);

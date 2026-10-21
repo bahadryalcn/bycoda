@@ -29,6 +29,12 @@ describe("SyncMergedNotice", () => {
     act(() => root.render(createElement(SyncMergedNotice)));
     expect(document.body.textContent).not.toContain(SYNC_MERGED_MESSAGE);
     act(() => fire());
+    expect(document.body.querySelector('[role="status"] button')?.getAttribute("role")).not.toBe(
+      "status",
+    );
+    expect(document.body.querySelector('[role="status"] button')?.getAttribute("aria-label")).toBe(
+      "Dismiss sync notice",
+    );
     expect(document.body.textContent).toContain("merged");
     act(() => void vi.advanceTimersByTime(4000));
     act(() => fire());

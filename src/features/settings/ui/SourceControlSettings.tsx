@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useStoredPreferenceState } from "../../../shared/hooks/useStoredPreferenceState";
 import { t, useLocale } from "../../../shared/i18n";
-import { loadDiffViewer, saveDiffViewer, type DiffViewer } from "../model/settings";
+import { loadDiffViewer, saveDiffViewer, subscribeDiffViewer, type DiffViewer } from "../model/settings";
 import { Group, Row, Segmented } from "./settingsControls";
 import { GitGenerationModelControl } from "../../source-control/ui/GitGenerationSettings";
 import {
@@ -12,7 +12,7 @@ import { Button } from "../../../shared/ui/Button";
 export function SourceControlSettings() {
   useLocale();
   const gitGenerationChoice = useDefaultGitGenerationChoice();
-  const [diffViewer, setDiffViewer] = useState<DiffViewer>(loadDiffViewer);
+  const [diffViewer, setDiffViewer] = useStoredPreferenceState(loadDiffViewer, subscribeDiffViewer);
   const onDiffViewer = (next: DiffViewer) => {
     saveDiffViewer(next);
     setDiffViewer(next);

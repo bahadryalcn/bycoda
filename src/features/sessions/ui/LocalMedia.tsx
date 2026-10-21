@@ -1,6 +1,15 @@
 import { Button } from "../../../shared/ui/Button";
 import { convertFileSrc } from "@tauri-apps/api/core";
-import { useEffect, useRef, useState, type MouseEvent, type ReactNode } from "react";
+import {
+  useContext,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type MouseEvent,
+  type ReactNode,
+} from "react";
+import { MediaVisibilityContext } from "../../files/model/mediaVisibility";
 import { prepareLocalFile, readBinaryFile } from "../../../platform/tauri/fs";
 import { isImagePath, sniffImageMime } from "../../files/model/filePreview";
 import { mediaKind } from "../../files/model/mediaPreview";
@@ -32,6 +41,20 @@ export function LocalMedia({
   const [url, setUrl] = useState<string>();
   const [failed, setFailed] = useState(false);
   const video = mediaKind(path) === "video";
+  const player = useRef<HTMLVideoElement>(null);
+  const visible = useContext(MediaVisibilityContext);
+  useLayoutEffect(() => {
+    const element = player.current;
+    const pauseWhenHidden = () => {
+      if (!visible || document.hidden) element?.pause();
+    };
+    pauseWhenHidden();
+    document.addEventListener("visibilitychange", pauseWhenHidden);
+    return () => {
+      element?.pause();
+      document.removeEventListener("visibilitychange", pauseWhenHidden);
+    };
+  }, [visible, url]);
 
   useEffect(() => {
     if (near || !box.current) return;
@@ -100,12 +123,16 @@ export function LocalMedia({
       >
         {url && video ? (
           <video
+            ref={player}
             src={url}
             controls
             playsInline
             preload="metadata"
             aria-label={label}
             onError={() => setFailed(true)}
+            onPlay={(event) => {
+              if (!visible || document.hidden) event.currentTarget.pause();
+            }}
             className="block size-full object-contain"
           />
         ) : onOpen && image ? (

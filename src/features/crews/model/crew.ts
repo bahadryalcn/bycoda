@@ -3,6 +3,7 @@ import type { RuntimeMode } from "../../sessions/model/session";
 
 export const HOST_CREWS = "crews.v1";
 export const HOST_CREW_TASKS = "crews.tasks.v1";
+export const HOST_CREW_DELETE = "crews.delete.v1";
 export const CREW_CAPABILITIES = [
   "code",
   "review",

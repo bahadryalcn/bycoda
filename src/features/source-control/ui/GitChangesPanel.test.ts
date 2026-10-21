@@ -83,6 +83,7 @@ import {
   gitBranches,
   gitCheckout,
   gitCommit,
+  gitHeadMessage,
   gitFetch,
   gitDiffIndex,
   gitTrustRepository,
@@ -2028,3 +2029,37 @@ it("keeps Amend reachable while the empty primary commit action is disabled, wit
   expect(container.querySelector('[role="group"][aria-label="Amend Commit"]')).not.toBeNull();
   expect(gitCommit).not.toHaveBeenCalled();
 });
+
+it.each(["Keep my new draft", "  "])(
+  "preserves the commit draft %j typed while the amend lookup is pending",
+  async (draft) => {
+    let finish!: (message: string) => void;
+    vi.mocked(gitHeadMessage).mockImplementationOnce(
+      () =>
+        new Promise<string>((resolve) => {
+          finish = resolve;
+        }),
+    );
+    vi.mocked(gitDiffIndex).mockResolvedValue(index({ headPushed: false }));
+    await renderPanel("/amend-pending-draft");
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>('[aria-label="Commit options"]')!.click();
+    });
+    await act(async () => {
+      document.querySelector<HTMLButtonElement>('[role="menuitemcheckbox"]')!.click();
+    });
+    const textarea = container.querySelector<HTMLTextAreaElement>("textarea")!;
+    act(() => {
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(
+        textarea,
+        draft,
+      );
+      textarea.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    expect(textarea.value).toBe(draft);
+    await act(async () => finish("Previous HEAD commit message"));
+    expect(textarea.value).toBe(draft);
+    expect(container.querySelector('[role="group"][aria-label="Amend Commit"]')).not.toBeNull();
+    expect(gitCommit).not.toHaveBeenCalled();
+  },
+);

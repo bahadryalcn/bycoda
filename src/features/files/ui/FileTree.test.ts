@@ -45,6 +45,25 @@ vi.mock("@tauri-apps/api/core", () => ({
       return directories.get(args.path) ?? [];
     }
     if (command === "clipboard_file_paths") return [...clipboardFiles];
+    if (command === "create_path") {
+      const path = `${args.parent}/${args.name}`;
+      directories.set(args.parent, [
+        ...(directories.get(args.parent) ?? []),
+        { name: args.name, path, isDir: Boolean(args.isDir), ignored: false },
+      ]);
+      return path;
+    }
+    if (command === "rename_path") {
+      const parent = args.path.slice(0, args.path.lastIndexOf("/"));
+      const path = `${parent}/${args.name}`;
+      directories.set(
+        parent,
+        (directories.get(parent) ?? []).map((entry) =>
+          entry.path === args.path ? { ...entry, path, name: args.name } : entry,
+        ),
+      );
+      return path;
+    }
     if (command === "reveal_path") return;
     if (command === "delete_path") {
       directories.set(
@@ -228,6 +247,54 @@ describe("NameRow filesystem collision ownership", () => {
 });
 
 describe("FileTree render isolation", () => {
+  it.each(["New File", "New Folder", "Rename"])(
+    "commits %s once and retries only the failed listing",
+    async (action) => {
+      props.onFileMoved = vi.fn();
+      await act(async () => render());
+      await act(async () => row("first.ts").click());
+      await press(row("first.ts"), { key: "ContextMenu" });
+      const item = [...document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find(
+        (button) => button.textContent?.trim().startsWith(action),
+      )!;
+      await act(async () => item.click());
+      const input = container.querySelector<HTMLInputElement>(
+        'input[aria-label^="Type file name"]',
+      )!;
+      act(() => {
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
+          input,
+          "new-entry",
+        );
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+      });
+      vi.mocked(props.onOpenFile).mockClear();
+      failures.set(cwd, "listing unavailable");
+      await press(input, { key: "Enter" });
+      expect(container.querySelector('input[aria-label^="Type file name"]')).toBeNull();
+      expect(container.querySelector('[role="alert"]')?.textContent).toContain(
+        "File change saved. Refresh failed.",
+      );
+      if (action === "Rename")
+        expect(props.onFileMoved).toHaveBeenCalledExactlyOnceWith(
+          `${cwd}/first.ts`,
+          `${cwd}/new-entry`,
+        );
+      if (action === "New File")
+        expect(props.onOpenFile).toHaveBeenCalledExactlyOnceWith(`${cwd}/new-entry`, undefined, {
+          exact: true,
+        });
+      const command = action === "Rename" ? "rename_path" : "create_path";
+      expect(vi.mocked(invoke).mock.calls.filter(([name]) => name === command)).toHaveLength(1);
+      failures.delete(cwd);
+      await act(async () =>
+        container.querySelector<HTMLButtonElement>('[role="alert"] button')!.click(),
+      );
+      expect(container.querySelector('[role="alert"]')).toBeNull();
+      expect(row("new-entry")).not.toBeNull();
+      expect(vi.mocked(invoke).mock.calls.filter(([name]) => name === command)).toHaveLength(1);
+    },
+  );
   it("exposes a file manager action for the project folder in the toolbar", async () => {
     await act(async () => render());
     const reveal = [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) =>
@@ -803,6 +870,33 @@ describe("FileTree multiple selection", () => {
     props.onFileMoved = vi.fn();
     props.onFileDeleted = vi.fn();
     await act(async () => render());
+  });
+  it.each(["c", "x"])("prefers a newer OS file copy over an internal %s clipboard", async (key) => {
+    await click("a.ts");
+    await press(row("a.ts"), { key, ctrlKey: true });
+    clipboardFiles.push("/external/new.ts");
+    await click("dest");
+    await press(row("dest"), { key: "v", ctrlKey: true });
+    expect(copied).toEqual([{ from: "/external/new.ts", destParent: `${cwd}/dest` }]);
+    expect(vi.mocked(invoke).mock.calls.filter(([name]) => name === "move_path")).toHaveLength(0);
+    expect(row("a.ts").getAttribute("data-tree-cut")).not.toBe("true");
+  });
+
+  it("hides Open for folder-only multiselection", async () => {
+    directories.set(cwd, [folder("dest"), folder("docs"), file("a.ts")]);
+    directories.set(`${cwd}/docs`, []);
+    await act(async () => {
+      await refreshDir(cwd);
+      announceDirListings();
+    });
+    await click("dest");
+    await click("docs", { ctrlKey: true });
+    await context("docs");
+    expect(
+      [...document.querySelectorAll('[role="menuitem"]')].some(
+        (item) => item.textContent?.trim() === "Open",
+      ),
+    ).toBe(false);
   });
   it("toggles selections without opening files and preserves selection on right click", async () => {
     await click("a.ts");

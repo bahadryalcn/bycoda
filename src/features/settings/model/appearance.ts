@@ -1,3 +1,4 @@
+import { subscribePreferenceChanges } from "../../../shared/lib/storedSetting";
 import { themePalette } from "../../../shared/theme/palette";
 import { clamp } from "../../../shared/lib/numbers";
 import { initAppearancePreferences } from "./appearancePreferences";
@@ -971,6 +972,8 @@ export function saveTranscriptLayout(value: TranscriptLayout) {
   );
 }
 
+export const subscribeTranscriptLayout = (onChange: () => void) => subscribePreferenceChanges([TRANSCRIPT_LAYOUT_KEY], TRANSCRIPT_LAYOUT_CHANGE_EVENT, onChange);
+
 function isChangesView(value: unknown): value is ChangesView {
   return value === "list" || value === "tree";
 }
@@ -1005,6 +1008,8 @@ export function saveTranscriptAnchor(value: boolean) {
     }),
   );
 }
+
+export const subscribeTranscriptAnchor = (onChange: () => void) => subscribePreferenceChanges([TRANSCRIPT_ANCHOR_KEY], TRANSCRIPT_ANCHOR_CHANGE_EVENT, onChange);
 
 export function loadShowExcludedFiles(): boolean {
   return readFlag(SHOW_EXCLUDED_FILES_KEY) ?? SHOW_EXCLUDED_FILES_DEFAULT;

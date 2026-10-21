@@ -1,4 +1,6 @@
 {
+  "Scroll to bottom": "Ir para o final",
+  "Clear terminal": "Limpar terminal",
   "Manual only": "Somente manual",
   "Automatic only": "Somente automático",
   "Invocation disabled": "Invocação desativada",
@@ -5498,5 +5500,17 @@
   "Imported {p0} servers. Skipped {p1} existing records. Saved {p2} SSH keys.": "Imported {p0} servers. Skipped {p1} existing records. Saved {p2} SSH keys.",
   "{p0} of {p1} selected": "{p0} of {p1} selected",
   "Import {p0}": "Import {p0}",
-  "Import selected ({p0})": "Import selected ({p0})"
+  "Import selected ({p0})": "Import selected ({p0})",
+  "Unfavorite": "Remover dos favoritos",
+  "Color…": "Cor…",
+  "Copy address": "Copiar endereço",
+  "No color": "Sem cor",
+  "List view": "Visualização em lista",
+  "Card view": "Visualização em cartões",
+  "Server view": "Visualização de servidores",
+  "Server actions": "Ações do servidor",
+  "Server color": "Cor do servidor",
+  "Delete {p0}?": "Excluir {p0}?",
+  "Removes this SSH server from bycoda. The remote machine is not changed.": "Remove este servidor SSH do bycoda. A máquina remota não é alterada.",
+  "Removes this machine from this desktop only. The host and its sessions keep running.": "Remove esta máquina apenas desta área de trabalho. O host e suas sessões continuam em execução."
 }

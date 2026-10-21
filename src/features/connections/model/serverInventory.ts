@@ -42,6 +42,15 @@ export type ServerMetadata = {
   lastUsedAt?: number;
   forwards?: ForwardRule[];
   activity?: ServerActivity[];
+  /** Index into TAB_GROUP_COLORS (tabGroups.ts). Absent or 0 means no color. */
+  colorIndex?: number;
+  /** Lowercase `#rrggbb`; wins over colorIndex when set. */
+  customColor?: string;
+};
+/** Patch for updateServerMetadata; `null` clears colorIndex or customColor. */
+export type ServerMetadataPatch = Partial<Omit<ServerMetadata, "colorIndex" | "customColor">> & {
+  colorIndex?: number | null;
+  customColor?: string | null;
 };
 export type ServerActivity = {
   id: string;
@@ -86,7 +95,7 @@ export async function setServerSshIdentity(
 }
 export async function updateServerMetadata(
   id: string,
-  metadata: Partial<ServerMetadata>,
+  metadata: ServerMetadataPatch,
 ): Promise<void> {
   await invoke("server_metadata_update", { id, metadata });
   refreshServerInventory();

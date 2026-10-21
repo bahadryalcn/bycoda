@@ -125,7 +125,9 @@ function setup() {
     turn.input.onEvent({ type: "message.delta", text });
     turn.input.onEvent({ type: "message.completed" });
     turn.finish();
-    await vi.waitFor(() => expect(store.session(turn.input.sessionId).status).toBe("idle"), { timeout: 10_000 });
+    await vi.waitFor(() => expect(store.session(turn.input.sessionId).status).toBe("idle"), {
+      timeout: 10_000,
+    });
     clock.now += MINUTE;
     await stewards.tick();
     await stewards.idle();
@@ -153,6 +155,25 @@ function setup() {
 }
 
 describe("host stewards", () => {
+  it("rejects stale configuration edits and toggles while preserving newer steward focus", () => {
+    const { stewards, input } = setup();
+    const opening = stewards.save(input({ enabled: false }));
+    const newer = stewards.save({
+      ...opening,
+      focus: "Newer focus",
+      expectedConfiguration: opening,
+    });
+    expect(() =>
+      stewards.save({ ...opening, model: "claude:other", expectedConfiguration: opening }),
+    ).toThrow("Configuration changed in another client");
+    expect(() =>
+      stewards.save({ ...opening, enabled: true, expectedConfiguration: opening }),
+    ).toThrow("Configuration changed in another client");
+    expect(stewards.list()[0]).toEqual(newer);
+    expect(
+      stewards.save({ ...newer, model: "claude:other", expectedConfiguration: newer }),
+    ).toMatchObject({ focus: "Newer focus", model: "claude:other", enabled: false });
+  });
   it("keeps an active run attached to the project that owns its checkout", async () => {
     const { stewards, repo, plain, input, startDue, steward } = setup();
     stewards.save(input());
@@ -459,14 +480,18 @@ describe("host stewards", () => {
     const capture = engine.checkpoints.finish.bind(engine.checkpoints);
     let releaseCapture!: () => void;
     let captureStarted = false;
-    const gate = new Promise<void>((resolve) => { releaseCapture = resolve; });
+    const gate = new Promise<void>((resolve) => {
+      releaseCapture = resolve;
+    });
     vi.spyOn(engine.checkpoints, "finish").mockImplementation(async (...args) => {
       captureStarted = true;
       await gate;
       return capture(...args);
     });
     let deleted = false;
-    const deletion = stewards.delete("steward").then(() => { deleted = true; });
+    const deletion = stewards.delete("steward").then(() => {
+      deleted = true;
+    });
     try {
       await vi.waitFor(() => expect(captureStarted).toBe(true));
       expect(deleted).toBe(false);

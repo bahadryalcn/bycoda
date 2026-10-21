@@ -48,6 +48,49 @@ fn read(root: &Path) -> Result<Vec<(String, Lease)>, String> {
     }
     Ok(leases)
 }
+fn mark_shared(root: &Path, name: &str) -> Result<(), String> {
+    use std::io::{Read, Seek, SeekFrom, Write};
+    let mut file = match std::fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open(root.join(name))
+    {
+        Ok(file) => file,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(error) => return Err(error.to_string()),
+    };
+    let mut bytes = Vec::new();
+    file.read_to_end(&mut bytes).map_err(|e| e.to_string())?;
+    let lease: Lease = serde_json::from_slice(&bytes).map_err(|e| e.to_string())?;
+    if lease.shared {
+        return Ok(());
+    }
+    let key = b"\"shared\"";
+    let start = bytes
+        .windows(key.len())
+        .position(|part| part == key)
+        .ok_or("Invalid checkpoint lease shared flag")?
+        + key.len();
+    let mut offset = start;
+    while bytes.get(offset).is_some_and(u8::is_ascii_whitespace) {
+        offset += 1;
+    }
+    if bytes.get(offset) != Some(&b':') {
+        return Err("Invalid checkpoint lease shared flag".into());
+    }
+    offset += 1;
+    while bytes.get(offset).is_some_and(u8::is_ascii_whitespace) {
+        offset += 1;
+    }
+    if !bytes[offset..].starts_with(b"false") {
+        return Err("Invalid checkpoint lease shared flag".into());
+    }
+    // Keep the old JSON protocol and its width, but never create or replace a
+    // peer's path: removal by its owner remains final even while this is open.
+    file.seek(SeekFrom::Start(offset as u64))
+        .map_err(|e| e.to_string())?;
+    file.write_all(b"true ").map_err(|e| e.to_string())
+}
 pub(super) fn publish(root: &Path, session: &str, turn: &str, cwd: &str) -> Result<bool, String> {
     let own_name = name(session, turn);
     let canonical = std::fs::canonicalize(cwd).map_err(|e| e.to_string())?;
@@ -61,11 +104,10 @@ pub(super) fn publish(root: &Path, session: &str, turn: &str, cwd: &str) -> Resu
     // Publish before scanning. Simultaneous starts observe each other's lease;
     // taint is monotonic, so a completing peer cannot erase overlap evidence.
     write(root, &own_name, &own)?;
-    for (other_name, mut other) in read(root)? {
+    for (other_name, other) in read(root)? {
         if other_name != own_name && overlap(&own.cwd, &other.cwd) {
             own.shared = true;
-            other.shared = true;
-            write(root, &other_name, &other)?;
+            mark_shared(root, &other_name)?;
         }
     }
     if own.shared {
@@ -88,5 +130,88 @@ pub(super) fn release(root: &Path, session: &str, turn: &str) -> Result<(), Stri
         Ok(()) => Ok(()),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
         Err(error) => Err(error.to_string()),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn checkpoint_lease_mark_never_recreates_released_peers() {
+        let root = std::env::temp_dir().join(format!("bycoda-lease-test-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&root).unwrap();
+        let lease = Lease {
+            owner: "host".into(),
+            session_id: "peer".into(),
+            turn_id: "turn".into(),
+            cwd: "project-ğ".into(),
+            shared: false,
+        };
+        let peer = "host-peer-turn.json";
+        write(&root, peer, &lease).unwrap();
+        let snapshot = read(&root).unwrap();
+        std::fs::remove_file(root.join(peer)).unwrap();
+        mark_shared(&root, &snapshot[0].0).unwrap();
+        assert!(!root.join(peer).exists());
+        write(&root, peer, &lease).unwrap();
+        mark_shared(&root, peer).unwrap();
+        let live = read(&root).unwrap();
+        assert!(live[0].1.shared);
+        assert_eq!(live[0].1.cwd, lease.cwd);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn checkpoint_lease_recovery_retires_only_the_exact_settled_native_turn() {
+        let root =
+            std::env::temp_dir().join(format!("bycoda-lease-recover-{}", uuid::Uuid::new_v4()));
+        let cwd = root.join("project");
+        std::fs::create_dir_all(&cwd).unwrap();
+        let store = CheckpointStore::new(root.join("checkpoints"));
+        let cwd = cwd.to_string_lossy().into_owned();
+        let turn = super::super::Turn {
+            id: "settled".into(),
+            cwd: cwd.clone(),
+            before: None,
+            head: None,
+            active: false,
+            shared: false,
+            error: None,
+            prepared_before: Default::default(),
+            dirty_before: Default::default(),
+            captured: Default::default(),
+        };
+        super::super::save_turn(&store.root.join("session"), &turn).unwrap();
+        write(
+            &store.leases,
+            "native-session-settled.json",
+            &Lease {
+                owner: "native".into(),
+                session_id: "session".into(),
+                turn_id: "settled".into(),
+                cwd: cwd.clone(),
+                shared: false,
+            },
+        )
+        .unwrap();
+        write(
+            &store.leases,
+            "host-peer-live.json",
+            &Lease {
+                owner: "host".into(),
+                session_id: "peer".into(),
+                turn_id: "live".into(),
+                cwd: cwd.clone(),
+                shared: false,
+            },
+        )
+        .unwrap();
+        store.recover_interrupted_turns();
+        let remaining = read(&store.leases).unwrap();
+        assert_eq!(remaining.len(), 1);
+        assert_eq!(remaining[0].0, "host-peer-live.json");
+        assert!(active(&store.leases, &cwd).unwrap());
+        std::fs::remove_dir_all(root).unwrap();
     }
 }

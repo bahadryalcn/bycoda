@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import { ToolHeader } from "../../../app/shell/ToolNavigation";
 import { OverlayNav } from "../../../app/shell/TitleBar";
 import { WindowControls } from "../../../app/shell/WindowControls";
@@ -8,6 +8,8 @@ import { t, useLocale } from "../../../shared/i18n";
 import { Alert } from "../../../shared/ui/Alert";
 import { Badge } from "../../../shared/ui/Badge";
 import { Button } from "../../../shared/ui/Button";
+import { ConfirmMorph } from "../../../shared/ui/ConfirmMorph";
+import { ContextMenu, type ContextMenuItem } from "../../../shared/ui/ContextMenu";
 import { Popover } from "../../../shared/ui/Popover";
 import { DropdownMenu } from "../../../shared/ui/DropdownMenu";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
@@ -18,33 +20,36 @@ import { SshServerEditor } from "./SshServerEditor";
 import { SshSettings } from "./SshSettings";
 import { TermiusImportDialog } from "./TermiusImportDialog";
 import { ServersConnectionTools } from "./ServersConnectionTools";
-import { useServerInventory, type ServerRecord } from "../model/serverInventory";
+import {
+  removeSshConnection,
+  updateServerMetadata,
+  useServerInventory,
+  type ServerMetadataPatch,
+  type ServerRecord,
+} from "../model/serverInventory";
 import { SearchInput } from "../../../shared/ui/SearchInput";
 import {
   Loader,
+  LayoutGrid,
+  ListBullet,
   Plus,
   RefreshCw,
   Server,
   ListFilter,
-  Star,
   X,
   Lock,
   Pencil,
   MoreHorizontal,
+  Trash2,
 } from "../../../shared/ui/icons";
-import { requestMachineEdit, useRemoteMachineOnline } from "../model/connections";
+import { disconnectMachine, requestMachineEdit } from "../model/connections";
 import { requestMachineAdd } from "../model/machineAdd";
 import type { RemoteMachine } from "../model/protocol";
-import { connectionIndicator, needsSignIn } from "../model/remoteConnection";
-import { readRemoteConnection, subscribeChanges } from "../model/remoteHealth";
-import {
-  isReconnecting,
-  subscribeReconnecting,
-  reconnectRemoteMachine,
-  cancelRemoteReconnect,
-} from "../model/remoteReconnect";
-import { useRemoteLifecycle } from "../model/remoteLifecycle";
-import { RemoteConnectionDetails } from "./RemoteConnectionDetails";
+import { MachineStatus, ReconnectAction } from "./ServerStatus";
+import { ServerItem, type ServerMenuAt } from "./ServerItem";
+import { ServerColorPopover } from "./ServerColorPopover";
+import { serverAccentColor } from "./serverColor";
+import { useServersLayout, type ServersLayout } from "./serversLayout";
 
 /** Display addresses without URL credentials or query strings. Records stay native-owned. */
 function machineAddress(machine: RemoteMachine) {
@@ -57,107 +62,43 @@ function machineAddress(machine: RemoteMachine) {
   }
 }
 
-function MachineStatus({
-  machine,
-  details = false,
-}: {
-  machine: RemoteMachine;
-  details?: boolean;
-}) {
-  useRemoteMachineOnline(machine.id);
-  const state = useSyncExternalStore(
-    subscribeChanges,
-    () => readRemoteConnection(machine.environmentId),
-    () => readRemoteConnection(machine.environmentId),
-  );
-  const reconnecting = useSyncExternalStore(
-    subscribeReconnecting,
-    () => isReconnecting(machine.environmentId),
-    () => false,
-  );
-  const lifecycle = useRemoteLifecycle(machine.environmentId);
-  const degraded = Object.values(lifecycle.features).some((feature) => feature.status !== "ready");
-  const indicator = connectionIndicator(state, reconnecting);
-  const label = reconnecting
-    ? t("Reconnecting")
-    : state.status === "host-key"
-      ? t("Review required")
-      : state.status === "needs-auth"
-        ? t("Authentication required")
-        : state.status === "outdated-host"
-          ? t("Update Host")
-          : indicator.tone === "down"
-            ? t("Not connected")
-            : indicator.tone === "connecting"
-              ? t("Connecting")
-              : t(degraded ? "Refresh pending" : "Connected");
-  const badge = (
-    <Badge
-      size="sm"
-      title={t(indicator.label)}
-      tone={
-        needsSignIn(state.status)
-          ? "warning"
-          : indicator.tone === "connected" && !degraded
-            ? "success"
-            : "neutral"
-      }
-    >
-      {label}
-    </Badge>
-  );
-  if (!details) return badge;
-  return (
-    <div className="flex flex-col items-start gap-2" aria-live="polite">
-      {badge}
-      {state.error ? (
-        <details
-          className="w-full text-xs text-(--ui-text-muted)"
-          open={needsSignIn(state.status) || undefined}
-        >
-          <summary className="cursor-pointer py-1">{t("Connection details")}</summary>
-          <p className="mbs-1 break-words leading-relaxed">{state.error}</p>
-        </details>
-      ) : null}
-      <RemoteConnectionDetails environmentId={machine.environmentId} />
-    </div>
-  );
+function errorText(reason: unknown) {
+  return reason instanceof Error ? reason.message : String(reason);
 }
 
-function ReconnectAction({ machine }: { machine: RemoteMachine }) {
-  const reconnecting = useSyncExternalStore(
-    subscribeReconnecting,
-    () => isReconnecting(machine.environmentId),
-    () => false,
-  );
-  const state = useSyncExternalStore(
-    subscribeChanges,
-    () => readRemoteConnection(machine.environmentId),
-    () => readRemoteConnection(machine.environmentId),
-  );
+function ViewToggle({
+  layout,
+  onChange,
+}: {
+  layout: ServersLayout;
+  onChange: (layout: ServersLayout) => void;
+}) {
+  useLocale();
   return (
-    <>
+    <div role="group" aria-label={t("Server view")} className="flex shrink-0 items-center gap-0.5">
       <Button
         variant="ghost"
         iconOnly
-        label={t("Reconnect")}
-        loading={reconnecting}
-        disabled={state.status === "identity-mismatch"}
-        onClick={() => void reconnectRemoteMachine(machine.environmentId, { signIn: true })}
+        label={t("List view")}
+        tooltip={t("List view")}
+        selected={layout === "list"}
+        aria-pressed={layout === "list"}
+        onClick={() => onChange("list")}
       >
-        <RefreshCw aria-hidden className="size-3.5" />
+        <ListBullet aria-hidden className="size-3.5" />
       </Button>
-      {reconnecting ? (
-        <Button
-          variant="ghost"
-          iconOnly
-          label={t("Cancel reconnect")}
-          onClick={() => cancelRemoteReconnect(machine.environmentId)}
-        >
-          <X aria-hidden className="size-3.5" />
-        </Button>
-      ) : null}
-    </>
+      <Button
+        variant="ghost"
+        iconOnly
+        label={t("Card view")}
+        tooltip={t("Card view")}
+        selected={layout === "cards"}
+        aria-pressed={layout === "cards"}
+        onClick={() => onChange("cards")}
+      >
+        <LayoutGrid aria-hidden className="size-3.5" />
+      </Button>
+    </div>
   );
 }
 
@@ -179,6 +120,7 @@ export function ServersView({
   const { servers, loaded, loading, error, refresh } = useServerInventory();
   const openQuick = useOpenQuickServerTerminal();
   const openTerminal = useOpenServerTerminal();
+  const [layout, setLayout] = useServersLayout();
   const canConnect = (server: ServerRecord) =>
     Boolean(openTerminal && (server.kind === "ssh" || server.machine?.ssh));
   const connect = (server: ServerRecord) => {
@@ -194,6 +136,14 @@ export function ServersView({
   const [editor, setEditor] = useState<ServerRecord | "new" | undefined>();
   const [filtersOpen, setFiltersOpen] = useState(false);
   const filtersAnchor = useRef<HTMLButtonElement>(null);
+  const [menu, setMenu] = useState<{ serverId: string; at: ServerMenuAt } | undefined>();
+  const [colorTarget, setColorTarget] = useState<{ serverId: string; at: ServerMenuAt }>();
+  const [deleteTarget, setDeleteTarget] = useState<{
+    server: ServerRecord;
+    at: ServerMenuAt;
+  }>();
+  const [deleting, setDeleting] = useState<string>();
+  const [actionError, setActionError] = useState("");
   const [group, setGroup] = useRetainedState("servers:group", "");
   const [tag, setTag] = useRetainedState("servers:tag", "");
   const [favoritesOnly, setFavoritesOnly] = useRetainedState("servers:favorites", false);
@@ -233,7 +183,86 @@ export function ServersView({
   if (recentFirst)
     filtered.sort((a, b) => (b.metadata.lastUsedAt ?? 0) - (a.metadata.lastUsedAt ?? 0));
   const selected = servers.find((server) => server.id === selectedId);
+  const menuServer = menu ? servers.find((server) => server.id === menu.serverId) : undefined;
+  const colorServer = colorTarget
+    ? servers.find((server) => server.id === colorTarget.serverId)
+    : undefined;
   const filterCount = Number(!!group) + Number(!!tag) + Number(favoritesOnly) + Number(recentFirst);
+
+  const runAction = async (work: () => Promise<unknown>) => {
+    setActionError("");
+    try {
+      await work();
+    } catch (reason) {
+      setActionError(errorText(reason));
+    }
+  };
+  const menuItems = (server: ServerRecord): ContextMenuItem[] => [
+    ...(canConnect(server) ? [{ kind: "item" as const, id: "connect", label: t("Connect") }] : []),
+    { kind: "item", id: "details", label: t("Show details") },
+    {
+      kind: "item",
+      id: "edit",
+      label: server.kind === "ssh" ? t("Edit SSH server") : t("Edit machine"),
+    },
+    {
+      kind: "item",
+      id: "favorite",
+      label: server.metadata.favorite ? t("Unfavorite") : t("Favorite"),
+    },
+    { kind: "item", id: "color", label: t("Color…") },
+    { kind: "item", id: "copy", label: t("Copy address") },
+    { kind: "sep" },
+    {
+      kind: "item",
+      id: "delete",
+      label: t("Delete"),
+      danger: true,
+      title:
+        server.kind === "ssh"
+          ? undefined
+          : t(
+              "Removes this machine from this desktop only. The host and its sessions keep running.",
+            ),
+    },
+  ];
+  const pickMenuItem = (server: ServerRecord, id: string, at: ServerMenuAt) => {
+    setMenu(undefined);
+    if (id === "connect") connect(server);
+    else if (id === "details") setSelectedId(server.id);
+    else if (id === "edit") {
+      if (server.kind === "ssh") setEditor(server);
+      else requestMachineEdit(server.id);
+    } else if (id === "favorite")
+      void runAction(() =>
+        updateServerMetadata(server.id, { favorite: !server.metadata.favorite }),
+      );
+    else if (id === "color") setColorTarget({ serverId: server.id, at });
+    else if (id === "copy") void runAction(() => navigator.clipboard.writeText(address(server)));
+    else if (id === "delete") {
+      setActionError("");
+      setDeleteTarget({ server, at });
+    }
+  };
+  const openServerMenu = (serverId: string, at: ServerMenuAt) => setMenu({ serverId, at });
+  // Deleting is not reversible: the question stays open until the store confirms, and a second press is ignored.
+  const deleteServer = async (server: ServerRecord) => {
+    if (deleting) return;
+    setDeleting(server.id);
+    setActionError("");
+    try {
+      if (server.kind === "ssh") await removeSshConnection(server.id);
+      else await disconnectMachine(server.id);
+      setSelectedId((current) => (current === server.id ? undefined : current));
+    } catch (reason) {
+      setActionError(errorText(reason));
+      throw reason;
+    } finally {
+      setDeleting(undefined);
+    }
+  };
+  const saveColor = (serverId: string, patch: ServerMetadataPatch) =>
+    void runAction(() => updateServerMetadata(serverId, patch));
   return (
     <section
       aria-label={t("Servers")}
@@ -331,6 +360,7 @@ export function ServersView({
               </div>
             </Popover>
           ) : null}
+          <ViewToggle layout={layout} onChange={setLayout} />
           <Button
             variant="ghost"
             iconOnly
@@ -405,6 +435,13 @@ export function ServersView({
           </Alert>
         </div>
       ) : null}
+      {actionError ? (
+        <div className="px-3 pt-2">
+          <Alert tone="danger" role="alert">
+            {actionError}
+          </Alert>
+        </div>
+      ) : null}
       {loading ? (
         <div
           role="status"
@@ -454,95 +491,26 @@ export function ServersView({
           </div>
           <ul
             aria-label={t("Servers")}
-            className="grid grid-cols-[repeat(auto-fill,minmax(min(100%,15rem),1fr))] content-start gap-1 @min-[44rem]/servers:gap-2"
+            data-servers-layout={layout}
+            className={
+              layout === "cards"
+                ? "grid grid-cols-[repeat(auto-fill,minmax(min(100%,15rem),1fr))] content-start gap-2"
+                : "flex flex-col gap-0.5"
+            }
           >
             {filtered.map((server) => (
-              <li key={server.id} className="min-w-0 rounded-lg border border-stroke">
-                <Button
-                  variant="item"
-                  selected={selectedId === server.id}
-                  aria-pressed={selectedId === server.id}
-                  data-server-row={server.id}
-                  aria-keyshortcuts={canConnect(server) ? "Enter" : undefined}
-                  aria-description={
-                    canConnect(server)
-                      ? t("Double-click or press Enter to connect via SSH. Space shows details.")
-                      : undefined
-                  }
-                  className="h-auto min-h-14 w-full @min-[44rem]/servers:min-h-20"
-                  onClick={() => setSelectedId(server.id)}
-                  onDoubleClick={(event) => {
-                    if (
-                      event.button !== 0 ||
-                      event.ctrlKey ||
-                      event.metaKey ||
-                      event.altKey ||
-                      event.shiftKey
-                    )
-                      return;
-                    connect(server);
-                  }}
-                  onKeyDown={(event) => {
-                    if (
-                      event.key !== "Enter" ||
-                      !canConnect(server) ||
-                      event.nativeEvent.isComposing
-                    )
-                      return;
-                    event.preventDefault();
-                    event.stopPropagation();
-                    if (
-                      event.repeat ||
-                      event.ctrlKey ||
-                      event.metaKey ||
-                      event.altKey ||
-                      event.shiftKey
-                    )
-                      return;
-                    connect(server);
-                  }}
-                >
-                  <Server aria-hidden className="size-4 shrink-0 text-(--ui-text-muted)" />
-                  <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-                    <span className="flex min-w-0 items-center justify-between gap-3">
-                      <span title={server.name} className="truncate font-medium">
-                        {server.name}
-                      </span>
-                      <span className="flex shrink-0 items-center gap-1">
-                        {server.metadata.favorite ? (
-                          <Star
-                            aria-label={t("Favorite")}
-                            className="size-3 text-(--ui-text-muted)"
-                          />
-                        ) : null}
-                        {server.machine ? (
-                          <MachineStatus machine={server.machine} />
-                        ) : (
-                          <Badge size="sm">SSH</Badge>
-                        )}
-                      </span>
-                    </span>
-                    <span
-                      title={address(server)}
-                      className="truncate text-xs text-(--ui-text-muted)"
-                    >
-                      {address(server)}
-                    </span>
-                    {server.metadata.group || server.metadata.tags.length ? (
-                      <span
-                        className="truncate text-xs text-(--ui-text-muted)"
-                        title={[server.metadata.group, ...server.metadata.tags]
-                          .filter(Boolean)
-                          .join(" · ")}
-                      >
-                        {[server.metadata.group, ...server.metadata.tags]
-                          .filter(Boolean)
-                          .join(" · ")}
-                      </span>
-                    ) : null}
-                  </span>
-                </Button>
-              </li>
+              <ServerItem
+                key={server.id}
+                server={server}
+                address={address(server)}
+                layout={layout}
+                selected={selectedId === server.id}
+                accent={serverAccentColor(server)}
+                canConnect={canConnect(server)}
+                onSelect={() => setSelectedId(server.id)}
+                onConnect={() => connect(server)}
+                onMenu={(at) => openServerMenu(server.id, at)}
+              />
             ))}
           </ul>
         </div>
@@ -570,6 +538,16 @@ export function ServersView({
                 </Button>
               ) : null}
               {selected.machine ? <ReconnectAction machine={selected.machine} /> : null}
+              <Button
+                variant="ghost"
+                iconOnly
+                label={t("Server actions")}
+                aria-haspopup="menu"
+                aria-expanded={menu?.serverId === selected.id}
+                onClick={(event) => openServerMenu(selected.id, event.currentTarget)}
+              >
+                <MoreHorizontal aria-hidden className="size-3.5" />
+              </Button>
               <Button
                 variant="ghost"
                 iconOnly
@@ -637,6 +615,67 @@ export function ServersView({
           </div>
         ) : null}
       </div>
+      {menuServer && menu ? (
+        <ContextMenu
+          {...(menu.at instanceof HTMLElement
+            ? { anchor: menu.at }
+            : { x: menu.at.x, y: menu.at.y })}
+          ariaLabel={menuServer.name}
+          items={menuItems(menuServer)}
+          onPick={(id) => pickMenuItem(menuServer, id, menu.at)}
+          onClose={() => setMenu(undefined)}
+        />
+      ) : null}
+      {colorServer && colorTarget ? (
+        <Popover
+          anchor={colorTarget.at}
+          align="start"
+          width={248}
+          role="dialog"
+          aria-label={t("Server color")}
+          onDismiss={() => setColorTarget(undefined)}
+        >
+          <ServerColorPopover
+            server={colorServer}
+            onPick={(patch) => saveColor(colorServer.id, patch)}
+          />
+        </Popover>
+      ) : null}
+      {deleteTarget ? (
+        <Popover
+          anchor={deleteTarget.at}
+          align="start"
+          width={280}
+          role="dialog"
+          aria-label={t("Delete {p0}?", { p0: deleteTarget.server.name })}
+          onDismiss={() => {
+            if (!deleting) setDeleteTarget(undefined);
+          }}
+        >
+          <div className="flex flex-col gap-3 p-3 text-sm">
+            <p className="font-medium">{t("Delete {p0}?", { p0: deleteTarget.server.name })}</p>
+            <p className="text-xs text-(--ui-text-muted)">
+              {deleteTarget.server.kind === "ssh"
+                ? t("Removes this SSH server from bycoda. The remote machine is not changed.")
+                : t(
+                    "Removes this machine from this desktop only. The host and its sessions keep running.",
+                  )}
+            </p>
+            <ConfirmMorph
+              label={t("Delete")}
+              icon={<Trash2 aria-hidden className="size-3.5" />}
+              tone="danger"
+              confirmMode="press"
+              disabled={deleting != null}
+              onConfirm={() => deleteServer(deleteTarget.server)}
+              onStateChange={(state) => {
+                if (state === "done") setDeleteTarget(undefined);
+              }}
+              onCancel={() => setDeleteTarget(undefined)}
+            />
+          </div>
+        </Popover>
+      ) : null}
       {quickConnect ? <QuickConnect onClose={() => setQuickConnect(false)} /> : null}
       {termiusImport ? (
         <TermiusImportDialog servers={servers} onClose={() => setTermiusImport(false)} />

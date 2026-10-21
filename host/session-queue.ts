@@ -86,7 +86,7 @@ export class SessionQueues {
       queue.claim ||
       queue.editingId ||
       (!steer && queue.status !== "active") ||
-      !queue.messages.some((row) => row.id === rowId) ||
+      !queue.messages.some((row) => row.id === rowId && !row.deliveryUnknown) ||
       (!steer && queue.messages[0]?.id !== rowId)
     )
       throw new Error("The shared queue changed. Refresh it before sending.");

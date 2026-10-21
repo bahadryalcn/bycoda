@@ -1,3 +1,4 @@
+import { useStoredPreferenceState } from "../../../shared/hooks/useStoredPreferenceState";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import { SettingsFeedback } from "./settingsControls";
 import { Badge } from "../../../shared/ui/Badge";
@@ -49,6 +50,7 @@ import {
   saveLastModelChoice,
   savePickerProviderVisible,
   subscribeModels,
+  subscribePickerVisibility,
 } from "../../sessions/model/models";
 import { offeredDelegationSetting } from "../../sessions/model/claudeAdvisor";
 import { pickerSettings } from "../../sessions/model/modelPickerData";
@@ -106,7 +108,7 @@ import {
 import { useTabGroupLogos } from "../../projects/hooks/useTabGroupLogos";
 import { ProjectLogoIcon } from "../../projects/ui/ProjectLogoIcon";
 import { ProjectMascot } from "../../projects/ui/ProjectMascot";
-import { loadClaudeHooks, saveClaudeHooks } from "../model/settings";
+import { loadClaudeHooks, saveClaudeHooks, subscribeClaudeHooks } from "../model/settings";
 
 import { AdvancedSettings, Group, RevealedSetting, Row, Toggle, Select } from "./settingsControls";
 import { GLOBAL_PROVIDER_SCOPE, ProviderBinaryControl } from "./ProviderBinarySettings";
@@ -135,9 +137,9 @@ export function ProvidersPage({ cwd, recents }: { cwd?: string; recents?: Recent
   );
   const [choice, setChoice] = useState(loadLastModelChoice);
   const [defaultModels, setDefaultModels] = useState(loadDefaultModels);
-  const [claudeHooks, setClaudeHooks] = useState(loadClaudeHooks);
+  const [claudeHooks, setClaudeHooks] = useStoredPreferenceState(loadClaudeHooks, subscribeClaudeHooks);
   const [scope, setScope] = useState<string>(GLOBAL_PROVIDER_SCOPE);
-  const [hiddenGlobally, setHiddenGlobally] = useState(loadHiddenPickerProviders);
+  const [hiddenGlobally, setHiddenGlobally] = useStoredPreferenceState(loadHiddenPickerProviders, subscribePickerVisibility);
   const [selectedProvider, setSelectedProvider] = useState<HarnessId | null>(
     () => loadLastModelChoice()?.harness ?? null,
   );

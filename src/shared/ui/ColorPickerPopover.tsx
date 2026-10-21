@@ -37,7 +37,7 @@ export function ColorSwatchRow({
   useLocale();
   const pipetteActive = customHighlighted ?? (customColor != null || customPickerOpen);
   return (
-    <div className="flex items-center justify-between gap-1 px-0.5">
+    <div className="flex flex-wrap items-center justify-between gap-1 px-0.5">
       {colors.map((color, index) => {
         const label = labels?.[index] ?? `Color ${index + 1}`;
         const selected =
@@ -51,7 +51,7 @@ export function ColorSwatchRow({
             aria-pressed={selected}
             onMouseDown={(event) => event.preventDefault()}
             onClick={() => onPickIndex(index)}
-            className="grid size-5 place-items-center rounded-full"
+            className="grid size-(--ui-color-swatch-target) shrink-0 place-items-center rounded-full"
           >
             <span
               className={`size-3.5 rounded-full ${
@@ -70,7 +70,7 @@ export function ColorSwatchRow({
         aria-pressed={customColor != null}
         onMouseDown={(event) => event.preventDefault()}
         onClick={onToggleCustom}
-        className="grid size-5 place-items-center rounded-full"
+        className="grid size-(--ui-color-swatch-target) shrink-0 place-items-center rounded-full"
       >
         <span
           className={`grid size-3.5 place-items-center overflow-hidden rounded-full ${
@@ -263,7 +263,8 @@ export function ColorPickerPopover({ value, onChange }: Props) {
         aria-valuenow={Math.round(hsv.h)}
         className="relative mbs-2 h-3 w-full cursor-ew-resize touch-none rounded-full focus-visible:outline-2 focus-visible:outline-accent"
         style={{
-          background: "linear-gradient(to right, var(--palette-hexf00), var(--palette-hexff0), var(--palette-hex0f0), var(--palette-hex0ff), var(--palette-hex00f), var(--palette-hexf0f), var(--palette-hexf00))",
+          background:
+            "linear-gradient(to right, var(--palette-hexf00), var(--palette-hexff0), var(--palette-hex0f0), var(--palette-hex0ff), var(--palette-hex00f), var(--palette-hexf0f), var(--palette-hexf00))",
         }}
         onPointerDown={onHuePointer}
         onKeyDown={(event) => {

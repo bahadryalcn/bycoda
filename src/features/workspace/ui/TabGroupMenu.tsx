@@ -204,6 +204,9 @@ export function TabGroupMenu({
   const input = useRef<HTMLInputElement>(null);
   const [name, setName] = useState(label);
   const [customPickerOpen, setCustomPickerOpen] = useState(false);
+  const [logoError, setLogoError] = useState<string | null>(null);
+  const [logoBusy, setLogoBusy] = useState(false);
+  const logoOperation = useRef(false);
   const [appearanceAnchor, setAppearanceAnchor] = useState<HTMLButtonElement | null>(null);
 
   useEffect(() => {
@@ -255,16 +258,22 @@ export function TabGroupMenu({
             type="button"
             title={logoPath ? t("Change project logo") : t("Add project logo")}
             aria-label={logoPath ? t("Change project logo") : t("Add project logo")}
+            loading={logoBusy}
             onMouseDown={(e) => e.preventDefault()}
             onClick={() => {
+              if (logoOperation.current) return;
+              logoOperation.current = true;
+              setLogoBusy(true);
+              setLogoError(null);
               void (async () => {
                 try {
                   const path = await pickAndSetProjectLogo(logoProject);
-                  if (path) onLogoChange();
+                  if (path) { onLogoChange(); onClose(); }
                 } catch (error) {
-                  console.error("Failed to save project logo:", error);
+                  setLogoError(error instanceof Error ? error.message : String(error));
                 } finally {
-                  onClose();
+                  logoOperation.current = false;
+                  setLogoBusy(false);
                 }
               })();
             }}
@@ -293,9 +302,16 @@ export function TabGroupMenu({
               type="button"
               title={t("Remove project logo")}
               aria-label={t("Remove project logo")}
+              disabled={logoBusy}
               onMouseDown={(e) => e.preventDefault()}
               onClick={() => {
-                void clearProjectLogo(projectKey(logoProject)).then(onLogoChange);
+                if (logoOperation.current) return;
+                logoOperation.current = true;
+                setLogoBusy(true);
+                setLogoError(null);
+                void clearProjectLogo(projectKey(logoProject)).then(onLogoChange, (error) => {
+                  setLogoError(error instanceof Error ? error.message : String(error));
+                }).finally(() => { logoOperation.current = false; setLogoBusy(false); });
               }}
               className="grid shrink-0 place-items-center"
             >
@@ -304,6 +320,7 @@ export function TabGroupMenu({
           ) : null}
         </div>
       ) : null}
+      {logoError ? <Alert tone="danger" role="alert">{logoError}</Alert> : null}
 
       <div className="mb-2">
         <ColorSwatchRow

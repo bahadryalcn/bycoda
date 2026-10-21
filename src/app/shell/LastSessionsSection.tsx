@@ -1,5 +1,6 @@
 import { DropdownMenu } from "../../shared/ui/DropdownMenu";
 import { Button } from "../../shared/ui/Button";
+import { useMinuteNow } from "./RelativeSessionTime";
 import { t, useLocale, getLocale } from "../../shared/i18n";
 import { useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
 import { ChevronDown, Clock, Internet, Pin, PinOff } from "../../shared/ui/icons";
@@ -217,7 +218,7 @@ export function LastSessionsRows({
     y: number;
     row: RecentSessionRow;
   } | null>(null);
-  const now = Date.now();
+  const now = useMinuteNow();
   const menuRow = menu?.row;
 
   return (

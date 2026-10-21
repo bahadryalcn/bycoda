@@ -293,7 +293,7 @@ export async function steerCodexTurn(input: SteerTurnInput): Promise<void> {
   if (!turnId) throw new Error("No active turn to steer");
 
   if (/(?:^|\s)\$[A-Za-z0-9]/.test(input.text)) await loadCodexSkills(live, input.sessionId);
-  if (live.cancelled) return;
+  if (live.cancelled) throw new Error("Follow-up cancelled because the turn was stopped");
 
   const params = buildTurnSteerParams({
     threadId: live.threadId,

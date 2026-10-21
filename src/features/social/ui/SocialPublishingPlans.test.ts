@@ -94,8 +94,12 @@ async function render(value: SocialSnapshot, extraProject = false) {
         ],
         initialProject: "project",
         run: async (work) => {
-          await work();
-          return true;
+          try {
+            await work();
+            return true;
+          } catch {
+            return false;
+          }
         },
       }),
     ),
@@ -124,6 +128,30 @@ afterEach(async () => {
   await act(async () => root.unmount());
   container.remove();
   vi.unstubAllGlobals();
+});
+
+it("preserves an open plan draft and its original revision when another owner saves newer settings", async () => {
+  await render(snapshot());
+  await act(async () => button("Planı düzenle").click());
+  const form = container.querySelector<HTMLFormElement>("form")!;
+  const name = form.querySelector<HTMLInputElement>("input")!;
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
+      name,
+      "Unsaved plan",
+    );
+    name.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  await render(snapshot({ publishingPlans: [{ ...plan, revision: 2, name: "Newer plan" }] }));
+  request.mockRejectedValue(new Error("Publishing plan changed in another client"));
+  await act(async () =>
+    form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })),
+  );
+  expect(request).toHaveBeenCalledWith(
+    "publishing-plans.update",
+    expect.objectContaining({ id: plan.id, expectedRevision: 1, name: "Unsaved plan" }),
+  );
+  expect(name.value).toBe("Unsaved plan");
 });
 
 it("requires owner review of the exact plan revision before activation", async () => {

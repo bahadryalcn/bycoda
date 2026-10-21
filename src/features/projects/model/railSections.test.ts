@@ -4,6 +4,8 @@ import {
   applyShownSectionOrder,
   isDefaultRailSectionOrder,
   loadRailSectionOrder,
+  loadRailSectionCollapse,
+  toggleRailSectionCollapse,
   moveRailSection,
   normalizeRailSectionOrder,
   resetRailSectionOrder,
@@ -11,7 +13,7 @@ import {
   type RailSectionId,
 } from "./railSections";
 
-const DEFAULT: RailSectionId[] = ["last-sessions", "pinned", "groups", "projects"];
+const DEFAULT: RailSectionId[] = ["last-sessions", "pinned", "groups", "crews", "projects"];
 
 describe("normalizeRailSectionOrder", () => {
   it("falls back to the default order", () => {
@@ -22,6 +24,7 @@ describe("normalizeRailSectionOrder", () => {
 
   it("keeps a stored order and appends missing sections in default order", () => {
     expect(normalizeRailSectionOrder(["projects", "groups"])).toEqual([
+      "crews",
       "projects",
       "groups",
       "last-sessions",
@@ -34,7 +37,18 @@ describe("normalizeRailSectionOrder", () => {
       "groups",
       "pinned",
       "last-sessions",
+      "crews",
       "projects",
+    ]);
+  });
+
+  it("places Crews before Projects in an order saved before it existed", () => {
+    expect(normalizeRailSectionOrder(["projects", "last-sessions", "pinned", "groups"])).toEqual([
+      "crews",
+      "projects",
+      "last-sessions",
+      "pinned",
+      "groups",
     ]);
   });
 });
@@ -45,12 +59,14 @@ describe("moveRailSection", () => {
       "last-sessions",
       "groups",
       "pinned",
+      "crews",
       "projects",
     ]);
     expect(moveRailSection(DEFAULT, "pinned", "down")).toEqual([
       "last-sessions",
       "groups",
       "pinned",
+      "crews",
       "projects",
     ]);
     expect(moveRailSection(DEFAULT, "projects", "top")[0]).toBe("projects");
@@ -68,10 +84,12 @@ describe("moveRailSection", () => {
       "last-sessions",
       "pinned",
       "groups",
+      "crews",
     ]);
     expect(moveRailSection(DEFAULT, "last-sessions", "down", shown)).toEqual([
       "pinned",
       "groups",
+      "crews",
       "projects",
       "last-sessions",
     ]);
@@ -81,11 +99,12 @@ describe("moveRailSection", () => {
 
 describe("applyShownSectionOrder", () => {
   it("lets hidden sections keep their slot", () => {
-    // Pinned is hidden; dragging Projects above Groups and Last sessions.
+    // Pinned and Crews are hidden; dragging Projects above Groups and Last sessions.
     expect(applyShownSectionOrder(DEFAULT, ["projects", "last-sessions", "groups"])).toEqual([
       "projects",
       "pinned",
       "last-sessions",
+      "crews",
       "groups",
     ]);
   });
@@ -100,8 +119,14 @@ describe("saved section order", () => {
 
   it("round-trips and resets", () => {
     expect(loadRailSectionOrder()).toEqual(DEFAULT);
-    saveRailSectionOrder(["groups", "projects", "pinned", "last-sessions"]);
-    expect(loadRailSectionOrder()).toEqual(["groups", "projects", "pinned", "last-sessions"]);
+    saveRailSectionOrder(["groups", "projects", "crews", "pinned", "last-sessions"]);
+    expect(loadRailSectionOrder()).toEqual([
+      "groups",
+      "projects",
+      "crews",
+      "pinned",
+      "last-sessions",
+    ]);
     expect(isDefaultRailSectionOrder(loadRailSectionOrder())).toBe(false);
     resetRailSectionOrder();
     expect(loadRailSectionOrder()).toEqual(DEFAULT);
@@ -111,5 +136,25 @@ describe("saved section order", () => {
   it("survives corrupt storage", () => {
     localStorage.setItem("bycoda.projectRailSectionOrder", "{oops");
     expect(loadRailSectionOrder()).toEqual(DEFAULT);
+  });
+});
+
+describe("saved section collapse", () => {
+  beforeEach(() => localStorage.clear());
+
+  it("starts expanded and preserves the other section when toggling", () => {
+    expect(loadRailSectionCollapse()).toEqual({ groups: false, projects: false });
+    toggleRailSectionCollapse("groups");
+    toggleRailSectionCollapse("projects");
+    expect(loadRailSectionCollapse()).toEqual({ groups: true, projects: true });
+    toggleRailSectionCollapse("groups");
+    expect(loadRailSectionCollapse()).toEqual({ groups: false, projects: true });
+  });
+
+  it("ignores malformed storage and non-boolean values", () => {
+    localStorage.setItem("bycoda.projectRailSectionCollapse", "{oops");
+    expect(loadRailSectionCollapse()).toEqual({ groups: false, projects: false });
+    localStorage.setItem("bycoda.projectRailSectionCollapse", '{"groups":"false","projects":true}');
+    expect(loadRailSectionCollapse()).toEqual({ groups: false, projects: true });
   });
 });

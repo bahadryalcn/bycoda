@@ -25,6 +25,12 @@ import {
 import { t } from "../../../../shared/i18n";
 import { type SubmissionAcceptance } from "../../../model/submissionAcceptance";
 import { userTurnCards } from "../../helpers/sessionHelpers";
+import { DeliveryUnknownError } from "../../../../shared/lib/deliveryUnknown";
+import {
+  beginDeliveryProgress,
+  readDeliveryProgress,
+  updateDeliveryProgress,
+} from "../../../../features/sessions/model/deliveryProgress";
 
 export function steerBusySubmit(
   ctx: SubmitDeps,
@@ -138,14 +144,22 @@ export function steerBusySubmit(
     const steerGeneration = turnGen.current.get(sessionId);
     const steerBlocks = nextSessions.find((entry) => entry.id === sessionId)?.blocks;
     const steerUserId = steerBlocks?.[steerBlocks.length - 1]?.id;
-    const holdFollowUp = () =>
+    const steerUserBlock = steerBlocks?.find((block) => block.id === steerUserId);
+    const messageId = options?.queuedMessageId ?? steerUserId ?? crypto.randomUUID();
+    const existingProgress = readDeliveryProgress(sessionId, messageId);
+    const progress =
+      existingProgress?.messageId === messageId
+        ? existingProgress
+        : beginDeliveryProgress(sessionId, messageId, "preparing");
+    const holdFollowUp = (deliveryUnknown = false) =>
       setSessions((prev) =>
         prev.map((entry) =>
           entry.id === sessionId
             ? holdUndeliveredFollowUp(
                 entry,
                 {
-                  id: options?.queuedMessageId ?? crypto.randomUUID(),
+                  id: messageId,
+                  ...(deliveryUnknown ? { deliveryUnknown: true as const } : {}),
                   text,
                   attachments,
                   noteCard,
@@ -168,9 +182,17 @@ export function steerBusySubmit(
         });
         if (turnGen.current.get(sessionId) !== steerGeneration) {
           holdFollowUp();
+          updateDeliveryProgress(
+            sessionId,
+            progress,
+            "rejected",
+            "The turn was stopped. The message remains queued.",
+          );
           return false;
         }
+        updateDeliveryProgress(sessionId, progress, "provider");
         await steerHarnessTurn({
+          onReady: () => updateDeliveryProgress(sessionId, progress, "confirming"),
           harness: current.harness,
           sessionId,
           cwd: initialWorkCwd,
@@ -179,10 +201,65 @@ export function steerBusySubmit(
           text: inboxAskPrompt(rawCommand ? undefined : current.inboxAsk, prompt),
           attachments: prepared,
         });
+        updateDeliveryProgress(sessionId, progress, "accepted");
         return true;
       } catch (error: unknown) {
+        if (error instanceof DeliveryUnknownError) {
+          holdFollowUp(true);
+          updateDeliveryProgress(
+            sessionId,
+            progress,
+            "unknown",
+            "Delivery is not confirmed. The message is held and will not be sent again automatically.",
+          );
+          void error.settlement.then((result) => {
+            if (result === "unknown") return;
+            setSessions((prev) =>
+              prev.map((entry) => {
+                const held = entry.queuedMessages?.find((row) => row.id === messageId);
+                const pendingProgress = readDeliveryProgress(sessionId, messageId);
+                if (entry.id !== sessionId) return entry;
+                const sameAttempt = pendingProgress?.operationId === progress.operationId;
+                if (result === "accepted") {
+                  // Actual acknowledgement is stronger evidence than a prior
+                  // "keep queued" review. Do not replay the unchanged request.
+                  const delivered =
+                    held && sameAttempt ? sentQueuedMessage(entry, messageId) : entry;
+                  return steerUserBlock &&
+                    !delivered.blocks.some((block) => block.id === steerUserBlock.id)
+                    ? { ...delivered, blocks: [...delivered.blocks, steerUserBlock] }
+                    : delivered;
+                }
+                if (!held || !sameAttempt) return entry;
+                return {
+                  ...entry,
+                  queueStatus: "paused",
+                  queuedMessages: entry.queuedMessages?.map((row) =>
+                    row.id === messageId ? { ...row, deliveryUnknown: undefined } : row,
+                  ),
+                };
+              }),
+            );
+            updateDeliveryProgress(
+              sessionId,
+              progress,
+              result === "accepted" ? "accepted" : "rejected",
+              result === "accepted"
+                ? "The provider confirmed delivery. The message was not sent again."
+                : "The provider rejected the message. It remains queued and paused.",
+            );
+          });
+          if (options?.queuedMessageId) throw error;
+          return false;
+        }
         if (turnGen.current.get(sessionId) !== steerGeneration) {
           holdFollowUp();
+          updateDeliveryProgress(
+            sessionId,
+            progress,
+            "rejected",
+            "The turn was stopped. The message remains queued.",
+          );
           return false;
         }
         const message =
@@ -190,6 +267,7 @@ export function steerBusySubmit(
             ? error.message
             : `${current.harness} could not steer the active turn`;
         holdFollowUp();
+        updateDeliveryProgress(sessionId, progress, "rejected", message);
         enqueueHarnessEvent(sessionId, {
           type: "status",
           text: `${t("The follow-up could not be delivered. It is saved in the paused queue.")} ${message}`,

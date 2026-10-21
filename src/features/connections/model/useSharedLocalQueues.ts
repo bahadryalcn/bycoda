@@ -8,11 +8,17 @@ import type { RemoteMachine } from "./protocol";
 import { queueSessionFields, type RemoteQueue } from "./remoteQueue";
 import { sameQueueValue, SHARED_QUEUE_CAPABILITY } from "./sharedQueue";
 import { desktopQueueClientId, SharedQueueClient } from "./sharedQueueClient";
+import {
+  beginDeliveryProgress,
+  updateDeliveryProgress,
+} from "../../sessions/model/deliveryProgress";
+import { DeliveryUnknownError } from "../../../shared/lib/deliveryUnknown";
 
 type Entry = {
   client: SharedQueueClient;
   observed: RemoteQueue;
   claiming: boolean;
+  nextIdleSyncAt: number;
   apply: (allowClaim?: boolean) => void;
   publish: () => boolean;
   read: () => RemoteQueue;
@@ -49,6 +55,9 @@ export async function submitSharedLocalQueue(
   if (!entry) return send(); // Local-only installs keep their existing queue contract.
   if (entry.claiming) return false;
   entry.claiming = true;
+  const progress = beginDeliveryProgress(sessionId, id, "syncing");
+  const heldStatus = entry.read().status;
+  let failure: string | undefined;
   let token: string | undefined;
   let accepted = false;
   let uncertain = false;
@@ -57,22 +66,69 @@ export async function submitSharedLocalQueue(
     if (steer) {
       await entry.client.retry();
       if (entry.client.snapshot().error) throw new Error(entry.client.snapshot().error);
-      if (!isCurrent()) return false;
-      entry.client.update((queue) => ({ ...queue, status: "active", editingId: undefined }), true);
+      if (!isCurrent()) {
+        failure = "The selected message or turn changed while waiting. The message remains queued.";
+        return false;
+      }
+      // A single selected send is not permission to release the rest of a held queue.
+      if (!entry.client.update((queue) => ({ ...queue, editingId: undefined }), true))
+        throw new Error(
+          entry.client.snapshot().error ??
+            "Another send owns this queue. Wait for its confirmation.",
+        );
     }
+    updateDeliveryProgress(sessionId, progress, "claiming");
     token = await entry.client.claim(id, steer);
-    if (!token) return false;
-    if (!isCurrent()) return false;
+    if (!token)
+      throw new Error(
+        entry.client.snapshot().error ?? "Another send owns this queue. Wait for its confirmation.",
+      );
+    if (!isCurrent()) {
+      failure = "The selected message or turn changed while waiting. The message remains queued.";
+      return false;
+    }
     entry.apply(true);
     const message = entry.client.snapshot().queue.messages.find((row) => row.id === id);
     if (!message) return false;
     uncertain = true;
+    updateDeliveryProgress(sessionId, progress, "preparing");
     accepted = await send(message);
     uncertain = false;
+    if (!accepted)
+      failure =
+        "The send was cancelled or rejected. The message remains queued and the queue is paused.";
     return accepted;
   } catch (error) {
+    failure = String(error).replace(/^Error: /, "");
+    if (error instanceof DeliveryUnknownError && token) {
+      const heldToken = token;
+      failure =
+        "Delivery is not confirmed. The message is held and will not be sent again automatically.";
+      void error.settlement.then(async (result) => {
+        if (result === "unknown") return;
+        try {
+          await entry.client.sync().catch(() => {});
+          // An explicit recovery decision may already have settled this token,
+          // or a newer send may own the queue. Never rewrite its journal.
+          if (entry.client.snapshot().queue.claim?.token !== heldToken) return;
+          await entry.client.finish(heldToken, result === "accepted");
+          entry.apply();
+          updateDeliveryProgress(
+            sessionId,
+            progress,
+            result === "accepted" ? "accepted" : "rejected",
+            result === "accepted"
+              ? "The provider confirmed delivery. The message was not sent again."
+              : "The provider rejected the message. It remains queued and paused.",
+          );
+        } catch (reason) {
+          entry.client.hold(reason);
+          entry.apply();
+        }
+      });
+    }
     console.warn("Shared queued send is held", error);
-    return false;
+    throw error;
   } finally {
     if (token && !uncertain) {
       try {
@@ -81,7 +137,12 @@ export async function submitSharedLocalQueue(
           const local = entry.read();
           entry.client.update((queue) => ({
             ...queue,
-            status: local.status,
+            status:
+              local.status === "paused" || local.status === "restored"
+                ? local.status
+                : heldStatus === "restored"
+                  ? "restored"
+                  : "paused",
             editingId: local.editingId,
           }));
           await entry.client.sync();
@@ -92,6 +153,12 @@ export async function submitSharedLocalQueue(
     }
     entry.claiming = false;
     entry.apply();
+    updateDeliveryProgress(
+      sessionId,
+      progress,
+      accepted ? "accepted" : uncertain ? "unknown" : "rejected",
+      failure,
+    );
   }
 }
 
@@ -166,7 +233,15 @@ export function useSharedLocalQueues(
           machine = found && capabilities?.includes(SHARED_QUEUE_CAPABILITY) ? found : undefined;
         }
         if (!machine || stopped) return;
-        for (const session of sessionsRef.current) {
+        let idleInitializations = 0;
+        // Interactive sessions go first; opening a project with much history
+        // must not put its active queue behind every empty historical queue.
+        const candidates = [...sessionsRef.current].sort(
+          (a, b) =>
+            Number(!!b.busy || !!b.queuedMessages?.length) -
+            Number(!!a.busy || !!a.queuedMessages?.length),
+        );
+        for (const session of candidates) {
           if (stopped) return;
           if (
             session.inboxAsk ||
@@ -176,6 +251,15 @@ export function useSharedLocalQueues(
           )
             continue;
           let entry = localQueues.get(session.id);
+          const interactive = !!session.busy || !!session.queuedMessages?.length;
+          if (!entry && !interactive && idleInitializations++ >= 8) continue;
+          if (
+            entry &&
+            !interactive &&
+            !entry.client.snapshot().error &&
+            Date.now() < entry.nextIdleSyncAt
+          )
+            continue;
           if (!entry) {
             const client = new SharedQueueClient(
               machine.id,
@@ -187,6 +271,7 @@ export function useSharedLocalQueues(
               client,
               observed: fields(session),
               claiming: false,
+              nextIdleSyncAt: 0,
               apply: () => {},
               publish: () => true,
               read: () =>
@@ -237,8 +322,10 @@ export function useSharedLocalQueues(
             notifyQueues();
             owned.add(session.id);
             await client.initialize(current.observed);
+            current.nextIdleSyncAt = Date.now() + 10_000;
             current.apply();
           } else if (!entry.claiming) {
+            entry.nextIdleSyncAt = Date.now() + 10_000;
             if (!entry.client.snapshot().loaded) {
               await entry.client.initialize(entry.observed);
               entry.apply();

@@ -125,14 +125,20 @@ it("filters the cached Inbox locally and reuses fresh data when reopened", async
   expect(container.querySelector('button[title="Beta issue"]')).toBeNull();
 });
 
-it("reports a failed mark-all write in Inbox and clears the error after retry", async () => {
+it("keeps cached rows visible with a provider failure and clears the warning after retry", async () => {
+  saveInboxConnections({ github: true, gitlab: false, linear: false, azuredevops: false });
+  saveInboxSource("github");
+  const actual =
+    await vi.importActual<typeof import("../model/githubTasks")>("../model/githubTasks");
+  listInboxItems.mockImplementation(actual.listInboxItems);
+  let failed = false;
   const item: InboxItem = {
     provider: "github",
     kind: "issue",
     repo: "acme/app",
-    number: 42,
-    title: "Unread issue",
-    url: "https://github.com/acme/app/issues/42",
+    number: 1,
+    title: "Retained issue",
+    url: "https://github.com/acme/app/issues/1",
     state: "open",
     updatedAt: "2030-01-15T11:59:00Z",
     labels: [],
@@ -140,16 +146,16 @@ it("reports a failed mark-all write in Inbox and clears the error after retry", 
     draft: false,
     projectPath: "/tmp/app",
   };
-  const entry = { key: inboxItemKey(item), updatedAt: item.updatedAt };
-  seedInboxSeenIfNeeded([{ ...entry, updatedAt: "2030-01-14T12:00:00Z" }]);
-  saveInboxConnections({
-    github: true,
-    gitlab: false,
-    linear: false,
-    azuredevops: false,
+  vi.mocked(invoke).mockImplementation(async (command, args) => {
+    if (command === "git_github_status") return { connected: true };
+    if (command === "git_github_repositories") return ["acme/app"];
+    if (command === "git_github_work_items") {
+      if (failed) throw new Error("GitHub unavailable");
+      return (args as { kind: string }).kind === "issue" ? [item] : [];
+    }
+    if (String(command).endsWith("_status")) return { connected: false };
+    throw new Error("No native bridge");
   });
-  saveInboxSource("github");
-  listInboxItems.mockResolvedValue({ items: [item], errors: {} });
   await act(async () =>
     root.render(
       createElement(InboxView, {
@@ -162,30 +168,92 @@ it("reports a failed mark-all write in Inbox and clears the error after retry", 
       }),
     ),
   );
-  const markAll = container.querySelector<HTMLButtonElement>(
-    'button[aria-label="Mark all as read"]',
-  )!;
-  const write = vi.spyOn(localStorage, "setItem").mockImplementation(() => {
-    throw new Error("Storage full");
-  });
-  act(() => markAll.click());
-  expect(container.querySelector('[role="alert"]')?.textContent).toContain(
-    "Could not save read status",
-  );
-  expect(isInboxEntryUnseen(entry)).toBe(true);
-  expect(markAll.disabled).toBe(false);
-  write.mockRestore();
-  act(() => markAll.click());
-  expect(isInboxEntryUnseen(entry)).toBe(false);
-  expect(markAll.disabled).toBe(true);
-  // The detail panel can independently report an unavailable native bridge.
-  // Retrying read status clears its own error without suppressing other errors.
+  const refresh = () => container.querySelector<HTMLButtonElement>('button[aria-label="Refresh"]')!;
+  expect(container.textContent).toContain("Retained issue");
+  failed = true;
+  await act(async () => refresh().click());
+  expect(container.textContent).toContain("Retained issue");
+  expect(container.querySelector('[role="alert"]')?.textContent).toContain("GitHub unavailable");
+  failed = false;
+  await act(async () => refresh().click());
   expect(
-    Array.from(container.querySelectorAll('[role="alert"]')).some((alert) =>
-      alert.textContent?.includes("Could not save read status"),
+    [...container.querySelectorAll('[role="alert"]')].some((alert) =>
+      alert.textContent?.includes("GitHub unavailable"),
     ),
   ).toBe(false);
+  expect(container.textContent).toContain("Retained issue");
 });
+
+it.each(["single", "all"])(
+  "reports a failed %s read write in Inbox and clears the error after retry",
+  async (mode) => {
+    const item: InboxItem = {
+      provider: "github",
+      kind: "issue",
+      repo: "acme/app",
+      number: 42,
+      title: "Unread issue",
+      url: "https://github.com/acme/app/issues/42",
+      state: "open",
+      updatedAt: "2030-01-15T11:59:00Z",
+      labels: [],
+      assignees: [],
+      draft: false,
+      projectPath: "/tmp/app",
+    };
+    const entry = { key: inboxItemKey(item), updatedAt: item.updatedAt };
+    seedInboxSeenIfNeeded([{ ...entry, updatedAt: "2030-01-14T12:00:00Z" }]);
+    saveInboxConnections({
+      github: true,
+      gitlab: false,
+      linear: false,
+      azuredevops: false,
+    });
+    saveInboxSource("github");
+    listInboxItems.mockResolvedValue({ items: [item], errors: {} });
+    await act(async () =>
+      root.render(
+        createElement(InboxView, {
+          cwd: "/tmp/app",
+          recents: [],
+          onAsk: async () => "",
+          onAskRestart: async () => "",
+          onAskMount: () => {},
+          onOpenIntegrations: () => {},
+        }),
+      ),
+    );
+    const markAll = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="Mark all as read"]',
+    )!;
+    const write = vi.spyOn(localStorage, "setItem").mockImplementation(() => {
+      throw new Error("Storage full");
+    });
+    const unread = container.querySelector<HTMLButtonElement>('button[title="Unread issue"]')!;
+    act(() => (mode === "all" ? markAll : unread).click());
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain(
+      "Could not save read status",
+    );
+    expect(isInboxEntryUnseen(entry)).toBe(true);
+    expect(markAll.disabled).toBe(false);
+    write.mockRestore();
+    act(() =>
+      (mode === "all"
+        ? markAll
+        : container.querySelector<HTMLButtonElement>("[data-inbox-read-retry]")!
+      ).click(),
+    );
+    expect(isInboxEntryUnseen(entry)).toBe(false);
+    expect(markAll.disabled).toBe(true);
+    // The detail panel can independently report an unavailable native bridge.
+    // Retrying read status clears its own error without suppressing other errors.
+    expect(
+      Array.from(container.querySelectorAll('[role="alert"]')).some((alert) =>
+        alert.textContent?.includes("Could not save read status"),
+      ),
+    ).toBe(false);
+  },
+);
 
 it.each([
   ["github", "issue", "issues", "https://github.com/acme/app/issues/42", "local:/tmp/app"],

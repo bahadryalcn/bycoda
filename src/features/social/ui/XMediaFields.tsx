@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Button } from "../../../shared/ui/Button";
 import { TextField } from "../../../shared/ui/TextField";
+import { t } from "../../../shared/i18n";
 import type { SocialMedia } from "../model/social";
 import type { SocialClient } from "../model/socialClient";
 
@@ -77,6 +78,25 @@ export function XMediaFields({
             {value.some((item) => item.kind === "video") ? "1 video" : `${value.length} görsel`}{" "}
             host'a yüklendi.
           </p>
+          <div className="grid gap-2">
+            {value.map((item, index) =>
+              item.kind === "image" ? (
+                <TextField
+                  key={index}
+                  label={`${t("Image alt text")} ${index + 1}`}
+                  value={item.alt ?? ""}
+                  maxLength={1000}
+                  onChange={(event) =>
+                    onChange(
+                      value.map((media, position) =>
+                        position === index ? { ...media, alt: event.target.value } : media,
+                      ),
+                    )
+                  }
+                />
+              ) : null,
+            )}
+          </div>
           <Button type="button" onClick={() => onChange([])}>
             Ekleri kaldır
           </Button>

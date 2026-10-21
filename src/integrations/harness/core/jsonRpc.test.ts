@@ -9,6 +9,7 @@ vi.mock("./child", () => ({
 }));
 
 import { JsonRpcClient } from "./jsonRpc";
+import { DeliveryUnknownError } from "../../../shared/lib/deliveryUnknown";
 
 describe("JsonRpcClient", () => {
   beforeEach(() => {
@@ -108,6 +109,56 @@ describe("JsonRpcClient", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it("retains a timed-out Steer for late acknowledgement without replaying it", async () => {
+    vi.useFakeTimers();
+    const writes: { id: number }[] = [];
+    transport.onWrite = async (_session, line) => {
+      writes.push(JSON.parse(line));
+    };
+    const client = new JsonRpcClient("late-steer", {}, { defaultRequestTimeoutMs: 100 });
+    try {
+      const outcome = client.request("turn/steer", {}).catch((error: unknown) => error);
+      await vi.advanceTimersByTimeAsync(101);
+      const error = (await outcome) as DeliveryUnknownError;
+      expect(error).toBeInstanceOf(DeliveryUnknownError);
+      client.pushLine(JSON.stringify({ id: writes[0].id, result: { turnId: "active" } }));
+      await expect(error.settlement).resolves.toBe("accepted");
+      expect(writes).toHaveLength(1);
+    } finally {
+      client.close();
+      vi.useRealTimers();
+    }
+  });
+
+  it("keeps a written Steer unknown if its process exits before acknowledgement", async () => {
+    vi.useFakeTimers();
+    const client = new JsonRpcClient("closed-steer", {}, { defaultRequestTimeoutMs: 100 });
+    try {
+      const outcome = client.request("turn/steer", {}).catch((error: unknown) => error);
+      await vi.advanceTimersByTimeAsync(101);
+      const error = (await outcome) as DeliveryUnknownError;
+      client.close();
+      await expect(error.settlement).resolves.toBe("unknown");
+    } finally {
+      client.close();
+      vi.useRealTimers();
+    }
+  });
+
+  it("does not classify process exit before the response deadline as definite non-delivery", async () => {
+    const client = new JsonRpcClient(
+      "exit-before-deadline",
+      {},
+      { defaultRequestTimeoutMs: 60_000 },
+    );
+    const outcome = client.request("turn/steer", {}).catch((error: unknown) => error);
+    await Promise.resolve();
+    client.close(new Error("Harness process exited"));
+    const error = (await outcome) as DeliveryUnknownError;
+    expect(error).toBeInstanceOf(DeliveryUnknownError);
+    await expect(error.settlement).resolves.toBe("unknown");
   });
 
   it("identifies a blocked server reply without including its content", async () => {

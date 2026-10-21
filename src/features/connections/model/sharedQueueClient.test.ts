@@ -4,7 +4,11 @@ import { invoke } from "@tauri-apps/api/core";
 import { SharedQueueClient, type QueueTransport } from "./sharedQueueClient";
 import { mergeQueueChange, type SharedQueue } from "./sharedQueue";
 import { recordRemoteCapabilities } from "./connections";
-import { ATTACHMENT_OWNERSHIP_CAPABILITY, attachmentOwnershipScope } from "./attachmentOwnership";
+import {
+  ATTACHMENT_OWNERSHIP_CAPABILITY,
+  attachmentOwnerId,
+  attachmentOwnershipScope,
+} from "./attachmentOwnership";
 vi.mock("@tauri-apps/api/core", async (original) => ({
   ...(await original<typeof import("@tauri-apps/api/core")>()),
   invoke: vi.fn(async (command: string) =>
@@ -72,6 +76,170 @@ function fixture() {
   };
 }
 
+it.each(["reply", "error"])(
+  "lets interactive retry overtake a stalled background read and ignores its late stale %s",
+  async (settlement) => {
+    const clientId = "desktop:interactive";
+    let queue: SharedQueue = {
+      messages: [message("a")],
+      revision: 1,
+      consumer: clientId,
+      status: "paused",
+    };
+    let blockNextRead = false;
+    let release!: (value: SharedQueue) => void;
+    let fail!: (error: Error) => void;
+    const calls: string[] = [];
+    const request: QueueTransport = async (method, params) => {
+      calls.push(method);
+      if (method.endsWith(".get") && blockNextRead) {
+        blockNextRead = false;
+        return new Promise((resolve, reject) => {
+          release = resolve as (value: SharedQueue) => void;
+          fail = reject;
+        });
+      }
+      if (method.endsWith(".claim"))
+        queue = {
+          ...queue,
+          revision: queue.revision + 1,
+          claim: { id: String(params.id), clientId, token: "interactive-token" },
+        };
+      return structuredClone(queue) as never;
+    };
+    const client = new SharedQueueClient("machine", "host", "interactive-chat", clientId, request);
+    await client.initialize();
+    const stale = structuredClone(queue);
+    blockNextRead = true;
+    const background = client.sync();
+    for (let i = 0; i < 10; i++) await Promise.resolve();
+    expect(release).toBeTypeOf("function");
+    let retried = false;
+    const interactive = client.retry().then(() => {
+      retried = true;
+    });
+    for (let i = 0; i < 30; i++) await Promise.resolve();
+    expect(retried).toBe(true);
+    await interactive;
+    const token = await client.claim("a", true);
+    expect(token).toBe("interactive-token");
+    if (settlement === "reply") release(stale);
+    else fail(new Error("stale read failed"));
+    await background;
+    expect(client.snapshot().error).toBeUndefined();
+    expect(client.snapshot().queue.claim?.token).toBe(token);
+    expect(client.snapshot().queue.revision).toBe(queue.revision);
+    expect(calls.filter((method) => method.endsWith(".claim"))).toHaveLength(1);
+  },
+);
+
+it("does not overtake acknowledgement recovery or replay an unknown send", async () => {
+  const clientId = "desktop:unknown";
+  let queue: SharedQueue = { messages: [message("a")], revision: 1, consumer: clientId };
+  let blockRead = false;
+  let release!: (value: SharedQueue) => void;
+  const calls: string[] = [];
+  const request: QueueTransport = async (method, params) => {
+    calls.push(method);
+    if (method.endsWith(".get") && blockRead) {
+      blockRead = false;
+      return new Promise((resolve) => {
+        release = resolve as (value: SharedQueue) => void;
+      });
+    }
+    if (method.endsWith(".claim"))
+      queue = {
+        ...queue,
+        revision: 2,
+        claim: { id: String(params.id), clientId, token: "unknown-token" },
+      };
+    return structuredClone(queue) as never;
+  };
+  const client = new SharedQueueClient("machine", "host", "unknown-chat", clientId, request);
+  await client.initialize();
+  await client.claim("a", true);
+  blockRead = true;
+  const recovery = client.sync();
+  const rejectedRecovery = expect(recovery).rejects.toThrow("unknown");
+  for (let i = 0; i < 20; i++) await Promise.resolve();
+  const before = calls.length;
+  let retried = false;
+  const retry = client.retry().finally(() => {
+    retried = true;
+  });
+  const rejectedRetry = expect(retry).rejects.toThrow("unknown");
+  for (let i = 0; i < 20; i++) await Promise.resolve();
+  expect(retried).toBe(false);
+  expect(calls).toHaveLength(before);
+  release(structuredClone(queue));
+  await rejectedRecovery;
+  await rejectedRetry;
+  expect(client.snapshot().recovery).toBe("a");
+  expect(client.canDrain()).toBe(false);
+  expect(calls.filter((method) => method.endsWith(".claim"))).toHaveLength(1);
+  expect(calls.some((method) => method.endsWith(".finish"))).toBe(false);
+});
+
+it("reconciles a superseded attachment export without adopting its stale cache", async () => {
+  const environment = "superseded-attachment-host";
+  recordRemoteCapabilities(environment, [ATTACHMENT_OWNERSHIP_CAPABILITY]);
+  const queue: SharedQueue = { messages: [message("a")], revision: 1 };
+  let blockRead = false;
+  let release!: (value: SharedQueue) => void;
+  const calls: string[] = [];
+  const request: QueueTransport = async (method) => {
+    calls.push(method);
+    if (method === "attachments.claims") return { claims: [] } as never;
+    if (method.startsWith("attachments.")) return undefined as never;
+    if (blockRead) {
+      blockRead = false;
+      return new Promise((resolve) => {
+        release = resolve as (value: SharedQueue) => void;
+      });
+    }
+    return structuredClone(queue) as never;
+  };
+  const client = new SharedQueueClient(
+    "machine",
+    environment,
+    "attachment-chat",
+    "desktop:attachments",
+    request,
+  );
+  await client.initialize();
+  await vi.waitFor(() => expect(calls).toContain("attachments.claims"));
+  blockRead = true;
+  const background = client.sync();
+  for (let i = 0; i < 20; i++) await Promise.resolve();
+  await client.retry();
+  const previousInventories = calls.filter((method) => method === "attachments.claims").length;
+  release({
+    messages: [
+      {
+        ...message("stale"),
+        attachments: [
+          { id: "stale-file", name: "old.txt", kind: "file", mimeType: "text/plain", size: 1 },
+        ],
+      },
+    ],
+    revision: 0,
+  });
+  await background;
+  await vi.waitFor(() =>
+    expect(calls.filter((method) => method === "attachments.claims").length).toBeGreaterThan(
+      previousInventories,
+    ),
+  );
+  const scope = attachmentOwnershipScope(
+    "machine",
+    environment,
+    attachmentOwnerId("desktop-queue", "attachment-chat"),
+    request,
+  );
+  expect(scope.claimId("stale-file")).toBeUndefined();
+  expect(client.snapshot().queue.messages.map((row) => row.id)).toEqual(["a"]);
+});
+
 it("shows queued messages on another computer and shares edits, order and deletion", async () => {
   const f = fixture();
   const a = f.client("remote:a");
@@ -94,6 +262,55 @@ it("shows queued messages on another computer and shares edits, order and deleti
   await b.sync();
   await a.sync();
   expect(a.snapshot().queue.messages).toEqual([message("a", "edited on pc2")]);
+});
+
+it("keeps interactive retry behind an in-flight queue mutation", async () => {
+  let queue: SharedQueue = { messages: [], revision: 0 };
+  let release!: () => void;
+  let changes = 0;
+  let reads = 0;
+  const request: QueueTransport = async (method, params) => {
+    if (method.endsWith(".change")) {
+      changes++;
+      await new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      queue = {
+        ...mergeQueueChange(queue, {
+          before: params.before as SharedQueue,
+          after: params.after as SharedQueue,
+          consumer: String(params.clientId),
+        }),
+        revision: queue.revision + 1,
+      };
+    } else if (method.endsWith(".get")) reads++;
+    return structuredClone(queue) as never;
+  };
+  const client = new SharedQueueClient(
+    "machine",
+    "host",
+    "mutation-chat",
+    "desktop:mutation",
+    request,
+  );
+  await client.initialize();
+  client.update((value) => enqueueRemoteMessage(value, message("a")));
+  for (let i = 0; i < 20; i++) await Promise.resolve();
+  expect(release).toBeTypeOf("function");
+  const previousReads = reads;
+  let retried = false;
+  const interactive = client.retry().then(() => {
+    retried = true;
+  });
+  for (let i = 0; i < 20; i++) await Promise.resolve();
+  expect(retried).toBe(false);
+  expect(reads).toBe(previousReads);
+  expect(changes).toBe(1);
+  release();
+  await interactive;
+  expect(client.snapshot().queue.messages).toEqual([message("a")]);
+  expect(changes).toBe(1);
+  expect(client.canDrain()).toBe(true);
 });
 
 it("retains offline changes across a remount and applies them after reconnect", async () => {

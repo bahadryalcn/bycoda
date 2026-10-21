@@ -5,7 +5,7 @@ import {
   revokeAttachment,
 } from "../sessions/model/attachments";
 import type { Attachment } from "../sessions/model/session";
-import { upsertNote, type Note, type NoteUpsert } from "./notes";
+import { noteTitleError, upsertNote, type Note, type NoteUpsert } from "./notes";
 
 export const NOTE_IMAGE_PREFIX = "/note-assets/";
 
@@ -23,18 +23,37 @@ export type MarkdownInsertion = {
 export async function createRecoveredNote(
   input: Omit<NoteUpsert, "id" | "expectedUpdatedAt">,
 ): Promise<Note> {
+  const titleError = noteTitleError(input.title);
+  if (titleError) throw new Error(titleError);
   const id = crypto.randomUUID();
   const assetPattern = /(?<![\w:/])\/note-assets\/[A-Za-z0-9_-]{1,200}\/[A-Za-z0-9_.-]+/g;
   const assets = new Set(input.body.match(assetPattern) ?? []);
   const replacements = new Map<string, string>();
-  for (const asset of assets) {
-    const sourcePath = await invoke<string>("notes_image_path", { asset });
-    const saved = await invoke<NoteImageAsset>("notes_save_image", { noteId: id, sourcePath });
-    replacements.set(asset, saved.markdownPath);
+  let copyingStarted = false;
+  try {
+    for (const asset of assets) {
+      const sourcePath = await invoke<string>("notes_image_path", { asset });
+      copyingStarted = true;
+      const saved = await invoke<NoteImageAsset>("notes_save_image", { noteId: id, sourcePath });
+      replacements.set(asset, saved.markdownPath);
+    }
+    // Never create the replacement until every referenced note image is copied.
+    const body = input.body.replace(assetPattern, (asset) => replacements.get(asset)!);
+    return await upsertNote({ ...input, id, body, expectedUpdatedAt: 0 });
+  } catch (error) {
+    if (copyingStarted) {
+      try {
+        // Native code checks that no note row exists: an ambiguous successful
+        // upsert must retain its copied assets even if its response was lost.
+        await invoke("notes_discard_recovery_assets", { id });
+      } catch (cleanupError) {
+        throw new Error(
+          `${String(error)}\n\nCould not remove unused recovery images: ${String(cleanupError)}`,
+        );
+      }
+    }
+    throw error;
   }
-  // Never create the replacement until every referenced note image is copied.
-  const body = input.body.replace(assetPattern, (asset) => replacements.get(asset)!);
-  return upsertNote({ ...input, id, body, expectedUpdatedAt: 0 });
 }
 
 export async function saveNoteImagesFromFiles(

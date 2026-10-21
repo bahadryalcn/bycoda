@@ -28,6 +28,63 @@ vi.mock("../../features/projects/model/projectData", () => ({
   projectSessionCount: vi.fn(async () => 0),
 }));
 
+it("collapses Groups and Projects independently and restores their saved state", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  localStorage.clear();
+  saveProjectGroups([{ id: "team", name: "Team", collapsed: false }]);
+  const container = document.createElement("div");
+  document.body.append(container);
+  let root = createRoot(container);
+  const onOpenProject = vi.fn();
+  const render = async () =>
+    act(async () =>
+      root.render(
+        createElement(ProjectRail, {
+          cwd: "/a",
+          recents: [{ path: "/a", openedAt: 1 }],
+          onSelectProject: vi.fn(),
+          onOpenProject,
+        }),
+      ),
+    );
+  const toggle = (label: string) =>
+    [...container.querySelectorAll<HTMLButtonElement>("button[aria-expanded]")].find(
+      (button) => button.textContent === label,
+    )!;
+  const body = (label: string) => toggle(label).parentElement!.nextElementSibling as HTMLElement;
+  try {
+    await render();
+    expect(toggle("Groups").getAttribute("aria-expanded")).toBe("true");
+    expect(toggle("Projects").getAttribute("aria-expanded")).toBe("true");
+    act(() => toggle("Groups").click());
+    expect(body("Groups").hidden).toBe(true);
+    expect(body("Projects").hidden).toBe(false);
+    act(() => toggle("Projects").click());
+    expect(body("Projects").hidden).toBe(true);
+    expect(toggle("Projects").getAttribute("aria-expanded")).toBe("false");
+    // The add action stays available and does not reopen the section.
+    const add = container.querySelector<HTMLButtonElement>('button[aria-label="Open project"]')!;
+    act(() => add.click());
+    expect(add.getAttribute("aria-expanded")).toBe("true");
+    expect(body("Projects").hidden).toBe(true);
+    act(() => add.click());
+    act(() => root.unmount());
+    root = createRoot(container);
+    await render();
+    expect(body("Groups").hidden).toBe(true);
+    expect(body("Projects").hidden).toBe(true);
+    act(() => toggle("Groups").click());
+    expect(body("Groups").hidden).toBe(false);
+    expect(body("Projects").hidden).toBe(true);
+    act(() => toggle("Projects").click());
+    expect(body("Projects").hidden).toBe(false);
+  } finally {
+    act(() => root.unmount());
+    container.remove();
+    vi.unstubAllGlobals();
+  }
+});
+
 it.each([
   { modifier: "shiftKey", start: "/a", target: "/c", selected: ["/a", "/b", "/c"] },
   { modifier: "shiftKey", start: "/c", target: "/a", selected: ["/a", "/b", "/c"] },

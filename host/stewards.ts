@@ -1,4 +1,5 @@
 import { runGitText } from "../src/shared/lib/processExecution.node";
+import { assertExpectedConfiguration } from "./configurationConflict";
 import { randomUUID } from "node:crypto";
 import { realpathSync, statSync } from "node:fs";
 import { nextAutomationRunAt } from "../src/features/automations/model/automationSchedule";
@@ -169,6 +170,7 @@ export class HostStewards {
       throw new Error("This project already has a steward.");
     const now = this.now();
     const previous = this.find(input.id);
+    assertExpectedConfiguration(raw, previous, parseHostSteward);
     if (
       previous &&
       previous.projectId !== input.projectId &&

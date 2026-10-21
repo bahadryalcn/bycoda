@@ -4,10 +4,16 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { ServersView } from "./ServersView";
 import { resetRetainedState } from "../../../shared/hooks/useRetainedState";
-import { requestMachineEdit, requestMachineReconnect, remoteRequest } from "../model/connections";
+import {
+  disconnectMachine,
+  requestMachineEdit,
+  requestMachineReconnect,
+  remoteRequest,
+} from "../model/connections";
 import { requestMachineAdd } from "../model/machineAdd";
 import type { RemoteMachine } from "../model/protocol";
 import {
+  removeSshConnection,
   saveSshConnection,
   updateServerMetadata,
   type ServerRecord,
@@ -15,6 +21,7 @@ import {
 import { applyRemoteConnection, resetRemoteHealth } from "../model/remoteHealth";
 import { recordFeatureHealth } from "../model/remoteLifecycle";
 import { reconnectRemoteMachine } from "../model/remoteReconnect";
+import { resetServersLayoutForTests } from "./serversLayout";
 
 vi.mock("./ServersConnectionTools", async () => {
   const { ServerOrganization } = await import("./ServerOrganization");
@@ -44,6 +51,7 @@ vi.mock("../model/connections", () => ({
   useRemoteMachineOnline: () => undefined,
   requestMachineEdit: vi.fn(),
   requestMachineReconnect: vi.fn(),
+  disconnectMachine: vi.fn(),
   knownRemoteMachine: (environmentId: string) =>
     fixture.machines.find((machine) => machine.environmentId === environmentId),
   remoteMachineFor: async (environmentId: string) =>
@@ -66,6 +74,7 @@ vi.mock("../model/serverInventory", () => ({
     ],
   }),
   saveSshConnection: vi.fn(),
+  removeSshConnection: vi.fn(),
   updateServerMetadata: vi.fn(),
 }));
 vi.mock("../model/machineAdd", () => ({ requestMachineAdd: vi.fn() }));
@@ -88,6 +97,7 @@ beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   vi.clearAllMocks();
   resetRetainedState();
+  resetServersLayoutForTests();
   resetRemoteHealth();
   vi.mocked(remoteRequest).mockResolvedValue({});
   terminalActions.open = undefined;
@@ -123,7 +133,9 @@ const search = async (value: string) => {
 it("opens Termius migration from the server actions menu", async () => {
   await render();
   await click("More actions");
-  const action = document.querySelector<HTMLButtonElement>('[role="menuitem"][aria-label="Import from Termius"]');
+  const action = document.querySelector<HTMLButtonElement>(
+    '[role="menuitem"][aria-label="Import from Termius"]',
+  );
   expect(action).toBeTruthy();
   await act(async () => action!.click());
   expect(document.querySelector('[role="dialog"]')?.textContent).toContain("Scan this computer");
@@ -268,7 +280,9 @@ it("restores search, selection and scroll after navigating away and returning", 
   await act(async () => root.render(null));
   await render();
   expect(container.querySelector("input")?.value).toBe("Home");
-  expect(container.querySelector('[aria-pressed="true"]')?.textContent).toContain("Home Mac");
+  expect(container.querySelector('[data-server-row][aria-pressed="true"]')?.textContent).toContain(
+    "Home Mac",
+  );
   expect(container.querySelector(".overflow-y-auto")?.scrollTop).toBe(90);
 });
 
@@ -313,7 +327,7 @@ it("updates the machine's status from shared host health without losing inventor
     disclosure.open = true;
   });
   expect(disclosure.open).toBe(true);
-  expect(container.querySelector('[aria-pressed="true"]')).toBeTruthy();
+  expect(container.querySelector('[data-server-row][aria-pressed="true"]')).toBeTruthy();
 });
 
 const sshServer: ServerRecord = {
@@ -419,7 +433,9 @@ it("filters favorites without clearing hidden selection and resets inside the po
   )!;
   await act(async () => reset.click());
   expect(container.querySelectorAll("[data-server-row]")).toHaveLength(2);
-  expect(container.querySelector('[aria-pressed="true"]')?.textContent).toContain("Home Mac");
+  expect(container.querySelector('[data-server-row][aria-pressed="true"]')?.textContent).toContain(
+    "Home Mac",
+  );
 });
 
 it("searches and displays the effective SSH destination while preserving the editable base", async () => {
@@ -442,4 +458,220 @@ it("searches and displays the effective SSH destination while preserving the edi
   expect(details.textContent).toContain("2200");
   expect(server.sshEndpoint).toEqual({ host: "target.invalid", user: "local-user", port: 22 });
   expect(terminalActions.open).not.toHaveBeenCalled();
+});
+
+const rowFor = (id: string) =>
+  container.querySelector<HTMLButtonElement>(`[data-server-row="${id}"]`)!;
+const menuItem = (label: string) =>
+  [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find((item) =>
+    item.textContent?.includes(label),
+  );
+const openRowMenu = async (id: string) => {
+  await act(async () =>
+    rowFor(id).dispatchEvent(
+      new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: 40, clientY: 60 }),
+    ),
+  );
+  expect(menuItem("Show details")).toBeTruthy();
+};
+/** ConfirmMorph ignores an answer within ~280 ms of the question being asked. */
+const settleQuestion = () => act(async () => new Promise((resolve) => setTimeout(resolve, 320)));
+const clickInDocument = async (label: string, scope: ParentNode = document) => {
+  const button = [...scope.querySelectorAll<HTMLButtonElement>("button")].find(
+    (entry) => entry.textContent?.includes(label) || entry.getAttribute("aria-label") === label,
+  );
+  expect(button, label).toBeTruthy();
+  await act(async () => button!.click());
+};
+
+it("opens the server context menu on right click with the expected actions", async () => {
+  terminalActions.open = vi.fn();
+  fixture.extraServers = [sshServer];
+  await render();
+  await openRowMenu("ssh-stable");
+  for (const label of [
+    "Connect",
+    "Show details",
+    "Edit SSH server",
+    "Unfavorite",
+    "Color…",
+    "Copy address",
+    "Delete",
+  ]) {
+    expect(menuItem(label), label).toBeTruthy();
+  }
+  await act(async () => menuItem("Show details")!.click());
+  expect(container.querySelector('[aria-label="Server details"]')?.textContent).toContain(
+    "Personal SSH",
+  );
+  expect(document.querySelector('[role="menu"], [role="menuitem"]')).toBeNull();
+});
+
+it("offers Connect only for servers that can open a terminal and reaches the menu from the keyboard", async () => {
+  terminalActions.open = undefined;
+  await render();
+  await act(async () =>
+    rowFor("mac").dispatchEvent(
+      new KeyboardEvent("keydown", { key: "F10", shiftKey: true, bubbles: true, cancelable: true }),
+    ),
+  );
+  expect(menuItem("Show details")).toBeTruthy();
+  expect(menuItem("Connect")).toBeUndefined();
+  expect(menuItem("Edit machine")).toBeTruthy();
+});
+
+it("opens the same menu from the details overflow and edits a host machine through the existing flow", async () => {
+  await render();
+  await click("Home Mac");
+  await click("Server actions");
+  expect(menuItem("Edit machine")).toBeTruthy();
+  await act(async () => menuItem("Edit machine")!.click());
+  expect(requestMachineEdit).toHaveBeenCalledWith("mac");
+});
+
+it("copies the address and toggles the favorite flag from the context menu", async () => {
+  const writeText = vi.fn().mockResolvedValue(undefined);
+  vi.stubGlobal("navigator", { ...navigator, clipboard: { writeText } });
+  fixture.extraServers = [sshServer];
+  await render();
+  await openRowMenu("ssh-stable");
+  await act(async () => menuItem("Copy address")!.click());
+  expect(writeText).toHaveBeenCalledWith("alice@remote.example");
+  await openRowMenu("ssh-stable");
+  await act(async () => menuItem("Unfavorite")!.click());
+  expect(updateServerMetadata).toHaveBeenCalledWith("ssh-stable", { favorite: false });
+  vi.unstubAllGlobals();
+});
+
+it("deletes an SSH server only after confirmation and clears the selection it held", async () => {
+  fixture.extraServers = [sshServer];
+  vi.mocked(removeSshConnection).mockResolvedValue(undefined);
+  await render();
+  await click("Personal SSH");
+  await openRowMenu("ssh-stable");
+  await act(async () => menuItem("Delete")!.click());
+  const question = document.querySelector<HTMLElement>(
+    '[role="dialog"][aria-label="Delete Personal SSH?"]',
+  )!;
+  expect(question).toBeTruthy();
+  expect(removeSshConnection).not.toHaveBeenCalled();
+  await clickInDocument("Delete", question);
+  await settleQuestion();
+  expect(removeSshConnection).not.toHaveBeenCalled();
+  await clickInDocument("Confirm delete", question);
+  expect(removeSshConnection).toHaveBeenCalledExactlyOnceWith("ssh-stable");
+  expect(container.querySelector('[aria-label="Server details"]')).toBeNull();
+});
+
+it("reports a failed delete inline and keeps the server selected", async () => {
+  fixture.extraServers = [sshServer];
+  vi.mocked(removeSshConnection).mockRejectedValueOnce(new Error("database locked"));
+  await render();
+  await click("Personal SSH");
+  await openRowMenu("ssh-stable");
+  await act(async () => menuItem("Delete")!.click());
+  const question = document.querySelector<HTMLElement>(
+    '[role="dialog"][aria-label="Delete Personal SSH?"]',
+  )!;
+  await clickInDocument("Delete", question);
+  await settleQuestion();
+  await clickInDocument("Confirm delete", question);
+  expect(container.querySelector('[role="alert"]')?.textContent).toContain("database locked");
+  expect(container.querySelector('[aria-label="Server details"]')?.textContent).toContain(
+    "Personal SSH",
+  );
+});
+
+it("removes a host machine from this desktop through the existing disconnect path", async () => {
+  await render();
+  await openRowMenu("mac");
+  await act(async () => menuItem("Delete")!.click());
+  const question = document.querySelector<HTMLElement>(
+    '[role="dialog"][aria-label="Delete Home Mac?"]',
+  )!;
+  expect(question.textContent).toContain("this desktop only");
+  await clickInDocument("Delete", question);
+  await settleQuestion();
+  await clickInDocument("Confirm delete", question);
+  expect(disconnectMachine).toHaveBeenCalledExactlyOnceWith("mac");
+  expect(removeSshConnection).not.toHaveBeenCalled();
+});
+
+it("sets and clears a server color through palette swatches", async () => {
+  fixture.extraServers = [{ ...sshServer, metadata: { ...sshServer.metadata, colorIndex: 2 } }];
+  await render();
+  await openRowMenu("ssh-stable");
+  await act(async () => menuItem("Color…")!.click());
+  const popover = document.querySelector<HTMLElement>(
+    '[role="dialog"][aria-label="Server color"]',
+  )!;
+  expect(popover).toBeTruthy();
+  await act(async () =>
+    popover.querySelector<HTMLButtonElement>('[aria-label="Color 4"]')!.click(),
+  );
+  expect(updateServerMetadata).toHaveBeenLastCalledWith("ssh-stable", {
+    colorIndex: 3,
+    customColor: null,
+  });
+  await clickInDocument("No color", popover);
+  expect(updateServerMetadata).toHaveBeenLastCalledWith("ssh-stable", {
+    colorIndex: null,
+    customColor: null,
+  });
+});
+
+it("saves a custom color once after edits settle and flushes on dismiss", async () => {
+  fixture.extraServers = [sshServer];
+  await render();
+  await openRowMenu("ssh-stable");
+  await act(async () => menuItem("Color…")!.click());
+  const popover = document.querySelector<HTMLElement>(
+    '[role="dialog"][aria-label="Server color"]',
+  )!;
+  await act(async () =>
+    popover.querySelector<HTMLButtonElement>('[aria-label="Custom color"]')!.click(),
+  );
+  const hex = document.querySelector<HTMLInputElement>('input[aria-label="Hex color"]')!;
+  const type = (value: string) => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(hex, value);
+    hex.dispatchEvent(new Event("input", { bubbles: true }));
+  };
+  vi.useFakeTimers();
+  try {
+    updateServerMetadata.mockClear();
+    act(() => type("#112233"));
+    act(() => type("#445566"));
+    expect(updateServerMetadata).not.toHaveBeenCalled();
+    act(() => vi.advanceTimersByTime(250));
+    expect(updateServerMetadata).toHaveBeenCalledExactlyOnceWith("ssh-stable", {
+      customColor: "#445566",
+    });
+    act(() => type("#778899"));
+    act(() =>
+      document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })),
+    );
+    act(() => vi.advanceTimersByTime(0));
+  } finally {
+    vi.useRealTimers();
+  }
+  expect(updateServerMetadata).toHaveBeenLastCalledWith("ssh-stable", { customColor: "#778899" });
+});
+
+it("switches between list and card layouts and remembers the choice", async () => {
+  await render();
+  const layout = () =>
+    container.querySelector("[data-servers-layout]")?.getAttribute("data-servers-layout");
+  expect(layout()).toBe("list");
+  await click("Card view");
+  expect(layout()).toBe("cards");
+  expect(container.querySelector('[aria-label="Card view"]')?.getAttribute("aria-pressed")).toBe(
+    "true",
+  );
+  expect(localStorage.getItem("bycoda.servers.layout")).toBe("cards");
+  await act(async () => root.render(null));
+  await render();
+  expect(layout()).toBe("cards");
+  await click("List view");
+  expect(layout()).toBe("list");
+  expect(rowFor("mac").textContent).toContain("Home Mac");
 });

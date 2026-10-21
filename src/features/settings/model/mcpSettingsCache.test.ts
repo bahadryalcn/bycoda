@@ -4,6 +4,7 @@ import {
   clearMcpSettingsCache,
   getCachedMcpSettings,
   loadMcpSettings,
+  MCP_LOCAL_ONLY_ERROR,
   subscribeMcpSettings,
 } from "./mcpSettingsCache";
 
@@ -25,6 +26,12 @@ beforeEach(() => {
   invoke.mockReset();
 });
 afterEach(clearMcpSettingsCache);
+
+it("never sends remote project paths to desktop discovery or health commands", async () => {
+  const snapshot = await loadMcpSettings("remote://fixture-host/work/project", true);
+  expect(snapshot).toEqual({ servers: [], error: MCP_LOCAL_ONLY_ERROR, claudeError: "" });
+  expect(invoke).not.toHaveBeenCalled();
+});
 
 it("publishes discovery before slow health and shares both requests across consumers", async () => {
   let resolveHealth!: (output: string) => void;

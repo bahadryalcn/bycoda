@@ -525,14 +525,17 @@ export function LinearSettings() {
   const [teamsError, setTeamsError] = useState<string | null>(null);
   const [teams, setTeams] = useState<LinearTeam[]>([]);
   const [hiddenTeamIds, setHiddenTeamIds] = useState(loadHiddenLinearTeamIds);
+  const teamRequest = useRef(0);
 
   const loadTeams = useCallback(async () => {
+    const generation = ++teamRequest.current;
     setTeamsError(null);
     try {
       const next = await listLinearTeams();
-      setTeams(next);
+      if (generation === teamRequest.current) setTeams(next);
     } catch (err: unknown) {
-      setTeamsError(err instanceof Error ? err.message : String(err));
+      if (generation === teamRequest.current)
+        setTeamsError(err instanceof Error ? err.message : String(err));
     }
   }, []);
 
@@ -558,6 +561,7 @@ export function LinearSettings() {
     void checkStatus();
     return () => {
       request.current += 1;
+      teamRequest.current += 1;
     };
   }, [checkStatus]);
 
@@ -570,6 +574,8 @@ export function LinearSettings() {
 
   const onSave = async () => {
     if (!token.trim() || busy || checking) return;
+    request.current += 1;
+    teamRequest.current += 1;
     setBusy(true);
     setError(null);
     try {
@@ -591,6 +597,8 @@ export function LinearSettings() {
 
   const onDisconnect = async () => {
     if (busy) return;
+    request.current += 1;
+    teamRequest.current += 1;
     setBusy(true);
     setError(null);
     try {

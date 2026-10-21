@@ -789,6 +789,7 @@ pub fn run() {
             notes::notes_upsert,
             notes::notes_link_session,
             notes::notes_delete,
+            notes::notes_discard_recovery_assets,
             notes::notes_save_image,
             notes::notes_image_path,
             checkpoint::session_checkpoint_ensure,

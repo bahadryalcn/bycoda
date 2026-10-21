@@ -45,6 +45,65 @@ it("does not create a recovery note when copying an asset fails", async () => {
   expect(invoke.mock.calls.some(([command]) => command === "notes_upsert")).toBe(false);
 });
 
+it.each(["later lookup", "later copy", "upsert"])(
+  "rolls back only the new attempt's images after a failed %s",
+  async (failure) => {
+    invoke.mockReset();
+    let copiedId = "";
+    let copies = 0;
+    invoke.mockImplementation(async (command, args) => {
+      if (command === "notes_image_path") {
+        if (failure === "later lookup" && copies === 1) throw new Error("Missing source");
+        return `C:/app${args.asset}`;
+      }
+      if (command === "notes_save_image") {
+        copies++;
+        copiedId = args.noteId;
+        if (failure === "later copy" && copies === 2) throw new Error("Copy failed");
+        return { name: "copy.png", markdownPath: `/note-assets/${copiedId}/${copies}.png` };
+      }
+      if (command === "notes_upsert") throw new Error("Save failed");
+      if (command === "notes_discard_recovery_assets") return true;
+      throw new Error(command);
+    });
+    await expect(
+      createRecoveredNote({
+        title: "Recovered",
+        tags: [],
+        body: "![a](/note-assets/original/a.png) ![b](/note-assets/original/b.png)",
+      }),
+    ).rejects.toThrow(
+      failure === "later lookup"
+        ? "Missing source"
+        : failure === "later copy"
+          ? "Copy failed"
+          : "Save failed",
+    );
+    expect(copiedId).not.toBe("original");
+    expect(
+      invoke.mock.calls.filter(([command]) => command === "notes_discard_recovery_assets"),
+    ).toEqual([["notes_discard_recovery_assets", { id: copiedId }]]);
+  },
+);
+
+it("reports failed rollback without hiding the original recovery failure", async () => {
+  invoke.mockReset();
+  invoke.mockImplementation(async (command, args) => {
+    if (command === "notes_image_path") return "C:/app/original.png";
+    if (command === "notes_save_image")
+      return { name: "copy.png", markdownPath: `/note-assets/${args.noteId}/copy.png` };
+    if (command === "notes_upsert") throw new Error("Save failed");
+    throw new Error("Cleanup failed");
+  });
+  await expect(
+    createRecoveredNote({
+      title: "Recovered",
+      tags: [],
+      body: "![a](/note-assets/original/a.png)",
+    }),
+  ).rejects.toThrow(/Save failed[\s\S]*Cleanup failed/);
+});
+
 const image: NoteImageAsset = {
   name: "Architecture [draft].png",
   markdownPath: "/note-assets/note-1/123-architecture-draft.png",

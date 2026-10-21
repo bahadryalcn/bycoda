@@ -39,6 +39,7 @@ export function ServerForwards({
   const [statuses, setStatuses] = useState<ForwardStatus[]>([]);
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
+  const [statusError, setStatusError] = useState("");
   const rules = server.metadata.forwards ?? [];
   const [search, setSearch] = useState("");
   const matchingRules = rules.filter((rule) =>
@@ -57,9 +58,12 @@ export function ServerForwards({
       pending = true;
       try {
         const result = await listSshForwards();
-        if (!disposed) setStatuses(result.filter((item) => item.connectionId === server.id));
+        if (!disposed) {
+          setStatuses(result.filter((item) => item.connectionId === server.id));
+          setStatusError("");
+        }
       } catch {
-        if (!disposed) setError(t("Couldn’t read forwarding status."));
+        if (!disposed) setStatusError(t("Couldn’t read forwarding status."));
       } finally {
         pending = false;
       }
@@ -79,6 +83,7 @@ export function ServerForwards({
     try {
       await action();
       setStatuses((await listSshForwards()).filter((item) => item.connectionId === server.id));
+      setStatusError("");
     } catch (cause) {
       setError(String(cause));
     } finally {
@@ -292,9 +297,9 @@ export function ServerForwards({
               </div>
             </form>
           </details>
-          {error ? (
+          {error || statusError ? (
             <p role="alert" className="break-words text-(--ui-tone-danger-fg)">
-              {error}
+              {error || statusError}
             </p>
           ) : null}
         </div>

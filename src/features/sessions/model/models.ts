@@ -771,10 +771,17 @@ function emitPickerVisibility() {
   for (const listener of pickerVisibilityListeners) listener();
 }
 
+function pickerVisibilityStorageChanged(event: StorageEvent) {
+  if (event.storageArea && event.storageArea !== localStorage) return;
+  if (event.key === null || event.key === HIDDEN_PICKER_PROVIDERS_KEY) emitPickerVisibility();
+}
+
 export function subscribePickerVisibility(onStoreChange: () => void): () => void {
   pickerVisibilityListeners.add(onStoreChange);
+  if (pickerVisibilityListeners.size === 1 && typeof window !== "undefined") window.addEventListener("storage", pickerVisibilityStorageChanged);
   return () => {
     pickerVisibilityListeners.delete(onStoreChange);
+    if (!pickerVisibilityListeners.size && typeof window !== "undefined") window.removeEventListener("storage", pickerVisibilityStorageChanged);
   };
 }
 

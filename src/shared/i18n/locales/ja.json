@@ -1,4 +1,6 @@
 {
+  "Scroll to bottom": "最下部に移動",
+  "Clear terminal": "ターミナルをクリア",
   "Manual only": "手動のみ",
   "Automatic only": "自動のみ",
   "Invocation disabled": "呼び出し無効",
@@ -5498,5 +5500,17 @@
   "Imported {p0} servers. Skipped {p1} existing records. Saved {p2} SSH keys.": "Imported {p0} servers. Skipped {p1} existing records. Saved {p2} SSH keys.",
   "{p0} of {p1} selected": "{p0} of {p1} selected",
   "Import {p0}": "Import {p0}",
-  "Import selected ({p0})": "Import selected ({p0})"
+  "Import selected ({p0})": "Import selected ({p0})",
+  "Unfavorite": "お気に入りから削除",
+  "Color…": "色…",
+  "Copy address": "アドレスをコピー",
+  "No color": "色なし",
+  "List view": "リスト表示",
+  "Card view": "カード表示",
+  "Server view": "サーバーの表示",
+  "Server actions": "サーバーの操作",
+  "Server color": "サーバーの色",
+  "Delete {p0}?": "{p0} を削除しますか？",
+  "Removes this SSH server from bycoda. The remote machine is not changed.": "この SSH サーバーを bycoda から削除します。リモートマシンは変更されません。",
+  "Removes this machine from this desktop only. The host and its sessions keep running.": "このマシンをこのデスクトップからのみ削除します。ホストとそのセッションは引き続き実行されます。"
 }

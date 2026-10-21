@@ -3,6 +3,10 @@ import { Button } from "../../../shared/ui/Button";
 import { Modal } from "../../../shared/ui/Modal";
 import { useLocalSharedQueueClient } from "../model/useSharedLocalQueues";
 import { t, useLocale } from "../../../shared/i18n";
+import {
+  readDeliveryProgress,
+  updateDeliveryProgress,
+} from "../../sessions/model/deliveryProgress";
 
 const empty = { recovery: undefined as string | undefined, error: undefined as string | undefined };
 const subscribe = () => () => {};
@@ -23,8 +27,19 @@ export function SharedQueueRecoveryNotice({ sessionId }: { sessionId: string }) 
     if (working) return;
     setWorking(true);
     setError(undefined);
+    const recoveryId = client.snapshot().queue.claim?.id;
     try {
       await client.resolveRecovery(accepted);
+      const progress = recoveryId ? readDeliveryProgress(sessionId, recoveryId) : undefined;
+      if (progress)
+        updateDeliveryProgress(
+          sessionId,
+          progress,
+          accepted ? "accepted" : "rejected",
+          accepted
+            ? "Marked as delivered. The message was not sent again."
+            : "The queue is paused. Resume it only after checking the conversation.",
+        );
       setOpen(false);
     } catch (reason) {
       setError(String(reason).replace(/^Error: /, ""));

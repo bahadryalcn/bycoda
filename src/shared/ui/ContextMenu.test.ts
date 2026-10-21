@@ -57,10 +57,28 @@ it("keeps point/anchor context actions, disabled gate and submenu keyboard owner
       menu.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })),
     );
     expect(pick).toHaveBeenCalledExactlyOnceWith("inspect");
+    const submenu = document.querySelector<HTMLElement>('[role="menu"][aria-label="More"]')!;
+    await act(async () =>
+      submenu.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }),
+      ),
+    );
+    expect(document.querySelectorAll('[role="menu"]')).toHaveLength(1);
+    expect(close).not.toHaveBeenCalled();
+    expect(document.activeElement).toBe(menu);
+    await act(async () =>
+      menu.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true })),
+    );
     await act(async () =>
       menu.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowLeft", bubbles: true })),
     );
     expect(document.querySelectorAll('[role="menu"]')).toHaveLength(1);
+    await act(async () =>
+      menu.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }),
+      ),
+    );
+    expect(close).toHaveBeenCalledOnce();
     await act(async () =>
       root.render(
         createElement(ContextMenu, {

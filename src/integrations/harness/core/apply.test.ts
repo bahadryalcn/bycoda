@@ -17,6 +17,12 @@ import type { HarnessEvent } from "./types";
 
 let now = 0;
 
+it("drops model-specific context capacity on provider model changes but retains usage", () => {
+  const original = { ...newSession("pi", "/repo"), model: "pi:provider/old", context: { used: 100_000, window: 200_000 } };
+  expect(applyHarnessEvent(original, { type: "session.configChanged", model: "pi:provider/new" })).toMatchObject({ model: "pi:provider/new", context: { used: 100_000 } });
+  expect(applyHarnessEvent(original, { type: "session.configChanged", model: original.model, modelSettings: { thinking: "high" } }).context).toEqual(original.context);
+});
+
 it.each([
   ["repeated words", ["ha", "ha", "!"], "haha!"],
   ["indentation", ["  ", "  ", "print('x')"], "    print('x')"],

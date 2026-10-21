@@ -20,6 +20,7 @@ import {
   type ClaudeSessionSummary,
 } from "../../../platform/tauri/fs";
 import { message } from "@tauri-apps/plugin-dialog";
+import { t } from "../../../shared/i18n";
 import {
   OPEN_CODE_WORKSPACE_EVENT,
   parseCodeWorkspace,
@@ -130,7 +131,16 @@ export function useProjectImport({
       const stillTarget = () =>
         claudeImportTarget(sessionsRef.current, target, turnGen.current.get(target.sessionId) ?? 0);
       if (!stillTarget()) return;
-      const transcript = await readTextFile(summary.path).catch(() => null);
+      const transcript = await readTextFile(summary.path).catch(async (error: unknown) => {
+        if (stillTarget())
+          await message(
+            t("Could not read the conversation. Open Resume again to retry.\n\n{p0}", {
+              p0: error instanceof Error ? error.message : String(error),
+            }),
+            { title: t("Resume a Claude Code conversation"), kind: "error" },
+          );
+        return null;
+      });
       if (transcript === null) return;
       if (!stillTarget()) return;
 

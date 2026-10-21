@@ -1,7 +1,10 @@
+import { useStoredPreferenceState } from "../../../shared/hooks/useStoredPreferenceState";
 import { useState, useSyncExternalStore } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import {
   loadCrewGrowthEnabled,
+  subscribeCrewSceneEnabled,
+  subscribeCrewGrowthEnabled,
   loadCrewSceneEnabled,
   loadTabAnimationsEnabled,
   saveCrewGrowthEnabled,
@@ -43,12 +46,12 @@ export function CrewSettings() {
   const crewTheme = useSyncExternalStore(subscribeCrewTheme, loadCrewTheme, loadCrewTheme);
   const starWars = crewTheme === "star-wars";
   const growthLabel = starWars ? t("Color with context") : t("Grow with context");
-  const [crewSceneEnabled, setCrewSceneEnabled] = useState(loadCrewSceneEnabled);
+  const [crewSceneEnabled, setCrewSceneEnabled] = useStoredPreferenceState(loadCrewSceneEnabled, subscribeCrewSceneEnabled);
   const onCrewSceneEnabled = (next: boolean) => {
     saveCrewSceneEnabled(next);
     setCrewSceneEnabled(next);
   };
-  const [crewGrowthEnabled, setCrewGrowthEnabled] = useState(loadCrewGrowthEnabled);
+  const [crewGrowthEnabled, setCrewGrowthEnabled] = useStoredPreferenceState(loadCrewGrowthEnabled, subscribeCrewGrowthEnabled);
   const onCrewGrowthEnabled = (next: boolean) => {
     saveCrewGrowthEnabled(next);
     setCrewGrowthEnabled(next);

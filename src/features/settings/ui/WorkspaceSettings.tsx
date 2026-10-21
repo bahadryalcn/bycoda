@@ -1,3 +1,4 @@
+import { useStoredPreferenceState } from "../../../shared/hooks/useStoredPreferenceState";
 import { Badge } from "../../../shared/ui/Badge";
 import { useState, type ReactNode } from "react";
 import { IS_MAC } from "../../../platform/tauri/platform";
@@ -8,6 +9,7 @@ import { quickComposerShortcutLabel } from "../../quick-composer/model/quickComp
 import {
   loadFileTabMode,
   loadLiveAgentsEnabled,
+  subscribeLiveAgentsEnabled,
   loadQuickComposerEnabled,
   loadQuickComposerShortcut,
   saveFileTabMode,
@@ -21,7 +23,7 @@ import "./WorkspaceSettings.css";
 
 export function WorkspacePage({ children }: { children?: ReactNode }) {
   useLocale();
-  const [liveAgentsEnabled, setLiveAgentsEnabled] = useState(loadLiveAgentsEnabled);
+  const [liveAgentsEnabled, setLiveAgentsEnabled] = useStoredPreferenceState(loadLiveAgentsEnabled, subscribeLiveAgentsEnabled);
   const [fileTabMode, setFileTabMode] = useState<FileTabMode>(loadFileTabMode);
 
   const [quickComposerEnabled, setQuickComposerEnabled] = useState(loadQuickComposerEnabled);

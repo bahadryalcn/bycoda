@@ -11,7 +11,7 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("../../core/child", () => ({
   killChild: mocks.killChild,
-  resolveOmpBinary: vi.fn(),
+  resolveOmpBinary: mocks.resolveBinary,
   resolvePiBinary: mocks.resolveBinary,
   spawnChild: mocks.spawnChild,
   unwatchChild: vi.fn(),
@@ -34,6 +34,7 @@ vi.mock("./piClient", () => ({
 
 import { compactPiContext, stopPiSession, sendPiTurn, cancelPiTurn, rewindPiLastTurn } from "./pi";
 import type { HarnessEvent } from "../../core/types";
+import { compactOmpContext, stopOmpSession } from "../omp/omp";
 
 describe("Pi live session", () => {
   beforeEach(() => {
@@ -60,6 +61,20 @@ describe("Pi live session", () => {
       }
       return { data: {} };
     });
+  });
+
+  it("does not reuse the old context window after an OMP provider config model change", async () => {
+    const events: HarnessEvent[] = [];
+    await compactOmpContext({ sessionId: "pi-model-context", cwd: "/repo", model: "omp:default", runtimeMode: "supervised", onEvent: (event) => events.push(event) });
+    expect(events).toContainEqual({ type: "context", used: 32_000, window: 200_000 });
+    const frame = mocks.frames[0]!;
+    frame({ type: "config_update", model: { provider: "new-provider", id: "new-model" } });
+    frame({ type: "message_update", usage: { totalTokens: 100_000 } });
+    expect(events.filter((event) => event.type === "context").at(-1)).toEqual({ type: "context", used: 100_000 });
+    frame({ type: "config_update", model: { provider: "new-provider", id: "another-model", contextWindow: 400_000 } });
+    frame({ type: "message_update", usage: { totalTokens: 100_000 } });
+    expect(events.filter((event) => event.type === "context").at(-1)).toEqual({ type: "context", used: 100_000, window: 400_000 });
+    await stopOmpSession("pi-model-context");
   });
 
   it("publishes the resolved Pi default model for provider usage", async () => {

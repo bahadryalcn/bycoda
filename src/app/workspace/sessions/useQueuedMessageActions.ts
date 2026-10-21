@@ -21,6 +21,10 @@ import {
 } from "../../../features/connections/model/useSharedLocalQueues";
 import { hasMissingAttachment } from "../../../features/sessions/model/queuePersistence";
 import type { QueueActionResult } from "../../../features/sessions/model/queueAction";
+import {
+  clearDeliveryProgress,
+  readDeliveryProgress,
+} from "../../../features/sessions/model/deliveryProgress";
 import { type HarnessEvent } from "../../../integrations/harness";
 import { type Submit } from "../helpers/types";
 
@@ -107,11 +111,24 @@ export function useQueuedMessageActions(deps: QueuedMessageActionDeps) {
           ) {
             return;
           }
-          onSubmit(session.id, head.text, head.attachments, {
-            queuedMessageId: head.id,
-            noteCard: head.noteCard,
-            handoffCard: head.handoffCard,
-            intent: head.intent,
+          void Promise.resolve(
+            onSubmit(session.id, head.text, head.attachments, {
+              queuedMessageId: head.id,
+              noteCard: head.noteCard,
+              handoffCard: head.handoffCard,
+              intent: head.intent,
+            }),
+          ).catch((error) => {
+            setSessions((sessions) =>
+              sessions.map((entry) =>
+                entry.id === session.id ? { ...entry, queueStatus: "paused" } : entry,
+              ),
+            );
+            enqueueHarnessEvent(session.id, {
+              type: "status",
+              text: String(error).replace(/^Error: /, ""),
+            });
+            flushHarnessEvents();
           });
         }, 0),
       );
@@ -123,6 +140,9 @@ export function useQueuedMessageActions(deps: QueuedMessageActionDeps) {
   }, [onSubmit, sessions, movingWindows, windowTransferPending]);
 
   const onDeleteQueuedMessage = useCallback((sessionId: string, messageId: string) => {
+    const progress = readDeliveryProgress(sessionId, messageId);
+    if (progress && !["accepted", "rejected", "unknown"].includes(progress.stage)) return;
+    if (progress) clearDeliveryProgress(sessionId, progress);
     setSessions((prev) =>
       prev.map((session) =>
         session.id === sessionId ? dequeueQueuedMessage(session, messageId) : session,
@@ -148,6 +168,9 @@ export function useQueuedMessageActions(deps: QueuedMessageActionDeps) {
 
   const onEditQueuedMessage = useCallback(
     (sessionId: string, messageId: string, text: string, attachments: Attachment[]) => {
+      const progress = readDeliveryProgress(sessionId, messageId);
+      if (progress && !["accepted", "rejected", "unknown"].includes(progress.stage)) return;
+      if (progress) clearDeliveryProgress(sessionId, progress);
       setSessions((prev) =>
         prev.map((session) =>
           session.id === sessionId
@@ -223,6 +246,8 @@ export function useQueuedMessageActions(deps: QueuedMessageActionDeps) {
       if (!session || !session.queuedMessages?.length) {
         return false;
       }
+      if (session.queuedMessages.some((message) => message.deliveryUnknown))
+        throw new Error("Review the unconfirmed delivery before resuming this queue.");
       if (
         windowTransferPendingRef.current ||
         movingSessionIds.current.has(sessionId) ||

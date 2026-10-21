@@ -291,6 +291,8 @@ export type Attachment = {
 };
 
 export type QueuedMessage = {
+  /** A written Steer has no definite delivery acknowledgement. Never replay automatically. */
+  deliveryUnknown?: true;
   /** Enqueue-time selection; absent only on queues saved by older versions. */
   modelTarget?: ModelTarget;
   id: string;
@@ -345,6 +347,8 @@ export type Block = {
   streaming?: boolean;
   /** Epoch ms when this user turn started. */
   startedAt?: number;
+  /** Mid-turn user messages retain the original execution turn's timing owner. */
+  continuationOf?: string;
   /** How long the agent worked on this user turn, in ms. */
   durationMs?: number;
   /** Stable model label for this turn. Present on newly created user blocks. */

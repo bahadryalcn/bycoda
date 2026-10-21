@@ -4,6 +4,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { LastSessionsRows, LastSessionsSection } from "./LastSessionsSection";
 import { pathKey } from "../../shared/lib/paths";
+import { formatRelative } from "../../features/sessions/model/recentSessions";
 const data = vi.hoisted(() => ({
   stored: [
     {
@@ -42,6 +43,30 @@ afterEach(async () => {
   container.remove();
   localStorage.clear();
   vi.unstubAllGlobals();
+  vi.useRealTimers();
+});
+
+it("advances idle relative labels from the shared minute clock and unsubscribes on unmount", async () => {
+  vi.useFakeTimers();
+  const now = new Date("2026-10-21T08:00:00Z").getTime();
+  vi.setSystemTime(now);
+  const updatedAt = now - 60_000;
+  await act(async () =>
+    root.render(
+      createElement(LastSessionsRows, {
+        ...appearance,
+        rows: [{ ...data.stored[0], updatedAt, harness: "codex", pinnable: true, remote: false }],
+        searchActive: false,
+        onOpenProject: vi.fn(),
+        onTogglePin: vi.fn(),
+      }),
+    ),
+  );
+  expect(container.textContent).toContain(formatRelative(updatedAt, now));
+  await act(async () => vi.advanceTimersByTime(120_000));
+  expect(container.textContent).toContain(formatRelative(updatedAt, now + 120_000));
+  await act(async () => root.render(null));
+  expect(vi.getTimerCount()).toBe(0);
 });
 it("keeps collapse and radio count selection with focus returning to the native trigger", async () => {
   await act(async () =>

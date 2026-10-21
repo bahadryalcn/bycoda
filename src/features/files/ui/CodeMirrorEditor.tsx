@@ -35,7 +35,7 @@ import { useColorScheme } from "../../../shared/hooks/useColorScheme";
 import { useLockOverscroll } from "../../../shared/hooks/useLockOverscroll";
 import { isLightScheme } from "../../settings/model/appearance";
 import { loadAutosave, loadFormatOnSave, subscribeAutosave } from "../../settings/model/settings";
-import { formatProjectText } from "../../../shared/lib/format";
+import { formatProjectText, hasBundledFormatter } from "../../../shared/lib/format";
 import {
   gitBlame,
   gitConflicts,
@@ -111,7 +111,9 @@ const inlineBlameExtension = editorBlame({ onOpenCommit: requestOpenCommit });
 
 export function CodeMirrorEditor(props: Parameters<typeof StandardCodeMirrorEditor>[0]) {
   const propsRef = useRef(props);
-  useLayoutEffect(() => { propsRef.current = props; });
+  useLayoutEffect(() => {
+    propsRef.current = props;
+  });
   const dirtyRef = useRef(false);
   const internalSaveRef = useRef<(() => Promise<boolean>) | null>(null);
   const pending = useRef(new Set<Promise<void>>());
@@ -391,7 +393,7 @@ function StandardCodeMirrorEditor({
         const result = await formatProjectText(path, before.toString(), selection.main.head);
         if (disposed || generation !== formatGeneration || view.state.doc !== before) return;
         if (!result) {
-          if (manual)
+          if (manual || hasBundledFormatter(path))
             setFormatError(t("No formatter is available for this file, or its syntax is invalid."));
           return;
         }
@@ -403,7 +405,7 @@ function StandardCodeMirrorEditor({
           scroller: scrollerRef.current ?? undefined,
         });
       } catch (error) {
-        if (manual && !disposed && generation === formatGeneration)
+        if (!disposed && generation === formatGeneration)
           setFormatError(error instanceof Error ? error.message : String(error));
       }
     };

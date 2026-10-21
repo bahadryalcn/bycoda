@@ -246,6 +246,17 @@ pub fn notes_delete(
     Ok(())
 }
 
+/// Roll back only an abandoned recovery attempt, never a persisted note's assets.
+#[tauri::command(async)]
+pub fn notes_discard_recovery_assets(
+    app: AppHandle,
+    store: State<'_, SessionStore>,
+    id: String,
+) -> Result<bool, String> {
+    let conn = store.lock_conn()?;
+    checked_discard_recovery_assets(&conn, &id, || remove_note_assets(&app, &id))
+}
+
 #[tauri::command]
 pub async fn notes_save_image(
     app: AppHandle,
@@ -401,6 +412,27 @@ fn validate_note_asset_path(asset: &str) -> Result<PathBuf, String> {
         return Err("Invalid note image path".into());
     }
     Ok(path.to_path_buf())
+}
+
+fn checked_discard_recovery_assets(
+    conn: &Connection,
+    id: &str,
+    remove: impl FnOnce() -> Result<(), String>,
+) -> Result<bool, String> {
+    validate_id(id, "note")?;
+    // Hold the write reservation through cleanup so another connection cannot
+    // create the note between the existence check and asset removal.
+    let tx = rusqlite::Transaction::new_unchecked(conn, rusqlite::TransactionBehavior::Immediate)
+        .map_err(|error| error.to_string())?;
+    if get_note(&tx, id)
+        .map_err(|error| error.to_string())?
+        .is_some()
+    {
+        return Ok(false);
+    }
+    remove()?;
+    tx.commit().map_err(|error| error.to_string())?;
+    Ok(true)
 }
 
 fn remove_note_assets(app: &AppHandle, note_id: &str) -> Result<(), String> {
@@ -786,6 +818,38 @@ fn unique_slug(conn: &Connection, title: &str) -> rusqlite::Result<String> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn recovery_cleanup_only_removes_assets_of_missing_notes() {
+        let store = SessionStore::open_in_memory().unwrap();
+        let conn = store.lock_conn().unwrap();
+        conn.execute(
+            "INSERT INTO notes(id, slug, title, body, created_at, updated_at) VALUES ('saved', 'saved', 'Saved', '', 1, 1)",
+            [],
+        ).unwrap();
+        assert!(!checked_discard_recovery_assets(&conn, "saved", || panic!(
+            "persisted assets must survive"
+        ))
+        .unwrap());
+        let removed = std::cell::Cell::new(false);
+        assert!(checked_discard_recovery_assets(&conn, "abandoned", || {
+            removed.set(true);
+            Ok(())
+        })
+        .unwrap());
+        assert!(removed.get());
+        assert!(
+            checked_discard_recovery_assets(&conn, "../saved", || panic!(
+                "invalid ID must not reach filesystem"
+            ))
+            .is_err()
+        );
+        assert!(
+            checked_discard_recovery_assets(&conn, "abandoned", || Err("disk error".into()))
+                .unwrap_err()
+                .contains("disk error")
+        );
+    }
+
     #[test]
     fn independent_connections_cannot_both_save_the_same_version() {
         let path = std::env::temp_dir().join(format!(

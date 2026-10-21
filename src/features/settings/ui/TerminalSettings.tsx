@@ -25,6 +25,23 @@ export function TerminalPage() {
   const [listed, setListed] = useState<ShellProfiles | null>(null);
   const [scanning, setScanning] = useState(true);
   const [problem, setProblem] = useState<string | null>(null);
+  const [saveProblem, setSaveProblem] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const savingRef = useRef(false);
+  const chooseProfile = async (id: string | undefined) => {
+    if (savingRef.current) return;
+    savingRef.current = true;
+    setSaving(true);
+    setSaveProblem(null);
+    try {
+      await saveTerminalProfile(id);
+    } catch (error) {
+      setSaveProblem(error instanceof Error ? error.message : String(error));
+    } finally {
+      savingRef.current = false;
+      setSaving(false);
+    }
+  };
   const request = useRef(0);
   const chosen = useTerminalProfile();
   const readProfiles = (refresh: boolean, generation: number) => {
@@ -63,7 +80,13 @@ export function TerminalPage() {
         persistence={{ mode: "automatic" }}
         description={t("Choose the shell for new terminals and local !commands.")}
         feedback={
-          problem ? (
+          saveProblem ? (
+            <SettingsFeedback state="error">
+              {t("Could not save the terminal profile. Select it again to retry.")} {saveProblem}
+            </SettingsFeedback>
+          ) : saving ? (
+            <SettingsFeedback state="loading">{t("Saving…")}</SettingsFeedback>
+          ) : problem ? (
             <SettingsFeedback state="error">
               {t("Could not discover shells. Use Look again to retry.")} {problem}
             </SettingsFeedback>
@@ -76,7 +99,7 @@ export function TerminalPage() {
             variant="ghost"
             size="sm"
             type="button"
-            disabled={scanning}
+            disabled={scanning || saving}
             onClick={() => scan(true)}
           >
             {scanning ? t("Looking…") : t("Look again")}
@@ -94,7 +117,7 @@ export function TerminalPage() {
         >
           <SearchableSelect
             label={t("Default terminal profile")}
-            disabled={scanning}
+            disabled={scanning || saving}
             value={chosen && !missing ? chosen : ""}
             options={[
               {
@@ -109,7 +132,7 @@ export function TerminalPage() {
                 description: profile.path,
               })),
             ]}
-            onChange={(next) => saveTerminalProfile(next || undefined)}
+            onChange={(next) => chooseProfile(next || undefined)}
           />
         </Row>
       </Group>
@@ -156,8 +179,8 @@ export function TerminalPage() {
                     variant="ghost"
                     size="sm"
                     type="button"
-                    disabled={scanning}
-                    onClick={() => saveTerminalProfile(profile.id)}
+                    disabled={scanning || saving}
+                    onClick={() => chooseProfile(profile.id)}
                   >
                     {t("Set as default")}
                   </Button>
@@ -284,6 +307,8 @@ function RemoteMachineShellState({ machine }: { machine: RemoteMachine }) {
     listed?.chosenId && listed.profiles.some((profile) => profile.id === listed.chosenId)
       ? listed.chosenId
       : "";
+  const missing =
+    !!listed?.chosenId && !listed.profiles.some((profile) => profile.id === listed.chosenId);
   return (
     <Row
       feedback={
@@ -322,10 +347,12 @@ function RemoteMachineShellState({ machine }: { machine: RemoteMachine }) {
         </span>
       }
       description={
-        listed
-          ? (listed.profiles.find((profile) => profile.id === (chosen || listed.defaultId))?.path ??
-            undefined)
-          : undefined
+        missing
+          ? t("The shell you picked is no longer installed, so the system default is used.")
+          : listed
+            ? (listed.profiles.find((profile) => profile.id === (chosen || listed.defaultId))
+                ?.path ?? undefined)
+            : undefined
       }
     >
       {listed ? (

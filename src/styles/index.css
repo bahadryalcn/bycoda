@@ -20,12 +20,14 @@
 
 /* Shared control geometry. Compact preserves the established desktop sizes. */
 html[data-control-density="comfortable"] {
+  --ui-color-swatch-target: 2rem;
   --ui-segment-height: 2rem;
   --ui-control-height: 2.5rem;
   --ui-control-height-compact: 2rem;
   --ui-control-height-lg: 2.75rem;
 }
 html[data-control-density="touch"] {
+  --ui-color-swatch-target: 2.75rem;
   --ui-control-clear-size: 2.75rem;
   --ui-segment-height: 2.75rem;
   --ui-control-height: 2.75rem;
@@ -317,7 +319,11 @@ html.theme-light {
   );
   --ui-text-disabled: color-mix(in srgb, var(--color-content) 50%, var(--color-background-base));
   --ui-text-muted: color-mix(in oklab, var(--ui-text-secondary) 72%, var(--color-background-base));
-  --ui-terminal-suggestion: color-mix(in oklab, var(--color-info) 55%, var(--color-background-base));
+  --ui-terminal-suggestion: color-mix(
+    in oklab,
+    var(--color-info) 55%,
+    var(--color-background-base)
+  );
   /* Cartesian mixing preserves the cool theme hue across light/dark surfaces. */
   --ui-surface: color-mix(in oklab, var(--color-content) 3%, var(--color-background-base));
   /* Startup brand canvas stays dark so the white loading mark is legible in every theme. */
@@ -352,6 +358,7 @@ html.theme-light {
   --ui-control-thumb-border: color-mix(in oklab, var(--color-scrim) 5%, transparent);
   --ui-control-thumb-shadow: 0 1px 4px color-mix(in oklab, var(--color-scrim) 20%, transparent);
   --ui-control-height: 2.25rem;
+  --ui-color-swatch-target: 1.25rem;
   --ui-control-height-compact: 1.75rem;
   --ui-control-height-sm: var(--ui-control-height-compact);
   --ui-control-height-md: var(--ui-control-height);

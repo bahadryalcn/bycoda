@@ -69,6 +69,7 @@ import {
   BellOff as LucideBellOff,
   Keyboard as LucideKeyboard,
   List as LucideListBullet,
+  LayoutGrid as LucideLayoutGrid,
   ListEnd as LucideListEnd,
   ListFilter as LucideListFilter,
   Loader as LucideLoader,
@@ -225,6 +226,7 @@ export const Inbox = wrap(LucideInbox, "Inbox");
 export const BellOff = wrap(LucideBellOff, "BellOff");
 export const Keyboard = wrap(LucideKeyboard, "Keyboard");
 export const ListBullet = wrap(LucideListBullet, "ListBullet");
+export const LayoutGrid = wrap(LucideLayoutGrid, "LayoutGrid");
 export const ListEnd = wrap(LucideListEnd, "ListEnd");
 export const ListFilter = wrap(LucideListFilter, "ListFilter");
 export const Loader = wrap(LucideLoader, "Loader");

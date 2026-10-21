@@ -1107,7 +1107,8 @@ function ChangedFiles({
     }
     try {
       const headMessage = await gitHeadMessage(cwd);
-      if (!message.trim()) setMessage(headMessage);
+      // The checkout owns the live draft, including edits made while Git reads HEAD.
+      if (!message.trim() && runtime.state.message === message) setMessage(headMessage);
       setAmendTarget({
         branch: index?.branch ?? null,
         head: index?.head ?? null,

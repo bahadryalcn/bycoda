@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.60]
+
+### Session and host reliability
+
+- Improve shared queues, message delivery recovery, session renaming and remote session adoption.
+- Strengthen checkpoint leases, configuration conflict handling and background task coordination.
+- Improve provider cancellation, skill-policy handling and automation recovery.
+
+### Workspace, connections and content
+
+- Refine server management, SSH forwarding, terminal tools and connection status feedback.
+- Improve project navigation, editor save handling, transcript selection and search.
+- Strengthen note image handling, file access safeguards and project logo processing.
+- Improve crew controls, Inbox notifications, shared preferences and translations.
+- Include expanded regression coverage and updated CI documentation.
+
 ## [0.6.56]
 
 ### Connections and workspace reliability

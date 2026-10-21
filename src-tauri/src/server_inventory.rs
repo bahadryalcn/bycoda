@@ -22,6 +22,48 @@ pub struct ServerMetadata {
     pub forwards: Vec<ForwardRule>,
     #[serde(default)]
     pub activity: Vec<ServerActivity>,
+    /// Index into the 9 tab-group colors (src/features/workspace/model/tabGroups.ts); absent = none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub color_index: Option<u8>,
+    /// Lowercase `#rrggbb`; wins over `color_index` when present.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub custom_color: Option<String>,
+}
+
+/// Number of entries in TAB_GROUP_COLORS; keep in sync with tabGroups.ts.
+const SERVER_COLOR_COUNT: u64 = 9;
+
+/// Applies one color key of a metadata patch. Returns Ok(false) for keys this helper does
+/// not own. A JSON null removes the key so the stored record carries no color at all.
+fn apply_color_patch(current: &mut Value, key: &str, value: &Value) -> Result<bool, String> {
+    if key != "colorIndex" && key != "customColor" {
+        return Ok(false);
+    }
+    let object = current.as_object_mut().ok_or("Invalid metadata")?;
+    if value.is_null() {
+        object.remove(key);
+        return Ok(true);
+    }
+    let stored = if key == "colorIndex" {
+        let index = value
+            .as_u64()
+            .filter(|index| *index < SERVER_COLOR_COUNT)
+            .ok_or("Invalid server color")?;
+        Value::from(index)
+    } else {
+        let color = value
+            .as_str()
+            .map(str::to_ascii_lowercase)
+            .filter(|color| {
+                color.len() == 7
+                    && color.starts_with('#')
+                    && color[1..].bytes().all(|byte| byte.is_ascii_hexdigit())
+            })
+            .ok_or("Invalid server color")?;
+        Value::from(color)
+    };
+    object.insert(key.to_string(), stored);
+    Ok(true)
 }
 
 #[derive(Clone, Deserialize, Serialize)]
@@ -357,10 +399,18 @@ pub fn server_metadata_update(
     metadata: Value,
 ) -> Result<(), String> {
     let patch = metadata.as_object().ok_or("Invalid metadata patch")?;
-    if patch
-        .keys()
-        .any(|key| !["group", "tags", "favorite", "lastUsedAt", "forwards"].contains(&key.as_str()))
-    {
+    if patch.keys().any(|key| {
+        ![
+            "group",
+            "tags",
+            "favorite",
+            "lastUsedAt",
+            "forwards",
+            "colorIndex",
+            "customColor",
+        ]
+        .contains(&key.as_str())
+    }) {
         return Err("Unknown metadata field".into());
     }
     let _guard = state
@@ -382,7 +432,9 @@ pub fn server_metadata_update(
         return Err("Invalid metadata".into());
     }
     for (key, value) in patch {
-        current[key] = value.clone();
+        if !apply_color_patch(&mut current, key, value)? {
+            current[key] = value.clone();
+        }
     }
     let metadata: ServerMetadata =
         serde_json::from_value(current.clone()).map_err(|_| "Invalid metadata")?;
@@ -421,7 +473,10 @@ pub fn server_metadata_update(
         return Err("Server metadata is too large or invalid".into());
     }
     record["metadata"] = current;
-    remote::write_store_values(&path, &records)
+    remote::write_store_values(&path, &records)?;
+    drop(_guard);
+    let _ = app.emit("server-inventory-changed", ());
+    Ok(())
 }
 
 #[tauri::command(async)]
@@ -722,6 +777,53 @@ mod tests {
         assert!(value.get("token").is_none());
         assert_eq!(value["id"], "ssh-id");
     }
+    #[test]
+    fn server_color_patch_sets_normalizes_and_clears() {
+        let mut current = json!({"group":"Work","favorite":true});
+        assert!(apply_color_patch(&mut current, "colorIndex", &json!(3)).unwrap());
+        assert!(apply_color_patch(&mut current, "customColor", &json!("#AABBCC")).unwrap());
+        assert!(!apply_color_patch(&mut current, "favorite", &json!(false)).unwrap());
+        assert_eq!(current["colorIndex"], 3);
+        assert_eq!(current["customColor"], "#aabbcc");
+        assert_eq!(current["group"], "Work");
+        let parsed: ServerMetadata = serde_json::from_value(current.clone()).unwrap();
+        assert_eq!(parsed.color_index, Some(3));
+        assert_eq!(parsed.custom_color.as_deref(), Some("#aabbcc"));
+        assert!(apply_color_patch(&mut current, "colorIndex", &json!(0)).unwrap());
+        assert_eq!(current["colorIndex"], 0);
+
+        assert!(apply_color_patch(&mut current, "colorIndex", &Value::Null).unwrap());
+        assert!(apply_color_patch(&mut current, "customColor", &Value::Null).unwrap());
+        assert!(current.get("colorIndex").is_none());
+        assert!(current.get("customColor").is_none());
+        assert_eq!(current["group"], "Work");
+        let cleared: ServerMetadata = serde_json::from_value(current).unwrap();
+        assert_eq!(cleared.color_index, None);
+        assert_eq!(cleared.custom_color, None);
+        let encoded = serde_json::to_value(&cleared).unwrap();
+        assert!(encoded.get("colorIndex").is_none());
+        assert!(encoded.get("customColor").is_none());
+    }
+
+    #[test]
+    fn server_color_patch_rejects_invalid_values() {
+        let mut current = json!({});
+        for index in [json!(9), json!(-1), json!("3"), json!(1.5), json!(true)] {
+            assert!(apply_color_patch(&mut current, "colorIndex", &index).is_err());
+        }
+        for color in [
+            json!("#abc"),
+            json!("#aabbccdd"),
+            json!("aabbcc"),
+            json!("#gggggg"),
+            json!("#aabbc "),
+            json!(16777215),
+        ] {
+            assert!(apply_color_patch(&mut current, "customColor", &color).is_err());
+        }
+        assert_eq!(current, json!({}));
+    }
+
     #[test]
     fn legacy_host_projection_never_returns_credentials() {
         let record = json!({"id":"host-id","name":"Host","endpoint":"https://host.invalid","environmentId":"env","token":"must-not-leave-native"});

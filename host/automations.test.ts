@@ -98,6 +98,25 @@ function setup(start = at("2026-10-05T08:00:00")) {
 }
 
 describe("host automations", () => {
+  it("rejects stale configuration edits and toggles while preserving newer automation prompts", () => {
+    const { automations, input } = setup();
+    const opening = automations.save(input({ enabled: false }));
+    const newer = automations.save({
+      ...opening,
+      prompt: "Newer prompt",
+      expectedConfiguration: opening,
+    });
+    expect(() =>
+      automations.save({ ...opening, name: "My name", expectedConfiguration: opening }),
+    ).toThrow("Configuration changed in another client");
+    expect(() =>
+      automations.save({ ...opening, enabled: true, expectedConfiguration: opening }),
+    ).toThrow("Configuration changed in another client");
+    expect(automations.list()[0]).toEqual(newer);
+    expect(
+      automations.save({ ...newer, name: "Reconciled", expectedConfiguration: newer }),
+    ).toMatchObject({ prompt: "Newer prompt", name: "Reconciled", enabled: false });
+  });
   it("keeps an active automation tracked until its session finishes", async () => {
     const { automations, input, turns, settled } = setup();
     automations.save(input());

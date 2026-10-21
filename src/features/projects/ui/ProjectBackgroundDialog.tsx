@@ -109,8 +109,14 @@ export function ProjectBackgroundDialog({ project, name, onClose }: Props) {
     setBusy(true);
     setError(null);
     try {
-      await clearProjectChatBackground(project);
+      const previous = loadProjectChatBackgroundSettings(project);
       clearProjectChatBackgroundSetting(project);
+      try {
+        await clearProjectChatBackground(project);
+      } catch (cause) {
+        if (previous) saveProjectChatBackgroundSettings(project, previous);
+        throw cause;
+      }
       setPath(null);
       setEmptyOpacity(loadChatBackgroundEmptyOpacity());
       setSessionOpacity(loadChatBackgroundSessionOpacity());

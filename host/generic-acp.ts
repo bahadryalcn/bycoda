@@ -64,11 +64,13 @@ export class GenericAcpService {
   remove(id: string): Promise<void> {
     return this.mutate((configs) => configs.filter((entry) => entry.id !== id));
   }
-  async registry(refresh = false): Promise<AcpRegistryEntry[]> {
+  async registry(refresh = false, signal?: AbortSignal): Promise<AcpRegistryEntry[]> {
     if (!refresh && this.registryCache && Date.now() - this.registryCache.at < 3600_000)
       return this.registryCache.entries;
     const response = await fetch(ACP_REGISTRY_URL, {
-      signal: AbortSignal.timeout(15_000),
+      signal: signal
+        ? AbortSignal.any([signal, AbortSignal.timeout(15_000)])
+        : AbortSignal.timeout(15_000),
       redirect: "error",
     });
     if (!response.ok) throw new Error(`ACP registry returned ${response.status}`);
@@ -96,17 +98,19 @@ export class GenericAcpService {
     this.installs.get(id)?.abort();
   }
   async install(id: string, version: string): Promise<void> {
-    const entry = (await this.registry()).find(
-      (item) => item.id === id && item.version === version,
-    );
-    if (!entry?.package || !ACP_PINNED_PACKAGE.test(entry.package))
-      throw new Error("Pinned npm distribution is unavailable");
     if (this.installs.has(id)) throw new Error("ACP installation is already running");
     const controller = new AbortController();
     this.installs.set(id, controller);
-    const prefix = join(this.directory, "acp-tools", id, randomUUID());
     try {
+      const entry = (await this.registry(false, controller.signal)).find(
+        (item) => item.id === id && item.version === version,
+      );
+      controller.signal.throwIfAborted();
+      if (!entry?.package || !ACP_PINNED_PACKAGE.test(entry.package))
+        throw new Error("Pinned npm distribution is unavailable");
+      const prefix = join(this.directory, "acp-tools", id, randomUUID());
       await mkdir(prefix, { recursive: true });
+      controller.signal.throwIfAborted();
       // Resolve npm through its JS CLI on Windows, avoiding cmd.exe interpolation entirely.
       let command = "npm";
       let args = ["install", "--prefix", prefix, "--no-audit", "--no-fund", "--", entry.package];
@@ -149,6 +153,7 @@ export class GenericAcpService {
       const script = resolve(packageRoot, bins[0]);
       if (!script.startsWith(resolve(packageRoot) + sep))
         throw new Error("Package command escapes install directory");
+      controller.signal.throwIfAborted();
       await this.save({
         id,
         name: entry.name,

@@ -248,7 +248,9 @@ it("retains the old folder during failed navigation and retries the requested fo
   expect(document.body.textContent).toContain("Permission denied");
   expect(document.body.textContent).toContain("Showing last loaded folder: /home/me");
   expect((button("Open") as HTMLButtonElement).disabled).toBe(true);
-  await act(async () => button("Retry").click());
+  await act(async () =>
+    (document.querySelector('button[aria-label^="Retry loading"]') as HTMLButtonElement).click(),
+  );
   expect(
     document.body.querySelector<HTMLInputElement>('input[aria-label="Folder path on the machine"]')
       ?.value,
@@ -268,7 +270,9 @@ it("does not present an unreadable machine registry as a successful empty result
   expect(document.body.textContent).toContain("Registry unavailable");
   expect(document.body.textContent).not.toContain("No machines are connected yet");
   vi.mocked(invoke).mockImplementation(original);
-  await act(async () => button("Retry").click());
+  await act(async () =>
+    (document.querySelector('button[aria-label^="Retry loading"]') as HTMLButtonElement).click(),
+  );
   expect(document.body.textContent).not.toContain("Registry unavailable");
   expect(button("code")).toBeTruthy();
 });

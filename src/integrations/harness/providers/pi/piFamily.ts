@@ -738,7 +738,14 @@ function handleFrame(
       const fastModeEnabled =
         typeof rec.fastModeEnabled === "boolean" ? rec.fastModeEnabled : undefined;
       const native = provider && modelId ? piNativeId(provider, modelId) : undefined;
-      if (native) live.nativeModel = native;
+      if (native && native !== live.nativeModel) {
+        live.nativeModel = native;
+        // Capacity belongs to the active model, never the previous model.
+        const capacity = model?.contextWindow;
+        live.contextWindow = typeof capacity === "number" && Number.isFinite(capacity) && capacity > 0
+          ? capacity
+          : undefined;
+      }
       if (isPiThinkingLevel(thinking)) live.thinking = thinking;
       if (fastModeEnabled != null) {
         live.fastModeEnabled = fastModeEnabled;

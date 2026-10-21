@@ -1,5 +1,41 @@
 import { test, expect } from "@playwright/test";
 
+test("Steer explains a prolonged wait and preserves the paused queue at narrow widths", async ({
+  page,
+}) => {
+  await initializeChatLayout(page);
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.clock.install();
+  for (const light of [false, true]) {
+    await page.goto("/tests/browser/composer-extras.html?chat-layout&delivery-progress");
+    await page.evaluate(
+      (value) => document.documentElement.classList.toggle("theme-light", value),
+      light,
+    );
+    await page.setViewportSize({ width: 320, height: 800 });
+    const card = page.locator("[data-message-queue-card]");
+    await card.getByRole("button", { name: "Steer", exact: true }).press("Enter");
+    const progress = page.locator("[data-delivery-progress]");
+    await expect(progress).toContainText("Synchronizing the message queue");
+    await expect(card.getByRole("button", { name: "Sending…", exact: true })).toBeDisabled();
+    await page.clock.runFor(11_000);
+    await expect(progress).toContainText("11s elapsed");
+    await expect(progress).toContainText("you do not need to write it again");
+    expect(await progress.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(
+      true,
+    );
+    await page.screenshot({
+      path: `temp/verification/2026-10-21-steer-investigation/${light ? "light" : "dark"}-320-waiting.png`,
+    });
+    await page.clock.runFor(1000);
+    await expect(progress).toContainText("Waiting for provider confirmation");
+    await page.clock.runFor(1000);
+    await expect(progress).toHaveAttribute("data-delivery-progress", "rejected");
+    await expect(card).toContainText("Queue paused");
+    await expect(card.getByRole("button", { name: "Steer", exact: true })).toBeEnabled();
+  }
+});
+
 test("queue actions expose progress and recovery in both themes at narrow widths", async ({
   page,
 }) => {
@@ -613,7 +649,10 @@ test("welcome and working labels stay readable in narrow panels and both themes"
   const footer = page.locator('footer[aria-label="Provider usage"]');
   const terminal = footer.getByRole("button", { name: /New Terminal/ });
   await expect(terminal).toBeInViewport();
-  for (const button of [terminal, footer.getByRole("button", { name: "Conversation tools", exact: true })]) {
+  for (const button of [
+    terminal,
+    footer.getByRole("button", { name: "Conversation tools", exact: true }),
+  ]) {
     const box = await button.boundingBox();
     expect(box?.width).toBe(28);
     expect(box?.height).toBe(28);

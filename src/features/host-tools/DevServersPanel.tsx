@@ -1,4 +1,3 @@
-import { Badge } from "../../shared/ui/Badge";
 import { EmptyState } from "../../shared/ui/EmptyState";
 import { Alert } from "../../shared/ui/Alert";
 import { NumberField } from "../../shared/ui/NumberField";
@@ -371,14 +370,14 @@ function ProjectDevServersPanel({ cwd, launch }: { cwd: string; launch?: Launch 
         aria-pressed={server.id === selected?.id}
         onClick={() => choose(server)}
       >
-        <Badge
-          tone={
-            server.state === "error" ? "danger" : server.state === "running" ? "success" : "neutral"
-          }
+        <span
+          className="dev-server-state"
+          data-state={server.state}
           role="status"
+          title={t(stateLabels[server.state])}
         >
           {t(stateLabels[server.state])}
-        </Badge>
+        </span>
         <strong className="dev-server-name">{server.name}</strong>
         <code className="dev-server-ports">
           {[...new Set(server.endpoints.map((item) => `:${item.port}`))].join(" ") ||
@@ -408,7 +407,7 @@ function ProjectDevServersPanel({ cwd, launch }: { cwd: string; launch?: Launch 
           disabled={disabled}
           onClick={() => setDetails(undefined)}
         >
-          <X />
+          <X size={16} aria-hidden />
         </Button>
       </div>
       <dl className="dev-server-metadata">
@@ -604,7 +603,7 @@ function ProjectDevServersPanel({ cwd, launch }: { cwd: string; launch?: Launch 
           disabled={disabled || !endpoint}
           onClick={() => endpoint && openLocal(server, endpoint)}
         >
-          <ExternalLink />
+          <ExternalLink size={16} aria-hidden />
         </Button>
         <Button
           iconOnly
@@ -612,7 +611,7 @@ function ProjectDevServersPanel({ cwd, launch }: { cwd: string; launch?: Launch 
           disabled={disabled || !endpoint}
           onClick={() => endpoint && copyUrl(server, endpoint)}
         >
-          <Copy />
+          <Copy size={16} aria-hidden />
         </Button>
         <span className="dev-server-actions-gap" aria-hidden="true" />
         <Button disabled={disabled} onClick={() => void select(server, "details")}>
@@ -643,7 +642,7 @@ function ProjectDevServersPanel({ cwd, launch }: { cwd: string; launch?: Launch 
             setMenu((current) => (current ? null : button));
           }}
         >
-          <MoreHorizontal />
+          <MoreHorizontal size={16} aria-hidden />
         </Button>
       </div>
       {menu ? (
@@ -765,7 +764,7 @@ function ProjectDevServersPanel({ cwd, launch }: { cwd: string; launch?: Launch 
             label={autoRefresh ? t("Pause automatic refresh") : t("Resume automatic refresh")}
             onClick={() => setAutoRefresh((value) => !value)}
           >
-            {autoRefresh ? <Pause /> : <Play />}
+            {autoRefresh ? <Pause size={16} aria-hidden /> : <Play size={16} aria-hidden />}
           </Button>
           <Button
             variant="ghost"
@@ -774,7 +773,7 @@ function ProjectDevServersPanel({ cwd, launch }: { cwd: string; launch?: Launch 
             disabled={disabled}
             onClick={() => setSharing("3000")}
           >
-            <Share />
+            <Share size={16} aria-hidden />
           </Button>
           <Button
             variant="primary"

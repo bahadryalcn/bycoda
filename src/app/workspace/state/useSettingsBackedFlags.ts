@@ -1,12 +1,13 @@
+import { useStoredPreferenceState } from "../../../shared/hooks/useStoredPreferenceState";
 import { settingSnapshot } from "./settingSnapshot";
-import { useState, useSyncExternalStore } from "react";
+import { useSyncExternalStore } from "react";
 import {
   loadCollapsedProjectRailMode,
+  subscribeCollapsedProjectRailMode,
   loadLiveAgentsEnabled,
   loadNotesEnabled,
   subscribeLiveAgentsEnabled,
   subscribeNotesEnabled,
-  type CollapsedProjectRailMode,
 } from "../../../features/settings/model/settings";
 
 const notes = settingSnapshot(loadNotesEnabled, subscribeNotesEnabled);
@@ -17,7 +18,7 @@ export function useSettingsBackedFlags() {
   const notesEnabled = useSyncExternalStore(notes.subscribe, notes.getSnapshot, () => true);
   const liveAgentsEnabled = useSyncExternalStore(agents.subscribe, agents.getSnapshot, () => true);
   const [collapsedProjectRailMode, setCollapsedProjectRailMode] =
-    useState<CollapsedProjectRailMode>(loadCollapsedProjectRailMode);
+    useStoredPreferenceState(loadCollapsedProjectRailMode, subscribeCollapsedProjectRailMode);
   return {
     notesEnabled,
     liveAgentsEnabled,

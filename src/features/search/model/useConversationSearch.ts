@@ -13,8 +13,8 @@ const EMPTY: SessionContentResult = {
 };
 
 /** Own the request lifecycle separately from the file-search channel. */
-export function useConversationSearch(enabled: boolean, options: Options) {
-  const key = JSON.stringify(options);
+export function useConversationSearch(enabled: boolean, options: Options, revision?: string) {
+  const key = JSON.stringify([options, revision]);
   const optionsRef = useRef(options);
   optionsRef.current = options;
   const [retryTick, setRetryTick] = useState(0);

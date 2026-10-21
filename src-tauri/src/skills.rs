@@ -18,24 +18,47 @@ pub struct SkillPolicy {
 
 static SKILL_POLICY_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
-struct SkillPolicyFileLock(PathBuf);
+struct SkillPolicyFileLock {
+    database: rusqlite::Connection,
+    path: PathBuf,
+}
 impl Drop for SkillPolicyFileLock {
     fn drop(&mut self) {
-        let _ = std::fs::remove_file(&self.0);
+        let _ = std::fs::remove_file(&self.path);
+        let _ = self.database.execute_batch("ROLLBACK");
     }
 }
 fn lock_policy(file: &Path) -> Result<SkillPolicyFileLock, String> {
     let parent = file.parent().ok_or("Invalid skill policy location")?;
     std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
     let path = parent.join("skill-policy.lock");
-    std::fs::OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .open(&path)
-        .map_err(|_| {
-            "Another skill preference save is in progress. Try again after it finishes."
-        })?;
-    Ok(SkillPolicyFileLock(path))
+    let marker = "bycoda-sqlite-policy-lock-v1\n";
+    // The host uses the same process lock. Keep this file so every writer locks
+    // the same inode; SQLite releases the lock even after an abrupt exit.
+    let database = rusqlite::Connection::open(parent.join("skill-policy-lock.sqlite3"))
+        .map_err(|e| e.to_string())?;
+    database
+        .busy_timeout(std::time::Duration::ZERO)
+        .map_err(|e| e.to_string())?;
+    database.execute_batch("BEGIN IMMEDIATE").map_err(|_| {
+        "Another skill preference save is in progress. Try again after it finishes."
+    })?;
+    if path.exists() {
+        // The acquired SQLite lock proves a v1 marker was abandoned. An old
+        // anonymous sentinel cannot be safely distinguished from a live owner.
+        if std::fs::read_to_string(&path).map_err(|e| e.to_string())? != marker {
+            return Err("Another skill preference save is in progress. A legacy lock remains; close legacy writers and verify its owner before recovery.".into());
+        }
+        std::fs::remove_file(&path).map_err(|e| e.to_string())?;
+    }
+    let temporary = parent.join(format!("skill-policy-lock-{}.tmp", uuid::Uuid::new_v4()));
+    std::fs::write(&temporary, marker).map_err(|e| e.to_string())?;
+    // Publish initialized metadata exclusively, retaining exclusion with older
+    // writers without a crash window that could produce an empty new sentinel.
+    let result = std::fs::hard_link(&temporary, &path);
+    let _ = std::fs::remove_file(&temporary);
+    result.map_err(|e| e.to_string())?;
+    Ok(SkillPolicyFileLock { database, path })
 }
 
 fn policy_file() -> Result<PathBuf, String> {
@@ -1205,6 +1228,37 @@ mod tests {
             }
         )
         .is_err());
+    }
+
+    #[test]
+    fn skill_policy_lock_recovers_initialized_abandoned_markers_and_excludes_live_writers() {
+        let root = tmp("policy-lock");
+        let file = root.0.join("skill-policy.json");
+        let marker = root.0.join("skill-policy.lock");
+        let guard = lock_policy(&file).unwrap();
+        assert!(lock_policy(&file).is_err());
+        assert!(std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&marker)
+            .is_err());
+        drop(guard);
+        assert!(!marker.exists());
+        std::fs::write(&marker, "bycoda-sqlite-policy-lock-v1\n").unwrap();
+        let recovered = lock_policy(&file).unwrap();
+        assert!(marker.exists());
+        drop(recovered);
+        assert!(!marker.exists());
+        assert!(root.0.join("skill-policy-lock.sqlite3").exists());
+    }
+
+    #[test]
+    fn skill_policy_lock_never_removes_anonymous_legacy_sentinels() {
+        let root = tmp("policy-legacy-lock");
+        let marker = root.0.join("skill-policy.lock");
+        std::fs::write(&marker, "").unwrap();
+        assert!(lock_policy(&root.0.join("skill-policy.json")).is_err());
+        assert_eq!(std::fs::read(&marker).unwrap(), b"");
     }
 
     #[test]

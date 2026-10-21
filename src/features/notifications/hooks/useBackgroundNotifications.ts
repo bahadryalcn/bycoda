@@ -22,15 +22,23 @@ const POLL_MS = 60_000;
 
 /** Only one workspace window watches, so each change is announced once. */
 export async function isLeadWindow(): Promise<boolean> {
+  let own: string;
   try {
-    const own = getCurrentWindow().label;
+    own = getCurrentWindow().label;
+  } catch {
+    return false;
+  }
+  try {
     const labels = (await getAllWebviewWindows())
       .map((window) => window.label)
       .filter((label) => !label.startsWith("quick-composer"))
       .sort();
     return (labels[0] ?? own) === own;
   } catch {
-    return true;
+    // Window labels are unique. The canonical workspace remains a single
+    // fallback owner when enumeration is unavailable; unidentified windows
+    // cannot safely claim ownership.
+    return own === "main";
   }
 }
 

@@ -683,8 +683,20 @@ export function BtwSheet({
                       type="button"
                       role="tab"
                       aria-selected={selected}
+                      tabIndex={selected ? 0 : -1}
                       title={tab.question}
                       onClick={() => btw.selectTab(tab.id)}
+                      onKeyDown={(event) => {
+                        if (event.altKey || event.ctrlKey || event.metaKey) return;
+                        const index = tabs.findIndex((item) => item.id === tab.id);
+                        const next = event.key === "ArrowLeft" ? (index + tabs.length - 1) % tabs.length
+                          : event.key === "ArrowRight" ? (index + 1) % tabs.length
+                          : event.key === "Home" ? 0 : event.key === "End" ? tabs.length - 1 : -1;
+                        if (next < 0) return;
+                        event.preventDefault();
+                        btw.selectTab(tabs[next].id);
+                        event.currentTarget.closest('[role="tablist"]')?.querySelectorAll<HTMLButtonElement>('[role="tab"]')[next]?.focus();
+                      }}
                       className="min-w-0"
                     >
                       {tab.status ? (
@@ -698,6 +710,7 @@ export function BtwSheet({
                     <Button
                       className={`mr-1 shrink-0 focus-visible:opacity-100 ${selected ? "" : "opacity-0 group-hover:opacity-100"}`}
                       selected={selected}
+                      tabIndex={selected ? 0 : -1}
                       iconOnly
                       label={
                         tab.thread ? t("Delete “{p0}”", { p0: label }) : t("Discard new question")

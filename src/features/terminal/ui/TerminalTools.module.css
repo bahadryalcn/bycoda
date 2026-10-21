@@ -13,6 +13,9 @@
   flex: 1 1 120px;
   min-inline-size: 0;
 }
+.tools:empty {
+  display: none;
+}
 .command {
   min-inline-size: 0;
   padding: 4px;
@@ -60,8 +63,13 @@
 }
 
 .menuTrigger {
-  position: absolute;
-  inset-block-start: 4px;
-  inset-inline-end: 8px;
-  z-index: 1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  flex-shrink: 0;
+  gap: 4px;
+  padding: 4px 8px;
+  border-block-end: 1px solid var(--color-stroke);
+  background: var(--ui-surface);
 }

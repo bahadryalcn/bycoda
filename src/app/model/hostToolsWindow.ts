@@ -1,3 +1,5 @@
+import type { ToolsTab } from "../../features/host-tools/toolsUiControl";
+
 /** The window role is data only: reading it must not load any tool or workspace UI. */
 export type HostToolsWindow = {
   cwd: string;
@@ -7,7 +9,7 @@ export type HostToolsWindow = {
   composerWindow?: string;
   onlyTab?: "logs";
   initialMachine?: string;
-  initialTab?: "browser";
+  initialTab?: ToolsTab;
   initialUrl?: string;
 };
 
@@ -34,7 +36,9 @@ export function readHostToolsWindow(
         typeof value.composerSessionId === "string" ? value.composerSessionId : undefined,
       composerWindow: typeof value.composerWindow === "string" ? value.composerWindow : undefined,
       onlyTab: value.onlyTab === "logs" ? "logs" : undefined,
-      ...(value.initialTab === "browser" ? { initialTab: "browser" as const } : {}),
+      ...(["devices", "browser", "servers", "logs", "resources"].includes(value.initialTab)
+        ? { initialTab: value.initialTab as ToolsTab }
+        : {}),
       ...(typeof value.initialUrl === "string" && /^https?:\/\//i.test(value.initialUrl)
         ? { initialUrl: value.initialUrl }
         : {}),

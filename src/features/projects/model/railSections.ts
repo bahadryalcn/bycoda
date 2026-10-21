@@ -2,9 +2,31 @@ import { moveIdByStep, type MoveStep } from "../../../shared/lib/reorder";
 import { notifyProjectPathsChanged, subscribeProjectPathsChanged } from "./recents";
 
 const SECTION_ORDER_KEY = "bycoda.projectRailSectionOrder";
+const SECTION_COLLAPSE_KEY = "bycoda.projectRailSectionCollapse";
+
+export function loadRailSectionCollapse(): { groups: boolean; projects: boolean } {
+  try {
+    const stored = JSON.parse(localStorage.getItem(SECTION_COLLAPSE_KEY) ?? "null");
+    return { groups: stored?.groups === true, projects: stored?.projects === true };
+  } catch {
+    return { groups: false, projects: false };
+  }
+}
+
+export function toggleRailSectionCollapse(id: "groups" | "projects", collapsed?: boolean) {
+  const next = loadRailSectionCollapse();
+  next[id] = collapsed ?? !next[id];
+  try {
+    localStorage.setItem(SECTION_COLLAPSE_KEY, JSON.stringify(next));
+  } catch {
+    // Keep the current window usable when storage is unavailable.
+  }
+  notifyProjectPathsChanged();
+  return next;
+}
 
 /** The rail's reorderable sections, in their default order. */
-export const RAIL_SECTION_IDS = ["last-sessions", "pinned", "groups", "projects"] as const;
+export const RAIL_SECTION_IDS = ["last-sessions", "pinned", "groups", "crews", "projects"] as const;
 
 export type RailSectionId = (typeof RAIL_SECTION_IDS)[number];
 
@@ -12,15 +34,19 @@ export const RAIL_SECTION_LABELS: Record<RailSectionId, string> = {
   "last-sessions": "Last sessions",
   pinned: "Pinned",
   groups: "Groups",
+  crews: "Crews",
   projects: "Projects",
 };
 
 const KNOWN = new Set<string>(RAIL_SECTION_IDS);
 
+/** Sections added after orders were saved, placed beside their neighbour rather than last. */
+const INSERT_BEFORE: Partial<Record<RailSectionId, RailSectionId>> = { crews: "projects" };
+
 /**
  * A stored order made safe: unknown ids and repeats are dropped, and sections
  * the list does not mention (added in a newer version) are appended in their
- * default order.
+ * default order, or placed before their `INSERT_BEFORE` neighbour.
  */
 export function normalizeRailSectionOrder(stored: unknown): RailSectionId[] {
   const out: RailSectionId[] = [];
@@ -32,7 +58,13 @@ export function normalizeRailSectionOrder(stored: unknown): RailSectionId[] {
       out.push(id as RailSectionId);
     }
   }
-  for (const id of RAIL_SECTION_IDS) if (!seen.has(id)) out.push(id);
+  for (const id of RAIL_SECTION_IDS) {
+    if (seen.has(id)) continue;
+    const anchor = INSERT_BEFORE[id];
+    const at = anchor ? out.indexOf(anchor) : -1;
+    if (at >= 0) out.splice(at, 0, id);
+    else out.push(id);
+  }
   return out;
 }
 
@@ -95,7 +127,8 @@ export function isDefaultRailSectionOrder(order: readonly RailSectionId[]): bool
 export function subscribeRailSectionOrder(onChange: () => void): () => void {
   if (typeof window === "undefined") return () => {};
   const onStorage = (event: StorageEvent) => {
-    if (event.key === null || event.key === SECTION_ORDER_KEY) onChange();
+    if (event.key === null || event.key === SECTION_ORDER_KEY || event.key === SECTION_COLLAPSE_KEY)
+      onChange();
   };
   window.addEventListener("storage", onStorage);
   const unsubscribe = subscribeProjectPathsChanged(onChange);

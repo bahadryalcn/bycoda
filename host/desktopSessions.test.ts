@@ -490,6 +490,29 @@ describe("desktop sessions on the host", () => {
     desktop.close();
   });
 
+  it("checks queue metadata without parsing a large transcript and still excludes drafts", async () => {
+    const s = await setup();
+    s.seed({ id: "large", cwd: s.project.cwd });
+    s.seed({ id: "draft", cwd: s.project.cwd, draft: 1 });
+    const blocks = JSON.stringify([{ id: "user", role: "user", text: "x".repeat(1_000_000) }]);
+    s.desktopDb.prepare("UPDATE sessions SET blocks_json=? WHERE id='large'").run(blocks);
+    const desktop = new DesktopSessions(() => [s.dbPath], process.platform, new DesktopLive());
+    const parse = vi.spyOn(JSON, "parse");
+    try {
+      expect(desktop.metadata("large")).toEqual({
+        cwd: s.project.cwd,
+        harness: "codex",
+        running: false,
+      });
+      expect(desktop.metadata("draft")).toBeUndefined();
+      expect(desktop.metadata("missing")).toBeUndefined();
+      expect(parse.mock.calls.some(([value]) => value === blocks)).toBe(false);
+    } finally {
+      parse.mockRestore();
+      desktop.close();
+    }
+  });
+
   it("reuses a database stamp read for a short while", async () => {
     const s = await setup();
     s.seed({ id: "a", cwd: s.project.cwd, updated: 100 });

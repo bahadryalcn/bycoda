@@ -1014,6 +1014,32 @@ describe("headless session ownership", () => {
     ]);
   });
 
+  it("accepts a desktop turn past a message whose attachment the desktop stored without a path", () => {
+    const { engine, store, id } = setup("claude");
+    const base = store.session(id);
+    const file = { id: "f1", name: "a.png", mimeType: "image/png", kind: "image" as const, size: 1 };
+    const sent = (path?: string) => ({
+      id: "phone",
+      role: "user" as const,
+      text: "[image1]",
+      attachments: [{ ...file, ...(path ? { path } : {}) }],
+    });
+    store.save(
+      {
+        ...base,
+        revision: base.revision + 1,
+        desktop: { updatedAt: 1 },
+        session: { ...base.session, blocks: [sent("C:/host/attachments/f1")] },
+      },
+      { type: "test.remote" },
+    );
+    const continued = structuredClone(store.session(id));
+    continued.updatedAt = Date.now() + 1000;
+    continued.session.blocks = [sent(), { id: "desk", role: "user", text: "From the desktop" }];
+    engine.refreshFromDesktop(continued);
+    expect(store.session(id).session.blocks.map((block) => block.id)).toEqual(["phone", "desk"]);
+  });
+
   it("switches a historic chat between providers with context on the next send", async () => {
     const { engine, store, turns, id } = setup("claude");
     const value = store.session(id);

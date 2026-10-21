@@ -1,8 +1,9 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { APPEARANCE_PREFERENCES_EVENT, loadAppearancePreferences } from "../../settings/model/appearancePreferences";
-import { Button } from "../../../shared/ui/Button";
-import { Minus, Plus, File } from "../../../shared/ui/icons";
-import { t } from "../../../shared/i18n";
+import {
+  APPEARANCE_PREFERENCES_EVENT,
+  loadAppearancePreferences,
+} from "../../settings/model/appearancePreferences";
+import { File } from "../../../shared/ui/icons";
 import type { SshEndpoint } from "../model/serverInventory";
 import styles from "./ServerTerminalSession.module.css";
 
@@ -20,7 +21,11 @@ export function ServerTerminalSession({
   port?: number | null;
   identityFile?: string | null;
   keyGenerationPath?: string;
-  children: (fontSize: number, onFontSizeChange: (size: number) => void, lineHeight: number) => ReactNode;
+  children: (
+    fontSize: number,
+    onFontSizeChange: (size: number) => void,
+    lineHeight: number,
+  ) => ReactNode;
 }) {
   const [preferences, setPreferences] = useState(loadAppearancePreferences);
   const defaultSize = preferences.terminalSize;
@@ -49,39 +54,9 @@ export function ServerTerminalSession({
           {key ? (
             <span className={styles.key} title={key}>
               <File aria-hidden className="size-3 shrink-0" />
-              <span>{key.split(/[\\/]/).pop()}</span>
+              <span className={styles.keyName}>{key.split(/[\\/]/).pop()}</span>
             </span>
           ) : null}
-        </div>
-        <div className={styles.typography} role="group" aria-label={t("Terminal text size")}>
-          <Button
-            variant="ghost"
-            iconOnly
-            label={t("Decrease text size")}
-            tooltip={t("Decrease text size")}
-            disabled={fontSize <= 8}
-            onClick={() => setFontSize(fontSize - 1)}
-          >
-            <Minus aria-hidden className="size-3.5" />
-          </Button>
-          <Button
-            variant="ghost"
-            label={t("Reset text size")}
-            tooltip={t("Reset text size")}
-            onClick={() => setFontSize(defaultSize)}
-          >
-            {fontSize}
-          </Button>
-          <Button
-            variant="ghost"
-            iconOnly
-            label={t("Increase text size")}
-            tooltip={t("Increase text size")}
-            disabled={fontSize >= 40}
-            onClick={() => setFontSize(fontSize + 1)}
-          >
-            <Plus aria-hidden className="size-3.5" />
-          </Button>
         </div>
       </div>
       {children(fontSize, setFontSize, preferences.terminalLineHeight)}

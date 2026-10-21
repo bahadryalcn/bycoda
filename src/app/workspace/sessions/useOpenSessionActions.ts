@@ -6,6 +6,9 @@ import {
   type MutableRefObject,
   type SetStateAction,
 } from "react";
+import { message } from "@tauri-apps/plugin-dialog";
+import { t } from "../../../shared/i18n";
+import { appName } from "../../../shared/lib/appName";
 import { getSessions } from "../../../features/sessions/model/sessionsStore";
 import { subscribeComposerDrafts } from "../../../features/sessions/model/draftCache";
 import {
@@ -175,7 +178,17 @@ export function useOpenSessionActions({
   /** Open several history sessions together as a grid in one new tab. */
   const onOpenSessionsSideBySide = useCallback(
     async (sessionIds: string[]) => {
-      const wanted = [...new Set(sessionIds)].slice(0, SIDE_BY_SIDE_LIMIT);
+      const wanted = [...new Set(sessionIds)];
+      if (wanted.length > SIDE_BY_SIDE_LIMIT) {
+        await message(
+          t("Select at most {p0} conversations to open side by side.", { p0: SIDE_BY_SIDE_LIMIT }),
+          {
+            title: appName(),
+            kind: "warning",
+          },
+        );
+        return;
+      }
       if (wanted.length === 0) return;
       workspaceNavigation.cancel();
       const request = ++openRequest.current;

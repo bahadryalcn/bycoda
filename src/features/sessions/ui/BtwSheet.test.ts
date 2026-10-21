@@ -349,6 +349,28 @@ describe("BTW conversation", () => {
     expect(container.textContent).not.toContain("Second question answered");
   });
 
+  it("moves and wraps keyboard tab focus while keeping only the active close action tabbable", async () => {
+    await render({ blocks: session([thread("t1", "First question", 1), thread("t2", "Second question", 2)]) });
+    await act(async () => void btw.openWith(""));
+    const key = async (value: string, expected: number) => {
+      const active = tabs().find((tab) => tab.getAttribute("aria-selected") === "true")!;
+      active.focus();
+      const event = new KeyboardEvent("keydown", { key: value, bubbles: true, cancelable: true });
+      await act(async () => { active.dispatchEvent(event); });
+      expect(event.defaultPrevented).toBe(true);
+      expect(tabs()[expected].getAttribute("aria-selected")).toBe("true");
+      expect(document.activeElement).toBe(tabs()[expected]);
+      expect(tabs().map((tab) => tab.tabIndex)).toEqual(tabs().map((_, index) => index === expected ? 0 : -1));
+      const closeButtons = [...container.querySelectorAll<HTMLButtonElement>('[role="tablist"] button:not([role="tab"])')];
+      expect(closeButtons.map((button) => button.tabIndex)).toEqual(closeButtons.map((_, index) => index === expected ? 0 : -1));
+    };
+    await key("ArrowRight", 0);
+    await key("ArrowLeft", 2);
+    await key("Home", 0);
+    await key("End", 2);
+    await key("ArrowLeft", 1);
+  });
+
   it("deletes a thread from its tab and closes when no tabs remain", async () => {
     const onDelete = vi.fn();
     await render({

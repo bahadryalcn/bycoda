@@ -46,6 +46,10 @@ export async function formatProjectText(path: string, source: string, cursorOffs
   return formatText(path, source, cursorOffset);
 }
 
+export function hasBundledFormatter(path: string): boolean {
+  return parserForPath(path) !== null;
+}
+
 function parserForPath(path: string): ParserName | null {
   const name = basename(path).toLowerCase();
   const extension = name.includes(".") ? name.slice(name.lastIndexOf(".")) : "";

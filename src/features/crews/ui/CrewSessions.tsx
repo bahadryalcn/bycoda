@@ -1,15 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
-import { Modal } from "../../../shared/ui/Modal";
 import { Alert } from "../../../shared/ui/Alert";
-import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
-import { TextareaField } from "../../../shared/ui/TextareaField";
-import { Plus, Settings, Pause, Play, Bot, Square } from "../../../shared/ui/icons";
+import { Pause, Play, Bot, Plus, Square } from "../../../shared/ui/icons";
 import type { BackgroundSessionTarget } from "../../tasks/model/backgroundSession";
 import { taskSessionIds } from "../../tasks/model/backgroundSession";
-import type { CrewRun } from "../model/crew";
 import { useProjectCrews } from "../model/crewClient";
+import { CrewEditDialog, StartCrewDialog } from "./CrewDialogs";
 export function CrewSidebar({
   cwd,
   onManagedChange,
@@ -18,7 +15,6 @@ export function CrewSidebar({
   cwd: string;
   query?: string;
   onOpen: (target: BackgroundSessionTarget) => void | Promise<void>;
-  onSettings: () => void;
   onManagedChange: (cwd: string, ids: string[]) => void;
 }) {
   const state = useProjectCrews(cwd);
@@ -39,22 +35,17 @@ export function CrewSessions({
   state,
   query = "",
   onOpen,
-  onSettings,
 }: {
   cwd: string;
   state: ReturnType<typeof useProjectCrews>;
   query?: string;
   onOpen?: (target: BackgroundSessionTarget) => void | Promise<void>;
-  onSettings: () => void;
 }) {
   useLocale();
-  const [creating, setCreating] = useState(false);
-  const [definitionId, setDefinitionId] = useState("");
-  const [prompt, setPrompt] = useState("");
   const [pending, setPending] = useState(false);
   const pendingGate = useRef(false);
-  const startRequest = useRef<{ signature: string; id: string } | null>(null);
   const [error, setError] = useState("");
+  const [dialog, setDialog] = useState<{ start: true } | { editId?: string } | null>(null);
   const data = state.data;
   const act = async (operation: () => Promise<unknown>) => {
     if (pendingGate.current) return;
@@ -73,7 +64,12 @@ export function CrewSessions({
   const open = (sessionId: string) => {
     if (!data || !onOpen) return;
     void act(async () =>
-      onOpen({ cwd, machineId: data.machine.id, projectId: data.project.id, sessionId }),
+      onOpen({
+        cwd,
+        machineId: data.machine.id,
+        projectId: data.project.id,
+        sessionId,
+      }),
     );
   };
   const runs =
@@ -84,6 +80,9 @@ export function CrewSessions({
           .toLocaleLowerCase()
           .includes(query.trim().toLocaleLowerCase()),
     ) ?? [];
+  // Crews are listed and edited in the project rail; this pane shows their runs
+  // and keeps Start reachable while the rail is hidden.
+  if (!data && !state.error) return null;
   return (
     <section
       aria-label={t("Crews")}
@@ -91,24 +90,18 @@ export function CrewSessions({
     >
       <div className="flex items-center gap-1">
         <Bot className="size-3.5" aria-hidden />
-        <span className="min-w-0 flex-1 text-xs">{t("Crews")}</span>
-        <Button variant="ghost" iconOnly label={t("Manage crews")} onClick={onSettings}>
-          <Settings className="size-3.5" />
-        </Button>
+        <span className="min-w-0 flex-1 text-xs">{t("Crew runs")}</span>
         <Button
           variant="ghost"
           iconOnly
           label={t("Start crew")}
           disabled={!data || pending}
-          onClick={() => {
-            setDefinitionId(data?.definitions[0]?.id ?? "");
-            setCreating(true);
-          }}
+          onClick={() => setDialog(data?.definitions.length ? { start: true } : {})}
         >
           <Plus className="size-3.5" />
         </Button>
       </div>
-      {error && !creating && <Alert tone="danger">{error}</Alert>}
+      {error && <Alert tone="danger">{error}</Alert>}
       {state.error && (
         <Button variant="ghost" onClick={() => void state.refetch()} title={state.error.message}>
           {t("Crew host unavailable. Retry")}
@@ -277,7 +270,9 @@ export function CrewSessions({
                   title={requests.map((request) => request.text).join("\n")}
                   onClick={() => run.coordinatorSessionId && open(run.coordinatorSessionId)}
                 >
-                  {t("{p0} requests · Open coordinator", { p0: requests.length })}
+                  {t("{p0} requests · Open coordinator", {
+                    p0: requests.length,
+                  })}
                 </Button>
               )}
               {blocked > 0 && (
@@ -290,79 +285,22 @@ export function CrewSessions({
           </div>
         );
       })}
-      {creating && (
-        <Modal
-          title={t("Start crew")}
-          onClose={() => {
-            if (!pending) setCreating(false);
-          }}
-          size="md"
-        >
-          <div className="flex flex-col gap-3 p-4">
-            {error && <Alert tone="danger">{error}</Alert>}
-            <SearchableSelect
-              label={t("Crew")}
-              value={definitionId}
-              options={
-                data?.definitions.map((d) => ({
-                  value: d.id,
-                  label: d.name,
-                  description: d.projectId ? t("Project") : t("Global"),
-                })) ?? []
-              }
-              onChange={setDefinitionId}
-              disabled={pending}
-            />
-            <TextareaField
-              label={t("Crew assignment")}
-              placeholder={t("What should this crew deliver?")}
-              value={prompt}
-              disabled={pending}
-              onChange={(e) => setPrompt(e.target.value)}
-            />
-            <div className="flex justify-end gap-2">
-              <Button
-                variant="ghost"
-                onClick={() => {
-                  setCreating(false);
-                  onSettings();
-                }}
-                disabled={pending}
-              >
-                {t("Manage crews")}
-              </Button>
-              <Button
-                disabled={!definitionId || !prompt.trim() || pending}
-                loading={pending}
-                onClick={() =>
-                  void act(async () => {
-                    const signature = JSON.stringify([definitionId, prompt]);
-                    if (startRequest.current?.signature !== signature)
-                      startRequest.current = { signature, id: crypto.randomUUID() };
-                    const run = await state.call<CrewRun>("crews.start", {
-                      definitionId,
-                      prompt,
-                      requestId: startRequest.current.id,
-                    });
-                    if (run.error) throw new Error(run.error);
-                    setCreating(false);
-                    setPrompt("");
-                    if (run.coordinatorSessionId && onOpen && data)
-                      await onOpen({
-                        cwd,
-                        machineId: data.machine.id,
-                        projectId: data.project.id,
-                        sessionId: run.coordinatorSessionId,
-                      });
-                  })
-                }
-              >
-                {t("Start crew")}
-              </Button>
-            </div>
-          </div>
-        </Modal>
-      )}
+      {dialog && "start" in dialog ? (
+        <StartCrewDialog
+          cwd={cwd}
+          state={state}
+          onOpen={onOpen}
+          onEdit={(editId) => setDialog({ editId })}
+          onClose={() => setDialog(null)}
+        />
+      ) : dialog ? (
+        <CrewEditDialog
+          cwd={cwd}
+          crewId={dialog.editId}
+          createScope={dialog.editId ? undefined : "project"}
+          onClose={() => setDialog(null)}
+        />
+      ) : null}
     </section>
   );
 }

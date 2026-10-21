@@ -3,6 +3,14 @@ import { loadWindowSurface, readHostToolsWindow } from "./hostToolsWindow";
 
 const search = (value: unknown) => `?hostTools=${encodeURIComponent(JSON.stringify(value))}`;
 
+it.each(["devices", "browser", "servers", "logs", "resources"])("preserves detached tool tab %s", (initialTab) => {
+  expect(readHostToolsWindow(search({ cwd: "/repo", sessionId: "one", title: "Project", initialTab }))).toMatchObject({ initialTab });
+});
+
+it("ignores an unknown detached tool tab", () => {
+  expect(readHostToolsWindow(search({ cwd: "/repo", sessionId: "one", title: "Project", initialTab: "unknown" }))?.initialTab).toBeUndefined();
+});
+
 it("preserves the project, originating composer and target without UI dependencies", () => {
   const payload = {
     cwd: "remote://mac/repo",

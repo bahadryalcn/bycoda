@@ -36,6 +36,7 @@ import { useLockSnapshot } from "../../group-lock/hooks/useGroupLock";
 import { isProjectLockedIn } from "../../group-lock/model/lockState";
 import { RevealedSetting } from "../../settings/ui/settingsControls";
 import { railGroupLookup } from "../model/railGroups";
+import { subscribeProjectPathsChanged } from "../../projects/model/recents";
 import {
   durationSamples,
   effectiveResolution,
@@ -211,7 +212,9 @@ export function UsageOverview({
     };
   }, [accounts, since, interval.end, queryKey, limitsOnly]);
   const lock = useLockSnapshot();
-  const groupFor = useMemo(() => railGroupLookup(), [load, lock]);
+  const [groupRevision, setGroupRevision] = useState(0);
+  useEffect(() => subscribeProjectPathsChanged(() => setGroupRevision((value) => value + 1)), []);
+  const groupFor = useMemo(() => railGroupLookup(), [load, lock, groupRevision]);
   const samples = useMemo(
     () =>
       usageSamples(

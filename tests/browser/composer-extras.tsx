@@ -118,8 +118,14 @@ if (accountPicker) {
   });
 }
 
+import {
+  beginDeliveryProgress,
+  updateDeliveryProgress,
+} from "../../src/features/sessions/model/deliveryProgress";
+
 function Fixture() {
   const queueFeedback = new URLSearchParams(location.search).has("queue-feedback");
+  const deliveryProgress = new URLSearchParams(location.search).has("delivery-progress");
   const [queueStatus, setQueueStatus] = useState<"paused" | "active">("paused");
   const [harness, setHarness] = useState<HarnessId>(
     antigravitySelection ? "antigravity" : "claude",
@@ -151,13 +157,13 @@ function Fixture() {
       </div>
       <Composer
         queuedMessages={
-          queueFeedback
+          queueFeedback || deliveryProgress
             ? [{ id: "queued", text: "Queued task waiting for the current turn", attachments: [] }]
             : undefined
         }
-        queueStatus={queueFeedback ? queueStatus : undefined}
+        queueStatus={queueFeedback || deliveryProgress ? queueStatus : undefined}
         onResumeQueue={
-          queueFeedback
+          queueFeedback || deliveryProgress
             ? async () => {
                 await new Promise((resolve) => setTimeout(resolve, 800));
                 setQueueStatus("active");
@@ -169,8 +175,25 @@ function Fixture() {
             : undefined
         }
         onSteerQueuedMessage={
-          queueFeedback
+          queueFeedback || deliveryProgress
             ? async () => {
+                if (deliveryProgress) {
+                  const progress = beginDeliveryProgress(
+                    "composer-layout-fixture",
+                    "queued",
+                    "syncing",
+                  );
+                  await new Promise((resolve) => setTimeout(resolve, 12_000));
+                  updateDeliveryProgress("composer-layout-fixture", progress, "confirming");
+                  await new Promise((resolve) => setTimeout(resolve, 800));
+                  updateDeliveryProgress(
+                    "composer-layout-fixture",
+                    progress,
+                    "rejected",
+                    "The send was cancelled or rejected. The message remains queued and the queue is paused.",
+                  );
+                  return false;
+                }
                 await new Promise((resolve) => setTimeout(resolve, 800));
                 return false;
               }

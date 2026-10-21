@@ -304,9 +304,22 @@ export function createHostServer(
     if (snapshot) return snapshot;
     return engine.store.session(id);
   };
-  const explicitSkillNames = (id: string) => skillInvocationTokens(
-    featureSession(id).session.blocks.filter((block) => block.role === "user").at(-1)?.text ?? "",
-  ).map((token) => token.name.replace(/^skill:/, ""));
+  const queueSessionStatus = (id: string) => {
+    const metadata = desktop.metadata(id);
+    if (
+      metadata &&
+      (metadata.harness === "acp" || providers.includes(metadata.harness as RemoteProvider)) &&
+      engine.store.projects().some((project) => desktop.samePath(project.cwd, metadata.cwd))
+    )
+      return metadata.running ? "running" : "idle";
+    return engine.store.sessionStatus(id);
+  };
+  const explicitSkillNames = (id: string) =>
+    skillInvocationTokens(
+      featureSession(id)
+        .session.blocks.filter((block) => block.role === "user")
+        .at(-1)?.text ?? "",
+    ).map((token) => token.name.replace(/^skill:/, ""));
   const xBrowser = new XBrowserSessions(join(featureDirectory, "social"));
   const social =
     socialOverride ??
@@ -542,15 +555,26 @@ export function createHostServer(
       progressive,
     );
   let imageCapability: { at: number; value: Promise<boolean> } | undefined;
-  const crews = new HostCrews(engine.store, engine, tasks, (projectId) => models(projectId), Date.now,
+  const crews = new HostCrews(
+    engine.store,
+    engine,
+    tasks,
+    (projectId) => models(projectId),
+    Date.now,
     async (candidate, capability) => {
       if (candidate.harness === "codex" && capability === "image-generation") {
         if (!imageCapability || Date.now() - imageCapability.at > 60_000)
-          imageCapability = { at: Date.now(), value: probeNativeCodexImageCapability(join(featureDirectory, "crews")).then((result) => result.available) };
+          imageCapability = {
+            at: Date.now(),
+            value: probeNativeCodexImageCapability(join(featureDirectory, "crews")).then(
+              (result) => result.available,
+            ),
+          };
         return imageCapability.value;
       }
       return undefined;
-    });
+    },
+  );
   const projectSessionList = async (projectId: string) => {
     const project = engine.store.project(projectId);
     const local = desktop.list(project.cwd, projectId, providers);
@@ -951,26 +975,46 @@ export function createHostServer(
             if (action === "tasks.create") {
               const own = featureSession(conversationPrincipal.sessionId).session;
               const input = {
-                id: String(args.taskId), projectId, title: String(args.title), prompt: String(args.prompt),
-                harness: own.harness, model: own.model, modelSettings: own.modelSettings,
-                runtimeMode: own.runtimeMode, maxRunMinutes: 0, isolate: false,
-                review: !args.crewDefinitionId, autoMerge: false, continueUntilDone: false,
-                ...(args.crewDefinitionId ? { crewDefinitionId: String(args.crewDefinitionId) } : {}),
+                id: String(args.taskId),
+                projectId,
+                title: String(args.title),
+                prompt: String(args.prompt),
+                harness: own.harness,
+                model: own.model,
+                modelSettings: own.modelSettings,
+                runtimeMode: own.runtimeMode,
+                maxRunMinutes: 0,
+                isolate: false,
+                review: !args.crewDefinitionId,
+                autoMerge: false,
+                continueUntilDone: false,
+                ...(args.crewDefinitionId
+                  ? { crewDefinitionId: String(args.crewDefinitionId) }
+                  : {}),
                 status: args.status === "queued" ? "queued" : "todo",
               };
               const key = `task-create:${projectId}:${input.id}`;
               const fingerprint = createHash("sha256")
-                .update(JSON.stringify([conversationPrincipal.sessionId, input])).digest("hex");
+                .update(JSON.stringify([conversationPrincipal.sessionId, input]))
+                .digest("hex");
               result = engine.store.transaction(() => {
-                const receipt = engine.store.db.prepare("SELECT value FROM metadata WHERE key=?").get(key) as { value: string } | undefined;
+                const receipt = engine.store.db
+                  .prepare("SELECT value FROM metadata WHERE key=?")
+                  .get(key) as { value: string } | undefined;
                 const existing = tasks.get(input.id);
                 if (receipt || existing) {
-                  if (receipt?.value !== fingerprint || !existing || existing.projectId !== projectId)
+                  if (
+                    receipt?.value !== fingerprint ||
+                    !existing ||
+                    existing.projectId !== projectId
+                  )
                     throw new Error("Task ID was reused or its task no longer exists.");
                   return existing;
                 }
                 const created = tasks.save(input);
-                engine.store.db.prepare("INSERT INTO metadata(key,value) VALUES(?,?)").run(key, fingerprint);
+                engine.store.db
+                  .prepare("INSERT INTO metadata(key,value) VALUES(?,?)")
+                  .run(key, fingerprint);
                 return created;
               });
             } else if (action === "tasks.list") result = list;
@@ -1374,6 +1418,7 @@ export function createHostServer(
                 "models.list",
                 "crews.v1",
                 "crews.tasks.v1",
+                "crews.delete.v1",
                 "approvals",
                 "questions",
                 "diff",
@@ -1871,7 +1916,7 @@ export function createHostServer(
           case "sessions.queue.finish": {
             const id = String(params.sessionId ?? "");
             attachmentOwnership.validateExposure(params);
-            featureSession(id); // Verify that the queue belongs to an existing host/desktop session.
+            const queueStatus = queueSessionStatus(id); // Lightweight authorized session existence check.
             const clientId = params.clientId;
             if (typeof clientId !== "string" || !clientId || clientId.length > 200)
               throw new Error("Invalid queue client");
@@ -1933,7 +1978,7 @@ export function createHostServer(
                 throw new Error("Invalid queue acknowledgement");
               if (
                 params.accepted === false &&
-                (desktopWatch(id)?.running || featureSession(id).status === "running")
+                (desktopWatch(id)?.running || queueStatus === "running")
               )
                 throw new Error("Wait for the running turn before recovering its queued message.");
               result = engine.store.transaction(() =>
@@ -2254,7 +2299,9 @@ export function createHostServer(
           case "crews.schema":
           case "crews.inspect":
           case "crews.save":
+          case "crews.delete":
           case "crews.agent.save":
+          case "crews.agent.delete":
           case "crews.start":
           case "crews.get":
           case "crews.assign":

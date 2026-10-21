@@ -87,10 +87,14 @@ function checkMark(state: GithubPrCheckState): {
 
 /** The Checks tab: label plus an overall mark whose name spells out the counts. */
 export function PrChecksTab({
+  id,
+  controls,
   overall,
   selected,
   onSelect,
 }: {
+  id?: string;
+  controls?: string;
   overall: GithubPrChecksOverall;
   selected: boolean;
   onSelect: () => void;
@@ -104,6 +108,9 @@ export function PrChecksTab({
       variant="tab"
       type="button"
       role="tab"
+      id={id}
+      aria-controls={controls}
+      tabIndex={selected ? 0 : -1}
       aria-selected={selected}
       aria-label={label}
       title={label}

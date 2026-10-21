@@ -1,9 +1,47 @@
 import { Button } from "../../../shared/ui/Button";
+import { Popover } from "../../../shared/ui/Popover";
+import { WorkingIndicator } from "../../../shared/ui/WorkingIndicator";
 import { t, useLocale } from "../../../shared/i18n";
 import { useEffect, useRef, useState } from "react";
 import type { Session } from "../../sessions/model/session";
 import { ADOPTED_CONFLICT_MESSAGE, ADOPTED_RUNNING_REASON } from "../model/adoptedSessions";
 import type { RefreshAdoptedSession } from "../model/useAdoptedSessions";
+
+/** Background execution belongs with the pane actions, without a notice row. */
+export function BackgroundSessionIndicator({ session }: { session: Session }) {
+  const [open, setOpen] = useState(false);
+  const anchor = useRef<HTMLButtonElement>(null);
+  useLocale();
+  if (!session.continuingElsewhere || session.busy) return null;
+  return (
+    <span className="inline-flex shrink-0" data-no-drag>
+      <Button
+        ref={anchor}
+        variant="ghost"
+        iconOnly
+        label={t(ADOPTED_RUNNING_REASON)}
+        aria-expanded={open}
+        aria-haspopup="dialog"
+        onPointerDown={(event) => event.stopPropagation()}
+        onClick={() => setOpen((value) => !value)}
+      >
+        <WorkingIndicator />
+      </Button>
+      {open ? (
+        <Popover
+          anchor={anchor}
+          align="end"
+          width={280}
+          onDismiss={() => setOpen(false)}
+          role="dialog"
+          aria-label={t(ADOPTED_RUNNING_REASON)}
+        >
+          <p className="p-3 text-xs text-(--ui-text-secondary)">{t(ADOPTED_RUNNING_REASON)}</p>
+        </Popover>
+      ) : null}
+    </span>
+  );
+}
 
 /** Keeps the composer mounted (and its draft/attachments intact) during refresh. */
 export function AdoptedSessionNotice({
@@ -65,9 +103,7 @@ export function AdoptedSessionNotice({
       }
     }
   };
-  // An attached live turn already has a working indicator and Stop control.
-  const backgroundRunning = session.continuingElsewhere && !session.busy;
-  if (!backgroundRunning && !session.adoptedSyncConflict && !feedback && !refreshing) return null;
+  if (!session.adoptedSyncConflict && !feedback && !refreshing) return null;
   return (
     <div
       role={session.adoptedSyncConflict || feedback?.error ? "alert" : "status"}
@@ -75,7 +111,6 @@ export function AdoptedSessionNotice({
     >
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="min-w-0 flex-1 space-y-1">
-          {backgroundRunning ? <div role="status">{t(ADOPTED_RUNNING_REASON)}</div> : null}
           {session.adoptedSyncConflict ? <div>{t(ADOPTED_CONFLICT_MESSAGE)}</div> : null}
           {feedback ? <div>{t(feedback.text)}</div> : null}
         </div>

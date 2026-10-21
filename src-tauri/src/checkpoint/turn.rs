@@ -602,6 +602,20 @@ impl CheckpointStore {
                     if let Err(error) = result {
                         eprintln!("Interrupted checkpoint could not settle: {error}");
                     }
+                } else {
+                    // A previous peer may have resurrected this exact settled
+                    // lease. Re-read under the session gate before retiring it.
+                    let _ = self.exclusive(&session, &[&turn.cwd], |s| {
+                        if let Some(current) = read_turn(&entry.path())? {
+                            if !current.active
+                                && current.id == turn.id
+                                && same_cwd(&current.cwd, &turn.cwd)
+                            {
+                                leases::release(&s.leases, &session, &turn.id)?;
+                            }
+                        }
+                        Ok(())
+                    });
                 }
             }
         }

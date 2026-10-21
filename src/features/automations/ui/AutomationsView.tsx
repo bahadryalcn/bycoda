@@ -53,6 +53,7 @@ import { Popover } from "../../../shared/ui/Popover";
 import { ProjectLogoIcon } from "../../projects/ui/ProjectLogoIcon";
 import { ProjectMascot } from "../../projects/ui/ProjectMascot";
 import { SearchableProjectPicker } from "../../projects/ui/SearchableProjectPicker";
+import { HostModelSource } from "../../connections/ui/HostModelSource";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import { SkillPromptField } from "../../skills/ui/SkillPromptField";
 import { OverlayNav } from "../../../app/shell/TitleBar";
@@ -156,6 +157,10 @@ type Props = {
 };
 
 let rememberedAutomationId: string | null = null;
+
+function automationKey(automation: Pick<Automation, "id" | "host">): string {
+  return JSON.stringify([automation.host?.machineId ?? null, automation.id]);
+}
 
 export function AutomationsView({
   besideRail = false,
@@ -277,6 +282,7 @@ function AutomationsContent({
   const [draft, setDraft] = useState<AutomationDraft | null>(null);
   const [pickerOpen, setPickerOpen] = useState(true);
   const [saving, setSaving] = useState(false);
+  const savingRef = useRef(false);
   const [running, setRunning] = useState<string | null>(null);
   const [deleting, setDeleting] = useState<string | null>(null);
   const logos = useTabGroupLogos();
@@ -292,9 +298,11 @@ function AutomationsContent({
   useEffect(() => {
     setSelectedId((current) => {
       const preferred = current ?? rememberedAutomationId;
-      return preferred && automations.some((entry) => entry.id === preferred)
+      return preferred && automations.some((entry) => automationKey(entry) === preferred)
         ? preferred
-        : (storedAutomations[0]?.id ?? null);
+        : automations[0]
+          ? automationKey(automations[0])
+          : null;
     });
   }, [automations, storedAutomations]);
   useEffect(
@@ -337,7 +345,7 @@ function AutomationsContent({
     setUnreachableNames(hostQuery.data.unreachable);
     showHostAutomations(hostQuery.data.automations);
   }, [hostQuery.data, showHostAutomations]);
-  const historyTarget = automations.find((entry) => entry.id === selectedId);
+  const historyTarget = automations.find((entry) => automationKey(entry) === selectedId);
   const historyKey = [
     "automations",
     "runs",
@@ -347,7 +355,9 @@ function AutomationsContent({
   const historyQuery = useQuery({
     queryKey: historyKey,
     queryFn: () =>
-      historyTarget?.host ? listHostAutomationRuns(historyTarget) : listAutomationRuns(selectedId!),
+      historyTarget?.host
+        ? listHostAutomationRuns(historyTarget)
+        : listAutomationRuns(historyTarget!.id),
     enabled: queryVisible && !!selectedId && !!historyTarget,
     staleTime: 10_000,
     retry: false,
@@ -390,7 +400,7 @@ function AutomationsContent({
         .includes(needle);
     });
   }, [automations, groupLabels, deferredQuery, statusFilter]);
-  const selected = automations.find((entry) => entry.id === selectedId) ?? null;
+  const selected = automations.find((entry) => automationKey(entry) === selectedId) ?? null;
 
   const defaultDraftTarget = () => {
     const project = cwd && looksLikeProject(cwd) ? cwd : (recents[0]?.path ?? "~");
@@ -405,17 +415,20 @@ function AutomationsContent({
   };
 
   const beginCreate = () => {
+    if (savingRef.current) return;
     setPickerOpen(true);
     setDraft(null);
   };
 
   const beginBlank = () => {
+    if (savingRef.current) return;
     const { project, harness, model } = defaultDraftTarget();
     setPickerOpen(false);
     setDraft(newAutomationDraft(project, harness, model));
   };
 
   const beginFromTemplate = (template: AutomationTemplate) => {
+    if (savingRef.current) return;
     const { project, harness, model } = defaultDraftTarget();
     setPickerOpen(false);
     setDraft(
@@ -429,32 +442,39 @@ function AutomationsContent({
 
   const onSave = async (event: FormEvent, nextDraft: AutomationDraft) => {
     event.preventDefault();
-    if (saving) return;
+    if (savingRef.current) return;
+    savingRef.current = true;
     setSaving(true);
     try {
+      if (nextDraft.id && selected?.host && nextDraft.cwd !== selected.cwd) {
+        throw new Error("Create a new automation to use another project.");
+      }
       const saved = nextDraft.runInBackground
         ? await saveHostAutomation(machines, nextDraft)
         : await saveAutomation(nextDraft);
       if (saved.host)
         showHostAutomations([
-          ...hostAutomationsRef.current.filter((entry) => entry.id !== saved.id),
+          ...hostAutomationsRef.current.filter(
+            (entry) => automationKey(entry) !== automationKey(saved),
+          ),
           saved,
         ]);
       setPickerOpen(false);
       setDraft(null);
-      setSelectedId(saved.id);
+      setSelectedId(automationKey(saved));
       setError(null);
       if (saved.host) await refreshHost();
     } catch (reason: unknown) {
       setError(reason instanceof Error ? reason.message : String(reason));
     } finally {
+      savingRef.current = false;
       setSaving(false);
     }
   };
 
   const onRun = async (automation: Automation) => {
     if (running) return;
-    setRunning(automation.id);
+    setRunning(automationKey(automation));
     try {
       if (automation.host) {
         await runHostAutomationNow(automation);
@@ -473,20 +493,23 @@ function AutomationsContent({
   const onDelete = async (automation: Automation) => {
     if (deleting || saving) return;
     if (
-      running === automation.id ||
+      running === automationKey(automation) ||
       automation.lastRunStatus === "running" ||
-      (history.id === automation.id && history.runs.some((run) => run.status === "running"))
+      (history.id === automationKey(automation) &&
+        history.runs.some((run) => run.status === "running"))
     ) {
       setError(t("Wait for the current run to finish before deleting this automation."));
       return;
     }
     if (!window.confirm(`Delete “${automation.name}” and its run history?`)) return;
-    setDeleting(automation.id);
+    setDeleting(automationKey(automation));
     try {
       if (automation.host) {
         await deleteHostAutomation(automation);
         showHostAutomations(
-          hostAutomationsRef.current.filter((entry) => entry.id !== automation.id),
+          hostAutomationsRef.current.filter(
+            (entry) => automationKey(entry) !== automationKey(automation),
+          ),
         );
       } else await deleteAutomation(automation.id);
       setSelectedId(null);
@@ -613,12 +636,12 @@ function AutomationsContent({
           ) : visible.length > 0 ? (
             <ul className="space-y-0.5">
               {visible.map((automation) => (
-                <li key={automation.id}>
+                <li key={automationKey(automation)}>
                   <AutomationCard
                     automation={automation}
                     active={
                       !pickerOpen &&
-                      automation.id === selected?.id &&
+                      automationKey(automation) === selectedId &&
                       (!draft || draft.id === automation.id)
                     }
                     logos={logos}
@@ -627,9 +650,10 @@ function AutomationsContent({
                     colors={groupColors}
                     customColors={groupCustomColors}
                     onSelect={() => {
+                      if (savingRef.current) return;
                       setPickerOpen(false);
                       setDraft(null);
-                      setSelectedId(automation.id);
+                      setSelectedId(automationKey(automation));
                     }}
                     onToggle={(enabled) => void onToggle(automation, enabled)}
                   />
@@ -681,58 +705,72 @@ function AutomationsContent({
             <LoaderCircle className="size-4 animate-spin" />
           </div>
         ) : editorDraft ? (
-          <AutomationEditor
-            key={editorDraft.id ?? "new"}
-            draft={editorDraft}
-            recents={recents}
-            runs={editorDraft.id && history.id === editorDraft.id ? history.runs : []}
-            historyLoading={!!editorDraft.id && (history.id !== editorDraft.id || history.loading)}
-            historyError={history.id === editorDraft.id ? history.error : null}
-            onRefreshHistory={() => setHistoryRevision((value) => value + 1)}
-            saving={saving}
-            running={editorDraft.id === running}
-            deleteDisabled={
-              saving ||
-              !!deleting ||
-              editorDraft.id === running ||
-              selected?.lastRunStatus === "running" ||
-              (history.id === editorDraft.id &&
-                history.runs.some((run) => run.status === "running"))
-            }
-            dirty={draft != null}
-            backgroundMachine={
+          <HostModelSource
+            local={!editorDraft.runInBackground}
+            machine={
               selected?.host && editorDraft.id
-                ? selected.host.machineName
-                : backgroundMachineName(machines, editorDraft.cwd)
+                ? machines.find((entry) => entry.id === selected.host!.machineId)
+                : backgroundMachineFor(machines, editorDraft.cwd)
             }
-            backgroundMachineId={
-              selected?.host && editorDraft.id
-                ? selected.host.machineId
-                : backgroundMachineFor(machines, editorDraft.cwd)?.id
-            }
-            onChange={setDraft}
-            onClose={() => {
-              setDraft(null);
-              if (!editorDraft.id) setPickerOpen(true);
-            }}
-            onSubmit={(event) => onSave(event, editorDraft)}
-            onRun={selected && editorDraft.id ? () => void onRun(selected) : undefined}
-            onDelete={selected && editorDraft.id ? () => void onDelete(selected) : undefined}
-            onOpenSession={async (sessionId) => {
-              try {
-                if (selected?.host && editorDraft.id)
-                  await onOpenBackgroundSession({
-                    machineId: selected.host.machineId,
-                    cwd: selected.cwd,
-                    projectId: selected.host.projectId,
-                    sessionId,
-                  });
-                else await onOpenSession(sessionId);
-              } catch (reason: unknown) {
-                setError(reason instanceof Error ? reason.message : String(reason));
+            cwd={editorDraft.cwd}
+            model={editorDraft.model}
+            values={editorDraft.modelSettings}
+          >
+            <AutomationEditor
+              key={editorDraft.id ? selectedId : "new"}
+              draft={editorDraft}
+              recents={recents}
+              runs={editorDraft.id && history.id === selectedId ? history.runs : []}
+              historyLoading={!!editorDraft.id && (history.id !== selectedId || history.loading)}
+              historyError={history.id === selectedId ? history.error : null}
+              onRefreshHistory={() => setHistoryRevision((value) => value + 1)}
+              saving={saving}
+              running={!!editorDraft.id && selectedId === running}
+              deleteDisabled={
+                saving ||
+                !!deleting ||
+                (!!editorDraft.id && selectedId === running) ||
+                selected?.lastRunStatus === "running" ||
+                (history.id === selectedId && history.runs.some((run) => run.status === "running"))
               }
-            }}
-          />
+              dirty={draft != null}
+              backgroundMachine={
+                selected?.host && editorDraft.id
+                  ? selected.host.machineName
+                  : backgroundMachineName(machines, editorDraft.cwd)
+              }
+              backgroundMachineId={
+                selected?.host && editorDraft.id
+                  ? selected.host.machineId
+                  : backgroundMachineFor(machines, editorDraft.cwd)?.id
+              }
+              onChange={(nextDraft) => {
+                if (!savingRef.current) setDraft(nextDraft);
+              }}
+              onClose={() => {
+                if (savingRef.current) return;
+                setDraft(null);
+                if (!editorDraft.id) setPickerOpen(true);
+              }}
+              onSubmit={(event) => onSave(event, editorDraft)}
+              onRun={selected && editorDraft.id ? () => void onRun(selected) : undefined}
+              onDelete={selected && editorDraft.id ? () => void onDelete(selected) : undefined}
+              onOpenSession={async (sessionId) => {
+                try {
+                  if (selected?.host && editorDraft.id)
+                    await onOpenBackgroundSession({
+                      machineId: selected.host.machineId,
+                      cwd: selected.cwd,
+                      projectId: selected.host.projectId,
+                      sessionId,
+                    });
+                  else await onOpenSession(sessionId);
+                } catch (reason: unknown) {
+                  setError(reason instanceof Error ? reason.message : String(reason));
+                }
+              }}
+            />
+          </HostModelSource>
         ) : (
           <AutomationPicker onBlank={beginBlank} onPick={beginFromTemplate} />
         )}
@@ -1250,7 +1288,12 @@ function AutomationEditor({
   const showingHistory = historyAvailable && tab === "history";
 
   return (
-    <form className="flex min-h-0 min-w-0 flex-1 flex-col" onSubmit={onSubmit}>
+    <form
+      className="flex min-h-0 min-w-0 flex-1 flex-col"
+      onSubmit={onSubmit}
+      aria-busy={saving}
+      inert={saving}
+    >
       <div className="relative w-full shrink-0 border-b border-(--ui-tone-neutral-border)">
         <div className="flex w-full flex-col gap-2.5 px-3 sm:px-6 pt-4">
           <header className="flex flex-col gap-2.5">
@@ -1261,6 +1304,7 @@ function AutomationEditor({
                 autoFocus
                 aria-label={t("Automation name")}
                 value={draft.name}
+                disabled={saving}
                 onChange={(event) => update("name", event.target.value)}
                 placeholder={t("Untitled")}
                 fieldClassName="min-w-0 flex-1"
@@ -1304,7 +1348,11 @@ function AutomationEditor({
               <SearchableProjectPicker
                 cwd={draft.cwd}
                 recents={recents}
-                onSelectProject={(cwd) => onChange({ ...draft, cwd, sessionFolderId: "" })}
+                disabled={!!draft.id && draft.runInBackground}
+                onSelectProject={(cwd) => {
+                  if (!draft.id || !draft.runInBackground)
+                    onChange({ ...draft, cwd, sessionFolderId: "" });
+                }}
               />
               {onDelete ? (
                 <>

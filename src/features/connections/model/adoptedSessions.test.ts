@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type { Attachment, Block, Session } from "../../sessions/model/session";
 import {
+  adoptedTranscriptLead,
   desktopCopyOf,
   mergeAdoptedSession,
   mirrorAdoptedSessions,
@@ -240,9 +241,31 @@ describe("mergeAdoptedSession", () => {
     ).toHaveLength(2);
   });
 
+  it.each([{ path: undefined }, { path: "C:/Users/me/.bycoda-host/attachments/image1" }])(
+    "ignores where each side stored the same attachment: %j",
+    (edit) => {
+      const stored = { ...message, attachments: [{ ...file, ...edit }] };
+      expect(
+        mergeAdoptedSession(local({ blocks: [stored] }), host({ blocks: [message, block("b")] })),
+      ).toBeDefined();
+      expect(
+        mergeAdoptedSession(local({ blocks: [message] }), host({ blocks: [stored, block("b")] })),
+      ).toBeDefined();
+    },
+  );
+
+  it("treats a finished block's stored `streaming: false` as absent", () => {
+    const reply = { id: "r", role: "assistant", text: "done" } as Block;
+    expect(
+      adoptedTranscriptLead(
+        local({ blocks: [reply, block("next")] }),
+        host({ blocks: [{ ...reply, streaming: false }] }).session,
+      ),
+    ).toBe("local");
+  });
+
   it.each([
     { name: "other.png" },
-    { path: "C:/proj/other.png" },
     { id: "image2" },
     { size: 4 },
     { mimeType: "image/jpeg" },
@@ -459,6 +482,53 @@ describe("adopted sessions after quitting mid-turn or with a lagging host", () =
     expect(mirror.current()).toBe(session);
     // Judged at this revision; only the host's next change is fetched again.
     expect(mirror.mirrored.get("s1")).toBe(5);
+  });
+
+  it("lets a local turn lead a host copy that only stored an attachment elsewhere", async () => {
+    const file = { id: "f1", name: "a.png", mimeType: "image/png", kind: "image", size: 1 };
+    const sent = (path?: string) =>
+      ({ ...user("u1"), attachments: [{ ...file, ...(path ? { path } : {}) }] }) as Block;
+    for (const [mine, theirs] of [
+      [sent(), sent("C:/host/attachments/f1")],
+      [sent("C:/desktop/f1"), sent()],
+    ]) {
+      const session = local({ blocks: [mine, user("u2")] });
+      const mirror = mirrorAfterRestart(session, [theirs]);
+      await mirror.run;
+      expect(mirror.preserve).not.toHaveBeenCalled();
+      expect(mirror.conflict).not.toHaveBeenCalled();
+      expect(mirror.current()).toBe(session);
+    }
+  });
+
+  it("saves one copy per divergence the host keeps refusing", async () => {
+    const reply = (text: string) => ({ id: "r1", role: "assistant", text }) as Block;
+    let current = local({ blocks: [user("u1"), reply("desktop")] });
+    let revision = 5;
+    const remote = () => ({ ...host({ blocks: [user("u1"), reply("host")] }), revision });
+    const preserve = vi.fn(async () => true);
+    const conflict = vi.fn();
+    const deps: AdoptedMirrorDeps = {
+      list: async () => [entry({ revision })],
+      load: async () => remote(),
+      local: () => [current],
+      apply: (merged) => {
+        current = merged;
+      },
+      mirrored: new Map(),
+      autoRefreshConflicts: true,
+      preserve,
+      conflict,
+    };
+    await mirrorAdoptedSessions(deps);
+    expect(preserve).toHaveBeenCalledOnce();
+    // The same block differs again after a local turn on the replaced copy.
+    current = { ...current, blocks: [user("u1"), reply("desktop"), user("next")] };
+    revision = 6;
+    await mirrorAdoptedSessions(deps);
+    expect(preserve).toHaveBeenCalledOnce();
+    expect(conflict).toHaveBeenCalledOnce();
+    expect(current.blocks.at(-1)?.id).toBe("next");
   });
 
   it("still saves a separate copy when the lagging host diverged", async () => {

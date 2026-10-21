@@ -1,3 +1,4 @@
+import { subscribePreferenceChanges } from "../../../shared/lib/storedSetting";
 import { invoke } from "@tauri-apps/api/core";
 import { projectName } from "../../../shared/lib/paths";
 import type { Session } from "../../sessions/model/session";
@@ -23,6 +24,7 @@ const KEY = "bycoda.notifications";
 export const NOTIFICATIONS_DEFAULT = false;
 
 export const NOTIFICATIONS_CHANGE_EVENT = "bycoda:notifications-change";
+export const subscribeNotificationsEnabled = (onChange: () => void) => subscribePreferenceChanges([KEY], NOTIFICATIONS_CHANGE_EVENT, onChange);
 
 /** Rust emits this with the session id when a notification is clicked. */
 export const NOTIFICATION_CLICK_EVENT = "bycoda:notification-click";

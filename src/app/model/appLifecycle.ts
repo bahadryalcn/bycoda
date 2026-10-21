@@ -70,7 +70,11 @@ import { appName } from "../../shared/lib/appName";
 import { readToolWindow } from "./toolWindows";
 
 export type { ResumedWorkspace };
-import { captureSessionRecovery, parseSessionRecovery, setSessionRecovery } from "../../features/workspace/model/sessionRecovery";
+import {
+  captureSessionRecovery,
+  parseSessionRecovery,
+  setSessionRecovery,
+} from "../../features/workspace/model/sessionRecovery";
 export { hasInFlightSessions };
 
 export type BootWorkspace = {
@@ -342,7 +346,8 @@ async function loadResumedWorkspaceOnce(): Promise<ResumedWorkspace | null> {
   const snapshot = parseWorkspaceSnapshot(snapshotRaw);
   const previousRecovery = parseSessionRecovery(
     snapshotRaw && typeof snapshotRaw === "object" && "sessionRecovery" in snapshotRaw
-      ? snapshotRaw.sessionRecovery : null,
+      ? snapshotRaw.sessionRecovery
+      : null,
   );
   setSessionRecovery(previousRecovery);
 
@@ -385,23 +390,40 @@ async function loadResumedWorkspaceOnce(): Promise<ResumedWorkspace | null> {
 
   bootingResumed = workspace;
   if (workspace) {
-    const recoverable = workspace.sessions.filter((session) =>
-      !session.inboxAsk && !session.orchestrationLeadId &&
-      (session.cwd.startsWith("remote://") ||
-        session.blocks.some((block) => block.role === "user") ||
-        (session.rewindHistory?.length ?? 0) > 0),
+    const recoverable = workspace.sessions.filter(
+      (session) =>
+        !session.inboxAsk &&
+        !session.orchestrationLeadId &&
+        (session.cwd.startsWith("remote://") ||
+          session.blocks.some((block) => block.role === "user") ||
+          (session.rewindHistory?.length ?? 0) > 0),
     );
     if (recoverable.length) {
-      setSessionRecovery(captureSessionRecovery(previousRecovery, collectWorkspaceSnapshot(
-        workspace.tabs, recoverable, workspace.activeTabId, workspace.projectCwd,
-        workspace.projectReturnMemory ?? new Map(),
-      )));
+      setSessionRecovery(
+        captureSessionRecovery(
+          previousRecovery,
+          collectWorkspaceSnapshot(
+            workspace.tabs,
+            recoverable,
+            workspace.activeTabId,
+            workspace.projectCwd,
+            workspace.projectReturnMemory ?? new Map(),
+          ),
+        ),
+      );
       // Freeze recovery before the first app paint can replace the workspace.
-      await saveWorkspaceSnapshot(snapshotRaw ?? collectWorkspaceSnapshot(
-        workspace.tabs, workspace.sessions, workspace.activeTabId, workspace.projectCwd,
-        workspace.projectReturnMemory ?? new Map(), workspace.projectTerminals,
-        workspace.lastDockSide,
-      )).catch((error) => console.warn("Could not persist session recovery", error));
+      await saveWorkspaceSnapshot(
+        snapshotRaw ??
+          collectWorkspaceSnapshot(
+            workspace.tabs,
+            workspace.sessions,
+            workspace.activeTabId,
+            workspace.projectCwd,
+            workspace.projectReturnMemory ?? new Map(),
+            workspace.projectTerminals,
+            workspace.lastDockSide,
+          ),
+      ).catch((error) => console.warn("Could not persist session recovery", error));
     }
   }
   if (workspace) {
@@ -596,7 +618,14 @@ export async function persistQuitState(
     sessions.map(async (session) => {
       if (!shouldPersistSession(session)) return;
       const payload = interrupted.has(session.id) ? markTurnInterrupted(session) : session;
-      await write(upsertSession(payload));
+      const saved = await write(upsertSession(payload));
+      // A revision conflict resolves without a write. Keep this renderer's
+      // unique transcript alive rather than reporting it safely persisted.
+      if (mode === "quit" && saved === null) {
+        throw new Error(
+          "The conversation could not be saved. It may have changed in another window.",
+        );
+      }
     }),
   );
   // Drafts wait on a short timer; the quit must not.
@@ -732,7 +761,10 @@ async function prepareWindowToClose(
 async function reportCloseFailure(error: unknown): Promise<void> {
   console.warn("Persisting close state failed", error);
   await message(
-    t("Could not save before closing. The window remains open. Retry closing to try again.\n\n{p0}", { p0: String(error) }),
+    t(
+      "Could not save before closing. The window remains open. Retry closing to try again.\n\n{p0}",
+      { p0: String(error) },
+    ),
     {
       title: appName(),
       kind: "error",

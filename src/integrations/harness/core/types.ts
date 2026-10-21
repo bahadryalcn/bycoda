@@ -216,6 +216,8 @@ export type SendTurnInput = HarnessSessionInput & {
 export type CompactContextInput = HarnessSessionInput;
 
 export type SteerTurnInput = {
+  /** Local progress only; never serialized into a provider request. */
+  onReady?: () => void;
   skillPolicy?: import("./skillPolicy").SkillPolicy;
   sessionId: string;
   cwd: string;

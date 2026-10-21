@@ -165,6 +165,8 @@ import { useLinkedGroupStatus } from "../../features/projects/model/linkedWorksp
 import { useGroupLock } from "../../features/group-lock/hooks/useGroupLock";
 import { isProjectLockedIn } from "../../features/group-lock/model/lockState";
 import type { RailSectionId } from "../../features/projects/model/railSections";
+import { CrewRailSection } from "../../features/crews/ui/CrewRailSection";
+import type { BackgroundSessionTarget } from "../../features/tasks/model/backgroundSession";
 import {
   keepFocus,
   moveStepForKey,
@@ -220,6 +222,8 @@ type Props = {
   activeSessionId?: string;
   onSelectAgent?: (sessionId: string) => void;
   onPreviewSession?: (sessionId: string, options?: { keepOpen?: boolean }) => void;
+  /** Opens a crew's coordinator; the Crews section needs it to open running crews. */
+  onOpenCrewSession?: (target: BackgroundSessionTarget) => void | Promise<void>;
   recentSessions?: RecentSessionsSource;
   settingsOpen?: boolean;
   settingsSection?: SettingsSectionId;
@@ -267,6 +271,7 @@ export function ProjectRail({
   activeSessionId,
   onSelectAgent,
   onPreviewSession,
+  onOpenCrewSession,
   recentSessions,
   settingsOpen = false,
   onOpenSettings,
@@ -325,6 +330,7 @@ export function ProjectRail({
     };
   }, []);
   const [lastSessionsShown, setLastSessionsShown] = useState(false);
+  const [crewsShown, setCrewsShown] = useState(false);
   const [inboxMenu, setInboxMenu] = useState<{
     x: number;
     y: number;
@@ -562,6 +568,7 @@ export function ProjectRail({
   );
   const shownSections = new Set<RailSectionId>(["projects"]);
   if (lastSessionsShown) shownSections.add("last-sessions");
+  if (crewsShown) shownSections.add("crews");
   if (pinnedProjects.length > 0) shownSections.add("pinned");
   if (projectGroups.length > 0) shownSections.add("groups");
   const rail = useRailSections(shownSections);
@@ -733,18 +740,35 @@ export function ProjectRail({
           <ProjectSectionHeader
             label={t("Groups")}
             drag={rail.drag("groups")}
+            collapsed={rail.collapsed.groups}
+            onToggleCollapsed={() => rail.toggleCollapsed("groups")}
             onAddGroup={(x, y) => projectMenu.createGroup(x, y)}
           />
-          <div className={`flex-col gap-px px-2 ${rail.folded ? "hidden" : "flex"}`}>
+          <div
+            hidden={rail.folded || rail.collapsed.groups}
+            className={`flex-col gap-px px-2 ${rail.folded || rail.collapsed.groups ? "hidden" : "flex"}`}
+          >
             {groupedProjectSections.grouped
               .filter((entry) => !entry.parentId)
               .map((entry) => renderProjectGroup(entry))}
           </div>
         </div>
       ) : null,
+    crews:
+      onOpenCrewSession && cwd && cwd !== "~" ? (
+        <CrewRailSection
+          key={cwd}
+          cwd={cwd}
+          drag={rail.drag("crews")}
+          onShownChange={setCrewsShown}
+          onOpenSession={onOpenCrewSession}
+        />
+      ) : null,
     projects: (
       <ProjectSection
         label={t("Projects")}
+        collapsed={rail.collapsed.projects}
+        onToggleCollapsed={() => rail.toggleCollapsed("projects")}
         items={groupedProjectSections.ungrouped}
         muteStatuses={muteStatuses}
         emptyLabel={
@@ -1137,6 +1161,8 @@ type SortableHandle = ReturnType<typeof useAnimatedReorder>;
 
 function ProjectSection({
   label,
+  collapsed = false,
+  onToggleCollapsed,
   items,
   muteStatuses,
   emptyLabel,
@@ -1161,6 +1187,8 @@ function ProjectSection({
   groupMascots,
 }: {
   label: string;
+  collapsed?: boolean;
+  onToggleCollapsed?: () => void;
   items: RecentProject[];
   muteStatuses: ReadonlyMap<string, string | null>;
   emptyLabel?: string;
@@ -1192,13 +1220,22 @@ function ProjectSection({
   useLocale();
   return (
     <div ref={drag.setRef} className="reorder-item rail-reorder-block shrink-0 mb-2">
-      <ProjectSectionHeader label={label} onAdd={onAdd} drag={drag} />
-      {items.length === 0 && emptyLabel && !drag.folded ? (
+      <ProjectSectionHeader
+        label={label}
+        onAdd={onAdd}
+        drag={drag}
+        collapsed={collapsed}
+        onToggleCollapsed={onToggleCollapsed}
+      />
+      {items.length === 0 && emptyLabel && !drag.folded && !collapsed ? (
         <p className="px-4 pb-1 text-[11px] leading-tight text-content/40 @max-[140px]/rail:hidden">
           {emptyLabel}
         </p>
       ) : null}
-      <div className={`flex-col gap-px px-2 ${drag.folded ? "hidden" : "flex"}`}>
+      <div
+        hidden={drag.folded || collapsed}
+        className={`flex-col gap-px px-2 ${drag.folded || collapsed ? "hidden" : "flex"}`}
+      >
         {items.map((item) => (
           <ProjectCard
             key={item.path}
@@ -1396,11 +1433,15 @@ function RemoteProjectSuggestion({
 function ProjectSectionHeader({
   label,
   drag,
+  collapsed = false,
+  onToggleCollapsed,
   onAdd,
   onAddGroup,
 }: {
   label: string;
   drag: RailSectionDrag;
+  collapsed?: boolean;
+  onToggleCollapsed?: () => void;
   onAdd?: () => void;
   onAddGroup?: (x: number, y: number) => void;
 }) {
@@ -1413,9 +1454,26 @@ function ProjectSectionHeader({
       title={t("Drag to reorder")}
       className={`${RAIL_SECTION_HEADER} ${RAIL_DRAG_HANDLE} rounded-md outline-none focus-visible:bg-content/8 @max-[140px]/rail:justify-center @max-[140px]/rail:px-0`}
     >
-      <span className="min-w-0 flex-1 truncate px-1 text-xs font-medium text-content/70 @max-[140px]/rail:hidden">
-        {label}
-      </span>
+      {onToggleCollapsed ? (
+        <Button
+          variant="item"
+          motion="none"
+          aria-expanded={!collapsed}
+          onClick={onToggleCollapsed}
+          className="min-w-0 flex-1 @max-[140px]/rail:hidden"
+        >
+          {collapsed ? (
+            <ChevronRight className="size-3 shrink-0" />
+          ) : (
+            <ChevronDown className="size-3 shrink-0" />
+          )}
+          <span className="truncate">{label}</span>
+        </Button>
+      ) : (
+        <span className="min-w-0 flex-1 truncate px-1 text-xs font-medium text-content/70 @max-[140px]/rail:hidden">
+          {label}
+        </span>
+      )}
       {onAddGroup ? (
         <Button
           iconOnly

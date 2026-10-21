@@ -1,6 +1,7 @@
 import { Badge, type BadgeTone } from "../../shared/ui/Badge";
 import { Alert } from "../../shared/ui/Alert";
 import { TextField } from "../../shared/ui/TextField";
+import { Modal } from "../../shared/ui/Modal";
 import { Button } from "../../shared/ui/Button";
 import styles from "./Sidebar.module.css";
 import {
@@ -11,6 +12,7 @@ import {
   preloadSidebarSurfaces,
 } from "./sidebarSurfaces";
 import { RelativeSessionTime, useMinuteNow } from "./RelativeSessionTime";
+import { SIDE_BY_SIDE_LIMIT } from "../../features/workspace/model/workspaceTabGroups";
 import { SearchInput, SearchInputGroup } from "../../shared/ui/SearchInput";
 import { themePalette } from "../../shared/theme/palette";
 import { motion as layoutMotion } from "motion/react";
@@ -350,7 +352,7 @@ type Props = {
   onPopOutSession?: (sessionId: string, position: WindowMovePosition) => void;
   /** Opens several sessions together as a grid in one new tab. */
   onOpenSessionsSideBySide?: (sessionIds: string[]) => void;
-  onRenameSession?: (sessionId: string, title: string) => void;
+  onRenameSession?: (sessionId: string, title: string) => void | Promise<void>;
   onArchiveSession?: (sessionId: string, archived: boolean) => void;
   onArchiveSessions?: (sessionIds: readonly string[], archived: boolean) => void;
   onPinSession?: (sessionId: string, pinned: boolean) => void;
@@ -765,6 +767,8 @@ function SidebarComponent({
     sessionId: string;
   } | null>(null);
   const [linkingSession, setLinkingSession] = useState<SessionSummary | null>(null);
+  const [copyIdFailure, setCopyIdFailure] = useState<{ value: string; error: string } | null>(null);
+  const [copyIdRetrying, setCopyIdRetrying] = useState(false);
   const [selectedSessionIds, setSelectedSessionIds] = useState<Set<string>>(() => new Set());
   const contextSelectionRef = useRef(false);
   const selectionAnchorRef = useRef<string | null>(null);
@@ -849,9 +853,18 @@ function SidebarComponent({
   }, []);
   const deferredSearchQuery = useDeferredValue(searchQuery);
   const now = useMinuteNow(tab === "sessions" && sessionFilters.time !== "all");
-  const [crewManaged, setCrewManaged] = useState<{ cwd: string; ids: Set<string> }>({ cwd: "", ids: new Set() });
+  const [crewManaged, setCrewManaged] = useState<{ cwd: string; ids: Set<string> }>({
+    cwd: "",
+    ids: new Set(),
+  });
   const onCrewManagedChange = useCallback((path: string, ids: string[]) => {
-    setCrewManaged((previous) => previous.cwd === path && previous.ids.size === ids.length && ids.every((id) => previous.ids.has(id)) ? previous : { cwd: path, ids: new Set(ids) });
+    setCrewManaged((previous) =>
+      previous.cwd === path &&
+      previous.ids.size === ids.length &&
+      ids.every((id) => previous.ids.has(id))
+        ? previous
+        : { cwd: path, ids: new Set(ids) },
+    );
   }, []);
   const { listedSessions, visibleSessions } = useMemo(() => {
     const listedSessions = mergeFolderSessionSummaries(
@@ -859,7 +872,10 @@ function SidebarComponent({
       remoteProject ? [] : openSessions,
       sessionFolders,
     ).filter(
-      (session) => !session.orchestrationLeadId && !(crewManaged.cwd === cwd && crewManaged.ids.has(session.id)) && inWorktreeFocus(session, focusedWorktree),
+      (session) =>
+        !session.orchestrationLeadId &&
+        !(crewManaged.cwd === cwd && crewManaged.ids.has(session.id)) &&
+        inWorktreeFocus(session, focusedWorktree),
     );
     const visibleSessions = [
       ...filterSessionsByQuery(
@@ -929,10 +945,7 @@ function SidebarComponent({
     const ungroupedFiltered = ungroupedSessions(visibleSessions, sessionFolders).filter(
       (session) => !reminderIds.has(session.id),
     );
-    const compareStatus = sessionStatusOrder(
-      listedApprovalSessionIds,
-      listedBusySessionIds,
-    );
+    const compareStatus = sessionStatusOrder(listedApprovalSessionIds, listedBusySessionIds);
     // Status leads within each group; saved order breaks ties.
     const ungroupedVisible = [
       ...applySessionOrder(
@@ -1436,6 +1449,13 @@ function SidebarComponent({
               {
                 kind: "item" as const,
                 id: "side-by-side",
+                disabled: menuSessions.length > SIDE_BY_SIDE_LIMIT,
+                description:
+                  menuSessions.length > SIDE_BY_SIDE_LIMIT
+                    ? t("Select at most {p0} conversations to open side by side.", {
+                        p0: SIDE_BY_SIDE_LIMIT,
+                      })
+                    : undefined,
                 get label() {
                   return t("Open Side by Side");
                 },
@@ -1641,7 +1661,7 @@ function SidebarComponent({
       const value = id === "copy-harness-session-id" ? providerSessionId : sessionId;
       if (value) {
         void copyText(value).catch((error) => {
-          console.error("Failed to copy session ID:", error);
+          setCopyIdFailure({ value, error: String(error) });
         });
       }
       return;
@@ -2145,7 +2165,8 @@ function SidebarComponent({
         session={session}
         isActive={session.id === activeListedSessionId}
         onCommit={(title) => {
-          onRenameSession(session.id, title);
+          const result = onRenameSession(session.id, title);
+          if (result) return result.then(() => setRenamingSessionId(null));
           setRenamingSessionId(null);
         }}
         onCancel={() => setRenamingSessionId(null)}
@@ -2695,6 +2716,20 @@ function SidebarComponent({
               <Search className="size-3 shrink-0" />
               {sessionSearchInput}
             </SearchInputGroup>
+            {remoteProject ? (
+              <RemoteDataStatus
+                presentation="indicator"
+                state={remote.dataState}
+                connectionIssueHandled={remoteConnectionIssue}
+                label={
+                  remote.machine
+                    ? t("sessions from {p0}", { p0: remote.machine.name })
+                    : t("sessions")
+                }
+                onRefresh={remote.refresh}
+                disabled={!remote.machine && !remote.dataState.error}
+              />
+            ) : null}
             <span data-session-selection-keep className="contents">
               <SessionsHeaderButton
                 label={selectionMode ? t("Stop selecting") : t("Select conversations")}
@@ -2849,6 +2884,7 @@ function SidebarComponent({
             <RemoteLoadError cwd={cwd} failure={classifyRemoteError(remote.dataState.error)} />
           ) : (
             <RemoteDataStatus
+              presentation="notice"
               state={remote.dataState}
               connectionIssueHandled={remoteConnectionIssue}
               label={
@@ -2876,7 +2912,15 @@ function SidebarComponent({
             <p className="px-3 py-2 text-[12px] text-content/50">{t("No project folder")}</p>
           ) : (
             <div>
-              {onOpenCrewSession && <CrewSidebar key={cwd} cwd={cwd} query={searchQuery} onOpen={onOpenCrewSession} onManagedChange={onCrewManagedChange} onSettings={() => { onSelectSettingsSection?.("crews"); onOpenSettings?.(); }} />}
+              {onOpenCrewSession && (
+                <CrewSidebar
+                  key={cwd}
+                  cwd={cwd}
+                  query={searchQuery}
+                  onOpen={onOpenCrewSession}
+                  onManagedChange={onCrewManagedChange}
+                />
+              )}
               {/* Loading and errors precede empty results, so an unfinished
                   request never claims this project has no conversations. */}
               {remoteProject &&
@@ -3180,6 +3224,20 @@ function SidebarComponent({
           onClose={() => setLinkingSession(null)}
         />
       ) : null}
+      {copyIdFailure ? (
+        <Modal title={t("Session ID")} size="sm" onClose={() => setCopyIdFailure(null)}>
+          <div className="flex flex-col gap-3">
+            <Alert tone="danger" role="alert">{t("Could not copy the session ID. Select it below to copy manually, or retry.")} {copyIdFailure.error}</Alert>
+            <TextField label={t("Session ID")} aria-label={t("Session ID")} value={copyIdFailure.value} readOnly onFocus={(event) => event.currentTarget.select()} />
+            <Button loading={copyIdRetrying} onClick={() => {
+              if (copyIdRetrying) return;
+              const value = copyIdFailure.value;
+              setCopyIdRetrying(true);
+              void copyText(value).then(() => setCopyIdFailure(null), (error) => setCopyIdFailure({ value, error: String(error) })).finally(() => setCopyIdRetrying(false));
+            }}>{t("Retry")}</Button>
+          </div>
+        </Modal>
+      ) : null}
       <div
         {...resize.separatorProps}
         aria-label={t("Resize sidebar")}
@@ -3242,6 +3300,7 @@ function SidebarComponent({
       {railMounted.current && onSelectProject && onOpenProject ? (
         <ProjectRail
           onPreviewSession={onPreviewSession}
+          onOpenCrewSession={onOpenCrewSession}
           onRenameProjectFolder={onRenameProjectFolder}
           recoveryControl={recoveryControl}
           visible={railVisible}
@@ -5267,13 +5326,19 @@ function SessionRenameRow({
 }: {
   session: SessionSummary;
   isActive: boolean;
-  onCommit: (title: string) => void;
+  onCommit: (title: string) => void | Promise<void>;
   onCancel: () => void;
 }) {
   useLocale();
   const inputRef = useRef<HTMLInputElement>(null);
   const finished = useRef(false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [value, setValue] = useState(() => sessionDisplayTitle(session.title, session.harness));
+
+  useEffect(() => {
+    if (error && !saving) inputRef.current?.focus();
+  }, [error, saving]);
 
   useEffect(() => {
     const input = inputRef.current;
@@ -5291,7 +5356,22 @@ function SessionRenameRow({
         return;
       }
       finished.current = true;
-      onCommit(trimmed);
+      setError(null);
+      const failed = (reason: unknown) => {
+        finished.current = false;
+        setSaving(false);
+        setError(reason instanceof Error ? reason.message : String(reason));
+        inputRef.current?.focus();
+      };
+      try {
+        const result = onCommit(trimmed);
+        if (result) {
+          setSaving(true);
+          void result.catch(failed);
+        }
+      } catch (reason) {
+        failed(reason);
+      }
       return;
     }
     finished.current = true;
@@ -5322,11 +5402,17 @@ function SessionRenameRow({
         label={t("Name")}
         ref={inputRef}
         value={value}
+        disabled={saving}
         onChange={(e) => setValue(e.target.value)}
         onBlur={() => finish(true)}
         onKeyDown={onKeyDown}
         className="w-full leading-snug"
       />
+      {error ? (
+        <Alert tone="danger" role="alert">
+          {error}
+        </Alert>
+      ) : null}
     </div>
   );
 }

@@ -277,6 +277,7 @@ export function InboxView({
   const [loading, setLoading] = useState(() => peekInboxForRail(recents, cwd) == null);
   const [revalidating, setRevalidating] = useState(false);
   const [readStatusError, setReadStatusError] = useState<string | null>(null);
+  const [failedReadItem, setFailedReadItem] = useState<InboxItem | null>(null);
   const [providerErrors, setProviderErrors] = useState<InboxProviderErrors>(
     () => peekInboxForRail(recents, cwd)?.errors ?? {},
   );
@@ -620,7 +621,9 @@ export function InboxView({
   }, [sessions]);
   const selectItem = useStableCallback((item: InboxItem) => {
     const key = inboxItemKey(item);
-    markInboxItemSeen({ key, updatedAt: item.updatedAt });
+    const saved = markInboxItemSeen({ key, updatedAt: item.updatedAt });
+    setFailedReadItem(saved ? null : item);
+    setReadStatusError(saved ? null : "Could not save read status. Please try again.");
     setSelectedKey(key);
   });
   const visibleItems = useMemo(() => {
@@ -854,13 +857,14 @@ export function InboxView({
             title={t("Mark all as read")}
             aria-label={t("Mark all as read")}
             disabled={!sourceHasUnseen}
-            onClick={() =>
+            onClick={() => {
+              setFailedReadItem(null);
               setReadStatusError(
                 markInboxItemsSeen(sourceEntries)
                   ? null
                   : "Could not save read status. Please try again.",
-              )
-            }
+              );
+            }}
             className="shrink-0"
           >
             <CheckCheck className="size-3.5" strokeWidth={1.75} />
@@ -883,6 +887,20 @@ export function InboxView({
       {readStatusError ? (
         <Alert tone="danger" role="alert">
           {readStatusError}
+          {failedReadItem ? (
+            <Button
+              data-inbox-read-retry
+              variant="secondary"
+              onClick={() => selectItem(failedReadItem)}
+            >
+              {t("Retry")}
+            </Button>
+          ) : null}
+        </Alert>
+      ) : null}
+      {sourceError && visibleItems.length > 0 ? (
+        <Alert tone="warning" role="alert">
+          {sourceError}
         </Alert>
       ) : null}
       <div ref={setListScrollRef} className="min-h-0 flex-1 overflow-y-auto overscroll-none">

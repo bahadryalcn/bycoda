@@ -114,7 +114,11 @@ type Props = {
 };
 
 type Creating = { id: number; parent: string; isDir: boolean };
-type Clip = { mode: "copy" | "cut"; entries: { path: string; isDir: boolean }[] };
+type Clip = {
+  mode: "copy" | "cut";
+  entries: { path: string; isDir: boolean }[];
+  systemFiles: Promise<string[] | null>;
+};
 type MenuTarget = { path: string; isDir: boolean; isRoot: boolean };
 type MenuState = { x: number; y: number; target: MenuTarget };
 
@@ -245,6 +249,7 @@ function explorerItems(
   canOpenTerminal: boolean,
   canInspectGit: boolean,
   selectionCount: number,
+  canOpenSelection: boolean,
 ): ExplorerMenuItem[] {
   const pasteParent = target.isDir ? target.path : parentPath(target.path);
   const pasteBlocked = clip?.entries.some(
@@ -252,7 +257,7 @@ function explorerItems(
       entry.isDir && (pasteParent === entry.path || pasteParent.startsWith(`${entry.path}/`)),
   );
   return [
-    ...(selectionCount > 1
+    ...(selectionCount > 1 && canOpenSelection
       ? [{ kind: "item" as const, id: "open", label: t("Open"), shortcut: "Enter" }]
       : []),
     {
@@ -415,6 +420,12 @@ export const FileTree = memo(function FileTree({
   const [menu, setMenu] = useState<MenuState | null>(null);
   const [dragOverPath, setDragOverPath] = useState<string | null>(null);
   const [opError, setOpError] = useState<string | null>(null);
+  const [refreshFailure, setRefreshFailure] = useState<{
+    cwd: string;
+    touched: string[];
+    forget: string[];
+    message: string;
+  } | null>(null);
   const { revealInFileManager, folderBrowser } = useRemoteFolderBrowser(onOpenFile);
   // Re-runs the root listing effect only when the root's own listing changes.
   const rootListing = useSyncExternalStore(
@@ -474,6 +485,7 @@ export const FileTree = memo(function FileTree({
   const setClipboard = (mode: "copy" | "cut", path: string) => {
     setClip({
       mode,
+      systemFiles: clipboardFilePaths().catch(() => null),
       entries: topLevelTreePaths(actionPaths(path)).map((value) => ({
         path: value,
         isDir: isDirAt(cwd, value),
@@ -682,6 +694,20 @@ export const FileTree = memo(function FileTree({
     announceDirListings();
   };
 
+  const refreshAfterMutation = async (touched: string[], forget: string[] = []) => {
+    setRefreshFailure(null);
+    try {
+      await refreshTouched(touched, forget);
+    } catch (error) {
+      setRefreshFailure({
+        cwd,
+        touched,
+        forget,
+        message: error instanceof Error ? error.message : String(error),
+      });
+    }
+  };
+
   const remapTreePaths = (from: string, to: string) => {
     setExpanded((prev) => {
       const next = new Set<string>();
@@ -736,11 +762,11 @@ export const FileTree = memo(function FileTree({
     const fileName = wellFormedFileName(raw);
     const created = await createPath(session.parent, fileName, asFolder);
     const touched = dirsTouchedByCreate(session.parent, fileName);
-    await refreshTouched(touched);
     setCreating((cur) => (cur?.id === id ? null : cur));
     expandDirs(touched);
     onSelect(created);
     if (!asFolder) onOpenFile(created, undefined, { exact: true });
+    await refreshAfterMutation(touched);
   };
 
   const onRenameCancel = () => setRenaming(null);
@@ -754,11 +780,14 @@ export const FileTree = memo(function FileTree({
     const next = await renamePath(path, fileName);
     const wasDir = isDirAt(cwd, path);
     const parent = parentPath(path);
-    await refreshTouched([...dirsTouchedByCreate(parent, fileName), parent], wasDir ? [path] : []);
     setRenaming(null);
     expandDirs(dirsTouchedByCreate(parent, fileName));
     remapTreePaths(path, next);
     onFileMoved?.(path, next);
+    await refreshAfterMutation(
+      [...dirsTouchedByCreate(parent, fileName), parent],
+      wasDir ? [path] : [],
+    );
   };
 
   const removeEntries = async (paths: string[]) => {
@@ -847,8 +876,11 @@ export const FileTree = memo(function FileTree({
 
   const pasteAt = async (targetPath: string) => {
     const destParent = createParentOf(cwd, targetPath);
-    if (!clip) {
-      await copyExternalFiles(await clipboardFilePaths(), destParent);
+    const baseline = clip ? await clip.systemFiles : null;
+    const systemFiles = await clipboardFilePaths();
+    if (!clip || baseline === null || JSON.stringify(baseline) !== JSON.stringify(systemFiles)) {
+      setClip(null);
+      await copyExternalFiles(systemFiles, destParent);
       return;
     }
     if (
@@ -1468,7 +1500,10 @@ export const FileTree = memo(function FileTree({
         <div className="flex h-full min-h-0 flex-col">
           <div
             className="flex min-h-[calc(var(--ui-control-height-compact)+0.5rem)] shrink-0 items-center gap-px overflow-visible border-b border-stroke px-2"
-            onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); }}
+            onContextMenu={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+            }}
           >
             <HeaderIcon
               label={t("New File")}
@@ -1566,6 +1601,25 @@ export const FileTree = memo(function FileTree({
                 {opError ? (
                   <p className="px-3 py-1 text-[12px] leading-4 text-danger">{opError}</p>
                 ) : null}
+                {refreshFailure?.cwd === cwd ? (
+                  <div
+                    role="alert"
+                    className="flex flex-wrap items-center gap-2 px-3 py-1 text-[12px] text-danger"
+                  >
+                    <span>
+                      {t("File change saved. Refresh failed.")} {refreshFailure.message}
+                    </span>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() =>
+                        void refreshAfterMutation(refreshFailure.touched, refreshFailure.forget)
+                      }
+                    >
+                      {t("Retry")}
+                    </Button>
+                  </div>
+                ) : null}
                 {connectionFailure ? (
                   <RemoteLoadError
                     cwd={cwd}
@@ -1605,6 +1659,7 @@ export const FileTree = memo(function FileTree({
               !!onOpenTerminal,
               canInspectGit,
               selectedPaths.size,
+              actionPaths(menu.target.path).some((path) => !isDirAt(cwd, path)),
             )}
             onPick={(id) => {
               const target = menu.target;

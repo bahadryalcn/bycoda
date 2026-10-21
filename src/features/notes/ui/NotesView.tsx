@@ -36,6 +36,7 @@ import {
   useCallback,
   useDeferredValue,
   useEffect,
+  useId,
   useMemo,
   useRef,
   useState,
@@ -54,6 +55,7 @@ import { useTabGroupLogos } from "../../projects/hooks/useTabGroupLogos";
 import { formatRelativeTime } from "../../inbox/model/githubTasks";
 import {
   createNote,
+  noteTitleError,
   deleteNote,
   loadNoteSummaries,
   MAX_NOTE_TAGS,
@@ -1159,10 +1161,14 @@ function NoteProjectMark({
 }
 
 function NoteDetailTab({
+  id,
+  controls,
   label,
   selected,
   onSelect,
 }: {
+  id: string;
+  controls: string;
   label: string;
   selected: boolean;
   onSelect: () => void;
@@ -1175,6 +1181,9 @@ function NoteDetailTab({
       motion="none"
       type="button"
       role="tab"
+      id={id}
+      aria-controls={controls}
+      tabIndex={selected ? 0 : -1}
       aria-selected={selected}
       onClick={onSelect}
       selected={selected}
@@ -1315,6 +1324,8 @@ function NoteEditor({
   onAddToChat: (note: Note) => void;
 }) {
   useLocale();
+  const modesId = useId();
+  const panelId = `${modesId}-panel`;
   const lockOverscroll = useLockOverscroll<HTMLDivElement>();
   const blank = !note.body.trim() && note.title === "Untitled";
   const [mode, setModeState] = useRetainedState<NoteViewMode>(
@@ -1347,6 +1358,7 @@ function NoteEditor({
   });
   const [edits, setEdits] = useState<Edits>(draftState.edits.current);
   const title = edits.title ?? note.title;
+  const titleError = noteTitleError(title);
   const body = edits.body ?? note.body;
   const tags = edits.tags ?? note.tags;
   // Keep only an unsaved choice locally so completed moves survive reopening.
@@ -1421,6 +1433,7 @@ function NoteEditor({
     const nextTitle =
       (changes.title ?? current.title).trim() ||
       (titleFocused ? current.title : noteTitle(nextBody));
+    if (noteTitleError(nextTitle)) return current;
     const nextTags = changes.tags ?? current.tags;
     const nextProject = projectChangeRef.current;
     const acceptSaved = (saved: Note) => {
@@ -1730,6 +1743,7 @@ function NoteEditor({
           </div>
           <TextField
             label={t("Note title")}
+            error={titleError}
             hideLabel
             ref={titleFieldRef}
             value={title}
@@ -1864,19 +1878,42 @@ function NoteEditor({
           <div
             role="tablist"
             aria-label={t("Note sections")}
+            onKeyDown={(event) => {
+              if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+              const tabs = [
+                ...event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="tab"]'),
+              ];
+              const index = tabs.indexOf(event.target as HTMLButtonElement);
+              if (index < 0) return;
+              event.preventDefault();
+              const next =
+                event.key === "Home"
+                  ? 0
+                  : event.key === "End"
+                    ? tabs.length - 1
+                    : (index + (event.key === "ArrowRight" ? 1 : -1) + tabs.length) % tabs.length;
+              tabs[next]?.focus();
+              tabs[next]?.click();
+            }}
             className="flex shrink-0 items-stretch gap-4"
           >
             <NoteDetailTab
+              id={`${modesId}-preview`}
+              controls={panelId}
               label={t("Edit preview")}
               selected={mode === "preview"}
               onSelect={() => setMode("preview")}
             />
             <NoteDetailTab
+              id={`${modesId}-source`}
+              controls={panelId}
               label={t("Source")}
               selected={mode === "source"}
               onSelect={() => setMode("source")}
             />
             <NoteDetailTab
+              id={`${modesId}-split`}
+              controls={panelId}
               label={t("Split")}
               selected={mode === "split"}
               onSelect={() => setMode("split")}
@@ -1891,6 +1928,9 @@ function NoteEditor({
         </div>
         <div
           ref={dropZoneRef}
+          id={panelId}
+          role="tabpanel"
+          aria-labelledby={`${modesId}-${mode}`}
           data-external-drop-owner="note-images"
           aria-busy={imageBusy}
           className={`note-editor-body relative rounded-lg border transition-colors ${

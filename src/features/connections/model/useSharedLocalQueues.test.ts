@@ -4,11 +4,14 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { Session } from "../../sessions/model/session";
 import { mergeQueueChange, type SharedQueue } from "./sharedQueue";
+import { DeliveryUnknownError, type DeliverySettlement } from "../../../shared/lib/deliveryUnknown";
+import { readDeliveryProgress } from "../../sessions/model/deliveryProgress";
 import {
   sharedLocalQueueReady,
   resumeSharedLocalQueue,
   submitSharedLocalQueue,
   useSharedLocalQueues,
+  useLocalSharedQueueClient,
 } from "./useSharedLocalQueues";
 
 const mocks = vi.hoisted(() => ({ request: vi.fn() }));
@@ -29,6 +32,7 @@ vi.mock("./remoteAttachments", () => ({
 let root: Root;
 let queue: SharedQueue;
 let sessionsRef: { current: Session[] };
+let localClient: ReturnType<typeof useLocalSharedQueueClient>;
 const reachable = { current: true };
 const row = (id: string, text = id) => ({ id, text, attachments: [] });
 const setSessions = (update: (sessions: Session[]) => Session[]) => {
@@ -36,6 +40,7 @@ const setSessions = (update: (sessions: Session[]) => Session[]) => {
 };
 function Probe() {
   useSharedLocalQueues(sessionsRef, setSessions, reachable);
+  localClient = useLocalSharedQueueClient("chat");
   return null;
 }
 beforeEach(() => {
@@ -202,4 +207,123 @@ it("keeps a shared queue paused when Stop cancels Resume", async () => {
   await expect(resumeSharedLocalQueue("chat", () => false)).rejects.toThrow("cancelled");
   expect(queue.status).toBe("paused");
   expect(queue.messages).toEqual([row("a")]);
+});
+
+it.each(["paused", "restored"] as const)(
+  "does not release a %s queue when the selected Steer is rejected",
+  async (status) => {
+    sessionsRef.current[0].queueStatus = status;
+    await mount();
+    expect(await submitSharedLocalQueue("chat", "a", true, () => false)).toBe(false);
+    expect(queue.messages.map((message) => message.id)).toEqual(["a"]);
+    expect(queue.status).toBe(status);
+    expect(sessionsRef.current[0].queueStatus).toBe(status);
+    expect(readDeliveryProgress("chat")?.stage).toBe("rejected");
+  },
+);
+
+it("polls empty idle queues less frequently but still discovers remotely added messages", async () => {
+  sessionsRef.current[0].queuedMessages = [];
+  await mount();
+  const before = mocks.request.mock.calls.length;
+  await tick();
+  expect(mocks.request.mock.calls).toHaveLength(before);
+  queue = { ...queue, messages: [row("remote")], revision: queue.revision + 1 };
+  await act(async () => {
+    vi.advanceTimersByTime(10_000);
+    for (let i = 0; i < 60; i++) await Promise.resolve();
+  });
+  expect(sessionsRef.current[0].queuedMessages?.map((message) => message.id)).toEqual(["remote"]);
+});
+
+it("prioritizes the active queue and bounds idle initialization across many sessions", async () => {
+  const active = sessionsRef.current[0];
+  sessionsRef.current = [
+    ...Array.from({ length: 100 }, (_, index) => ({
+      ...active,
+      id: `idle-${index}`,
+      queuedMessages: [],
+      queueStatus: undefined,
+    })),
+    active,
+  ];
+  const queues = new Map<string, SharedQueue>();
+  mocks.request.mockImplementation(async (_machine, method, params) => {
+    const previous = queues.get(params.sessionId) ?? { messages: [], revision: 0 };
+    const value = method.endsWith(".change")
+      ? {
+          ...mergeQueueChange(previous, {
+            before: params.before,
+            after: params.after,
+            consumer: params.takeOwnership ? params.clientId : undefined,
+          }),
+          revision: previous.revision + 1,
+        }
+      : previous;
+    queues.set(params.sessionId, value);
+    return structuredClone(value);
+  });
+  await mount();
+  await act(async () => {
+    for (let i = 0; i < 300; i++) await Promise.resolve();
+  });
+  const firstIds = [...new Set(mocks.request.mock.calls.map((call) => call[2].sessionId))];
+  expect(firstIds[0]).toBe("chat");
+  expect(firstIds).toHaveLength(9);
+  expect(sharedLocalQueueReady("chat")).toBe(true);
+  await tick();
+  await act(async () => {
+    for (let i = 0; i < 300; i++) await Promise.resolve();
+  });
+  const nextIds = [...new Set(mocks.request.mock.calls.map((call) => call[2].sessionId))];
+  expect(nextIds).toHaveLength(17);
+});
+
+it("reconciles a late provider acknowledgement without sending the row twice", async () => {
+  await mount();
+  let settle!: (value: DeliverySettlement) => void;
+  const settlement = new Promise<DeliverySettlement>((resolve) => {
+    settle = resolve;
+  });
+  const send = vi.fn(() => {
+    throw new DeliveryUnknownError("late acknowledgement", settlement);
+  });
+  await expect(submitSharedLocalQueue("chat", "a", true, send)).rejects.toThrow(
+    "late acknowledgement",
+  );
+  expect(queue.claim?.id).toBe("a");
+  expect(queue.messages).toHaveLength(1);
+  expect(readDeliveryProgress("chat")?.stage).toBe("unknown");
+  await act(async () => {
+    settle("accepted");
+    for (let i = 0; i < 100; i++) await Promise.resolve();
+  });
+  expect(send).toHaveBeenCalledOnce();
+  expect(queue.messages).toEqual([]);
+  expect(queue.claim).toBeUndefined();
+  expect(readDeliveryProgress("chat")?.stage).toBe("accepted");
+});
+
+it("does not rewrite an already reviewed claim journal when a late acknowledgement arrives", async () => {
+  await mount();
+  let settle!: (value: DeliverySettlement) => void;
+  const settlement = new Promise<DeliverySettlement>((resolve) => {
+    settle = resolve;
+  });
+  const send = vi.fn(() => {
+    throw new DeliveryUnknownError("late acknowledgement", settlement);
+  });
+  await expect(submitSharedLocalQueue("chat", "a", true, send)).rejects.toThrow();
+  await tick();
+  expect(localClient?.snapshot().recovery).toBeTruthy();
+  await localClient!.resolveRecovery(false);
+  expect(queue.claim).toBeUndefined();
+  await act(async () => {
+    settle("accepted");
+    for (let i = 0; i < 100; i++) await Promise.resolve();
+  });
+  await expect(localClient!.sync()).resolves.toBeUndefined();
+  expect(localClient?.snapshot().error).toBeUndefined();
+  expect(queue.status).toBe("paused");
+  expect(send).toHaveBeenCalledOnce();
 });

@@ -17,6 +17,19 @@ function setup() {
 }
 afterEach(() => databases.splice(0).forEach((db) => db.close()));
 
+it("never claims a message with unconfirmed prior delivery", () => {
+  const { queues } = setup();
+  const value = queues.change(
+    "chat",
+    { messages: [] },
+    { messages: [{ ...message("a"), deliveryUnknown: true }], status: "active" },
+    "desktop:test",
+  );
+  expect(() => queues.claim("chat", "a", "desktop:test", value.revision, true)).toThrow(
+    /queue changed/i,
+  );
+});
+
 it("validates explicit selected-row sends without releasing a paused queue", () => {
   const { queues } = setup();
   const paused = queues.change(

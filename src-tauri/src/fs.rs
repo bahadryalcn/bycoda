@@ -6558,13 +6558,15 @@ fn git_branch_ref_arg(root: &Path, reference: &str) -> Result<String, String> {
     if reference.is_empty() || reference.starts_with('-') {
         return Err("Invalid branch".into());
     }
-    if git_ref_exists(root, &format!("refs/heads/{reference}"))
-        || git_ref_exists(root, &format!("refs/remotes/{reference}"))
-    {
-        Ok(reference.to_string())
-    } else {
-        Err(format!("Branch {reference} does not exist"))
+    for qualified in [
+        format!("refs/heads/{reference}"),
+        format!("refs/remotes/{reference}"),
+    ] {
+        if git_ref_exists(root, &qualified) {
+            return Ok(qualified);
+        }
     }
+    Err(format!("Branch {reference} does not exist"))
 }
 
 fn git_delete_branch_for(root: &Path, name: &str, force: bool) -> Result<(), String> {
@@ -12480,6 +12482,53 @@ mod tests {
         assert!(dir.0.join("b.txt").exists() && dir.0.join("c.txt").exists());
 
         assert!(git_fetch_for(&dir.0, false).is_err());
+    }
+
+    #[test]
+    fn git_branch_operations_ignore_same_named_tags() {
+        let dir = tmp("git-branch-tag-collision");
+        if !init_git_commit(&dir.0, &[("base.txt", "base\n")]) {
+            return;
+        }
+        let base = git_stdout(&dir.0, &["rev-parse", "HEAD"]).unwrap();
+        assert!(git(&dir.0, &["checkout", "-b", "topic"]));
+        let topic = commit_file(&dir.0, "topic.txt", "topic\n", "topic change");
+        assert!(git(&dir.0, &["checkout", "main"]));
+        assert!(git(&dir.0, &["tag", "topic", &base]));
+        assert!(git(
+            &dir.0,
+            &["update-ref", "refs/remotes/origin/topic", &topic]
+        ));
+        assert!(git(&dir.0, &["tag", "origin/topic", &base]));
+
+        for (name, expected) in [
+            ("topic", "refs/heads/topic"),
+            ("origin/topic", "refs/remotes/origin/topic"),
+        ] {
+            assert_eq!(git_branch_ref_arg(&dir.0, name).unwrap(), expected);
+            assert!(git(
+                &dir.0,
+                &["checkout", "-b", &format!("merge-{name}"), &base]
+            ));
+            git_merge_for(&dir.0, name).unwrap();
+            assert_eq!(git_stdout(&dir.0, &["rev-parse", "HEAD"]).unwrap(), topic);
+
+            assert!(git(
+                &dir.0,
+                &["checkout", "-b", &format!("rebase-{name}"), &base]
+            ));
+            git_rebase_for(&dir.0, name).unwrap();
+            assert_eq!(git_stdout(&dir.0, &["rev-parse", "HEAD"]).unwrap(), topic);
+
+            git_create_branch_from_for(&dir.0, &format!("from-{name}"), name).unwrap();
+            assert_eq!(git_stdout(&dir.0, &["rev-parse", "HEAD"]).unwrap(), topic);
+        }
+        // A local branch keeps precedence over a same-named remote branch.
+        assert!(git(&dir.0, &["branch", "origin/topic", &base]));
+        assert_eq!(
+            git_branch_ref_arg(&dir.0, "origin/topic").unwrap(),
+            "refs/heads/origin/topic"
+        );
     }
 
     #[test]

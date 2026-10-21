@@ -73,8 +73,9 @@ function read(): Record<string, StoredProjectChatBackground> {
 function write(value: Record<string, StoredProjectChatBackground>) {
   try {
     localStorage.setItem(KEY, JSON.stringify(value));
+    return true;
   } catch {
-    // private mode / quota
+    return false;
   }
 }
 
@@ -162,7 +163,7 @@ export function clearProjectChatBackgroundSetting(project: string) {
   const next = read();
   if (!(project in next)) return;
   delete next[project];
-  write(next);
+  if (!write(next)) throw new Error("Could not save project background settings. Retry removing the image.");
   notifyProjectChatBackgroundChanged();
 }
 

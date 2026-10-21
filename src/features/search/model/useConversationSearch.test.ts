@@ -13,8 +13,8 @@ vi.mock("../../sessions/data/sessionStore", () => ({
   cancelSessionSearch,
 }));
 let view: ReturnType<typeof useConversationSearch>;
-function Consumer({ query }: { query: string }) {
-  view = useConversationSearch(true, { query });
+function Consumer({ query, revision }: { query: string; revision?: string }) {
+  view = useConversationSearch(true, { query }, revision);
   return null;
 }
 let container: HTMLDivElement;
@@ -44,6 +44,40 @@ const advance = (ms: number) =>
   act(async () => {
     await vi.advanceTimersByTimeAsync(ms);
   });
+
+it("invalidates completed results immediately after session inventory changes", async () => {
+  const result: SessionContentResult = {
+    ...empty,
+    sessions: [
+      {
+        sessionId: "deleted",
+        cwd: "/project",
+        harness: "codex",
+        title: "Deleted",
+        titleRanges: [],
+        createdAt: 1,
+        updatedAt: 1,
+        archived: false,
+        hitCount: 0,
+        hits: [],
+      },
+    ],
+  };
+  searchSessionContent.mockResolvedValueOnce(result).mockResolvedValueOnce(empty);
+  await act(async () =>
+    root.render(createElement(Consumer, { query: "hello", revision: "before-delete" })),
+  );
+  await advance(200);
+  expect(view.result.sessions[0]?.sessionId).toBe("deleted");
+  await act(async () =>
+    root.render(createElement(Consumer, { query: "hello", revision: "after-delete" })),
+  );
+  expect(view.result.sessions).toHaveLength(0);
+  expect(view.loading).toBe(true);
+  await advance(200);
+  expect(view.result.sessions).toHaveLength(0);
+  expect(searchSessionContent).toHaveBeenCalledTimes(2);
+});
 
 it("exposes a conversation error and recovers with Retry", async () => {
   searchSessionContent

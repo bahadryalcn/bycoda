@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { DesktopLive, DESKTOP_BEAT_STALE_MS } from "./desktopLive";
+import { DesktopLive, DESKTOP_BEAT_STALE_MS, DESKTOP_COMMAND_RETAIN_MS } from "./desktopLive";
 import { ChangeSignal } from "./changeSignal";
 import { RemoteChanges } from "./remoteChanges";
 import type {
@@ -8,6 +8,37 @@ import type {
 } from "../src/features/connections/model/protocol";
 
 describe("desktop window ownership", () => {
+  it("reclaims old undeliverable commands while preserving a brief same-session reconnect", () => {
+    let now = 0;
+    const live = new DesktopLive(() => now);
+    live.beat({
+      clientId: "old",
+      sessions: Array.from({ length: 100 }, (_, index) => ({ id: `old-${index}`, busy: true })),
+    });
+    for (let index = 0; index < 100; index++)
+      live.enqueue({ type: "cancel", sessionId: `old-${index}` });
+    now = DESKTOP_BEAT_STALE_MS + 1;
+    expect(
+      live.beat({ clientId: "new", sessions: [{ id: "current", busy: true }] }).commands,
+    ).toHaveLength(0);
+    expect(() => live.enqueue({ type: "cancel", sessionId: "current" })).toThrow(
+      "Too many commands",
+    );
+    now = DESKTOP_COMMAND_RETAIN_MS + 1;
+    live.beat({ clientId: "new", sessions: [{ id: "current", busy: true }] });
+    live.enqueue({ type: "cancel", sessionId: "current" });
+    expect(
+      live.beat({ clientId: "new", sessions: [{ id: "current", busy: true }] }).commands,
+    ).toEqual([expect.objectContaining({ type: "cancel", sessionId: "current" })]);
+
+    const reconnect = new DesktopLive(() => now);
+    reconnect.beat({ clientId: "a", sessions: [{ id: "same", busy: true }] });
+    reconnect.enqueue({ type: "cancel", sessionId: "same" });
+    now += DESKTOP_BEAT_STALE_MS + 1;
+    expect(
+      reconnect.beat({ clientId: "b", sessions: [{ id: "same", busy: true }] }).commands,
+    ).toHaveLength(1);
+  });
   it("delivers a new machine cursor when an idle desktop session starts again", async () => {
     const signal = new ChangeSignal();
     const changes = new RemoteChanges(signal);
@@ -125,15 +156,32 @@ describe("desktop window ownership", () => {
 describe("privacy-filtered project directory", () => {
   it("uses desktop visibility and order while carrying read-only session organization", () => {
     const live = new DesktopLive(() => 0);
-    const sessionLayout = { folders: [{ id: "f", name: "Work", sessionIds: ["s"], collapsed: false }], order: { loose: ["s"] } };
-    live.beat({ clientId: "desktop", sessions: [], projectDirectory: {
-      version: 1, groups: [], excludedPaths: [], excludedGroupIds: [],
-      projects: [{ cwd: "/second", name: "Second", sessionLayout }, { cwd: "/first", name: "First" }],
-    } });
-    const result = live.projectDirectory([
-      { id: "a", cwd: "/first", name: "First" }, { id: "ghost", cwd: "/removed", name: "Removed" },
-      { id: "b", cwd: "/second", name: "Second" },
-    ], "host");
+    const sessionLayout = {
+      folders: [{ id: "f", name: "Work", sessionIds: ["s"], collapsed: false }],
+      order: { loose: ["s"] },
+    };
+    live.beat({
+      clientId: "desktop",
+      sessions: [],
+      projectDirectory: {
+        version: 1,
+        groups: [],
+        excludedPaths: [],
+        excludedGroupIds: [],
+        projects: [
+          { cwd: "/second", name: "Second", sessionLayout },
+          { cwd: "/first", name: "First" },
+        ],
+      },
+    });
+    const result = live.projectDirectory(
+      [
+        { id: "a", cwd: "/first", name: "First" },
+        { id: "ghost", cwd: "/removed", name: "Removed" },
+        { id: "b", cwd: "/second", name: "Second" },
+      ],
+      "host",
+    );
     expect(result.projects.map((project) => project.id)).toEqual(["b", "a"]);
     expect(result.projects[0]?.sessionLayout).toEqual(sessionLayout);
     expect(JSON.stringify(result)).not.toContain("Removed");
@@ -155,9 +203,17 @@ describe("privacy-filtered project directory", () => {
       cwd: index < 2 ? "g:/projects/shared" : `G:/Projects/${index}`,
       name: `P${index}`,
     }));
-    live.beat({ clientId: "desktop", sessions: [], projectDirectory: {
-      ...projection(), projects: [...projection().projects, ...registered.slice(2).map(({ cwd, name }) => ({ cwd, name }))],
-    } });
+    live.beat({
+      clientId: "desktop",
+      sessions: [],
+      projectDirectory: {
+        ...projection(),
+        projects: [
+          ...projection().projects,
+          ...registered.slice(2).map(({ cwd, name }) => ({ cwd, name })),
+        ],
+      },
+    });
     const result = live.projectDirectory(
       [...registered, { id: "private", cwd: "g:\\private", name: "Secret" }],
       "host",

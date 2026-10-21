@@ -1,5 +1,6 @@
 import { trimAndCapText } from "../../../shared/lib/cappedText";
 import { hasReadableText } from "../../../features/sessions/model/transcriptActivity";
+import { executionUserIndex } from "../../../features/sessions/model/executionTurn";
 import { boundedToolPreview } from "../../../features/sessions/model/toolInspection";
 import { knownToolKindTitle } from "../../../shared/lib/toolKindTitles";
 import { looksLikeCallId as isCallId } from "../../../shared/lib/records";
@@ -12,7 +13,10 @@ import type {
   TaskListItem,
   ToolPreview,
 } from "../../../features/sessions/model/session";
-import { mergeContextUsage } from "../../../features/sessions/model/contextUsage";
+import {
+  dropContextWindow,
+  mergeContextUsage,
+} from "../../../features/sessions/model/contextUsage";
 import {
   mergeSessionUsage,
   resetProcessCounters,
@@ -284,6 +288,9 @@ export function applyHarnessEvent(
       return {
         ...session,
         ...(event.model ? { model: event.model } : {}),
+        ...(event.model && event.model !== session.model
+          ? { context: dropContextWindow(session.context) }
+          : {}),
         ...(event.modelSettings
           ? {
               modelSettings: {
@@ -578,6 +585,7 @@ export function appendSteerUser(
   attachments: Attachment[] = [],
   extra?: UserTurnExtra,
 ): Session {
+  const owner = session.blocks[executionUserIndex(session.blocks)];
   return {
     ...session,
     busy: true,
@@ -587,6 +595,7 @@ export function appendSteerUser(
         id: crypto.randomUUID(),
         role: "user",
         text,
+        ...(owner ? { continuationOf: owner.id } : {}),
         ...turnModelFields(session),
         ...(attachments.length > 0 ? { attachments } : {}),
         ...userTurnFields(extra),
@@ -771,13 +780,7 @@ function stopBlockProgress(block: Block): Block {
 }
 
 function stampTurnDuration(blocks: Block[], endedAt: number): Block[] {
-  let lastUser = -1;
-  for (let i = blocks.length - 1; i >= 0; i--) {
-    if (blocks[i].role === "user") {
-      lastUser = i;
-      break;
-    }
-  }
+  const lastUser = executionUserIndex(blocks);
   if (lastUser < 0) return blocks;
   const user = blocks[lastUser];
   if (user.durationMs != null || user.startedAt == null) return blocks;

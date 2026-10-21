@@ -523,7 +523,18 @@ export function ProjectTerminalDock({
                   { kind: "item" as const, id: "split", label: t("Split") },
                 ]
               : []),
-            ...(profiles && profiles.profiles.length === 0
+            ...(profiles?.error
+              ? [
+                  {
+                    kind: "item" as const,
+                    id: "profile-error",
+                    label: profiles.error,
+                    disabled: true,
+                  },
+                  { kind: "item" as const, id: "retry-profiles", label: t("Retry") },
+                ]
+              : []),
+            ...(profiles && !profiles.error && profiles.profiles.length === 0
               ? [
                   {
                     kind: "item" as const,
@@ -550,7 +561,8 @@ export function ProjectTerminalDock({
           ]}
           onPick={(id) => {
             setProfileMenu(null);
-            if (id === "default") onSelectDefaultProfile?.();
+            if (id === "retry-profiles") profiles?.retry();
+            else if (id === "default") onSelectDefaultProfile?.();
             else if (id === "split") splitTerminal(dock.pane.activeFileId);
             else if (id.startsWith("profile:")) {
               onAddTerminalWithProfile?.(id.slice("profile:".length));

@@ -944,7 +944,6 @@ function Workspace({
       projectOfTab,
     });
 
-
   // New-session and card callbacks (createWorkspaceTab, onNew*, onStartInboxItem,
   // onAddNoteToChat). The ADD_NOTE_TO_CHAT listener effect stays below.
   const {
@@ -1443,7 +1442,6 @@ function Workspace({
     loadedSessionCache,
     lastPersisted,
     invalidateLoadedSession,
-    persistSession,
     refreshHistory,
     sidebarCwd,
   });
@@ -1690,6 +1688,7 @@ function Workspace({
       tabsRef,
       activeTabIdRef,
       projectCwdRef,
+      dirtyFilesRef,
       removingSessionIds,
       loadedSessionCache,
       sessionLoads,
@@ -1879,7 +1878,7 @@ function Workspace({
     retiringTurns,
     sessionsRef,
     setSessions,
-    onSubmit,
+    onSubmit: submitSession,
     enqueueHarnessEvent,
     flushHarnessEvents,
   });
@@ -2250,17 +2249,21 @@ function Workspace({
     {
       tools: !!toolWindow,
       grouped: toolWindow?.grouped ?? false,
-      activeTool: serversViewOpen ? "servers" : automationsViewOpen && auxiliaryTool ? auxiliaryTool : inboxViewOpen
-        ? "inbox"
-        : notesViewOpen
-          ? "notes"
-          : automationsViewOpen
-            ? socialBoardShown
-              ? "social"
-              : taskBoardShown
-                ? "tasks"
-                : "automations"
-            : null,
+      activeTool: serversViewOpen
+        ? "servers"
+        : automationsViewOpen && auxiliaryTool
+          ? auxiliaryTool
+          : inboxViewOpen
+            ? "inbox"
+            : notesViewOpen
+              ? "notes"
+              : automationsViewOpen
+                ? socialBoardShown
+                  ? "social"
+                  : taskBoardShown
+                    ? "tasks"
+                    : "automations"
+                : null,
       cwd: socialBoardShown && socialPanelCwd ? socialPanelCwd : projectCwd,
       sessionIds: announcedSessionIds,
     },
@@ -2287,8 +2290,12 @@ function Workspace({
       setPullRequestsOnly(false);
       setServersViewOpen(target.tool === "servers");
       setNotesViewOpen(target.tool === "notes");
-      setAutomationsViewOpen(["tasks", "automations", "social", "terminal", "conversation-tools"].includes(target.tool));
-      setAuxiliaryTool(target.tool === "terminal" || target.tool === "conversation-tools" ? target.tool : null);
+      setAutomationsViewOpen(
+        ["tasks", "automations", "social", "terminal", "conversation-tools"].includes(target.tool),
+      );
+      setAuxiliaryTool(
+        target.tool === "terminal" || target.tool === "conversation-tools" ? target.tool : null,
+      );
       setTaskBoardShown(target.tool === "tasks");
       setSocialBoardShown(target.tool === "social");
     },
@@ -2346,11 +2353,16 @@ function Workspace({
     isDetachedSessionWindow: () => detachedSessionWindow,
   });
 
-  const { navigation: tabVisitNav, surfaceForward, onRailBack, onRailForward } = useRailNavigation({
+  const {
+    navigation: tabVisitNav,
+    surfaceForward,
+    onRailBack,
+    onRailForward,
+  } = useRailNavigation({
     auxiliaryTool,
     setAuxiliaryTool,
     toolWindow: !!toolWindow,
-    openTabIds: new Set(tabs.map(tab => tab.id)),
+    openTabIds: new Set(tabs.map((tab) => tab.id)),
     activateTab,
     setProjectCwd,
     socialPanelCwd,

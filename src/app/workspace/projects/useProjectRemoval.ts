@@ -1,12 +1,12 @@
-import {
-  useCallback,
-  type Dispatch,
-  type MutableRefObject,
-  type SetStateAction,
-} from "react";
+import { useCallback, type Dispatch, type MutableRefObject, type SetStateAction } from "react";
+import { flushSync } from "react-dom";
 import type { setSessions } from "../../../features/sessions/model/sessionsStore";
 import { newDefaultSession, type Session } from "../../../features/sessions/model/session";
-import { newTab, type WorkspaceTab } from "../../../features/workspace/model/layout";
+import {
+  isFilesystemTab,
+  newTab,
+  type WorkspaceTab,
+} from "../../../features/workspace/model/layout";
 import {
   archiveProject,
   forgetProject,
@@ -27,12 +27,14 @@ import { sessionChildHarnesses } from "../../../features/sessions/model/handoff"
 import { shouldPersistSession } from "../../../features/sessions/data/sessionStore";
 import { rememberLoadedSession } from "../../../features/sessions/data/sessionCache";
 import type { ProjectTerminalDockState } from "../terminal/useProjectTerminalDockState";
+import { confirmDiscardUnsaved } from "../helpers/appHelpers";
 
 export interface ProjectRemovalRefs {
   sessionsRef: { current: Session[] };
   tabsRef: MutableRefObject<WorkspaceTab[]>;
   activeTabIdRef: MutableRefObject<string>;
   projectCwdRef: MutableRefObject<string>;
+  dirtyFilesRef: MutableRefObject<Set<string>>;
   removingSessionIds: MutableRefObject<Set<string>>;
   loadedSessionCache: MutableRefObject<Map<string, Session>>;
   sessionLoads: MutableRefObject<Map<string, Promise<Session | null>>>;
@@ -80,6 +82,7 @@ export function useProjectRemoval({
     tabsRef,
     activeTabIdRef,
     projectCwdRef,
+    dirtyFilesRef,
     removingSessionIds,
     loadedSessionCache,
     sessionLoads,
@@ -91,7 +94,39 @@ export function useProjectRemoval({
   const onRemoveProject = useCallback(
     async (path: string, options: { purgeData: boolean }) => {
       const normalized = normalizeProjectPath(path);
-      if (options.purgeData) {
+      const confirmedDirtyIds = new Set<string>();
+      let dataRemoved = !options.purgeData;
+      while (true) {
+        // Include queued workspace updates, including tabs opened while a native
+        // confirmation was pending. Only the current project may be removed.
+        flushSync(() =>
+          setTabs((previous) => {
+            tabsRef.current = previous;
+            return previous;
+          }),
+        );
+        const unsaved = filterTabsForProject(tabsRef.current, sessionsRef.current, normalized)
+          .flatMap((tab) => [
+            ...tab.editorPanes.flatMap((pane) => pane.files),
+            ...(tab.terminalPanes ?? []).flatMap((pane) => pane.files),
+          ])
+          .filter(
+            (file) =>
+              isFilesystemTab(file) &&
+              dirtyFilesRef.current.has(file.id) &&
+              !confirmedDirtyIds.has(file.id),
+          );
+        if (unsaved.length > 0) {
+          if (!(await confirmDiscardUnsaved("Close these tabs with unsaved files?"))) {
+            // Bulk/group callers must stop, rather than marking this project
+            // removed and proceeding with the rest of their selection.
+            throw new Error(t("Cancelled"));
+          }
+          for (const file of unsaved) confirmedDirtyIds.add(file.id);
+          // A newly opened or newly dirty buffer needs its own decision.
+          continue;
+        }
+        if (dataRemoved) break;
         const projectSessions = sessionsRef.current.filter((session) =>
           sameProjectPath(session.cwd, normalized),
         );
@@ -114,6 +149,10 @@ export function useProjectRemoval({
         } finally {
           for (const session of projectSessions) removingSessionIds.current.delete(session.id);
         }
+        dataRemoved = true;
+        // Storage deletion also yielded. Earlier approval must not cover edits
+        // made during that wait, including edits to an already dirty file.
+        confirmedDirtyIds.clear();
       }
       const wasCurrent = sameProjectPath(projectCwdRef.current, normalized);
       const remaining = options.purgeData ? forgetProject(normalized) : archiveProject(normalized);

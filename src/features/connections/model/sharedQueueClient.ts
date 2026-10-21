@@ -21,6 +21,8 @@ export class SharedQueueClient {
   private desired: RemoteQueue = this.base;
   private listeners = new Set<() => void>();
   private running?: Promise<void>;
+  private syncGeneration = 0;
+  private reading = false;
   private takeOwnership = false;
   private conflict = false;
   private hasBaseline = false;
@@ -273,7 +275,11 @@ export class SharedQueueClient {
       this.emit(this.state.loaded, String(error).replace(/^Error: /, ""));
     }
   }
-  private async call<T>(action: string, params: Record<string, unknown> = {}): Promise<T> {
+  private async call<T>(
+    action: string,
+    params: Record<string, unknown> = {},
+    current = () => true,
+  ): Promise<T> {
     const scope = this.attachments();
     const claimId = scope?.cacheClaimId();
     const result = await this.request<T>(`sessions.queue.${action}`, {
@@ -285,6 +291,16 @@ export class SharedQueueClient {
       this.attachmentFingerprint = undefined;
       throw error;
     });
+    if (!current()) {
+      if (scope) {
+        // The host may have exported attachment claims with this old view.
+        // Reconcile those against the current durable inventory, never adopt
+        // the stale view as the current cache source.
+        this.attachmentFingerprint = undefined;
+        this.persist();
+      }
+      return result;
+    }
     if (scope && claimId)
       await scope
         .adoptClaimed(
@@ -314,8 +330,13 @@ export class SharedQueueClient {
     }
     return { ...this.fields(queue), messages };
   }
-  async sync(): Promise<void> {
-    if (this.running) return this.running;
+  async sync(interactive = false): Promise<void> {
+    // Only a background read may be overtaken. Writes and acknowledgement
+    // recovery must finish before another operation can touch the queue.
+    if (this.running && !(interactive && this.reading)) return this.running;
+    const generation = ++this.syncGeneration;
+    const current = () => generation === this.syncGeneration;
+    this.reading = false;
     const task = async () => {
       try {
         await this.recoverAcknowledgement();
@@ -344,7 +365,14 @@ export class SharedQueueClient {
             this.emit(true);
           }
           const before = this.base;
-          const value = await this.call<SharedQueue>("get");
+          this.reading = !interactive;
+          const value = await this.call<SharedQueue>("get", {}, () => {
+            if (!current()) return false;
+            this.reading = false;
+            return true;
+          });
+          if (!current()) return;
+          this.reading = false;
           if (this.dirty()) {
             this.desired = mergeQueueChange(value, { before, after: this.desired });
             this.base = value;
@@ -357,6 +385,7 @@ export class SharedQueueClient {
           break;
         }
       } catch (error) {
+        if (!current()) return;
         const message = String(error).replace(/^Error: /, "");
         this.conflict =
           /changed on another computer|order changed|state changed|being sent|Queued message ID/.test(
@@ -367,14 +396,18 @@ export class SharedQueueClient {
       }
     };
     this.running = task().finally(() => {
-      this.running = undefined;
+      if (current()) {
+        this.running = undefined;
+        this.reading = false;
+      }
     });
     return this.running;
   }
   async retry(): Promise<void> {
     if (this.running) {
       try {
-        await this.running;
+        await this.sync(true);
+        return;
       } catch {}
     }
     if (this.conflict) {
@@ -398,7 +431,7 @@ export class SharedQueueClient {
       this.persist();
     }
     this.emit(true);
-    await this.sync();
+    await this.sync(true);
   }
   canDrain(): boolean {
     return (
@@ -418,7 +451,7 @@ export class SharedQueueClient {
     };
   }
   async claim(id: string, steer: boolean): Promise<string | undefined> {
-    await this.sync();
+    await this.sync(true);
     if (!this.canDrain()) return undefined;
     // Write before the RPC: a committed claim with a lost reply must be recoverable.
     // No provider callback can run until this method returns its token.
@@ -508,6 +541,13 @@ export class SharedQueueClient {
       JSON.stringify({ ...pending, accepted: pending.accepted ?? accepted }),
     );
     await this.recoverAcknowledgement();
+    if (!accepted)
+      this.update((queue) => ({
+        ...queue,
+        messages: queue.messages.map((row) =>
+          row.id === pending.id ? { ...row, deliveryUnknown: undefined } : row,
+        ),
+      }));
     await this.sync();
   }
 }

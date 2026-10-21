@@ -1,4 +1,6 @@
 {
+  "Scroll to bottom": "滚动到底部",
+  "Clear terminal": "清空终端",
   "Manual only": "仅手动",
   "Automatic only": "仅自动",
   "Invocation disabled": "调用已禁用",
@@ -5498,5 +5500,17 @@
   "Imported {p0} servers. Skipped {p1} existing records. Saved {p2} SSH keys.": "Imported {p0} servers. Skipped {p1} existing records. Saved {p2} SSH keys.",
   "{p0} of {p1} selected": "{p0} of {p1} selected",
   "Import {p0}": "Import {p0}",
-  "Import selected ({p0})": "Import selected ({p0})"
+  "Import selected ({p0})": "Import selected ({p0})",
+  "Unfavorite": "取消收藏",
+  "Color…": "颜色…",
+  "Copy address": "复制地址",
+  "No color": "无颜色",
+  "List view": "列表视图",
+  "Card view": "卡片视图",
+  "Server view": "服务器视图",
+  "Server actions": "服务器操作",
+  "Server color": "服务器颜色",
+  "Delete {p0}?": "删除 {p0}？",
+  "Removes this SSH server from bycoda. The remote machine is not changed.": "从 bycoda 中移除此 SSH 服务器。远程机器不会被更改。",
+  "Removes this machine from this desktop only. The host and its sessions keep running.": "仅从此桌面移除这台机器。主机及其会话将继续运行。"
 }

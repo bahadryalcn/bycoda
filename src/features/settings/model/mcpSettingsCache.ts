@@ -10,6 +10,8 @@ export type McpSettingsSnapshot = {
 };
 
 const snapshots = new Map<string, McpSettingsSnapshot>();
+export const MCP_LOCAL_ONLY_ERROR =
+  "MCP server configuration is only available for projects on this computer.";
 const requests = new Map<string, Promise<McpSettingsSnapshot>>();
 const healthRequests = new Map<string, Promise<void>>();
 const listeners = new Map<string, Set<(snapshot: McpSettingsSnapshot) => void>>();
@@ -42,6 +44,9 @@ export function loadMcpSettings(
   force = false,
   options: { claudeHealth?: boolean } = {},
 ) {
+  if (cwd.startsWith("remote://")) {
+    return Promise.resolve({ servers: [], error: MCP_LOCAL_ONLY_ERROR, claudeError: "" });
+  }
   let request = requests.get(cwd);
   if (!request || force) {
     const discovery = fetchMcpSettings(cwd).then((snapshot) => {

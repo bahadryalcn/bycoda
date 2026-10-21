@@ -70,13 +70,21 @@ function transcript(session: Session): string {
   return canonicalJson(
     session.blocks.map((block) => ({
       ...block,
+      // The host keeps a finished block's `streaming: false`; desktop storage
+      // drops it. Only an open stream is part of the comparison.
+      streaming: block.streaming || undefined,
       image: block.image
         ? (({ data: _data, loadPreview: _load, ...image }) => image)(block.image)
         : undefined,
-      // Desktop-only file/preview flags disappear during persistence. They
+      // Desktop-only file/preview flags disappear during persistence, and
+      // `path` is where one machine stored the file: transcript pages and the
+      // remote cache drop it in transit. Neither is part of the message, and
       // must not make an unchanged message look like a competing local edit.
       attachments: block.attachments?.length
-        ? block.attachments.map(persistableAttachment)
+        ? block.attachments.map((file) => {
+            const { path: _path, ...content } = persistableAttachment(file);
+            return content;
+          })
         : undefined,
     })),
   );
@@ -137,6 +145,15 @@ export function adoptedTranscriptLead(
   local: Session,
   remote: Session,
 ): "same" | "local" | "host" | undefined {
+  const { lead } = compareTranscripts(local, remote);
+  return lead;
+}
+
+/** The lead, or for diverged transcripts the first pair of blocks that differ. */
+function compareTranscripts(
+  local: Session,
+  remote: Session,
+): { lead?: "same" | "local" | "host"; divergence?: string } {
   const mine = local.blocks.filter((block) => !isQuitNotice(block));
   const theirs = remote.blocks.filter(
     (block) => !isQuitNotice(block) && (block.role !== "approval" || !!block.approval?.decided),
@@ -145,12 +162,16 @@ export function adoptedTranscriptLead(
   for (let i = 0; i < shared; i++) {
     const a = mine[i];
     const b = theirs[i];
-    if (a.id !== b.id || a.role !== b.role) return undefined;
-    if (blockJson(a) === blockJson(b) || isOpenBlock(b) || sameBlockContent(a, b)) continue;
-    return undefined;
+    if (
+      a.id === b.id &&
+      a.role === b.role &&
+      (blockJson(a) === blockJson(b) || isOpenBlock(b) || sameBlockContent(a, b))
+    )
+      continue;
+    return { divergence: `${i}\0${a.id}\0${b.id}` };
   }
-  if (mine.length === theirs.length) return "same";
-  return mine.length > theirs.length ? "local" : "host";
+  if (mine.length === theirs.length) return { lead: "same" };
+  return { lead: mine.length > theirs.length ? "local" : "host" };
 }
 
 /** The host copy only lags this desktop: it has not caught up with turns run
@@ -268,6 +289,8 @@ export type AdoptedMirrorDeps = {
  * read from storage again on every pass. */
 const storedHere = new WeakMap<Map<string, number>, Set<string>>();
 const baselines = new WeakMap<Map<string, number>, Map<string, Session>>();
+/** Per session, the divergence an automatic refresh last saved a copy for. */
+const autoPreserved = new WeakMap<Map<string, number>, Map<string, string>>();
 /** The last host snapshot received per session, to ask for deltas. Bounded:
  * a snapshot is a whole transcript. */
 const snapshots = new WeakMap<Map<string, number>, Map<string, HostSession>>();
@@ -391,9 +414,16 @@ export async function mirrorAdoptedSessions(deps: AdoptedMirrorDeps): Promise<Se
           deps.mirrored.set(entry.id, host.revision);
           continue;
         }
-        if (deps.autoRefreshConflicts) {
+        // A divergence that already produced a copy and came back is one the
+        // host keeps refusing; another copy per turn would only scatter the
+        // conversation. Leave it to an explicit refresh.
+        const divergence =
+          compareTranscripts(current, host.session).divergence ?? "configuration";
+        let saved = autoPreserved.get(deps.mirrored);
+        if (!saved) autoPreserved.set(deps.mirrored, (saved = new Map()));
+        if (deps.autoRefreshConflicts && saved.get(entry.id) !== divergence) {
           try {
-            await applyAdoptedSnapshot(deps, current, host);
+            if (await applyAdoptedSnapshot(deps, current, host)) saved.set(entry.id, divergence);
             continue;
           } catch {
             // A failed backup or a concurrent local edit leaves the copy intact.
@@ -404,6 +434,7 @@ export async function mirrorAdoptedSessions(deps: AdoptedMirrorDeps): Promise<Se
         continue;
       }
       deps.apply(merged, current);
+      autoPreserved.get(deps.mirrored)?.delete(entry.id);
       remember(entry.id, host);
       base.set(entry.id, baselineOf(merged, host));
       deps.mirrored.set(entry.id, host.revision);

@@ -19,6 +19,8 @@ export type UpdaterSnapshot = {
 };
 
 let pendingUpdate: Update | null = null;
+let updateFlow: Promise<UpdaterSnapshot> | null = null;
+let installation: Promise<UpdaterSnapshot> | null = null;
 
 function isUpdaterNotConfiguredError(error: unknown): boolean {
   const text = error instanceof Error ? error.message : String(error);
@@ -58,7 +60,23 @@ export async function probeForUpdate(): Promise<Update | null> {
   return update;
 }
 
-export async function runUpdateFlow(
+export function runUpdateFlow(
+  manual: boolean,
+  onProgress?: (snapshot: UpdaterSnapshot) => void,
+): Promise<UpdaterSnapshot> {
+  const active = installation ?? updateFlow;
+  if (active)
+    return active.then((snapshot) => {
+      onProgress?.(snapshot);
+      return snapshot;
+    });
+  updateFlow = runUpdateFlowOnce(manual, onProgress).finally(() => {
+    updateFlow = null;
+  });
+  return updateFlow;
+}
+
+async function runUpdateFlowOnce(
   manual: boolean,
   onProgress?: (snapshot: UpdaterSnapshot) => void,
 ): Promise<UpdaterSnapshot> {
@@ -145,7 +163,21 @@ export async function runUpdateFlow(
   }
 }
 
-export async function installPendingUpdate(
+export function installPendingUpdate(
+  onProgress?: (snapshot: UpdaterSnapshot) => void,
+): Promise<UpdaterSnapshot> {
+  if (installation)
+    return installation.then((snapshot) => {
+      onProgress?.(snapshot);
+      return snapshot;
+    });
+  installation = installPendingUpdateOnce(onProgress).finally(() => {
+    installation = null;
+  });
+  return installation;
+}
+
+async function installPendingUpdateOnce(
   onProgress?: (snapshot: UpdaterSnapshot) => void,
 ): Promise<UpdaterSnapshot> {
   const currentVersion = await readAppVersion();
@@ -191,7 +223,18 @@ export async function installPendingUpdate(
 
     rememberInstalledUpdate(update.version);
     pendingUpdate = null;
-    await relaunch();
+    try {
+      await relaunch();
+    } catch (err) {
+      const detail = err instanceof Error ? err.message : String(err);
+      const error = t("The update was installed. Restart the app manually to finish.\n\n{p0}", {
+        p0: detail,
+      });
+      const failed: UpdaterSnapshot = { phase: "error", currentVersion: update.version, error };
+      onProgress?.(failed);
+      await message(error, { title: appName() });
+      return failed;
+    }
     return {
       phase: "current",
       currentVersion: update.version,

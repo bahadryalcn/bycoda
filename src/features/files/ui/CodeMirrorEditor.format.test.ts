@@ -8,7 +8,10 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { CodeMirrorEditor } from "./CodeMirrorEditor";
 
 const format = vi.hoisted(() => vi.fn());
-vi.mock("../../../shared/lib/format", () => ({ formatProjectText: format }));
+vi.mock("../../../shared/lib/format", () => ({
+  formatProjectText: format,
+  hasBundledFormatter: (path: string) => path.endsWith(".tsx"),
+}));
 vi.mock("@tauri-apps/api/core", () => ({ invoke: async () => [] }));
 
 let host: HTMLDivElement;
@@ -65,6 +68,47 @@ async function shortcut() {
   });
   expect(event.defaultPrevented).toBe(true);
 }
+
+it.each(["unsupported", "invalid", "exception"])(
+  "reports format-on-save %s while preserving a successful source save",
+  async (kind) => {
+    localStorage.setItem("bycoda.formatOnSave", "1");
+    onSave.mockResolvedValue(undefined);
+    if (kind === "exception")
+      format.mockRejectedValue(new Error("Invalid project formatter configuration"));
+    else format.mockResolvedValue(null);
+    const saveRequestRef: { current: (() => Promise<boolean>) | null } = { current: null };
+    await act(async () =>
+      root.render(
+        createElement(CodeMirrorEditor, {
+          path: kind === "unsupported" ? "/repo/file.bin" : "/repo/Page.tsx",
+          cwd: "/repo",
+          value: "source",
+          showDiff: false,
+          gitOriginal: null,
+          active: true,
+          formatOnSave: true,
+          onSave,
+          onDirtyChange: vi.fn(),
+          onErrorCountChange: vi.fn(),
+          canAutosave: () => false,
+          saveRequestRef,
+        }),
+      ),
+    );
+    const editor = EditorView.findFromDOM(host.querySelector(".cm-editor")!)!;
+    act(() => editor.dispatch({ changes: { from: 0, insert: "edited " } }));
+    await act(async () => {
+      expect(await saveRequestRef.current!()).toBe(true);
+    });
+    expect(onSave).toHaveBeenLastCalledWith("edited source");
+    if (kind === "unsupported") expect(host.querySelector('[role="alert"]')).toBeNull();
+    else
+      expect(host.querySelector('[role="alert"]')?.textContent).toContain(
+        kind === "exception" ? "Invalid project formatter" : "syntax is invalid",
+      );
+  },
+);
 it("formats with Alt+Shift+F despite format-on-save being disabled, without saving, and supports undo", async () => {
   const original = view.state.doc.toString();
   format.mockResolvedValue({ formatted: "const Page = () => <div />;\n", cursorOffset: 10 });

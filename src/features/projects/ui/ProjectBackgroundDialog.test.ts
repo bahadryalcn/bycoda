@@ -3,6 +3,7 @@
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { invoke } from "@tauri-apps/api/core";
 import { ProjectBackgroundDialog } from "./ProjectBackgroundDialog";
 import {
   loadProjectChatBackgroundSettings,
@@ -30,6 +31,7 @@ function mockLocalStorage() {
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   mockLocalStorage();
+  vi.mocked(invoke).mockReset().mockResolvedValue(undefined);
   vi.stubGlobal(
     "fetch",
     vi.fn(async () => {
@@ -50,6 +52,25 @@ afterEach(async () => {
 });
 
 describe("project background dialog", () => {
+  it.each(["storage", "native"])("retains recoverable background state after %s removal failure", async (failure) => {
+    saveProjectChatBackgroundSettings("/work/alpha", { path: "/backgrounds/alpha.png", emptyOpacity: 0.2, sessionOpacity: 0.3, scope: "empty", effect: "none" });
+    await act(async () => root.render(createElement(ProjectBackgroundDialog, { project: "/work/alpha", name: "Alpha", onClose: vi.fn() })));
+    if (failure === "storage") vi.spyOn(localStorage, "setItem").mockImplementationOnce(() => { throw new Error("Quota"); });
+    else vi.mocked(invoke).mockImplementation(async (command) => {
+      if (command === "remove_project_chat_background") {
+        expect(loadProjectChatBackgroundSettings("/work/alpha")).toBeNull();
+        throw new Error("Native removal failed");
+      }
+    });
+    const remove = [...document.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "Remove background image")!;
+    await act(async () => remove.click());
+    expect(loadProjectChatBackgroundSettings("/work/alpha")?.path).toBe("/backgrounds/alpha.png");
+    expect(document.querySelector('[role="alert"]')?.textContent).toContain(failure === "storage" ? "Could not save project background settings" : "Native removal failed");
+    if (failure === "storage") expect(vi.mocked(invoke).mock.calls.some(([command]) => command === "remove_project_chat_background")).toBe(false);
+    vi.mocked(invoke).mockResolvedValue(undefined);
+    await act(async () => remove.click());
+    expect(loadProjectChatBackgroundSettings("/work/alpha")).toBeNull();
+  });
   it("persists bounded visibility keyboard edits and the exclusive background scope for this project", async () => {
     saveProjectChatBackgroundSettings("/work/alpha", {
       path: "/backgrounds/alpha.png",

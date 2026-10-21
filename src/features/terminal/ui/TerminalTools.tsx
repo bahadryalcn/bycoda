@@ -23,6 +23,7 @@ import { TerminalCursorPopover } from "./TerminalCursorPopover";
 import styles from "./TerminalTools.module.css";
 import type { SshShellController } from "../model/sshShellIntegration";
 import { RemoteShellSuggestions } from "./RemoteShellSuggestions";
+import { TerminalGhostText } from "./TerminalGhostText";
 
 export type TerminalTool = "search" | "command" | "remote" | null;
 
@@ -178,18 +179,7 @@ export function TerminalTools({
               {query && !found ? t("No matches") : ""}
             </span>
           </>
-        ) : (
-          <Button
-            variant="ghost"
-            size="sm"
-            title={`${t("Find in terminal")} (Ctrl/Cmd+F)`}
-            aria-label={t("Find in terminal")}
-            disabled={!terminal}
-            onClick={() => changeMode("search")}
-          >
-            <Search size={14} />
-          </Button>
-        )}
+        ) : null}
         {suggestionsAllowed && (
           <Button
             variant="ghost"
@@ -230,33 +220,6 @@ export function TerminalTools({
             )} (Bash 4.4+ · ls/cd/pwd/git)`}
             onClick={() => onEnableShellIntegration("bash")}
           />
-        ) : null}
-        {remoteShell ? (
-          <Button
-            variant="ghost"
-            size="sm"
-            disabled={!ready || alternate}
-            loading={remoteShell.waiting}
-            aria-label={t("Remote command suggestions")}
-            title={`${t("Remote command suggestions")} (Ctrl+Space)`}
-            aria-pressed={mode === "remote"}
-            onClick={() => {
-              changeMode("remote");
-              void remoteShell.request(remoteShell.source);
-            }}
-          >
-            {t("Suggestions")}
-          </Button>
-        ) : null}
-        {onSavedCommands ? (
-          <Button
-            variant="ghost"
-            size="sm"
-            disabled={!ready || alternate}
-            onClick={onSavedCommands}
-          >
-            {t("Saved commands")}
-          </Button>
         ) : null}
         {onStartupReview ? (
           <Button
@@ -377,6 +340,59 @@ export function TerminalTools({
         controls
       ) : (
         <div className={styles.menuTrigger}>
+          {onEnableShellIntegration ? (
+            <Button
+              variant="ghost"
+              size="sm"
+              disabled={!ready || alternate}
+              tooltip={t(
+                "Opens a new Bash terminal with session-only suggestions. No remote shell files are changed.",
+              )}
+              onClick={() => onEnableShellIntegration("bash")}
+            >
+              <TerminalIcon aria-hidden size={14} />
+              {t("Bash suggestions")}
+            </Button>
+          ) : null}
+          {remoteShell ? (
+            <>
+              <Button
+                variant="ghost"
+                size="sm"
+                disabled={!ready || alternate}
+                loading={remoteShell.waiting}
+                shortcut="Ctrl+Space"
+                onClick={() => {
+                  changeMode("remote");
+                  void remoteShell.request(remoteShell.source);
+                }}
+              >
+                {t("Suggestions")}
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                disabled={!ready || alternate}
+                onClick={() => {
+                  remoteShell.setSource("history");
+                  changeMode("remote");
+                  void remoteShell.request("history");
+                }}
+              >
+                {t("Reviewed history")}
+              </Button>
+            </>
+          ) : null}
+          {onSavedCommands ? (
+            <Button
+              variant="ghost"
+              size="sm"
+              disabled={!ready || alternate}
+              onClick={onSavedCommands}
+            >
+              {t("Saved commands")}
+            </Button>
+          ) : null}
           <Button
             variant="ghost"
             size="sm"
@@ -388,7 +404,7 @@ export function TerminalTools({
           >
             <Search size={14} />
           </Button>
-          {remoteShell || onEnableShellIntegration || onSavedCommands || onStartupReview ? (
+          {terminal ? (
             <>
               <Button
                 ref={menuAnchor}
@@ -412,6 +428,31 @@ export function TerminalTools({
                   onDismiss={() => setMenuOpen(false)}
                 >
                   {controls}
+                  <div className={styles.row}>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => {
+                        terminal.scrollToBottom();
+                        setMenuOpen(false);
+                        terminal.focus();
+                      }}
+                    >
+                      {t("Scroll to bottom")}
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      disabled={alternate}
+                      onClick={() => {
+                        terminal.clear();
+                        setMenuOpen(false);
+                        terminal.focus();
+                      }}
+                    >
+                      {t("Clear terminal")}
+                    </Button>
+                  </div>
                 </Popover>
               ) : null}
             </>
@@ -427,20 +468,28 @@ export function TerminalTools({
         />
       ) : null}
       {showRemote ? (
-        <TerminalCursorPopover
-          terminal={terminal}
-          onDismiss={() => {
-            remoteShell.dismiss();
-            changeMode(null);
-          }}
-        >
-          <RemoteShellSuggestions
-            shell={remoteShell}
+        <>
+          {mode === null && remoteShell.state?.prefix && remoteShell.state.suggestions?.[0] ? (
+            <TerminalGhostText
+              terminal={terminal}
+              suffix={remoteShell.state.suggestions[0].slice(remoteShell.state.prefix.length)}
+            />
+          ) : null}
+          <TerminalCursorPopover
             terminal={terminal}
-            selectionMode={mode === "remote"}
-            onClose={() => changeMode(null)}
-          />
-        </TerminalCursorPopover>
+            onDismiss={() => {
+              remoteShell.dismiss();
+              changeMode(null);
+            }}
+          >
+            <RemoteShellSuggestions
+              shell={remoteShell}
+              terminal={terminal}
+              selectionMode={mode === "remote"}
+              onClose={() => changeMode(null)}
+            />
+          </TerminalCursorPopover>
+        </>
       ) : null}
     </>
   );

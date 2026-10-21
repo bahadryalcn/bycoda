@@ -72,12 +72,14 @@ export function UsageLimitNotice({
               {t("Switch model")}
             </Button>
           ) : null}
-          {!waiting ? (
+          {!waiting && !onResume ? (
+            <span>{t("Send a message to continue.")}</span>
+          ) : !waiting ? (
             <Button variant="ghost" type="button" onClick={onResume}>
               <Play className="size-3.5" />
               {t("Resume")}
             </Button>
-          ) : limit.resumeAtReset ? (
+          ) : !onResumeAtReset ? null : limit.resumeAtReset ? (
             <Button
               variant="ghost"
               type="button"

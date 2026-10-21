@@ -1,3 +1,4 @@
+import { useStoredPreferenceState } from "../../../shared/hooks/useStoredPreferenceState";
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
@@ -24,6 +25,7 @@ import {
   KEEP_AWAKE_HOLD_AFTER_DEFAULT,
   isKeepAwakeHoldAfter,
   loadCloseToTray,
+  subscribeCloseToTray,
   loadKeepAwakeEnabled,
   loadKeepAwakeHoldAfter,
   loadKeepAwakeScreen,
@@ -41,7 +43,7 @@ import "./GeneralSettings.css";
 
 export function GeneralPage({ onOpenWhatsNew }: { onOpenWhatsNew: (version: string) => void }) {
   useLocale();
-  const [closeToTray, setCloseToTray] = useState(loadCloseToTray);
+  const [closeToTray, setCloseToTray] = useStoredPreferenceState(loadCloseToTray, subscribeCloseToTray);
   const onCloseToTray = (next: boolean) => {
     saveCloseToTray(next);
     setCloseToTray(next);
@@ -288,16 +290,22 @@ export function UpdateRow({ onOpenWhatsNew }: { onOpenWhatsNew: (version: string
     };
   }, []);
 
-  const busy = snapshot.phase === "checking" || snapshot.phase === "downloading";
+  const [flowBusy, setFlowBusy] = useState(false);
+  const busy = flowBusy || snapshot.phase === "checking" || snapshot.phase === "downloading";
   const hasUpdate = snapshot.phase === "available";
 
   const onClick = async () => {
     if (busy) return;
-    if (hasUpdate) {
-      await installPendingUpdate(setSnapshot);
-      return;
+    setFlowBusy(true);
+    try {
+      if (hasUpdate) {
+        await installPendingUpdate(setSnapshot);
+        return;
+      }
+      await runUpdateFlow(true, setSnapshot);
+    } finally {
+      setFlowBusy(false);
     }
-    await runUpdateFlow(true, setSnapshot);
   };
 
   const status =

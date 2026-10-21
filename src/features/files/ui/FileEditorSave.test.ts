@@ -157,6 +157,72 @@ function shortcut(target: EventTarget, extra: KeyboardEventInit = {}) {
   return event;
 }
 
+function conflictAction(label: string) {
+  return [...container.querySelectorAll<HTMLButtonElement>("button")].find(
+    (button) => button.textContent === label,
+  )!;
+}
+
+it.each(["button", "shortcut"])(
+  "requires an informed overwrite after external edits (%s)",
+  async (action) => {
+    const view = await render();
+    act(() => view.dispatch({ changes: { from: 0, insert: "draft " } }));
+    disk = "external\r\n";
+    await act(async () => invalidateWatchedFiles(["/repo/save.txt"]));
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain(
+      "File changed on disk",
+    );
+    expect(view.state.doc.toString()).toBe("draft original\n");
+    await act(async () => {
+      if (action === "button") saveButton().click();
+      else shortcut(view.contentDOM);
+    });
+    expect(disk).toBe("external\r\n");
+    expect(onDirtyChange).toHaveBeenLastCalledWith("/repo/save.txt", true);
+    act(() => view.dispatch({ changes: { from: 0, insert: "latest " } }));
+    await act(async () => conflictAction("Overwrite disk version").click());
+    expect(disk).toBe("latest draft original\r\n");
+    expect(container.querySelector('[role="alert"]')).toBeNull();
+    expect(onDirtyChange).toHaveBeenLastCalledWith("/repo/save.txt", false);
+  },
+);
+
+it("reloads the external version only after the explicit discard choice", async () => {
+  const view = await render();
+  act(() => view.dispatch({ changes: { from: 0, insert: "draft " } }));
+  disk = "external\r\n";
+  await act(async () => invalidateWatchedFiles(["/repo/save.txt"]));
+  await act(async () => conflictAction("Reload from disk").click());
+  const reloaded = EditorView.findFromDOM(container.querySelector<HTMLElement>(".cm-editor")!)!;
+  expect(reloaded.state.doc.toString()).toBe("external\n");
+  expect(disk).toBe("external\r\n");
+  expect(onDirtyChange).toHaveBeenLastCalledWith("/repo/save.txt", false);
+  expect(container.querySelector('[role="alert"]')).toBeNull();
+});
+
+it("retains newer edits made while the chosen reload is reading", async () => {
+  const view = await render();
+  act(() => view.dispatch({ changes: { from: 0, insert: "draft " } }));
+  disk = "external\r\n";
+  await act(async () => invalidateWatchedFiles(["/repo/save.txt"]));
+  const original = bridge.invoke.getMockImplementation()!;
+  let finish!: (content: string) => void;
+  bridge.invoke.mockImplementation((command, args) =>
+    command === "read_text_file"
+      ? new Promise<string>((resolve) => {
+          finish = resolve;
+        })
+      : original(command, args),
+  );
+  act(() => conflictAction("Reload from disk").click());
+  act(() => view.dispatch({ changes: { from: 0, insert: "newer " } }));
+  await act(async () => finish("external\r\n"));
+  expect(view.state.doc.toString()).toBe("newer draft original\n");
+  expect(container.querySelector('[role="alert"]')).not.toBeNull();
+  expect(onDirtyChange).toHaveBeenLastCalledWith("/repo/save.txt", true);
+});
+
 it("saves from the visible action and marks the buffer clean", async () => {
   const view = await render();
   act(() => view.dispatch({ changes: { from: 0, insert: "edited " } }));

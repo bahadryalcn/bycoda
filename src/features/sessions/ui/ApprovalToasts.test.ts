@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { act, createElement, type ComponentProps } from "react";
+import { act, createElement, StrictMode, type ComponentProps } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { updateNotificationPreferences } from "../../notifications/model/notificationPreferences";
@@ -54,6 +54,66 @@ const onFocusSession = vi.fn();
 function render(notices: Notice[]) {
   root.render(createElement(ApprovalToasts, { notices, onApproval, onFocusSession }));
 }
+
+it("retains arrivals from two mounted histories before sibling storage events are delivered", () => {
+  const siblingNode = document.createElement("div");
+  document.body.append(siblingNode);
+  const sibling = createRoot(siblingNode);
+  try {
+    act(() => render([]));
+    act(() =>
+      sibling.render(createElement(ApprovalToasts, { notices: [], onApproval, onFocusSession })),
+    );
+    act(() => render([notice("first")]));
+    act(() =>
+      sibling.render(
+        createElement(ApprovalToasts, { notices: [notice("second")], onApproval, onFocusSession }),
+      ),
+    );
+    const saved = JSON.parse(localStorage.getItem(NOTIFICATION_HISTORY_KEY)!);
+    expect(saved.map((entry: { sessionId: string }) => entry.sessionId).sort()).toEqual([
+      "first",
+      "second",
+    ]);
+    expect(document.querySelectorAll(".approval-toast")).toHaveLength(2);
+    expect(onApproval).not.toHaveBeenCalled();
+  } finally {
+    act(() => sibling.unmount());
+    siblingNode.remove();
+  }
+});
+
+it("records one StrictMode arrival, retains reused request occurrences and falls back locally when storage fails", async () => {
+  const strictRender = (notices: Notice[]) =>
+    root.render(
+      createElement(
+        StrictMode,
+        null,
+        createElement(ApprovalToasts, { notices, onApproval, onFocusSession }),
+      ),
+    );
+  await act(async () => strictRender([notice("work", "question")]));
+  expect(JSON.parse(localStorage.getItem(NOTIFICATION_HISTORY_KEY)!)).toHaveLength(1);
+  await act(async () => strictRender([]));
+  await act(async () => strictRender([notice("work", "question")]));
+  expect(JSON.parse(localStorage.getItem(NOTIFICATION_HISTORY_KEY)!)).toHaveLength(2);
+  const original = localStorage.setItem.bind(localStorage);
+  const write = vi.spyOn(localStorage, "setItem").mockImplementation((key, value) => {
+    if (key === NOTIFICATION_HISTORY_KEY) throw new Error("Storage unavailable");
+    original(key, value);
+  });
+  try {
+    await act(async () => strictRender([notice("work", "question"), notice("second")]));
+    await act(async () => strictRender([]));
+    act(() => button("Notifications").click());
+    act(() => document.querySelector<HTMLButtonElement>('[role="tab"]:last-child')!.click());
+    expect(document.querySelectorAll('[role="tabpanel"] article')).toHaveLength(3);
+    expect(JSON.parse(localStorage.getItem(NOTIFICATION_HISTORY_KEY)!)).toHaveLength(2);
+    expect(onApproval).not.toHaveBeenCalled();
+  } finally {
+    write.mockRestore();
+  }
+});
 
 it("updates project names in open popups and history when the rail label changes", () => {
   act(() => render([notice("work", "question")]));

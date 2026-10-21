@@ -11,6 +11,7 @@ vi.mock("../../notifications/model/notifications", () => ({
   cachedNotificationPermission: () => permission.value,
   loadNotificationsEnabled: () => false,
   saveNotificationsEnabled: vi.fn(),
+  subscribeNotificationsEnabled: () => () => {},
   probeNotificationPermission: async () => permission.value,
   requestNotificationPermission: async () => permission.value,
   openNotificationSettings: async () => {

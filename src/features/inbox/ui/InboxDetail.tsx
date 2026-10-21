@@ -14,7 +14,7 @@ import {
   LoaderCircle,
   MessageMultiple,
 } from "../../../shared/ui/icons";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { InboxProviderMark } from "./InboxProviderMark";
 import { useLockOverscroll } from "../../../shared/hooks/useLockOverscroll";
 import {
@@ -56,11 +56,15 @@ import { InboxDescriptionSummary, InboxPrChangesGlance } from "./InboxPrOverview
 import { useInboxDetailData } from "./useInboxDetailData";
 
 export function InboxDetailTab({
+  id,
+  controls,
   label,
   count,
   selected,
   onSelect,
 }: {
+  id?: string;
+  controls?: string;
   label: string;
   count?: number;
   selected: boolean;
@@ -72,6 +76,9 @@ export function InboxDetailTab({
       variant="tab"
       type="button"
       role="tab"
+      id={id}
+      aria-controls={controls}
+      tabIndex={selected ? 0 : -1}
       aria-label={label}
       aria-selected={selected}
       onClick={onSelect}
@@ -125,6 +132,8 @@ export function InboxDetail({
   useLocale();
   const detailLock = useLockOverscroll<HTMLDivElement>();
   const panel = mode === "panel";
+  const tabsId = useId();
+  const tabPanelId = `${tabsId}-panel`;
   const [diffFocusPath, setDiffFocusPath] = useState<string | undefined>();
   const [tab, setTab] = useState<"summary" | "code" | "checks">("summary");
   const [diffMode, setDiffMode] = useState<"hunks" | "full">("hunks");
@@ -539,14 +548,36 @@ export function InboxDetail({
                 <div
                   role="tablist"
                   aria-label={gitlab ? t("Merge request sections") : t("Pull request sections")}
+                  onKeyDown={(event) => {
+                    if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+                    const tabs = [
+                      ...event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="tab"]'),
+                    ];
+                    const index = tabs.indexOf(event.target as HTMLButtonElement);
+                    if (index < 0) return;
+                    event.preventDefault();
+                    const next =
+                      event.key === "Home"
+                        ? 0
+                        : event.key === "End"
+                          ? tabs.length - 1
+                          : (index + (event.key === "ArrowRight" ? 1 : -1) + tabs.length) %
+                            tabs.length;
+                    tabs[next]?.focus();
+                    tabs[next]?.click();
+                  }}
                   className="flex items-stretch gap-4"
                 >
                   <InboxDetailTab
+                    id={`${tabsId}-summary`}
+                    controls={tabPanelId}
                     label={t("Summary")}
                     selected={tab === "summary"}
                     onSelect={() => setTab("summary")}
                   />
                   <InboxDetailTab
+                    id={`${tabsId}-code`}
+                    controls={tabPanelId}
                     label={t("Code")}
                     count={panel ? prDiff?.files.length : undefined}
                     selected={tab === "code"}
@@ -557,6 +588,8 @@ export function InboxDetail({
                   />
                   {prChecksOverall ? (
                     <PrChecksTab
+                      id={`${tabsId}-checks`}
+                      controls={tabPanelId}
                       overall={prChecksOverall}
                       selected={tab === "checks"}
                       onSelect={() => setTab("checks")}
@@ -593,6 +626,9 @@ export function InboxDetail({
         </div>
         <div
           ref={panel ? undefined : detailLock}
+          id={isPr ? tabPanelId : undefined}
+          role={isPr ? "tabpanel" : undefined}
+          aria-labelledby={isPr ? `${tabsId}-${tab}` : undefined}
           data-inbox-detail-scroll={panel ? undefined : ""}
           className={panel ? "min-w-0" : "min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-none"}
         >

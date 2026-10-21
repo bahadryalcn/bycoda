@@ -73,6 +73,50 @@ it("reveals real content and clears busy state when loading completes", async ()
   expect(node.querySelector('[aria-busy="true"]')).toBeNull();
 });
 
+it.each([true, "true"] as const)(
+  "keeps decorative skeletons hidden for aria-hidden=%s",
+  async (hidden) => {
+    await act(async () =>
+      root.render(createElement(Skeleton, { label: "Decorative shape", "aria-hidden": hidden })),
+    );
+    expect(node.firstElementChild?.getAttribute("aria-hidden")).toBe("true");
+    expect(node.querySelector('[role="status"]')).toBeNull();
+    expect(node.querySelector('[aria-label="Decorative shape"]')).toBeNull();
+    expect(node.querySelector('[aria-busy="true"]')).toBeNull();
+    await act(async () =>
+      root.render(createElement(Skeleton, { label: "Actual loading", "aria-hidden": false })),
+    );
+    expect(node.querySelector('[role="status"]')?.getAttribute("aria-label")).toBe(
+      "Actual loading",
+    );
+  },
+);
+
+it("keeps revealed content accessible when its loading shape was decorative", async () => {
+  await act(async () =>
+    root.render(
+      createElement(
+        Skeleton,
+        { "aria-hidden": true, loading: true },
+        createElement("button", null, "Loaded action"),
+      ),
+    ),
+  );
+  expect(node.querySelector('[role="status"]')).toBeNull();
+  expect(node.querySelector('[aria-busy="true"]')).toBeNull();
+  await act(async () =>
+    root.render(
+      createElement(
+        Skeleton,
+        { "aria-hidden": true, loading: false },
+        createElement("button", null, "Loaded action"),
+      ),
+    ),
+  );
+  await vi.waitFor(() => expect(node.querySelector("button")?.textContent).toBe("Loaded action"));
+  expect(node.querySelector("button")?.closest('[aria-hidden="true"]')).toBeNull();
+});
+
 it("keeps inline quota labels readable at zero and full capacity without a completion check", async () => {
   for (const value of [0, 100]) {
     await act(async () =>

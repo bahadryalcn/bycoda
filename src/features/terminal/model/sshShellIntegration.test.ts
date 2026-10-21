@@ -133,7 +133,7 @@ it("requests a snapshot only explicitly and never sends remote setup or commands
   }
 });
 
-it("debounces zero-data edit notifications only after opt-in and structured prompt readiness", async () => {
+it("automatically debounces edit notifications only after structured prompt readiness", async () => {
   vi.useFakeTimers();
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   const host = document.createElement("div");
@@ -150,7 +150,7 @@ it("debounces zero-data edit notifications only after opt-in and structured prom
       await vi.advanceTimersByTimeAsync(300);
     });
     expect(native.invoke).not.toHaveBeenCalled();
-    await act(async () => controller.setAutomatic(true));
+    expect(controller.automatic).toBe(true);
     await act(async () => {
       controller.notifyInput();
       await vi.advanceTimersByTimeAsync(300);
@@ -256,7 +256,7 @@ it("correlates early native replies to acknowledgements and rejects late replies
   }
 });
 
-it("requires fresh exposure consent across terminal IDs and integration disable/re-enable boundaries", async () => {
+it("resets to automatic command suggestions across terminal IDs and requires fresh prompt readiness", async () => {
   vi.useFakeTimers();
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   const host = document.createElement("div"),
@@ -278,15 +278,14 @@ it("requires fresh exposure consent across terminal IDs and integration disable/
     expect(controller.automatic).toBe(true);
     await act(async () => root.render(createElement(Harness, { id: "id-B" })));
     expect(controller.source).toBe("commands");
-    expect(controller.automatic).toBe(false);
+    expect(controller.automatic).toBe(true);
     expect(controller.state).toBeUndefined();
-    await ready("id-B");
     await act(async () => {
       controller.notifyInput();
       await vi.advanceTimersByTimeAsync(300);
     });
     expect(native.invoke).not.toHaveBeenCalled();
-    await act(async () => controller.setAutomatic(true));
+    await ready("id-B");
     await act(async () => {
       controller.notifyInput();
       await vi.advanceTimersByTimeAsync(300);
@@ -297,7 +296,7 @@ it("requires fresh exposure consent across terminal IDs and integration disable/
     });
     await act(async () => root.render(createElement(Harness, { id: "id-B", enabled: false })));
     await act(async () => root.render(createElement(Harness, { id: "id-B", enabled: true })));
-    expect(controller.automatic).toBe(false);
+    expect(controller.automatic).toBe(true);
     expect(controller.source).toBe("commands");
     expect(controller.state).toBeUndefined();
     await ready("id-B");
@@ -305,7 +304,7 @@ it("requires fresh exposure consent across terminal IDs and integration disable/
       controller.notifyInput();
       await vi.advanceTimersByTimeAsync(300);
     });
-    expect(native.invoke).toHaveBeenCalledTimes(1);
+    expect(native.invoke).toHaveBeenCalledTimes(2);
   } finally {
     await act(async () => root.unmount());
     vi.useRealTimers();

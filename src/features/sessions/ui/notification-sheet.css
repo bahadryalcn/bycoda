@@ -1,3 +1,15 @@
+.notification-trigger-count {
+  position: absolute;
+  inset-block-start: -10px;
+  inset-inline-end: -4px;
+  font-size: 10px;
+  font-weight: 500;
+  line-height: 10px;
+  font-variant-numeric: tabular-nums;
+  color: var(--ui-tone-warning-fg);
+  pointer-events: none;
+}
+
 .notification-sheet {
   inset-block: 40px 32px;
   inline-size: min(420px, 100%);

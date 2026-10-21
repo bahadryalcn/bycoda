@@ -477,6 +477,26 @@ describe("sidebar session multiselection", () => {
 });
 
 describe("sidebar session bulk actions", () => {
+  it("explains and enforces the side-by-side limit before dispatching an oversized selection", () => {
+    props.onOpenSessionsSideBySide = vi.fn();
+    props.sessions = Array.from({ length: 10 }, (_, index) => ({
+      ...props.sessions[0],
+      id: `session-${index + 1}`,
+      updatedAt: 100 - index,
+    }));
+    act(() => render());
+    for (const session of props.sessions) clickCard(session.id, { ctrlKey: true });
+    act(() =>
+      card().dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true })),
+    );
+    const item = Array.from(document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')).find(
+      (entry) => entry.textContent?.includes("Open Side by Side"),
+    )!;
+    expect(item.disabled).toBe(true);
+    expect(item.textContent).toContain("Select at most 9 conversations");
+    act(() => item.click());
+    expect(props.onOpenSessionsSideBySide).not.toHaveBeenCalled();
+  });
   const selectedIds = () =>
     Array.from(container.querySelectorAll('[data-session-selected="true"]'), (el) =>
       el.getAttribute("data-session-card"),
@@ -666,6 +686,24 @@ describe("sidebar session IDs", () => {
     return document.querySelector<HTMLElement>('[role="menu"][aria-label="Copy session ID"]')!;
   }
 
+  it.each(["Harness session ID", "bycoda session ID"])("shows selectable ID and retries after %s clipboard failure", async (label) => {
+    props.sessions = [{ ...props.sessions[0], providerSessionId: "provider-identity" }];
+    vi.mocked(copyText).mockRejectedValueOnce(new Error("Clipboard unavailable"));
+    act(() => render());
+    const menu = openCopyIdMenu("session-1");
+    const item = [...menu.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find((button) => button.textContent === label)!;
+    await act(async () => item.click());
+    const dialog = document.querySelector('[role="dialog"]')!;
+    expect(dialog.textContent).toContain("Could not copy the session ID");
+    const field = dialog.querySelector<HTMLInputElement>('input[aria-label="Session ID"]')!;
+    expect(field.value).toBe(label === "Harness session ID" ? "provider-identity" : "session-1");
+    expect(field.readOnly).toBe(true);
+    const retry = [...dialog.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "Retry")!;
+    await act(async () => retry.click());
+    expect(copyText).toHaveBeenLastCalledWith(field.value);
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
+  });
+
   it("copies either ID from the right-clicked session", async () => {
     props.sessions = [
       { ...props.sessions[0], providerSessionId: "harness-session-1" },
@@ -711,6 +749,31 @@ describe("sidebar session IDs", () => {
 });
 
 describe("sidebar session rename", () => {
+  it("keeps a rejected async rename draft visible and allows retry", async () => {
+    const commit = props.onRenameSession!;
+    const rename = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("Disk unavailable"))
+      .mockImplementationOnce(commit);
+    props.onRenameSession = rename;
+    act(() => render());
+    const input = startRename();
+    typeTitle(input, "Retry this name");
+    await act(async () => {
+      pressKey(input, "Enter");
+    });
+    expect(renameInput()).toBe(input);
+    expect(input.value).toBe("Retry this name");
+    expect(input.disabled).toBe(false);
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain("Disk unavailable");
+    await act(async () => {
+      pressKey(input, "Enter");
+    });
+    expect(rename).toHaveBeenCalledTimes(2);
+    expect(renameInput()).toBeNull();
+    expect(card().textContent).toContain("Retry this name");
+  });
+
   it.each(["idle", "working", "needs approval"])(
     "renames from the menu and restores navigation (status=%s)",
     (status) => {

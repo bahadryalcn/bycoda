@@ -1188,7 +1188,7 @@ fn ensure_column(conn: &Connection, name: &str, decl: &str) -> rusqlite::Result<
     Ok(())
 }
 
-fn migrate(conn: &Connection) -> rusqlite::Result<()> {
+fn migrate_versions(conn: &Connection) -> rusqlite::Result<()> {
     conn.execute(
         "CREATE TABLE IF NOT EXISTS schema_migrations (
            version INTEGER PRIMARY KEY,
@@ -1209,15 +1209,15 @@ fn migrate(conn: &Connection) -> rusqlite::Result<()> {
         )?;
     }
     if current < 2 {
-        conn.execute("ALTER TABLE sessions ADD COLUMN branch TEXT", [])?;
+        ensure_session_column(conn, "branch", "TEXT")?;
         conn.execute(
             "INSERT INTO schema_migrations (version, applied_at) VALUES (2, ?1)",
             params![now_millis()],
         )?;
     }
     if current < 3 {
-        conn.execute("ALTER TABLE sessions ADD COLUMN context_used INTEGER", [])?;
-        conn.execute("ALTER TABLE sessions ADD COLUMN context_window INTEGER", [])?;
+        ensure_session_column(conn, "context_used", "INTEGER")?;
+        ensure_session_column(conn, "context_window", "INTEGER")?;
         conn.execute(
             "INSERT INTO schema_migrations (version, applied_at) VALUES (3, ?1)",
             params![now_millis()],
@@ -1250,17 +1250,14 @@ fn migrate(conn: &Connection) -> rusqlite::Result<()> {
         )?;
     }
     if current < 6 {
-        conn.execute(
-            "ALTER TABLE sessions ADD COLUMN archived INTEGER NOT NULL DEFAULT 0",
-            [],
-        )?;
+        ensure_session_column(conn, "archived", "INTEGER NOT NULL DEFAULT 0")?;
         conn.execute(
             "INSERT INTO schema_migrations (version, applied_at) VALUES (6, ?1)",
             params![now_millis()],
         )?;
     }
     if current < 7 {
-        conn.execute("ALTER TABLE sessions ADD COLUMN worktree_cwd TEXT", [])?;
+        ensure_session_column(conn, "worktree_cwd", "TEXT")?;
         conn.execute(
             "INSERT INTO schema_migrations (version, applied_at) VALUES (7, ?1)",
             params![now_millis()],
@@ -1453,6 +1450,19 @@ fn migrate(conn: &Connection) -> rusqlite::Result<()> {
             params![now_millis()],
         )?;
     }
+    Ok(())
+}
+
+fn migrate(conn: &Connection) -> rusqlite::Result<()> {
+    // Acquire the writer lock before reading the version. DDL and its version
+    // markers must commit together, including the fresh-database path. Existing
+    // legacy prefixes are repaired by the column checks in migrate_versions.
+    let tx = rusqlite::Transaction::new_unchecked(conn, rusqlite::TransactionBehavior::Immediate)?;
+    migrate_versions(&tx)?;
+    tx.commit()?;
+
+    // Keep independent schema helpers outside this transaction: some own their
+    // own transaction (notably ensure_orchestration_history).
     // Message-content search index: derived tables, created empty like the ones
     // around it (so no version row, and instant however many sessions exist).
     // Sessions are indexed lazily; see `content_search`.
@@ -3193,6 +3203,216 @@ mod tests {
             )
             .unwrap();
         assert_eq!(branch, 1);
+    }
+
+    fn seed_legacy_migration(conn: &Connection, version: i64) {
+        conn.execute_batch(MIGRATION_V1).unwrap();
+        conn.execute_batch(
+            "CREATE TABLE schema_migrations (
+               version INTEGER PRIMARY KEY, applied_at INTEGER NOT NULL
+             );
+             INSERT INTO sessions (
+               id, cwd, harness, model, runtime_mode, title, blocks_json, created_at, updated_at
+             ) VALUES ('legacy', '/legacy', 'codex', 'test', 'supervised',
+                       'Keep me', '[{\"role\":\"user\",\"text\":\"saved transcript\"}]', 10, 20);",
+        )
+        .unwrap();
+        conn.execute("INSERT INTO schema_migrations VALUES (?1, 1)", [version])
+            .unwrap();
+        for (introduced, sql) in [
+            (2, "ALTER TABLE sessions ADD COLUMN branch TEXT"),
+            (3, "ALTER TABLE sessions ADD COLUMN context_used INTEGER"),
+            (3, "ALTER TABLE sessions ADD COLUMN context_window INTEGER"),
+            (
+                6,
+                "ALTER TABLE sessions ADD COLUMN archived INTEGER NOT NULL DEFAULT 0",
+            ),
+            (7, "ALTER TABLE sessions ADD COLUMN worktree_cwd TEXT"),
+        ] {
+            if version >= introduced {
+                conn.execute(sql, []).unwrap();
+            }
+        }
+    }
+
+    #[test]
+    fn migrate_recovers_every_durable_legacy_prefix_after_reopen() {
+        // These autocommitted statements model each possible interruption point
+        // of the old v2/v3/v6/v7 migrations, before their version marker landed.
+        for (version, prefix, column, value) in [
+            (
+                2,
+                "ALTER TABLE sessions ADD COLUMN branch TEXT",
+                "branch",
+                "saved-branch",
+            ),
+            (
+                3,
+                "ALTER TABLE sessions ADD COLUMN context_used INTEGER",
+                "context_used",
+                "123",
+            ),
+            (
+                3,
+                "ALTER TABLE sessions ADD COLUMN context_used INTEGER;
+                 ALTER TABLE sessions ADD COLUMN context_window INTEGER",
+                "context_window",
+                "456",
+            ),
+            (
+                6,
+                "ALTER TABLE sessions ADD COLUMN archived INTEGER NOT NULL DEFAULT 0",
+                "archived",
+                "1",
+            ),
+            (
+                7,
+                "ALTER TABLE sessions ADD COLUMN worktree_cwd TEXT",
+                "worktree_cwd",
+                "/saved-worktree",
+            ),
+        ] {
+            let path = std::env::temp_dir().join(format!(
+                "bycoda-legacy-migration-{}.db",
+                uuid::Uuid::new_v4()
+            ));
+            {
+                let conn = Connection::open(&path).unwrap();
+                seed_legacy_migration(&conn, version - 1);
+                conn.execute_batch(prefix).unwrap();
+                conn.execute(&format!("UPDATE sessions SET {column} = ?1"), [value])
+                    .unwrap();
+            }
+            // Use the production open path, including WAL and ancillary schemas.
+            for _ in 0..2 {
+                let store = SessionStore::open(path.clone()).unwrap();
+                let conn = store.lock_conn().unwrap();
+                let row: (String, String, i64, i64) = conn.query_row(
+                    "SELECT title, blocks_json, created_at, updated_at FROM sessions WHERE id = 'legacy'",
+                    [], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+                ).unwrap();
+                assert_eq!(
+                    row,
+                    (
+                        "Keep me".into(),
+                        "[{\"role\":\"user\",\"text\":\"saved transcript\"}]".into(),
+                        10,
+                        20
+                    )
+                );
+                let retained: String = conn
+                    .query_row(
+                        &format!("SELECT CAST({column} AS TEXT) FROM sessions WHERE id = 'legacy'"),
+                        [],
+                        |row| row.get(0),
+                    )
+                    .unwrap();
+                assert_eq!(retained, value, "legacy v{version} prefix: {prefix}");
+                let latest: i64 = conn
+                    .query_row("SELECT MAX(version) FROM schema_migrations", [], |row| {
+                        row.get(0)
+                    })
+                    .unwrap();
+                assert_eq!(latest, 18);
+                let count: i64 = conn
+                    .query_row("SELECT COUNT(*) FROM sessions", [], |row| row.get(0))
+                    .unwrap();
+                assert_eq!(count, 1);
+            }
+            std::fs::remove_file(path).unwrap();
+        }
+    }
+
+    #[test]
+    fn migrate_rolls_back_legacy_schema_changes_when_marker_write_fails() {
+        for (version, column) in [
+            (2, "branch"),
+            (3, "context_used"),
+            (6, "archived"),
+            (7, "worktree_cwd"),
+        ] {
+            let path = std::env::temp_dir().join(format!(
+                "bycoda-migration-rollback-{}.db",
+                uuid::Uuid::new_v4()
+            ));
+            {
+                let conn = Connection::open(&path).unwrap();
+                seed_legacy_migration(&conn, version - 1);
+                conn.execute_batch(&format!(
+                    "CREATE TRIGGER fail_migration_marker BEFORE INSERT ON schema_migrations
+                     WHEN NEW.version = {version} BEGIN SELECT RAISE(ABORT, 'injected interruption'); END;"
+                )).unwrap();
+                assert!(migrate(&conn).is_err());
+                assert!(conn.is_autocommit());
+            }
+            {
+                let conn = Connection::open(&path).unwrap();
+                let present: i64 = conn
+                    .query_row(
+                        "SELECT COUNT(*) FROM pragma_table_info('sessions') WHERE name = ?1",
+                        [column],
+                        |row| row.get(0),
+                    )
+                    .unwrap();
+                assert_eq!(
+                    present, 0,
+                    "v{version} ALTER must roll back with its marker"
+                );
+                let latest: i64 = conn
+                    .query_row("SELECT MAX(version) FROM schema_migrations", [], |row| {
+                        row.get(0)
+                    })
+                    .unwrap();
+                assert_eq!(latest, version - 1);
+                conn.execute_batch("DROP TRIGGER fail_migration_marker")
+                    .unwrap();
+            }
+            let store = SessionStore::open(path.clone()).unwrap();
+            let conn = store.lock_conn().unwrap();
+            let retained: String = conn
+                .query_row(
+                    "SELECT title FROM sessions WHERE id = 'legacy'",
+                    [],
+                    |row| row.get(0),
+                )
+                .unwrap();
+            assert_eq!(retained, "Keep me");
+            drop(conn);
+            drop(store);
+            std::fs::remove_file(path).unwrap();
+        }
+    }
+
+    #[test]
+    fn migrate_rolls_back_fresh_schema_when_legacy_marker_write_fails() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE schema_migrations (
+               version INTEGER PRIMARY KEY, applied_at INTEGER NOT NULL
+             );
+             CREATE TRIGGER fail_migration_marker BEFORE INSERT ON schema_migrations
+             WHEN NEW.version = 3 BEGIN SELECT RAISE(ABORT, 'injected interruption'); END;",
+        )
+        .unwrap();
+        assert!(migrate(&conn).is_err());
+        assert!(conn.is_autocommit());
+        let sessions: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE name = 'sessions'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(sessions, 0);
+        let markers: i64 = conn
+            .query_row("SELECT COUNT(*) FROM schema_migrations", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert_eq!(markers, 0);
+        conn.execute_batch("DROP TRIGGER fail_migration_marker")
+            .unwrap();
+        migrate(&conn).unwrap();
     }
 
     #[test]

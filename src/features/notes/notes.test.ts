@@ -12,6 +12,8 @@ import {
   notesAsProjectFiles,
   normalizeNoteTags,
   noteTitle,
+  noteTitleError,
+  upsertNote,
   rankNoteFiles,
   type Note,
 } from "./notes";
@@ -27,6 +29,17 @@ function note(partial: Partial<Note> & Pick<Note, "id" | "slug" | "title">): Not
 }
 
 describe("noteTitle", () => {
+  it("rejects oversized explicit writes before invoking persistence", async () => {
+    await expect(
+      upsertNote({ id: "new", title: "😀".repeat(201), body: "Keep body", tags: [] }),
+    ).rejects.toThrow("at most 200 characters");
+  });
+  it("validates the 200 Unicode scalar title boundary before persistence", () => {
+    expect(noteTitleError("a".repeat(200))).toBeUndefined();
+    expect(noteTitleError("a".repeat(201))).toContain("200");
+    expect(noteTitleError("😀".repeat(200))).toBeUndefined();
+    expect(noteTitleError("😀".repeat(201))).toContain("200");
+  });
   it("uses the first heading", () => {
     expect(noteTitle("intro\n# Auth approach\n\nbody")).toBe("Auth approach");
   });

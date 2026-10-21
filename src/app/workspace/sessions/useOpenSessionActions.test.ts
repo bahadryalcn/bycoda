@@ -12,6 +12,8 @@ import {
 import { leafIds, newTab, type WorkspaceTab } from "../../../features/workspace/model/layout";
 import { normalizeSessionPreview } from "../../../features/workspace/model/sessionPreview";
 import { useOpenSessionActions, type OpenSessionActionsDeps } from "./useOpenSessionActions";
+import { message } from "@tauri-apps/plugin-dialog";
+vi.mock("@tauri-apps/plugin-dialog", () => ({ message: vi.fn(async () => undefined) }));
 
 let root: Root;
 let container: HTMLDivElement;
@@ -32,6 +34,7 @@ function Harness() {
 
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  vi.mocked(message).mockClear();
   sessions = Array.from({ length: 12 }, (_, i) => session(`session-${i}`));
   resetSessionsStore(sessions);
   active = "";
@@ -189,6 +192,25 @@ it("opens side-by-side sessions as a kept composition", async () => {
   const tab = deps.tabsRef.current.find((entry) => entry.id === active)!;
   expect(leafIds(tab.layout)).toEqual(expect.arrayContaining([sessions[0].id, sessions[1].id]));
   expect(tab.previewSessionId).toBeUndefined();
+});
+
+it("rejects an oversized composition explicitly before loading or changing any tabs", async () => {
+  await actions.onOpenSessionsSideBySide(sessions.slice(0, 10).map((entry) => entry.id));
+  expect(message).toHaveBeenCalledWith(
+    "Select at most 9 conversations to open side by side.",
+    expect.objectContaining({ kind: "warning" }),
+  );
+  expect(deps.ensureOpenSession).not.toHaveBeenCalled();
+  expect(deps.tabsRef.current).toEqual([]);
+  expect(deps.workspaceNavigation.cancel).not.toHaveBeenCalled();
+});
+
+it("opens all nine distinct requests and ignores duplicate IDs without dropping a session", async () => {
+  const ids = sessions.slice(0, 9).map((entry) => entry.id);
+  await actions.onOpenSessionsSideBySide([...ids, ids[0]]);
+  expect(message).not.toHaveBeenCalled();
+  expect(deps.ensureOpenSession).toHaveBeenCalledTimes(9);
+  expect(new Set(leafIds(deps.tabsRef.current[0].layout))).toEqual(new Set(ids));
 });
 
 it("preserves existing kept tabs", async () => {

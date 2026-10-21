@@ -108,7 +108,11 @@ it("clears through the controlled owner and lets the shared overlay dismiss Esca
       new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }),
     ),
   );
-  expect(changed).toHaveBeenCalledExactlyOnceWith("");
+  expect(changed).not.toHaveBeenCalled();
+  expect(input.value).toBe("Alpha");
   expect(document.querySelector('[role="listbox"]')).toBeNull();
   expect(document.activeElement).toBe(container.querySelector("button"));
+  await act(async () => container.querySelector("button")!.click());
+  expect(input.value).toBe("Alpha");
+  expect(document.querySelector('[role="listbox"]')).not.toBeNull();
 });

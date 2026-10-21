@@ -6,6 +6,14 @@ import type { RankedFile } from "../files/model/fileIndex";
 import { isMarkdownBlockquotePosition } from "../sessions/model/quoteDraft";
 
 import { looksLikeProject } from "../projects/model/recents";
+import { t } from "../../shared/i18n";
+
+export const NOTE_TITLE_MAX = 200;
+export function noteTitleError(title: string): string | undefined {
+  return Array.from(title.trim()).length > NOTE_TITLE_MAX
+    ? t("The title must be at most 200 characters. Shorten it before saving.")
+    : undefined;
+}
 
 export const NOTE_MENTION_PREFIX = "note/";
 export const NOTE_PATH_PREFIX = "note:";
@@ -209,6 +217,8 @@ export async function getNote(id: string): Promise<Note | null> {
 }
 
 export async function upsertNote(note: NoteUpsert): Promise<Note> {
+  const titleError = noteTitleError(note.title ?? "");
+  if (titleError) throw new Error(titleError);
   const saved = await invoke<Note>("notes_upsert", { note });
   const previous = cache;
   const previousSummaries = summaryCache;

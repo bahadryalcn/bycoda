@@ -7,6 +7,7 @@ import { basename } from "../../../platform/tauri/fs";
 import { prettyParent, projectKey, projectName } from "../../../shared/lib/paths";
 import {
   looksLikeProject,
+  isLocalProject,
   projectRailItems,
   sameProjectPath,
   subscribeProjectPathsChanged,
@@ -42,6 +43,9 @@ type Props = {
   /** Project whose rail supplies the choices when it differs from `cwd`. */
   railCwd?: string;
   busy?: boolean;
+  disabled?: boolean;
+  /** Hide targets unsupported by desktop-only filesystem integrations. */
+  localOnly?: boolean;
   mode?: "switch" | "move";
   className?: string;
   buttonClassName?: string;
@@ -60,6 +64,8 @@ export function SearchableProjectPicker({
   recents,
   railCwd,
   busy = false,
+  disabled = false,
+  localOnly = false,
   mode = "switch",
   className,
   buttonClassName,
@@ -97,7 +103,7 @@ export function SearchableProjectPicker({
   const orderedProjects = [
     ...projects.filter((item) => sameProjectPath(item.path, cwd)),
     ...projects.filter((item) => !sameProjectPath(item.path, cwd)),
-  ];
+  ].filter((item) => !localOnly || isLocalProject(item.path));
   const normalizedQuery = query.trim().toLocaleLowerCase();
   const filteredProjects = normalizedQuery
     ? orderedProjects.filter((item) => {
@@ -118,6 +124,7 @@ export function SearchableProjectPicker({
   };
 
   const openPicker = () => {
+    if (disabled) return;
     setOpen(true);
     setQuery("");
     setActive(0);
@@ -133,6 +140,7 @@ export function SearchableProjectPicker({
   }, [open]);
 
   const pickProject = (path: string) => {
+    if (disabled || (localOnly && !isLocalProject(path))) return;
     closePicker();
     if (!sameProjectPath(path, cwd)) onSelectProject(path);
   };
@@ -189,6 +197,7 @@ export function SearchableProjectPicker({
         label={t("Choose project for note")}
         motion="none"
         type="button"
+        disabled={disabled}
         title={inProject ? cwd : undefined}
         aria-label={
           inProject
@@ -239,7 +248,7 @@ export function SearchableProjectPicker({
           </>
         )}
       </Button>
-      {open ? (
+      {open && !disabled ? (
         <Popover
           anchor={pickerRef}
           side="bottom"

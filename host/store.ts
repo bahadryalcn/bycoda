@@ -429,6 +429,15 @@ export class HostStore {
     return value;
   }
 
+  /** Lightweight existence/running check for queue RPCs; never loads blocks. */
+  sessionStatus(id: string): string {
+    const pending = this.pending.get(id);
+    if (pending) return pending.value.status;
+    const row = this.db.prepare("SELECT status FROM session_state WHERE id=?").get(id);
+    if (!row) throw new Error("Session not found on this machine");
+    return String(row.status);
+  }
+
   summaries(projectId: string): HostSessionSummary[] {
     return this.db
       .prepare("SELECT id, summary FROM session_state WHERE project_id=?")

@@ -405,6 +405,12 @@ export class DesktopSessions {
     return found ? String(found.row.cwd) : undefined;
   }
 
+  /** Queue access checks must not materialize a potentially large transcript. */
+  metadata(id: string): { cwd: string; harness: string; running: boolean } | undefined {
+    const found = this.collect("id=?", [id], false)[0];
+    return found && { cwd: String(found.row.cwd), harness: String(found.row.harness), running: found.inFlight };
+  }
+
   samePath(a: string, b: string): boolean {
     return normalizeProjectPath(a, this.platform) === normalizeProjectPath(b, this.platform);
   }

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   githubPrDiff,
   GITHUB_WORK_ITEM_FRESH_MS,
@@ -52,7 +52,12 @@ export function useInboxDetailData(
   fullFile: boolean,
   panel = false,
 ) {
-  const maxAgeMs = panel && revision === 0 ? GITHUB_WORK_ITEM_FRESH_MS : undefined;
+  const initialUpdatedAt = useRef(item.updatedAt);
+  // A newer list revision invalidates the panel's initially reusable detail cache.
+  const maxAgeMs =
+    panel && revision === 0 && item.updatedAt === initialUpdatedAt.current
+      ? GITHUB_WORK_ITEM_FRESH_MS
+      : undefined;
   const diffWanted = tab === "code" || (panel && tab === "summary");
   const linear = item.provider === "linear";
   const jira = item.provider === "jira";
@@ -174,6 +179,7 @@ export function useInboxDetailData(
     item.number,
     item.projectPath,
     item.repo,
+    item.updatedAt,
     jira,
     jiraKey,
     linear,
@@ -336,6 +342,7 @@ export function useInboxDetailData(
     item.number,
     item.projectPath,
     item.repo,
+    item.updatedAt,
     jira,
     jiraKey,
     linear,
@@ -392,6 +399,7 @@ export function useInboxDetailData(
     item.number,
     item.projectPath,
     item.repo,
+    item.updatedAt,
     revision,
     maxAgeMs,
     diffWanted,

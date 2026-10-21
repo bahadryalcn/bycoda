@@ -33,6 +33,7 @@ import {
   getCachedMcpSettings,
   loadMcpSettings,
   subscribeMcpSettings,
+  MCP_LOCAL_ONLY_ERROR,
   type McpServerRow,
   type McpSettingsSnapshot,
 } from "../model/mcpSettingsCache";
@@ -243,22 +244,30 @@ export function McpSettings({ cwd, recents = [] }: { cwd: string; recents?: Rece
   useLocale();
   const [selection, setSelection] = useState({ initialCwd: cwd, project: cwd });
   const project = selection.initialCwd === cwd ? selection.project : cwd;
+  const projectPicker = (
+    <SearchableProjectPicker
+      cwd={project}
+      railCwd={cwd}
+      recents={recents}
+      localOnly
+      className="w-fit max-w-full shrink-0"
+      buttonClassName="max-w-full"
+      onSelectProject={(path) => {
+        if (!path.startsWith("remote://")) setSelection({ initialCwd: cwd, project: path });
+      }}
+    />
+  );
+  if (project.startsWith("remote://")) {
+    return (
+      <div className="grid min-w-0 gap-6">
+        {projectPicker}
+        <SettingsFeedback state="warning">{t(MCP_LOCAL_ONLY_ERROR)}</SettingsFeedback>
+      </div>
+    );
+  }
   return (
     <div className="grid min-w-0 gap-6">
-      <McpConnections
-        key={project}
-        cwd={project}
-        projectPicker={
-          <SearchableProjectPicker
-            cwd={project}
-            railCwd={cwd}
-            recents={recents}
-            className="w-fit max-w-full shrink-0"
-            buttonClassName="max-w-full"
-            onSelectProject={(path) => setSelection({ initialCwd: cwd, project: path })}
-          />
-        }
-      />
+      <McpConnections key={project} cwd={project} projectPicker={projectPicker} />
       <ExternalMcpAccess cwd={project} />
     </div>
   );

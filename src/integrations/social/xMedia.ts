@@ -26,6 +26,8 @@ export function xMediaFormat(bytes: Uint8Array): "png" | "jpg" | "mp4" {
   throw new SocialPlatformError("rejected");
 }
 export function xMediaIssue(items: SocialMedia[], message = false): string | undefined {
+  if (items.some((item) => item.alt && (item.kind !== "image" || item.alt.length > 1000)))
+    return "X alternative text supports images and at most 1000 characters.";
   if (items.some((item) => !item.uploadId || item.url)) return "X requires host-uploaded media.";
   if (message && items.length > 1) return "X messages accept one media attachment.";
   if (items.length > 4 || (items.some((item) => item.kind === "video") && items.length !== 1))
@@ -128,5 +130,20 @@ export async function uploadXMedia(
     save();
   }
   if (state.xVideo && state.xVideo.expiresAt <= now()) throw new SocialPlatformError("rejected");
+  for (const [index, item] of job.payload.media.entries()) {
+    if (!item.alt || item.kind !== "image") continue;
+    const id = mediaId(ids[index]);
+    if (state.xAltText?.[id] === item.alt) continue;
+    // X API v2 metadata nests the description under metadata.alt_text.text.
+    // Persist uploaded IDs before metadata so failed descriptions retry without
+    // another upload, and never allow posting before every description succeeds.
+    const { value } = await http.json("https://api.x.com/2/media/metadata", token, {
+      id,
+      metadata: { alt_text: { text: item.alt } },
+    });
+    if (value.data?.id !== id) throw new SocialPlatformError("unknown");
+    state = { ...state, xAltText: { ...state.xAltText, [id]: item.alt } };
+    save();
+  }
   return ids;
 }

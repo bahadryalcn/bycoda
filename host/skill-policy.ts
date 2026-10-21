@@ -1,8 +1,7 @@
 import {
-  closeSync,
   existsSync,
+  linkSync,
   mkdirSync,
-  openSync,
   readFileSync,
   renameSync,
   unlinkSync,
@@ -11,6 +10,7 @@ import {
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
+import { DatabaseSync } from "node:sqlite";
 import {
   EMPTY_SKILL_POLICY,
   parseSkillPolicy,
@@ -21,18 +21,46 @@ import { skillNameForPath } from "./skills";
 function withPolicyLock<T>(home: string, run: () => T): T {
   const dir = join(home, ".bycoda-host");
   mkdirSync(dir, { recursive: true });
-  const path = join(dir, "skill-policy.lock");
-  let file: number;
+  const lock = join(dir, "skill-policy.lock");
+  const marker = "bycoda-sqlite-policy-lock-v1\n";
+  const database = new DatabaseSync(join(dir, "skill-policy-lock.sqlite3"));
   try {
-    file = openSync(path, "wx", 0o600);
+    // Native and host share this OS-released lock. Never unlink the database.
+    database.exec("PRAGMA busy_timeout = 0; BEGIN IMMEDIATE");
   } catch {
+    database.close();
     throw new Error("Another skill preference save is in progress. Try again after it finishes.");
   }
   try {
-    return run();
+    if (existsSync(lock)) {
+      // Possessing the SQLite lock proves that no updated writer owns this v1
+      // marker. Anonymous legacy sentinels have no such proof; preserve them.
+      if (readFileSync(lock, "utf8") !== marker)
+        throw new Error(
+          "Another skill preference save is in progress. A legacy lock remains; close legacy writers and verify its owner before recovery.",
+        );
+      unlinkSync(lock);
+    }
+    const temporary = join(dir, `skill-policy-lock-${randomUUID()}.tmp`);
+    writeFileSync(temporary, marker, { mode: 0o600 });
+    try {
+      // Atomic exclusive publication of initialized metadata also excludes old
+      // writers. A crash cannot leave a newly created anonymous/empty sentinel.
+      linkSync(temporary, lock);
+    } finally {
+      unlinkSync(temporary);
+    }
+    try {
+      return run();
+    } finally {
+      unlinkSync(lock);
+    }
   } finally {
-    closeSync(file);
-    unlinkSync(path);
+    try {
+      database.exec("ROLLBACK");
+    } finally {
+      database.close();
+    }
   }
 }
 

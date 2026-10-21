@@ -1,7 +1,7 @@
 import { Button } from "../../../shared/ui/Button";
 import { Alert } from "../../../shared/ui/Alert";
 import { t, useLocale, getLocale } from "../../../shared/i18n";
-import { Loader, RefreshCw } from "../../../shared/ui/icons";
+import { Check, Loader, RefreshCw } from "../../../shared/ui/icons";
 import type { RemoteDataState } from "../model/remoteDataState";
 
 /** Retained content stays visible; this strip explains whether it was verified. */
@@ -11,6 +11,7 @@ export function RemoteDataStatus({
   label,
   disabled = false,
   connectionIssueHandled = false,
+  presentation = "auto",
 }: {
   state: RemoteDataState;
   onRefresh?: () => void;
@@ -18,11 +19,14 @@ export function RemoteDataStatus({
   disabled?: boolean;
   /** The shared connection notice already explains why this data cannot refresh. */
   connectionIssueHandled?: boolean;
+  /** Place routine health in an existing toolbar; keep actionable warnings in the body. */
+  presentation?: "auto" | "indicator" | "notice";
 }) {
   useLocale();
   if (connectionIssueHandled) return null;
   const dataLabel = label ?? t("conversation");
   const busy = state.phase === "loading" || state.phase === "refreshing";
+  const needsAttention = state.phase === "error" || state.phase === "stale";
   const message =
     state.phase === "loading"
       ? t("Loading {p0}…", { p0: dataLabel })
@@ -43,6 +47,43 @@ export function RemoteDataStatus({
         minute: "2-digit",
       })
     : undefined;
+  if (presentation === "notice" && !needsAttention) return null;
+  if (presentation === "indicator" && needsAttention) return null;
+  if (!needsAttention) {
+    const detail = `${message}${time ? ` · ${t("Last verified {p0}", { p0: new Date(state.updatedAt!).toLocaleString(getLocale()) })}` : ""}`;
+    const icon = busy ? (
+      <Loader aria-hidden className="size-3.5 motion-safe:animate-spin" />
+    ) : (
+      <Check aria-hidden className="size-3.5" />
+    );
+    return (
+      <span
+        data-remote-data-state={state.phase}
+        className="inline-flex shrink-0 items-center text-(--ui-text-muted)"
+        aria-busy={busy}
+      >
+        <span role="status" className="sr-only">
+          {detail}
+        </span>
+        {onRefresh ? (
+          <Button
+            variant="ghost"
+            iconOnly
+            label={t("Refresh {p0}", { p0: dataLabel })}
+            tooltip={detail}
+            onClick={onRefresh}
+            disabled={disabled || busy}
+          >
+            {icon}
+          </Button>
+        ) : (
+          <span title={detail} aria-label={detail} role="img">
+            {icon}
+          </span>
+        )}
+      </span>
+    );
+  }
   return (
     <Alert
       data-remote-data-state={state.phase}
@@ -50,7 +91,7 @@ export function RemoteDataStatus({
       aria-busy={busy}
       role={state.phase === "error" ? "alert" : "group"}
       tone={state.phase === "error" || state.phase === "stale" ? "warning" : "info"}
-      icon={busy ? <Loader aria-hidden className="size-3.5 animate-spin" /> : undefined}
+      icon={busy ? <Loader aria-hidden className="size-3.5 motion-safe:animate-spin" /> : undefined}
     >
       <div className="flex items-start gap-2">
         <div className="min-w-0 flex-1">
@@ -79,10 +120,18 @@ export function RemoteDataStatus({
                 ? t("Retry loading {p0}", { p0: dataLabel })
                 : t("Refresh {p0}", { p0: dataLabel })
             }
-            variant="secondary"
+            variant="ghost"
+            iconOnly
+            label={
+              state.phase === "error"
+                ? t("Retry loading {p0}", { p0: dataLabel })
+                : t("Refresh {p0}", { p0: dataLabel })
+            }
           >
-            <RefreshCw aria-hidden className={`size-3 ${busy ? "animate-spin" : ""}`} />
-            {state.phase === "error" ? t("Retry") : t("Refresh")}
+            <RefreshCw
+              aria-hidden
+              className={`size-3.5 ${busy ? "motion-safe:animate-spin" : ""}`}
+            />
           </Button>
         ) : null}
       </div>

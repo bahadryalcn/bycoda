@@ -349,6 +349,10 @@ export function NativeContextMenu({
           aria-activedescendant={submenuActive >= 0 ? `${menuId}-sub-${submenuActive}` : undefined}
           data-explorer-menu={menuId}
           data-menu-owner={ownerId}
+          onDismiss={(reason) => {
+            if (reason === "escape") closeSubmenu();
+            else onClose();
+          }}
           onKeyDown={onMenuKey}
           onContextMenu={(e) => e.preventDefault()}
           onMouseEnter={() => {

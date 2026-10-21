@@ -3,7 +3,7 @@ import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { newSession, type Session } from "../../sessions/model/session";
-import { AdoptedSessionNotice } from "./AdoptedSessionNotice";
+import { AdoptedSessionNotice, BackgroundSessionIndicator } from "./AdoptedSessionNotice";
 import { setLanguagePreference } from "../../../shared/i18n";
 
 let root: Root;
@@ -43,9 +43,7 @@ it("shows both warnings, disables repeat clicks, and explains the preserved copy
       }),
   );
   act(() => root.render(createElement(AdoptedSessionNotice, { session, onRefresh })));
-  expect(container.querySelector('[role="status"]')?.textContent).toContain(
-    "running in the background",
-  );
+  expect(container.textContent).not.toContain("running in the background");
   expect(container.querySelector('[role="alert"]')?.textContent).toContain(
     "Your messages were kept",
   );
@@ -104,7 +102,7 @@ it("removes an obsolete Retry warning when automatic reconciliation clears the c
   );
   expect(button()).toBeNull();
   expect(container.textContent).not.toContain("Check the connection and try again");
-  expect(container.textContent).toContain("New messages appear automatically");
+  expect(container.textContent).toBe("");
 });
 
 it("does not leave a different conversation busy or show an old refresh failure", async () => {
@@ -155,7 +153,7 @@ it("explains automatic background updates without a redundant refresh action", (
       }),
     ),
   );
-  expect(container.textContent).toContain("New messages appear automatically");
+  expect(container.textContent).toBe("");
   expect(button()).toBeNull();
 });
 
@@ -187,7 +185,7 @@ it("clears success feedback after six seconds without hiding an active backgroun
   expect(container.textContent).toContain("Conversation synced.");
   act(() => vi.advanceTimersByTime(6_000));
   expect(container.textContent).not.toContain("Conversation synced.");
-  expect(container.textContent).toContain("running in the background");
+  expect(container.textContent).toBe("");
   act(() =>
     root.render(
       createElement(AdoptedSessionNotice, {
@@ -209,11 +207,32 @@ it("translates background, conflict, action and success messages into Turkish", 
       }),
     ),
   );
-  expect(container.textContent).toContain("arka planda devam ediyor");
+  expect(container.textContent).not.toContain("arka planda devam ediyor");
   expect(container.textContent).toContain("iki farklı sürümü bulundu");
   expect(button().textContent).toBe("Konuşmayı eşitle");
   await act(async () => button().click());
   expect(container.textContent).toContain("Konuşma eşitlendi.");
   expect(container.textContent).toContain("proje geçmişine");
   expect(container.textContent).not.toContain("host");
+});
+
+it("keeps background execution in an accessible SVG action with tap and keyboard details", async () => {
+  act(() => root.render(createElement(BackgroundSessionIndicator, { session })));
+  expect(button().getAttribute("aria-label")).toContain("running in the background");
+  expect(button().querySelector("svg")).not.toBeNull();
+  expect(container.textContent).toBe("");
+  button().focus();
+  expect(document.activeElement).toBe(button());
+  await act(async () => button().click());
+  expect(document.querySelector('[role="dialog"]')?.textContent).toContain(
+    "New messages appear automatically",
+  );
+  await act(async () =>
+    document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })),
+  );
+  expect(document.querySelector('[role="dialog"]')).toBeNull();
+  act(() =>
+    root.render(createElement(BackgroundSessionIndicator, { session: { ...session, busy: true } })),
+  );
+  expect(button()).toBeNull();
 });

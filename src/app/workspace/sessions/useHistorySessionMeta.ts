@@ -13,6 +13,7 @@ import {
   summaryFromSession,
 } from "../../../features/sessions/data/sessionHistory";
 import { appName } from "../../../shared/lib/appName";
+import { t } from "../../../shared/i18n";
 import type { useLinkedWorkItemPanelState } from "../bridges/useLinkedWorkItemPanels";
 import type { useSessionLoading } from "./useSessionLoading";
 
@@ -24,7 +25,9 @@ export interface HistorySessionMetaDeps {
   setStoredLinkedSessions: Dispatch<SetStateAction<SessionSummary[]>>;
   loadedSessionCache: MutableRefObject<Map<string, Session>>;
   invalidateLoadedSession: ReturnType<typeof useSessionLoading>["invalidateLoadedSession"];
-  setLinkedWorkItemPanels: ReturnType<typeof useLinkedWorkItemPanelState>["setLinkedWorkItemPanels"];
+  setLinkedWorkItemPanels: ReturnType<
+    typeof useLinkedWorkItemPanelState
+  >["setLinkedWorkItemPanels"];
   refreshHistory: (cwd: string) => Promise<unknown>;
   sidebarCwd: string;
 }
@@ -45,14 +48,19 @@ export function useHistorySessionMeta(deps: HistorySessionMetaDeps) {
 
   const onPinHistorySession = useCallback(async (sessionId: string, pinned: boolean) => {
     const open = sessionsRef.current.find((session) => session.id === sessionId);
-    if (open && shouldPersistSession(open)) {
-      await upsertSession(open).catch((error) => {
-        console.warn("App operation failed", error);
+    try {
+      if (open && shouldPersistSession(open)) {
+        const saved = await upsertSession(open);
+        if (!saved) throw new Error(t("Could not save changes"));
+      }
+      await setSessionPinned(sessionId, pinned);
+    } catch (error) {
+      await message(`${t("Could not save changes")}\n\n${String(error)}`, {
+        title: appName(),
+        kind: "error",
       });
+      return;
     }
-    await setSessionPinned(sessionId, pinned).catch((error) => {
-      console.warn("App operation failed", error);
-    });
     setHistory((current) => {
       const existing = current.find((entry) => entry.id === sessionId);
       if (existing) {

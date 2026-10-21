@@ -206,6 +206,8 @@ export class HostCrews {
     if (definition.projectId) this.store.project(definition.projectId);
     const state = this.read();
     const previous = state.definitions.find((d) => d.id === definition.id);
+    // An editor holding a deleted crew must not silently recreate it.
+    if (!previous && expectedUpdatedAt !== undefined) throw new Error("This crew was deleted");
     if (principal && definition.policy.delegateApprovals && !previous?.policy.delegateApprovals)
       throw new Error("Only the owner may grant delegated approvals");
     if (previous && principal && previous.projectId !== principal.projectId)
@@ -229,6 +231,34 @@ export class HostCrews {
     state.definitions = [...state.definitions.filter((d) => d.id !== definition.id), definition];
     this.write(state);
     return definition;
+  }
+  /** Owner-only: removes a definition no unfinished run or open task still uses. */
+  delete(
+    projectId: string,
+    definitionId: string,
+    expectedUpdatedAt?: number,
+    principal?: Principal,
+  ) {
+    if (principal) throw new Error("Only the owner may delete a crew");
+    const state = this.read();
+    const definition = state.definitions.find(
+      (d) => d.id === definitionId && (!d.projectId || d.projectId === projectId),
+    );
+    if (!definition) throw new Error("Unknown crew");
+    if (expectedUpdatedAt !== undefined && definition.updatedAt !== expectedUpdatedAt)
+      throw new Error("Crew changed. Reload before deleting");
+    // Paused and finished runs carry their own definition snapshot.
+    if (state.runs.some((run) => run.definition.id === definitionId && run.status === "active"))
+      throw new Error("Stop this crew's running work before deleting it");
+    if (
+      this.tasks
+        .list()
+        .some((task) => task.crewDefinitionId === definitionId && task.status !== "done")
+    )
+      throw new Error("Tasks still use this crew. Finish or change them before deleting it");
+    state.definitions = state.definitions.filter((d) => d.id !== definitionId);
+    this.write(state);
+    return { deleted: true };
   }
   private run(id: string, projectId: string) {
     const run = this.read().runs.find((r) => r.id === id && r.projectId === projectId);
@@ -706,6 +736,25 @@ export class HostCrews {
       state.agents = [...(state.agents ?? []).filter((a) => a.id !== agent.id), saved];
       this.write(state);
       return saved;
+    }
+    if (action === "crews.delete")
+      return this.delete(
+        projectId,
+        message(input.definitionId, 200),
+        input.expectedUpdatedAt as number | undefined,
+        principal,
+      );
+    if (action === "crews.agent.delete") {
+      if (principal) throw new Error("Only the owner may delete a library agent");
+      const state = this.read();
+      const id = message(input.agentId, 200);
+      const agent = state.agents?.find(
+        (a) => a.id === id && (!a.projectId || a.projectId === projectId),
+      );
+      if (!agent) throw new Error("Unknown agent");
+      state.agents = (state.agents ?? []).filter((a) => a !== agent);
+      this.write(state);
+      return { deleted: true };
     }
     if (action === "crews.save")
       return this.save(

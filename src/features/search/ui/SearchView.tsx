@@ -55,7 +55,7 @@ import {
 import { pathKey, prettyCwd } from "../../../shared/lib/paths";
 import { useRetainedState } from "../../../shared/hooks/useRetainedState";
 import { IS_MAC } from "../../../platform/tauri/platform";
-import { isLocalProject, type RecentProject } from "../../projects/model/recents";
+import { looksLikeProject, type RecentProject } from "../../projects/model/recents";
 import { useLockSnapshot } from "../../group-lock/hooks/useGroupLock";
 import { isProjectLockedIn } from "../../group-lock/model/lockState";
 import { type OpenFileFn } from "../model/search";
@@ -152,6 +152,8 @@ export function SearchView({
   const [scope, setScope] = useRetainedState<SearchScope>(`${stateKey}:scope`, "all");
   const [active, setActive] = useState(0);
   const [fileIndex, setFileIndex] = useState(() => ({ cwd, files: peekProjectFiles(cwd) ?? [] }));
+  const [fileIndexError, setFileIndexError] = useState<{ cwd: string; error: string } | null>(null);
+  const [fileRetry, setFileRetry] = useState(0);
   const files = fileIndex.cwd === cwd ? fileIndex.files : [];
   const [chatFilters, setChatFilters] = useRetainedState<ChatFilters>(
     `${stateKey}:filters`,
@@ -193,7 +195,7 @@ export function SearchView({
 
   useEffect(() => {
     if (!open) return;
-    if (!isLocalProject(cwd)) {
+    if (!looksLikeProject(cwd)) {
       setFileIndex({ cwd, files: [] });
       return;
     }
@@ -201,6 +203,7 @@ export function SearchView({
     let revision = 0;
     const refresh = (activate = false) => {
       const requestedRevision = ++revision;
+      setFileIndexError(null);
       const cached = peekProjectFiles(cwd);
       setFileIndex({ cwd, files: cached ?? [] });
       if (cached && !activate) return;
@@ -208,7 +211,13 @@ export function SearchView({
         .then((next) => {
           if (!cancelled && revision === requestedRevision) setFileIndex({ cwd, files: next });
         })
-        .catch(() => undefined);
+        .catch((error: unknown) => {
+          if (!cancelled && revision === requestedRevision)
+            setFileIndexError({
+              cwd,
+              error: error instanceof Error ? error.message : String(error),
+            });
+        });
     };
     const unsubscribe = subscribeProjectFiles(() => refresh());
     refresh(true);
@@ -216,7 +225,7 @@ export function SearchView({
       cancelled = true;
       unsubscribe();
     };
-  }, [cwd, open]);
+  }, [cwd, open, fileRetry]);
 
   const deferredTrimmed = useDeferredValue(trimmed);
   const deferredSessions = useDeferredValue(sessions);
@@ -227,7 +236,7 @@ export function SearchView({
   );
   const fileHits = useMemo(
     () =>
-      deferredTrimmed && isLocalProject(cwd)
+      deferredTrimmed && looksLikeProject(cwd)
         ? hitsFromFileRanks(rankProjectFiles(files, deferredTrimmed, recentOpenedFiles(cwd), 40))
         : [],
     [cwd, files, deferredTrimmed],
@@ -278,14 +287,23 @@ export function SearchView({
     }),
     [trimmed, filters, cwd, recents, grouping],
   );
+  const conversationRevision = useMemo(
+    () =>
+      JSON.stringify([
+        history.map((session) => session.id).sort(),
+        sessions.map((session) => session.id).sort(),
+      ]),
+    [history, sessions],
+  );
   const conversation = useConversationSearch(
     open && (scope === "all" || scope === "conversations"),
     conversationOptions,
+    conversationRevision,
   );
   const chatSessions = conversation.result.sessions;
   const pendingIndex = conversation.result.pending;
   const projectSearch = useProjectFileSearch(
-    open && (scope === "all" || scope === "files") && isLocalProject(cwd),
+    open && (scope === "all" || scope === "files") && looksLikeProject(cwd),
     cwd,
     trimmed,
   );
@@ -293,7 +311,7 @@ export function SearchView({
     () => hitsFromContentMatches(projectSearch.result.matches),
     [projectSearch.result.matches],
   );
-  const error = projectSearch.error;
+  const error = projectSearch.error ?? (fileIndexError?.cwd === cwd ? fileIndexError.error : null);
   const contentTruncated = projectSearch.result.truncated;
   const loading = projectSearch.loading || conversation.loading || deferredTrimmed !== trimmed;
   const truncated = contentTruncated || conversation.result.truncated;
@@ -504,7 +522,15 @@ export function SearchView({
             <p>
               {t("File search failed: ")}
               {error}{" "}
-              <Button variant="ghost" size="sm" type="button" onClick={projectSearch.retry}>
+              <Button
+                variant="ghost"
+                size="sm"
+                type="button"
+                onClick={() => {
+                  projectSearch.retry();
+                  setFileRetry((value) => value + 1);
+                }}
+              >
                 {t("Retry file search")}
               </Button>
             </p>

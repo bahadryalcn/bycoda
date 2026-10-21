@@ -17,6 +17,11 @@ function message(patch: Partial<QueuedMessage> = {}): QueuedMessage {
   return { id: "q1", text: "hello", attachments: [], ...patch };
 }
 
+it("preserves the unknown-delivery hold across persistence and restore", () => {
+  const queue = [message({ deliveryUnknown: true })];
+  expect(restoreQueuedMessages(persistableQueue(queue))).toEqual(queue);
+});
+
 it("persists a shared attachment's host identity and does not probe its path on another PC", async () => {
   const saved = persistableQueue([
     message({ attachments: [file({ path: "/host/upload", hostEnvironmentId: "host" })] }),

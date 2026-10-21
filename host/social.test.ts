@@ -544,6 +544,7 @@ describe("durable owner-approved publishing plans", () => {
     await s.call("campaigns.create", {
       id: campaign.id,
       name: "Changed announcement",
+      expectedRevision: campaign.revision,
       projectIds: campaign.projectIds,
       variants: campaign.variants,
     });
@@ -743,6 +744,69 @@ describe("durable owner-approved publishing plans", () => {
     expect(s.send).toHaveBeenCalledTimes(1);
   });
 
+  it("rejects stale or missing campaign revisions without replacing newer owner content", async () => {
+    const s = fixture();
+    const account = await s.account();
+    const original = await s.campaign([account]);
+    const input = {
+      id: original.id,
+      name: "Owner revision 2",
+      projectIds: original.projectIds,
+      variants: original.variants,
+    };
+    const updated = await s.call<SocialCampaign>("campaigns.create", {
+      ...input,
+      expectedRevision: original.revision,
+    });
+    expect(updated.revision).toBe(2);
+    await expect(
+      s.call("campaigns.create", {
+        ...input,
+        name: "Stale name",
+        expectedRevision: original.revision,
+      }),
+    ).rejects.toThrow("Campaign changed in another client");
+    await expect(s.call("campaigns.create", input)).rejects.toThrow(
+      "Campaign changed in another client",
+    );
+    expect(s.social.snapshot(owner).campaigns.find((entry) => entry.id === original.id)).toEqual(
+      updated,
+    );
+    expect(s.send).not.toHaveBeenCalled();
+  });
+
+  it("rejects stale or missing publishing-plan revisions and keeps the newer paused configuration", async () => {
+    const s = fixture();
+    const account = await s.account();
+    const campaign = await s.campaign([account]);
+    const original = await createPlan(s, account, [campaign]);
+    const input = {
+      id: original.id,
+      name: "Owner revision 2",
+      accountId: account.id,
+      projectId: s.a.id,
+      campaignIds: [campaign.id],
+      schedule: original.schedule,
+    };
+    const updated = await s.call<SocialPublishingPlan>("publishing-plans.update", {
+      ...input,
+      expectedRevision: original.revision,
+    });
+    expect(updated.revision).toBe(2);
+    await expect(
+      s.call("publishing-plans.update", {
+        ...input,
+        name: "Stale plan",
+        expectedRevision: original.revision,
+      }),
+    ).rejects.toThrow("Publishing plan changed in another client");
+    await expect(s.call("publishing-plans.update", input)).rejects.toThrow(
+      "Publishing plan changed in another client",
+    );
+    expect(await current(s, original.id)).toEqual(updated);
+    expect(s.send).not.toHaveBeenCalled();
+  });
+
   it("schedule edits save paused and preserve already confirmed progress for an unchanged pool", async () => {
     const s = fixture();
     const account = await s.account();
@@ -754,6 +818,7 @@ describe("durable owner-approved publishing plans", () => {
     const updated = await s.call<SocialPublishingPlan>("publishing-plans.update", {
       id: plan.id,
       name: "Adjusted hours",
+      expectedRevision: plan.revision,
       accountId: account.id,
       projectId: s.a.id,
       campaignIds: campaigns.map((campaign) => campaign.id),
@@ -783,6 +848,7 @@ describe("durable owner-approved publishing plans", () => {
     const updated = await s.call<SocialPublishingPlan>("publishing-plans.update", {
       id: plan.id,
       name: plan.name,
+      expectedRevision: plan.revision,
       accountId: account.id,
       projectId: s.a.id,
       campaignIds: campaigns.map((campaign) => campaign.id),
@@ -1279,6 +1345,40 @@ describe("Merkezi sosyal servis", () => {
       ]),
     );
     expect((await s.call<SocialJob>("replies.send", { id: replacement.id })).id).toBe(job.id);
+  });
+  it("rejects a stale draft editor baseline without losing the newer draft", async () => {
+    const s = fixture();
+    const account = await s.account();
+    const thread = await s.thread(account);
+    const original = await s.call<SocialDraft>("replies.draft", {
+      threadId: thread.id,
+      text: "Original.",
+    });
+    const newer = await s.call<SocialDraft>("drafts.update", {
+      id: original.id,
+      text: "Newer text.",
+      expectedDraft: original,
+    });
+    await expect(
+      s.call("drafts.update", {
+        id: original.id,
+        text: original.text,
+        factIds: [],
+        expectedDraft: original,
+      }),
+    ).rejects.toThrow("Draft changed in another client");
+    expect(s.social.snapshot(owner).drafts.find((draft) => draft.id === original.id)).toEqual(
+      newer,
+    );
+    await expect(
+      s.call("drafts.update", {
+        id: original.id,
+        text: "Reconciled.",
+        factIds: [],
+        expectedDraft: newer,
+      }),
+    ).resolves.toMatchObject({ text: "Reconciled." });
+    expect(s.send).not.toHaveBeenCalled();
   });
   it("owner draft edits enforce limits, invalidate approval, and protect queued or dispatched content", async () => {
     const s = fixture();

@@ -10,6 +10,7 @@ const index = vi.hoisted(() => ({
   files: new Map<string, ProjectFile[]>(),
   listeners: new Set<() => void>(),
   load: vi.fn<(cwd: string) => Promise<ProjectFile[]>>(),
+  search: vi.fn(),
 }));
 
 vi.mock("../../../app/shell/TitleBar", () => ({ OverlayNav: () => null }));
@@ -32,11 +33,15 @@ vi.mock("../model/useConversationSearch", () => ({
   }),
 }));
 vi.mock("../model/useProjectFileSearch", () => ({
-  useProjectFileSearch: () => ({
-    result: { matches: [], truncated: false },
-    loading: false,
-    error: null,
-  }),
+  useProjectFileSearch: (...args: unknown[]) => {
+    index.search(...args);
+    return {
+      result: { matches: [], truncated: false },
+      loading: false,
+      error: null,
+      retry: vi.fn(),
+    };
+  },
 }));
 vi.mock("../../group-lock/hooks/useGroupLock", () => ({ useLockSnapshot: () => ({}) }));
 let root: Root;
@@ -45,6 +50,7 @@ beforeEach(() => {
   index.files.clear();
   index.listeners.clear();
   index.load.mockReset().mockImplementation(async (cwd) => index.files.get(cwd) ?? []);
+  index.search.mockClear();
   localStorage.clear();
   resetRetainedState();
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
@@ -95,6 +101,34 @@ async function typeQuery(query: string) {
     input.focus();
   });
 }
+
+it("searches remote filenames and enables the owning-host content route in Files", async () => {
+  const cwd = "remote://environment/repo";
+  index.files.set(cwd, [file("needle.ts", cwd)]);
+  await render(cwd);
+  await act(async () =>
+    [...host.querySelectorAll("button")].find((button) => button.textContent === "Files")!.click(),
+  );
+  await typeQuery("needle");
+  expect(index.load).toHaveBeenCalledWith(cwd);
+  expect(index.search).toHaveBeenLastCalledWith(true, cwd, "needle");
+  expect(host.textContent).toContain("needle.ts");
+});
+
+it("shows remote filename-read failure and retries its listing", async () => {
+  const cwd = "remote://environment/repo";
+  index.load
+    .mockRejectedValueOnce(new Error("Owning computer disconnected"))
+    .mockResolvedValueOnce([file("needle.ts", cwd)]);
+  await render(cwd);
+  await typeQuery("needle");
+  expect(host.querySelector('[role="alert"]')?.textContent).toContain(
+    "Owning computer disconnected",
+  );
+  await act(async () => host.querySelector<HTMLButtonElement>('[role="alert"] button')!.click());
+  expect(host.querySelector('[role="alert"]')).toBeNull();
+  expect(host.textContent).toContain("needle.ts");
+});
 it("refreshes created, renamed and deleted filename results without losing query or focus", async () => {
   index.files.set("/repo", [file("needle.ts")]);
   await render();

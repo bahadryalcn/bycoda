@@ -15,6 +15,8 @@ import {
   applyShownSectionOrder,
   isDefaultRailSectionOrder,
   loadRailSectionOrder,
+  loadRailSectionCollapse,
+  toggleRailSectionCollapse,
   moveRailSection,
   resetRailSectionOrder,
   saveRailSectionOrder,
@@ -106,6 +108,8 @@ export type RailSectionDrag = {
  * `shown` lists the sections currently on screen; the others keep their slot.
  */
 export function useRailSections(shown: ReadonlySet<RailSectionId>) {
+  const [collapsed, setCollapsed] = useState(loadRailSectionCollapse);
+  useEffect(() => subscribeRailSectionOrder(() => setCollapsed(loadRailSectionCollapse())), []);
   const [order, setOrder] = useState(loadRailSectionOrder);
   useEffect(() => subscribeRailSectionOrder(() => setOrder(loadRailSectionOrder())), []);
   const [menu, setMenu] = useState<{
@@ -215,5 +219,8 @@ export function useRailSections(shown: ReadonlySet<RailSectionId>) {
     />
   ) : null;
 
-  return { order, drag, folded, element };
+  const toggleCollapsed = (id: "groups" | "projects") => {
+    setCollapsed(toggleRailSectionCollapse(id, !collapsed[id]));
+  };
+  return { order, drag, folded, element, collapsed, toggleCollapsed };
 }

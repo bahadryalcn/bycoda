@@ -336,6 +336,8 @@ export type SocialJob = {
     mediaIds?: string[];
     tiktokPublishId?: string;
     xVideo?: { id: string; expiresAt: number };
+    /** Descriptions confirmed by X for uploaded media, retained across retries. */
+    xAltText?: Record<string, string>;
   };
 };
 export type SocialAudit = {

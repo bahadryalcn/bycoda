@@ -37,21 +37,22 @@ export function SyncMergedNotice() {
 
   if (!visible) return null;
   return createPortal(
-    <Button
-      type="button"
-      role="status"
-      aria-label={t("Dismiss sync notice")}
-      style={{ zIndex: LAYER.toast }}
-      variant="item"
-      motion="none"
-      layout="stacked"
-      className={`fixed right-3 bottom-3 w-[min(340px,calc(100vw-24px))] text-left transition-opacity duration-300 motion-reduce:transition-none ${fading ? "opacity-0" : "opacity-100"}`}
-      onClick={() => setVisible(false)}
-    >
-      <Alert tone="info" role="presentation">
-        {SYNC_MERGED_MESSAGE}
-      </Alert>
-    </Button>,
+    <div role="status" className="contents">
+      <Button
+        type="button"
+        aria-label={t("Dismiss sync notice")}
+        style={{ zIndex: LAYER.toast }}
+        variant="item"
+        motion="none"
+        layout="stacked"
+        className={`fixed right-3 bottom-3 w-[min(340px,calc(100vw-24px))] text-left transition-opacity duration-300 motion-reduce:transition-none ${fading ? "opacity-0" : "opacity-100"}`}
+        onClick={() => setVisible(false)}
+      >
+        <Alert tone="info" role="presentation">
+          {SYNC_MERGED_MESSAGE}
+        </Alert>
+      </Button>
+    </div>,
     document.body,
   );
 }

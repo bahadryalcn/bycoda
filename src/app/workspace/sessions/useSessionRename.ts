@@ -1,15 +1,14 @@
 import { useCallback, type MutableRefObject } from "react";
 import type { setSessions } from "../../../features/sessions/model/sessionsStore";
-import {
-  formatSessionTitle,
-  type Session,
-} from "../../../features/sessions/model/session";
+import { formatSessionTitle, type Session } from "../../../features/sessions/model/session";
 import {
   getSession,
   persistFingerprint,
+  shouldPersistSession,
   upsertSession,
 } from "../../../features/sessions/data/sessionStore";
 import { rememberLoadedSession } from "../../../features/sessions/data/sessionCache";
+import { t } from "../../../shared/i18n";
 
 export interface SessionRenameDeps {
   sessionsRef: { current: Session[] };
@@ -17,7 +16,6 @@ export interface SessionRenameDeps {
   loadedSessionCache: MutableRefObject<Map<string, Session>>;
   lastPersisted: MutableRefObject<Map<string, string>>;
   invalidateLoadedSession: (sessionId: string) => void;
-  persistSession: (session: Session | undefined) => void;
   refreshHistory: (cwd: string) => Promise<void>;
   sidebarCwd: string;
 }
@@ -29,7 +27,6 @@ export function useSessionRename({
   loadedSessionCache,
   lastPersisted,
   invalidateLoadedSession,
-  persistSession,
   refreshHistory,
   sidebarCwd,
 }: SessionRenameDeps) {
@@ -43,30 +40,30 @@ export function useSessionRename({
       if (open) {
         const title = formatSessionTitle(open.harness, trimmed);
         const updated = { ...open, title };
+        if (shouldPersistSession(updated)) {
+          const saved = await upsertSession(updated);
+          if (!saved) throw new Error(t("Could not save changes"));
+          lastPersisted.current.set(sessionId, persistFingerprint(updated));
+        }
         setSessions((prev) =>
-          prev.map((session) => (session.id === sessionId ? updated : session)),
+          prev.map((session) => (session.id === sessionId ? { ...session, title } : session)),
         );
         loadedSessionCache.current.delete(sessionId);
-        persistSession(updated);
       } else {
-        const restored = await getSession(sessionId).catch(() => null);
-        if (!restored) {
-          void refreshHistory(sidebarCwd);
-          return;
-        }
+        const restored = await getSession(sessionId);
+        if (!restored) throw new Error(t("Could not save changes"));
         const updated = {
           ...restored,
           title: formatSessionTitle(restored.harness, trimmed),
         };
-        const saved = await upsertSession(updated).catch(() => null);
-        if (saved) {
-          rememberLoadedSession(loadedSessionCache.current, updated);
-          lastPersisted.current.set(sessionId, persistFingerprint(updated));
-        }
+        const saved = await upsertSession(updated);
+        if (!saved) throw new Error(t("Could not save changes"));
+        rememberLoadedSession(loadedSessionCache.current, updated);
+        lastPersisted.current.set(sessionId, persistFingerprint(updated));
       }
       void refreshHistory(sidebarCwd);
     },
-    [invalidateLoadedSession, persistSession, refreshHistory, sidebarCwd],
+    [invalidateLoadedSession, refreshHistory, sidebarCwd],
   );
 
   return { onRenameHistorySession };

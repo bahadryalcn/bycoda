@@ -1,4 +1,9 @@
 import { Alert } from "../../../shared/ui/Alert";
+import {
+  DeliveryProgressNotice,
+  deliveryIsPending,
+  useDeliveryProgress,
+} from "./DeliveryProgressNotice";
 import { Badge } from "../../../shared/ui/Badge";
 import { useClearComposerDraft } from "../hooks/useClearComposerDraft";
 import {
@@ -425,6 +430,7 @@ function ToolButton({
 }
 
 function MessageQueue({
+  sessionId,
   messages,
   status,
   onDelete,
@@ -438,6 +444,7 @@ function MessageQueue({
   onSteer,
   onResume,
 }: {
+  sessionId?: string;
   messages: QueuedMessage[];
   status?: MessageQueueStatus;
   canAttach: boolean;
@@ -453,9 +460,18 @@ function MessageQueue({
   onResume?: () => QueueAction;
 }) {
   useLocale();
+  const delivery = useDeliveryProgress(sessionId);
+  const pendingDelivery = deliveryIsPending(delivery?.stage);
   const actionRef = useRef(false);
   const [pendingAction, setPendingAction] = useState<string>();
-  const [feedback, setFeedback] = useState<{ error: boolean; text: string }>();
+  const [feedback, setFeedback] = useState<{ error: boolean; text: string; actionId: string }>();
+  const activeFeedback =
+    feedback?.error &&
+    (feedback.actionId === "resume"
+      ? status === "active"
+      : !messages.some((message) => message.id === feedback.actionId))
+      ? undefined
+      : feedback;
   useEffect(() => {
     if (!feedback || feedback.error) return;
     const timer = window.setTimeout(() => setFeedback(undefined), 6000);
@@ -480,6 +496,7 @@ function MessageQueue({
         );
       setFeedback({
         error: false,
+        actionId: id,
         text:
           typeof result === "object" && result?.message
             ? t(result.message)
@@ -488,7 +505,7 @@ function MessageQueue({
               : t("Message accepted. Follow its progress in the conversation."),
       });
     } catch (error) {
-      setFeedback({ error: true, text: t(String(error).replace(/^Error: /, "")) });
+      setFeedback({ error: true, actionId: id, text: t(String(error).replace(/^Error: /, "")) });
     } finally {
       actionRef.current = false;
       setPendingAction(undefined);
@@ -542,11 +559,14 @@ function MessageQueue({
       onEditingChangeRef.current?.();
     }
   }, [editingId, editingMessage]);
-  if (messages.length === 0 && !pendingAction && !feedback) return null;
+  if (messages.length === 0 && !pendingAction && !activeFeedback) return null;
   const paused = (status === "paused" || status === "resuming") && messages.length > 0;
   const restored = status === "restored" && messages.length > 0;
   const canSend = (message: QueuedMessage) =>
     !pendingAction &&
+    !pendingDelivery &&
+    !message.deliveryUnknown &&
+    !(delivery?.messageId === message.id && delivery.stage === "unknown") &&
     !hasMissingAttachment(message) &&
     (!busy || (steerSupported && message.intent !== "plan" && message.intent !== "orchestrate"));
 
@@ -575,7 +595,14 @@ function MessageQueue({
             <Button
               variant="ghost"
               type="button"
-              disabled={!onResume || !!pendingAction || hasMissingAttachment(messages[0])}
+              disabled={
+                !onResume ||
+                !!pendingAction ||
+                pendingDelivery ||
+                messages.some((message) => message.deliveryUnknown) ||
+                delivery?.stage === "unknown" ||
+                hasMissingAttachment(messages[0])
+              }
               loading={pendingAction === "resume"}
               loadingLabel={t("Resuming…")}
               onClick={() => void perform("resume", onResume)}
@@ -599,6 +626,9 @@ function MessageQueue({
               type="button"
               disabled={
                 !!pendingAction ||
+                pendingDelivery ||
+                messages.some((message) => message.deliveryUnknown) ||
+                delivery?.stage === "unknown" ||
                 hasMissingAttachment(messages[0]) ||
                 (!onResume && !canSend(messages[0]))
               }
@@ -638,7 +668,7 @@ function MessageQueue({
                   <Button
                     iconOnly
                     label={t("Reorder queued message")}
-                    disabled={!!pendingAction}
+                    disabled={!!pendingAction || pendingDelivery}
                     variant="ghost"
                     type="button"
                     data-queue-handle={message.id}
@@ -681,7 +711,10 @@ function MessageQueue({
                           ? t("New messages wait until this turn finishes. Stop pauses the queue.")
                           : undefined
                       }
-                      loading={pendingAction === message.id}
+                      loading={
+                        pendingAction === message.id ||
+                        (pendingDelivery && delivery?.messageId === message.id)
+                      }
                       loadingLabel={t("Sending…")}
                       onClick={() =>
                         void perform(message.id, onSteer ? () => onSteer(message.id) : undefined)
@@ -689,13 +722,16 @@ function MessageQueue({
                       className="shrink-0"
                     >
                       <CornerDownRight className="size-3.5" />
-                      {t("Steer")}
+                      {pendingAction === message.id ||
+                      (pendingDelivery && delivery?.messageId === message.id)
+                        ? t("Sending…")
+                        : t("Steer")}
                     </Button>
                   )}
                   <Button
                     iconOnly
                     label={t("Edit queued message")}
-                    disabled={!!pendingAction}
+                    disabled={!!pendingAction || pendingDelivery}
                     variant="ghost"
                     type="button"
                     title={t("Edit queued message")}
@@ -708,7 +744,7 @@ function MessageQueue({
                   <Button
                     iconOnly
                     label={t("Remove queued message")}
-                    disabled={!!pendingAction}
+                    disabled={!!pendingAction || pendingDelivery}
                     variant="ghost"
                     type="button"
                     title={t("Remove queued message")}
@@ -723,16 +759,19 @@ function MessageQueue({
             );
           })}
         </div>
-        {pendingAction || feedback || (busy && status === "active" && messages.length > 0) ? (
+        {!delivery &&
+        (pendingAction ||
+          activeFeedback ||
+          (busy && status === "active" && messages.length > 0)) ? (
           <div
-            role={feedback?.error ? "alert" : "status"}
+            role={activeFeedback?.error ? "alert" : "status"}
             aria-live="polite"
             className="py-1 text-[12px] [overflow-wrap:anywhere]"
             data-queue-feedback
           >
             {pendingAction
               ? t("Waiting for confirmation…")
-              : (feedback?.text ?? t("Queue is waiting for the current turn to finish."))}
+              : (activeFeedback?.text ?? t("Queue is waiting for the current turn to finish."))}
           </div>
         ) : null}
         {remote ? (
@@ -2746,8 +2785,10 @@ export const Composer = memo(function Composer({
           onDismiss={onUsageLimitDismiss}
         />
       ) : null}
+      <DeliveryProgressNotice sessionId={sessionId} messages={queuedMessages} />
       <MessageQueue
         key={sessionId}
+        sessionId={sessionId}
         messages={queuedMessages}
         status={queueStatus}
         canAttach={attachmentsSupported}

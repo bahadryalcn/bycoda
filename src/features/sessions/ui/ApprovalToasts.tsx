@@ -29,11 +29,12 @@ import { HarnessIcon } from "./HarnessIcon";
 import { prettyCwd, projectName } from "../../../shared/lib/paths";
 import {
   historyEntry,
-  MAX_NOTIFICATION_HISTORY,
   notificationKey,
   NOTIFICATION_HISTORY_KEY,
   readNotificationHistory,
-  writeNotificationHistory,
+  appendNotificationHistory,
+  mergeNotificationHistory,
+  clearNotificationHistory,
 } from "../../notifications/model/notificationHistory";
 import "./notification-sheet.css";
 import {
@@ -76,6 +77,8 @@ export function ApprovalToasts({
   const [expanded, setExpanded] = useState(false);
   const [view, setView] = useState<"pending" | "history">("pending");
   const [history, setHistory] = useState(readNotificationHistory);
+  const localHistory = useRef(history);
+  const historyMutation = useRef(0);
   const previousRequests = useRef<Set<string> | null>(null);
   const [popupsEnabled, setPopupsEnabled] = useState(readPopupsEnabled);
   const [dismissed, setDismissed] = useState<ReadonlySet<string>>(() => new Set());
@@ -106,14 +109,22 @@ export function ApprovalToasts({
     );
     previousRequests.current = new Set(notices.map(noticeKey));
     if (!arrivals.length) return;
-    setHistory((current) => {
-      const next = [...arrivals.map(historyEntry).reverse(), ...current].slice(
-        0,
-        MAX_NOTIFICATION_HISTORY,
-      );
-      writeNotificationHistory(next);
-      return next;
-    });
+    const additions = arrivals.map(historyEntry).reverse();
+    const current = localHistory.current;
+    localHistory.current = mergeNotificationHistory(additions, current);
+    setHistory(localHistory.current);
+    const mutation = ++historyMutation.current;
+    // Persistence is an effect, never a React updater: StrictMode may replay
+    // updater functions, which would append the same occurrence twice.
+    void Promise.resolve(appendNotificationHistory(additions, current))
+      .then((next) => {
+        if (historyMutation.current !== mutation) return;
+        localHistory.current = next;
+        setHistory(next);
+      })
+      .catch(() => {
+        /* Keep the local history if optional persistence fails. */
+      });
   }, [notices, history]);
   useEffect(() => {
     const keys = new Set(notices.map(noticeKey));
@@ -156,8 +167,11 @@ export function ApprovalToasts({
     const sync = (event: StorageEvent) => {
       if (event.key === POPUP_PREFERENCE || event.key === null)
         setPopupsEnabled(readPopupsEnabled());
-      if (event.key === NOTIFICATION_HISTORY_KEY || event.key === null)
-        setHistory(readNotificationHistory());
+      if (event.key === NOTIFICATION_HISTORY_KEY || event.key === null) {
+        const next = readNotificationHistory();
+        localHistory.current = next;
+        setHistory(next);
+      }
     };
     window.addEventListener("storage", sync);
     return () => window.removeEventListener("storage", sync);
@@ -212,15 +226,14 @@ export function ApprovalToasts({
           setExpanded((value) => !value);
         }}
       >
-        {popupsEnabled ? <MessageMultiple className="size-4" /> : <BellOff className="size-4" />}
-        {count > 0 ? (
-          <span
-            id={`${panelId}-count`}
-            className="absolute inset-e-0 inset-bs-0 rounded bg-(--ui-tone-warning-subtle) px-1 text-[10px] font-semibold tabular-nums text-(--ui-tone-warning-fg)"
-          >
-            {count}
-          </span>
-        ) : null}
+        <span className="relative inline-flex size-4 shrink-0">
+          {popupsEnabled ? <MessageMultiple className="size-4" /> : <BellOff className="size-4" />}
+          {count > 0 ? (
+            <span id={`${panelId}-count`} className="notification-trigger-count">
+              {count}
+            </span>
+          ) : null}
+        </span>
       </Button>
       {expanded
         ? createPortal(
@@ -347,8 +360,10 @@ export function ApprovalToasts({
                     type="button"
                     disabled={history.length === 0}
                     onClick={() => {
+                      historyMutation.current += 1;
+                      localHistory.current = [];
                       setHistory([]);
-                      writeNotificationHistory([]);
+                      void clearNotificationHistory();
                     }}
                   >
                     {t("Clear notification history")}

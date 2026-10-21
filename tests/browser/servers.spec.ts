@@ -40,11 +40,9 @@ for (const theme of ["light", "dark"]) {
       expect((await requests())[0].input.connectionId).toBe("fixture-3");
       const session = page.locator("[data-server-terminal-session]:visible");
       const typography = session.getByRole("group", { name: "Terminal text size" });
-      await expect(typography.getByRole("button", { name: "Reset text size" })).toHaveText("13");
-      await typography.getByRole("button", { name: "Increase text size", exact: true }).click();
-      await expect(typography.getByRole("button", { name: "Reset text size" })).toHaveText("14");
+      await expect(typography).toHaveCount(0);
+      await expect(session.getByRole("button", { name: "Bash suggestions", exact: true })).toBeVisible();
       expect(await requests()).toHaveLength(1);
-      await typography.getByRole("button", { name: "Reset text size" }).click();
       await page.evaluate((id) => (window as any).serversFixtureTerminalOutput(id,
         "\x1b[32mubuntu@server-3\x1b[0m:~$ ls -lah\r\ntotal 24K\r\ndrwxr-xr-x  ubuntu ubuntu 4.0K  projects\r\n-rw-r--r--  ubuntu ubuntu 1.2K  README.md\r\n\x1b[32mubuntu@server-3\x1b[0m:~$ "), (await requests())[0].input.id);
       await page.screenshot({ path: `temp/verification/2026-10-19-server-terminal/session-${theme}-${width}.png` });
@@ -942,7 +940,8 @@ for (const theme of ["light", "dark"]) {
     await page.getByRole("button", { name: "Terminal · More actions", exact: true }).click();
     await page.locator("summary").filter({ hasText: "Suggestion settings" }).click();
     const automatic = page.getByRole("switch", { name: "Show suggestions while typing" });
-    await expect(automatic).toHaveAttribute("aria-checked", "false");
+    await expect(automatic).toHaveAttribute("aria-checked", "true");
+    await automatic.click();
     await page.keyboard.press("Escape");
     await emit("ready", true);
     await input.focus();
@@ -957,6 +956,7 @@ for (const theme of ["light", "dark"]) {
     await page.keyboard.type("doc");
     const preview = page.getByLabel("Remote suggestion preview", { exact: true });
     await expect(preview).toBeVisible();
+    await expect(page.locator('.xterm-screen [aria-hidden="true"]').filter({ hasText: "ker" })).toBeVisible();
     await expect(preview.getByRole("option", { name: "docker", exact: true })).toBeVisible();
     await expect(input).toBeFocused();
     expect(

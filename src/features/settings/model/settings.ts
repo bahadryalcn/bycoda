@@ -1,4 +1,4 @@
-import { createStoredSetting, storedFlag } from "../../../shared/lib/storedSetting";
+import { createStoredSetting, storedFlag, subscribePreferenceChanges } from "../../../shared/lib/storedSetting";
 import { t, sourceMessages } from "../../../shared/i18n";
 import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
 import { HARNESSES, HARNESS_TITLE } from "../../sessions/model/session";
@@ -1606,6 +1606,7 @@ const collapsedProjectRailModeSetting = createStoredSetting<CollapsedProjectRail
     raw === "compact" || raw === "hidden" ? raw : COLLAPSED_PROJECT_RAIL_MODE_DEFAULT,
   serialize: String,
   event: COLLAPSED_PROJECT_RAIL_MODE_CHANGE_EVENT,
+  storageEvents: true,
 });
 export const loadCollapsedProjectRailMode = collapsedProjectRailModeSetting.load;
 export const saveCollapsedProjectRailMode = collapsedProjectRailModeSetting.save;
@@ -1648,9 +1649,7 @@ export function saveModelControls(value: ModelControls) {
 }
 
 export function subscribeModelControls(onStoreChange: () => void) {
-  if (typeof window === "undefined") return () => {};
-  window.addEventListener(MODEL_CONTROLS_CHANGE_EVENT, onStoreChange);
-  return () => window.removeEventListener(MODEL_CONTROLS_CHANGE_EVENT, onStoreChange);
+  return subscribePreferenceChanges([MODEL_CONTROLS_KEY, COMPOSER_EFFORT_VISIBLE_KEY], MODEL_CONTROLS_CHANGE_EVENT, onStoreChange);
 }
 
 const NOTES_ENABLED_KEY = "bycoda.notesEnabled";
@@ -1730,7 +1729,7 @@ const liveAgentsEnabledSetting = storedFlag(
   LIVE_AGENTS_ENABLED_KEY,
   LIVE_AGENTS_ENABLED_DEFAULT,
   LIVE_AGENTS_ENABLED_CHANGE_EVENT,
-  false,
+  true,
 );
 
 export function loadLiveAgentsEnabled(): boolean {
@@ -1921,7 +1920,9 @@ export function loadCloseToTray(): boolean {
 
 export function saveCloseToTray(value: boolean) {
   writeFlag(CLOSE_TO_TRAY_KEY, value);
+  if (typeof window !== "undefined") window.dispatchEvent(new Event("bycoda:close-to-tray-change"));
 }
+export const subscribeCloseToTray = (onChange: () => void) => subscribePreferenceChanges([CLOSE_TO_TRAY_KEY], "bycoda:close-to-tray-change", onChange);
 
 const CREW_SCENE_ENABLED_KEY = "bycoda.crewSceneEnabled";
 
@@ -1952,9 +1953,7 @@ export function saveCrewSceneEnabled(value: boolean) {
 }
 
 export function subscribeCrewSceneEnabled(onStoreChange: () => void) {
-  if (typeof window === "undefined") return () => {};
-  window.addEventListener(CREW_SCENE_ENABLED_CHANGE_EVENT, onStoreChange);
-  return () => window.removeEventListener(CREW_SCENE_ENABLED_CHANGE_EVENT, onStoreChange);
+  return subscribePreferenceChanges([CREW_SCENE_ENABLED_KEY, LEGACY_CREW_SCENE_ENABLED_KEY], CREW_SCENE_ENABLED_CHANGE_EVENT, onStoreChange);
 }
 
 const CREW_GROWTH_ENABLED_KEY = "bycoda.crewGrowthEnabled";
@@ -1994,9 +1993,7 @@ export function saveCrewGrowthEnabled(value: boolean) {
 }
 
 export function subscribeCrewGrowthEnabled(onStoreChange: () => void) {
-  if (typeof window === "undefined") return () => {};
-  window.addEventListener(CREW_GROWTH_ENABLED_CHANGE_EVENT, onStoreChange);
-  return () => window.removeEventListener(CREW_GROWTH_ENABLED_CHANGE_EVENT, onStoreChange);
+  return subscribePreferenceChanges([CREW_GROWTH_ENABLED_KEY], CREW_GROWTH_ENABLED_CHANGE_EVENT, onStoreChange);
 }
 
 const DIFF_VIEWER_KEY = "bycoda.diffViewer";
@@ -2016,6 +2013,7 @@ const diffViewerSetting = createStoredSetting<DiffViewer>({
   key: DIFF_VIEWER_KEY,
   fallback: DIFF_VIEWER_DEFAULT,
   event: DIFF_VIEWER_CHANGE_EVENT,
+  storageEvents: true,
   parse: (raw) => (isDiffViewer(raw) ? raw : DIFF_VIEWER_DEFAULT),
   serialize: String,
 });
@@ -2122,7 +2120,8 @@ const CLAUDE_HOOKS_KEY = "bycoda.claudeHooks";
 
 export const CLAUDE_HOOKS_DEFAULT = true;
 
-const claudeHooksSetting = storedFlag(CLAUDE_HOOKS_KEY, CLAUDE_HOOKS_DEFAULT);
+const claudeHooksSetting = storedFlag(CLAUDE_HOOKS_KEY, CLAUDE_HOOKS_DEFAULT, "bycoda:claude-hooks-change", true);
+export const subscribeClaudeHooks = claudeHooksSetting.subscribe;
 
 export function loadClaudeHooks(): boolean {
   return claudeHooksSetting.load() ?? CLAUDE_HOOKS_DEFAULT;

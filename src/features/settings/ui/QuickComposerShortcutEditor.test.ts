@@ -60,6 +60,42 @@ async function render() {
   await act(async () => root.render(createElement(QuickComposerShortcutEditor)));
 }
 
+it("keeps a sibling-disabled global shortcut disabled while recording a new chord", async () => {
+  await render();
+  act(() => {
+    data.set("bycoda.quickComposerEnabled", "0");
+    window.dispatchEvent(
+      new StorageEvent("storage", { key: "bycoda.quickComposerEnabled", newValue: "0" }),
+    );
+  });
+  const input = container.querySelector<HTMLButtonElement>(
+    '[aria-label="Change Quick composer shortcut"]',
+  )!;
+  expect(input.textContent).toContain("Disabled");
+  await act(async () => input.click());
+  await act(async () =>
+    document.body.dispatchEvent(
+      new KeyboardEvent("keydown", {
+        key: "y",
+        code: "KeyY",
+        ctrlKey: true,
+        bubbles: true,
+        cancelable: true,
+      }),
+    ),
+  );
+  expect(data.get("bycoda.quickComposerEnabled")).toBe("0");
+  expect(data.get("bycoda.quickComposerShortcut")).toBe("Control+KeyY");
+  expect(
+    vi
+      .mocked(invoke)
+      .mock.calls.some(
+        ([command, args]) =>
+          command === "quick_composer_set_enabled" && (args as { enabled: boolean })?.enabled,
+      ),
+  ).toBe(false);
+});
+
 it("preserves an app binding when the native menu rejects a recorded shortcut", async () => {
   await act(async () => root.render(createElement(KeybindingsPage)));
   vi.mocked(invoke).mockRejectedValueOnce(new Error("Native shortcut rejected"));

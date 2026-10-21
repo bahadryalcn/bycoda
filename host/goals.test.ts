@@ -197,6 +197,7 @@ function setup() {
     store,
     engine,
     provider,
+    providersStarted,
     turns,
     clock,
     tasks,
@@ -767,7 +768,7 @@ describe("goal planning", () => {
   });
 
   it("plans again with the owner's feedback", async () => {
-    const { goals, lead, plan, goal, turns, finish } = setup();
+    const { goals, lead, plan, goal, turns, finish, providersStarted } = setup();
     const blocked = await plan("No plan, sorry.");
     expect(blocked.status).toBe("blocked");
 
@@ -778,7 +779,10 @@ describe("goal planning", () => {
     });
     expect(again.planError).toBeUndefined();
     expect(again.plannerSessionId).not.toBe(blocked.plannerSessionId);
-    await vi.waitFor(() => expect(turns).toHaveLength(2));
+    // Replanning captures another real checkpoint before provider.send. Wait
+    // for that run's provider readiness, as create() and task ticks already do.
+    await providersStarted();
+    expect(turns).toHaveLength(2);
     expect(turns[1].input.text).toContain(
       "The owner's feedback on an earlier plan:\nSplit the work by folder.",
     );
@@ -978,6 +982,27 @@ describe("goal tasks", () => {
     await settled(created.plannerSessionId!);
     await advance();
     expect(goal().status).toBe("cancelled");
+  });
+
+  it("cancels a goal's registered verification job through the normal task Stop path", async () => {
+    const { goals, tasks, lead, plan, planned, turnOf, settled, turns } = setup();
+    await plan(planReply([{ key: "a", project: lead.cwd }]), {
+      verifyDefaults: {
+        review: false,
+        verifyCommand: { [lead.id]: 'node -e "setTimeout(() => {}, 1000)"' },
+      },
+    });
+    const running = planned().a;
+    turnOf(running.sessionId!).finish();
+    await settled(running.sessionId!);
+    await tasks.tick();
+    expect(tasks.get(running.id)?.status).toBe("verifying");
+    const cancelled = await goals.cancel("goal");
+    expect(cancelled.status).toBe("cancelled");
+    expect(tasks.get(running.id)).toMatchObject({ status: "blocked", error: "Stopped by you." });
+    await tasks.idle();
+    expect(tasks.get(running.id)?.status).toBe("blocked");
+    expect(turns).toHaveLength(2);
   });
 
   it("deletes a goal with nothing running, leaving its tasks unless told", async () => {

@@ -103,7 +103,7 @@ export function useTranscriptSelection(
           ? {
               text,
               rect,
-              responseId: responseIdForNode(nativeSelection.anchorNode, root) ?? undefined,
+              responseId: responseIdForNode(range.startContainer, root) ?? undefined,
               occurrence,
               responseText,
             }

@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
+  ask: vi.fn(),
   announce: vi.fn(),
   check: vi.fn(),
   downloadAndInstall: vi.fn(),
@@ -17,7 +18,7 @@ vi.mock("@tauri-apps/api/app", () => ({
   getVersion: mocks.getVersion,
 }));
 vi.mock("@tauri-apps/plugin-dialog", () => ({
-  ask: vi.fn(),
+  ask: mocks.ask,
   message: mocks.message,
 }));
 vi.mock("@tauri-apps/plugin-process", () => ({ relaunch: mocks.relaunch }));
@@ -47,6 +48,7 @@ beforeEach(() => {
   mocks.getVersion.mockResolvedValue("0.1.22");
   mocks.relaunch.mockResolvedValue(undefined);
   mocks.message.mockResolvedValue(undefined);
+  mocks.ask.mockResolvedValue(true);
 });
 
 async function updaterWithPendingUpdate() {
@@ -63,6 +65,47 @@ async function updaterWithPendingUpdate() {
 }
 
 describe("installPendingUpdate", () => {
+  it("coalesces installs before version preflight resolves", async () => {
+    mocks.downloadAndInstall.mockResolvedValue(undefined);
+    const updater = await updaterWithPendingUpdate();
+    let finish!: (version: string) => void;
+    mocks.getVersion.mockImplementationOnce(
+      () =>
+        new Promise<string>((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const first = updater.installPendingUpdate();
+    const nextProgress = vi.fn();
+    const second = updater.installPendingUpdate(nextProgress);
+    finish("0.1.22");
+    await Promise.all([first, second]);
+    expect(mocks.downloadAndInstall).toHaveBeenCalledOnce();
+    expect(mocks.relaunch).toHaveBeenCalledOnce();
+    expect(nextProgress).toHaveBeenLastCalledWith(expect.objectContaining({ phase: "current" }));
+  });
+
+  it("reports installed state with manual restart recovery when relaunch fails", async () => {
+    mocks.downloadAndInstall.mockResolvedValue(undefined);
+    mocks.relaunch.mockRejectedValueOnce(new Error("restart unavailable"));
+    const updater = await updaterWithPendingUpdate();
+    const result = await updater.installPendingUpdate();
+    expect(result).toEqual(
+      expect.objectContaining({
+        phase: "error",
+        currentVersion: "0.1.23",
+        error: expect.stringContaining("Restart the app manually"),
+      }),
+    );
+    expect(result.availableVersion).toBeUndefined();
+    expect(mocks.remember).toHaveBeenCalledWith("0.1.23");
+    expect(mocks.message).toHaveBeenCalledWith(
+      expect.stringContaining("The update was installed"),
+      expect.anything(),
+    );
+    expect((await updater.installPendingUpdate()).phase).toBe("idle");
+    expect(mocks.downloadAndInstall).toHaveBeenCalledOnce();
+  });
   it("records a successful installation before relaunching", async () => {
     mocks.downloadAndInstall.mockResolvedValue(undefined);
     const updater = await updaterWithPendingUpdate();
@@ -99,6 +142,38 @@ describe("installPendingUpdate", () => {
 });
 
 describe("disabled updater", () => {
+  it("coalesces a manual flow throughout delayed preflight and installation", async () => {
+    mocks.updaterEnabled = true;
+    let finish!: (version: string) => void;
+    let installed!: () => void;
+    mocks.getVersion.mockImplementationOnce(
+      () =>
+        new Promise<string>((resolve) => {
+          finish = resolve;
+        }),
+    );
+    mocks.downloadAndInstall.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          installed = resolve;
+        }),
+    );
+    mocks.check.mockResolvedValue({
+      version: "0.1.23",
+      downloadAndInstall: mocks.downloadAndInstall,
+    });
+    const updater = await import("./updater");
+    const first = updater.runUpdateFlow(true);
+    const second = updater.runUpdateFlow(true);
+    finish("0.1.22");
+    await vi.waitFor(() => expect(mocks.downloadAndInstall).toHaveBeenCalledOnce());
+    const third = updater.runUpdateFlow(true);
+    expect(mocks.ask).toHaveBeenCalledOnce();
+    expect(mocks.check).toHaveBeenCalledOnce();
+    installed();
+    await Promise.all([first, second, third]);
+    expect(mocks.relaunch).toHaveBeenCalledOnce();
+  });
   it("ships with the signed release feed enabled", async () => {
     const actual = await vi.importActual<typeof import("../../shared/lib/productIdentity")>(
       "../../shared/lib/productIdentity",

@@ -44,6 +44,7 @@ export function persistableQueue(queue: QueuedMessage[] | undefined): QueuedMess
   return queue.map((message) => ({
     id: message.id,
     text: message.text,
+    ...(message.deliveryUnknown ? { deliveryUnknown: true as const } : {}),
     attachments: message.attachments.map(persistableAttachment),
     ...(message.noteCard ? { noteCard: message.noteCard } : {}),
     ...(message.handoffCard ? { handoffCard: message.handoffCard } : {}),
@@ -125,6 +126,7 @@ export function restoreQueuedMessages(raw: unknown): QueuedMessage[] {
     restored.push({
       id: value.id,
       text: value.text,
+      ...(value.deliveryUnknown === true ? { deliveryUnknown: true as const } : {}),
       attachments,
       ...(target
         ? {

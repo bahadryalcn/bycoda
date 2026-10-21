@@ -85,6 +85,8 @@
 }
 /* The row shows only the dot; its text stays available to assistive technology. */
 .dev-server-row .dev-server-state {
+  display: block;
+  justify-self: center;
   overflow: hidden;
   inline-size: 8px;
   block-size: 8px;

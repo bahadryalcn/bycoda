@@ -346,6 +346,35 @@ function tab(label: string) {
   )!;
 }
 
+it("moves focus and selection through mode tabs and associates the active panel", async () => {
+  await render();
+  await act(async () => tab("Source").click());
+  tab("Source").focus();
+  const move = async (key: string, label: string) => {
+    await act(async () =>
+      document.activeElement!.dispatchEvent(
+        new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true }),
+      ),
+    );
+    const selected = tab(label);
+    expect(document.activeElement).toBe(selected);
+    expect(selected.getAttribute("aria-selected")).toBe("true");
+    expect(
+      [...container.querySelectorAll<HTMLButtonElement>('[role="tab"]')].filter(
+        (entry) => entry.tabIndex === 0,
+      ),
+    ).toEqual([selected]);
+    const panel = document.getElementById(selected.getAttribute("aria-controls")!)!;
+    expect(panel.getAttribute("role")).toBe("tabpanel");
+    expect(panel.getAttribute("aria-labelledby")).toBe(selected.id);
+  };
+  await move("ArrowRight", "Split");
+  await move("ArrowRight", "Edit preview");
+  await move("ArrowLeft", "Split");
+  await move("Home", "Edit preview");
+  await move("End", "Split");
+});
+
 it("restores a note's editor mode after returning to the library", async () => {
   await render();
   await act(async () => tab("Source").click());
@@ -890,6 +919,28 @@ async function editTitle(value: string) {
     input.dispatchEvent(new Event("input", { bubbles: true }));
   });
 }
+
+it("preserves and explains over-limit title drafts without sending truncating writes", async () => {
+  vi.useFakeTimers();
+  await render();
+  const title = container.querySelector<HTMLInputElement>('[aria-label="Note title"]')!;
+  const invalid = "a".repeat(201);
+  await editTitle(invalid);
+  await act(async () => {
+    title.focus();
+    title.blur();
+  });
+  await act(async () => vi.advanceTimersByTime(450));
+  expect(title.value).toBe(invalid);
+  expect(title.getAttribute("aria-invalid")).toBe("true");
+  expect(container.textContent).toContain("at most 200 characters");
+  expect(invoke.mock.calls.filter(([command]) => command === "notes_upsert")).toHaveLength(0);
+  const valid = "😀".repeat(200);
+  await editTitle(valid);
+  await act(async () => vi.advanceTimersByTime(450));
+  expect(stored.title).toBe(valid);
+  expect(title.getAttribute("aria-invalid")).not.toBe("true");
+});
 
 it("keeps a conflicting draft on its original version and offers creation as a new note", async () => {
   vi.useFakeTimers();

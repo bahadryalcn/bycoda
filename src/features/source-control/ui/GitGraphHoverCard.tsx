@@ -7,6 +7,7 @@ import { Popover, type PopoverAnchor } from "../../../shared/ui/Popover";
 import { formatAbsoluteTime, formatRelativeTime, orderGraphRefs } from "../model/gitGraphDisplay";
 import type { HistoryItemViewModel } from "../model/gitGraph";
 import { GraphAvatar, RefPill } from "./GitGraphParts";
+import { copyText } from "../../../platform/tauri/clipboard";
 
 const CARD_WIDTH = 320;
 
@@ -28,6 +29,7 @@ export function GitGraphHoverCard({
 }) {
   useLocale();
   const [copied, setCopied] = useState(false);
+  const [copyError, setCopyError] = useState<string | null>(null);
   const copiedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(
     () => () => {
@@ -38,11 +40,16 @@ export function GitGraphHoverCard({
   const refs = useMemo(() => orderGraphRefs(row.refs, commit.head), [row.refs, commit.head]);
 
   const copy = () => {
-    void navigator.clipboard.writeText(commit.sha).then(() => {
-      setCopied(true);
-      if (copiedTimer.current != null) clearTimeout(copiedTimer.current);
-      copiedTimer.current = setTimeout(() => setCopied(false), 1200);
-    });
+    setCopyError(null);
+    void copyText(commit.sha)
+      .then(() => {
+        setCopied(true);
+        if (copiedTimer.current != null) clearTimeout(copiedTimer.current);
+        copiedTimer.current = setTimeout(() => setCopied(false), 1200);
+      })
+      .catch((error: unknown) =>
+        setCopyError(error instanceof Error ? error.message : String(error)),
+      );
   };
 
   return (
@@ -93,6 +100,11 @@ export function GitGraphHoverCard({
             <RefPill key={`${ref.kind}:${ref.name}`} refInfo={ref} />
           ))}
         </div>
+      ) : null}
+      {copyError ? (
+        <p role="alert" className="text-danger">
+          {copyError}
+        </p>
       ) : null}
       {commit.parents.length > 0 ? (
         <p className="text-[var(--ui-text-secondary)]">

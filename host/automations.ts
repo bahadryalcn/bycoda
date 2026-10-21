@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { assertExpectedConfiguration } from "./configurationConflict";
 import {
   automationLimits,
   dailyRunLimitSkip,
@@ -76,6 +77,7 @@ export class HostAutomations {
     this.store.project(input.projectId);
     const now = this.now();
     const previous = this.find(input.id);
+    assertExpectedConfiguration(raw, previous, parseHostAutomation);
     return this.write({
       ...input,
       nextRunAt: nextAutomationRunAt(input, now),

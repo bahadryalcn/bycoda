@@ -8,6 +8,7 @@ import { parseShellCommand } from "../../../../features/sessions/model/shellRun"
 import { isClearSessionCommand } from "../../../../features/sessions/model/newSessionCommand";
 import { submitClearConversation } from "./submitClearConversation";
 import { type SubmissionAcceptance } from "../../../model/submissionAcceptance";
+import { sameQueueValue } from "../../../../features/connections/model/sharedQueue";
 
 export function routeSubmitSession(ctx: SubmitDeps, input: SubmitInput): SubmissionAcceptance | undefined {
   const { getSubmitSessionRef, runSessionShell } = ctx;
@@ -26,6 +27,7 @@ export function routeSubmitSession(ctx: SubmitDeps, input: SubmitInput): Submiss
   if (sharedLocalQueueClaiming(sessionId) && !options?.sharedQueueClaimed) return false;
   if (options?.queuedMessageId && !options.sharedQueueClaimed) {
     const queuedGeneration = turnGen.current.get(sessionId);
+    const selected = remote?.queuedMessages?.find((message) => message.id === options.queuedMessageId);
     return submitSharedLocalQueue(
       sessionId,
       options.queuedMessageId,
@@ -41,7 +43,8 @@ export function routeSubmitSession(ctx: SubmitDeps, input: SubmitInput): Submiss
         const latest = sessionsRef.current.find((session) => session.id === sessionId);
         return (
           turnGen.current.get(sessionId) === queuedGeneration &&
-          latest?.queuedMessages === remote?.queuedMessages &&
+          !!latest && !!selected &&
+          sameQueueValue(latest.queuedMessages?.find((message) => message.id === options.queuedMessageId), selected) &&
           latest?.queueStatus === remote?.queueStatus &&
           latest?.editingQueuedMessageId === remote?.editingQueuedMessageId
         );

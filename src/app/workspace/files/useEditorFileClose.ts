@@ -214,67 +214,123 @@ export function useEditorFileClose(deps: EditorFileCloseDeps): EditorFileClose {
     [activeTabId, onCloseTab, projectCwd, tabCloseScope],
   );
 
-  const onCloseOtherFiles = useCallback((paneId: string, fileId: string, direction?: "left" | "right") => {
-    if (isMovingPane(paneId)) return;
-    const tab = tabsRef.current.find((entry) => findSurfacePane(entry, paneId));
-    if (!tab) return;
-    const found = findSurfacePane(tab, paneId);
-    if (!found) return;
-    const index = found.pane.files.findIndex((file) => file.id === fileId);
-    if (index < 0) return;
-    const closingFiles = found.pane.files.filter((file, fileIndex) =>
-      direction === "left" ? fileIndex < index : direction === "right" ? fileIndex > index : file.id !== fileId,
-    );
-    if (closingFiles.length === 0) return;
-    const closingIds = new Set(closingFiles.map((file) => file.id));
-    const unsaved = closingFiles.filter(
-      (file) => isFilesystemTab(file) && dirtyFilesRef.current.has(file.id),
-    );
-    const terminals = closingFiles.filter((file) => file.terminal);
-
-    const finishClose = () => {
-      setTabs((prev) =>
-        prev.map((entry) => {
-          if (entry.id !== tab.id) return entry;
-          const current = findSurfacePane(entry, paneId);
-          if (!current?.pane.files.some((file) => file.id === fileId)) {
-            return entry;
-          }
-          return withSurfacePanes(
-            { ...entry, focusedId: paneId },
-            current.kind,
-            surfacePanes(entry, current.kind).map((pane) =>
-              pane.id === paneId
-                ? {
-                    ...pane,
-                    files: pane.files.filter((file) => !closingIds.has(file.id)),
-                    activeFileId: fileId,
-                  }
-                : pane,
-            ),
-          );
-        }),
+  const onCloseOtherFiles = useCallback(
+    (paneId: string, fileId: string, direction?: "left" | "right") => {
+      if (isMovingPane(paneId)) return;
+      const tab = tabsRef.current.find((entry) => findSurfacePane(entry, paneId));
+      if (!tab) return;
+      const found = findSurfacePane(tab, paneId);
+      if (!found) return;
+      const index = found.pane.files.findIndex((file) => file.id === fileId);
+      if (index < 0) return;
+      const closingFiles = found.pane.files.filter((file, fileIndex) =>
+        direction === "left"
+          ? fileIndex < index
+          : direction === "right"
+            ? fileIndex > index
+            : file.id !== fileId,
       );
-      setDirtyFiles((prev) => {
-        const next = new Set(prev);
-        for (const id of closingIds) next.delete(id);
-        return next;
-      });
-    };
+      if (closingFiles.length === 0) return;
+      const closingIds = new Set(closingFiles.map((file) => file.id));
+      const unsaved = closingFiles.filter(
+        (file) => isFilesystemTab(file) && dirtyFilesRef.current.has(file.id),
+      );
+      const terminals = closingFiles.filter((file) => file.terminal);
 
-    void (async () => {
-      if (
-        !(await confirmWorkspaceClose(
-          unsaved.length > 0
-            ? () => confirmDiscardUnsaved("Close other tabs with unsaved files?")
-            : undefined,
-          terminals.length > 0 ? () => confirmCloseTerminals(terminals) : undefined,
-        ))
-      )
-        return;
-      finishClose();
-    })();
-  }, []);
+      const finishClose = async () => {
+        const confirmedDirtyIds = new Set(unsaved.map((file) => file.id));
+        while (true) {
+          let latest = tabsRef.current;
+          flushSync(() =>
+            setTabs((previous) => {
+              latest = previous;
+              return previous;
+            }),
+          );
+          const currentTab = latest.find((entry) => entry.id === tab.id);
+          const current = currentTab && findSurfacePane(currentTab, paneId);
+          if (
+            !current ||
+            isMovingPane(paneId) ||
+            !current.pane.files.some((file) => file.id === fileId)
+          )
+            return;
+          const newlyDirty = current.pane.files.filter(
+            (file) =>
+              closingIds.has(file.id) &&
+              isFilesystemTab(file) &&
+              dirtyFilesRef.current.has(file.id) &&
+              !confirmedDirtyIds.has(file.id),
+          );
+          if (newlyDirty.length === 0) break;
+          if (
+            !(await confirmWorkspaceClose(() =>
+              confirmDiscardUnsaved("Close other tabs with unsaved files?"),
+            ))
+          )
+            return;
+          for (const file of newlyDirty) confirmedDirtyIds.add(file.id);
+        }
+        let removedIds = new Set<string>();
+        flushSync(() =>
+          setTabs((prev) => {
+            removedIds = new Set();
+            return prev.map((entry) => {
+              if (entry.id !== tab.id) return entry;
+              const current = findSurfacePane(entry, paneId);
+              if (isMovingPane(paneId) || !current?.pane.files.some((file) => file.id === fileId)) {
+                return entry;
+              }
+              const closing = current.pane.files.filter((file) => closingIds.has(file.id));
+              if (
+                closing.some(
+                  (file) =>
+                    isFilesystemTab(file) &&
+                    dirtyFilesRef.current.has(file.id) &&
+                    !confirmedDirtyIds.has(file.id),
+                )
+              )
+                return entry;
+              removedIds = new Set(closing.map((file) => file.id));
+              return withSurfacePanes(
+                { ...entry, focusedId: paneId },
+                current.kind,
+                surfacePanes(entry, current.kind).map((pane) =>
+                  pane.id === paneId
+                    ? {
+                        ...pane,
+                        files: pane.files.filter((file) => !closingIds.has(file.id)),
+                        activeFileId: fileId,
+                      }
+                    : pane,
+                ),
+              );
+            });
+          }),
+        );
+        if (removedIds.size === 0) return;
+        setDirtyFiles((prev) => {
+          const next = new Set(prev);
+          for (const id of removedIds) next.delete(id);
+          return next;
+        });
+      };
+
+      void (async () => {
+        if (
+          !(await confirmWorkspaceClose(
+            unsaved.length > 0
+              ? () => confirmDiscardUnsaved("Close other tabs with unsaved files?")
+              : undefined,
+            terminals.length > 0 ? () => confirmCloseTerminals(terminals) : undefined,
+          ))
+        )
+          return;
+        await finishClose();
+      })();
+    },
+    [],
+  );
 
   return { onCloseFile, onCloseOtherFiles };
 }

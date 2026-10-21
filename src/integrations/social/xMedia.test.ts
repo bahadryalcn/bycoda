@@ -114,3 +114,60 @@ it("rejects expired uploads, mixed attachments, false media kinds and document b
   expect(() => xMediaFormat(new TextEncoder().encode("%PDF-1.7 fake"))).toThrow();
   expect(() => xMediaFormat(new Uint8Array([137, 80]))).toThrow();
 });
+
+it("attaches image alt text before returning postable media and resumes failed metadata without reuploading", async () => {
+  const pending = job();
+  pending.payload.media = [
+    { kind: "image", uploadId: "image", alt: "A chart showing the owner’s new feature" },
+  ];
+  let metadataFails = true;
+  const fetcher = vi.fn(async (raw: string | URL | Request) => {
+    if (String(raw).endsWith("/metadata"))
+      return metadataFails
+        ? new Response(null, { status: 503 })
+        : Response.json({ data: { id: "500", associated_metadata: {} } });
+    return Response.json({ data: { id: "500" } });
+  });
+  const read = vi.fn(async () => new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]));
+  const http = new SocialHttp(fetcher);
+  await expect(uploadXMedia(http, pending, "synthetic", read, false)).rejects.toMatchObject({
+    code: "unknown",
+  });
+  expect(pending.preparation?.mediaIds).toEqual(["500"]);
+  expect(pending.preparation?.xAltText).toBeUndefined();
+  metadataFails = false;
+  await expect(uploadXMedia(http, pending, "synthetic", read, false)).resolves.toEqual(["500"]);
+  expect(read).toHaveBeenCalledOnce();
+  expect(fetcher.mock.calls.filter(([raw]) => String(raw).endsWith("/upload"))).toHaveLength(1);
+  const calls = fetcher.mock.calls as unknown as [string, RequestInit][];
+  expect(JSON.parse(calls.at(-1)![1].body as string)).toEqual({
+    id: "500",
+    metadata: { alt_text: { text: pending.payload.media[0].alt } },
+  });
+  expect(pending.preparation?.xAltText?.["500"]).toBe(pending.payload.media[0].alt);
+  const before = fetcher.mock.calls.length;
+  await expect(uploadXMedia(http, pending, "synthetic", read, false)).resolves.toEqual(["500"]);
+  expect(fetcher).toHaveBeenCalledTimes(before);
+});
+
+it("leaves uncaptioned uploads alone and rejects unsupported descriptions before upload", async () => {
+  const pending = job();
+  pending.payload.media = [{ kind: "image", uploadId: "image" }];
+  const fetcher = vi.fn(async () => Response.json({ data: { id: "501" } }));
+  await expect(
+    uploadXMedia(
+      new SocialHttp(fetcher),
+      pending,
+      "synthetic",
+      async () => new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]),
+      false,
+    ),
+  ).resolves.toEqual(["501"]);
+  expect(fetcher).toHaveBeenCalledOnce();
+  expect(
+    xMediaIssue([{ kind: "video", uploadId: "video", alt: "Unsupported video description" }]),
+  ).toContain("images");
+  expect(xMediaIssue([{ kind: "image", uploadId: "image", alt: "x".repeat(1001) }])).toContain(
+    "1000",
+  );
+});

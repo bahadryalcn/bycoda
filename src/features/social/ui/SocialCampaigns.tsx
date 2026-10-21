@@ -87,6 +87,7 @@ export function Campaigns({
   const [variants, setVariants] = useState<CampaignVariant[]>([]);
   const [name, setName] = useState("");
   const [editingId, setEditingId] = useState<string>();
+  const [editingRevision, setEditingRevision] = useState<number>();
   const [editVersion, setEditVersion] = useState(0);
   const [selectedId, setSelectedId] = useState(snapshot.campaigns[0]?.id ?? "");
   const [search, setSearch] = useState("");
@@ -284,7 +285,7 @@ export function Campaigns({
                       }),
                     );
                     saved = await client.request<SocialCampaign>("campaigns.create", {
-                      ...(editingId ? { id: editingId } : {}),
+                      ...(editingId ? { id: editingId, expectedRevision: editingRevision } : {}),
                       name,
                       projectIds: selectedProjects,
                       variants,
@@ -955,6 +956,7 @@ export function Campaigns({
                         onClick={() => {
                           setEditVersion((value) => value + 1);
                           setEditingId(selected.id);
+                          setEditingRevision(selected.revision);
                           setName(selected.name);
                           setSelectedProjects(selected.projectIds);
                           setVariants(

@@ -340,13 +340,30 @@ describe("scoped Conversation Tools RPC", () => {
   });
   it("creates tasks with inherited permissions and rejects changed idempotency requests", async () => {
     const s = await sessionTools();
-    const input = { taskId: "created-task", title: "New work", prompt: "Implement", status: "todo" };
+    const input = {
+      taskId: "created-task",
+      title: "New work",
+      prompt: "Implement",
+      status: "todo",
+    };
     const first = (await s.tool("tasks.create", input)).value.result;
-    expect(first).toMatchObject({ id: input.taskId, projectId: s.project.id, runtimeMode: "supervised", model: "gpt", status: "todo" });
+    expect(first).toMatchObject({
+      id: input.taskId,
+      projectId: s.project.id,
+      runtimeMode: "supervised",
+      model: "gpt",
+      status: "todo",
+    });
     expect((await s.tool("tasks.create", input)).value.result).toEqual(first);
-    expect((await s.tool("tasks.create", { ...input, status: "queued" })).value.error).toContain("reused");
-    expect((await s.tool("tasks.create", { ...input, prompt: "Changed" })).value.error).toContain("reused");
-    expect((await s.tool("tasks.create", { ...input, runtimeMode: "auto" })).value.error).toBeTruthy();
+    expect((await s.tool("tasks.create", { ...input, status: "queued" })).value.error).toContain(
+      "reused",
+    );
+    expect((await s.tool("tasks.create", { ...input, prompt: "Changed" })).value.error).toContain(
+      "reused",
+    );
+    expect(
+      (await s.tool("tasks.create", { ...input, runtimeMode: "auto" })).value.error,
+    ).toBeTruthy();
     await s.call("tasks.delete", { taskId: first.id });
     expect((await s.tool("tasks.create", input)).value.error).toBeTruthy();
   });
@@ -598,6 +615,37 @@ async function setup(providers: RemoteProvider[] = ["codex"]) {
 }
 
 describe("shared queued messages", () => {
+  it("reads an existing host queue without loading its transcript and rejects missing sessions", async () => {
+    const s = await setup();
+    const created = s.engine.command({
+      type: "create",
+      commandId: "metadata-create",
+      projectId: s.project.id,
+      harness: "codex",
+      model: "gpt",
+      runtimeMode: "supervised",
+    });
+    const snapshot = vi.spyOn(s.store, "session").mockImplementation(() => {
+      throw new Error("Transcript must not be read for queue access");
+    });
+    try {
+      expect(
+        (
+          await s.call("sessions.queue.get", {
+            sessionId: created.sessionId,
+            clientId: "desktop:test",
+          })
+        ).value.result.messages,
+      ).toEqual([]);
+      expect(snapshot).not.toHaveBeenCalled();
+      expect(
+        (await s.call("sessions.queue.get", { sessionId: "missing", clientId: "desktop:test" }))
+          .value.error,
+      ).toBeTruthy();
+    } finally {
+      snapshot.mockRestore();
+    }
+  });
   it("dispatches /clear without opening a session or sending a provider turn", async () => {
     const s = await setup();
     const created = s.engine.command({

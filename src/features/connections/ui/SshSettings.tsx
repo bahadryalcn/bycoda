@@ -57,6 +57,7 @@ export function SshSettings({
   const [config, setConfig] = useState("");
   const [preview, setPreview] = useState<Preview>();
   const [error, setError] = useState("");
+  const [hostsError, setHostsError] = useState("");
   const [busy, setBusy] = useState(true);
   const pending = useRef(true);
   const canAssignKey = Boolean(server && (server.kind === "ssh" || server.machine?.ssh));
@@ -104,7 +105,10 @@ export function SshSettings({
     ]).then((result) => {
       if (!current) return;
       if (result[0].status === "fulfilled") setKeys(result[0].value);
-      if (result[1].status === "fulfilled") setHosts(result[1].value);
+      if (result[1].status === "fulfilled") {
+        setHosts(result[1].value);
+        setHostsError("");
+      } else setHostsError(String(result[1].reason));
       if (result[2].status === "fulfilled") setAgent(result[2].value);
       if (result.some((item) => item.status === "rejected"))
         setError(
@@ -286,7 +290,12 @@ export function SshSettings({
             value={hostSearch}
             onChange={(event) => setHostSearch(event.target.value)}
           />
-          {!hosts.length && !busy ? (
+          {hostsError ? (
+            <p role="alert" className="text-xs text-(--ui-tone-danger-fg)">
+              {hostsError}
+            </p>
+          ) : null}
+          {!hosts.length && !busy && !hostsError ? (
             <p className="text-xs text-(--ui-text-muted)">{t("No known hosts yet.")}</p>
           ) : null}
           {hosts

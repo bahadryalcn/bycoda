@@ -42,11 +42,9 @@ function remember(id: string | undefined): void {
 
 /** Saves the shell for this computer. The Bycoda Host here reads the same
  * choice, so `!commands` sent from another machine run in it too. */
-export function saveTerminalProfile(id: string | undefined): Promise<void> {
+export async function saveTerminalProfile(id: string | undefined): Promise<void> {
+  await invoke("set_terminal_profile", { id: id ?? null });
   remember(id);
-  return invoke("set_terminal_profile", { id: id ?? null })
-    .then(() => undefined)
-    .catch((error) => console.debug("[bycoda] terminal profile", error));
 }
 
 function subscribe(listener: () => void): () => void {
@@ -92,22 +90,31 @@ export function listTerminalProfiles(refresh = false): Promise<ShellProfiles> {
   return listing;
 }
 
-export function useTerminalProfiles(): ShellProfiles | null {
+export function useTerminalProfiles():
+  | (ShellProfiles & { error?: string; retry: () => void })
+  | null {
   const [value, setValue] = useState<ShellProfiles | null>(null);
+  const [error, setError] = useState<string>();
+  const [retryTick, setRetryTick] = useState(0);
   useEffect(() => {
     let alive = true;
-    void listTerminalProfiles()
+    setValue(null);
+    setError(undefined);
+    void listTerminalProfiles(retryTick > 0)
       .then((next) => {
         if (alive) setValue(next);
       })
-      .catch(() => {
-        if (alive) setValue({ profiles: [], defaultId: null });
+      .catch((reason: unknown) => {
+        if (alive) {
+          setError(reason instanceof Error ? reason.message : String(reason));
+          setValue({ profiles: [], defaultId: null });
+        }
       });
     return () => {
       alive = false;
     };
-  }, []);
-  return value;
+  }, [retryTick]);
+  return value ? { ...value, error, retry: () => setRetryTick((tick) => tick + 1) } : null;
 }
 
 /** The profile a new terminal opens with: the user's choice while that shell

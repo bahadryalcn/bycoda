@@ -323,7 +323,12 @@ export function ToolsWorkspace({ children }: { children: ReactNode }) {
                     title={t("Open in new window")}
                     onClick={async () => {
                       try {
-                        await openHostToolsWindow(pane, pane.onlyTab);
+                        const current = views.current.get(pane.id);
+                        await openHostToolsWindow({
+                          ...pane,
+                          initialTab: current?.tab ?? pane.initialTab,
+                          initialMachine: current?.machine ?? pane.initialMachine,
+                        }, pane.onlyTab);
                         close(pane.id);
                       } catch (cause) {
                         setError(String(cause));

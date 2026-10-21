@@ -1,7 +1,14 @@
 // Official free Arc registry source, adapted for bycoda.
 "use client";
 
-import { useEffect, useLayoutEffect, useRef, type CSSProperties, type ReactNode } from "react";
+import {
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  type AriaAttributes,
+  type CSSProperties,
+  type ReactNode,
+} from "react";
 import {
   AnimatePresence,
   animate,
@@ -23,6 +30,7 @@ export interface SkeletonProps {
   children?: ReactNode;
   /** Keeps the placeholder visible while true. Only used together with children. */
   loading?: boolean;
+  "aria-hidden"?: AriaAttributes["aria-hidden"];
 }
 
 /** Follows its content height. After `morphKey` changes, the height springs from the old size to the new one and then returns to auto, so passive reflows (a resize, a font swap) follow instantly. It clips only while moving, so focus rings stay visible at rest. */
@@ -94,19 +102,22 @@ function SkeletonStatus({
   label,
   className,
   children,
+  ariaHidden,
 }: {
   label: string;
   className?: string;
   children: ReactNode;
+  ariaHidden?: AriaAttributes["aria-hidden"];
 }) {
   const present = useIsPresent();
+  const hidden = !present || ariaHidden === true || ariaHidden === "true";
   return (
     <div
       className={className}
-      role={present ? "status" : undefined}
-      aria-label={present ? label : undefined}
-      aria-busy={present || undefined}
-      aria-hidden={!present || undefined}
+      role={!hidden ? "status" : undefined}
+      aria-label={!hidden ? label : undefined}
+      aria-busy={!hidden || undefined}
+      aria-hidden={hidden || undefined}
     >
       {children}
     </div>
@@ -120,12 +131,17 @@ export function Skeleton({
   className,
   children,
   loading = true,
+  "aria-hidden": ariaHidden,
 }: SkeletonProps) {
   const reduce = useReducedMotion();
   const count = Math.min(Math.max(Math.floor(lines), 1), 6);
   // Each block pulses a beat after the one above it, so the wait reads as one calm wave.
   const placeholder = (extra?: string) => (
-    <SkeletonStatus className={[styles.root, extra].filter(Boolean).join(" ")} label={label}>
+    <SkeletonStatus
+      className={[styles.root, extra].filter(Boolean).join(" ")}
+      label={label}
+      ariaHidden={ariaHidden}
+    >
       {avatar && <span className={styles.avatar} aria-hidden="true" />}
       <span className={styles.lines} aria-hidden="true">
         {Array.from({ length: count }, (_, index) => (
@@ -140,7 +156,11 @@ export function Skeleton({
   );
   if (children === undefined) return placeholder(className);
   return (
-    <HeightFrame className={className} busy={loading} reduce={reduce}>
+    <HeightFrame
+      className={className}
+      busy={loading && ariaHidden !== true && ariaHidden !== "true"}
+      reduce={reduce}
+    >
       <AnimatePresence mode="popLayout" initial={false}>
         {loading ? (
           <motion.div

@@ -5,8 +5,9 @@ type SeenMap = Record<string, number>;
 type Listener = () => void;
 
 const listeners = new Set<Listener>();
+let volatileSeen: SeenMap = {};
 
-function loadSeenMap(): SeenMap {
+function loadStoredSeenMap(): SeenMap {
   try {
     const raw = localStorage.getItem(KEY);
     if (!raw) return {};
@@ -24,11 +25,22 @@ function loadSeenMap(): SeenMap {
   }
 }
 
+function loadSeenMap(): SeenMap {
+  const seen = loadStoredSeenMap();
+  for (const [sessionId, updatedAt] of Object.entries(volatileSeen)) {
+    seen[sessionId] = Math.max(seen[sessionId] ?? 0, updatedAt);
+  }
+  return seen;
+}
+
 function saveSeenMap(items: SeenMap) {
   try {
     localStorage.setItem(KEY, JSON.stringify(items));
+    volatileSeen = {};
   } catch {
-    // Private mode / quota. The in-memory notification still clears this run.
+    // Publish the acknowledgement for this run even when persistence fails.
+    // A later successful save merges and flushes these bounded timestamps.
+    volatileSeen = items;
   }
   for (const listener of listeners) listener();
 }

@@ -1997,6 +1997,238 @@ it("saves custom daily hours above the presets and 24 hours", async () => {
   }
 });
 
+it.each([
+  {
+    action: "New task",
+    form: "New task",
+    title: "Task title",
+    body: "Description",
+    submit: "Add and start",
+    method: "tasks.save",
+  },
+  {
+    action: "New goal",
+    form: "New goal",
+    title: "Goal title",
+    body: "Main job",
+    submit: "Plan it",
+    method: "goals.create",
+  },
+  {
+    action: "Stewards",
+    form: "New steward",
+    title: undefined,
+    body: "Focus",
+    submit: "Save",
+    method: "stewards.save",
+  },
+])(
+  "locks $form drafts and cancel while the submitted snapshot is pending",
+  async ({ action, form: label, title, body, submit, method }) => {
+    host([], ["tasks", "tasks.todo", "goals", "stewards"]);
+    const original = invoke.getMockImplementation()!;
+    let rejectSave!: (error: Error) => void;
+    const pending = new Promise((_, reject) => {
+      rejectSave = reject;
+    });
+    invoke.mockImplementation(async (command: string, args?: any) => {
+      if (command === "remote_request" && args.method === method) return pending;
+      return original(command, args);
+    });
+    await render();
+    await pickAction(container, action);
+    if (action === "Stewards") await act(async () => button(container, "Add steward")!.click());
+    const form = document.querySelector<HTMLFormElement>(`form[aria-label="${label}"]`)!;
+    if (title)
+      await act(async () =>
+        type(
+          form.querySelector<HTMLInputElement>(`input[aria-label="${title}"]`)!,
+          "Submitted title",
+        ),
+      );
+    const description = form.querySelector<HTMLTextAreaElement>(`textarea[aria-label="${body}"]`)!;
+    await act(async () => type(description, "Submitted instructions"));
+    await act(async () => button(form, submit)!.click());
+    expect(form.getAttribute("aria-busy")).toBe("true");
+    const lock = form.querySelector<HTMLFieldSetElement>("fieldset")!;
+    expect(lock.disabled).toBe(true);
+    expect(lock.hasAttribute("inert")).toBe(true);
+    // Synthetic events also cover callbacks from already-open portaled controls.
+    await act(async () => type(description, "Later edit"));
+    await act(async () => button(form, "Cancel")!.click());
+    expect(form.isConnected).toBe(true);
+    await act(async () => rejectSave(new Error("Save failed")));
+    expect(form.isConnected).toBe(true);
+    expect(description.value).toBe("Submitted instructions");
+    expect(lock.disabled).toBe(false);
+    await act(async () => type(description, "Retry instructions"));
+    expect(description.value).toBe("Retry instructions");
+  },
+);
+
+it("locks custom daily hours until the settings request settles", async () => {
+  host([], LIMIT_CAPABILITIES, [], [], LIMITS);
+  const original = invoke.getMockImplementation()!;
+  let release!: (value: HostSettingsState) => void;
+  const pending = new Promise<HostSettingsState>((resolve) => {
+    release = resolve;
+  });
+  invoke.mockImplementation(async (command: string, args?: any) => {
+    if (command === "remote_request" && args.method === "host.settings.save") return pending;
+    return original(command, args);
+  });
+  await render();
+  await pickAction(container, "Limits");
+  const form = container.querySelector<HTMLFormElement>(
+    'form[aria-label="Custom daily agent time on this computer"]',
+  )!;
+  const hours = form.querySelector<HTMLInputElement>('input[type="number"]')!;
+  await act(async () => type(hours, "3"));
+  await act(async () => button(form, "Save")!.click());
+  expect(hours.disabled).toBe(true);
+  expect(button(form, "Save")!.disabled).toBe(true);
+  await act(async () => type(hours, "4"));
+  await act(async () => release({ ...LIMITS, dailyAgentMinutes: 180 }));
+  expect(hours.value).toBe("3");
+  expect(hours.disabled).toBe(false);
+});
+
+it("locks task detail edits and cancellation while saving", async () => {
+  host([task({ status: "todo" })]);
+  const original = invoke.getMockImplementation()!;
+  let rejectSave!: (error: Error) => void;
+  const pending = new Promise((_, reject) => {
+    rejectSave = reject;
+  });
+  invoke.mockImplementation(async (command: string, args?: any) => {
+    if (command === "remote_request" && args.method === "tasks.save") return pending;
+    return original(command, args);
+  });
+  await render();
+  await act(async () => card("Ship the report").click());
+  await act(async () => edit(panel()!).click());
+  const form = panel()!.querySelector('form[aria-label="Edit details"]')!;
+  const title = form.querySelector<HTMLInputElement>('input[aria-label="Title"]')!;
+  await act(async () => type(title, "Submitted title"));
+  await act(async () => button(form, "Save")!.click());
+  expect(title.disabled).toBe(true);
+  expect(form.querySelector<HTMLTextAreaElement>("textarea")!.disabled).toBe(true);
+  expect(button(form, "Cancel")!.disabled).toBe(true);
+  await act(async () => type(title, "Later title"));
+  await escape();
+  expect(form.isConnected).toBe(true);
+  await act(async () => rejectSave(new Error("Save failed")));
+  expect(title.value).toBe("Submitted title");
+  expect(title.disabled).toBe(false);
+});
+
+it("keeps a successfully saved task's identity when its separate start fails", async () => {
+  const savedTasks: HostTask[] = [];
+  host(savedTasks, ["tasks", "tasks.todo", "tasks.workspaces"]);
+  const original = invoke.getMockImplementation()!;
+  const savedIds: string[] = [];
+  const startedIds: string[] = [];
+  invoke.mockImplementation(async (command: string, args?: any) => {
+    if (command === "remote_request" && args.method === "tasks.save") {
+      const saved = { ...args.params.task, createdAt: 1, updatedAt: 1 } as HostTask;
+      savedTasks.push(saved);
+      savedIds.push(saved.id);
+      return saved;
+    }
+    if (command === "remote_request" && args.method === "tasks.start") {
+      startedIds.push(args.params.taskId);
+      if (startedIds.length === 1) throw new Error("Start transport failed");
+    }
+    return original(command, args);
+  });
+  await render();
+  await act(async () => button(container, "New task")!.click());
+  const form = document.querySelector<HTMLFormElement>('form[aria-label="New task"]')!;
+  await act(async () =>
+    type(form.querySelector<HTMLInputElement>('input[aria-label="Task title"]')!, "One saved task"),
+  );
+  await act(async () =>
+    type(
+      form.querySelector<HTMLTextAreaElement>('textarea[aria-label="Description"]')!,
+      "Run this once",
+    ),
+  );
+  await act(async () => button(form, "Add and start")!.click());
+  expect(startedIds).toEqual(savedIds);
+  expect(form.isConnected).toBe(false);
+  expect(container.textContent).toContain("Task action failed");
+  const existing = card("One saved task");
+  expect(existing).toBeTruthy();
+  await act(async () => button(existing, "Start now")!.click());
+  expect(savedIds).toHaveLength(1);
+  expect(startedIds).toEqual([savedIds[0], savedIds[0]]);
+  expect(savedTasks).toHaveLength(1);
+  expect(savedTasks[0].status).toBe("running");
+});
+
+it("disables unrelated task, goal, steward and note mutations while a board action is pending", async () => {
+  host(
+    [
+      task({ id: "a", title: "Running A", status: "running" }),
+      task({
+        id: "b",
+        title: "Running B",
+        status: "running",
+        reviewNotes: [
+          {
+            id: "note",
+            finding: "Review this",
+            kind: "finding",
+            sessionId: "review",
+            createdAt: 1,
+            updatedAt: 1,
+            occurrences: 1,
+          },
+        ],
+      }),
+    ],
+    ["tasks", "tasks.todo", "goals", "stewards"],
+    [goal({ status: "awaiting-approval" })],
+    [steward()],
+  );
+  const original = invoke.getMockImplementation()!;
+  let release!: (value: HostTask) => void;
+  const pending = new Promise<HostTask>((resolve) => {
+    release = resolve;
+  });
+  const stops: string[] = [];
+  invoke.mockImplementation(async (command: string, args?: any) => {
+    if (command === "remote_request" && args.method === "tasks.move") {
+      stops.push(args.params.taskId);
+      if (args.params.taskId === "a") return pending;
+    }
+    return original(command, args);
+  });
+  await render();
+  await pickAction(container, "Stewards");
+  await act(async () => button(card("Running A"), "Stop")!.click());
+  expect(stops).toEqual(["a"]);
+  await act(async () => card("Running B").click());
+  expect(button(panel()!, "Stop")!.getAttribute("aria-disabled")).toBe("true");
+  expect(button(card("Running B"), "Stop")!.getAttribute("aria-disabled")).toBe("true");
+  const notes = panel()!.querySelector('[aria-label="Review notes"]')!;
+  expect(button(notes, "Mark 1 as read")!.disabled).toBe(true);
+  expect(button(notes, "Mark fixed")!.disabled).toBe(true);
+  const goalCard = container.querySelector('article[aria-label="Launch the beta"]')!;
+  expect(button(goalCard, "Approve")!.disabled).toBe(true);
+  const stewardRow = stewardCard()!;
+  expect(button(stewardRow, "Run now")!.disabled).toBe(true);
+  expect(stewardRow.querySelector<HTMLInputElement>('input[aria-label="Enabled"]')!.disabled).toBe(
+    true,
+  );
+  await act(async () => button(panel()!, "Stop")!.click());
+  expect(stops).toEqual(["a"]);
+  await act(async () => release(task({ id: "a", title: "Running A", status: "blocked" })));
+  expect(button(panel()!, "Stop")!.getAttribute("aria-disabled")).not.toBe("true");
+  await act(async () => button(panel()!, "Stop")!.click());
+  expect(stops).toEqual(["a", "b"]);
+});
+
 it("has no Limits button on a host without work limits", async () => {
   host([], ["tasks", "tasks.todo"]);
   await render();

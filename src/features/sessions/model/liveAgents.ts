@@ -1,4 +1,5 @@
 import { sessionIssue } from "./sessionIssue";
+import { executionUserIndex } from "./executionTurn";
 import { composeToolTitle } from "../../../integrations/harness/core/preview";
 import { displayPath } from "../../../shared/lib/paths";
 import {
@@ -135,17 +136,11 @@ function lastActivityBlock(blocks: Block[]): Block | undefined {
 }
 
 function turnStartedAt(blocks: Block[]): number | undefined {
-  for (let i = blocks.length - 1; i >= 0; i--) {
-    if (blocks[i].role === "user") return blocks[i].startedAt;
-  }
-  return undefined;
+  return blocks[executionUserIndex(blocks)]?.startedAt;
 }
 
 function turnDurationMs(blocks: Block[]): number | undefined {
-  for (let i = blocks.length - 1; i >= 0; i--) {
-    if (blocks[i].role === "user") return blocks[i].durationMs;
-  }
-  return undefined;
+  return blocks[executionUserIndex(blocks)]?.durationMs;
 }
 
 function activityLabel(block: Block | undefined, cwd: string): string {

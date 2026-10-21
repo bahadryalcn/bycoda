@@ -41,6 +41,7 @@ export function PublishingPlans({ client, snapshot, projects, initialProject, ru
   const supported = snapshot.publishingPlans !== undefined;
   const [selectedId, setSelectedId] = useState(plans[0]?.id ?? "");
   const [editingId, setEditingId] = useState<string>();
+  const [editingRevision, setEditingRevision] = useState<number>();
   const [editVersion, setEditVersion] = useState(0);
   const [name, setName] = useState("");
   const [accountId, setAccountId] = useState(snapshot.accounts[0]?.id ?? "");
@@ -164,7 +165,9 @@ export function PublishingPlans({ client, snapshot, projects, initialProject, ru
                       saved = await client.request<SocialPublishingPlan>(
                         editingId ? "publishing-plans.update" : "publishing-plans.create",
                         {
-                          ...(editingId ? { id: editingId } : {}),
+                          ...(editingId
+                            ? { id: editingId, expectedRevision: editingRevision }
+                            : {}),
                           name: name.trim(),
                           accountId,
                           projectId,
@@ -674,6 +677,7 @@ export function PublishingPlans({ client, snapshot, projects, initialProject, ru
                       variant="secondary"
                       onClick={() => {
                         setEditingId(selected.id);
+                        setEditingRevision(selected.revision);
                         setName(selected.name);
                         setAccountId(selected.accountId);
                         setProjectId(selected.projectId);

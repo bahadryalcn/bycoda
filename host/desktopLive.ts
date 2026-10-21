@@ -14,6 +14,7 @@ import { canonicalHostPath, hostProjectId } from "../src/features/sync/model/syn
 export const DESKTOP_BEAT_STALE_MS = 20_000;
 const MAX_PENDING_BLOCKS = 50;
 const MAX_COMMANDS = 100;
+export const DESKTOP_COMMAND_RETAIN_MS = 5 * 60_000;
 
 export type DesktopCommand = {
   id: string;
@@ -118,13 +119,25 @@ export function parseDesktopProjectDirectory(input: unknown): DesktopProjectDire
 export class DesktopLive {
   private clients = new Map<string, number>();
   private sessions = new Map<string, LiveSession>();
-  private commands: DesktopCommand[] = [];
+  private commands: (DesktopCommand & { queuedAt: number })[] = [];
   private directories = new Map<string, { at: number; value?: DesktopProjectDirectory }>();
 
   private lastChange = 0;
 
   onChange?: () => void;
   constructor(private readonly now: () => number = Date.now) {}
+
+  private reclaimCommands(): void {
+    const now = this.now();
+    this.commands = this.commands.filter((command) => {
+      const owner = this.sessions.get(command.sessionId)?.clientId;
+      const heartbeat = owner ? this.clients.get(owner) : undefined;
+      return (
+        (heartbeat !== undefined && now - heartbeat <= DESKTOP_BEAT_STALE_MS) ||
+        now - command.queuedAt < DESKTOP_COMMAND_RETAIN_MS
+      );
+    });
+  }
 
   /** Strictly increasing, so two changes in one millisecond still differ. */
   private changeStamp(): number {
@@ -224,11 +237,12 @@ export class DesktopLive {
     }
     // Watchers must read the committed sessions and heartbeat, including on the
     // first beat. Signalling earlier can expose the previous running state.
+    this.reclaimCommands();
     if (changed) this.onChange?.();
     return {
-      commands: this.commands.filter(
-        (command) => this.sessions.get(command.sessionId)?.clientId === clientId,
-      ),
+      commands: this.commands
+        .filter((command) => this.sessions.get(command.sessionId)?.clientId === clientId)
+        .map(({ queuedAt: _queuedAt, ...command }) => command),
     };
   }
 
@@ -274,8 +288,14 @@ export class DesktopLive {
     for (const [key, projection] of paths) {
       const matches = registeredByPath.get(key) ?? [];
       if (matches.length) {
-        for (const project of matches) projects.push({ ...project, ...projection, cwd: project.cwd, registered: true });
-      } else projects.push({ ...projection, id: hostProjectId(environmentId, projection.cwd), registered: false });
+        for (const project of matches)
+          projects.push({ ...project, ...projection, cwd: project.cwd, registered: true });
+      } else
+        projects.push({
+          ...projection,
+          id: hostProjectId(environmentId, projection.cwd),
+          registered: false,
+        });
     }
     return { version: 1, privacyReady: true, groups: [...groups.values()], projects };
   }
@@ -311,9 +331,11 @@ export class DesktopLive {
 
   /** Leaves a watcher's stop, approval or answer for the desktop to run. */
   enqueue(command: Extract<HostCommand, { type: "cancel" | "approve" | "answer" }>): void {
+    this.reclaimCommands();
     if (this.commands.length >= MAX_COMMANDS)
       throw new Error("Too many commands waiting for the bycoda app on that computer");
     this.commands.push({
+      queuedAt: this.now(),
       id: randomUUID(),
       sessionId: command.sessionId,
       type: command.type,

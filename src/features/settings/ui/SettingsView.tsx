@@ -334,9 +334,9 @@ export function SettingsView({
                       onKeyDown={(event) => {
                         if (!onSelectSection) return;
                         let next = index;
-                        if (event.key === "ArrowRight" || event.key === "ArrowDown")
+                        if (event.key === (horizontalNavigation ? "ArrowRight" : "ArrowDown"))
                           next = (index + 1) % categories.length;
-                        else if (event.key === "ArrowLeft" || event.key === "ArrowUp")
+                        else if (event.key === (horizontalNavigation ? "ArrowLeft" : "ArrowUp"))
                           next = (index - 1 + categories.length) % categories.length;
                         else if (event.key === "Home") next = 0;
                         else if (event.key === "End") next = categories.length - 1;
