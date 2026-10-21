@@ -4,6 +4,7 @@ import { SearchInput } from "../../../shared/ui/SearchInput";
 import { t, useLocale } from "../../../shared/i18n";
 import {
   memo,
+  useCallback,
   useEffect,
   useMemo,
   useRef,
@@ -17,6 +18,7 @@ import { findTranscriptBlocks } from "../model/transcriptFind";
 import { peekTranscriptJump, subscribeTranscriptJump } from "../model/transcriptJump";
 import { keybindingPressed } from "../../settings/model/settings";
 import { useKeybindingShortcut } from "../../settings/model/useKeybindingShortcut";
+import type { ExpandingButtonGroupItem } from "../../../shared/ui/ExpandingButtonGroup";
 
 type Props = {
   blocks: Block[];
@@ -30,6 +32,8 @@ type Props = {
   triggerContainer?: HTMLElement | null;
   /** Tells the owner when results depend on live text, so it can feed every frame. */
   onSearchingChange?: (searching: boolean) => void;
+  /** Let the pane compose this action into its shared toolbar. */
+  onTriggerChange?: (item: ExpandingButtonGroupItem | null) => void;
 };
 
 export const TranscriptFind = memo(function TranscriptFind({
@@ -41,9 +45,11 @@ export const TranscriptFind = memo(function TranscriptFind({
   side = "right",
   triggerContainer,
   onSearchingChange,
+  onTriggerChange,
 }: Props) {
   useLocale();
   const findShortcut = useKeybindingShortcut("Editor: Find");
+  const findLabel = t("Find in conversation");
   const input = useRef<HTMLInputElement>(null);
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -63,13 +69,32 @@ export const TranscriptFind = memo(function TranscriptFind({
   const adoptedJump = useRef(0);
   const [jumpTarget, setJumpTarget] = useState<string | null>(null);
 
-  const openFind = () => {
+  const openFind = useCallback(() => {
     setOpen(true);
     requestAnimationFrame(() => {
       input.current?.focus();
       input.current?.select();
     });
-  };
+  }, []);
+  useEffect(() => {
+    if (!onTriggerChange) return;
+    onTriggerChange(
+      visible
+        ? {
+            id: "find-conversation",
+            label: findLabel,
+            shortcut: findShortcut,
+            icon: <Search className="size-3.5" strokeWidth={1.75} />,
+            render: (renderTrigger) =>
+              renderTrigger({
+                "aria-expanded": open,
+                onSelect: openFind,
+              }),
+          }
+        : null,
+    );
+    return () => onTriggerChange(null);
+  }, [onTriggerChange, visible, findLabel, findShortcut, open, openFind]);
   const closeFind = () => {
     setOpen(false);
     onNavigate(null);
@@ -157,10 +182,11 @@ export const TranscriptFind = memo(function TranscriptFind({
       <Search className="size-3.5" strokeWidth={1.75} />
     </Button>
   );
-  const headerTrigger = triggerContainer ? createPortal(trigger, triggerContainer) : null;
+  const headerTrigger =
+    !onTriggerChange && triggerContainer ? createPortal(trigger, triggerContainer) : null;
 
   if (!open) {
-    if (triggerContainer !== undefined) return headerTrigger;
+    if (onTriggerChange || triggerContainer !== undefined) return headerTrigger;
     return (
       <div
         className={`pointer-events-none absolute top-2 z-40 ${side === "left" ? "left-3" : "right-3"}`}

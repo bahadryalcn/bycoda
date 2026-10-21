@@ -359,7 +359,7 @@ pub struct SshConfigPreview {
 
 /// Parse literal Host blocks only. Unsupported semantics are conspicuous and
 /// never silently execute. No filesystem reads or subprocesses occur here.
-#[tauri::command]
+#[tauri::command(async)]
 pub fn ssh_config_preview(content: String) -> Result<SshConfigPreview, String> {
     if content.len() > 1024 * 1024 {
         return Err("SSH config exceeds 1 MiB".into());
@@ -522,7 +522,7 @@ fn public_file(path: &std::path::Path) -> Result<PublicFile, String> {
         .map_err(|_| "Cannot read SSH public metadata".into())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn ssh_known_hosts_list() -> Result<Vec<SshPublicMetadata>, String> {
     known_hosts_at(&ssh_dir()?.join("known_hosts"))
 }
@@ -567,7 +567,7 @@ fn parse_known_hosts(content: &str) -> Vec<SshPublicMetadata> {
         .collect()
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn ssh_public_keys_list() -> Result<Vec<SshPublicMetadata>, String> {
     let directory = ssh_dir()?;
     let entries = match fs::read_dir(&directory) {

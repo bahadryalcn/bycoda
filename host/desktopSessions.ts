@@ -420,6 +420,13 @@ export class DesktopSessions {
     if (!found) return undefined;
     const { row } = found;
     const updatedAt = Number(row.updated_at);
+    // An unreadable transcript is unavailable, never empty: callers adopt and
+    // refresh host copies from this snapshot, and an empty one would replace it.
+    const blocks = parse(row.blocks_json);
+    if (!Array.isArray(blocks)) {
+      console.warn(`[bycoda] desktop transcript ${id} is unreadable; skipping its snapshot`);
+      return undefined;
+    }
     const session: Session = {
       id: String(row.id),
       harness: String(row.harness) as Session["harness"],
@@ -428,7 +435,7 @@ export class DesktopSessions {
       runtimeMode: row.runtime_mode as Session["runtimeMode"],
       title: String(row.title ?? ""),
       cwd: workCwd(row),
-      blocks: (parse(row.blocks_json) as Block[]) ?? [],
+      blocks: blocks as Block[],
       ...(row.provider_session_id ? { providerSessionId: String(row.provider_session_id) } : {}),
       ...(row.provider_account_id ? { providerAccountId: String(row.provider_account_id) } : {}),
       ...(row.branch ? { branch: String(row.branch) } : {}),

@@ -7,7 +7,7 @@ import type { ProjectTerminalDock as ProjectTerminal } from "../../../features/p
 import { sameProjectPath } from "../../../features/projects/model/recents";
 import type { SettingsSectionId } from "../../../features/settings/model/settings";
 import type { Session } from "../../../features/sessions/model/session";
-import { hasPendingApproval } from "../../../features/sessions/model/session";
+import { hasPendingApproval, type Block } from "../../../features/sessions/model/session";
 import { LinkedWorkItemPanel } from "../surfaces/lazySurfaces";
 import type { LinkedWorkItemPanelState } from "../helpers/types";
 
@@ -117,6 +117,18 @@ export interface WorkspaceMainAreaProps {
   activeLinkedWorkItemPanel: LinkedWorkItemPanelState | null;
 }
 
+/** Runs on every session update, across every open session: rescan a transcript
+ * only when its block array changed. */
+const liveBlocksByArray = new WeakMap<Block[], boolean>();
+function hasLiveBlock(blocks: Block[]): boolean {
+  let live = liveBlocksByArray.get(blocks);
+  if (live === undefined) {
+    live = blocks.some((block) => block.streaming || block.tool?.status === "in_progress");
+    liveBlocksByArray.set(blocks, live);
+  }
+  return live;
+}
+
 export function WorkspaceMainArea({
   dockGridRef,
   projectCwd,
@@ -188,7 +200,7 @@ export function WorkspaceMainArea({
             session.continuingElsewhere ||
             session.pendingQuestion ||
             hasPendingApproval(session.blocks) ||
-            session.blocks.some((block) => block.streaming || block.tool?.status === "in_progress"),
+            hasLiveBlock(session.blocks),
         )
         .map((session) => session.id),
       sessions.map((session) => session.id),

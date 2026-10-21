@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.64]
+
+### Terminal and connection workflows
+
+- Improve SSH environment detection, shell integration and remote terminal behavior.
+- Refine terminal tools, remote suggestions and the Servers terminal workspace.
+
+### Workspace and session reliability
+
+- Improve checkpoint recovery, session synchronization and transcript rendering.
+- Refine crew controls, project quick actions and source-control review panels.
+- Improve window controls, session navigation, shared settings and translations.
+- Expand regression coverage for the updated native, host and desktop workflows.
+
 ## [0.6.61]
 
 ### Providers

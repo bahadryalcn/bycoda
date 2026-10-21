@@ -422,4 +422,47 @@ describe("crew deletion", () => {
     await f.service.call("crews.agent.delete", { agentId: "saved" }, f.project.id);
     expect(f.service.list(f.project.id).agents).toEqual([]);
   });
+
+  it("lists a short work title without exposing the launch prompt", async () => {
+    const f = setup();
+    await f.service.startRun(
+      f.project.id,
+      "crew",
+      "Mobile sign-in\nUse the design system",
+      "run",
+      "supervised",
+    );
+    const [run] = f.service.list(f.project.id).runs;
+    expect(run).toMatchObject({ title: "Mobile sign-in", launch: undefined });
+  });
+
+  it("keeps library groups and shares host-wide profiles with other projects", async () => {
+    const f = setup();
+    const other = f.store.addProject("/crew-fixture-mobile", "Mobile fixture");
+    await f.service.call(
+      "crews.agent.save",
+      { agent: { ...f.definition.agents[1]!, id: "ui", groups: ["UI", "UI", "Mobile"] } },
+      f.project.id,
+    );
+    await f.service.call(
+      "crews.agent.save",
+      { agent: { ...f.definition.agents[1]!, id: "local", projectId: f.project.id } },
+      f.project.id,
+    );
+    const shared = f.service.list(other.id).agents;
+    expect(shared.map((agent) => agent.id)).toEqual(["ui"]);
+    expect(shared[0]!.groups).toEqual(["UI", "Mobile"]);
+    // A crew member remembers the profile it came from; the library never edits it.
+    const member = { ...shared[0]!, id: "ui-copy", source: { id: "ui", updatedAt: 1000 } };
+    const saved = f.service.save({
+      ...f.definition,
+      id: "mobile",
+      projectId: other.id,
+      agents: [...f.definition.agents, member],
+    });
+    expect(saved.agents.find((agent) => agent.id === "ui-copy")).toMatchObject({
+      groups: ["UI", "Mobile"],
+      source: { id: "ui", updatedAt: 1000 },
+    });
+  });
 });

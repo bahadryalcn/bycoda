@@ -34,7 +34,7 @@ else
     __bycoda_literal() {
         [[ ${#1} -le 256 && $1 != *[!a-zA-Z0-9\ ./_:-]* ]] || return 1
         local lower=${1,,}
-        [[ $lower != *password* && $lower != *passwd* && $lower != *secret* && $lower != *token* && $lower != *credential* && $lower != *.env* && $lower != *.ssh* && $lower != *private* ]]
+        [[ $lower != *password* && $lower != *passwd* && $lower != *secret* && $lower != *token* && $lower != *authorization* && $lower != *api_key* && $lower != *apikey* && $lower != *credential* && $lower != *.env* && $lower != *.ssh* && $lower != *private* ]]
     }
     __bycoda_reviewed() {
         __bycoda_literal "$1" || return 1
@@ -44,7 +44,8 @@ else
         [[ $1 =~ ^(cd|ls)\ [a-zA-Z0-9./_:][a-zA-Z0-9./_:-]*$ || $1 =~ ^systemctl\ status\ [a-zA-Z0-9./_:][a-zA-Z0-9./_:-]*$ ]]
     }
     __bycoda_source() {
-        local source=$1 candidate values='' path lead count=0
+        local source=$1 candidate values='' path lead count=0 i
+        local -a recent
         (( ++__bycoda_request_seq ))
         [[ $__bycoda_prompt_echo_ok == 1 ]] || { __bycoda_unavailable; return; }
         [[ $READLINE_POINT == ${#READLINE_LINE} ]] && __bycoda_literal "$READLINE_LINE" || { __bycoda_no_match; return; }
@@ -52,12 +53,19 @@ else
         # completion, expand shell syntax, read file contents or execute a name.
         case $source in
             commands)
-                [[ $READLINE_LINE != */* && $READLINE_LINE != -* ]] || { __bycoda_no_match; return; }
-                for candidate in 'git status' 'git diff' 'git log --oneline' 'ls -l' 'ls -la' 'docker ps' 'docker ps -a' 'systemctl status'; do
-                    [[ $candidate == "$READLINE_LINE"* ]] && builtin type -t -- "${candidate%% *}" >/dev/null 2>&1 && values+="$candidate"$'\t'
+                # Recent matching history comes first, followed by common forms
+                # and executable names. No programmable completion is invoked.
+                mapfile -t recent < <(HISTTIMEFORMAT= builtin history 200 2>/dev/null)
+                for (( i=${#recent[@]}-1; i>=0; i-- )); do
+                    candidate=${recent[i]#*[0-9]  }
+                    __bycoda_literal "$candidate" && [[ -n $candidate && $candidate != ' '* && $candidate != "$READLINE_LINE" && $candidate == "$READLINE_LINE"* && $values != *"$candidate"$'\t'* ]] || continue
+                    values+="$candidate"$'\t'; (( ++count >= 8 )) && break
+                done
+                for candidate in 'git status' 'git diff' 'git diff --staged' 'git log --oneline' 'git stash list' 'ls -l' 'ls -la' 'docker ps' 'docker ps -a' 'docker compose up' 'docker compose logs -f' 'systemctl status' 'systemctl restart' 'pnpm install' 'pnpm dev' 'pnpm build' 'pnpm test' 'npm install' 'npm run dev' 'cargo check' 'cargo test' 'clear'; do
+                    [[ $candidate != "$READLINE_LINE" && $candidate == "$READLINE_LINE"* && $values != *"$candidate"$'\t'* ]] && builtin type -t -- "${candidate%% *}" >/dev/null 2>&1 && values+="$candidate"$'\t'
                 done
                 while IFS= read -r candidate; do
-                    __bycoda_literal "$candidate" && [[ $candidate != *[\ /]* && $candidate != -* && $values != *"$candidate"$'\t'* ]] || continue
+                    __bycoda_literal "$candidate" && [[ $candidate != "$READLINE_LINE" && $candidate != *[\ /]* && $candidate != -* && $values != *"$candidate"$'\t'* ]] || continue
                     values+="$candidate"$'\t'; (( ++count >= 12 )) && break
                 done < <(builtin compgen -A command -- "$READLINE_LINE") ;;
             paths)
@@ -80,12 +88,12 @@ else
                     [[ $candidate == "$READLINE_LINE"* && $values != *"$candidate"$'\t'* ]] && builtin type -t -- "${candidate%% *}" >/dev/null 2>&1 && values+="$candidate"$'\t'
                 done ;;
             history)
-                while IFS= read -r candidate; do
-                    candidate=${candidate#*[0-9]  }
-                    __bycoda_reviewed "$candidate" && [[ $candidate == "$READLINE_LINE"* && $values != *"$candidate"$'\t'* ]] || continue
-                    builtin type -t -- "${candidate%% *}" >/dev/null 2>&1 || continue
+                mapfile -t recent < <(HISTTIMEFORMAT= builtin history 200 2>/dev/null)
+                for (( i=${#recent[@]}-1; i>=0; i-- )); do
+                    candidate=${recent[i]#*[0-9]  }
+                    __bycoda_literal "$candidate" && [[ -n $candidate && $candidate != ' '* && $candidate != "$READLINE_LINE" && $candidate == "$READLINE_LINE"* && $values != *"$candidate"$'\t'* ]] || continue
                     values+="$candidate"$'\t'; (( ++count >= 12 )) && break
-                done < <(HISTTIMEFORMAT= builtin history 100 2>/dev/null) ;;
+                done ;;
         esac
         [[ -n $values ]] || { __bycoda_no_match; return; }
         __bycoda_emit "suggestions;$__bycoda_user;$__bycoda_host;$__bycoda_prompt_seq;$__bycoda_request_seq;$READLINE_POINT;$READLINE_LINE;$values"

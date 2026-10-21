@@ -172,6 +172,20 @@ describe("desktop sessions on the host", () => {
     });
   });
 
+  it("never serves an unreadable desktop transcript as an empty one", async () => {
+    const s = await setup();
+    s.seed({ id: "a", cwd: s.project.cwd });
+    s.desktopDb.prepare("UPDATE sessions SET blocks_json = '[{\"id\":' WHERE id = 'a'").run();
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const sync = await s.call("sessions.sync", { projectId: s.project.id, sessionId: "a" });
+      expect(sync.result?.value?.session?.blocks).toBeUndefined();
+      expect(() => s.store.session("a")).toThrow("Session not found");
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
   it("adopts on send, binds the provider and prefers the host copy", async () => {
     const s = await setup();
     s.seed({ id: "a", cwd: s.project.cwd });

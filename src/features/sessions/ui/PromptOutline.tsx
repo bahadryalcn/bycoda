@@ -241,7 +241,7 @@ export const PromptOutline = memo(function PromptOutline({
       role="toolbar"
       aria-label={t("Prompts")}
       aria-orientation="vertical"
-      style={{ width: BAR_WIDTH_LIFTED_PX }}
+      style={{ width: BAR_WIDTH_LIFTED_PX, maxHeight: stackBudget }}
       onMouseEnter={() => {
         pointerInside.current = true;
       }}
@@ -278,7 +278,14 @@ export const PromptOutline = memo(function PromptOutline({
               }
             }}
             onClick={() => jumpTo(prompt.id)}
-            style={{ height: BAR_HEIGHT_PX + stack.gap }}
+            // This is a ruler hit area, not a square icon action. Override the
+            // shared icon target minimum so dense histories honor the budget.
+            style={{
+              height: BAR_HEIGHT_PX + stack.gap,
+              minBlockSize: 0,
+              padding: 0,
+              aspectRatio: "auto",
+            }}
             className="w-full shrink-0"
           >
             <span
@@ -345,15 +352,12 @@ function promptBand(anchor: HTMLElement, viewport: DOMRect): OutlineBand {
 
 /** One bar per prompt while the bars fit the budget. The gap shrinks first. Past that, a window slides. */
 function barStack(count: number, activeIndex: number | null, budget: number) {
-  const fit = Math.max(1, Math.floor((budget + BAR_GAP_MIN_PX) / (BAR_HEIGHT_PX + BAR_GAP_MIN_PX)));
+  const fit = Math.max(1, Math.floor(budget / (BAR_HEIGHT_PX + BAR_GAP_MIN_PX)));
   const window_ = barWindow(count, activeIndex, fit);
   const shown = window_.end - window_.start;
   const gap =
     shown > 1
-      ? Math.min(
-          BAR_GAP_PX,
-          Math.max(BAR_GAP_MIN_PX, Math.floor((budget - shown * BAR_HEIGHT_PX) / (shown - 1))),
-        )
+      ? Math.min(BAR_GAP_PX, Math.max(BAR_GAP_MIN_PX, Math.floor(budget / shown) - BAR_HEIGHT_PX))
       : 0;
   return { ...window_, gap };
 }

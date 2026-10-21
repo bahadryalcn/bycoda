@@ -180,8 +180,34 @@ export function getPtySuggestions(id: string, prefix: string): Promise<string[]>
   return invoke<string[]>("pty_suggestions", { id, prefix });
 }
 
-export async function resizePty(id: string, cols: number, rows: number): Promise<void> {
-  await invoke("pty_resize", { id, cols, rows });
+type ResizeSlot = { cols: number; rows: number; running: Promise<void> };
+const resizeSlots = new Map<string, ResizeSlot>();
+
+/**
+ * Resizes run off the main thread and may finish out of order, so one runs at
+ * a time per PTY and a burst collapses to its latest size.
+ */
+export function resizePty(id: string, cols: number, rows: number): Promise<void> {
+  const slot = resizeSlots.get(id);
+  if (slot) {
+    slot.cols = cols;
+    slot.rows = rows;
+    return slot.running;
+  }
+  const next: ResizeSlot = { cols, rows, running: Promise.resolve() };
+  resizeSlots.set(id, next);
+  next.running = (async () => {
+    try {
+      let sent: [number, number] | null = null;
+      while (!sent || sent[0] !== next.cols || sent[1] !== next.rows) {
+        sent = [next.cols, next.rows];
+        await invoke("pty_resize", { id, cols: sent[0], rows: sent[1] });
+      }
+    } finally {
+      resizeSlots.delete(id);
+    }
+  })();
+  return next.running;
 }
 
 export async function getPtyStatus(

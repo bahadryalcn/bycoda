@@ -4,6 +4,7 @@ import { Button } from "../../../shared/ui/Button";
 import { t } from "../../../shared/i18n";
 import type { SshShellController } from "../model/sshShellIntegration";
 import styles from "./TerminalTools.module.css";
+import { TerminalGhostText } from "./TerminalGhostText";
 
 /** Explicit selection mode. Native code, not this UI, verifies safe insertion. */
 export function RemoteShellSuggestions({
@@ -17,14 +18,20 @@ export function RemoteShellSuggestions({
   onClose: () => void;
   selectionMode?: boolean;
 }) {
-  const [selected, setSelected] = useState(0);
+  const [selection, setSelection] = useState({ prefix: "", value: "" });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const host = useRef<HTMLDivElement>(null);
   const pending = useRef(false);
   const snapshot = shell.state?.status === "suggestions" ? shell.state : undefined;
   const suggestions = [...new Set(snapshot?.suggestions ?? [])];
-  const choice = Math.min(selected, Math.max(0, suggestions.length - 1));
+  const choice =
+    selection.prefix === snapshot?.prefix ? Math.max(0, suggestions.indexOf(selection.value)) : 0;
+  const select = (index: number) =>
+    setSelection({ prefix: snapshot?.prefix ?? "", value: suggestions[index] });
+  useLayoutEffect(() => {
+    host.current?.querySelector('[aria-selected="true"]')?.scrollIntoView?.({ block: "nearest" });
+  }, [choice]);
   useEffect(() => {
     if (selectionMode) host.current?.focus();
   }, [snapshot?.requestId, selectionMode]);
@@ -52,7 +59,20 @@ export function RemoteShellSuggestions({
   };
   const previewKeys = useRef<(event: KeyboardEvent) => void>(() => {});
   const handlePreviewKey = (event: KeyboardEvent) => {
-    if (event.isComposing || event.ctrlKey || event.metaKey || event.altKey) return;
+    if (event.isComposing || event.ctrlKey || event.metaKey) return;
+    if (
+      event.altKey &&
+      (event.key === "ArrowDown" || event.key === "ArrowUp") &&
+      suggestions.length
+    ) {
+      select(
+        (choice + (event.key === "ArrowDown" ? 1 : -1) + suggestions.length) % suggestions.length,
+      );
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      return;
+    }
+    if (event.altKey) return;
     // Passive previews must not take over shell history or submission. Explicit
     // selection mode below owns those keys only after the owner opens it.
     if (
@@ -78,99 +98,112 @@ export function RemoteShellSuggestions({
     return () => element.removeEventListener("keydown", listener, true);
   }, [terminal, selectionMode]);
   return (
-    <div
-      ref={host}
-      className={styles.command}
-      tabIndex={selectionMode ? 0 : undefined}
-      aria-label={t(selectionMode ? "Remote suggestion selection" : "Remote suggestion preview")}
-      onKeyDown={(event) => {
-        if (!selectionMode || event.nativeEvent.isComposing) return;
-        event.stopPropagation();
-        if (event.key === "Escape") {
-          event.preventDefault();
-          close();
-        } else if ((event.key === "ArrowDown" || event.key === "ArrowUp") && suggestions.length) {
-          event.preventDefault();
-          setSelected(
-            (choice + (event.key === "ArrowDown" ? 1 : -1) + suggestions.length) %
-              suggestions.length,
-          );
-        } else if (
-          (event.key === "Enter" || (event.key === "Tab" && !event.shiftKey)) &&
-          suggestions[choice]
-        ) {
-          event.preventDefault();
-          void accept(suggestions[choice]);
-        } else if (
-          event.ctrlKey &&
-          !event.altKey &&
-          !event.metaKey &&
-          event.key.toLowerCase() === "c"
-        ) {
-          event.preventDefault();
-          close();
-          terminal?.input("\x03");
-        }
-      }}
-    >
-      {snapshot && selectionMode ? (
-        <p className={styles.hint}>
-          {snapshot.user}@{snapshot.host} ·{" "}
-          {snapshot.shell === "zsh"
-            ? "Zsh"
-            : snapshot.shell === "powershell"
-              ? "PowerShell"
-              : "Bash"}{" "}
-          · {t("Prefix")}: <code>{snapshot.prefix || "∅"}</code>
-        </p>
+    <>
+      {!selectionMode && terminal && snapshot?.prefix && suggestions[choice] ? (
+        <TerminalGhostText
+          terminal={terminal}
+          suffix={suggestions[choice].slice(snapshot.prefix.length)}
+        />
       ) : null}
-      {shell.waiting ? (
-        <p role="status" className={styles.hint}>
-          {t("Waiting for the shell prompt…")}
-        </p>
-      ) : null}
-      {shell.error || error ? (
-        <p role="status" className={styles.hint}>
-          {t(shell.error || error)}
-        </p>
-      ) : null}
-      {snapshot ? (
-        <div
-          role="listbox"
-          aria-label={t("Remote command suggestions")}
-          className={styles.list}
-          aria-busy={busy}
-        >
-          {suggestions.map((value, index) => (
-            <Button
-              key={value}
-              role="option"
-              tabIndex={-1}
-              variant="item"
-              size="sm"
-              className={styles.option}
-              aria-selected={index === choice}
-              disabled={busy}
-              onMouseDown={(event) => event.preventDefault()}
-              onClick={() => void accept(value)}
-            >
-              <span className={styles.text} title={value}>
-                {value}
-              </span>
-            </Button>
-          ))}
-          {!suggestions.length ? (
-            <p className={styles.hint}>{t("No safe matching suggestions.")}</p>
-          ) : null}
-        </div>
-      ) : null}
-      <p className={styles.hint}>
-        {t(
-          selectionMode
-            ? "↑/↓ select · Tab/Enter insert only · Esc returns to the shell. Press Enter in the terminal to run."
-            : "Tab/→ complete · Enter runs the typed command · ↑/↓ browse shell history.",
-        )}
-      </p>
-    </div>
+      <div
+        ref={host}
+        className={styles.command}
+        tabIndex={selectionMode ? 0 : undefined}
+        aria-label={t(selectionMode ? "Remote suggestion selection" : "Remote suggestion preview")}
+        onKeyDown={(event) => {
+          if (!selectionMode || event.nativeEvent.isComposing) return;
+          event.stopPropagation();
+          if (event.key === "Escape") {
+            event.preventDefault();
+            close();
+          } else if ((event.key === "ArrowDown" || event.key === "ArrowUp") && suggestions.length) {
+            event.preventDefault();
+            select(
+              (choice + (event.key === "ArrowDown" ? 1 : -1) + suggestions.length) %
+                suggestions.length,
+            );
+          } else if (
+            (event.key === "Enter" || (event.key === "Tab" && !event.shiftKey)) &&
+            suggestions[choice]
+          ) {
+            event.preventDefault();
+            void accept(suggestions[choice]);
+          } else if (
+            event.ctrlKey &&
+            !event.altKey &&
+            !event.metaKey &&
+            event.key.toLowerCase() === "c"
+          ) {
+            event.preventDefault();
+            close();
+            terminal?.input("\x03");
+          }
+        }}
+      >
+        {snapshot && selectionMode ? (
+          <p className={styles.hint}>
+            {snapshot.user}@{snapshot.host} ·{" "}
+            {snapshot.shell === "zsh"
+              ? "Zsh"
+              : snapshot.shell === "powershell"
+                ? "PowerShell"
+                : "Bash"}{" "}
+            · {t("Prefix")}: <code>{snapshot.prefix || "∅"}</code>
+          </p>
+        ) : null}
+        {shell.waiting ? (
+          <p role="status" className={styles.hint}>
+            {t("Waiting for the shell prompt…")}
+          </p>
+        ) : null}
+        {shell.error || error ? (
+          <p role="status" className={styles.hint}>
+            {t(shell.error || error)}
+          </p>
+        ) : null}
+        {snapshot ? (
+          <div
+            role="listbox"
+            aria-label={t("Remote command suggestions")}
+            className={styles.list}
+            aria-busy={busy}
+          >
+            {suggestions.map((value, index) => (
+              <Button
+                key={value}
+                role="option"
+                tabIndex={-1}
+                variant="item"
+                size="sm"
+                className={styles.option}
+                aria-selected={index === choice}
+                disabled={busy}
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={() => void accept(value)}
+              >
+                <span className={styles.text} title={value}>
+                  <span className={styles.match}>
+                    {value.slice(0, snapshot.prefix?.length ?? 0)}
+                  </span>
+                  {value.slice(snapshot.prefix?.length ?? 0)}
+                </span>
+              </Button>
+            ))}
+            {!suggestions.length ? (
+              <p className={styles.hint}>{t("No safe matching suggestions.")}</p>
+            ) : null}
+          </div>
+        ) : null}
+        {selectionMode ? (
+          <p className={styles.hint}>
+            {t(
+              selectionMode
+                ? "↑/↓ select · Tab/Enter insert only · Esc returns to the shell. Press Enter in the terminal to run."
+                : "Tab/→ complete · Enter runs the typed command · ↑/↓ browse shell history.",
+            )}
+          </p>
+        ) : null}
+      </div>
+    </>
   );
 }

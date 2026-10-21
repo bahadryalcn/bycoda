@@ -194,6 +194,36 @@ describe("transcript pool", () => {
     expect(host.childElementCount).toBe(1);
   });
 
+  it("does not mount a transcript first shown hidden until it is shown or protected", () => {
+    const pool = new TranscriptPool();
+    render(pool, null);
+    const host = document.createElement("div");
+    document.body.append(host);
+    act(() => pool.show("a", host, createElement(Probe, { id: "a", visible: false })));
+    expect(probe("a")).toBeNull();
+    act(() => pool.show("a", host, createElement(Probe, { id: "a", visible: true })));
+    expect(probe("a")?.dataset.visible).toBe("true");
+    act(() => pool.show("b", host, createElement(Probe, { id: "b", visible: false })));
+    expect(probe("b")).toBeNull();
+    act(() => pool.setProtectedIds(["b"]));
+    expect(probe("b")).not.toBeNull();
+    host.remove();
+  });
+
+  it("keeps a hidden transcript's render while its pane keeps updating, then shows the latest", () => {
+    const pool = new TranscriptPool();
+    render(pool, "a");
+    const host = pool.getSnapshot()[0].host!;
+    act(() => pool.show("a", host, createElement(Probe, { id: "a", visible: false })));
+    const hidden = pool.getSnapshot();
+    act(() => pool.show("a", host, createElement(Probe, { id: "a", visible: false, parked: false })));
+    // Same outlet snapshot: no re-render of the hidden transcript.
+    expect(pool.getSnapshot()).toBe(hidden);
+    act(() => pool.show("a", host, createElement(Probe, { id: "a", visible: true })));
+    expect(probe("a")?.dataset.visible).toBe("true");
+    expect(unmounts).toEqual([]);
+  });
+
   it("renders in place without a pool", () => {
     act(() =>
       root.render(

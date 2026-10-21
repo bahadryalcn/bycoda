@@ -371,3 +371,165 @@ fn turn_symlink_ancestor_cannot_escape_even_for_a_missing_leaf() {
         "outside\n"
     );
 }
+
+#[test]
+fn prune_orphans_removes_only_old_folders_of_deleted_idle_sessions() {
+    let repo = tmp("prune-orphans");
+    assert!(init_git_commit(&repo.0, &[("a.txt", "base\n")]));
+    let cwd = repo.0.to_string_lossy().into_owned();
+    let (_tmp, store) = store();
+    for session in ["kept", "deleted", "busy"] {
+        store.ensure(session, &cwd).unwrap();
+    }
+    store.begin_turn("busy", &cwd, "one").unwrap();
+    let known: HashSet<String> = ["kept".to_string()].into();
+
+    // Too recent: a session may checkpoint before its first save.
+    assert_eq!(store.prune_orphans(&known, std::time::Duration::from_secs(3600)), 0);
+    assert!(store.session_dir("deleted").exists());
+
+    assert_eq!(store.prune_orphans(&known, std::time::Duration::ZERO), 1);
+    assert!(store.session_dir("kept").exists());
+    assert!(!store.session_dir("deleted").exists());
+    assert!(store.session_dir("busy").exists(), "an active turn is never pruned");
+    store.finish_turn("busy", &cwd, "one", false).unwrap();
+}
+
+fn turn_record(store: &CheckpointStore, session: &str) -> serde_json::Value {
+    let bytes = std::fs::read(store.session_dir(session).join("turn.json")).unwrap();
+    serde_json::from_slice(&bytes).unwrap()
+}
+
+/// Leaves `session` with an active turn, as after a forced kill, and returns a
+/// store over the same root whose recovery barrier starts empty, as at launch.
+fn crashed_session(store: &CheckpointStore, cwd: &str, session: &str, turn: &str) -> CheckpointStore {
+    store.begin_turn(session, cwd, turn).unwrap();
+    CheckpointStore::new(store.root.clone())
+}
+
+#[test]
+fn recovery_barrier_holds_same_session_and_overlapping_checkouts_only() {
+    let repo = tmp("barrier-repo");
+    assert!(init_git_commit(&repo.0, &[("a.txt", "base\n")]));
+    let other = tmp("barrier-other");
+    assert!(init_git_commit(&other.0, &[("b.txt", "base\n")]));
+    let cwd = repo.0.to_string_lossy().into_owned();
+    let elsewhere = other.0.to_string_lossy().into_owned();
+    let (_tmp, seeded) = store();
+    let store = crashed_session(&seeded, &cwd, "session", "crashed");
+    let plan = store.plan_recovery();
+    let (tx, rx) = std::sync::mpsc::channel();
+    let waiter = {
+        let (store, cwd) = (store.clone(), cwd.clone());
+        std::thread::spawn(move || {
+            let result = store.coordinated("session", &[&cwd], |s| s.status("session", &cwd));
+            tx.send(std::time::Instant::now()).unwrap();
+            result
+        })
+    };
+    std::thread::sleep(std::time::Duration::from_millis(200));
+    assert!(
+        rx.try_recv().is_err(),
+        "same-session call ran before recovery released it"
+    );
+    let started = std::time::Instant::now();
+    store
+        .coordinated("other", &[&elsewhere], |s| s.status("other", &elsewhere))
+        .unwrap();
+    assert!(
+        started.elapsed() < std::time::Duration::from_secs(30),
+        "a non-overlapping checkout waited for recovery"
+    );
+    let released = std::time::Instant::now();
+    drop(plan);
+    let finished = rx
+        .recv_timeout(std::time::Duration::from_secs(30))
+        .expect("waiter was never released");
+    assert!(finished >= released);
+    let _ = waiter.join().unwrap();
+}
+
+#[test]
+fn recovery_settles_interrupted_turn_before_status_reads_it() {
+    let repo = tmp("recovery-settle");
+    assert!(init_git_commit(&repo.0, &[("a.txt", "base\n")]));
+    let cwd = repo.0.to_string_lossy().into_owned();
+    let (_tmp, seeded) = store();
+    let store = crashed_session(&seeded, &cwd, "session", "crashed");
+    std::fs::write(repo.0.join("a.txt"), "agent\n").unwrap();
+    assert!(store
+        .status("session", &cwd)
+        .unwrap_err()
+        .contains("still recording"));
+    store.plan_recovery().run();
+    assert_eq!(turn_record(&store, "session")["active"], false);
+    assert!(store.status("session", &cwd).is_ok());
+}
+
+#[test]
+fn same_session_begin_waits_for_interrupted_turn_then_starts_clean() {
+    let repo = tmp("recovery-same-session");
+    assert!(init_git_commit(&repo.0, &[("a.txt", "base\n")]));
+    let cwd = repo.0.to_string_lossy().into_owned();
+    let (_tmp, seeded) = store();
+    let store = crashed_session(&seeded, &cwd, "session", "crashed");
+    let plan = store.plan_recovery();
+    let (tx, rx) = std::sync::mpsc::channel();
+    let begin = {
+        let (store, cwd) = (store.clone(), cwd.clone());
+        std::thread::spawn(move || {
+            let result = store.coordinated("session", &[&cwd], |s| {
+                s.begin_turn("session", &cwd, "next")
+            });
+            tx.send(()).unwrap();
+            result
+        })
+    };
+    std::thread::sleep(std::time::Duration::from_millis(200));
+    assert!(
+        rx.try_recv().is_err(),
+        "begin ran before the interrupted turn settled"
+    );
+    plan.run();
+    rx.recv_timeout(std::time::Duration::from_secs(30))
+        .expect("begin was never released");
+    begin.join().unwrap().unwrap();
+    let record = turn_record(&store, "session");
+    assert_eq!(record["id"], "next");
+    assert_eq!(record["active"], true);
+    assert!(record["error"].is_null());
+}
+
+#[test]
+fn recovery_ticket_releases_waiters_when_recovery_panics() {
+    let (_tmp, store) = store();
+    let ticket = store.barrier.register("session", "");
+    let panicked = std::thread::spawn(move || {
+        let _held = ticket;
+        panic!("simulated recovery failure");
+    })
+    .join();
+    assert!(panicked.is_err());
+    let (tx, rx) = std::sync::mpsc::channel();
+    let waiter = {
+        let store = store.clone();
+        std::thread::spawn(move || {
+            store.coordinated("session", &[], |_| Ok(())).unwrap();
+            tx.send(()).unwrap();
+        })
+    };
+    rx.recv_timeout(std::time::Duration::from_secs(30))
+        .expect("waiter stayed blocked after the panicking recovery");
+    waiter.join().unwrap();
+}
+
+#[test]
+fn recovery_wait_gives_up_after_its_bound_and_proceeds() {
+    let (_tmp, store) = store();
+    let _ticket = store.barrier.register("session", "");
+    let started = std::time::Instant::now();
+    store
+        .barrier
+        .wait_for("session", &[], std::time::Duration::from_millis(100));
+    assert!(started.elapsed() >= std::time::Duration::from_millis(100));
+}

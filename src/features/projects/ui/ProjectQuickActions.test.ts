@@ -28,48 +28,55 @@ beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
 });
 
-it.each(["web", "native"])("opens the add-action dialog from the %s project menu without dragging the pane", async (surface) => {
-  const host = document.createElement("div");
-  const popupHost = document.createElement("div");
-  document.body.append(host);
-  document.body.append(popupHost);
-  const root = createRoot(host);
-  const drag = vi.fn();
-  try {
-    await act(async () =>
-      root.render(
-        createElement(
-          "div",
-          {
-            onPointerDown: (event: { target: EventTarget }) => {
-              if (!(event.target as HTMLElement).closest("[data-no-drag]")) drag();
-            },
-          },
+it.each(["web", "native"])(
+  "opens the add-action dialog from the %s project menu without dragging the pane",
+  async (surface) => {
+    const host = document.createElement("div");
+    const popupHost = document.createElement("div");
+    document.body.append(host);
+    document.body.append(popupHost);
+    const root = createRoot(host);
+    const drag = vi.fn();
+    try {
+      await act(async () =>
+        root.render(
           createElement(
-            NativePopupHost.Provider,
-            { value: surface === "native" ? popupHost : null },
-            createElement(ProjectQuickActions, { cwd: "C:/project" }),
+            "div",
+            {
+              onPointerDown: (event: { target: EventTarget }) => {
+                if (!(event.target as HTMLElement).closest("[data-no-drag]")) drag();
+              },
+            },
+            createElement(
+              NativePopupHost.Provider,
+              { value: surface === "native" ? popupHost : null },
+              createElement(ProjectQuickActions, { cwd: "C:/project" }),
+            ),
           ),
         ),
-      ),
-    );
-    await act(async () =>
-      host.querySelector<HTMLButtonElement>('[aria-label="Project actions"]')!.click(),
-    );
-    const add = document.querySelector<HTMLButtonElement>('[role="menuitem"]')!;
-    expect(add.textContent).toContain("Add action");
-    expect(host.contains(add)).toBe(false);
-    const icon = add.querySelector("svg")!;
-    await act(async () => icon.dispatchEvent(new MouseEvent("pointerdown", { bubbles: true, button: 0 })));
-    expect(drag).not.toHaveBeenCalled();
-    await act(async () => icon.dispatchEvent(new MouseEvent("click", { bubbles: true, button: 0 })));
-    expect(document.querySelector('[role="dialog"]')?.textContent).toContain("Add action");
-  } finally {
-    await act(async () => root.unmount());
-    host.remove();
-    popupHost.remove();
-  }
-});
+      );
+      await act(async () =>
+        host.querySelector<HTMLButtonElement>('button[aria-label="Project actions"]')!.click(),
+      );
+      const add = document.querySelector<HTMLButtonElement>('[role="menuitem"]')!;
+      expect(add.textContent).toContain("Add action");
+      expect(host.contains(add)).toBe(false);
+      const icon = add.querySelector("svg")!;
+      await act(async () =>
+        icon.dispatchEvent(new MouseEvent("pointerdown", { bubbles: true, button: 0 })),
+      );
+      expect(drag).not.toHaveBeenCalled();
+      await act(async () =>
+        icon.dispatchEvent(new MouseEvent("click", { bubbles: true, button: 0 })),
+      );
+      expect(document.querySelector('[role="dialog"]')?.textContent).toContain("Add action");
+    } finally {
+      await act(async () => root.unmount());
+      host.remove();
+      popupHost.remove();
+    }
+  },
+);
 
 it("starts managed actions on the selected remote host without using a local terminal or browser", async () => {
   const cwd = "remote://machine/worktree";
@@ -186,7 +193,7 @@ it("runs a saved action and keeps folder controls local while exposing remote pr
     );
     expect(onRun).toHaveBeenCalledWith(action);
     const openButton = host.querySelector<HTMLButtonElement>('[aria-label="Open project in"]')!;
-    expect(openButton.textContent).toBe("");
+    expect(openButton.dataset.expanded).toBeUndefined();
     expect(openButton.title).toContain("C:/project-worktree");
     await act(async () =>
       root.render(

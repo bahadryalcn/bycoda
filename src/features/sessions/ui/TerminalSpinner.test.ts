@@ -11,7 +11,7 @@ it("renders the shared signal without a JavaScript animation timer or duplicate 
   const interval = vi.spyOn(window, "setInterval");
   try {
     act(() => root.render(createElement(TerminalSpinner, { className: "w-3 text-active" })));
-    expect(container.querySelector("svg")).not.toBeNull();
+    expect(container.querySelectorAll('[aria-hidden="true"] span span')).toHaveLength(4);
     expect(container.querySelector('[aria-hidden="true"]')?.className).toContain("w-3 text-active");
     expect(container.querySelector("[role=status]")).toBeNull();
     expect(interval).not.toHaveBeenCalled();

@@ -94,24 +94,26 @@ export function useWorkspaceSnapshotSync({
 
   useEffect(() => {
     if (windowTransfer || toolWindow) return;
-    const snapshot = collectWorkspaceSnapshot(
-      tabs,
-      sessions,
-      activeTabId,
-      projectCwd,
-      reconcileProjectReturn({
-        memory: projectReturnRef.current,
+    // Collect and key inside the debounce: a burst of session events then
+    // serializes the workspace once instead of on every event.
+    const timer = window.setTimeout(() => {
+      const snapshot = collectWorkspaceSnapshot(
         tabs,
         sessions,
         activeTabId,
-      }),
-      projectTerminals,
-      lastDockSide ?? undefined,
-      keepWorkspaceTab,
-    );
-    const key = workspaceSnapshotKey(snapshot);
-    if (workspaceSyncKey.current === key) return;
-    const timer = window.setTimeout(() => {
+        projectCwd,
+        reconcileProjectReturn({
+          memory: projectReturnRef.current,
+          tabs,
+          sessions,
+          activeTabId,
+        }),
+        projectTerminals,
+        lastDockSide ?? undefined,
+        keepWorkspaceTab,
+      );
+      const key = workspaceSnapshotKey(snapshot);
+      if (workspaceSyncKey.current === key) return;
       workspaceSyncKey.current = key;
       void saveWorkspaceSnapshot(snapshot).catch(() => {
         if (workspaceSyncKey.current === key) workspaceSyncKey.current = null;

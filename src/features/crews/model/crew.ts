@@ -4,6 +4,8 @@ import type { RuntimeMode } from "../../sessions/model/session";
 export const HOST_CREWS = "crews.v1";
 export const HOST_CREW_TASKS = "crews.tasks.v1";
 export const HOST_CREW_DELETE = "crews.delete.v1";
+/** Library members carry specialty groups and crews remember which profile a member came from. */
+export const HOST_CREW_AGENT_GROUPS = "crews.agent-groups.v1";
 export const CREW_CAPABILITIES = [
   "code",
   "review",
@@ -39,6 +41,10 @@ export type CrewAgent = {
   instructions: string;
   selection: "fixed" | "automatic";
   candidates: CrewCandidate[];
+  /** Specialty groups such as UI or Mobile; independent from the working role. */
+  groups?: string[];
+  /** The library profile this member was copied from. Library edits never apply silently. */
+  source?: { id: string; updatedAt: number };
 };
 export type CrewPolicy = {
   preset: "economy" | "balanced" | "quality";
@@ -83,6 +89,8 @@ export type CrewAssignment = {
   requestFingerprint?: string;
 };
 export type CrewRun = {
+  /** Short work title from the delivery's first line; older runs derive it from their launch. */
+  title?: string;
   sourceTaskId?: string;
   requestedBySessionId?: string;
   id: string;
@@ -101,6 +109,15 @@ export type CrewRun = {
   updatedAt: number;
   error?: string;
 };
+/** A delivery's first non-empty line, shortened; never the whole prompt. */
+export function crewWorkTitle(prompt: string | undefined): string | undefined {
+  const line = prompt
+    ?.split(/\r?\n/)
+    .map((part) => part.trim())
+    .find(Boolean);
+  if (!line) return undefined;
+  return line.length > 72 ? `${line.slice(0, 71).trimEnd()}…` : line;
+}
 export const defaultCrewPolicy: CrewPolicy = {
   preset: "balanced",
   maxParallel: 2,
@@ -166,6 +183,16 @@ export function parseCrewAgent(value: unknown): CrewAgent {
   });
   if (new Set(candidates.map((c) => c.id)).size !== candidates.length)
     throw new Error("Duplicate candidate IDs");
+  let groups: string[] | undefined;
+  if (a.groups !== undefined) {
+    if (!Array.isArray(a.groups) || a.groups.length > 12) throw new Error("Invalid member groups");
+    groups = [...new Set(a.groups.map((group) => text(group, 40)))];
+  }
+  let source: CrewAgent["source"];
+  if (a.source !== undefined) {
+    const s = record(a.source);
+    source = { id: text(s.id), updatedAt: number(s.updatedAt, 0, Number.MAX_SAFE_INTEGER) };
+  }
   return {
     id: text(a.id),
     name: text(a.name),
@@ -173,6 +200,8 @@ export function parseCrewAgent(value: unknown): CrewAgent {
     instructions: typeof a.instructions === "string" ? a.instructions.slice(0, 12000) : "",
     selection: a.selection,
     candidates,
+    ...(groups?.length ? { groups } : {}),
+    ...(source ? { source } : {}),
   };
 }
 

@@ -329,6 +329,7 @@ export function ProjectTerminalDock({
               <div key={file.id} className="terminal-list-row" role="presentation">
                 <Button
                   variant="tab"
+                  fullWidth
                   motion="none"
                   id={`terminal-tab-${file.id}`}
                   type="button"

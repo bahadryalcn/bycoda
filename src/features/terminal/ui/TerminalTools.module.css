@@ -46,6 +46,10 @@
   white-space: nowrap;
   font-family: var(--font-mono);
 }
+.match {
+  color: var(--ui-tone-accent-fg);
+  font-weight: 500;
+}
 .hint {
   color: var(--ui-text-muted);
   font-size: 11px;

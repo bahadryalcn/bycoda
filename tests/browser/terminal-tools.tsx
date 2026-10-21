@@ -4,6 +4,7 @@ import { TerminalView } from "../../src/features/terminal/ui/TerminalView";
 import "../../src/styles/index.css";
 import "../../src/features/terminal/ui/terminal.css";
 import { applyThemePreference } from "../../src/features/settings/model/appearance";
+import { RemoteSuggestionsFixture } from "./terminal-remote-suggestions";
 
 const params = new URLSearchParams(location.search);
 applyThemePreference(params.get("theme") === "light" ? "light" : "dark");
@@ -31,7 +32,11 @@ Terminal.prototype.open = function (element) {
   });
 };
 createRoot(document.getElementById("root")!).render(
-  <div className="project-terminal-dock" style={{ height: "90dvh", width: "100%" }}>
-    <TerminalView id="fixture" cwd="/fixture" active />
-  </div>,
+  params.has("remote") ? (
+    <RemoteSuggestionsFixture />
+  ) : (
+    <div className="project-terminal-dock" style={{ height: "90dvh", width: "100%" }}>
+      <TerminalView id="fixture" cwd="/fixture" active />
+    </div>
+  ),
 );

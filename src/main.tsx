@@ -41,6 +41,7 @@ import { NoteDraftRecoveryNotice } from "./features/notes/ui/NoteDraftRecoveryNo
 import { PrivacyLaunchGate } from "./features/group-lock/ui/PrivacyLaunchGate";
 
 import { startPerformanceSpan, recordPerformanceEvent } from "./shared/lib/performanceTrace";
+import { initPerformanceTracing } from "./shared/lib/performanceTraceSettings";
 
 // Opt in with VITE_REACT_SCAN=1 when starting Vite. The outer DEV guard lets
 // production builds remove both this branch and the diagnostic dependency.
@@ -50,6 +51,8 @@ if (import.meta.env.DEV && import.meta.env.VITE_REACT_SCAN === "1") {
     .catch((error: unknown) => console.warn("[bycoda] React Scan failed to load", error));
 }
 
+// Must run before the startup span so an enabled trace captures this boot.
+initPerformanceTracing();
 performance.mark("bycoda:bootstrap");
 const finishStartup = startPerformanceSpan("startup");
 // Resolve the role before starting imports: tool windows never evaluate App.

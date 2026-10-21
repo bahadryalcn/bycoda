@@ -49,7 +49,7 @@ vi.mock("../../terminal/ui/TerminalView", () => ({
     keyGenerationPath?: string;
     active: boolean;
     sshEndpoint?: { host: string; user?: string; port: number };
-    shellIntegration?: "bash" | "zsh" | "powershell";
+    shellIntegration?: "auto" | "bash" | "zsh" | "powershell";
     agentForwardingReviewId?: string;
     expectedConfigurationDigest?: string;
     httpProxyTicketId?: string;
@@ -120,7 +120,7 @@ const server: ServerRecord = {
   sshEndpoint: { host: "example.invalid", port: 22 },
   metadata: { tags: [], favorite: false },
 };
-it("cold restore previews the current canonical target and connects a fresh raw tab only explicitly", async () => {
+it("cold restore previews the current canonical target and connects a fresh shell-assisted tab only explicitly", async () => {
   serverTerminalRestoreState.initialize({
     version: 1,
     enabled: true,
@@ -139,7 +139,7 @@ it("cold restore previews the current canonical target and connects a fresh raw 
   expect(events.mounted).toEqual([server.id]);
   const terminal = container.querySelector("[data-terminal-id]")!;
   expect(terminal.getAttribute("data-terminal-id")).not.toBe("old-ui-reference");
-  expect(terminal.getAttribute("data-integration")).toBeNull();
+  expect(terminal.getAttribute("data-integration")).toBe("auto");
   expect(serverTerminalRestoreState.getSnapshot().pending).toEqual([]);
   expect(JSON.stringify(serverTerminalRestoreState.getSnapshot().restore)).not.toContain(
     "must-not-replay",
@@ -382,14 +382,18 @@ it("does not create or restore a proxy terminal before approval and keeps its ti
   expect(proxy.request).toHaveBeenLastCalledWith({
     connectionId: server.id,
     endpoint: target.sshEndpoint,
-    operation: { kind: "terminal", id: terminal.getAttribute("data-terminal-id") },
+    operation: {
+      kind: "terminal",
+      id: terminal.getAttribute("data-terminal-id"),
+      shellIntegration: "auto",
+    },
   });
   expect(JSON.stringify(serverTerminalRestoreState.getSnapshot())).not.toContain(
     "one-use-proxy-ticket",
   );
 });
 
-it("reconnects with a fresh canonical target, proxy approval and raw PTY without startup replay", async () => {
+it("reconnects with a fresh canonical target, proxy approval and a fresh PTY without startup replay", async () => {
   await act(async () =>
     root.render(createElement(ServersTerminalWorkspace, { children: createElement(Inventory) })),
   );
@@ -417,7 +421,7 @@ it("reconnects with a fresh canonical target, proxy approval and raw PTY without
   const fresh = container.querySelector('[data-active="true"][data-terminal-id]')!;
   expect(fresh.getAttribute("data-terminal-id")).not.toBe(oldId);
   expect(fresh.getAttribute("data-proxy-ticket")).toBe("fresh-reconnect-ticket");
-  expect(fresh.hasAttribute("data-integration")).toBe(false);
+  expect(fresh.getAttribute("data-integration")).toBe("auto");
   await act(async () =>
     [...fresh.querySelectorAll("button")]
       .find((button) => button.textContent === "Native ready prompt")!

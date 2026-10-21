@@ -151,6 +151,9 @@ type Props = {
   onOpenNotes?: () => void;
   onClose: (id: string) => void;
   onCloseMany: (ids: string[], fallbackId: string) => void;
+  /** Closes every tab whose sessions are all idle; `idleTabCount` drives the disabled state. */
+  onCloseIdleTabs?: () => void;
+  idleTabCount?: number;
   onArchiveTab?: (id: string) => void;
   onDeleteTab?: (id: string) => void;
   onReorder: (ids: string[], movedId?: string) => void;
@@ -721,6 +724,8 @@ function TitleBarComponent({
   onOpenNotes,
   onClose,
   onCloseMany,
+  onCloseIdleTabs,
+  idleTabCount,
   onArchiveTab,
   onDeleteTab,
   onReorder,
@@ -1110,6 +1115,18 @@ function TitleBarComponent({
           },
           disabled: contextCloseIds?.left.length === 0,
         },
+        ...(onCloseIdleTabs
+          ? [
+              {
+                kind: "item" as const,
+                id: "close-idle",
+                get label() {
+                  return t("Close Idle Tabs");
+                },
+                disabled: !idleTabCount,
+              },
+            ]
+          : []),
         ...(contextTab.sessionCount > 0 && (onArchiveTab || onDeleteTab)
           ? [
               { kind: "sep" as const },
@@ -1179,6 +1196,10 @@ function TitleBarComponent({
     }
     if (id === "delete") {
       onDeleteTab?.(contextTab.id);
+      return;
+    }
+    if (id === "close-idle") {
+      onCloseIdleTabs?.();
       return;
     }
     if (id === "others" || id === "right" || id === "left") {

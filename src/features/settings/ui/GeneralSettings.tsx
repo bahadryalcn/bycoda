@@ -38,6 +38,7 @@ import {
   subscribeKeepAwakeScreen,
 } from "../model/settings";
 import { LanguageSettings } from "./LanguageSettings";
+import { DiagnosticsGroup } from "./DiagnosticsSettings";
 import { AdvancedSettings, Group, Row, Toggle } from "./settingsControls";
 import "./GeneralSettings.css";
 
@@ -207,6 +208,8 @@ export function GeneralPage({ onOpenWhatsNew }: { onOpenWhatsNew: (version: stri
           <SecondaryButton onClick={openUsageGuide}>{t("Open guide")}</SecondaryButton>
         </Row>
       </Group>
+
+      <DiagnosticsGroup />
 
       <Group title={t("About")} layout="full">
         <UpdateRow onOpenWhatsNew={onOpenWhatsNew} />

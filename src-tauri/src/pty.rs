@@ -381,7 +381,7 @@ pub(crate) fn integration_for_spawn(
 ) -> Result<Option<Arc<Mutex<crate::ssh_shell_integration::ShellIntegration>>>, String> {
     match mode {
         None => Ok(None),
-        Some(mode @ ("bash" | "zsh" | "powershell")) => {
+        Some(mode @ ("auto" | "bash" | "zsh" | "powershell")) => {
             if let Some(live) = host.get(id) {
                 ensure_window(&live, owner)?;
                 if let Some(integration) = &live.shell_integration {
@@ -649,15 +649,24 @@ fn write_locked(writer: &mut dyn Write, data: &[u8]) -> Result<(), String> {
         .map_err(|e| format!("Failed to write to terminal: {e}"))
 }
 
+/// On a blocking thread: ConPTY's resize waits on conhost, which stalls while
+/// it is busy writing output. On the main thread that froze the whole window,
+/// and on an async worker it would starve other commands.
 #[tauri::command]
-pub fn pty_resize(
+pub async fn pty_resize(
     window: tauri::Window,
-    host: State<PtyHost>,
+    host: State<'_, PtyHost>,
     id: String,
     cols: u16,
     rows: u16,
 ) -> Result<(), String> {
     let live = host.get_for_window(&id, window.label())?;
+    tauri::async_runtime::spawn_blocking(move || resize_live(&live, cols, rows))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+fn resize_live(live: &LivePty, cols: u16, rows: u16) -> Result<(), String> {
     #[cfg(unix)]
     {
         resize_fd(live.master_fd, cols.max(2), rows.max(2))

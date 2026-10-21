@@ -35,8 +35,21 @@ export const REVEAL_MAX_LAG_MS = 500;
 // updates. Keep no idle frame alive once every reply has caught up or unmounted.
 const revealFrames = new Set<(now: number) => boolean>();
 let revealFrame = 0;
+/**
+ * The reveal advances at most at 60 Hz. On a 240 Hz display every frame would
+ * otherwise re-render the reply and re-parse its markdown four times as often
+ * for no visible gain; the rate math already scales with elapsed time.
+ */
+const REVEAL_FRAME_MS = 1000 / 60 - 1;
+let lastRevealRun = -Infinity;
 function runRevealFrame(now: number) {
   revealFrame = 0;
+  const since = now - lastRevealRun;
+  if (since >= 0 && since < REVEAL_FRAME_MS) {
+    revealFrame = requestAnimationFrame(runRevealFrame);
+    return;
+  }
+  lastRevealRun = now;
   for (const tick of revealFrames) {
     if (!tick(now)) revealFrames.delete(tick);
   }
@@ -45,7 +58,11 @@ function runRevealFrame(now: number) {
 
 function subscribeRevealFrame(tick: (now: number) => boolean) {
   revealFrames.add(tick);
-  if (!revealFrame) revealFrame = requestAnimationFrame(runRevealFrame);
+  if (!revealFrame) {
+    // A fresh loop advances on its first frame.
+    lastRevealRun = -Infinity;
+    revealFrame = requestAnimationFrame(runRevealFrame);
+  }
   return () => {
     revealFrames.delete(tick);
     if (!revealFrames.size) {

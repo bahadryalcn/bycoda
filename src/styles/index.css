@@ -941,8 +941,7 @@ html.has-chat-background.chat-background-effect-ready.chat-background-gradient-b
 }
 
 /* Fade a stationary layer, leaving the scroll surface unmasked. */
-.sidebar-session-scroll::after,
-.transcript-composer-fade:has(.agent-transcript)::after {
+.sidebar-session-scroll::after {
   content: "";
   display: block;
   block-size: 2.5rem;
@@ -955,17 +954,6 @@ html.has-chat-background.chat-background-effect-ready.chat-background-gradient-b
   inset-block-end: 0;
   margin-block-start: -2.5rem;
 }
-.transcript-composer-fade:has(.agent-transcript)::after {
-  position: absolute;
-  inset-inline: 0;
-  inset-block-end: 0;
-}
-
-/* Let the latest reply scroll fully clear of the composer's fade. */
-.transcript-composer-fade [data-transcript-content] {
-  padding-bottom: 2.5rem;
-}
-
 .agent-transcript [data-transcript-search-current="true"] .user-message-bubble pre.line-clamp-4 {
   display: block;
   overflow: visible;

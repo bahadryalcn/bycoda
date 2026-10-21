@@ -1,4 +1,5 @@
 import { useSyncExternalStore } from "react";
+import { usePresentationVisible } from "./presentationVisibility";
 import { formatElapsed } from "./useElapsedFrom";
 
 /**
@@ -70,8 +71,10 @@ export function AgentClock({
   className?: string;
 }) {
   const ticking = live && startedAt !== undefined && endedAt === undefined;
-  const at = useSharedNow(ticking);
-  const label = agentClockLabel(startedAt, endedAt, live, ticking ? at : 0);
+  // Hidden panes keep their rows mounted; they need no once-a-second render.
+  const visible = usePresentationVisible();
+  const at = useSharedNow(ticking && visible);
+  const label = agentClockLabel(startedAt, endedAt, live, ticking ? (visible ? at : Date.now()) : 0);
   if (!label) return null;
   return <span className={`shrink-0 tabular-nums ${className}`}>{label}</span>;
 }

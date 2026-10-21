@@ -24,7 +24,9 @@ export type PerformanceStage =
   | "remote-tail"
   | "remote-history"
   | "remote-decode"
-  | "remote-apply";
+  | "remote-apply"
+  | "long-task"
+  | "long-animation-frame";
 export type PerformanceMetrics = Partial<
   Record<
     | "bytes"
@@ -95,6 +97,8 @@ const stages = new Set<string>([
   "remote-history",
   "remote-decode",
   "remote-apply",
+  "long-task",
+  "long-animation-frame",
 ]);
 let enabled = false;
 let capacity = 2048;
@@ -178,6 +182,16 @@ export function recordPerformanceEvent(
 ): void {
   if (enabled) append(stage, performance.now(), metrics, traceId);
 }
+/** Records an observed interval (for example a long task) with its duration only. */
+export function recordPerformanceInterval(
+  stage: PerformanceStage,
+  startedAt: number,
+  duration: number,
+): void {
+  if (enabled && Number.isFinite(startedAt) && Number.isFinite(duration))
+    append(stage, startedAt, {}, undefined, Math.max(0, duration));
+}
+
 const noop = () => {};
 export function startPerformanceSpan(
   stage: PerformanceStage,

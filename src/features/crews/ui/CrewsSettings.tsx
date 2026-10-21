@@ -8,8 +8,9 @@ import { useProjectCrews } from "../model/crewClient";
 import { saveCrewsOnRail, useCrewsOnRail } from "../model/crewAppearance";
 import { CrewAvatar } from "./CrewAvatar";
 import { CrewEditDialog } from "./CrewDialogs";
+import { CrewLibrary } from "./CrewLibrary";
 
-/** Settings → Crews: where crews show, and each crew's settings one click away. */
+/** Settings → Crews: where crews show, each crew one click away, and the member library. */
 export function CrewsSettings({ cwd }: { cwd: string }) {
   useLocale();
   const shown = useCrewsOnRail();
@@ -25,7 +26,7 @@ export function CrewsSettings({ cwd }: { cwd: string }) {
         <Row
           label={t("Show crews")}
           description={t(
-            "Teams of agents on the project rail: a coordinator plans the work, specialists deliver it and a reviewer checks it. Turn this off to hide them.",
+            "A coordinator plans the work, specialists deliver it and a reviewer checks it.",
           )}
         >
           <Toggle label={t("Show crews")} on={shown} onChange={saveCrewsOnRail} />
@@ -33,9 +34,6 @@ export function CrewsSettings({ cwd }: { cwd: string }) {
       </Group>
       <Group
         title={t("Your crews")}
-        description={t(
-          "Project crews work only in this project; global crews are available in every project on this host. Add one with the plus on the rail or here.",
-        )}
         action={
           <Button
             variant="ghost"
@@ -79,6 +77,7 @@ export function CrewsSettings({ cwd }: { cwd: string }) {
           ))
         )}
       </Group>
+      {data ? <CrewLibrary cwd={cwd} state={state} data={data} /> : null}
       {dialog ? (
         <CrewEditDialog
           cwd={cwd}

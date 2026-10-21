@@ -84,10 +84,11 @@
   align-items: center;
   gap: 6px;
   text-align: start;
+  padding-inline-end: calc(var(--control-height-sm) + 6px);
   cursor: pointer;
 }
-.terminal-list-row:has([aria-selected="true"]) {
-  background: var(--terminal-selected);
+.terminal-list-row:has(.terminal-row-actions > :nth-child(2)) .terminal-list-item {
+  padding-inline-end: calc(var(--control-height-sm) * 2 + 6px);
 }
 .terminal-row-actions {
   position: absolute;
@@ -95,7 +96,6 @@
   display: flex;
   opacity: 0;
   pointer-events: none;
-  background: var(--terminal-selected);
 }
 .terminal-row-actions button {
   display: grid;
@@ -107,9 +107,6 @@
   pointer-events: auto;
 }
 @media (hover: hover) and (pointer: fine) {
-  .terminal-list-row:hover {
-    background: var(--terminal-selected);
-  }
   .terminal-list-row:hover .terminal-row-actions {
     opacity: 1;
     pointer-events: auto;

@@ -297,8 +297,8 @@ describe("GitChangesPanel branch switching", () => {
     )!;
     expect(trigger).not.toBeNull();
     expect(trigger.disabled).toBe(false);
-    expect(container.querySelector("header")?.textContent).toContain("↑2");
-    expect(container.querySelector("header")?.textContent).toContain("↓1");
+    expect(container.querySelector("header")?.textContent).not.toContain("↑2");
+    expect(container.querySelector("header")?.textContent).not.toContain("↓1");
     let release!: () => void;
     let operation!: Promise<void>;
     await act(async () => {
@@ -511,8 +511,55 @@ async function renderPanel(cwd = "/repo") {
   await act(async () => {});
 }
 
+it.each([
+  { grouped: false, ahead: 1, behind: 0 },
+  { grouped: true, ahead: 1, behind: 0 },
+  { grouped: true, ahead: 0, behind: 2 },
+  { grouped: true, ahead: 3, behind: 2 },
+])("shows sync counts only on the sync action: %j", async ({ grouped, ahead, behind }) => {
+  vi.mocked(gitDiffIndex).mockResolvedValue(
+    index({ remote: "origin", upstream: "origin/feature/pull", ahead, behind }),
+  );
+  await act(async () =>
+    root.render(
+      createElement(GitChangesPanel, {
+        cwd: `/repo-sync-summary-${grouped}-${ahead}-${behind}`,
+        enabled: true,
+        embedded: grouped,
+        repository: grouped ? { name: "api", expanded: true, onToggle: vi.fn() } : undefined,
+        onOpenFile: vi.fn(),
+        onOpenAllChanges: vi.fn(),
+        onOpenCommit: vi.fn(),
+      }),
+    ),
+  );
+  const sync = [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) =>
+    button.textContent?.includes("Sync Changes"),
+  )!;
+  expect(sync).toBeDefined();
+  expect(sync.disabled).toBe(false);
+  for (const [count, direction] of [
+    [ahead, "unpushed"],
+    [behind, "incoming"],
+  ] as const) {
+    if (!count) continue;
+    const label = `${count} ${direction} commit${count === 1 ? "" : "s"}`;
+    expect(container.querySelectorAll(`[aria-label="${label}"]`)).toHaveLength(1);
+    expect(sync.querySelector(`[aria-label="${label}"]`)?.textContent).toBe(String(count));
+    expect(container.querySelector("header")?.textContent).not.toContain(
+      `${direction === "unpushed" ? "↑" : "↓"}${count}`,
+    );
+    expect(container.textContent).not.toContain(label);
+  }
+  expect(container.textContent).toContain(
+    ahead && behind ? "Diverged from origin/feature/pull" : "No uncommitted changes",
+  );
+});
+
 it("keeps workspace rows collapsed and stages through the checkout's overflow menu", async () => {
-  vi.mocked(gitDiffIndex).mockResolvedValue(index({ files: [changedFile("src/app.ts")] }));
+  vi.mocked(gitDiffIndex).mockResolvedValue(
+    index({ files: [changedFile("src/app.ts")], ahead: 2, behind: 1 }),
+  );
   const toggle = vi.fn();
   await act(async () =>
     root.render(
@@ -531,6 +578,8 @@ it("keeps workspace rows collapsed and stages through the checkout's overflow me
     container.querySelector("header button[aria-expanded]")!.getAttribute("aria-expanded"),
   ).toBe("false");
   expect(container.querySelector("textarea")!.closest(".hidden")).not.toBeNull();
+  expect(container.querySelector("header")?.textContent).toContain("↑2");
+  expect(container.querySelector("header")?.textContent).toContain("↓1");
   expect(container.textContent).not.toContain("GRAPH");
   expect(container.querySelector('header button[aria-label="Stage All Changes"]')).toBeNull();
   await openBranchMenu();
@@ -1082,7 +1131,7 @@ describe("GitChangesPanel navigation", () => {
     vi.mocked(gitDiffIndex).mockResolvedValue(index({ ahead: 1 }));
     await act(async () => finish());
     expect(container.textContent).not.toContain("Staged Changes");
-    expect(container.textContent).toContain("1 unpushed commit");
+    expect(container.textContent).toContain("No uncommitted changes");
     expect(status()).toBeUndefined();
   });
 });

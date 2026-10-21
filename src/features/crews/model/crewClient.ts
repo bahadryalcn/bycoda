@@ -16,6 +16,7 @@ import {
   HOST_CREWS,
   HOST_CREW_TASKS,
   HOST_CREW_DELETE,
+  HOST_CREW_AGENT_GROUPS,
   type CrewDefinition,
   type CrewRun,
   type SavedCrewAgent,
@@ -29,6 +30,8 @@ export type ProjectCrews = {
   taskExecutionSupported?: boolean;
   /** Older hosts keep every saved crew; delete needs this host capability. */
   deleteSupported?: boolean;
+  /** Older hosts drop member groups and library sources, so their controls stay hidden. */
+  groupsSupported?: boolean;
   machine: RemoteMachine;
   project: HostProject;
   definitions: CrewDefinition[];
@@ -63,6 +66,7 @@ export function useProjectCrews(cwd: string, enabled = true) {
         catalog,
         taskExecutionSupported: capabilities.includes(HOST_CREW_TASKS),
         deleteSupported: capabilities.includes(HOST_CREW_DELETE),
+        groupsSupported: capabilities.includes(HOST_CREW_AGENT_GROUPS),
       };
     },
     staleTime: 3000,

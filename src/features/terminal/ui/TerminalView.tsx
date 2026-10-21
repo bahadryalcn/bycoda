@@ -66,7 +66,7 @@ type Props = {
   sshConnectionId?: string;
   /** Quick connections remain ephemeral and use the same native SSH engine. */
   sshEndpoint?: SshEndpoint;
-  shellIntegration?: "bash" | "zsh" | "powershell";
+  shellIntegration?: "auto" | "bash" | "zsh" | "powershell";
   /** Native one-use approval for this ephemeral launch. Never restored. */
   agentForwardingReviewId?: string;
   expectedConfigurationDigest?: string;
@@ -272,7 +272,8 @@ export function TerminalView({
   }, [fontSize, lineHeight]);
   const privateTerminal = Boolean(sshConnectionId || sshEndpoint || keyGenerationPath);
   const integrated = Boolean(
-    (shellIntegration === "bash" ||
+    (shellIntegration === "auto" ||
+      shellIntegration === "bash" ||
       shellIntegration === "zsh" ||
       shellIntegration === "powershell") &&
     (sshConnectionId || sshEndpoint),

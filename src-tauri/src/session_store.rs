@@ -53,9 +53,12 @@ impl SessionStore {
         let conn = Connection::open(&path).map_err(|e| e.to_string())?;
         // NORMAL in WAL mode survives an app crash; only an OS crash or power
         // loss can drop the last commits (never corrupts), and skips a WAL
-        // fsync on every autocommit write.
+        // fsync on every autocommit write. The size limit truncates the WAL
+        // back down after each checkpoint reset; without it one write burst
+        // (an index rebuild, a migration) left a 700 MB file behind for good.
         conn.execute_batch(
-            "PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL;",
+            "PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL;
+             PRAGMA journal_size_limit = 67108864;",
         )
         .map_err(|e| e.to_string())?;
         migrate(&conn).map_err(|e| e.to_string())?;
@@ -111,6 +114,19 @@ impl SessionStore {
             let conn = self.conn.lock().map_err(|_| "Session store is locked")?;
             read(&conn)
         }
+    }
+
+    /// Every stored session id, archived ones included.
+    pub(crate) fn session_ids(&self) -> Result<std::collections::HashSet<String>, String> {
+        self.with_read_conn(|conn| {
+            conn.prepare("SELECT id FROM sessions")
+                .and_then(|mut statement| {
+                    statement
+                        .query_map([], |row| row.get::<_, String>(0))?
+                        .collect::<rusqlite::Result<_>>()
+                })
+                .map_err(|e| e.to_string())
+        })
     }
 
     pub(crate) fn lock_conn(&self) -> Result<std::sync::MutexGuard<'_, Connection>, String> {
@@ -4814,6 +4830,13 @@ mod tests {
             .query_row("PRAGMA synchronous", [], |row| row.get(0))
             .unwrap();
         assert_eq!(synchronous, 1, "NORMAL");
+        let wal_limit: i64 = store
+            .conn
+            .lock()
+            .unwrap()
+            .query_row("PRAGMA journal_size_limit", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(wal_limit, 64 * 1024 * 1024);
 
         drop(store);
         let _ = std::fs::remove_file(&path);

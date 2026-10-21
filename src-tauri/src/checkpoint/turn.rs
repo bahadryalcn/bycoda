@@ -1,5 +1,6 @@
 //! Workspace boundaries complement structured-edit ownership, including shell edits.
 use super::*;
+use std::sync::{Condvar, PoisonError};
 #[path = "leases.rs"]
 mod leases;
 
@@ -115,6 +116,127 @@ fn overlap(a: &str, b: &str) -> bool {
     let (a, b) = (normalize(a), normalize(b));
     a == b || a.starts_with(&(b.clone() + "/")) || b.starts_with(&(a + "/"))
 }
+/// Longest a command waits for startup recovery of an overlapping turn.
+const RECOVERY_WAIT: std::time::Duration = std::time::Duration::from_secs(60);
+
+/// Session/checkout pairs whose interrupted turn is still being settled by
+/// startup recovery. Commands for those pairs wait before taking any gate, since
+/// recovery itself needs the gates.
+#[derive(Default)]
+pub(super) struct RecoveryBarrier {
+    pending: Mutex<Vec<(String, String)>>,
+    settled: Condvar,
+}
+
+/// Holds one barrier entry. Dropping it releases waiters, including during a panic.
+pub(super) struct RecoveryTicket {
+    barrier: Arc<RecoveryBarrier>,
+    session: String,
+    cwd: String,
+}
+
+impl RecoveryBarrier {
+    pub(super) fn register(self: &Arc<Self>, session: &str, cwd: &str) -> RecoveryTicket {
+        self.lock().push((session.into(), cwd.into()));
+        RecoveryTicket {
+            barrier: self.clone(),
+            session: session.into(),
+            cwd: cwd.into(),
+        }
+    }
+
+    fn lock(&self) -> std::sync::MutexGuard<'_, Vec<(String, String)>> {
+        self.pending.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    pub(super) fn wait(&self, session: &str, cwds: &[&str]) {
+        self.wait_for(session, cwds, RECOVERY_WAIT);
+    }
+
+    pub(super) fn wait_for(&self, session: &str, cwds: &[&str], timeout: std::time::Duration) {
+        let deadline = std::time::Instant::now() + timeout;
+        let mut pending = self.lock();
+        while blocks(&pending, session, cwds) {
+            let Some(remaining) = deadline.checked_duration_since(std::time::Instant::now()) else {
+                eprintln!(
+                    "Checkpoint recovery for session {session} is still pending after {timeout:?}; continuing"
+                );
+                return;
+            };
+            pending = self
+                .settled
+                .wait_timeout(pending, remaining)
+                .unwrap_or_else(PoisonError::into_inner)
+                .0;
+        }
+    }
+}
+
+fn blocks(pending: &[(String, String)], session: &str, cwds: &[&str]) -> bool {
+    pending.iter().any(|(pending_session, pending_cwd)| {
+        pending_session == session
+            || cwds
+                .iter()
+                .any(|cwd| !cwd.is_empty() && overlap(cwd, pending_cwd))
+    })
+}
+
+impl Drop for RecoveryTicket {
+    fn drop(&mut self) {
+        let mut pending = self.barrier.lock();
+        if let Some(index) = pending
+            .iter()
+            .position(|(session, cwd)| *session == self.session && *cwd == self.cwd)
+        {
+            pending.remove(index);
+        }
+        drop(pending);
+        self.barrier.settled.notify_all();
+    }
+}
+
+/// Snapshot of the startup scan. Settling runs git, so it happens in `run`
+/// on a background thread, never while the app is starting its UI.
+pub(super) struct RecoveryPlan {
+    store: CheckpointStore,
+    active: Vec<(RecoveryTicket, String, Turn)>,
+    settled: Vec<(String, Turn)>,
+}
+
+impl RecoveryPlan {
+    pub(super) fn run(self) {
+        for (ticket, session, turn) in self.active {
+            let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                self.store.exclusive(&session, &[&turn.cwd], |s| {
+                    s.finish_turn(&session, &turn.cwd, &turn.id, true)
+                })
+            }));
+            match outcome {
+                Ok(Ok(())) => {}
+                Ok(Err(error)) => eprintln!("Interrupted checkpoint could not settle: {error}"),
+                Err(_) => {
+                    eprintln!("Interrupted checkpoint recovery panicked for session {session}")
+                }
+            }
+            // Released only after settlement, so a waiter never sees "still recording".
+            drop(ticket);
+        }
+        for (session, turn) in self.settled {
+            // A previous peer may have resurrected this exact settled
+            // lease. Re-read under the session gate before retiring it.
+            let _ = self.store.exclusive(&session, &[&turn.cwd], |s| {
+                if let Some(current) = read_turn(&s.session_dir(&session))? {
+                    if !current.active && current.id == turn.id && same_cwd(&current.cwd, &turn.cwd)
+                    {
+                        leases::release(&s.leases, &session, &turn.id)?;
+                    }
+                }
+                Ok(())
+            });
+        }
+    }
+}
+
 impl CheckpointStore {
     /// Retire accepted results in the existing manifest, without touching the
     /// working tree or the owner's index. A later edit must get a new baseline.
@@ -585,40 +707,88 @@ impl CheckpointStore {
         leases::release(&self.leases, session_id, id)?;
         result
     }
+    /// Synchronous recovery for tests; production startup uses `plan_recovery`.
+    #[cfg(test)]
     pub(super) fn recover_interrupted_turns(&self) {
+        self.plan_recovery().run();
+    }
+
+    /// Git-free scan of every session record. Active turns are registered with
+    /// the barrier here, so commands arriving after this call already wait.
+    pub(super) fn plan_recovery(&self) -> RecoveryPlan {
+        let mut plan = RecoveryPlan {
+            store: self.clone(),
+            active: Vec::new(),
+            settled: Vec::new(),
+        };
         let Ok(entries) = std::fs::read_dir(&self.root) else {
-            return;
+            return plan;
         };
         for entry in entries.flatten() {
             let session = entry.file_name().to_string_lossy().into_owned();
             if validate_id(&session, "session").is_err() {
                 continue;
             }
-            if let Ok(Some(turn)) = read_turn(&entry.path()) {
-                if turn.active {
-                    let result = self.exclusive(&session, &[&turn.cwd], |s| {
-                        s.finish_turn(&session, &turn.cwd, &turn.id, true)
-                    });
-                    if let Err(error) = result {
-                        eprintln!("Interrupted checkpoint could not settle: {error}");
-                    }
-                } else {
-                    // A previous peer may have resurrected this exact settled
-                    // lease. Re-read under the session gate before retiring it.
-                    let _ = self.exclusive(&session, &[&turn.cwd], |s| {
-                        if let Some(current) = read_turn(&entry.path())? {
-                            if !current.active
-                                && current.id == turn.id
-                                && same_cwd(&current.cwd, &turn.cwd)
-                            {
-                                leases::release(&s.leases, &session, &turn.id)?;
-                            }
-                        }
-                        Ok(())
-                    });
+            match read_turn(&entry.path()) {
+                Ok(Some(turn)) if turn.active => {
+                    let ticket = self.barrier.register(&session, &turn.cwd);
+                    plan.active.push((ticket, session, turn));
                 }
+                Ok(Some(turn)) => plan.settled.push((session, turn)),
+                Ok(None) => {}
+                Err(error) => eprintln!(
+                    "Checkpoint record for session {session} is unreadable and was not recovered: {error}"
+                ),
             }
         }
+        plan
+    }
+
+    /// Deletes snapshot directories whose session no longer exists. Deleting a
+    /// conversation never released them, so they piled up by the hundred
+    /// thousand files. Recent and active-turn directories are left alone: a
+    /// session may hold a checkpoint shortly before its first save.
+    pub(crate) fn prune_orphans(
+        &self,
+        known_sessions: &HashSet<String>,
+        min_age: std::time::Duration,
+    ) -> usize {
+        let Ok(entries) = std::fs::read_dir(&self.root) else {
+            return 0;
+        };
+        let now = std::time::SystemTime::now();
+        let mut removed = 0;
+        for entry in entries.flatten() {
+            let session = entry.file_name().to_string_lossy().into_owned();
+            if validate_id(&session, "session").is_err() || known_sessions.contains(&session) {
+                continue;
+            }
+            let dir = entry.path();
+            let old_enough = |dir: &Path| {
+                std::fs::metadata(dir)
+                    .and_then(|meta| meta.modified())
+                    .ok()
+                    .and_then(|modified| now.duration_since(modified).ok())
+                    .is_some_and(|age| age >= min_age)
+            };
+            if !dir.is_dir() || !old_enough(&dir) {
+                continue;
+            }
+            let result = self.exclusive(&session, &[], |_| {
+                // Re-check under the session gate: a turn may have begun since.
+                if !old_enough(&dir)
+                    || read_turn(&dir).map_or(true, |t| t.is_some_and(|t| t.active))
+                {
+                    return Ok(false);
+                }
+                std::fs::remove_dir_all(&dir).map_err(|e| e.to_string())?;
+                Ok(true)
+            });
+            if matches!(result, Ok(true)) {
+                removed += 1;
+            }
+        }
+        removed
     }
 }
 
@@ -633,7 +803,7 @@ pub async fn session_checkpoint_begin_turn(
     validate_id(&turn_id, "turn")?;
     let store = store.inner().clone();
     tauri::async_runtime::spawn_blocking(move || {
-        store.exclusive(&session_id, &[&cwd], |s| {
+        store.coordinated(&session_id, &[&cwd], |s| {
             s.begin_turn(&session_id, &cwd, &turn_id)
         })
     })
@@ -652,7 +822,7 @@ pub async fn session_checkpoint_finish_turn(
     validate_id(&turn_id, "turn")?;
     let store = store.inner().clone();
     tauri::async_runtime::spawn_blocking(move || {
-        store.exclusive(&session_id, &[&cwd], |s| {
+        store.coordinated(&session_id, &[&cwd], |s| {
             s.finish_turn(&session_id, &cwd, &turn_id, interrupted.unwrap_or(false))
         })
     })

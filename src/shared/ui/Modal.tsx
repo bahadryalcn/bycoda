@@ -37,6 +37,8 @@ type Props = {
   fitViewport?: boolean;
   /** Side detail surface with the same overlay, focus and native popup owner. */
   placement?: "center" | "end";
+  /** Actions kept visible below the scrolling content. */
+  footer?: ReactNode;
   children: ReactNode;
 };
 
@@ -50,6 +52,7 @@ export function ModalPanel({
   className,
   fitViewport = true,
   placement = "center",
+  footer,
   children,
 }: Props) {
   const locale = useLocale(languageDomain);
@@ -131,6 +134,11 @@ export function ModalPanel({
               <div ref={lockOverscroll} className="min-h-0 flex-1 overflow-y-auto overscroll-none">
                 {children}
               </div>
+              {footer ? (
+                <footer className="flex shrink-0 flex-wrap items-center gap-2 border-t border-(--ui-tone-neutral-border) px-4 py-3">
+                  {footer}
+                </footer>
+              ) : null}
             </div>
           </div>
         </div>

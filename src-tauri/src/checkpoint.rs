@@ -49,6 +49,7 @@ pub struct CheckpointStore {
     root: PathBuf,
     leases: PathBuf,
     gates: Arc<Mutex<LockMap<String, Weak<Mutex<()>>>>>,
+    barrier: Arc<turn::RecoveryBarrier>,
 }
 
 fn checkpoint_gate(gates: &mut LockMap<String, Weak<Mutex<()>>>, key: String) -> Arc<Mutex<()>> {
@@ -74,7 +75,20 @@ impl CheckpointStore {
             root,
             leases,
             gates: Arc::new(Mutex::new(LockMap::new())),
+            barrier: Arc::new(turn::RecoveryBarrier::default()),
         }
+    }
+
+    /// Command entry point: waits for startup recovery of an overlapping turn,
+    /// then takes the gates. Waiting while holding a gate would deadlock with recovery.
+    fn coordinated<T>(
+        &self,
+        session_id: &str,
+        cwds: &[&str],
+        operation: impl FnOnce(&Self) -> Result<T, String>,
+    ) -> Result<T, String> {
+        self.barrier.wait(session_id, cwds);
+        self.exclusive(session_id, cwds, operation)
     }
 
     fn exclusive<T>(
@@ -744,9 +758,52 @@ pub fn init(app: &AppHandle) -> Result<(), String> {
         .join("checkpoints");
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     let store = CheckpointStore::new(dir);
-    store.recover_interrupted_turns();
-    app.manage(store);
+    // Only a read-only scan runs before commands are accepted. Settling
+    // interrupted turns runs git, so it stays off the UI thread.
+    let recovery = store.plan_recovery();
+    app.manage(store.clone());
+    spawn_recovery(recovery);
+    start_orphan_pruning(app, store);
     Ok(())
+}
+
+fn spawn_recovery(recovery: turn::RecoveryPlan) {
+    // If the spawn fails, the plan is dropped and its tickets release waiters.
+    let spawned = std::thread::Builder::new()
+        .name("checkpoint-recover".into())
+        .spawn(move || recovery.run());
+    if let Err(error) = spawned {
+        eprintln!("checkpoint recovery thread: {error}");
+    }
+}
+
+/// Orphans are only garbage, so this waits for startup to settle and walks the
+/// directory on its own thread. It never prunes without a successful read of
+/// the session list: a failed or empty read is not "no sessions".
+fn start_orphan_pruning(app: &AppHandle, store: CheckpointStore) {
+    let app = app.clone();
+    let spawned = std::thread::Builder::new()
+        .name("checkpoint-prune".into())
+        .spawn(move || {
+            std::thread::sleep(std::time::Duration::from_secs(60));
+            let Some(sessions) = app.try_state::<crate::session_store::SessionStore>() else {
+                return;
+            };
+            match sessions.session_ids() {
+                Ok(known) if !known.is_empty() => {
+                    let removed =
+                        store.prune_orphans(&known, std::time::Duration::from_secs(48 * 60 * 60));
+                    if removed > 0 {
+                        eprintln!("Removed {removed} checkpoint folders of deleted sessions");
+                    }
+                }
+                Ok(_) => {}
+                Err(error) => eprintln!("Checkpoint pruning skipped: {error}"),
+            }
+        });
+    if let Err(error) = spawned {
+        eprintln!("checkpoint prune thread: {error}");
+    }
 }
 
 #[derive(Default, Serialize)]
@@ -767,7 +824,7 @@ pub async fn session_checkpoint_ensure(
     let store = store.inner().clone();
     tauri::async_runtime::spawn_blocking(move || {
         let started = std::time::Instant::now();
-        store.exclusive(&session_id, &[&cwd], |store| {
+        store.coordinated(&session_id, &[&cwd], |store| {
             let waited = started.elapsed().as_secs_f64() * 1000.0;
             let mut timings = store.ensure_timed(&session_id, &cwd)?;
             timings.checkpoint_wait_ms = waited;
@@ -791,7 +848,7 @@ pub async fn session_checkpoint_prepare(
     }
     let store = store.inner().clone();
     tauri::async_runtime::spawn_blocking(move || {
-        store.exclusive(&session_id, &[&cwd], |store| {
+        store.coordinated(&session_id, &[&cwd], |store| {
             store.prepare(&session_id, &cwd, &paths)
         })
     })
@@ -812,7 +869,7 @@ pub async fn session_checkpoint_capture(
     }
     let store = store.inner().clone();
     tauri::async_runtime::spawn_blocking(move || {
-        store.exclusive(&session_id, &[&cwd], |store| {
+        store.coordinated(&session_id, &[&cwd], |store| {
             store.capture(&session_id, &cwd, &paths)
         })
     })
@@ -829,7 +886,7 @@ pub async fn session_checkpoint_status(
     validate_id(&session_id, "session")?;
     let store = store.inner().clone();
     tauri::async_runtime::spawn_blocking(move || {
-        store.exclusive(&session_id, &[&cwd], |store| {
+        store.coordinated(&session_id, &[&cwd], |store| {
             store.status(&session_id, &cwd)
         })
     })
@@ -847,7 +904,7 @@ pub async fn session_checkpoint_apply(
     validate_id(&session_id, "session")?;
     let store = store.inner().clone();
     tauri::async_runtime::spawn_blocking(move || {
-        store.exclusive(&session_id, &[&from_cwd, &to_cwd], |store| {
+        store.coordinated(&session_id, &[&from_cwd, &to_cwd], |store| {
             crate::fs::with_git_mutation(&crate::fs::expand_home(&to_cwd), || {
                 store.apply(&session_id, &from_cwd, &to_cwd)
             })
@@ -866,7 +923,7 @@ pub async fn session_checkpoint_cleanup_safe(
     validate_id(&session_id, "session")?;
     let store = store.inner().clone();
     tauri::async_runtime::spawn_blocking(move || {
-        store.exclusive(&session_id, &[&cwd], |store| {
+        store.coordinated(&session_id, &[&cwd], |store| {
             store.cleanup_safe(&session_id, &cwd)
         })
     })
@@ -882,7 +939,7 @@ pub async fn session_checkpoint_forget(
     validate_id(&session_id, "session")?;
     let store = store.inner().clone();
     tauri::async_runtime::spawn_blocking(move || {
-        store.exclusive(&session_id, &[], |store| store.forget(&session_id))
+        store.coordinated(&session_id, &[], |store| store.forget(&session_id))
     })
     .await
     .map_err(|e| e.to_string())?
@@ -898,7 +955,7 @@ pub async fn session_checkpoint_file_diff(
     validate_id(&session_id, "session")?;
     let store = store.inner().clone();
     tauri::async_runtime::spawn_blocking(move || {
-        store.exclusive(&session_id, &[&cwd], |store| {
+        store.coordinated(&session_id, &[&cwd], |store| {
             store.file_diff(&session_id, &cwd, &relative)
         })
     })
@@ -916,7 +973,7 @@ pub async fn session_checkpoint_undo(
     validate_id(&session_id, "session")?;
     let store = store.inner().clone();
     tauri::async_runtime::spawn_blocking(move || {
-        store.exclusive(&session_id, &[&cwd], |store| {
+        store.coordinated(&session_id, &[&cwd], |store| {
             crate::fs::with_git_mutation(&crate::fs::expand_home(&cwd), || {
                 store.undo(&session_id, &cwd, relative.as_deref())
             })
@@ -936,7 +993,7 @@ pub async fn session_checkpoint_keep(
     validate_id(&session_id, "session")?;
     let store = store.inner().clone();
     tauri::async_runtime::spawn_blocking(move || {
-        store.exclusive(&session_id, &[&cwd], |store| {
+        store.coordinated(&session_id, &[&cwd], |store| {
             store.keep(&session_id, &cwd, relative.as_deref())
         })
     })

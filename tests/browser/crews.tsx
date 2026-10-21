@@ -4,8 +4,13 @@ import { mockIPC, mockWindows } from "@tauri-apps/api/mocks";
 import { QueryProvider } from "../../src/app/QueryProvider";
 import { CrewsSettings } from "../../src/features/crews/ui/CrewsSettings";
 import { CrewSidebar } from "../../src/features/crews/ui/CrewSessions";
+import { CrewRailSection } from "../../src/features/crews/ui/CrewRailSection";
 import { CrewTaskPicker } from "../../src/features/crews/ui/CrewTaskPicker";
-import { defaultCrewPolicy, type CrewDefinition } from "../../src/features/crews/model/crew";
+import {
+  defaultCrewPolicy,
+  type CrewDefinition,
+  type SavedCrewAgent,
+} from "../../src/features/crews/model/crew";
 import { setLanguagePreference } from "../../src/shared/i18n";
 import { applyThemePreference } from "../../src/features/settings/model/appearance";
 import { Button } from "../../src/shared/ui/Button";
@@ -14,6 +19,7 @@ import "../../src/features/settings/ui/BycodaSettings.css";
 
 // Isolated transport. No owner hosts, accounts or paid providers are reached.
 mockWindows("main");
+const params = new URLSearchParams(location.search);
 const cwd = "C:/fixture/crew-project";
 const candidate = {
   id: "codex/codex:fixture",
@@ -56,6 +62,33 @@ const definition: CrewDefinition = {
   ],
 };
 let definitions = [definition];
+let agents: SavedCrewAgent[] =
+  params.get("library") === "empty"
+    ? []
+    : [
+        {
+          id: "lib-ui",
+          name: "UI designer",
+          role: "specialist",
+          selection: "fixed",
+          instructions: "Owns screens shared by web and mobile",
+          candidates: [candidate],
+          groups: ["UI", "Mobile"],
+          updatedAt: 1,
+        },
+        {
+          id: "lib-api",
+          name: "API engineer",
+          role: "specialist",
+          selection: "fixed",
+          instructions: "Owns backend contracts",
+          candidates: [candidate],
+          groups: ["Backend"],
+          projectId: "project",
+          updatedAt: 1,
+        },
+      ];
+let starts = 0;
 let runs = [
   {
     id: "run",
@@ -63,6 +96,11 @@ let runs = [
     definition,
     coordinatorSessionId: "lead-session",
     status: "active",
+    launch: {
+      candidate,
+      runtimeMode: "supervised",
+      prompt: "Build settings page\nWith tests",
+    },
     assignments: [
       {
         id: "assignment",
@@ -83,7 +121,7 @@ let runs = [
     ],
     notifications: {},
     createdAt: 1,
-    updatedAt: 1,
+    updatedAt: 2,
     tasks: [
       {
         id: "task",
@@ -92,9 +130,29 @@ let runs = [
         model: "codex:fixture",
         status: "review",
         sessionId: "ui-session",
-        verification: { review: { verdict: "pass", sessionId: "review-session" } },
+        verification: {
+          review: { verdict: "pass", sessionId: "review-session" },
+        },
       },
     ],
+  },
+  {
+    id: "old-run",
+    projectId: "project",
+    definition,
+    coordinatorSessionId: "old-lead",
+    status: "finished",
+    launch: {
+      candidate,
+      runtimeMode: "supervised",
+      prompt: "Audit landing page",
+    },
+    assignments: [],
+    messages: [],
+    notifications: {},
+    createdAt: 0,
+    updatedAt: 1,
+    tasks: [],
   },
 ];
 mockIPC((command, args) => {
@@ -112,42 +170,108 @@ mockIPC((command, args) => {
     const p = args?.params as Record<string, unknown>;
     switch (args?.method) {
       case "environment.describe":
-        return { capabilities: ["crews.v1", "crews.tasks.v1"], environmentId: "fixture" };
+        return {
+          capabilities: [
+            "crews.v1",
+            "crews.tasks.v1",
+            "crews.delete.v1",
+            ...(params.get("legacy") ? [] : ["crews.agent-groups.v1"]),
+          ],
+          environmentId: "fixture",
+        };
       case "projects.list":
         return [{ id: "project", cwd, name: "Fixture" }];
       case "models.list":
         return {
           models: {
-            codex: [{ id: "codex:fixture", harness: "codex", name: "Codex fixture", settings: [] }],
+            codex: [
+              {
+                id: "codex:fixture",
+                harness: "codex",
+                name: "Codex fixture",
+                settings: [],
+              },
+            ],
           },
           errors: {},
         };
       case "crews.list":
-        return { definitions, runs, agents: [] };
+        return { definitions, runs, agents };
       case "crews.save": {
         const input = p.definition as CrewDefinition;
         const previous = definitions.find((d) => d.id === input.id);
         if (previous && p.expectedUpdatedAt !== previous.updatedAt)
           throw new Error("Crew changed. Reload before saving");
-        const d = { ...input, updatedAt: Math.max(Date.now(), (previous?.updatedAt ?? 0) + 1) };
+        const d = {
+          ...input,
+          updatedAt: Math.max(Date.now(), (previous?.updatedAt ?? 0) + 1),
+        };
         definitions = [...definitions.filter((a) => a.id !== d.id), d];
         return d;
       }
+      case "crews.agent.save": {
+        const input = p.agent as SavedCrewAgent;
+        const previous = agents.find((a) => a.id === input.id);
+        if (previous && previous.updatedAt !== p.expectedUpdatedAt)
+          throw new Error("Agent changed. Reload before saving");
+        const saved = { ...input, updatedAt: (previous?.updatedAt ?? 0) + 1 };
+        agents = [...agents.filter((a) => a.id !== saved.id), saved];
+        return saved;
+      }
+      case "crews.agent.delete":
+        agents = agents.filter((a) => a.id !== p.agentId);
+        return { deleted: true };
+      case "crews.delete":
+        definitions = definitions.filter((d) => d.id !== p.definitionId);
+        return { deleted: true };
+      case "crews.start":
+        starts += 1;
+        document.querySelector("[aria-label='Started work']")!.textContent = String(starts);
+        return {
+          id: `run-${starts}`,
+          coordinatorSessionId: `started-${starts}`,
+        };
       case "crews.pause":
-        runs = runs.map((r) => ({ ...r, status: "paused" }));
+        runs = runs.map((r) => (r.id === p.runId ? { ...r, status: "paused" } : r));
         return runs[0];
       case "crews.resume":
-        runs = runs.map((r) => ({ ...r, status: "active" }));
+        runs = runs.map((r) => (r.id === p.runId ? { ...r, status: "active" } : r));
+        return runs[0];
+      case "crews.stop":
+        runs = runs.map((r) => (r.id === p.runId ? { ...r, status: "finished" } : r));
         return runs[0];
     }
   }
   if (command.startsWith("plugin:")) return null;
   throw new Error(`Unsupported fixture operation ${command}`);
 });
+// Another session saving the same crew while it is open here.
+Object.assign(window, {
+  simulateCrewUpdate: () => {
+    definitions = definitions.map((d) =>
+      d.id === "crew"
+        ? {
+            ...d,
+            name: "Updated by another session",
+            updatedAt: d.updatedAt + 1,
+          }
+        : d,
+    );
+  },
+});
 setLanguagePreference("en");
-applyThemePreference(
-  new URLSearchParams(location.search).get("theme") === "light" ? "light" : "dark",
-);
+applyThemePreference(params.get("theme") === "light" ? "light" : "dark");
+const drag = {
+  setRef: () => {},
+  folded: false,
+  headerProps: {
+    onPointerDown: () => {},
+    onClickCapture: () => {},
+    onKeyDown: () => {},
+    onContextMenu: () => {},
+  },
+  openMenu: () => {},
+};
 function Fixture() {
   const [view, setView] = useState("sessions");
   const [opened, setOpened] = useState("");
@@ -156,37 +280,32 @@ function Fixture() {
   return (
     <QueryProvider>
       <main className="bycoda-arc flex min-h-screen flex-wrap bg-(--ui-surface) text-(--color-content)">
+        <aside
+          className="@container/rail flex shrink-0 flex-col border-e border-(--ui-tone-neutral-border) pt-2"
+          style={{ width: 256 }}
+        >
+          <CrewRailSection
+            cwd={cwd}
+            drag={drag}
+            onOpenSession={(target) => setOpened(target.sessionId)}
+          />
+        </aside>
         <aside className="w-80 max-w-full shrink-0 border-e border-(--ui-tone-neutral-border)">
           <CrewSidebar
             cwd={cwd}
             onOpen={(target) => setOpened(target.sessionId)}
-            onSettings={() => setView("settings")}
             onManagedChange={() => {}}
           />
         </aside>
-        <div className="min-w-0 flex-1 p-4" style={{ flexBasis: "32rem" }}>
+        <div className="min-w-0 flex-1 p-4" style={{ flexBasis: "24rem" }}>
           <Button variant="ghost" onClick={() => setView("settings")}>
-            Crew settings
-          </Button>
-          <Button variant="ghost" onClick={() => setView("sessions")}>
-            Leave settings
+            Crew settings page
           </Button>
           <Button variant="ghost" onClick={() => setView("task")}>
             Task crew selection
           </Button>
-          <Button
-            variant="ghost"
-            onClick={() => {
-              definitions = definitions.map((d) =>
-                d.id === "crew"
-                  ? { ...d, name: "Updated by another session", updatedAt: d.updatedAt + 1 }
-                  : d,
-              );
-            }}
-          >
-            Simulate external crew update
-          </Button>
           <output aria-label="Opened session">{opened}</output>
+          <output aria-label="Started work">0</output>
           {view === "task" ? (
             <div>
               <CrewTaskPicker
@@ -204,9 +323,7 @@ function Fixture() {
             <div className="bycoda-settings-content bycoda-settings-form">
               <CrewsSettings cwd={cwd} />
             </div>
-          ) : (
-            <p>Open any member to continue its conversation.</p>
-          )}
+          ) : null}
         </div>
       </main>
     </QueryProvider>

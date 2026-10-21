@@ -340,6 +340,22 @@ export type SettingsEntry = {
 
 export const SETTINGS_INDEX: SettingsEntry[] = [
   {
+    id: "performance-trace",
+    section: "general",
+    get label() {
+      return t("Performance trace");
+    },
+    keywords: "diagnostics performance trace freeze lag slow startup long task debug performans tanılama izleme donma",
+  },
+  {
+    id: "performance-trace-data",
+    section: "general",
+    get label() {
+      return t("Trace data");
+    },
+    keywords: "copy clear export json diagnostics performance trace izleme verisi kopyala temizle",
+  },
+  {
     id: "privacy-policy",
     section: "policies",
     get label() {

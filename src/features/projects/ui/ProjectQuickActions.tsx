@@ -1,5 +1,8 @@
 import { Alert } from "../../../shared/ui/Alert";
-import { Button } from "../../../shared/ui/Button";
+import {
+  ExpandingButtonGroup,
+  type ExpandingButtonGroupItem,
+} from "../../../shared/ui/ExpandingButtonGroup";
 import { t, useLocale } from "../../../shared/i18n";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
@@ -58,11 +61,13 @@ export function ProjectQuickActions({
   actionsCwd = cwd,
   onRun,
   shortcutsEnabled = true,
+  additionalItems = [],
 }: {
   cwd: string;
   actionsCwd?: string;
   onRun?: (action: ProjectAction) => void;
   shortcutsEnabled?: boolean;
+  additionalItems?: readonly ExpandingButtonGroupItem[];
 }) {
   useLocale();
   const [menu, setMenu] = useState<{
@@ -83,6 +88,8 @@ export function ProjectQuickActions({
   const pendingLaunch = useRef(false);
   const launchGeneration = useRef(0);
   const local = isLocalProject(cwd);
+  const actionsTrigger = useRef<HTMLButtonElement>(null);
+  const openTrigger = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     const reload = () => setActions(loadProjectActions(actionsCwd));
@@ -275,52 +282,78 @@ export function ProjectQuickActions({
       // Portal menus still bubble through this React owner into the draggable header.
       onPointerDown={(event) => event.stopPropagation()}
     >
-      {selected ? (
-        <Button
-          variant="ghost"
-          motion="none"
-          title={`${selected.name}\n${selected.command || selected.url}\n${cwd}`}
-          aria-label={t("Run {p0}", { p0: selected.name })}
-          disabled={
-            Boolean(selected.command.trim() && !selected.devServer && !onRun) || !!launch?.pending
-          }
-          onClick={() => run(selected)}
-        >
-          <SelectedIcon className="size-3.5 text-accent" />
-        </Button>
-      ) : null}
-      <Button
-        variant="ghost"
-        motion="none"
-        aria-label={t("Project actions")}
-        title={`${t("Project actions")}\n${cwd}`}
-        aria-haspopup="menu"
-        aria-expanded={menu?.kind === "actions"}
-        onClick={(event) => {
-          setError("");
-          setMenu(
-            menu?.kind === "actions" ? null : { kind: "actions", anchor: event.currentTarget },
-          );
-        }}
-      >
-        <Play className="size-3.5" />
-      </Button>
-      {local ? (
-        <Button
-          variant="ghost"
-          motion="none"
-          aria-label={t("Open project in")}
-          title={`${t("Open project in")}\n${cwd}`}
-          aria-haspopup="menu"
-          aria-expanded={menu?.kind === "open"}
-          onClick={(event) => {
-            setError("");
-            setMenu(menu?.kind === "open" ? null : { kind: "open", anchor: event.currentTarget });
-          }}
-        >
-          <FolderOpen className="size-3.5" />
-        </Button>
-      ) : null}
+      <ExpandingButtonGroup
+        label={t("Project actions")}
+        size="sm"
+        fit
+        defaultExpanded={null}
+        items={[
+          ...(selected
+            ? [
+                {
+                  id: "run-project-action",
+                  label: selected.name,
+                  ariaLabel: t("Run {p0}", { p0: selected.name }),
+                  tooltip: `${selected.name}\n${selected.command || selected.url}\n${cwd}`,
+                  icon: <SelectedIcon className="size-3.5" />,
+                  disabled:
+                    Boolean(selected.command.trim() && !selected.devServer && !onRun) ||
+                    !!launch?.pending,
+                  onSelect: () => run(selected),
+                },
+              ]
+            : []),
+          {
+            id: "project-actions",
+            label: t("Project actions"),
+            tooltip: `${t("Project actions")}\n${cwd}`,
+            icon: <Play className="size-3.5" />,
+            render: (renderTrigger) =>
+              renderTrigger({
+                ref: actionsTrigger,
+                "aria-haspopup": "menu",
+                "aria-expanded": menu?.kind === "actions",
+                onSelect: () => {
+                  setError("");
+                  if (actionsTrigger.current)
+                    setMenu(
+                      menu?.kind === "actions"
+                        ? null
+                        : { kind: "actions", anchor: actionsTrigger.current },
+                    );
+                },
+              }),
+          },
+          ...(local
+            ? [
+                {
+                  id: "open-project",
+                  label: t("Open project in"),
+                  tooltip: `${t("Open project in")}\n${cwd}`,
+                  icon: <FolderOpen className="size-3.5" />,
+                  render: (
+                    renderTrigger: Parameters<NonNullable<ExpandingButtonGroupItem["render"]>>[0],
+                  ) =>
+                    renderTrigger({
+                      ref: openTrigger,
+                      "aria-haspopup": "menu",
+                      "aria-expanded": menu?.kind === "open",
+                      onSelect: () => {
+                        setError("");
+                        if (openTrigger.current)
+                          setMenu(
+                            menu?.kind === "open"
+                              ? null
+                              : { kind: "open", anchor: openTrigger.current },
+                          );
+                      },
+                    }),
+                },
+              ]
+            : []),
+          ...additionalItems,
+        ]}
+      />
       {menu ? (
         <ExplorerMenu
           anchor={menu.anchor}

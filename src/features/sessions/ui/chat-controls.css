@@ -165,9 +165,16 @@ html [data-activity-dock] {
   color: var(--color-stroke);
 }
 
+.context-signal-frame {
+  position: relative;
+  display: inline-flex;
+  flex: none;
+}
+
 .context-speed-bolt {
+  position: absolute;
+  inset: 0;
   color: var(--ui-tone-neutral-fg);
-  transform-box: fill-box;
   transform-origin: center;
 }
 
@@ -176,7 +183,7 @@ html [data-activity-dock] {
 }
 
 @media (prefers-reduced-motion: no-preference) {
-  .context-signal[data-working="true"] .context-speed-bolt {
+  .context-signal-frame[data-working="true"] .context-speed-bolt {
     animation: context-speed-charge calc(var(--motion-feedback-duration) * 12)
       var(--motion-ease-out) infinite;
   }

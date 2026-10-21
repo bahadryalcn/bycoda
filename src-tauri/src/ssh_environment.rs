@@ -6,6 +6,22 @@ use crate::{
 };
 use base64::{engine::general_purpose::STANDARD, Engine as _};
 
+pub(crate) fn integration_mode<'a>(
+    endpoint: &SshEndpoint,
+    requested: Option<&'a str>,
+) -> Option<&'a str> {
+    if requested == Some("auto")
+        && endpoint
+            .runtime_configuration
+            .as_ref()
+            .is_some_and(|config| config.shell_kind == Some(RemoteShellKind::Powershell))
+    {
+        Some("powershell")
+    } else {
+        requested
+    }
+}
+
 pub(crate) fn prologue(
     environment: &[LiteralEnvironment],
     shell: RemoteShellKind,

@@ -121,6 +121,8 @@ import { useLinkedWorkspaceGroups } from "../features/projects/hooks/useLinkedWo
 import { additionalDirsForSession } from "../features/projects/model/additionalDirs";
 import { setAdditionalDirsResolver } from "../integrations/harness/core/additionalDirs";
 import { leafIds } from "../features/workspace/model/layout";
+import { idleWorkspaceTabIds } from "../features/workspace/model/idleTabs";
+import { composerDraftOf } from "../features/sessions/model/draftCache";
 import { type WindowTransferPayload } from "./model/windowTransfer";
 import { paneDropFromPoint } from "../features/workspace/model/paneDrop";
 import {
@@ -1071,6 +1073,27 @@ function Workspace({
     rememberRemoteSession,
     rememberRemotePendingWorktree,
   });
+
+  // Idle tabs close without prompts: the active, moving, dirty and terminal tabs stay.
+  const idleTabIds = () =>
+    idleWorkspaceTabIds({
+      tabs,
+      sessions,
+      activeTabId: activeTabIdRef.current,
+      busySessionIds,
+      unseenFinishedIds,
+      dirtyFileIds: dirtyFilesRef.current,
+      movingTabIds: movingTabIds.current,
+      hasComposerDraft: (sessionId) => {
+        const draft = composerDraftOf(sessionId);
+        return draft.text.trim().length > 0 || draft.attachments.length > 0;
+      },
+    });
+  const idleTabCount = idleTabIds().length;
+  const onCloseIdleTabs = () => {
+    const ids = idleTabIds();
+    if (ids.length > 0) onCloseTabs(ids, activeTabIdRef.current);
+  };
 
   const { onCloseFile, onCloseOtherFiles } = useEditorFileClose({
     activeTabId,
@@ -2623,6 +2646,8 @@ function Workspace({
     onOpenNotes,
     onCloseTitleTab,
     onCloseTabs,
+    onCloseIdleTabs,
+    idleTabCount,
     onArchiveTitleTab,
     onDeleteTitleTab,
     onReorderTabs,
@@ -2909,6 +2934,8 @@ function Workspace({
                       onShowSourceControl={onToggleChanges}
                       onCloseCurrentTab={onCloseCurrentTab}
                       onCloseOtherTabs={onCloseOtherTabs}
+                      onCloseIdleTabs={onCloseIdleTabs}
+                      idleTabCount={idleTabCount}
                       onCloseAllTabs={onCloseAllTabs}
                       onPickProject={pickProject}
                       onFindInProject={onFindInProject}

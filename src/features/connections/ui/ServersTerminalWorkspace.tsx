@@ -48,7 +48,7 @@ export function ServersTerminalWorkspace({
       server?: ServerRecord;
       endpoint?: SshEndpoint;
       keyGenerationPath?: string;
-      shellIntegration?: "bash" | "zsh" | "powershell";
+      shellIntegration?: "auto" | "bash" | "zsh" | "powershell";
       agentForwardingReviewId?: string;
       expectedConfigurationDigest?: string;
       httpProxyTicketId?: string;
@@ -60,7 +60,7 @@ export function ServersTerminalWorkspace({
   const [configurationReview, setConfigurationReview] = useState<{
     server: ServerRecord;
     replacingPendingId?: string;
-    shellIntegration?: "bash" | "zsh" | "powershell";
+    shellIntegration?: "auto" | "bash" | "zsh" | "powershell";
     name?: string;
     startupEligible?: boolean;
   }>();
@@ -68,7 +68,7 @@ export function ServersTerminalWorkspace({
     id: string,
     server?: ServerRecord,
     endpoint?: SshEndpoint,
-    shellIntegration?: "bash" | "zsh" | "powershell",
+    shellIntegration?: "auto" | "bash" | "zsh" | "powershell",
   ) => {
     const target = endpoint ?? server?.effectiveSshEndpoint ?? server?.sshEndpoint;
     return target?.httpProxy
@@ -83,7 +83,7 @@ export function ServersTerminalWorkspace({
     server: ServerRecord,
     replacingPendingId?: string,
     expectedConfigurationDigest?: string,
-    shellIntegration?: "bash" | "zsh" | "powershell",
+    shellIntegration: "auto" | "bash" | "zsh" | "powershell" = "auto",
     name = server.name,
     startupEligible = !replacingPendingId,
   ) => {
@@ -97,9 +97,10 @@ export function ServersTerminalWorkspace({
       {
         id,
         restoreId,
-        name: shellIntegration
-          ? `${name} · ${shellIntegration === "powershell" ? "PowerShell 7" : shellIntegration === "zsh" ? "Zsh" : "Bash"}`
-          : name,
+        name:
+          shellIntegration && shellIntegration !== "auto"
+            ? `${name} · ${shellIntegration === "powershell" ? "PowerShell 7" : shellIntegration === "zsh" ? "Zsh" : "Bash"}`
+            : name,
         server,
         expectedConfigurationDigest,
         shellIntegration,
@@ -120,7 +121,7 @@ export function ServersTerminalWorkspace({
         open,
         forwardAgent: async (server, reviewId) => {
           const id = `ssh-agent:${crypto.randomUUID()}`;
-          const approval = authorizeProxy(id, server);
+          const approval = authorizeProxy(id, server, undefined, "auto");
           const httpProxyTicketId = approval ? await approval : undefined;
           if (httpProxyTicketId === null) return;
           // Approval and this tab are ephemeral. Restore can only open an ordinary session.
@@ -132,6 +133,7 @@ export function ServersTerminalWorkspace({
               name: server.name,
               server,
               agentForwardingReviewId: reviewId,
+              shellIntegration: "auto",
               startupEligible: true,
               httpProxyTicketId,
             },
@@ -140,7 +142,7 @@ export function ServersTerminalWorkspace({
         },
         quick: async (endpoint, name) => {
           const id = `ssh-quick:${crypto.randomUUID()}`;
-          const approval = authorizeProxy(id, undefined, endpoint);
+          const approval = authorizeProxy(id, undefined, endpoint, "auto");
           const httpProxyTicketId = approval ? await approval : undefined;
           if (httpProxyTicketId === null) return;
           setTerminals((previous) => [
@@ -149,6 +151,7 @@ export function ServersTerminalWorkspace({
               id,
               restoreId: crypto.randomUUID(),
               endpoint: { ...endpoint },
+              shellIntegration: "auto",
               httpProxyTicketId,
               name:
                 name ||
@@ -355,7 +358,8 @@ export function ServersTerminalWorkspace({
                           : undefined
                       }
                       onEnableShellIntegration={
-                        !terminal.keyGenerationPath && !terminal.shellIntegration
+                        !terminal.keyGenerationPath &&
+                        (!terminal.shellIntegration || terminal.shellIntegration === "auto")
                           ? async (shell = "bash") => {
                               if (terminal.server?.metadata.sshInheritance) {
                                 setConfigurationReview({

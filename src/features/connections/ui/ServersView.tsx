@@ -41,6 +41,11 @@ import {
   Pencil,
   MoreHorizontal,
   Trash2,
+  Terminal,
+  Info,
+  Star,
+  Palette,
+  Copy,
 } from "../../../shared/ui/icons";
 import { disconnectMachine, requestMachineEdit } from "../model/connections";
 import { requestMachineAdd } from "../model/machineAdd";
@@ -198,25 +203,58 @@ export function ServersView({
     }
   };
   const menuItems = (server: ServerRecord): ContextMenuItem[] => [
-    ...(canConnect(server) ? [{ kind: "item" as const, id: "connect", label: t("Connect") }] : []),
-    { kind: "item", id: "details", label: t("Show details") },
+    ...(canConnect(server)
+      ? [
+          {
+            kind: "item" as const,
+            id: "connect",
+            label: t("Connect"),
+            icon: <Terminal aria-hidden className="size-3.5" />,
+          },
+        ]
+      : []),
+    {
+      kind: "item",
+      id: "details",
+      label: t("Show details"),
+      icon: <Info aria-hidden className="size-3.5" />,
+    },
     {
       kind: "item",
       id: "edit",
       label: server.kind === "ssh" ? t("Edit SSH server") : t("Edit machine"),
+      icon: <Pencil aria-hidden className="size-3.5" />,
     },
     {
       kind: "item",
       id: "favorite",
       label: server.metadata.favorite ? t("Unfavorite") : t("Favorite"),
+      icon: (
+        <Star
+          aria-hidden
+          className="size-3.5"
+          fill={server.metadata.favorite ? "currentColor" : "none"}
+        />
+      ),
     },
-    { kind: "item", id: "color", label: t("Color…") },
-    { kind: "item", id: "copy", label: t("Copy address") },
+    {
+      kind: "item",
+      id: "color",
+      label: t("Color…"),
+      icon: <Palette aria-hidden className="size-3.5" />,
+    },
+    {
+      kind: "item",
+      id: "copy",
+      label: t("Copy address"),
+      icon: <Copy aria-hidden className="size-3.5" />,
+    },
     { kind: "sep" },
     {
       kind: "item",
       id: "delete",
       label: t("Delete"),
+      icon: <Trash2 aria-hidden className="size-3.5" />,
       danger: true,
       title:
         server.kind === "ssh"

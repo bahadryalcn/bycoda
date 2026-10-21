@@ -2,15 +2,74 @@ import { expect, test } from "@playwright/test";
 import { mkdirSync } from "node:fs";
 
 for (const theme of ["light", "dark"]) {
+  for (const width of [390, 1440]) {
+    test(`remote suggestion list: ${theme} ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 800 });
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      await page.goto(`/tests/browser/terminal-tools.html?remote&theme=${theme}`);
+      const terminal = page.locator(".xterm-helper-textarea");
+      await terminal.pressSequentially("cl");
+      const list = page.getByRole("listbox", { name: "Remote command suggestions" });
+      await expect(list).toBeVisible();
+      await expect(list.getByRole("option")).toHaveCount(3);
+      await expect(terminal).toBeFocused();
+      await terminal.press("Alt+ArrowDown");
+      await expect(list.locator('[aria-selected="true"]')).toHaveText("clear previous");
+      await expect(
+        page.locator('.xterm-screen [aria-hidden="true"]').filter({ hasText: "ear previous" }),
+      ).toBeVisible();
+      const box = await list.boundingBox();
+      expect(box!.x).toBeGreaterThanOrEqual(0);
+      expect(box!.x + box!.width).toBeLessThanOrEqual(width);
+      await terminal.press("Tab");
+      await expect(page.locator("html")).not.toHaveAttribute("data-remote-executed");
+      await terminal.press("Enter");
+      await expect(page.locator("html")).toHaveAttribute("data-remote-executed", "clear previous");
+      await terminal.pressSequentially("cl");
+      await terminal.press("Control+Space");
+      const selection = page.getByLabel("Remote suggestion selection", { exact: true });
+      await expect(selection).toBeFocused();
+      await selection.press("ArrowDown");
+      await selection.press("Enter");
+      await expect(terminal).toBeFocused();
+      await expect(page.locator("html")).toHaveAttribute("data-remote-executed", "clear previous");
+      const directory = "temp/verification/2026-10-21-server-autocomplete";
+      mkdirSync(directory, { recursive: true });
+      await terminal.press("Enter");
+      await terminal.pressSequentially("cl");
+      await expect(list).toBeVisible();
+      await page.screenshot({ path: `${directory}/remote-${theme}-${width}.png` });
+    });
+  }
+}
+
+for (const theme of ["light", "dark"]) {
   test(`terminal typography wheel zoom: ${theme}`, async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 800 });
     await page.emulateMedia({ reducedMotion: "reduce" });
-    await page.addInitScript(() => localStorage.setItem("bycoda.appearancePreferences.v1", JSON.stringify({
-      terminalSize: 16, terminalFont: "Consolas", terminalWeight: 600, terminalLineHeight: 1.35,
-    })));
+    await page.addInitScript(() =>
+      localStorage.setItem(
+        "bycoda.appearancePreferences.v1",
+        JSON.stringify({
+          terminalSize: 16,
+          terminalFont: "Consolas",
+          terminalWeight: 600,
+          terminalLineHeight: 1.35,
+        }),
+      ),
+    );
     await page.goto(`/tests/browser/terminal-tools.html?theme=${theme}`);
-    const typography = () => page.locator("html").getAttribute("data-terminal-typography").then((value) => JSON.parse(value ?? "{}"));
-    await expect.poll(typography).toMatchObject({ fontSize: 16, fontFamily: '"Consolas", monospace', fontWeight: 600, lineHeight: 1.35 });
+    const typography = () =>
+      page
+        .locator("html")
+        .getAttribute("data-terminal-typography")
+        .then((value) => JSON.parse(value ?? "{}"));
+    await expect.poll(typography).toMatchObject({
+      fontSize: 16,
+      fontFamily: '"Consolas", monospace',
+      fontWeight: 600,
+      lineHeight: 1.35,
+    });
     await expect(page.locator("html")).toHaveAttribute("data-terminal-prompt", /^ready>\s*$/);
     await page.locator(".xterm-screen").hover();
     await page.keyboard.down("Control");

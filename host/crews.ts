@@ -10,6 +10,7 @@ import {
   crewScopesOverlap,
   selectCrewCandidate,
   CREW_CAPABILITIES,
+  crewWorkTitle,
   type CrewRun,
   type CrewDefinition,
   type CrewCapability,
@@ -165,6 +166,7 @@ export class HostCrews {
           coordinatorStatus: run.coordinatorSessionId
             ? this.store.sessionStateMetadata(run.coordinatorSessionId)?.status
             : undefined,
+          title: run.title ?? crewWorkTitle(run.launch?.prompt),
           launch: undefined,
           pendingDelivery: undefined,
           definition: {
@@ -451,6 +453,7 @@ export class HostCrews {
       ...(newConversation && principal ? { requestedBySessionId: principal.sessionId } : {}),
       ...(sourceTaskId ? { sourceTaskId } : {}),
       coordinatorCandidate: selected.candidate,
+      ...(crewWorkTitle(prompt) ? { title: crewWorkTitle(prompt) } : {}),
       assignments: [],
       messages: [],
       notifications: {},

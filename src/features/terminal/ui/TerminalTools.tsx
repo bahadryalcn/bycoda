@@ -23,7 +23,6 @@ import { TerminalCursorPopover } from "./TerminalCursorPopover";
 import styles from "./TerminalTools.module.css";
 import type { SshShellController } from "../model/sshShellIntegration";
 import { RemoteShellSuggestions } from "./RemoteShellSuggestions";
-import { TerminalGhostText } from "./TerminalGhostText";
 
 export type TerminalTool = "search" | "command" | "remote" | null;
 
@@ -469,12 +468,6 @@ export function TerminalTools({
       ) : null}
       {showRemote ? (
         <>
-          {mode === null && remoteShell.state?.prefix && remoteShell.state.suggestions?.[0] ? (
-            <TerminalGhostText
-              terminal={terminal}
-              suffix={remoteShell.state.suggestions[0].slice(remoteShell.state.prefix.length)}
-            />
-          ) : null}
           <TerminalCursorPopover
             terminal={terminal}
             onDismiss={() => {

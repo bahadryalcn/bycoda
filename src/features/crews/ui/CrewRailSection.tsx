@@ -1,7 +1,20 @@
 import { useEffect, useRef, useState, type MouseEvent } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
-import { MoreHorizontal, Plus } from "../../../shared/ui/icons";
+import { DropdownMenu, type DropdownMenuItem } from "../../../shared/ui/DropdownMenu";
+import type { PopoverAnchor } from "../../../shared/ui/Popover";
+import {
+  Bot,
+  Copy,
+  Globe,
+  MoreHorizontal,
+  Pause,
+  Pencil,
+  Play,
+  Plus,
+  Square,
+  Trash2,
+} from "../../../shared/ui/icons";
 import {
   RAIL_DRAG_HANDLE,
   RAIL_SECTION_HEADER,
@@ -12,13 +25,14 @@ import type { BackgroundSessionTarget } from "../../tasks/model/backgroundSessio
 import type { CrewDefinition } from "../model/crew";
 import { useProjectCrews, type CrewRunView } from "../model/crewClient";
 import { useCrewsOnRail } from "../model/crewAppearance";
+import { activeCrewRuns, crewRunTitle } from "../model/crewRoster";
 import { CrewAvatar } from "./CrewAvatar";
-import { CrewEditDialog, StartCrewDialog } from "./CrewDialogs";
-import { CrewQuickMenu } from "./CrewQuickMenu";
+import { CrewDeleteDialog, CrewEditDialog, StartCrewDialog } from "./CrewDialogs";
+import type { CrewEditorPage } from "./CrewEditor";
 
-type CrewStatus = "input" | "blocked" | "working" | "paused" | "active";
+export type CrewWorkStatus = "input" | "blocked" | "working" | "paused" | "active";
 
-const STATUS_DOT: Record<CrewStatus, string> = {
+const STATUS_DOT: Record<CrewWorkStatus, string> = {
   input: "bg-warning",
   blocked: "bg-danger",
   working: "bg-accent animate-pulse motion-reduce:animate-none",
@@ -26,15 +40,21 @@ const STATUS_DOT: Record<CrewStatus, string> = {
   active: "bg-success",
 };
 
-const STATUS_LABEL: Record<CrewStatus, string> = {
-  input: "Needs decision",
-  blocked: "Blocked",
-  working: "Working",
-  paused: "Paused",
-  active: "Active",
-};
+const STATUS_RANK: CrewWorkStatus[] = ["input", "blocked", "working", "paused", "active"];
 
-function runStatus(run: CrewRunView): CrewStatus {
+export function crewWorkStatusLabel(status: CrewWorkStatus) {
+  return status === "input"
+    ? t("Needs decision")
+    : status === "blocked"
+      ? t("Blocked")
+      : status === "working"
+        ? t("Working")
+        : status === "paused"
+          ? t("Paused")
+          : t("Active");
+}
+
+export function crewWorkStatus(run: CrewRunView): CrewWorkStatus {
   if (run.status === "paused") return "paused";
   if (run.messages.some((m) => !m.resolvedAt) || run.tasks.some((task) => task.status === "review"))
     return "input";
@@ -48,14 +68,21 @@ function runStatus(run: CrewRunView): CrewStatus {
 }
 
 type Dialog =
-  | { kind: "edit"; crewId?: string; createScope?: "project" | "global" }
-  | { kind: "start"; definitionId: string };
+  | {
+      kind: "edit";
+      crewId?: string;
+      createScope?: "project" | "global";
+      copyOf?: { crewId: string; scope: "project" | "global" };
+      initialPage?: CrewEditorPage;
+      /** Editing from the start dialog returns to it with the written delivery. */
+      returnToStart?: string;
+    }
+  | { kind: "start"; definitionId?: string }
+  | { kind: "delete"; crewId: string };
 
-type Menu =
-  | { kind: "crew"; crewId: string; x: number; y: number }
-  | { kind: "new"; x: number; y: number };
+type Menu = { kind: "crew" | "work"; crewId: string; anchor: PopoverAnchor };
 
-/** The project rail's crew list: one row per crew, opened like a project. */
+/** The project rail's crew list: open a crew's work, start new work or manage it from "…". */
 export function CrewRailSection({
   cwd,
   drag,
@@ -97,29 +124,148 @@ export function CrewRailSection({
       setPending(false);
     }
   };
-  // The newest unfinished run is the crew's live state.
-  const activeRun = (crew: CrewDefinition) => {
-    const runs = data.runs.filter(
-      (run) => run.definition.id === crew.id && run.status !== "finished",
-    );
-    return runs[runs.length - 1];
-  };
   const openCoordinator = (run: CrewRunView) => {
     const sessionId = run.coordinatorSessionId;
     if (!sessionId || !onOpenSession) return;
     void act(async () =>
-      onOpenSession({ cwd, machineId: data.machine.id, projectId: data.project.id, sessionId }),
+      onOpenSession({
+        cwd,
+        machineId: data.machine.id,
+        projectId: data.project.id,
+        sessionId,
+      }),
     );
   };
-  const openCrew = (crew: CrewDefinition) => {
-    const run = activeRun(crew);
-    if (run?.coordinatorSessionId && onOpenSession) openCoordinator(run);
+  // One ongoing work opens directly; several ask which one; none starts new work.
+  const openCrew = (crew: CrewDefinition, anchor: PopoverAnchor) => {
+    const runs = activeCrewRuns(data.runs, crew.id);
+    if (runs.length === 1 && runs[0].coordinatorSessionId && onOpenSession)
+      openCoordinator(runs[0]);
+    else if (runs.length > 1) setMenu({ kind: "work", crewId: crew.id, anchor });
     else setDialog({ kind: "start", definitionId: crew.id });
   };
-  const menuCrew =
-    menu?.kind === "crew" ? data.definitions.find((d) => d.id === menu.crewId) : undefined;
-  const menuRun = menuCrew ? activeRun(menuCrew) : undefined;
+  const menuCrew = menu ? data.definitions.find((d) => d.id === menu.crewId) : undefined;
+  const menuRuns = menuCrew ? activeCrewRuns(data.runs, menuCrew.id) : [];
+  const single = menuRuns.length === 1 ? menuRuns[0] : undefined;
+  const crewItems: DropdownMenuItem[] = menuCrew
+    ? [
+        ...(single?.coordinatorSessionId && onOpenSession
+          ? [
+              {
+                kind: "item" as const,
+                id: "open",
+                label: t("Open coordinator"),
+                description: crewRunTitle(single),
+                icon: <Bot className="size-3.5" />,
+              },
+            ]
+          : []),
+        ...(menuRuns.length > 1
+          ? [
+              {
+                kind: "item" as const,
+                id: "work",
+                label: t("Ongoing work ({p0})", { p0: menuRuns.length }),
+                icon: <Bot className="size-3.5" />,
+              },
+            ]
+          : []),
+        {
+          kind: "item",
+          id: "start",
+          label: t("Start work"),
+          icon: <Play className="size-3.5" />,
+        },
+        {
+          kind: "item",
+          id: "edit",
+          label: t("Edit crew"),
+          icon: <Pencil className="size-3.5" />,
+        },
+        {
+          kind: "item",
+          id: "members",
+          label: t("Add members"),
+          icon: <Plus className="size-3.5" />,
+        },
+        {
+          kind: "item",
+          id: "duplicate",
+          label: t("Duplicate"),
+          icon: <Copy className="size-3.5" />,
+        },
+        {
+          kind: "item",
+          id: "scope",
+          label: menuCrew.projectId ? t("Copy to all projects") : t("Copy to this project"),
+          icon: <Globe className="size-3.5" />,
+        },
+        ...(single
+          ? [
+              { kind: "sep" as const },
+              {
+                kind: "item" as const,
+                id: "pause",
+                label: single.status === "paused" ? t("Resume work") : t("Pause new assignments"),
+                description: crewRunTitle(single),
+                icon:
+                  single.status === "paused" ? (
+                    <Play className="size-3.5" />
+                  ) : (
+                    <Pause className="size-3.5" />
+                  ),
+              },
+              {
+                kind: "item" as const,
+                id: "stop",
+                label: t("Stop work"),
+                description: t("Cancels running assignments"),
+                icon: <Square className="size-3.5" />,
+              },
+            ]
+          : []),
+        ...(data.deleteSupported
+          ? [
+              { kind: "sep" as const },
+              {
+                kind: "item" as const,
+                id: "delete",
+                label: t("Delete crew"),
+                danger: true,
+                icon: <Trash2 className="size-3.5" />,
+              },
+            ]
+          : []),
+      ]
+    : [];
+  const pickCrew = (id: string) => {
+    if (!menuCrew) return;
+    const crewId = menuCrew.id;
+    const scope = menuCrew.projectId ? "global" : "project";
+    if (id === "open" && single) openCoordinator(single);
+    else if (id === "work" && menu) setMenu({ ...menu, kind: "work" });
+    else if (id === "start") setDialog({ kind: "start", definitionId: crewId });
+    else if (id === "edit") setDialog({ kind: "edit", crewId });
+    else if (id === "members") setDialog({ kind: "edit", crewId, initialPage: "add" });
+    else if (id === "duplicate")
+      setDialog({
+        kind: "edit",
+        copyOf: { crewId, scope: menuCrew.projectId ? "project" : "global" },
+      });
+    else if (id === "scope") setDialog({ kind: "edit", copyOf: { crewId, scope } });
+    else if (id === "pause" && single)
+      void act(() =>
+        state.call(single.status === "paused" ? "crews.resume" : "crews.pause", {
+          runId: single.id,
+        }),
+      );
+    else if (id === "stop" && single)
+      void act(() => state.call("crews.stop", { runId: single.id }));
+    else if (id === "delete") setDialog({ kind: "delete", crewId });
+  };
   const label = t("Crews");
+  const deleting =
+    dialog?.kind === "delete" ? data.definitions.find((d) => d.id === dialog.crewId) : undefined;
 
   return (
     <div ref={drag.setRef} className="reorder-item rail-reorder-block mb-2 shrink-0">
@@ -140,11 +286,8 @@ export function CrewRailSection({
           motion="none"
           type="button"
           data-no-drag
-          aria-haspopup="menu"
-          onClick={(event) => {
-            const rect = event.currentTarget.getBoundingClientRect();
-            setMenu({ kind: "new", x: rect.left, y: rect.bottom });
-          }}
+          aria-haspopup="dialog"
+          onClick={() => setDialog({ kind: "edit", createScope: "project" })}
           className="grid size-5 shrink-0 place-items-center"
         >
           <Plus className="size-3.5" strokeWidth={1.75} />
@@ -159,18 +302,36 @@ export function CrewRailSection({
         className={`flex-col gap-px px-2 ${drag.folded ? "hidden" : "flex"}`}
       >
         {data.definitions.length === 0 ? (
-          <p className="px-2 pb-1 text-[11px] leading-tight text-(--ui-text-secondary) @max-[140px]/rail:hidden">
-            {t("No crews yet")}
-          </p>
+          <span className="@max-[140px]/rail:hidden">
+            <Button
+              variant="ghost"
+              motion="none"
+              startIcon={<Plus className="size-3.5" />}
+              onClick={() => setDialog({ kind: "edit", createScope: "project" })}
+            >
+              {t("Create your first crew")}
+            </Button>
+          </span>
         ) : null}
         {data.definitions.map((crew) => {
-          const run = activeRun(crew);
-          const status = run ? runStatus(run) : undefined;
+          const runs = activeCrewRuns(data.runs, crew.id);
+          const status = runs
+            .map(crewWorkStatus)
+            .sort((a, b) => STATUS_RANK.indexOf(a) - STATUS_RANK.indexOf(b))[0];
           const scope = crew.projectId ? t("This project") : t("All projects on this host");
+          const statusText = status
+            ? runs.length > 1
+              ? `${crewWorkStatusLabel(status)} · ${t("{p0} ongoing", { p0: runs.length })}`
+              : crewWorkStatusLabel(status)
+            : "";
           const openMenuAt = (event: MouseEvent<HTMLElement>) => {
             event.preventDefault();
             event.stopPropagation();
-            setMenu({ kind: "crew", crewId: crew.id, x: event.clientX, y: event.clientY });
+            setMenu({
+              kind: "crew",
+              crewId: crew.id,
+              anchor: { x: event.clientX, y: event.clientY },
+            });
           };
           return (
             <div
@@ -181,25 +342,24 @@ export function CrewRailSection({
             >
               <Button
                 variant="item"
-                selected={menu?.kind === "crew" && menu.crewId === crew.id}
+                selected={menu?.crewId === crew.id}
                 motion="none"
                 type="button"
-                title={[crew.name, scope, status ? t(STATUS_LABEL[status]) : ""]
-                  .filter(Boolean)
-                  .join("\n")}
-                aria-label={[crew.name, status ? t(STATUS_LABEL[status]) : ""]
-                  .filter(Boolean)
-                  .join(", ")}
+                title={[crew.name, scope, statusText].filter(Boolean).join("\n")}
+                aria-label={[crew.name, statusText].filter(Boolean).join(", ")}
                 disabled={pending}
-                onClick={() => openCrew(crew)}
+                onClick={(event) => openCrew(crew, event.currentTarget)}
                 onKeyDown={(event) => {
                   if (event.key !== "ContextMenu" && !(event.shiftKey && event.key === "F10"))
                     return;
                   event.preventDefault();
-                  const rect = event.currentTarget.getBoundingClientRect();
-                  setMenu({ kind: "crew", crewId: crew.id, x: rect.left, y: rect.bottom });
+                  setMenu({
+                    kind: "crew",
+                    crewId: crew.id,
+                    anchor: event.currentTarget,
+                  });
                 }}
-                className="flex min-w-0 flex-1 items-center gap-2 text-left group-hover:pr-6 group-has-[button:focus-visible]:pr-6 @max-[140px]/rail:justify-center @max-[140px]/rail:pr-0!"
+                className="flex min-w-0 flex-1 items-center gap-2 @max-[140px]/rail:justify-center"
               >
                 <span className="relative grid size-4 shrink-0 place-items-center">
                   <CrewAvatar crew={crew} active={status === "working"} />
@@ -214,24 +374,49 @@ export function CrewRailSection({
                   {crew.name}
                 </span>
               </Button>
-              <Button
-                iconOnly
-                label={t("Crew options")}
-                size="sm"
-                variant="ghost"
-                motion="none"
-                type="button"
-                data-no-drag
-                aria-haspopup="menu"
-                onClick={(event) => {
-                  event.stopPropagation();
-                  const rect = event.currentTarget.getBoundingClientRect();
-                  setMenu({ kind: "crew", crewId: crew.id, x: rect.left, y: rect.bottom });
-                }}
-                className="absolute right-1 top-1/2 hidden size-6 -translate-y-1/2 place-items-center group-hover:grid group-has-[button:focus-visible]:grid @max-[140px]/rail:hidden!"
-              >
-                <MoreHorizontal className="size-4" strokeWidth={1.75} />
-              </Button>
+              <span className="hidden shrink-0 items-center gap-px group-hover:flex group-has-[button:focus-visible]:flex pointer-coarse:flex @max-[140px]/rail:hidden!">
+                <Button
+                  iconOnly
+                  label={t("Start work with {p0}", { p0: crew.name })}
+                  tooltip={t("Start work")}
+                  size="sm"
+                  variant="ghost"
+                  motion="none"
+                  type="button"
+                  data-no-drag
+                  disabled={pending}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    setDialog({ kind: "start", definitionId: crew.id });
+                  }}
+                  className="grid size-6 place-items-center"
+                >
+                  <Play className="size-3.5" strokeWidth={1.75} />
+                </Button>
+                <Button
+                  iconOnly
+                  label={t("{p0} options", { p0: crew.name })}
+                  tooltip={t("More actions")}
+                  size="sm"
+                  variant="ghost"
+                  motion="none"
+                  type="button"
+                  data-no-drag
+                  aria-haspopup="menu"
+                  aria-expanded={menu?.kind === "crew" && menu.crewId === crew.id}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    setMenu({
+                      kind: "crew",
+                      crewId: crew.id,
+                      anchor: event.currentTarget,
+                    });
+                  }}
+                  className="grid size-6 place-items-center"
+                >
+                  <MoreHorizontal className="size-4" strokeWidth={1.75} />
+                </Button>
+              </span>
             </div>
           );
         })}
@@ -241,16 +426,37 @@ export function CrewRailSection({
           </p>
         ) : null}
       </div>
-      {menu && (menu.kind === "new" || menuCrew) ? (
-        <CrewQuickMenu
-          anchor={{ x: menu.x, y: menu.y }}
-          state={state}
-          crew={menuCrew}
-          run={menuRun}
-          onSettings={(crewId) => setDialog({ kind: "edit", crewId })}
-          onStart={(crewId) => setDialog({ kind: "start", definitionId: crewId })}
-          onOpenCoordinator={onOpenSession ? openCoordinator : undefined}
-          onClose={() => setMenu(null)}
+      {menu?.kind === "crew" && menuCrew ? (
+        <DropdownMenu
+          anchor={menu.anchor}
+          label={t("{p0} options", { p0: menuCrew.name })}
+          side="right"
+          align="start"
+          width={248}
+          items={crewItems}
+          onPick={pickCrew}
+          onClose={() => setMenu((current) => (current?.kind === "crew" ? null : current))}
+        />
+      ) : null}
+      {menu?.kind === "work" && menuCrew ? (
+        <DropdownMenu
+          anchor={menu.anchor}
+          label={t("Ongoing work")}
+          side="right"
+          align="start"
+          width={260}
+          items={menuRuns.map((run) => ({
+            kind: "item" as const,
+            id: run.id,
+            label: crewRunTitle(run),
+            description: crewWorkStatusLabel(crewWorkStatus(run)),
+            disabled: !run.coordinatorSessionId || !onOpenSession,
+          }))}
+          onPick={(id) => {
+            const run = menuRuns.find((item) => item.id === id);
+            if (run) openCoordinator(run);
+          }}
+          onClose={() => setMenu((current) => (current?.kind === "work" ? null : current))}
         />
       ) : null}
       {dialog?.kind === "edit" ? (
@@ -258,7 +464,14 @@ export function CrewRailSection({
           cwd={cwd}
           crewId={dialog.crewId}
           createScope={dialog.createScope}
-          onClose={() => setDialog(null)}
+          copyOf={dialog.copyOf}
+          initialPage={dialog.initialPage}
+          onStart={(definitionId) => setDialog({ kind: "start", definitionId })}
+          onClose={() =>
+            setDialog(
+              dialog.returnToStart ? { kind: "start", definitionId: dialog.returnToStart } : null,
+            )
+          }
         />
       ) : null}
       {dialog?.kind === "start" ? (
@@ -267,7 +480,18 @@ export function CrewRailSection({
           state={state}
           definitionId={dialog.definitionId}
           onOpen={onOpenSession}
-          onEdit={(crewId) => setDialog({ kind: "edit", crewId })}
+          onEdit={(crewId) => setDialog({ kind: "edit", crewId, returnToStart: crewId })}
+          onClose={() => setDialog(null)}
+        />
+      ) : null}
+      {deleting ? (
+        <CrewDeleteDialog
+          state={state}
+          crew={deleting}
+          activeWork={
+            data.runs.filter((run) => run.definition.id === deleting.id && run.status === "active")
+              .length
+          }
           onClose={() => setDialog(null)}
         />
       ) : null}

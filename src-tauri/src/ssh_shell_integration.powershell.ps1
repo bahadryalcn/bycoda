@@ -37,7 +37,7 @@ $global:__BCA = $false
 $global:__BCS = @('cd', 'git', 'ls', 'pwd', 'git status', 'git diff', 'git log --oneline')
 
 function global:__BCLiteral([string]$v) {
-    $v.Length -le 256 -and $v -cmatch '^[a-zA-Z0-9 ./_:-]*$' -and $v -notmatch 'password|passwd|secret|token|credential|\.env|\.ssh|private'
+    $v.Length -le 256 -and $v -cmatch '^[a-zA-Z0-9 ./_:-]*$' -and $v -notmatch 'password|passwd|secret|token|authorization|api_key|apikey|credential|\.env|\.ssh|private'
 }
 function global:__BCReviewed([string]$v) {
     (__BCLiteral $v) -and ($v -cmatch '^(cd|ls|pwd|git|docker|systemctl|ls -l|ls -la|git status|git diff|git log --oneline|docker ps|docker ps -a|systemctl status)$' -or $v -cmatch '^(cd|ls|systemctl status) [a-zA-Z0-9./_:][a-zA-Z0-9./_:-]*$')
@@ -59,6 +59,13 @@ function global:__BCRequest([string]$source) {
         } } catch {}
     }
     $choices=[Collections.Generic.List[string]]::new()
+    if($source -ne 'paths') {
+        $h=[Microsoft.PowerShell.PSConsoleReadLine]::GetHistoryItems()
+        for($i=$h.Length-1;$i -ge [Math]::Max(0,$h.Length-200);--$i) {
+            $c=$h[$i].CommandLine
+            if($source -ne 'reviewed' -or $__BCS -ccontains $c) { $choices.Add($c) }
+        }
+    }
     switch ($source) {
         commands {
             if ($line -cmatch '^[a-zA-Z0-9_.:-]*$' -and -not $line.StartsWith('-')) { $choices.AddRange([string[]]$names) }
@@ -83,18 +90,13 @@ function global:__BCRequest([string]$source) {
                 } } catch {}
             }
         }
-        default {
-            $items=[Microsoft.PowerShell.PSConsoleReadLine]::GetHistoryItems()
-            for($i=[Math]::Max(0,$items.Length-100);$i -lt $items.Length;++$i) {
-                $c=$items[$i].CommandLine
-                if (($source -eq 'reviewed' -and $__BCS -ccontains $c) -or ($source -eq 'history' -and (__BCReviewed $c))) { $choices.Add($c) }
-            }
-            if($source -eq 'reviewed') { $choices.AddRange([string[]]$__BCS) }
+        reviewed {
+            $choices.AddRange([string[]]$__BCS)
         }
     }
     $out=[Collections.Generic.List[string]]::new()
     foreach($c in $choices) {
-        if(-not (__BCLiteral $c) -or -not $c.StartsWith($line,[StringComparison]::Ordinal) -or $out.Contains($c)) { continue }
+        if(-not (__BCLiteral $c) -or ($source -ne 'reviewed' -and $c -ceq $line) -or $c.StartsWith(' ') -or -not $c.StartsWith($line,[StringComparison]::Ordinal) -or $out.Contains($c)) { continue }
         if($source -ne 'paths' -and -not $names.Contains($c.Split(' ')[0])) { continue }
         $out.Add($c)
         if($out.Count -ge 12) { break }

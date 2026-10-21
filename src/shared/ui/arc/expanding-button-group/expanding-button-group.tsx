@@ -43,6 +43,7 @@ export interface ExpandingButtonGroupItem {
   active?: boolean;
   ariaLabel?: string;
   onOpenContextMenu?: (x: number, y: number) => void;
+  tooltip?: string;
   render?: (renderTrigger: (props: ExpandingButtonGroupTriggerProps) => ReactNode) => ReactNode;
 }
 
@@ -273,7 +274,7 @@ function ItemButton({
       data-expanded={expanded || undefined}
       data-unmeasured={measured ? undefined : ""}
       aria-label={item.ariaLabel ?? item.label}
-      title={item.ariaLabel ?? item.label}
+      title={item.tooltip ?? item.ariaLabel ?? item.label}
       shortcut={item.shortcut}
       aria-current={item.active ? "page" : undefined}
       onContextMenu={

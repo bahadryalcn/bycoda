@@ -80,7 +80,14 @@ type PooledProps = {
 export type TranscriptPoolEntry = {
   id: string;
   container: HTMLDivElement;
+  /** The pane's latest element; its props drive retention decisions. */
   element: ReactElement<PooledProps>;
+  /**
+   * What the portal renders. A pane that stays hidden keeps updating `element`
+   * (a streaming session changes it ~10 times a second) but not this, so a
+   * hidden transcript does not re-render until it is shown again.
+   */
+  rendered: ReactElement<PooledProps>;
   onMouseDown?: () => void;
   host: HTMLElement | null;
   weight: number;
@@ -131,7 +138,12 @@ export class TranscriptPool {
     let changed = false;
     for (const entry of this.entries.values()) {
       if (!entry.mounted && this.protectedEntry(entry)) {
-        this.entries.set(entry.id, { ...entry, mounted: true, hiddenAt: Date.now() });
+        this.entries.set(entry.id, {
+          ...entry,
+          rendered: entry.element,
+          mounted: true,
+          hiddenAt: Date.now(),
+        });
         changed = true;
       }
     }
@@ -205,6 +217,11 @@ export class TranscriptPool {
     if (visible && !wasVisible)
       this.recent = [id, ...this.recent.filter((key) => key !== id)].slice(0, this.warmCount);
     const container = previous?.container ?? createContainer();
+    // First seen while hidden (a restored background tab): wait until shown,
+    // unless it needs to stay live. Mounting every restored transcript at boot
+    // was the largest startup cost with many tabs.
+    const mounted =
+      visible || !!previous?.mounted || this.protectedIds.has(id);
     // Attach before the pane's passive effects run, so anything that looks
     // for the transcript in the pane already finds a revisited one.
     if (container.parentElement !== host) host.appendChild(container);
@@ -214,15 +231,14 @@ export class TranscriptPool {
       sameElement(previous.element, element)
     )
       return;
-    // Re-inserting keeps the map in least-recently-shown order.
-    this.entries.delete(id);
-    this.entries.set(id, {
+    const next: TranscriptPoolEntry = {
       id,
       container,
       element,
+      rendered: element,
       onMouseDown,
       host,
-      mounted: visible || !previous || previous.mounted || !!this.protectedIds.has(id),
+      mounted,
       hiddenAt: visible ? null : (previous?.hiddenAt ?? Date.now()),
       checkpoint,
       uiState: checkpoint.read(),
@@ -230,10 +246,25 @@ export class TranscriptPool {
         previous && previous.element.props.blocks === element.props.blocks
           ? previous.weight
           : transcriptPoolWeight(element.props.blocks),
-    });
-    const updated = this.entries.get(id)!;
-    if (!updated.mounted && this.protectedEntry(updated))
-      this.entries.set(id, { ...updated, mounted: true });
+    };
+    if (!next.mounted && this.protectedEntry(next)) next.mounted = true;
+    if (
+      previous &&
+      !visible &&
+      !wasVisible &&
+      previous.host === host &&
+      previous.onMouseDown === onMouseDown &&
+      previous.mounted === next.mounted
+    ) {
+      // Still hidden in the same pane: refresh what retention reads, keep the
+      // rendered tree as it is and skip the outlet update.
+      this.entries.set(id, { ...next, rendered: previous.rendered });
+      this.schedule();
+      return;
+    }
+    // Re-inserting keeps the map in least-recently-shown order.
+    this.entries.delete(id);
+    this.entries.set(id, next);
     this.trim();
     this.emit();
     this.expire();
@@ -248,6 +279,7 @@ export class TranscriptPool {
       host: null,
       onMouseDown: undefined,
       element: cloneElement(entry.element, { visible: false, parked: true }),
+      rendered: cloneElement(entry.element, { visible: false, parked: true }),
       hiddenAt: Date.now(),
     });
     this.trim();
@@ -317,10 +349,10 @@ const PooledEntry = memo(function PooledEntry({ entry }: { entry: TranscriptPool
   return createPortal(
     <div className="contents" onMouseDown={entry.onMouseDown}>
       <PresentationVisibility.Provider
-        value={!!entry.host && entry.element.props.visible !== false}
+        value={!!entry.host && entry.rendered.props.visible !== false}
       >
         <TranscriptRetentionContext.Provider value={entry.checkpoint}>
-          {entry.element}
+          {entry.rendered}
         </TranscriptRetentionContext.Provider>
       </PresentationVisibility.Provider>
     </div>,

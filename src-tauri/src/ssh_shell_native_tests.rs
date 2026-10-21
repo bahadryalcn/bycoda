@@ -22,6 +22,8 @@ impl ShellHarness {
     fn spawn_config(root: &std::path::Path, local_bootstrap: bool, mac_zsh: bool) -> Self {
         let shell = Arc::new(Mutex::new(if mac_zsh {
             ShellIntegration::for_shell("zsh").unwrap()
+        } else if local_bootstrap {
+            ShellIntegration::for_shell("auto").unwrap()
         } else {
             ShellIntegration::new()
         }));
@@ -41,6 +43,8 @@ impl ShellHarness {
                 identity_file: Some(std::env::var("BYCODA_ZSH_MAC_IDENTITY").unwrap()),
                 ..Default::default()
             }
+        } else if local_bootstrap {
+            crate::ssh_security::SshEndpoint::default()
         } else {
             crate::ssh_security::SshEndpoint {
                 host: "127.0.0.1".into(),
@@ -63,9 +67,14 @@ impl ShellHarness {
             "ssh.exe"
         });
         if local_bootstrap {
-            command.args(["-c".into(), shell.lock().unwrap().remote_command()]);
+            // SSH transmits the command as bytes; a Windows bash -c argument
+            // adds MSYS quoting/conversion which is not part of that transport.
+            let bootstrap = root.join("bootstrap-command.sh");
+            std::fs::write(&bootstrap, shell.lock().unwrap().remote_command()).unwrap();
+            command.arg(bootstrap);
             command.env("HOME", root.join("bash-home"));
             command.env("HISTFILE", root.join("bash-home/history"));
+            command.env("SHELL", "/bin/bash");
             command.env(
                 "PATH",
                 format!(
@@ -273,6 +282,24 @@ fn exact_production_bootstrap_runs_in_native_conpty_without_filesystem_rc() {
     let harness = ShellHarness::spawn_mode(&root, true);
     harness.wait("ready");
     harness.profile_checks(false);
+    // Real Readline history and the exact production automatic bootstrap.
+    harness.send("history -s 'clear screen-old'\r");
+    harness.wait("ready");
+    harness.send("history -s 'clear screen-new'\r");
+    harness.wait("ready");
+    harness.send("history -s 'clear token-hidden'\r");
+    harness.wait("ready");
+    harness.send("cl");
+    let request = harness.request_source("commands");
+    let event = harness.wait("suggestions");
+    let values = event.suggestions.unwrap();
+    assert_eq!(&values[..2], &["clear screen-new", "clear screen-old"]);
+    assert!(values.iter().any(|value| value == "clear"));
+    assert!(!values.iter().any(|value| value.contains("token")));
+    harness.accept(&request, "clear");
+    assert!(harness.shell.lock().unwrap().ready);
+    harness.send("\x03");
+    harness.wait("ready");
     harness.send("git st");
     let request = harness.request();
     let event = harness.wait("suggestions");

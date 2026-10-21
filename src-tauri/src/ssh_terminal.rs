@@ -105,7 +105,7 @@ pub fn ssh_terminal_spawn(
         &host,
         &id,
         window.label(),
-        shell_integration.as_deref(),
+        crate::ssh_environment::integration_mode(&endpoint, shell_integration.as_deref()),
     )?;
     let mut args = reviewed_interactive_args(
         &reviews,
@@ -184,7 +184,7 @@ pub fn ssh_terminal_quick_spawn(
         &host,
         &id,
         window.label(),
-        shell_integration.as_deref(),
+        crate::ssh_environment::integration_mode(&endpoint, shell_integration.as_deref()),
     )?;
     let mut args = reviewed_interactive_args(
         &reviews,

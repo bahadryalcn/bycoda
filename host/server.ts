@@ -1424,6 +1424,7 @@ export function createHostServer(
                 "crews.v1",
                 "crews.tasks.v1",
                 "crews.delete.v1",
+                "crews.agent-groups.v1",
                 "approvals",
                 "questions",
                 "diff",

@@ -20,7 +20,7 @@ import { Composer } from "./Composer";
 import type { NewSessionOptions } from "../model/newSessionCommand";
 import "./session-notes-layout.css";
 import { ProjectQuickActions } from "../../projects/ui/ProjectQuickActions";
-import { ExpandingButtonGroup } from "../../../shared/ui/ExpandingButtonGroup";
+import type { ExpandingButtonGroupItem } from "../../../shared/ui/ExpandingButtonGroup";
 import type { ProjectAction } from "../../projects/model/projectActions";
 import type { OpenFileFn } from "../../search/model/search";
 import {
@@ -497,7 +497,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
   const stableAllowedHarnesses = useStableValue(allowedModelHarnesses, shallowArrayEqual);
   // Find and the outline read live text only while a search or a card is open.
   const [findSearching, setFindSearching] = useState(false);
-  const [findTriggerContainer, setFindTriggerContainer] = useState<HTMLSpanElement | null>(null);
+  const [findAction, setFindAction] = useState<ExpandingButtonGroupItem | null>(null);
   const [outlineOpen, setOutlineOpen] = useState(false);
   const draftBlock = useMemo(() => sessionDraftBlock(stableSession), [stableSession]);
   useSyncExternalStore(
@@ -1207,11 +1207,40 @@ const LocalSessionPane = memo(function LocalSessionPane({
       {workingMachine}.
     </Badge>
   ) : null;
+  const notesShortcut = useKeybindingShortcut(NOTES_PANEL_COMMAND);
+  const closeShortcut = useKeybindingShortcut("Pane: Close");
+  const paneActions: ExpandingButtonGroupItem[] = [
+    ...(hasPaneHeader && !session.inboxAsk && findAction ? [findAction] : []),
+    ...(notesEnabled && visible && focused && !showNotesPanel
+      ? [
+          {
+            id: "notes",
+            label: t("Notes"),
+            ariaLabel: t("Open notes panel"),
+            shortcut: notesShortcut,
+            icon: <File className="size-3.5" strokeWidth={1.75} />,
+            onSelect: toggleNotesPanel,
+          },
+        ]
+      : []),
+    ...(hasPaneHeader
+      ? [
+          {
+            id: "close-pane",
+            label: t("Close pane"),
+            shortcut: closeShortcut,
+            icon: <X className="size-3" strokeWidth={1.75} />,
+            onSelect: () => onClose(session.id),
+          },
+        ]
+      : []),
+  ];
   const projectActions = visible ? (
     <ProjectQuickActions
       cwd={workCwd}
       actionsCwd={session.cwd}
       shortcutsEnabled={focused}
+      additionalItems={paneActions}
       onRun={
         onRunProjectAction && !session.worktreeRemoved
           ? (action) => onRunProjectAction(session.id, action)
@@ -1219,32 +1248,6 @@ const LocalSessionPane = memo(function LocalSessionPane({
       }
     />
   ) : null;
-  const notesShortcut = useKeybindingShortcut(NOTES_PANEL_COMMAND);
-  const closeShortcut = useKeybindingShortcut("Pane: Close");
-  const notesButton =
-    notesEnabled && visible && focused && !showNotesPanel ? (
-      <span
-        data-no-drag
-        onPointerDown={(event) => event.stopPropagation()}
-        onMouseDown={(event) => event.stopPropagation()}
-      >
-        <ExpandingButtonGroup
-          label={t("Notes")}
-          size="sm"
-          defaultExpanded={null}
-          items={[
-            {
-              id: "notes",
-              label: t("Notes"),
-              ariaLabel: t("Open notes panel"),
-              shortcut: notesShortcut,
-              icon: <File className="size-3.5" strokeWidth={1.75} />,
-              onSelect: toggleNotesPanel,
-            },
-          ]}
-        />
-      </span>
-    ) : null;
 
   const pane = (
     <div
@@ -1311,28 +1314,6 @@ const LocalSessionPane = memo(function LocalSessionPane({
             {headerStatus}
             <BackgroundSessionIndicator key={session.id} session={session} />
             {projectActions}
-            {!session.inboxAsk ? (
-              <span ref={setFindTriggerContainer} className="flex" data-no-drag />
-            ) : null}
-            {notesButton}
-            <Button
-              variant="ghost"
-              size="sm"
-              iconOnly
-              label={t("Close pane")}
-              motion="none"
-              shortcut={closeShortcut}
-              aria-label={t("Close pane")}
-              data-no-drag
-              onPointerDown={(e) => e.stopPropagation()}
-              onMouseDown={(e) => e.stopPropagation()}
-              onClick={(e) => {
-                e.stopPropagation();
-                onClose(session.id);
-              }}
-            >
-              <X className="size-3" strokeWidth={1.75} />
-            </Button>
           </div>
         </div>
       ) : null}
@@ -1349,7 +1330,6 @@ const LocalSessionPane = memo(function LocalSessionPane({
           {headerStatus}
           <BackgroundSessionIndicator key={session.id} session={session} />
           {projectActions}
-          {notesButton}
         </div>
       ) : null}
       <div data-session-body className="relative flex min-h-0 min-w-0 flex-1 flex-col">
@@ -1359,10 +1339,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
           session={session}
           onRefresh={onRefreshAdoptedSession}
         />
-        <div
-          ref={transcriptScope}
-          className={`@container relative flex min-h-0 flex-1 flex-col${dockComposer ? " transcript-composer-fade" : ""}`}
-        >
+        <div ref={transcriptScope} className="@container relative flex min-h-0 flex-1 flex-col">
           {visible && focused && !session.inboxAsk ? (
             <LinkedWorkItemUpdateNotice
               sessionId={session.id}
@@ -1497,7 +1474,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
               {!session.inboxAsk ? (
                 <TranscriptFind
                   sessionId={session.id}
-                  triggerContainer={hasPaneHeader ? findTriggerContainer : undefined}
+                  onTriggerChange={hasPaneHeader ? setFindAction : undefined}
                   blocks={findSearching ? session.blocks : stableBlocks}
                   visible={visible}
                   focused={focused}

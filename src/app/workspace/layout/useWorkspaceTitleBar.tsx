@@ -34,6 +34,8 @@ export interface WorkspaceTitleBarDeps {
   onOpenNotes: TitleBarProps["onOpenNotes"];
   onCloseTitleTab: TitleBarProps["onClose"];
   onCloseTabs: TitleBarProps["onCloseMany"];
+  onCloseIdleTabs: TitleBarProps["onCloseIdleTabs"];
+  idleTabCount: TitleBarProps["idleTabCount"];
   onArchiveTitleTab: TitleBarProps["onArchiveTab"];
   onDeleteTitleTab: TitleBarProps["onDeleteTab"];
   onReorderTabs: TitleBarProps["onReorder"];
@@ -74,6 +76,8 @@ export function useWorkspaceTitleBar({
   onOpenNotes,
   onCloseTitleTab,
   onCloseTabs,
+  onCloseIdleTabs,
+  idleTabCount,
   onArchiveTitleTab,
   onDeleteTitleTab,
   onReorderTabs,
@@ -124,6 +128,8 @@ export function useWorkspaceTitleBar({
       onOpenNotes={notesEnabled ? onOpenNotes : undefined}
       onClose={onCloseTitleTab}
       onCloseMany={onCloseTabs}
+      onCloseIdleTabs={onCloseIdleTabs}
+      idleTabCount={idleTabCount}
       onArchiveTab={onArchiveTitleTab}
       onDeleteTab={onDeleteTitleTab}
       onReorder={(ids) => {

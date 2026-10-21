@@ -175,3 +175,33 @@ it("automatic preview preserves typing, history and Enter while accepting only e
     await context.cleanup();
   }
 });
+
+it("browses the automatic list with Alt arrows without taking shell history keys", async () => {
+  const context = await setup(false, false, "bash", false);
+  try {
+    await act(async () =>
+      context.terminal.element!.dispatchEvent(
+        new KeyboardEvent("keydown", {
+          key: "ArrowDown",
+          altKey: true,
+          bubbles: true,
+          cancelable: true,
+        }),
+      ),
+    );
+    expect(context.host.querySelector('[aria-selected="true"]')?.textContent).toBe("git diff");
+    await act(async () =>
+      context.terminal.element!.dispatchEvent(
+        new KeyboardEvent("keydown", {
+          key: "Tab",
+          bubbles: true,
+          cancelable: true,
+        }),
+      ),
+    );
+    expect(context.shell.accept).toHaveBeenCalledExactlyOnceWith("git diff");
+    expect(context.terminal.input).not.toHaveBeenCalled();
+  } finally {
+    await context.cleanup();
+  }
+});

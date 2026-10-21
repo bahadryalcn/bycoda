@@ -1,4 +1,4 @@
-//! Opt-in, session-only Bash readline integration. No key recording or history
+//! Session-only shell editor integration. No key recording or history
 //! persistence. Only policy-approved shell snapshots leave the remote process.
 use serde::Serialize;
 
@@ -55,6 +55,7 @@ struct Pending {
 }
 pub(crate) struct ShellIntegration {
     mode: &'static str,
+    automatic: bool,
     nonce: String,
     buffer: Vec<u8>,
     ready: bool,
@@ -95,6 +96,9 @@ fn literal(value: &str) -> bool {
             "secret",
             "token",
             "credential",
+            "authorization",
+            "api_key",
+            "apikey",
             ".env",
             ".ssh",
             "private",
@@ -123,17 +127,9 @@ fn source_value(source: &str, prefix: &str, value: &str) -> bool {
         return false;
     }
     match source {
-        "commands" => {
-            if value.contains(' ') {
-                return reviewed_line(value);
-            }
-            !value.is_empty()
-                && !value.contains(' ')
-                && !value.contains('/')
-                && !value.starts_with('-')
-        }
+        "commands" => !value.is_empty() && !value.starts_with('-'),
         "paths" => reviewed_line(value) && (value.starts_with("cd ") || value.starts_with("ls ")),
-        "history" => reviewed_line(value),
+        "history" => !value.is_empty() && !value.starts_with('-'),
         _ => safe_candidate(prefix, value),
     }
 }
@@ -152,6 +148,7 @@ impl ShellIntegration {
     pub(crate) fn new() -> Self {
         Self {
             mode: "bash",
+            automatic: false,
             nonce: uuid::Uuid::new_v4().simple().to_string(),
             buffer: Vec::new(),
             ready: false,
@@ -166,6 +163,10 @@ impl ShellIntegration {
     pub(crate) fn for_shell(mode: &str) -> Result<Self, String> {
         let mut integration = Self::new();
         integration.mode = match mode {
+            "auto" => {
+                integration.automatic = true;
+                "bash"
+            }
             "bash" => "bash",
             "zsh" => "zsh",
             "powershell" => "powershell",
@@ -176,7 +177,11 @@ impl ShellIntegration {
         Ok(integration)
     }
     pub(crate) fn shell_mode(&self) -> &str {
-        self.mode
+        if self.automatic {
+            "auto"
+        } else {
+            self.mode
+        }
     }
     fn event(&self, id: &str, status: &str) -> ShellEvent {
         ShellEvent {
@@ -357,6 +362,14 @@ impl ShellIntegration {
             return None;
         }
         match parts.get(1).copied()? {
+            "shell" if self.automatic && self.prompt_seq == 0 && parts.len() == 3 => {
+                self.mode = match parts[2] {
+                    "bash" => "bash",
+                    "zsh" => "zsh",
+                    _ => return None,
+                };
+                None
+            }
             "ready" if parts.len() == 6 && safe_atom(parts[2]) && safe_atom(parts[3]) => {
                 let prompt_seq = parts[4].parse::<u64>().ok()?;
                 let request_seq = parts[5].parse::<u64>().ok()?;
@@ -439,7 +452,11 @@ impl ShellIntegration {
                 }
                 let values: Vec<String> = parts[8]
                     .split('\t')
-                    .filter(|v| !v.is_empty() && source_value(pending.source, prefix, v))
+                    .filter(|v| {
+                        !v.is_empty()
+                            && (pending.source == "reviewed" || *v != prefix)
+                            && source_value(pending.source, prefix, v)
+                    })
                     .take(12)
                     .map(str::to_string)
                     .collect();
@@ -487,6 +504,30 @@ impl ShellIntegration {
     /// Only the native validated literal-environment builder may supply this
     /// prologue. It joins the fixed integration script before its one encoding.
     pub(crate) fn remote_command_with_prologue(&self, prologue: Option<&str>) -> String {
+        if self.automatic {
+            let command = |mode| {
+                let mut shell = Self::for_shell(mode).expect("fixed shell mode");
+                shell.nonce = self.nonce.clone();
+                format!(
+                    "printf '\\033]777;bycoda;{};shell;{}\\007'; {}",
+                    self.nonce,
+                    mode,
+                    shell.remote_command_with_prologue(prologue)
+                )
+            };
+            // Detect the account's login shell. Unsupported shells retain their
+            // ordinary login session with no input capture or suggestion chords.
+            let fallback = format!("{}exec \"${{SHELL:-/bin/sh}}\" -l", prologue.unwrap_or(""));
+            return format!(
+                "sh -c {}",
+                crate::remote_ssh::shell_quote(&format!(
+                    "case \"${{SHELL##*/}}\" in bash) {} ;; zsh) {} ;; *) {} ;; esac",
+                    command("bash"),
+                    command("zsh"),
+                    fallback
+                ))
+            );
+        }
         let script = match prologue {
             Some(prologue) if !prologue.is_empty() => format!("{prologue}\n{}", self.script()),
             _ => self.script(),
@@ -522,6 +563,21 @@ impl ShellIntegration {
 mod tests {
     use super::*;
     #[test]
+    fn automatic_bootstrap_detects_shell_and_keeps_nonce_scoped_protocol() {
+        let mut shell = ShellIntegration::for_shell("auto").unwrap();
+        let command = shell.remote_command();
+        assert!(command.starts_with("sh -c "));
+        assert!(command.contains("SHELL##*/"));
+        assert!(command.contains("zsh -dfc"));
+        assert!(command.contains("bash --noprofile"));
+        shell.filter("t", &message(&shell, "shell;zsh"));
+        let (_, events) = shell.filter("t", &message(&shell, "ready;alice;remote;1;0"));
+        assert_eq!(events[0].shell, "zsh");
+        assert_eq!(shell.shell_mode(), "auto");
+        shell.filter("t", &message(&shell, "shell;bash"));
+        assert_eq!(shell.mode, "zsh");
+    }
+    #[test]
     fn reverse_search_revokes_automatic_request_capability_for_every_shell() {
         for mode in ["bash", "zsh", "powershell"] {
             let mut shell = ShellIntegration::for_shell(mode).unwrap();
@@ -534,7 +590,7 @@ mod tests {
         }
     }
     #[test]
-    fn capability_sources_are_bounded_and_not_arbitrary_history_or_shell_programs() {
+    fn capability_sources_accept_literal_history_but_never_secrets_or_shell_syntax() {
         assert!(source_value("commands", "dock", "docker"));
         assert!(source_value("commands", "docker p", "docker ps"));
         assert!(source_value("commands", "git st", "git status"));
@@ -545,6 +601,14 @@ mod tests {
             "systemctl status nginx"
         ));
         assert!(source_value("history", "docker ", "docker ps"));
+        assert!(source_value("commands", "cl", "clear"));
+        assert!(source_value("commands", "mcli a", "mcli alias list"));
+        assert!(source_value(
+            "history",
+            "systemctl r",
+            "systemctl restart nginx"
+        ));
+        assert!(source_value("history", "docker ", "docker run x"));
         for value in [
             "curl -H Authorization",
             "ls .env",
@@ -553,8 +617,6 @@ mod tests {
             "ls $(whoami)",
             "ls /tmp/a;b",
             "ls /tmp/日本語",
-            "docker run x",
-            "systemctl restart nginx",
             "ls /tmp/a\nb",
         ] {
             assert!(!source_value("history", "", value), "{value}");

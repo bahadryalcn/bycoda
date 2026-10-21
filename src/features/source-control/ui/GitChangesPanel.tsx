@@ -434,7 +434,7 @@ export function GitChangesPanel({
                   {t("Merge Conflicts")}: {conflicts.length}
                 </span>
               ) : null}
-              {(index.ahead ?? 0) > 0 ? (
+              {!detailsOpen && (index.ahead ?? 0) > 0 ? (
                 <span
                   title={t(index.ahead === 1 ? "{p0} unpushed commit" : "{p0} unpushed commits", {
                     p0: index.ahead,
@@ -443,7 +443,7 @@ export function GitChangesPanel({
                   ↑{index.ahead}
                 </span>
               ) : null}
-              {(index.behind ?? 0) > 0 ? (
+              {!detailsOpen && (index.behind ?? 0) > 0 ? (
                 <span
                   title={t(index.behind === 1 ? "{p0} incoming commit" : "{p0} incoming commits", {
                     p0: index.behind,
@@ -486,16 +486,6 @@ export function GitChangesPanel({
                   changesRef.current?.refreshPr?.();
                 }}
               />
-              {!repository && (index?.ahead ?? 0) > 0 ? (
-                <span className="shrink-0 tabular-nums text-[var(--ui-text-muted)]">
-                  ↑{index?.ahead}
-                </span>
-              ) : null}
-              {!repository && (index?.behind ?? 0) > 0 ? (
-                <span className="shrink-0 tabular-nums text-[var(--ui-text-muted)]">
-                  ↓{index?.behind}
-                </span>
-              ) : null}
             </span>
           ) : null}
           <Button
@@ -1544,8 +1534,8 @@ function ChangedFiles({
             {index?.repository === false
               ? ""
               : index
-                ? index.ahead > 0 || index.behind > 0
-                  ? syncStatusLabel(index)
+                ? diverged
+                  ? t("Diverged from {p0}", { p0: index.upstream ?? "upstream" })
                   : t("No uncommitted changes")
                 : failure || loadError
                   ? ""
@@ -1732,25 +1722,6 @@ function usePrStatus(cwd: string, branch: string | null | undefined, enabled: bo
     error: resource.error,
     reload: resource.refresh,
   };
-}
-
-function syncStatusLabel(index: GitDiffIndex): string {
-  if (index.ahead > 0 && index.behind > 0) {
-    return t("Diverged from {p0}", { p0: index.upstream ?? "upstream" });
-  }
-  if (index.ahead > 0) {
-    const n = index.ahead;
-    return t(n === 1 ? "{p0} unpushed commit" : "{p0} unpushed commits", {
-      p0: n,
-    });
-  }
-  if (index.behind > 0) {
-    const n = index.behind;
-    return t(n === 1 ? "{p0} incoming commit" : "{p0} incoming commits", {
-      p0: n,
-    });
-  }
-  return t("No files");
 }
 
 function GitSyncActions({

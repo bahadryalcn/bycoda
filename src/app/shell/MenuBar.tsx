@@ -34,6 +34,8 @@ type Props = {
   onShowSourceControl?: () => void;
   onCloseCurrentTab?: () => void;
   onCloseOtherTabs?: () => void;
+  onCloseIdleTabs?: () => void;
+  idleTabCount?: number;
   onCloseAllTabs?: () => void;
   onPickProject?: () => void;
   onFindInProject?: () => void;
@@ -56,6 +58,8 @@ export const MenuBar = memo(function MenuBar({
   onShowSourceControl,
   onCloseCurrentTab,
   onCloseOtherTabs,
+  onCloseIdleTabs,
+  idleTabCount,
   onCloseAllTabs,
   onPickProject,
   onFindInProject,
@@ -178,6 +182,9 @@ export const MenuBar = memo(function MenuBar({
         case "close_other_tabs":
           onCloseOtherTabs?.();
           break;
+        case "close_idle_tabs":
+          onCloseIdleTabs?.();
+          break;
         case "close_all_tabs":
           onCloseAllTabs?.();
           break;
@@ -228,6 +235,8 @@ export const MenuBar = memo(function MenuBar({
       autosave,
       onCloseCurrentTab,
       onCloseOtherTabs,
+      onCloseIdleTabs,
+      idleTabCount,
       onCloseAllTabs,
       onFindInProject,
       onGoToFile,
@@ -334,6 +343,18 @@ export const MenuBar = memo(function MenuBar({
             },
             shortcut: shortcut("Tab: Close Others", `${MOD}${ALT}T`),
           },
+          ...(onCloseIdleTabs
+            ? [
+                {
+                  kind: "item" as const,
+                  id: "close_idle_tabs",
+                  get label() {
+                    return t("Close Idle Tabs");
+                  },
+                  disabled: !idleTabCount,
+                },
+              ]
+            : []),
           {
             kind: "item",
             id: "close_all_tabs",

@@ -45,7 +45,7 @@ __bycoda_literal() {
     emulate -L zsh
     [[ ${#1} -le 256 && $1 != *[^a-zA-Z0-9\ ./_:-]* ]] || return 1
     local lower=${(L)1}
-    [[ $lower != *password* && $lower != *passwd* && $lower != *secret* && $lower != *token* && $lower != *credential* && $lower != *.env* && $lower != *.ssh* && $lower != *private* ]]
+    [[ $lower != *password* && $lower != *passwd* && $lower != *secret* && $lower != *token* && $lower != *authorization* && $lower != *api_key* && $lower != *apikey* && $lower != *credential* && $lower != *.env* && $lower != *.ssh* && $lower != *private* ]]
 }
 __bycoda_reviewed() {
     emulate -L zsh
@@ -64,18 +64,17 @@ __bycoda_source() {
     [[ $CURSOR == ${#BUFFER} ]] && __bycoda_literal "$BUFFER" || { __bycoda_no_match; return; }
     case $source in
         commands)
-            [[ $BUFFER != */* && $BUFFER != -* ]] || { __bycoda_no_match; return; }
             # Parameter-table keys enumerate names without invoking/autoloading
             # functions or calling the user's programmable completion widgets.
             builtin rehash
-            candidates=( ${(k)commands} ${(k)builtins} ${(k)functions} ${(k)aliases} 'git status' 'git diff' 'git log --oneline' 'ls -l' 'ls -la' 'docker ps' 'docker ps -a' 'systemctl status' ) ;;
+            candidates=( "${(@f)$(builtin fc -rln -200 2>/dev/null)}" 'git status' 'git diff' 'git diff --staged' 'git log --oneline' 'git stash list' 'ls -l' 'ls -la' 'docker ps' 'docker ps -a' 'docker compose up' 'docker compose logs -f' 'systemctl status' 'systemctl restart' 'pnpm install' 'pnpm dev' 'pnpm build' 'pnpm test' 'npm install' 'npm run dev' 'cargo check' 'cargo test' clear ${(ok)commands} ${(ok)builtins} ${(ok)functions} ${(ok)aliases} ) ;;
         paths)
             case $BUFFER in 'cd '*|'ls '*) ;; *) __bycoda_no_match; return ;; esac
             lead=${BUFFER%% *}' '; typed_path=${BUFFER#* }
             [[ $typed_path != -* && $typed_path != *' '* ]] || { __bycoda_no_match; return; }
             candidates=( ${~typed_path}*(N) ) ;;
         reviewed) candidates=( "${(@f)$(builtin fc -ln -100 2>/dev/null)}" cd git ls 'ls -l' 'ls -la' pwd 'git status' 'git diff' 'git log --oneline' ) ;;
-        history) candidates=( "${(@f)$(builtin fc -ln -100 2>/dev/null)}" ) ;;
+        history) candidates=( "${(@f)$(builtin fc -rln -200 2>/dev/null)}" ) ;;
     esac
     for candidate in "${candidates[@]}"; do
         if [[ $source == paths ]]; then
@@ -84,20 +83,16 @@ __bycoda_source() {
             candidate=$lead$candidate
             __bycoda_reviewed "$candidate" || continue
         elif [[ $source == commands ]]; then
-            [[ $candidate != */* && $candidate != -* ]] || continue
-            if [[ $candidate == *' '* ]]; then
-                __bycoda_reviewed "$candidate" || continue
-                builtin whence -w -- "${candidate%% *}" >/dev/null 2>&1 || continue
-            fi
+            [[ $candidate != ' '* && $candidate != -* ]] || continue
         else
             if [[ $source == reviewed ]]; then
                 case $candidate in cd|git|ls|'ls -l'|'ls -la'|pwd|'git status'|'git diff'|'git log --oneline') ;; *) continue ;; esac
             else
-                __bycoda_reviewed "$candidate" || continue
+                [[ $candidate != ' '* && $candidate != -* ]] || continue
             fi
             builtin whence -w -- "${candidate%% *}" >/dev/null 2>&1 || continue
         fi
-        __bycoda_literal "$candidate" && [[ $candidate == "$BUFFER"* && $values != *"$candidate"$'\t'* ]] || continue
+        __bycoda_literal "$candidate" && [[ -n $candidate && $candidate != "$BUFFER" && $candidate == "$BUFFER"* && $values != *"$candidate"$'\t'* ]] || continue
         values+="$candidate"$'\t'
         (( ++count >= 12 )) && break
     done

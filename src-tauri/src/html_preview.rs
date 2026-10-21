@@ -13,7 +13,7 @@ fn previews() -> &'static Mutex<HashMap<String, Preview>> {
     PREVIEWS.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn create_html_preview(path: String, content: String) -> Result<String, String> {
     if content.len() > 16 * 1024 * 1024 {
         return Err("HTML preview is limited to 16 MiB.".into());

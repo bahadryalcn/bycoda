@@ -6,61 +6,15 @@ import { Alert } from "../../../shared/ui/Alert";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import { TextareaField } from "../../../shared/ui/TextareaField";
 import type { BackgroundSessionTarget } from "../../tasks/model/backgroundSession";
-import type { CrewRun } from "../model/crew";
+import type { CrewDefinition, CrewRun } from "../model/crew";
 import type { useProjectCrews } from "../model/crewClient";
-import { Bot, Settings, SlidersHorizontal, type IconComponent } from "../../../shared/ui/icons";
-import { CrewEditor, type CrewEditorView } from "./CrewEditor";
+import { saveCrewAppearance } from "../model/crewAppearance";
+import { roleLabel } from "./CrewMemberForm";
 
-const VIEWS: { id: CrewEditorView; label: string; icon: IconComponent }[] = [
-  { id: "general", label: "General", icon: Settings },
-  { id: "team", label: "Team", icon: Bot },
-  { id: "limits", label: "Limits", icon: SlidersHorizontal },
-];
+export { CrewEditDialog } from "./CrewEditor";
 
-/** A crew's settings: a page list on the left, one editor kept across pages. */
-export function CrewEditDialog({
-  cwd,
-  crewId,
-  createScope,
-  initialView = "general",
-  onClose,
-}: {
-  cwd: string;
-  crewId?: string;
-  createScope?: "project" | "global";
-  initialView?: CrewEditorView;
-  onClose: () => void;
-}) {
-  useLocale();
-  const [view, setView] = useState<CrewEditorView>(initialView);
-  return (
-    <Modal title={t("Crew settings")} size="lg" onClose={onClose}>
-      <div className="flex min-h-[min(560px,70vh)] max-sm:flex-col">
-        <nav
-          aria-label={t("Crew settings")}
-          className="flex shrink-0 flex-col gap-px border-e border-(--ui-tone-neutral-border) p-2 sm:w-40 max-sm:flex-row max-sm:border-e-0 max-sm:border-b"
-        >
-          {VIEWS.map(({ id, label, icon: Icon }) => (
-            <Button
-              key={id}
-              variant="item"
-              motion="none"
-              selected={view === id}
-              aria-current={view === id ? "page" : undefined}
-              onClick={() => setView(id)}
-            >
-              <Icon className="size-3.5 shrink-0" aria-hidden />
-              <span className="min-w-0 flex-1 truncate text-start">{t(label)}</span>
-            </Button>
-          ))}
-        </nav>
-        <div className="min-w-0 flex-1 p-4">
-          <CrewEditor cwd={cwd} crewId={crewId} createScope={createScope} view={view} />
-        </div>
-      </div>
-    </Modal>
-  );
-}
+// The delivery being written survives editing the crew and reopening this dialog.
+const startDrafts = new Map<string, { definitionId: string; prompt: string }>();
 
 export function StartCrewDialog({
   cwd,
@@ -74,20 +28,33 @@ export function StartCrewDialog({
   state: ReturnType<typeof useProjectCrews>;
   definitionId?: string;
   onOpen?: (target: BackgroundSessionTarget) => void | Promise<void>;
-  /** Opens the editor for the chosen crew. */
+  /** Opens the editor for the chosen crew; the written delivery is kept. */
   onEdit?: (definitionId: string) => void;
   onClose: () => void;
 }) {
   useLocale();
   const data = state.data;
-  const [definitionId, setDefinitionId] = useState(
-    initialDefinition ?? data?.definitions[0]?.id ?? "",
+  const draftKey = data ? `${data.machine.id}/${data.project.id}` : cwd;
+  const stored = startDrafts.get(draftKey);
+  const [definitionId, setDefinitionIdState] = useState(
+    initialDefinition ?? stored?.definitionId ?? data?.definitions[0]?.id ?? "",
   );
-  const [prompt, setPrompt] = useState("");
+  const [prompt, setPromptState] = useState(stored?.prompt ?? "");
+  const remember = (next: { definitionId?: string; prompt?: string }) =>
+    startDrafts.set(draftKey, { definitionId, prompt, ...next });
+  const setDefinitionId = (value: string) => {
+    setDefinitionIdState(value);
+    remember({ definitionId: value });
+  };
+  const setPrompt = (value: string) => {
+    setPromptState(value);
+    remember({ prompt: value });
+  };
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
   const pendingGate = useRef(false);
   const startRequest = useRef<{ signature: string; id: string } | null>(null);
+  const crew = data?.definitions.find((d) => d.id === definitionId);
   const start = async () => {
     if (pendingGate.current) return;
     pendingGate.current = true;
@@ -103,6 +70,7 @@ export function StartCrewDialog({
         requestId: startRequest.current.id,
       });
       if (run.error) throw new Error(run.error);
+      startDrafts.delete(draftKey);
       onClose();
       if (run.coordinatorSessionId && onOpen && data)
         await onOpen({
@@ -120,13 +88,31 @@ export function StartCrewDialog({
   };
   return (
     <Modal
-      title={t("Start crew")}
+      title={t("Start crew work")}
       onClose={() => {
         if (!pending) onClose();
       }}
       size="md"
+      footer={
+        <>
+          <span className="min-w-0 flex-1" />
+          {onEdit && definitionId ? (
+            <Button variant="ghost" onClick={() => onEdit(definitionId)} disabled={pending}>
+              {t("Edit crew")}
+            </Button>
+          ) : null}
+          <Button
+            variant="primary"
+            disabled={!definitionId || !prompt.trim() || pending}
+            loading={pending}
+            onClick={() => void start()}
+          >
+            {t("Start work")}
+          </Button>
+        </>
+      }
     >
-      <div className="flex flex-col gap-3 p-4">
+      <div className="flex flex-col gap-3 p-4 pt-2">
         {error && <Alert tone="danger">{error}</Alert>}
         <SearchableSelect
           label={t("Crew")}
@@ -141,28 +127,102 @@ export function StartCrewDialog({
           onChange={setDefinitionId}
           disabled={pending}
         />
+        {crew ? <CrewRosterSummary crew={crew} /> : null}
         <TextareaField
-          label={t("Crew assignment")}
-          placeholder={t("What should this crew deliver?")}
+          label={t("What should the crew deliver?")}
+          placeholder={t("e.g. Build the mobile sign-in screen with tests.")}
           value={prompt}
+          rows={5}
+          autoFocus
           disabled={pending}
           onChange={(e) => setPrompt(e.target.value)}
         />
-        <div className="flex justify-end gap-2">
-          {onEdit && definitionId ? (
-            <Button variant="ghost" onClick={() => onEdit(definitionId)} disabled={pending}>
-              {t("Edit crew")}
-            </Button>
-          ) : null}
-          <Button
-            variant="primary"
-            disabled={!definitionId || !prompt.trim() || pending}
-            loading={pending}
-            onClick={() => void start()}
-          >
-            {t("Start crew")}
+        <p className="text-xs text-(--ui-text-secondary)">
+          {t("The first line becomes the work title. The coordinator plans and assigns the rest.")}
+        </p>
+      </div>
+    </Modal>
+  );
+}
+
+function CrewRosterSummary({ crew }: { crew: CrewDefinition }) {
+  return (
+    <p className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-(--ui-text-secondary)">
+      {crew.agents.map((agent) => (
+        <span key={agent.id}>
+          <span className="font-medium text-content">{agent.name}</span> · {roleLabel(agent.role)}
+        </span>
+      ))}
+    </p>
+  );
+}
+
+/** Deletes a saved crew after an explicit confirmation; finished work history stays. */
+export function CrewDeleteDialog({
+  state,
+  crew,
+  activeWork,
+  onClose,
+}: {
+  state: ReturnType<typeof useProjectCrews>;
+  crew: CrewDefinition;
+  activeWork: number;
+  onClose: () => void;
+}) {
+  useLocale();
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState("");
+  return (
+    <Modal
+      title={t("Delete {p0}?", { p0: crew.name })}
+      size="sm"
+      onClose={() => {
+        if (!pending) onClose();
+      }}
+      footer={
+        <>
+          <span className="min-w-0 flex-1" />
+          <Button variant="ghost" disabled={pending} onClick={onClose}>
+            {t("Cancel")}
           </Button>
-        </div>
+          <Button
+            variant="danger"
+            loading={pending}
+            disabled={pending || activeWork > 0}
+            onClick={async () => {
+              setPending(true);
+              setError("");
+              try {
+                await state.call("crews.delete", {
+                  definitionId: crew.id,
+                  expectedUpdatedAt: crew.updatedAt,
+                });
+                saveCrewAppearance(crew.id, {
+                  icon: undefined,
+                  color: undefined,
+                });
+                onClose();
+              } catch (reason) {
+                setError(reason instanceof Error ? reason.message : String(reason));
+              } finally {
+                setPending(false);
+              }
+            }}
+          >
+            {t("Delete crew")}
+          </Button>
+        </>
+      }
+    >
+      <div className="flex flex-col gap-3 p-4 pt-2">
+        {error ? <Alert tone="danger">{error}</Alert> : null}
+        {activeWork > 0 ? (
+          <Alert tone="warning">{t("Stop this crew's running work before deleting it.")}</Alert>
+        ) : (
+          <p className="text-sm">
+            {t("The crew definition is removed. Library members are kept.")}
+          </p>
+        )}
       </div>
     </Modal>
   );

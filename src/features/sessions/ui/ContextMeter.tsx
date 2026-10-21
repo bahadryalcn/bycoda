@@ -289,48 +289,60 @@ function ContextSignal({
 }) {
   const clipId = useId();
   const fill = responseSpeedFill(tps);
+  // The bolt is its own root <svg> so its working pulse animates on the
+  // compositor; an animated element inside an SVG repaints every frame.
   return (
-    <svg
-      width={24}
-      height={24}
-      viewBox="0 0 24 24"
-      className={`context-signal ${ringClass(ratio)}`}
-      data-working={working ? "true" : undefined}
-      data-speed-fill={fill}
-      fill="none"
-      strokeWidth={1.8}
-      strokeLinecap="round"
-      role={label ? "img" : undefined}
-      aria-label={label}
-      aria-hidden={label ? undefined : true}
-    >
-      <circle
-        cx="12"
-        cy="12"
-        r="10"
-        stroke="currentColor"
-        strokeWidth="1.5"
-        className="context-signal-track"
-      />
-      {ratio > 0 ? (
+    <span className="context-signal-frame" data-working={working ? "true" : undefined}>
+      <svg
+        width={24}
+        height={24}
+        viewBox="0 0 24 24"
+        className={`context-signal ${ringClass(ratio)}`}
+        data-working={working ? "true" : undefined}
+        data-speed-fill={fill}
+        fill="none"
+        strokeWidth={1.8}
+        strokeLinecap="round"
+        role={label ? "img" : undefined}
+        aria-label={label}
+        aria-hidden={label ? undefined : true}
+      >
         <circle
           cx="12"
           cy="12"
           r="10"
           stroke="currentColor"
           strokeWidth="1.5"
-          pathLength="100"
-          strokeDasharray="100"
-          strokeDashoffset={100 * (1 - ratio)}
-          transform="rotate(-90 12 12)"
+          className="context-signal-track"
         />
-      ) : null}
-      <defs>
-        <clipPath id={clipId}>
-          <rect x="8" y={17.2 - 10.4 * fill} width="8" height={10.4 * fill} />
-        </clipPath>
-      </defs>
-      <g className="context-speed-bolt">
+        {ratio > 0 ? (
+          <circle
+            cx="12"
+            cy="12"
+            r="10"
+            stroke="currentColor"
+            strokeWidth="1.5"
+            pathLength="100"
+            strokeDasharray="100"
+            strokeDashoffset={100 * (1 - ratio)}
+            transform="rotate(-90 12 12)"
+          />
+        ) : null}
+      </svg>
+      <svg
+        width={24}
+        height={24}
+        viewBox="0 0 24 24"
+        className="context-speed-bolt"
+        fill="none"
+        aria-hidden="true"
+        focusable="false"
+      >
+        <defs>
+          <clipPath id={clipId}>
+            <rect x="8" y={17.2 - 10.4 * fill} width="8" height={10.4 * fill} />
+          </clipPath>
+        </defs>
         <path
           d="M13.5 6.8 8.5 12.5h3.3l-1.3 4.7 5-6.3h-3.2z"
           stroke="currentColor"
@@ -345,7 +357,7 @@ function ContextSignal({
             clipPath={`url(#${clipId})`}
           />
         ) : null}
-      </g>
-    </svg>
+      </svg>
+    </span>
   );
 }
