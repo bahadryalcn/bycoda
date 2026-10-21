@@ -216,10 +216,10 @@ it("translates background, conflict, action and success messages into Turkish", 
   expect(container.textContent).not.toContain("host");
 });
 
-it("keeps background execution in an accessible SVG action with tap and keyboard details", async () => {
+it("keeps background execution in an accessible action with tap and keyboard details", async () => {
   act(() => root.render(createElement(BackgroundSessionIndicator, { session })));
   expect(button().getAttribute("aria-label")).toContain("running in the background");
-  expect(button().querySelector("svg")).not.toBeNull();
+  expect(button().querySelector('[aria-hidden="true"]')).not.toBeNull();
   expect(container.textContent).toBe("");
   button().focus();
   expect(document.activeElement).toBe(button());
