@@ -4,7 +4,10 @@ import { createRoot } from "react-dom/client";
 import { expect, it, vi } from "vitest";
 import { SharedQueueRecoveryNotice } from "./SharedQueueRecoveryNotice";
 
-const mocks = vi.hoisted(() => ({ resolve: vi.fn(), state: { recovery: "held request" } }));
+const mocks = vi.hoisted(() => ({
+  resolve: vi.fn(),
+  state: { recovery: "held request", queue: { messages: [] } },
+}));
 vi.mock("../model/useSharedLocalQueues", () => ({
   useLocalSharedQueueClient: () => ({
     subscribe: () => () => {},
