@@ -123,6 +123,7 @@ import { additionalDirsForSession } from "../features/projects/model/additionalD
 import { setAdditionalDirsResolver } from "../integrations/harness/core/additionalDirs";
 import { leafIds } from "../features/workspace/model/layout";
 import { idleWorkspaceTabIds } from "../features/workspace/model/idleTabs";
+import { useCloseForeignEmptyTabs } from "./workspace/tabs/useCloseForeignEmptyTabs";
 import { composerDraftOf } from "../features/sessions/model/draftCache";
 import { type WindowTransferPayload } from "./model/windowTransfer";
 import { paneDropFromPoint } from "../features/workspace/model/paneDrop";
@@ -1095,6 +1096,19 @@ function Workspace({
     const ids = idleTabIds();
     if (ids.length > 0) onCloseTabs(ids, activeTabIdRef.current);
   };
+  // Other projects' never-used new chats close on launch and on project switch.
+  useCloseForeignEmptyTabs({
+    projectCwd,
+    tabs,
+    sessions,
+    activeTabId,
+    busySessionIds,
+    unseenFinishedIds,
+    dirtyFileIds: dirtyFiles,
+    movingTabIds: movingTabIds.current,
+    restoredWorkspace: !windowTransfer,
+    onCloseTabs: (ids, fallbackId) => onCloseTabs(ids, fallbackId),
+  });
 
   const { onCloseFile, onCloseOtherFiles } = useEditorFileClose({
     activeTabId,
@@ -2988,6 +3002,8 @@ function Workspace({
                     activeTabId={activeTabId}
                     windowTransferPending={windowTransferPending}
                     movingWindows={movingWindows}
+                    busySessionIds={busySessionIds}
+                    unseenFinishedIds={unseenFinishedIds}
                     inboxViewOpen={inboxViewOpen}
                     dirtyFiles={dirtyFiles}
                     fileErrorCounts={fileErrorCounts}

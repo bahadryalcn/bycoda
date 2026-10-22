@@ -10,6 +10,7 @@ import type { Session } from "../../../features/sessions/model/session";
 import { hasPendingApproval, type Block } from "../../../features/sessions/model/session";
 import { LinkedWorkItemPanel } from "../surfaces/lazySurfaces";
 import type { LinkedWorkItemPanelState } from "../helpers/types";
+import { useTabHibernation } from "../tabs/useTabHibernation";
 
 type DockProps = ComponentProps<typeof ProjectTerminalDock>;
 type PaneTreeProps = ComponentProps<typeof PaneTree>;
@@ -79,6 +80,9 @@ export interface WorkspaceMainAreaProps {
   dirtyFiles: PaneTreeProps["dirtyFileIds"];
   fileErrorCounts: PaneTreeProps["fileErrorCounts"];
   sessions: Session[];
+  /** Hibernation eligibility: a hidden tab with busy or unseen-finished sessions stays mounted. */
+  busySessionIds: ReadonlySet<string>;
+  unseenFinishedIds: ReadonlySet<string>;
   active: Session | undefined;
   composerFocused: boolean;
   composerFocusToken: PaneTreeProps["composerFocusToken"];
@@ -156,6 +160,8 @@ export function WorkspaceMainArea({
   dirtyFiles,
   fileErrorCounts,
   sessions,
+  busySessionIds,
+  unseenFinishedIds,
   active,
   composerFocused,
   composerFocusToken,
@@ -206,6 +212,16 @@ export function WorkspaceMainArea({
       sessions.map((session) => session.id),
     );
   }, [transcriptPool, sessions]);
+  // Hidden, idle tabs release their pane tree; the tab entry itself is untouched.
+  const isHibernated = useTabHibernation({
+    tabs,
+    activeTabId,
+    sessions,
+    busySessionIds,
+    unseenFinishedIds,
+    dirtyFileIds: dirtyFiles,
+    movingTabIds: movingWindows,
+  });
   return (
     <main className="relative flex min-h-0 min-w-0 flex-1">
       <ToolsWorkspace>
@@ -257,6 +273,7 @@ export function WorkspaceMainArea({
                     aria-busy={windowTransferPending || movingWindows.has(tab.id)}
                     className="flex h-full min-h-0 min-w-0 flex-1 flex-col"
                   >
+                    {isHibernated(tab) ? null : (
                     <PaneTree
                       {...sessionPaneProps}
                       visible={tab.id === activeTabId && !inboxViewOpen}
@@ -298,6 +315,7 @@ export function WorkspaceMainArea({
                       onPopOutPane={onPopOutPane}
                       onTerminalMetaChange={onTerminalMetaChange}
                     />
+                    )}
                   </div>
                 </div>
               ))}

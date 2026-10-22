@@ -155,6 +155,12 @@ export function composerDraftOf(sessionId: string): {
   };
 }
 
+/** Typed text or an attachment that has not been sent. Whitespace alone is not a message. */
+export function hasUnsentComposerDraft(sessionId: string): boolean {
+  const draft = composerDraftOf(sessionId);
+  return draft.text.trim().length > 0 || draft.attachments.length > 0;
+}
+
 export function clearComposerDraft(sessionId: string): void {
   drafts.delete(sessionId);
   mcpTags.delete(sessionId);

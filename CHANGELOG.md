@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.66]
+
+### Workspace performance
+
+- Hibernate tabs that stay hidden for ten minutes, releasing their panes while keeping the tab, its order and unsent drafts; busy, waiting, editor and terminal tabs stay mounted.
+- Close never-used new chats of other projects on launch and when switching projects, keeping any chat with typed text, attachments or activity.
+
 ## [0.6.65]
 
 ### Host tools and session workflows

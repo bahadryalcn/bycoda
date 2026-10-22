@@ -42,6 +42,13 @@ const written = new Map<string, string | null>();
 const spilled = new Map<string, Map<string, { data: string; path: string }>>();
 /** A successful listing establishes absence; a failed read leaves it unknown. */
 let listedSessions: Set<string> | null = null;
+/** True only once every saved draft is in the cache. A timeout leaves it false. */
+let draftsLoaded = false;
+
+/** Whether the saved drafts are known to be in the cache, so an empty cache means no draft. */
+export function composerDraftsLoaded(): boolean {
+  return draftsLoaded;
+}
 /** Marks a row whose content differs from the cache, so the next write always goes out. */
 const STALE = "stale";
 let installed = false;
@@ -191,6 +198,7 @@ function install() {
 export async function hydrateComposerDrafts(): Promise<void> {
   const startedAt = composerDraftRevision();
   listedSessions = null;
+  draftsLoaded = false;
   try {
     const timeout = new Promise<null>((resolve) =>
       setTimeout(() => resolve(null), HYDRATE_TIMEOUT_MS),
@@ -204,7 +212,11 @@ export async function hydrateComposerDrafts(): Promise<void> {
             : [],
         ),
       );
-      await Promise.race([Promise.all(rows.map((row) => hydrateRow(row, startedAt))), timeout]);
+      const finished = await Promise.race([
+        Promise.all(rows.map((row) => hydrateRow(row, startedAt))).then(() => true),
+        timeout,
+      ]);
+      draftsLoaded = finished === true;
     }
   } catch {
     // Start with no saved drafts.
