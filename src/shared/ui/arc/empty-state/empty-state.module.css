@@ -1,0 +1,62 @@
+/* Adapted official free Arc source; bycoda semantic theme owns presentation. */
+.root {
+  display: flex;
+  inline-size: 100%;
+  flex-direction: column;
+  align-items: center;
+  justify-content: safe center;
+  gap: var(--space-2);
+  padding: var(--space-10) var(--space-2);
+  text-align: center;
+  color: var(--text-secondary);
+}
+.icon,
+.glyph {
+  position: relative;
+  display: grid;
+  place-items: center;
+}
+.icon {
+  color: var(--text-muted);
+}
+.icon svg {
+  inline-size: 1.5rem;
+  block-size: 1.5rem;
+}
+.frame {
+  inline-size: 100%;
+  max-inline-size: 100%;
+}
+.copy {
+  display: flow-root;
+}
+.root h3 {
+  position: relative;
+  margin: 0;
+  color: var(--foreground);
+  font-size: var(--text-base);
+  font-weight: 500;
+  line-height: var(--leading-body);
+}
+.root p {
+  position: relative;
+  max-inline-size: 42ch;
+  margin: 0 auto;
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  line-height: var(--leading-body);
+}
+.root h3 + p {
+  margin-block-start: var(--space-2);
+}
+.line {
+  display: block;
+  text-wrap: balance;
+  overflow-wrap: anywhere;
+}
+.action {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--space-3);
+}

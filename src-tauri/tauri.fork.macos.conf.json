@@ -1,0 +1,19 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "bycoda",
+  "mainBinaryName": "bycoda",
+  "identifier": "com.bycoda.desktop",
+  "bundle": {
+    "createUpdaterArtifacts": false,
+    "resources": {
+      "../build/host-packages/bycoda-host-darwin-arm64.tar.gz": "host/bycoda-host-darwin-arm64.tar.gz",
+      "../build/host-packages/bycoda-host-darwin-arm64.tar.gz.sha256": "host/bycoda-host-darwin-arm64.tar.gz.sha256"
+    }
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDIxQ0UyNDFGNEQyN0FFNzgKUldSNHJpZE5IeVRPSVo3TFZERFpCVitHcjVNUWJ2NDFJay9PUHJEN3dvQjFyWXBhT05iNFFPcGwK",
+      "endpoints": ["https://github.com/bahadryalcn/bycoda/releases/latest/download/latest.json"]
+    }
+  }
+}

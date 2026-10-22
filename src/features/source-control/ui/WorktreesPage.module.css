@@ -1,0 +1,141 @@
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-inline-size: 0;
+}
+
+.toolbar,
+.listToolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+
+.project {
+  flex: 1 1 240px;
+  min-inline-size: 0;
+}
+
+.scope,
+.path {
+  color: var(--ui-text-muted);
+  font-size: var(--ui-font-caption);
+  overflow-wrap: anywhere;
+}
+
+.scope {
+  margin-block-start: 4px;
+}
+
+.actions,
+.rowActions,
+.count {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.actions {
+  margin-inline-start: auto;
+}
+
+.count {
+  flex: 1 1 auto;
+  font-size: var(--ui-font-secondary);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+.search {
+  flex: 0 1 280px;
+  min-inline-size: min(100%, 180px);
+}
+
+.list {
+  border: 1px solid var(--color-stroke);
+  border-radius: 12px;
+  background: var(--ui-surface);
+}
+
+.row {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 16px;
+}
+
+.row + .row {
+  border-block-start: 1px solid var(--color-stroke);
+}
+
+.treeIcon {
+  inline-size: 16px;
+  block-size: 16px;
+  flex-shrink: 0;
+  margin-block-start: 2px;
+  color: var(--ui-text-muted);
+}
+
+.identity {
+  flex: 1;
+  min-inline-size: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.name {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--ui-font-secondary);
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+
+.branch,
+.metadata {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--ui-text-secondary);
+  font-size: var(--ui-font-caption);
+}
+
+.metadata {
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.rowActions {
+  flex-shrink: 0;
+  gap: 4px;
+}
+
+.empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding-block: 32px;
+  color: var(--ui-text-secondary);
+  font-size: var(--ui-font-secondary);
+}
+
+.location {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-block: 8px;
+  color: var(--ui-text-secondary);
+  font-size: var(--ui-font-caption);
+  overflow-wrap: anywhere;
+}
+
+.location > span {
+  color: var(--ui-text-muted);
+}

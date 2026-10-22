@@ -1,0 +1,60 @@
+.general-settings {
+  min-inline-size: 0;
+}
+
+.general-save-note,
+.general-dependency,
+.general-detail {
+  margin: 0;
+  color: var(--ui-text-secondary);
+  font-size: var(--ui-font-secondary);
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+
+.general-save-note {
+  margin-block-end: 16px;
+}
+
+.bycoda-settings-workbench .bycoda-settings-form .general-settings > .settings-group {
+  padding-block: 20px;
+}
+
+.bycoda-settings-workbench
+  .bycoda-settings-form
+  .general-settings
+  > .settings-group
+  > .settings-group-heading {
+  padding-block: 0 12px;
+}
+
+.general-sleep-options {
+  padding-inline-start: 16px;
+  border-inline-start: 2px solid var(--color-stroke);
+  margin-block: 8px;
+}
+
+.general-dependency {
+  padding-block: 4px 8px;
+}
+
+.general-detail {
+  padding-block-end: 12px;
+}
+
+.general-update-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 8px;
+}
+
+.general-version {
+  color: var(--ui-text-secondary);
+  font-family: var(--font-mono);
+  font-size: var(--ui-font-secondary);
+}
+.general-link-error {
+  padding: 0 16px 16px;
+}

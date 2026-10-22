@@ -1,0 +1,57 @@
+/*
+ * Session rows adapt to the sidebar's own width, not the window's. Details
+ * drop in a fixed order as it narrows; the model name is shortened last.
+ */
+[data-session-list] {
+  container: session-list / inline-size;
+}
+
+.session-row-model-short {
+  display: none;
+}
+
+@container session-list (max-width: 250px) {
+  [data-session-density="standard"] .session-row-branch,
+  [data-session-density="standard"] .session-row-separator {
+    display: none;
+  }
+}
+
+@container session-list (max-width: 215px) {
+  .session-row-model-full {
+    display: none;
+  }
+
+  .session-row-model-short {
+    display: inline;
+  }
+}
+
+/* One-line rows keep the title readable: the provider icon stays, the name goes. */
+@container session-list (max-width: 280px) {
+  .session-row-compact-model {
+    display: none;
+  }
+}
+
+/* Countdown while a dragged session rests on a card; full once grouping is armed. */
+.session-row-dwell-progress {
+  stroke-dasharray: 100;
+  stroke-dashoffset: 100;
+}
+
+[data-session-dwell="ready"] .session-row-dwell-progress {
+  stroke-dashoffset: 0;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  [data-session-dwell="waiting"] .session-row-dwell-progress {
+    animation: session-row-dwell var(--session-dwell-ms, 700ms) linear forwards;
+  }
+}
+
+@keyframes session-row-dwell {
+  to {
+    stroke-dashoffset: 0;
+  }
+}

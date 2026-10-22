@@ -1,0 +1,23 @@
+.date-time-range-panel {
+  inline-size: min(24rem, calc(100vw - 24px));
+}
+.date-time-range-panel form {
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+  min-inline-size: 0;
+}
+.date-time-range-panel h3 {
+  font-size: var(--text-sm);
+  font-weight: 500;
+  color: var(--color-content);
+}
+.date-time-range-panel p {
+  font-size: var(--text-xs);
+  color: var(--ui-text-secondary);
+}
+.date-time-range-actions {
+  display: flex;
+  justify-content: end;
+  gap: 8px;
+}

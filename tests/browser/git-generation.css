@@ -1,0 +1,31 @@
+/* Scope Tailwind scanning to the controls under test in the shared dirty tree. */
+@import "tailwindcss" source(none);
+@source "./git-generation.tsx";
+@source "../../src/features/source-control/ui/GitGenerationSettings.tsx";
+@source "../../src/features/sessions/ui/ModelPicker.tsx";
+@source "../../src/features/sessions/ui/ModelExtras.tsx";
+@source "../../src/features/sessions/ui/ModelFlyout.tsx";
+@source "../../src/shared/ui/Popover.tsx";
+@source "../../src/app/shell/GlassBackdrop.tsx";
+@theme {
+  --color-background-base: #0f0f0f;
+  --color-sidebar: #111111;
+  --color-content: #ebebeb;
+  --color-stroke: #ffffff12;
+  --color-selection: #ffffff14;
+  --color-selection-hover: #ffffff20;
+  --color-selection-emphasis: #ffffff24;
+  --font-sans: "Segoe UI", sans-serif;
+}
+/* Match the application's native form-control theme in this isolated fixture. */
+html {
+  color-scheme: dark;
+}
+body {
+  margin: 0;
+  background: #0f0f0f;
+  color: #ebebeb;
+}
+.popover-backdrop {
+  background: color-mix(in srgb, var(--color-background-base) 95%, transparent);
+}

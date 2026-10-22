@@ -1,0 +1,86 @@
+.section {
+  display: grid;
+  gap: 12px;
+  min-inline-size: 0;
+  border-block-start: 1px solid var(--color-stroke);
+  padding-block-start: 20px;
+  font-size: var(--ui-font-secondary);
+}
+.header,
+.actions,
+.row,
+.scope {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.header,
+.row,
+.scope {
+  justify-content: space-between;
+}
+.header h2 {
+  font-weight: 500;
+}
+.actions {
+  min-inline-size: 0;
+}
+.stack,
+.help {
+  display: grid;
+  gap: 12px;
+  min-inline-size: 0;
+}
+.stack fieldset {
+  border: 0;
+  padding: 0;
+  margin: 0;
+}
+.stack legend {
+  margin-block-end: 8px;
+}
+.stack {
+  padding: 16px;
+  font-size: var(--ui-font-secondary);
+}
+.list {
+  display: grid;
+  max-block-size: 320px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+.row {
+  padding-block: 10px;
+  border-block-end: 1px solid var(--color-stroke);
+}
+.identity {
+  display: grid;
+  gap: 4px;
+  min-inline-size: 0;
+  flex: 1 1 180px;
+  overflow-wrap: anywhere;
+}
+.metadata {
+  color: var(--ui-text-secondary);
+  font-size: var(--ui-font-caption);
+}
+.help {
+  padding: 12px;
+  color: var(--color-content);
+  background: var(--ui-surface);
+  font-size: var(--ui-font-caption);
+}
+.help strong {
+  font-weight: 500;
+}
+.help pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  min-inline-size: 0;
+  user-select: text;
+}
+.scope > span {
+  flex: 1 1 120px;
+}

@@ -1,0 +1,23 @@
+.layout {
+  overflow: clip;
+}
+
+/* A resized input or long delivery status must not push actions out of the pane.
+   Keep room for the trail; the composer can scroll on short split panes. */
+.composer {
+  min-block-size: 0;
+  max-block-size: 55%;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  overflow-wrap: anywhere;
+}
+
+.composer .message {
+  min-block-size: 3lh;
+  max-block-size: 8rem;
+}
+
+.composer > * {
+  flex-shrink: 0;
+}

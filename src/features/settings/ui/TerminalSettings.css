@@ -1,0 +1,36 @@
+.terminal-settings {
+  min-inline-size: 0;
+}
+
+.terminal-settings-note {
+  margin-block: 12px 20px;
+  color: var(--ui-text-secondary);
+  font-size: var(--ui-font-secondary);
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+
+.terminal-settings-machine {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.terminal-settings-machine > span {
+  min-inline-size: 0;
+  overflow-wrap: anywhere;
+}
+
+.bycoda-settings-workbench .bycoda-settings-form .terminal-settings .settings-group {
+  padding-block: 20px;
+}
+
+.bycoda-settings-workbench
+  .bycoda-settings-form
+  .terminal-settings
+  .settings-group
+  > .settings-group-heading {
+  gap: 12px;
+  padding-block: 0 12px;
+}

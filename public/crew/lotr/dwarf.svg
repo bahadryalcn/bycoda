@@ -1,0 +1,96 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 240" fill="none">
+  <defs>
+    <linearGradient id="beard" x1="56" y1="112" x2="104" y2="168" gradientUnits="userSpaceOnUse"><stop stop-color="#e0702a"/><stop offset="1" stop-color="#8e3c16"/></linearGradient>
+    <linearGradient id="steel" x1="58" y1="84" x2="104" y2="124" gradientUnits="userSpaceOnUse"><stop stop-color="#aab0ba"/><stop offset="1" stop-color="#555a66"/></linearGradient>
+    <linearGradient id="leather" x1="40" y1="126" x2="120" y2="186" gradientUnits="userSpaceOnUse"><stop stop-color="#7a5740"/><stop offset="1" stop-color="#43302a"/></linearGradient>
+    <linearGradient id="skin" x1="62" y1="104" x2="98" y2="124" gradientUnits="userSpaceOnUse"><stop stop-color="#f5c49c"/><stop offset="1" stop-color="#d68f68"/></linearGradient>
+    <linearGradient id="axe" x1="104" y1="84" x2="138" y2="124" gradientUnits="userSpaceOnUse"><stop stop-color="#d4d8de"/><stop offset="1" stop-color="#6c727e"/></linearGradient>
+  </defs>
+  <g stroke="#2a1c14" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+    <g data-part="body">
+      <path d="M45 178L47 210L41 226H77L77 210L79 178Z" fill="#5a4030"/>
+      <path d="M81 178L83 210L83 226H119L113 210L115 178Z" fill="#5a4030"/>
+      <path d="M44 205H78M82 205H116" stroke="#2a1c14"/>
+      <path d="M40 210Q40 222 40 226H78V210Z" fill="#4a3226"/>
+      <path d="M82 210V226H120Q121 222 120 210Z" fill="#4a3226"/>
+      <path d="M44 214H77M83 214H118" stroke="#8b6a4c"/>
+      <path d="M41 142Q40 126 60 125L100 125Q120 126 120 142L124 178Q80 190 36 178Z" fill="url(#leather)"/>
+      <path d="M46 168H72L70 192H46ZM88 168H114V192H90Z" fill="#8a909a"/>
+      <path d="M50 172V190M55 172V190M60 172V190M65 172V190M94 172V190M99 172V190M104 172V190M109 172V190" stroke="#4c515c" stroke-width="1"/>
+      <path d="M38 164H122V178H38Z" fill="#3c2a22"/>
+      <rect x="72" y="162" width="16" height="18" rx="2" fill="#d4aa4c"/><rect x="76" y="167" width="8" height="8" rx="1" fill="#7a5a22" stroke-width="1"/>
+      <path d="M62 135H98L96 160H64Z" fill="#8a909a" stroke="none"/>
+      <path d="M66 138V158M72 138V158M78 138V158M84 138V158M90 138V158M96 138V158" stroke="#4c515c" stroke-width="1"/>
+    </g>
+    <g data-part="arm-b" data-pivot-x="48" data-pivot-y="134">
+      <path d="M48 134L36 157" stroke-width="23.5" stroke="#2a1c14"/><path d="M48 134L36 157" stroke="#8a909a" stroke-width="21"/>
+      <path d="M48 134L36 157" stroke="#4c515c" stroke-width="1" stroke-dasharray="1.2 2.5"/>
+      <path d="M35 128Q36 118 50 119Q62 122 62 134Q60 143 48 144Q36 143 35 128Z" fill="#6f747e"/>
+      <path d="M38 134Q48 128 59 134M38 139Q48 134 59 140" stroke="#33363f" stroke-width="1"/>
+    </g>
+    <g data-part="forearm-b" data-follow="arm-b" data-pivot-x="36" data-pivot-y="157">
+      <circle cx="36" cy="157" r="10.5" fill="#8a909a" stroke="none"/>
+      <path d="M36 157L39 173" stroke-width="19" stroke="#2a1c14"/><path d="M36 157L39 173" stroke="#6a4a35" stroke-width="16.5"/>
+      <path d="M31 162L45 165" stroke="#2a1c14" stroke-width="1"/>
+    </g>
+    <g data-part="arm" data-pivot-x="112" data-pivot-y="134">
+      <path d="M112 134L124 157" stroke-width="23.5" stroke="#2a1c14"/><path d="M112 134L124 157" stroke="#8a909a" stroke-width="21"/>
+      <path d="M112 134L124 157" stroke="#4c515c" stroke-width="1" stroke-dasharray="1.2 2.5"/>
+      <path d="M125 128Q124 118 110 119Q98 122 98 134Q100 143 112 144Q124 143 125 128Z" fill="#6f747e"/>
+      <path d="M122 134Q112 128 101 134M122 139Q112 134 101 140" stroke="#33363f" stroke-width="1"/>
+    </g>
+    <g data-part="head" data-pivot-x="80" data-pivot-y="128">
+      <path d="M62 102Q58 106 59 124Q63 130 70 126L98 126Q102 126 101 124Q102 106 98 102Z" fill="url(#skin)"/>
+      <ellipse cx="71" cy="112" rx="5" ry="3.8" fill="#fff4e6" stroke-width="1"/><ellipse cx="89" cy="112" rx="5" ry="3.8" fill="#fff4e6" stroke-width="1"/>
+      <circle cx="72" cy="112.4" r="2.5" fill="#3a2418" stroke="none"/><circle cx="88" cy="112.4" r="2.5" fill="#3a2418" stroke="none"/>
+      <path d="M62 107L76 111M98 107L84 111" stroke="#9a4418" stroke-width="4"/>
+      <ellipse cx="80" cy="118" rx="5.5" ry="4.5" fill="#e8a47c"/>
+      <path d="M53 108Q50 126 58 134L66 126L64 106Z" fill="url(#steel)"/>
+      <path d="M107 108Q110 126 102 134L94 126L96 106Z" fill="url(#steel)"/>
+      <path d="M54 108Q52 84 80 82Q108 84 106 108Z" fill="url(#steel)"/>
+      <path d="M54 107Q80 111 106 107L105 97Q80 101 55 97Z" fill="#d4aa4c"/>
+      <path d="M60 102H100" stroke="#7a5a22" stroke-width="1"/>
+      <path d="M75 84H85L86 112L80 117L74 112Z" fill="#b8bec8"/>
+      <path d="M80 100L83 103L80 106L77 103Z" fill="#7a5a22" stroke-width="1"/>
+    </g>
+    <g data-part="prop" data-follow="head" data-pivot-x="80" data-pivot-y="114">
+      <path d="M58 118Q44 132 52 152L56 166L62 158L67 172L74 166L80 174L86 166L93 172L98 158L104 166L108 152Q116 132 102 118Q80 128 58 118Z" fill="url(#beard)"/>
+      <path d="M66 128Q62 146 66 160M80 130V166M94 128Q98 146 94 160M58 132Q54 144 58 156M102 132Q106 144 102 156" stroke="#7a3212" stroke-width="1.2"/>
+      <path d="M64 150H70M90 150H96M77 156H83" stroke="#b8bec8" stroke-width="2.4"/>
+      <path d="M80 121Q72 116 59 122Q64 132 73 127Q77 125 80 126Q83 125 87 127Q96 132 101 122Q88 116 80 121Z" fill="#e0702a"/>
+      <path d="M62 124Q68 126 74 124M98 124Q92 126 86 124" stroke="#8e3c16" stroke-width="1"/>
+    </g>
+    <g data-part="blink" data-follow="head" data-pivot-x="80" data-pivot-y="128" opacity="0">
+      <path d="M64 108.5H78V116H64ZM82 108.5H96V116H82Z" fill="#f0b890" stroke="none"/>
+      <path d="M66 112.5Q71 115.5 76 112.5M84 112.5Q89 115.5 94 112.5" stroke="#5a2c18" stroke-width="1.6"/>
+    </g>
+    <g data-part="mouth" data-follow="prop" data-pivot-x="80" data-pivot-y="114" opacity="0">
+      <path d="M72 128Q80 127 88 128Q88 135 80 136Q72 135 72 128Z" fill="#3a1410" stroke="#7a3212" stroke-width="1"/>
+      <path d="M75 129.2H85" stroke="#f0e6d8" stroke-width="1.5"/>
+    </g>
+    <g data-part="weapon" data-follow="forearm" data-front="true" data-pivot-x="121" data-pivot-y="178">
+      <path d="M121 220V90" stroke="#2a1c14" stroke-width="7"/><path d="M121 218V92" stroke="#6a4630" stroke-width="4.6"/>
+      <path d="M119.5 192L123 188M119.5 202L123 198M119.5 212L123 208" stroke="#2a1c14" stroke-width="1"/>
+      <path d="M118 218L121 226L124 218Z" fill="#b8bec8" stroke-width="1.2"/>
+      <rect x="117.5" y="184" width="7" height="3.2" fill="#d4aa4c" stroke-width="1"/>
+    </g>
+    <g data-part="weapon" data-follow="forearm" data-front="true" data-trail="true" data-pivot-x="121" data-pivot-y="178">
+      <path d="M118 90L112 86Q104 82 100 86Q104 104 100 122Q106 126 112 122L118 118Z" fill="url(#axe)"/>
+      <path d="M124 90L130 86Q138 82 142 86Q138 104 142 122Q136 126 130 122L124 118Z" fill="url(#axe)"/>
+      <path d="M106 92Q109 104 106 116M136 92Q133 104 136 116" stroke="#4a4f5a" stroke-width="1.2"/>
+      <rect x="117.5" y="84" width="7" height="40" rx="2" fill="#6a7080"/><rect x="117.5" y="84" width="7" height="6" fill="#d4aa4c" stroke-width="1"/>
+    </g>
+    <g data-part="forearm-b" data-follow="arm-b" data-front="true" data-pivot-x="36" data-pivot-y="157">
+      <path d="M38.5 172L39 179" stroke-width="17" stroke="#2a1c14"/><path d="M38.5 172L39 179" stroke="#6a4a35" stroke-width="14.5"/>
+      <circle cx="39" cy="179" r="9.5" fill="url(#skin)"/>
+      <path d="M33 176Q39 182 45 176M35 181Q39 185 43 181" stroke="#a8603a" stroke-width="1"/>
+    </g>
+    <g data-part="forearm" data-follow="arm" data-front="true" data-pivot-x="124" data-pivot-y="157">
+      <circle cx="124" cy="157" r="10.5" fill="#8a909a" stroke="none"/>
+      <path d="M124 157L121 173" stroke-width="19" stroke="#2a1c14"/><path d="M124 157L121 173" stroke="#6a4a35" stroke-width="16.5"/>
+      <path d="M115 164L129 161" stroke="#2a1c14" stroke-width="1"/>
+      <circle cx="121" cy="179" r="9.5" fill="url(#skin)"/>
+      <path d="M115 176Q121 182 127 176M117 181Q121 185 125 181" stroke="#a8603a" stroke-width="1"/>
+    </g>
+  </g>
+</svg>

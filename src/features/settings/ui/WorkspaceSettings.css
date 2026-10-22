@@ -1,0 +1,87 @@
+.workspace-settings {
+  min-inline-size: 0;
+}
+
+.workspace-save-note {
+  margin-block: 0 8px;
+  color: var(--ui-text-secondary);
+  font-size: var(--ui-font-secondary);
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+
+.bycoda-settings-workbench .bycoda-settings-form .workspace-settings .settings-group {
+  display: block;
+  min-inline-size: 0;
+  padding-block: 12px;
+}
+
+.bycoda-settings-workbench
+  .bycoda-settings-form
+  .workspace-settings
+  .settings-group[data-settings-layout="full"]
+  > .settings-group-heading {
+  align-items: center;
+  padding-block: 0 8px;
+}
+
+.bycoda-settings-workbench
+  .bycoda-settings-form
+  .workspace-settings
+  .settings-group[data-settings-layout="full"]
+  > .settings-group-heading
+  > .settings-group-title {
+  flex-basis: auto;
+}
+
+.bycoda-settings-workbench .bycoda-settings-form .workspace-settings .settings-group-heading h2 {
+  font-size: var(--ui-font-secondary);
+  font-weight: 500;
+  color: var(--ui-text-secondary);
+}
+
+.bycoda-settings-workbench .bycoda-settings-form .workspace-settings .settings-row {
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 24px;
+  padding-block: 10px;
+}
+
+.bycoda-settings-workbench .bycoda-settings-form .workspace-settings .settings-row-label {
+  flex: 1 1 16rem;
+}
+
+.bycoda-settings-workbench .bycoda-settings-form .workspace-settings .settings-row-control {
+  max-inline-size: 100%;
+  align-self: center;
+}
+
+.bycoda-settings-workbench .workspace-settings .settings-advanced > h3 {
+  padding-block: 12px;
+  color: var(--ui-text-secondary);
+  font-size: var(--ui-font-secondary);
+}
+
+.workspace-tools-help {
+  padding: 16px;
+  color: var(--ui-text-secondary);
+  font-size: var(--ui-font-secondary);
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+
+.workspace-tools-help dl {
+  display: grid;
+  gap: 12px;
+  margin-block: 12px;
+}
+
+.workspace-tools-help dt {
+  color: var(--color-content);
+  font-weight: 500;
+}
+
+.workspace-tools-help dd {
+  margin-inline: 0;
+}

@@ -1,0 +1,39 @@
+/* One captured surface keeps editors, portals and terminals in the same fade. */
+html {
+  --ui-theme-transition-duration: 550ms;
+  --ui-theme-transition-easing: cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+html[data-theme-transition="fade"]::view-transition {
+  pointer-events: none;
+}
+
+html[data-theme-transition="fade"]::view-transition-group(root) {
+  animation: none;
+}
+
+html[data-theme-transition="fade"]::view-transition-image-pair(root) {
+  isolation: isolate;
+}
+
+html[data-theme-transition="fade"]::view-transition-old(root),
+html[data-theme-transition="fade"]::view-transition-new(root) {
+  mix-blend-mode: normal;
+  animation: none;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  html[data-theme-transition="fade"]::view-transition-new(root) {
+    animation: bycoda-theme-fade var(--ui-theme-transition-duration)
+      var(--ui-theme-transition-easing) both;
+  }
+}
+
+@keyframes bycoda-theme-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}

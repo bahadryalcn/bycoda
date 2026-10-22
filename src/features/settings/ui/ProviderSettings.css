@@ -1,0 +1,340 @@
+/* Keep the CLI overview together instead of splitting labels from controls. */
+.bycoda-settings-workbench .bycoda-settings-form > #setting-agent-clis {
+  display: block;
+}
+.bycoda-settings-workbench .bycoda-settings-form > #setting-agent-clis > .settings-group-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 16px;
+  padding-block-end: 12px;
+}
+#setting-agent-clis > .settings-group-content {
+  container-type: inline-size;
+  overflow: visible;
+}
+.provider-cli-scope {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.provider-cli-workspace {
+  display: grid;
+  grid-template-columns: minmax(9rem, 13rem) minmax(0, 1fr);
+  align-items: start;
+  gap: 24px;
+}
+.provider-cli-selector {
+  display: grid;
+  gap: 4px;
+  min-inline-size: 0;
+  padding: 4px;
+  border: 1px solid var(--color-stroke);
+  border-radius: 10px;
+  background: var(--ui-surface);
+}
+.provider-cli-option {
+  justify-content: flex-start;
+  min-inline-size: 0;
+  min-block-size: 34px;
+  gap: 8px;
+  padding-inline: 9px;
+  text-align: start;
+}
+.provider-cli-detail {
+  min-inline-size: 0;
+  container-type: inline-size;
+}
+.provider-cli-panel > #setting-enabled-models {
+  margin-block-start: 20px;
+  border-block-start: 1px solid var(--color-stroke);
+}
+.provider-cli-panel > #setting-enabled-models > h3 {
+  padding-block: 12px;
+  font-size: 12px;
+}
+.provider-cli-model-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 15rem), 1fr));
+  column-gap: 24px;
+  max-block-size: 18rem;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+}
+.bycoda-settings-workbench .bycoda-settings-form .provider-cli-model-list .settings-row {
+  align-items: center;
+  gap: 12px;
+  padding-block: 8px;
+  min-block-size: 40px;
+}
+.provider-cli-model-heading {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.provider-accounts-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding-block-end: 8px;
+}
+.provider-accounts-title {
+  flex: 1;
+  min-inline-size: 5rem;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--ui-text-secondary);
+}
+.provider-account-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  padding-block: 12px;
+  border-block-end: 1px solid var(--color-stroke);
+}
+.provider-account-row:last-child {
+  border-block-end: 0;
+}
+.provider-account-identity {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  min-inline-size: 0;
+}
+.provider-account-name {
+  overflow-wrap: anywhere;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--color-content);
+}
+.provider-account-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  min-inline-size: 0;
+  margin-block-start: 6px;
+  font-size: 12px;
+}
+.provider-account-subtitle {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--ui-text-secondary);
+}
+.provider-account-meta > * {
+  max-inline-size: 100%;
+}
+.provider-account-meta > :first-child {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.provider-cli-panel > #setting-claude-hooks {
+  padding-inline: 12px;
+  padding-block: 10px;
+}
+.bycoda-settings-workbench .bycoda-settings-form .provider-cli-detail #setting-provider-accounts {
+  padding-block: 0 16px;
+  margin-block-end: 16px;
+  border-block-end: 1px solid var(--color-stroke);
+}
+.bycoda-settings-workbench
+  .bycoda-settings-form
+  .provider-cli-detail
+  #setting-provider-accounts
+  > .settings-group-heading {
+  padding-block: 0 8px;
+}
+.provider-cli-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 380px), 1fr));
+  gap: 12px;
+}
+.provider-cli-card {
+  display: flex;
+  min-inline-size: 0;
+  flex-direction: column;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+.provider-cli-panel[hidden],
+.provider-cli-card[hidden] {
+  display: none;
+}
+.provider-cli-card[data-default] {
+  border-color: var(--ui-border-accent);
+}
+
+.provider-cli-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding-block-end: 16px;
+}
+.provider-cli-header-main {
+  display: flex;
+  min-inline-size: 0;
+  align-items: center;
+  gap: 8px;
+}
+.provider-cli-header-copy,
+.provider-cli-title-line {
+  min-inline-size: 0;
+}
+.provider-cli-title-line h3 {
+  overflow-wrap: anywhere;
+  font-size: 16px;
+  font-weight: 500;
+  color: var(--color-content);
+}
+.provider-cli-title-line {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+}
+.provider-cli-status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px;
+  margin-block-start: 0;
+  font-size: 11px;
+  line-height: 1.35;
+  color: var(--ui-text-secondary);
+}
+.provider-cli-machine {
+  color: var(--ui-text-secondary);
+}
+.provider-cli-header > .settings-advanced {
+  flex: 0 0 auto;
+  margin: 0;
+}
+.provider-cli-header > .settings-advanced > h3 {
+  padding-block: 5px;
+  font-size: 11px;
+  white-space: nowrap;
+}
+.provider-cli-header > .settings-advanced {
+  flex-basis: 100%;
+}
+.provider-cli-card > .settings-advanced {
+  margin-block-start: 12px;
+}
+.provider-cli-fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 13rem), 1fr));
+  align-items: start;
+  gap: 12px;
+  margin-block-start: 10px;
+  margin-block-end: 8px;
+}
+.provider-cli-field {
+  min-width: 0;
+}
+.provider-cli-field > span {
+  display: block;
+  margin-block-end: 6px;
+  font-size: 11px;
+  color: var(--ui-text-secondary);
+}
+.provider-cli-field > div {
+  max-width: none;
+}
+.provider-cli-field > div > button {
+  width: 100%;
+  justify-content: space-between;
+}
+.provider-cli-defaults {
+  margin-block-start: 6px;
+}
+.provider-cli-defaults-heading {
+  margin-block-end: 12px;
+}
+.provider-cli-defaults > .provider-cli-fields {
+  margin-block: 0 4px;
+}
+.provider-cli-defaults-heading h4 {
+  width: fit-content;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--ui-text-secondary);
+}
+.provider-cli-footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-block-start: 12px;
+  padding-block-start: 4px;
+}
+
+.provider-cli-install {
+  margin-block-start: 12px;
+  font-size: 11px;
+  color: var(--ui-text-secondary);
+}
+.provider-cli-install > h3 {
+  width: fit-content;
+}
+
+.provider-cli-install > p {
+  margin-block-start: 8px;
+  line-height: 1.7;
+  overflow-wrap: anywhere;
+}
+@container (max-width: 560px) {
+  .provider-cli-workspace {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 8px;
+  }
+  .provider-cli-selector {
+    display: flex;
+    gap: 4px;
+    overflow-x: auto;
+    padding: 3px;
+  }
+  .provider-cli-option {
+    flex: 0 0 auto;
+    inline-size: auto;
+    min-block-size: 32px;
+  }
+  .provider-cli-header {
+    align-items: flex-start;
+  }
+  .provider-cli-header > .settings-advanced > h3 {
+    font-size: var(--ui-font-caption);
+  }
+}
+@container (max-width: 430px) {
+  .provider-account-row > :first-child {
+    flex-basis: 100%;
+  }
+  .provider-account-row > :last-child {
+    margin-inline-start: auto;
+  }
+}
+
+/* Update status stays beside the CLI instead of spanning the entire page. */
+.provider-cli-updates {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 22rem), 1fr));
+  column-gap: 24px;
+}
+.bycoda-settings-workbench .bycoda-settings-form .provider-cli-updates .settings-row {
+  align-items: center;
+  min-block-size: 64px;
+  gap: 12px;
+  padding-block: 12px;
+}
+.provider-cli-updates .settings-row-label > div:first-child > span {
+  flex-wrap: wrap;
+}

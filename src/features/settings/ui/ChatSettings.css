@@ -1,0 +1,104 @@
+.chat-settings {
+  container: chat-settings / inline-size;
+  min-inline-size: 0;
+}
+
+.chat-save-note,
+.chat-detail {
+  color: var(--ui-text-secondary);
+  font-size: var(--ui-font-secondary);
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+
+.chat-save-note {
+  margin-block: 0 8px;
+}
+
+.chat-detail {
+  margin-block: 0 12px;
+}
+
+.bycoda-settings-workbench .bycoda-settings-form .chat-settings .settings-group {
+  display: block;
+  min-inline-size: 0;
+  padding-block: 12px;
+}
+
+.bycoda-settings-workbench
+  .bycoda-settings-form
+  .chat-settings
+  .settings-group[data-settings-layout="full"]
+  > .settings-group-heading {
+  flex-direction: row;
+  align-items: center;
+  gap: 12px;
+  padding-block: 0 8px;
+}
+
+.bycoda-settings-workbench .bycoda-settings-form .chat-settings .settings-group-heading h2 {
+  font-weight: 500;
+  color: var(--ui-text-secondary);
+  font-size: var(--ui-font-secondary);
+}
+
+.bycoda-settings-workbench .bycoda-settings-form .chat-settings .settings-row {
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 24px;
+  padding-block: 12px;
+}
+
+.bycoda-settings-workbench .bycoda-settings-form .chat-settings .settings-row-label {
+  flex: 1 1 17rem;
+}
+
+.bycoda-settings-workbench .bycoda-settings-form .chat-settings .settings-row-control {
+  max-inline-size: 100%;
+  align-self: center;
+}
+
+.chat-settings .settings-advanced {
+  min-inline-size: 0;
+}
+
+.bycoda-settings-workbench .chat-settings .settings-advanced > h3 {
+  padding-block: 12px;
+  font-size: var(--ui-font-secondary);
+  color: var(--ui-text-secondary);
+}
+
+.bycoda-settings-workbench
+  .bycoda-settings-form
+  .chat-settings
+  > .settings-advanced
+  > .settings-group {
+  padding-block-start: 4px;
+}
+
+.bycoda-settings-workbench .bycoda-settings-form .chat-settings #setting-prompt-templates {
+  border-block-end: 0;
+}
+
+.chat-settings .settings-templates > .settings-advanced {
+  margin-block-end: 8px;
+}
+
+.chat-settings .settings-templates > div > p {
+  padding-inline: 0;
+}
+
+@container chat-settings (inline-size < 32rem) {
+  .bycoda-settings-workbench .bycoda-settings-form .chat-settings .settings-row-control {
+    justify-content: flex-start;
+  }
+
+  .bycoda-settings-workbench
+    .bycoda-settings-form
+    .chat-settings
+    .settings-row:has([role="switch"])
+    .settings-row-label {
+    flex-basis: 0;
+  }
+}

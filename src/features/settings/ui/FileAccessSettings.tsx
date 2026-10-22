@@ -1,0 +1,89 @@
+import { SettingsFeedback } from "./settingsControls";
+import { useEffect, useState } from "react";
+import { t, useLocale } from "../../../shared/i18n";
+import {
+  configureFileAccess,
+  getFileAccessMode,
+  type FileAccessMode,
+} from "../../../platform/tauri/fileAccess";
+import { AdvancedSettings, Group, Row } from "./settingsControls";
+import { Button } from "../../../shared/ui/Button";
+
+export function FileAccessSettings({ embedded = false }: { embedded?: boolean }) {
+  useLocale();
+  const [mode, setMode] = useState<FileAccessMode | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  useEffect(() => {
+    let active = true;
+    void getFileAccessMode().then(
+      (value) => {
+        if (active) setMode(value);
+      },
+      (reason) => {
+        if (active) setError(String(reason));
+      },
+    );
+    return () => {
+      active = false;
+    };
+  }, []);
+  const review = async () => {
+    if (busy) return;
+    setBusy(true);
+    setError("");
+    try {
+      setMode(await configureFileAccess(true));
+    } catch (reason) {
+      setError(String(reason));
+    } finally {
+      setBusy(false);
+    }
+  };
+  const content = (
+    <>
+      <Row
+        id="file-access"
+        label={t("File access")}
+        feedback={
+          error ? (
+            <SettingsFeedback state="error">{error}</SettingsFeedback>
+          ) : busy ? (
+            <SettingsFeedback state="loading">{t("Waiting for approval…")}</SettingsFeedback>
+          ) : null
+        }
+      >
+        <span role="status" aria-live="polite">
+          {mode === null
+            ? error
+              ? t("Status unavailable")
+              : t("Loading…")
+            : mode === "all-files"
+              ? t("All files allowed")
+              : mode === "selected-folders"
+                ? t("Selected folders only")
+                : t("Not configured")}
+        </span>
+        <Button loading={busy} disabled={mode === null && !error} onClick={() => void review()}>
+          {busy ? t("Waiting for approval…") : t("Change file access")}
+        </Button>
+      </Row>
+      <AdvancedSettings
+        id="file-access-permissions"
+        settingIds={["file-access-permissions"]}
+        title={t("Files, projects and skills")}
+      >
+        <p className="privacy-inline-note">
+          {t("Scope: this computer. Remote hosts manage their own file access.")}
+        </p>
+        <Row
+          label={t("Separate permissions")}
+          description={t(
+            "File access allows the app to read files. Agent approval rules still control commands and tools. Change file access opens the native consent flow; the saved status updates after it completes.",
+          )}
+        />
+      </AdvancedSettings>
+    </>
+  );
+  return embedded ? content : <Group title={t("File access")}>{content}</Group>;
+}

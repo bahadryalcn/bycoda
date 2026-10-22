@@ -1,0 +1,145 @@
+{
+  "labels": [
+    {
+      "name": "status: needs-triage",
+      "color": "ededed",
+      "description": "Awaiting maintainer assessment; not a claim of confirmation"
+    },
+    {
+      "name": "status: needs-info",
+      "color": "d4c5f9",
+      "description": "Waiting for specific details needed to assess or reproduce"
+    },
+    {
+      "name": "status: confirmed",
+      "color": "0e8a16",
+      "description": "Maintainer has verified the issue in the stated environment"
+    },
+    {
+      "name": "status: in-progress",
+      "color": "1d76db",
+      "description": "An assigned contributor is actively working on this"
+    },
+    {
+      "name": "status: blocked",
+      "color": "b60205",
+      "description": "Work cannot proceed until a named dependency is resolved"
+    },
+    {
+      "name": "severity: critical",
+      "color": "b60205",
+      "description": "Widespread outage or unrecoverable data loss; assess immediately"
+    },
+    {
+      "name": "severity: high",
+      "color": "d93f0b",
+      "description": "Lost work, unintended actions, or a core workflow blocked"
+    },
+    {
+      "name": "severity: medium",
+      "color": "fbca04",
+      "description": "Incorrect behavior with a usable workaround or limited scope"
+    },
+    {
+      "name": "severity: low",
+      "color": "c5def5",
+      "description": "Visual, wording, or minor inconvenience"
+    },
+    {
+      "name": "priority: p0",
+      "color": "b60205",
+      "description": "Immediate scheduling priority, explicitly set by maintainers"
+    },
+    {
+      "name": "priority: p1",
+      "color": "d93f0b",
+      "description": "Next available work, explicitly set by maintainers"
+    },
+    {
+      "name": "priority: p2",
+      "color": "fbca04",
+      "description": "Planned normal-priority work"
+    },
+    {
+      "name": "priority: p3",
+      "color": "c5def5",
+      "description": "Backlog work without a near-term commitment"
+    },
+    {
+      "name": "area: chat",
+      "color": "bfd4f2",
+      "description": "Chat, composer, drafts, and attachments"
+    },
+    {
+      "name": "area: queue",
+      "color": "bfd4f2",
+      "description": "Queue, Stop, and recovery"
+    },
+    {
+      "name": "area: providers",
+      "color": "bfd4f2",
+      "description": "Providers, transcripts, and history import"
+    },
+    {
+      "name": "area: remote",
+      "color": "bfd4f2",
+      "description": "Remote hosts and connections"
+    },
+    {
+      "name": "area: git",
+      "color": "bfd4f2",
+      "description": "Git, branches, diffs, and pull requests"
+    },
+    {
+      "name": "area: files",
+      "color": "bfd4f2",
+      "description": "Files, editor, and search"
+    },
+    {
+      "name": "area: automation",
+      "color": "bfd4f2",
+      "description": "Tasks, goals, and automations"
+    },
+    {
+      "name": "area: notes",
+      "color": "bfd4f2",
+      "description": "Notes"
+    },
+    {
+      "name": "area: settings",
+      "color": "bfd4f2",
+      "description": "Settings, usage, and notifications"
+    },
+    {
+      "name": "area: installation",
+      "color": "bfd4f2",
+      "description": "Installation, updates, and startup"
+    },
+    {
+      "name": "area: ui",
+      "color": "bfd4f2",
+      "description": "Accessibility, layout, and translations"
+    }
+  ],
+  "fields": {
+    "Severity": {
+      "Critical - widespread outage or unrecoverable data loss": "severity: critical",
+      "High - lost work, unintended actions, or a core workflow blocked": "severity: high",
+      "Medium - incorrect behavior with a usable workaround": "severity: medium",
+      "Low - visual, wording, or minor inconvenience": "severity: low"
+    },
+    "Affected area": {
+      "Chat, composer, drafts, and attachments": "area: chat",
+      "Queue, Stop, and recovery": "area: queue",
+      "Providers, transcripts, and history import": "area: providers",
+      "Remote hosts and connections": "area: remote",
+      "Git, branches, diffs, and pull requests": "area: git",
+      "Files, editor, and search": "area: files",
+      "Tasks, goals, and automations": "area: automation",
+      "Notes": "area: notes",
+      "Settings, usage, and notifications": "area: settings",
+      "Installation, updates, and startup": "area: installation",
+      "Accessibility, layout, and translations": "area: ui"
+    }
+  }
+}

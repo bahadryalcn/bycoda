@@ -1,0 +1,116 @@
+/* Arc's measured tray/highlight geometry; actions keep the shared Button skin. */
+.group {
+  position: relative;
+  isolation: isolate;
+  display: inline-flex;
+  min-inline-size: 0;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-1);
+  border-radius: var(--radius-control);
+  color: var(--foreground);
+}
+.sm {
+  --fbg-h: var(--ui-control-height-sm);
+}
+.md {
+  --fbg-h: var(--ui-control-height-md);
+}
+.floating {
+  background: var(--ui-surface-raised);
+  border: 1px solid var(--color-stroke);
+}
+.vertical {
+  inline-size: 100%;
+  flex-direction: column;
+  align-items: stretch;
+}
+.highlight {
+  position: absolute;
+  z-index: 1;
+  inset-block-start: 0;
+  inset-inline-start: 0;
+  border-radius: var(--radius-control);
+  background: var(--ui-surface-hover);
+  pointer-events: none;
+  transition: background-color var(--duration-fast) var(--ease-standard);
+}
+.highlight[data-pressing] {
+  background: var(--ui-surface-pressed);
+}
+.item {
+  position: relative;
+  z-index: 2;
+  min-inline-size: var(--fbg-h);
+  min-block-size: var(--fbg-h);
+  flex: none;
+}
+.vertical .item:not([data-icon-only]) {
+  justify-content: flex-start;
+}
+.vertical .item[data-icon-only] {
+  align-self: center;
+}
+.slot {
+  position: relative;
+  display: inline-grid;
+  min-inline-size: 0;
+  align-items: center;
+  justify-items: center;
+}
+.slot > * {
+  grid-area: 1 / 1;
+}
+.vertical .slot {
+  justify-items: start;
+}
+.ghost {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  visibility: hidden;
+  pointer-events: none;
+}
+.iconSpace {
+  display: block;
+  inline-size: 1rem;
+  block-size: 1rem;
+  flex: none;
+}
+.phase {
+  display: inline-flex;
+  min-inline-size: 0;
+  align-items: center;
+  gap: var(--space-2);
+}
+.icon {
+  display: inline-flex;
+  flex: none;
+}
+.icon svg {
+  inline-size: 1rem;
+  block-size: 1rem;
+  stroke-width: 1.75;
+}
+.text {
+  display: block;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.separator {
+  flex: none;
+  align-self: center;
+  inline-size: 1px;
+  block-size: calc(var(--fbg-h) * 0.5);
+  background: var(--color-stroke);
+}
+.vertical .separator {
+  inline-size: 50%;
+  block-size: 1px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .highlight {
+    transition: none;
+  }
+}

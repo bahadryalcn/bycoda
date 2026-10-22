@@ -1,0 +1,157 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 240" fill="none">
+  <defs>
+    <radialGradient id="skin" cx=".33" cy=".18" r=".86">
+      <stop stop-color="#c4cc8b"/><stop offset=".48" stop-color="#9fab70"/><stop offset="1" stop-color="#5f704e"/>
+    </radialGradient>
+    <linearGradient id="ear" x1="21" y1="103" x2="133" y2="130" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#a9b782"/><stop offset=".48" stop-color="#6e8055"/><stop offset="1" stop-color="#9ca675"/>
+    </linearGradient>
+    <linearGradient id="robe" x1="37" y1="147" x2="113" y2="219" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#ddd8bb"/><stop offset=".45" stop-color="#bcb899"/><stop offset="1" stop-color="#817e65"/>
+    </linearGradient>
+    <linearGradient id="sleeve" x1="46" y1="153" x2="73" y2="189" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#e0dcc3"/><stop offset=".6" stop-color="#c8c3a6"/><stop offset="1" stop-color="#9d9b7f"/>
+    </linearGradient>
+    <linearGradient id="collar" x1="60" y1="141" x2="100" y2="185" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#eee6cb"/><stop offset="1" stop-color="#b0aa8a"/>
+    </linearGradient>
+    <linearGradient id="nose" x1="83" y1="117" x2="93" y2="136" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#c2c98b"/><stop offset="1" stop-color="#7c8c59"/>
+    </linearGradient>
+    <clipPath id="eyes">
+      <path d="M55 120C61 118 69 117 75 120C70 123 61 124 55 120ZM90 120C97 118 103 118 108 121C102 124 96 124 90 120Z"/>
+    </clipPath>
+  </defs>
+  <g stroke-linecap="round" stroke-linejoin="round">
+    <g data-part="body">
+    <!-- Bare, three-toed feet beneath the worn hem. -->
+    <path d="M48 212C44 217 37 220 38 225C41 228 46 226 49 225C51 229 57 229 61 226C66 227 72 225 73 222L70 212ZM90 214L86 224C89 228 94 226 98 227C101 229 107 228 109 226C114 228 121 226 118 222L108 213Z" fill="url(#skin)" stroke="#485740" stroke-width="1.3"/>
+    <path d="M39 224L43 219L45 224ZM52 226L55 220L58 226ZM66 224L67 219L69 223ZM90 224L93 220L94 225ZM101 226L104 220L107 226ZM113 224L112 219L117 223Z" fill="#dad5ab" stroke="#7c8260" stroke-width=".65"/>
+    <!-- Rounded shoulders, heavy robe and offset stance. -->
+    <path d="M56 139C39 140 28 153 28 171C28 188 35 199 32 211L37 218C51 221 64 218 74 216C88 222 106 222 120 218L115 203C119 185 121 169 112 155C106 146 99 141 93 139Z" fill="url(#robe)" stroke="#686c57" stroke-width="1.4"/>
+    <path d="M62 143L74 156L95 147C103 167 103 198 98 218L76 215L55 219C60 197 60 170 62 143Z" fill="#595747" stroke="#6b6954"/>
+    <path d="M66 158Q79 165 97 155M65 171Q82 177 99 165M62 196Q78 193 99 187M61 207Q78 204 99 202" stroke="#858168" stroke-width="1.7"/>
+    <path d="M54 140C46 147 41 163 44 178L54 184L64 164L75 156L67 144Z" fill="url(#collar)" stroke="#96977b" stroke-width="1.2"/>
+    <path d="M52 149C48 159 49 169 52 174L62 160L69 155" stroke="#f0e8d0" stroke-width="2.6"/>
+    <path d="M98 142C107 148 110 159 109 174C107 190 110 204 115 216L100 218C96 203 96 180 97 166L88 155Z" fill="url(#collar)" stroke="#929176" stroke-width="1.2"/>
+    <path d="M100 149L103 162L102 179M104 190L108 211" stroke="#ece3c9" stroke-width="2.3"/>
+    <path d="M37 188C48 204 62 204 79 195C74 207 58 213 40 211M37 215Q54 219 69 213M113 191L111 204M34 165L38 156" stroke="#797d64" stroke-width="1.5"/>
+    <path d="M36 193C46 208 59 206 71 203M40 214Q51 216 62 212" stroke="#d2ceb0" stroke-width="1.5"/>
+    </g>
+    <g data-part="arm" data-pivot-x="80" data-pivot-y="155" data-mode="rest">
+    <!-- Both sleeves, gripping fingers and cane move as one supported gesture. -->
+    <path d="M92 226C94 214 94 206 98 197L101 183L101 171C105 166 112 167 115 171L112 177L108 178C110 187 102 195 102 203L99 219L98 226Z" fill="#766044" stroke="#494d37" stroke-width="1.3"/>
+    <path d="M95 222L98 207L99 198L104 184L104 174L111 172" stroke="#b39869" stroke-width="1.4"/>
+    <path d="M111 158C118 160 122 169 121 179L115 190L107 186L108 171Z" fill="url(#sleeve)" stroke="#7f8168" stroke-width="1.2"/>
+    <path d="M116 176Q119 182 115 187L108 184L109 177Z" fill="#585d49"/>
+    <path d="M109 176C112 173 117 174 118 178L117 190C116 194 113 193 113 189L112 181C112 185 112 188 110 188C106 187 108 182 106 180Z" fill="url(#skin)" stroke="#586b47"/>
+    <!-- Near sleeve drapes across the body as he leans on the staff. -->
+    <path d="M39 151C29 159 30 174 37 185C46 198 67 197 80 188L101 174L94 163C81 170 64 181 55 172L49 157" fill="url(#sleeve)" stroke="#7f826a" stroke-width="1.3"/>
+    <path d="M34 163C35 175 40 183 49 186M40 180C51 191 66 190 78 183M53 173C61 179 67 177 72 175" stroke="#e9e1c7" stroke-width="1.6"/>
+    <path d="M90 164L95 163L102 175L94 181C94 173 90 169 87 167Z" fill="#e5dcc0" stroke="#929278"/>
+    <path d="M96 170L102 176L98 179Z" fill="#595f49"/>
+    <path d="M95 163C99 158 104 158 108 160L117 165C120 168 119 173 116 175L113 170L109 167C112 172 113 178 110 179C107 179 107 173 104 170C106 178 105 183 102 181L100 171C98 173 95 172 93 169Z" fill="url(#skin)" stroke="#596e48" stroke-width="1.1"/>
+    <path d="M98 163L103 162L109 164M100 168L103 166M108 171L111 169M113 167L115 167" stroke="#d1d3a0" stroke-width="1"/>
+    <path d="M102 178L105 180L103 183ZM109 176L112 176L111 180ZM116 172L119 170L119 175Z" fill="#ded5ae" stroke="#7e8660" stroke-width=".65"/>
+    </g>
+    <g data-part="force-arm" data-pivot-x="50" data-pivot-y="151" data-mode="jedi" opacity="0">
+      <!-- A broad sleeve supports the open, three-finger Force gesture. -->
+      <path d="M56 141C48 139 39 144 35 151L24 146L18 159C24 173 36 181 47 175L60 162Z" fill="url(#sleeve)" stroke="#7f826a" stroke-width="1.3"/>
+      <path d="M43 148C40 154 38 161 34 167M25 161C30 169 38 174 46 170M48 151L53 158" stroke="#e9e1c7" stroke-width="1.7"/>
+      <path d="M25 146C20 148 17 153 18 159L25 163C27 156 30 152 33 151Z" fill="#e5dcc0" stroke="#96967a" stroke-width="1.1"/>
+      <path d="M26 149C22 150 20 154 21 158L27 160L31 152Z" fill="#555f45"/>
+      <path d="M30 151L25 147L24 135C24 131 20 129 18 133L18 142L13 135C10 130 6 133 8 137L13 146L7 143C2 140 0 144 4 147L12 154C15 160 22 162 27 158L31 157Z" fill="url(#skin)" stroke="#596e48" stroke-width="1.1"/>
+      <path d="M17 145L21 148L21 154M13 150L18 153M22 137L21 141M10 136L12 140" stroke="#ccd29a" stroke-width="1"/>
+      <path d="M19 134L20 130L22 133ZM8 135L6 133L10 133ZM4 146L1 144L5 143Z" fill="#ded5ae" stroke="#7e8660" stroke-width=".6"/>
+    </g>
+    <g data-part="jedi-arm" data-pivot-x="100" data-pivot-y="151" data-mode="jedi" opacity="0">
+      <!-- The lifted right sleeve overlaps the robe throughout the saber swing. -->
+      <path d="M93 142C103 138 115 145 117 154L127 159L126 177C117 186 103 183 99 172L91 155Z" fill="url(#sleeve)" stroke="#7f826a" stroke-width="1.3"/>
+      <path d="M102 148C109 153 106 164 112 169M105 173C110 179 117 180 122 175" stroke="#e9e1c7" stroke-width="1.7"/>
+      <path d="M112 160C116 156 122 157 126 160L127 174C123 178 117 177 113 173Z" fill="#e5dcc0" stroke="#96967a" stroke-width="1.1"/>
+      <path d="M116 161Q121 159 124 163L124 171Q120 175 116 171Z" fill="#555f45"/>
+      <path d="M114 160C115 156 120 155 124 158C128 159 129 164 127 168L123 174L117 173L112 169Z" fill="url(#skin)" stroke="#596e48" stroke-width="1.1"/>
+      <path d="M115 165L119 167L124 165M116 170L121 171M117 159Q121 158 124 161" stroke="#c7ce93" stroke-width="1"/>
+    </g>
+    <g data-part="saber" data-follow="jedi-arm" data-pivot-x="118" data-pivot-y="164" data-mode="jedi" opacity="0">
+      <!-- Green blade with a pale core; the gripping fingers travel with the hilt. -->
+      <path d="M118 152V87" stroke="#55eb78" stroke-opacity=".14" stroke-width="12"/>
+      <path d="M118 152V87" stroke="#7bff93" stroke-opacity=".35" stroke-width="7"/>
+      <path d="M118 152V87" stroke="#94ffab" stroke-width="4.3"/>
+      <path d="M118 152V87" stroke="#eefff1" stroke-width="1.8"/>
+      <path d="M114.5 152H121.5L122 156L121 174H115L114 156Z" fill="#bfc8bc" stroke="#48564b" stroke-width="1"/>
+      <path d="M114 151H122V155H114ZM115 171H121V175H115Z" fill="#647469" stroke="#414f42" stroke-width=".9"/>
+      <path d="M117 157V170M120 157V170" stroke="#526052" stroke-width="1.3"/>
+      <path d="M116 156H120" stroke="#edf1d9" stroke-width="1.1"/>
+      <circle cx="121" cy="158" r="1.1" fill="#b5e688" stroke="#516848" stroke-width=".5"/>
+      <path d="M113 161C116 159 121 159 124 161L124 164C120 165 117 164 114 164L114 167C117 169 121 169 124 167L123 171C119 173 115 171 112 169Z" fill="url(#skin)" stroke="#596e48" stroke-width="1"/>
+      <path d="M115 162H121M115 168Q119 170 122 169" stroke="#c7ce93" stroke-width=".9"/>
+    </g>
+    <g data-part="body">
+    <!-- Short neck tucked into the raised collar. -->
+    <path d="M62 136L65 149C74 158 88 159 99 145L99 136Z" fill="#6f8054" stroke="#566849" stroke-width="1.1"/>
+    <path d="M71 148Q82 154 92 147" stroke="#a6b177"/>
+    </g>
+    <g data-part="head" data-pivot-x="80" data-pivot-y="144">
+    <!-- Long, folded ears are deliberately uneven, like the original puppet. -->
+    <path d="M52 106C37 106 20 102 7 94C6 106 15 116 27 122C36 127 45 128 54 121ZM105 108C120 111 137 98 151 101L155 105C145 104 137 113 130 120C122 127 113 129 105 125Z" fill="url(#ear)" stroke="#556847" stroke-width="1.4"/>
+    <path d="M13 102C24 109 36 110 47 112L46 122C33 120 20 115 13 102ZM112 114C128 113 136 105 148 104C138 111 132 121 115 123Z" fill="#627550" stroke="#b3bf85" stroke-width="1.3"/>
+    <path d="M18 106Q29 119 43 120M120 120Q131 118 139 110" stroke="#849869" stroke-width="1.3"/>
+    <!-- Broad cranium, low cheeks and a tucked chin. -->
+    <path d="M43 111C43 99 47 91 56 85C64 79 75 78 84 80C94 80 103 86 108 94C113 100 116 109 115 119C114 135 103 145 91 151C84 154 76 153 69 149C57 145 48 139 45 128Z" fill="url(#skin)" stroke="#556849" stroke-width="1.4"/>
+    <path d="M48 117C47 133 58 142 70 145C76 151 88 153 100 144C95 151 83 157 73 151C57 147 48 139 45 128Z" fill="#66794f" opacity=".65"/>
+    <path d="M54 99C56 89 68 83 79 83C89 82 98 88 102 93C90 89 88 95 81 93C72 88 64 94 54 99Z" fill="#c2c98b" opacity=".58"/>
+    <!-- Sparse white temple hair follows the silhouette. -->
+    <g stroke="#d6d7b9" stroke-width=".8" opacity=".85">
+      <path d="M53 89C49 89 46 91 43 95M51 91C45 94 43 98 42 103M49 95C41 94 38 100 37 104M47 99C40 99 37 102 36 107M46 104C40 107 41 114 38 117"/>
+      <path d="M46 109C41 116 43 123 39 126M47 114C43 123 45 128 42 131M48 119C47 128 48 131 45 135M51 124C47 131 49 134 47 137M103 91C109 91 112 96 114 101M108 99C116 99 120 102 122 106M112 104C120 105 121 111 124 112M114 109C119 114 118 119 122 123M114 116C119 122 116 129 120 131"/>
+      <path d="M57 86C56 80 60 77 65 78M65 81C66 76 71 75 75 77M76 80C80 75 84 76 87 79M91 83C94 78 99 81 101 84" opacity=".75"/>
+    </g>
+    <!-- Layered forehead folds and the heavy brow ridge. -->
+    <g stroke="#788c59" stroke-width="1.1">
+      <path d="M61 91C66 88 70 89 74 91C78 94 81 95 86 92C89 90 94 92 98 94M57 98C64 94 70 95 75 98M86 98C90 95 97 97 102 100M76 93L78 100L82 104M84 94L82 99M65 85L70 87M88 85L93 88"/>
+    </g>
+    <path d="M60 92Q67 91 72 94M58 100Q66 97 73 101M89 99Q95 98 100 102" stroke="#d5d5a0" stroke-width="1.1"/>
+    <path d="M49 111C52 103 62 99 70 102C76 103 80 108 79 112C72 109 68 109 63 112C57 115 53 115 49 113ZM86 110C88 103 95 101 102 104C108 106 110 111 111 115C103 111 95 113 88 115Z" fill="#8b9e67" stroke="#677f50" stroke-width="1.2"/>
+    <path d="M51 110C57 105 63 104 68 106L76 111M89 110C94 106 100 106 106 111" stroke="#c6ce93" stroke-width="2.2"/>
+    <!-- Deep-set eyes with hooded lids and small, readable highlights. -->
+    <path d="M52 119C58 110 69 109 77 118C72 126 60 127 52 119ZM88 119C94 112 103 111 110 120C104 126 95 128 88 119Z" fill="#465a3e"/>
+    <path d="M55 120C61 118 69 117 75 120C70 123 61 124 55 120ZM90 120C97 118 103 118 108 121C102 124 96 124 90 120Z" fill="#d5d2a9" stroke="#61794d" stroke-width=".7"/>
+    <g clip-path="url(#eyes)">
+    <ellipse cx="67.5" cy="118.7" rx="4.1" ry="3.6" fill="#635d37"/>
+    <ellipse cx="100.7" cy="119.5" rx="3.6" ry="3.1" fill="#635d37"/>
+    <ellipse cx="68" cy="118.7" rx="2.1" ry="3.1" fill="#25392c"/>
+    <ellipse cx="101" cy="119.5" rx="1.8" ry="2.8" fill="#25392c"/>
+    <circle cx="66.6" cy="117.7" r="1" fill="#eff0d9"/><circle cx="99.9" cy="118.6" r=".85" fill="#eff0d9"/>
+    </g>
+    <path d="M52 119C57 110 69 109 77 119C69 116 61 118 52 121ZM88 120C93 112 103 110 110 121C103 117 96 118 88 121Z" fill="#9eae75"/>
+    <path d="M53 120C61 118 68 116 76 120M89 120C95 117 103 117 109 121" stroke="#536b45" stroke-width="1.3"/>
+    <path d="M52 117C59 112 69 110 76 117M90 117C97 112 103 114 108 118" stroke="#d0d39a" stroke-width="1.2"/>
+    <path d="M52 122C58 129 69 128 74 123M53 126C58 132 66 131 70 128M92 126C98 130 105 129 109 124M94 129C100 132 105 131 107 129" stroke="#697f50" stroke-width="1"/>
+    <path d="M55 125C61 128 68 126 71 125M94 127Q101 130 106 126" stroke="#bac78b" stroke-width=".8"/>
+    <!-- A rounded nose projects from the brow, with tucked nostrils. -->
+    <path d="M80 109C78 115 79 119 77 123C73 127 77 132 81 132C86 137 94 133 96 130C98 127 94 124 91 122L88 112" fill="url(#nose)" stroke="#7b905c" stroke-width="1"/>
+    <path d="M80 114Q83 111 87 114M80 118Q84 115 88 119M80 122Q85 119 90 123" stroke="#718752" stroke-width=".8"/>
+    <path d="M80 124C83 121 89 122 92 125" stroke="#d1d3a0" stroke-width="1.4"/>
+    <path d="M77 128Q79 125 82 128M89 129Q93 126 94 129" stroke="#4e633f" stroke-width="1.7"/>
+    <path d="M82 131Q86 133 89 131" stroke="#b9c387" stroke-width="1.2"/>
+    <!-- Sagging cheeks, fine lip and tucked chin. -->
+    <path d="M75 128C69 130 69 135 65 138M96 131C97 136 102 136 102 139M52 130C57 135 61 134 64 136M54 133L61 137" stroke="#738751" stroke-width="1.1"/>
+    <path d="M76 132C80 135 88 135 93 133L98 140C88 138 77 140 69 140Z" fill="#a7b57c"/>
+    <path d="M67 140C73 138 77 140 82 139C87 138 92 138 98 140" stroke="#4e633f" stroke-width="1.3"/>
+    <path d="M74 142C80 144 87 143 93 142" stroke="#bdc58b" stroke-width="1.5"/>
+    <path d="M76 146Q83 148 90 145M62 140L68 144M101 139L97 143" stroke="#708451" stroke-width=".9"/>
+    <path d="M74 148Q83 152 92 147" stroke="#9cad73" stroke-width="1.2"/>
+    </g>
+    <g data-part="blink" data-follow="head" data-pivot-x="80" data-pivot-y="144" opacity="0">
+      <path d="M52 118C59 113 70 113 77 119L75 125C66 129 57 126 52 121ZM88 119C94 113 104 114 110 120L108 125C100 129 92 126 88 122Z" fill="#9eae75"/>
+      <path d="M54 121C60 124 69 124 75 121M90 122C96 125 103 125 108 122" stroke="#536b45" stroke-width="1.3"/>
+      <path d="M57 124Q65 127 71 124M94 125Q101 128 106 124" stroke="#bdc88c" stroke-width=".8"/>
+    </g>
+    <g data-part="mouth" data-follow="head" data-pivot-x="80" data-pivot-y="144" opacity="0">
+      <path d="M72 139C79 137 89 137 96 140C92 146 79 147 72 139Z" fill="#46503a" stroke="#617447" stroke-width=".9"/>
+      <path d="M79 143Q85 141 91 143" stroke="#a99477" stroke-width="1.4"/>
+      <path d="M76 145Q85 148 94 144" stroke="#b5c080" stroke-width="1.2"/>
+    </g>
+  </g>
+</svg>

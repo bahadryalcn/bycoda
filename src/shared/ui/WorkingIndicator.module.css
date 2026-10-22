@@ -1,0 +1,70 @@
+.indicator {
+  display: inline-flex;
+  vertical-align: middle;
+}
+
+/* The 24x24 grid of the former SVG, centered and fitted like its viewBox. */
+.grid {
+  position: relative;
+  display: block;
+  block-size: 1em;
+  max-inline-size: 100%;
+  aspect-ratio: 1;
+  margin-inline: auto;
+}
+
+/* Static staggered bars; only the root pulses. Measured in the WebView2 build:
+   per-bar animations stayed on the main thread and kept a large workspace
+   rendering every frame (~90% of a core at 240 Hz, from a single indicator),
+   while a root opacity animation runs on the compositor. */
+.bar {
+  position: absolute;
+  top: calc(5 / 24 * 100%);
+  inline-size: calc(2.6 / 24 * 100%);
+  block-size: calc(14 / 24 * 100%);
+  border-radius: 999px;
+  background: currentColor;
+  transform: scaleY(var(--bar-scale, 0.6));
+}
+
+.bar:nth-child(1) {
+  --bar-scale: 0.45;
+}
+
+.bar:nth-child(2) {
+  --bar-scale: 0.85;
+}
+
+.bar:nth-child(3) {
+  --bar-scale: 1;
+}
+
+.bar:nth-child(4) {
+  --bar-scale: 0.6;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .indicator {
+    animation: working-signal 1.25s ease-in-out infinite;
+  }
+}
+
+:global(html[data-decorative-motion="off"]) .indicator {
+  animation: none;
+}
+
+/* Set by the shared observer in WorkingIndicator.tsx while off-viewport. Higher
+   specificity than the animation shorthand above, so it survives its reset. */
+.indicator[data-offscreen="true"] {
+  animation-play-state: paused;
+}
+
+@keyframes working-signal {
+  0%,
+  100% {
+    opacity: 0.45;
+  }
+  50% {
+    opacity: 1;
+  }
+}

@@ -1,0 +1,63 @@
+.surface {
+  display: grid;
+  place-items: safe center;
+  flex: 1;
+  min-inline-size: 0;
+  min-block-size: 0;
+  overflow: auto;
+  padding: clamp(16px, 4vi, 32px);
+  background: var(--ui-surface);
+  color: var(--color-content);
+}
+
+.surface[data-fullscreen] {
+  block-size: 100dvh;
+}
+
+.content {
+  display: grid;
+  gap: 16px;
+  inline-size: min(100%, 32rem);
+  min-inline-size: 0;
+}
+
+.title {
+  margin: 0;
+  font-size: var(--ui-font-heading, 1.25rem);
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+
+.description {
+  margin: 0;
+  color: var(--ui-text-secondary);
+  font-size: var(--ui-font-secondary);
+  line-height: 1.6;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.details {
+  display: grid;
+  gap: 12px;
+  min-inline-size: 0;
+  font-size: var(--ui-font-caption);
+}
+
+.details pre {
+  margin: 0;
+  padding: 16px;
+  max-block-size: min(32dvh, 16rem);
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  border: 1px solid var(--color-stroke);
+  border-radius: 8px;
+  background: var(--ui-surface-muted);
+  font-size: inherit;
+}

@@ -1,0 +1,68 @@
+.app-search-modal .modal-panel > div:last-child {
+  display: flex;
+  overflow: clip;
+}
+
+.app-search-dialog {
+  block-size: min(520px, calc(100dvh - 110px));
+}
+
+.app-search-footer {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 8px 12px;
+  border-block-start: 1px solid var(--color-stroke);
+  color: var(--ui-text-secondary);
+  font-size: 11px;
+}
+
+.app-search-footer kbd {
+  font: inherit;
+  color: var(--color-content);
+}
+
+.app-search .app-search-result {
+  align-items: flex-start;
+  padding-block: 10px;
+}
+
+.app-search-result-copy {
+  display: flex;
+  flex: 1;
+  min-inline-size: 0;
+  flex-direction: column;
+  gap: 3px;
+  text-align: start;
+}
+
+.app-search-result-title,
+.app-search-result-meta {
+  overflow: clip;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.app-search-result-title {
+  font-weight: 500;
+}
+
+.app-search-result-preview {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: clip;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  color: var(--ui-text-secondary);
+}
+
+.app-search-result-meta,
+.app-search-result-kind {
+  color: var(--ui-text-secondary);
+  font-size: 11px;
+}
+
+.app-search-result-kind {
+  flex-shrink: 0;
+}

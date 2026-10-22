@@ -1,0 +1,106 @@
+.field {
+  display: grid;
+  inline-size: 100%;
+  min-inline-size: 0;
+}
+.field label {
+  margin-block-end: var(--space-2);
+  font-size: var(--text-sm);
+  font-weight: 500;
+}
+.control {
+  box-sizing: content-box;
+  overflow: clip;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: var(--ui-surface);
+}
+.content {
+  position: relative;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1);
+  min-block-size: var(--control-height-md);
+  box-sizing: border-box;
+  padding: var(--space-1);
+}
+.tag {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-inline-size: 0;
+  max-inline-size: 100%;
+  padding-inline-start: var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: var(--surface-muted);
+  color: var(--foreground);
+  font-size: var(--text-sm);
+}
+.tagLabel {
+  overflow-wrap: anywhere;
+}
+.content input {
+  flex: 1 1 6rem;
+  min-inline-size: 4rem;
+  min-block-size: var(--control-height-sm);
+  box-sizing: border-box;
+  border: 0;
+  padding-inline: var(--space-1);
+  background: var(--ui-surface);
+  color: var(--foreground);
+  font: inherit;
+  font-size: var(--text-sm);
+}
+.content input::placeholder {
+  color: var(--text-muted);
+}
+.placeholder {
+  display: none;
+}
+.ring {
+  position: absolute;
+  inset-block-start: 0;
+  inset-inline-start: 0;
+  z-index: 1;
+  box-sizing: border-box;
+  border: 1px solid var(--color-active);
+  border-radius: var(--radius-control);
+  background: var(--color-selection-subtle);
+  opacity: 0;
+  pointer-events: none;
+}
+.tagLabel,
+.tag button {
+  position: relative;
+  z-index: 2;
+}
+.messageSlot {
+  display: block;
+  overflow: clip;
+}
+.hint {
+  display: block;
+  padding-block-start: var(--space-2);
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  line-height: var(--leading-body);
+}
+.words {
+  position: relative;
+  display: block;
+}
+.word {
+  display: inline-block;
+  white-space: pre;
+}
+.srOnly {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}

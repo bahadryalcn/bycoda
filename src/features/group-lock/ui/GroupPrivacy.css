@@ -1,0 +1,212 @@
+/* The privacy page shares one compact layout, including app and file access. */
+.bycoda-settings-workbench .bycoda-settings-form[data-settings-section="groupLock"] {
+  max-inline-size: none;
+}
+.group-privacy {
+  display: grid;
+  gap: 16px;
+  min-inline-size: 0;
+  container-type: inline-size;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 360px), 1fr));
+  align-items: stretch;
+}
+.group-privacy-controls {
+  display: contents;
+}
+.group-privacy-controls > :not(#setting-group-lock-password) {
+  grid-column: 1 / -1;
+}
+.bycoda-settings-workbench .bycoda-settings-form .group-privacy .settings-group {
+  display: block;
+  min-inline-size: 0;
+  padding: 0;
+  border: 1px solid var(--color-stroke);
+  border-radius: 10px;
+  background: var(--ui-surface);
+}
+.bycoda-settings-workbench
+  .bycoda-settings-form
+  .group-privacy
+  .settings-group
+  > .settings-group-heading {
+  padding: 16px;
+  gap: 12px;
+  flex-direction: row;
+  align-items: center;
+}
+.bycoda-settings-workbench .bycoda-settings-form .group-privacy .settings-group-heading h2 {
+  font-weight: 500;
+}
+.bycoda-settings-workbench .group-privacy .settings-group-heading p {
+  max-inline-size: 76ch;
+  margin-block-start: 4px;
+}
+.bycoda-settings-workbench .bycoda-settings-form .group-privacy .settings-group-content {
+  border: 0;
+  border-radius: 0 0 10px 10px;
+  background: transparent;
+}
+.bycoda-settings-workbench .bycoda-settings-form .group-privacy .settings-row,
+.bycoda-settings-workbench .bycoda-settings-form .group-privacy .settings-row:first-child {
+  padding: 12px 16px;
+  gap: 16px;
+  align-items: center;
+}
+.bycoda-settings-workbench .bycoda-settings-form .group-privacy .settings-row-control {
+  max-inline-size: 100%;
+  max-width: 100%;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+.bycoda-settings-workbench .group-privacy .settings-row-label {
+  flex-basis: auto;
+}
+.bycoda-settings-workbench .group-privacy .settings-row-control > button {
+  flex-shrink: 0;
+}
+.bycoda-settings-workbench .group-privacy .settings-row p {
+  color: var(--ui-text-secondary);
+  line-height: 1.5;
+}
+.bycoda-settings-workbench .group-privacy .settings-row-control > [role="status"] {
+  font-size: 12px;
+  color: var(--ui-text-secondary);
+}
+.bycoda-settings-workbench .group-privacy .settings-advanced,
+.privacy-recovery {
+  margin: 0;
+  border-block-start: 1px solid var(--color-stroke);
+}
+.bycoda-settings-workbench .group-privacy .settings-advanced > h3,
+.privacy-recovery > h3 {
+  padding: 12px 16px;
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--ui-text-secondary);
+}
+@media (hover: hover) and (pointer: fine) {
+  .bycoda-settings-workbench .group-privacy .settings-advanced > h3:hover,
+  .privacy-recovery > h3:hover {
+    color: var(--color-content);
+    background: var(--ui-surface-hover);
+  }
+}
+.privacy-recovery > h3:active {
+  background: var(--ui-surface-pressed);
+}
+.privacy-heading,
+.privacy-gate-label,
+.privacy-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.privacy-heading svg,
+.privacy-gate-label svg {
+  flex-shrink: 0;
+  color: var(--ui-text-secondary);
+}
+.privacy-status::before {
+  content: "";
+  inline-size: 6px;
+  block-size: 6px;
+  border-radius: 50%;
+  background: var(--color-accent);
+}
+.privacy-group-name {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr) auto;
+  column-gap: 10px;
+  row-gap: 4px;
+  align-items: center;
+  min-inline-size: 0;
+}
+.privacy-group-icon {
+  display: inline-flex;
+  color: var(--ui-text-secondary);
+}
+.privacy-group-title {
+  overflow-wrap: anywhere;
+}
+.privacy-group-state {
+  justify-self: end;
+}
+.privacy-group-list {
+  max-block-size: 360px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+.bycoda-settings-workbench .group-privacy .privacy-group-list .settings-row-label {
+  flex: 1;
+  min-inline-size: 0;
+}
+.bycoda-settings-workbench .group-privacy .privacy-group-list .settings-row {
+  flex-direction: row;
+  flex-wrap: nowrap;
+}
+.bycoda-settings-workbench .group-privacy .privacy-group-list .settings-row-control {
+  flex: 0 0 auto;
+  align-self: center;
+}
+.bycoda-settings-workbench .group-privacy .privacy-group-list .settings-row + .settings-row {
+  border-block-start: 1px solid var(--color-stroke);
+}
+.privacy-footnote,
+.privacy-inline-note {
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--ui-text-secondary);
+}
+.privacy-footnote {
+  max-inline-size: 88ch;
+  margin: 0;
+}
+.privacy-inline-note {
+  padding: 0 18px 12px;
+}
+.privacy-hidden-footer {
+  display: flex;
+  padding: 10px 18px 12px;
+  justify-content: flex-end;
+}
+@container (max-width: 560px) {
+  .bycoda-settings-workbench .bycoda-settings-form .group-privacy .settings-row,
+  .bycoda-settings-workbench .bycoda-settings-form .group-privacy .settings-row:first-child {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+  }
+  .bycoda-settings-workbench .bycoda-settings-form .group-privacy .settings-row-control {
+    justify-content: flex-start;
+    max-inline-size: 100%;
+    max-width: 100%;
+    align-self: stretch;
+  }
+  .bycoda-settings-workbench
+    .bycoda-settings-form
+    .group-privacy
+    .settings-row:has([role="switch"]) {
+    flex-direction: row;
+    flex-wrap: nowrap;
+    align-items: center;
+  }
+  .bycoda-settings-workbench
+    .group-privacy
+    .settings-row:has([role="switch"])
+    .settings-row-control {
+    align-self: center;
+    flex-shrink: 0;
+  }
+  .privacy-group-name {
+    grid-template-columns: 16px minmax(0, 1fr);
+  }
+  .privacy-group-state {
+    grid-column: 2;
+    justify-self: start;
+  }
+  .privacy-hidden-footer {
+    justify-content: flex-start;
+  }
+}

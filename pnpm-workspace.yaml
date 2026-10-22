@@ -1,0 +1,14 @@
+# The local update coordinator alone decides when dependencies need installation.
+verifyDepsBeforeRun: false
+allowBuilds:
+  esbuild: true
+  core-js: false
+  tsc-rs: true
+minimumReleaseAgeExclude:
+  - '@tsc-rs/darwin-arm64@0.7.0'
+  - '@tsc-rs/darwin-x64@0.7.0'
+  - '@tsc-rs/linux-arm64@0.7.0'
+  - '@tsc-rs/linux-x64@0.7.0'
+  - '@tsc-rs/win32-arm64@0.7.0'
+  - '@tsc-rs/win32-x64@0.7.0'
+  - tsc-rs@0.7.0

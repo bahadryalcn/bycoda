@@ -1,0 +1,71 @@
+/* Adapted official free Arc source; bycoda semantic theme owns presentation. */
+.presence {
+  min-inline-size: 0;
+}
+.alert {
+  display: flex;
+  align-items: start;
+  gap: var(--space-3);
+  min-inline-size: 0;
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: var(--ui-surface);
+  color: var(--foreground);
+  line-height: var(--leading-body);
+}
+.icon,
+.glyph {
+  position: relative;
+  display: grid;
+  flex: 0 0 auto;
+  place-items: center;
+}
+.icon {
+  inline-size: 1.125rem;
+  block-size: 1.125rem;
+}
+.icon svg {
+  display: block;
+  inline-size: 100%;
+  block-size: 100%;
+}
+.copy {
+  flex: 1;
+  min-inline-size: 0;
+}
+.content {
+  position: relative;
+}
+.title {
+  position: relative;
+  display: block;
+  font-size: var(--text-sm);
+  font-weight: 500;
+}
+.line {
+  display: block;
+  overflow-wrap: anywhere;
+}
+.description {
+  position: relative;
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+  overflow-wrap: anywhere;
+}
+.title + .description {
+  margin-block-start: var(--space-1);
+}
+.info .icon {
+  color: var(--ui-tone-info-fg);
+}
+.success .icon {
+  color: var(--ui-tone-success-fg);
+}
+.warning .icon {
+  color: var(--ui-tone-warning-fg);
+}
+.danger .icon {
+  color: var(--ui-tone-danger-fg);
+}

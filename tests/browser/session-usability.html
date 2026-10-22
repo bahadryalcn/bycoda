@@ -1,0 +1,23 @@
+<!doctype html>
+<html>
+  <head><meta charset="UTF-8" /><meta name="viewport" content="width=device-width,initial-scale=1" /><title>Integrated session usability</title></head>
+  <body>
+    <div id="root"></div>
+    <script>
+      localStorage.setItem("bycoda.language", "en");
+      window.__TAURI_EVENT_PLUGIN_INTERNALS__ = { unregisterListener: () => {} };
+      window.__TAURI_INTERNALS__ = {
+        metadata: { currentWebview: { label: "fixture" }, currentWindow: { label: "fixture" } },
+        transformCallback: () => 1,
+        unregisterCallback: () => {},
+        invoke: async (command) => {
+          if (command === "plugin:event|listen") return 1;
+          if (command === "plugin:event|unlisten") return;
+          if (command === "session_checkpoint_status") return { files: [] };
+          throw new Error(`No native host in integrated session fixture: ${command}`);
+        },
+      };
+    </script>
+    <script type="module" src="/tests/browser/session-usability.tsx"></script>
+  </body>
+</html>

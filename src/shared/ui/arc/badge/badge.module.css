@@ -1,0 +1,79 @@
+/* Adapted official free Arc source; bycoda semantic theme owns presentation. */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  max-inline-size: 100%;
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--badge-border);
+  border-radius: var(--radius-pill);
+  color: var(--badge-foreground);
+  background: var(--badge-background);
+  font-size: var(--text-xs);
+  font-weight: 500;
+  line-height: var(--leading-body);
+  overflow: clip;
+}
+.body {
+  display: block;
+  min-inline-size: 0;
+  max-inline-size: 100%;
+}
+.content {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  max-inline-size: 100%;
+}
+.label,
+.glyph {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  min-inline-size: 0;
+}
+.text {
+  display: block;
+  overflow-wrap: anywhere;
+}
+.icon {
+  position: relative;
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+}
+.icon svg {
+  inline-size: 1em;
+  block-size: 1em;
+}
+.sm {
+  padding-block: 0;
+}
+.md {
+  font-size: var(--text-xs);
+}
+.neutral {
+  --badge-foreground: var(--ui-tone-neutral-fg);
+  --badge-background: var(--ui-tone-neutral-subtle);
+  --badge-border: var(--ui-tone-neutral-border);
+}
+.success {
+  --badge-foreground: var(--ui-tone-success-fg);
+  --badge-background: var(--ui-tone-success-subtle);
+  --badge-border: var(--ui-tone-success-border);
+}
+.info {
+  --badge-foreground: var(--ui-tone-info-fg);
+  --badge-background: var(--ui-tone-info-subtle);
+  --badge-border: var(--ui-tone-info-border);
+}
+.warning {
+  --badge-foreground: var(--ui-tone-warning-fg);
+  --badge-background: var(--ui-tone-warning-subtle);
+  --badge-border: var(--ui-tone-warning-border);
+}
+.danger {
+  --badge-foreground: var(--ui-tone-danger-fg);
+  --badge-background: var(--ui-tone-danger-subtle);
+  --badge-border: var(--ui-tone-danger-border);
+}

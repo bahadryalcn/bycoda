@@ -1,0 +1,72 @@
+/* Opening motion belongs to surfaces, never streamed rows or file editors.
+   Page/session fades avoid creating containing blocks for fixed overlays.
+   No forwards fill: release compositor layers as soon as the entrance ends. */
+:root {
+  --motion-surface-duration: 200ms;
+  --motion-sheet-duration: 240ms;
+  --motion-notice-duration: 180ms;
+  --motion-surface-distance: 8px;
+  --motion-sheet-distance: 16px;
+}
+
+@keyframes ui-surface-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes ui-sheet-in {
+  from {
+    opacity: 0;
+    translate: var(--motion-sheet-distance) 0;
+  }
+  to {
+    opacity: 1;
+    translate: 0 0;
+  }
+}
+
+@keyframes ui-dialog-in {
+  from {
+    opacity: 0;
+    translate: 0 var(--motion-surface-distance);
+    scale: 0.99;
+  }
+  to {
+    opacity: 1;
+    translate: 0 0;
+    scale: 1;
+  }
+}
+
+/* The glass and dialog contents open as one surface. Keep .modal-panel's
+   structural role for existing consumers, but avoid a second nested entrance. */
+[data-modal-placement] > .modal-panel {
+  animation: none;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .ui-page-enter,
+  .bycoda-settings-panel > *,
+  .app-search:not(.app-search-dialog),
+  [data-session-drop][data-session-visible="true"] {
+    animation: ui-surface-fade-in var(--motion-surface-duration) var(--motion-ease-out) backwards;
+  }
+
+  [data-modal-placement="center"] {
+    animation: ui-dialog-in var(--motion-surface-duration) var(--motion-ease-out) backwards;
+  }
+
+  [data-modal-placement="end"] {
+    animation: ui-sheet-in var(--motion-sheet-duration) var(--motion-ease-out) backwards;
+  }
+}
+
+/* Logical end is the left edge in right-to-left layouts. */
+:dir(rtl) [data-modal-placement="end"],
+:dir(rtl) .notification-sheet {
+  --motion-sheet-distance: -16px;
+}

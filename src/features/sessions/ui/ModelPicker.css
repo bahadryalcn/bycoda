@@ -1,0 +1,5 @@
+.model-controls-menu {
+  inline-size: auto;
+  min-inline-size: min(250px, calc(100vw - 18px));
+  max-inline-size: min(320px, calc(100vw - 18px));
+}

@@ -1,0 +1,110 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 240" fill="none">
+  <defs>
+    <linearGradient id="fur" x1="49" y1="85" x2="115" y2="198" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#96704c"/><stop offset=".4" stop-color="#66503e"/><stop offset="1" stop-color="#443c36"/>
+    </linearGradient>
+    <linearGradient id="leg" x1="63" y1="151" x2="72" y2="229" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#4c4238"/><stop offset=".56" stop-color="#69513c"/><stop offset="1" stop-color="#96704b"/>
+    </linearGradient>
+    <linearGradient id="arm" x1="109" y1="86" x2="138" y2="170" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#665346"/><stop offset=".55" stop-color="#827058"/><stop offset="1" stop-color="#a48156"/>
+    </linearGradient>
+    <radialGradient id="face" cx=".43" cy=".32" r=".76">
+      <stop stop-color="#c3a478"/><stop offset=".48" stop-color="#a38560"/><stop offset="1" stop-color="#6d5540"/>
+    </radialGradient>
+    <linearGradient id="metal" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#e4e4d8"/><stop offset=".45" stop-color="#9dabb0"/><stop offset="1" stop-color="#56646e"/>
+    </linearGradient>
+  </defs>
+  <g stroke-linecap="round" stroke-linejoin="round">
+    <g data-part="body">
+    <!-- Long legs and broad furry feet keep the Wookiee silhouette distinct. -->
+    <path d="M50 144L48 165L51 176L48 179L50 190L46 195L48 204L45 212C41 217 34 221 32 227L38 230L48 228L51 230L70 227L71 215L74 201L72 197L77 175L81 158Z" fill="url(#leg)" stroke="#3e3730" stroke-width="1.5"/>
+    <path d="M80 151L82 173L87 181L84 185L88 198L86 203L91 216L87 226L96 229L108 229L111 231L128 228C127 221 118 218 115 213L113 201L115 196L111 184L113 179L108 163L109 146Z" fill="url(#leg)" stroke="#3e3730" stroke-width="1.5"/>
+    <g stroke="#a2855f" stroke-width="1.35" opacity=".72">
+      <path d="M54 162L56 182L53 191M61 166L61 194L57 207M70 172L65 200M53 204L51 217L43 224M60 207L57 221M66 207L64 223M48 221L45 227M91 169L96 187L95 199M101 168L103 193M106 195L109 211L116 222M99 204L104 225M94 211L96 224M112 220L116 227"/>
+    </g>
+    <path d="M55 171L55 186M64 187L61 205M51 210L49 219M94 181L98 198M104 201L106 214M60 218L58 225M100 216L100 227" stroke="#c09b69" stroke-width=".9" opacity=".6"/>
+    <!-- Shaggy torso, with the dark center visible behind the bandolier. -->
+    <path d="M59 76L47 84L44 89L39 93L46 101L42 114L47 123L44 130L48 141L45 151L52 153L55 160L62 158L66 164L73 160L79 166L87 161L94 164L100 158L108 160L112 150L110 143L115 132L111 123L116 111L111 91L99 80L94 75Z" fill="url(#fur)" stroke="#483d32" stroke-width="1.5"/>
+    <path d="M64 94L74 100L87 96L95 110L89 125L96 142L89 154L82 153L77 159L69 153L60 156L64 136L58 128L63 115Z" fill="#463f36" opacity=".6"/>
+    <g stroke="#ad8960" stroke-width="1.25" opacity=".7">
+      <path d="M49 94L53 109L52 117M55 94L59 110M60 86L65 103M69 91L73 111M80 98L82 114M92 91L97 110M104 96L109 112M49 120L53 137M59 119L61 132L58 146M70 116L68 135L72 149M79 120L76 137L79 153M90 119L85 136L90 150M99 116L96 136L100 148M107 125L104 145M51 140L53 151M64 140L63 155"/>
+    </g>
+    <path d="M55 114L56 126M66 105L69 119M72 128L72 141M82 140L84 153M94 138L95 152M104 113L102 127" stroke="#4d4134" stroke-width="2.5"/>
+    <!-- One arm hangs naturally; the other supports the bowcaster at the shoulder. -->
+    <path d="M107 86C120 89 125 99 125 110L129 123L128 128L133 143L131 149L135 157L132 169L127 169L124 173L120 169L116 171L113 164L115 152L110 136L109 124L105 114L104 99Z" fill="url(#arm)" stroke="#483d32" stroke-width="1.5"/>
+    <path d="M113 96L118 112L116 117L122 137M118 125L122 145L121 155M125 137L128 153M115 146L118 159M125 154L124 163M129 158L129 166M119 160L117 166" stroke="#ba9b70" stroke-width="1.2"/>
+    <path d="M108 97L111 112L110 118M115 119L117 131M124 121L127 137M120 157L121 167" stroke="#5b4b3c" stroke-width="1.5"/>
+    </g>
+    <g data-part="arm" data-pivot-x="47" data-pivot-y="94">
+    <path d="M47 86C37 87 34 95 33 101L30 94L31 86L26 81L22 86L20 98L18 103L21 116L26 124L33 122L38 125L45 118L46 110L51 103Z" fill="url(#arm)" stroke="#483d32" stroke-width="1.5"/>
+    <path d="M25 97L26 111L30 117M31 105L33 115M37 103L38 115M43 96L41 108M22 110L25 117" stroke="#b7976b" stroke-width="1.3"/>
+    </g>
+    <g data-part="body">
+    <!-- Leather bandolier and separate silver ammunition blocks. -->
+    <path d="M102 80L113 87L58 165L45 158Z" fill="#493c32" stroke="#332f2b" stroke-width="1.5"/>
+    <path d="M104 82L48 158M111 87L56 163" stroke="#a58358" stroke-width="1.3"/>
+    <g fill="url(#metal)" stroke="#414951" stroke-width=".9">
+      <rect x="101" y="86" width="13" height="7" rx="1" transform="rotate(35 107.5 89.5)"/>
+      <rect x="94" y="96" width="13" height="7" rx="1" transform="rotate(35 100.5 99.5)"/>
+      <rect x="87" y="106" width="13" height="7" rx="1" transform="rotate(35 93.5 109.5)"/>
+      <rect x="80" y="116" width="13" height="7" rx="1" transform="rotate(35 86.5 119.5)"/>
+      <rect x="73" y="126" width="13" height="7" rx="1" transform="rotate(35 79.5 129.5)"/>
+      <rect x="66" y="136" width="13" height="7" rx="1" transform="rotate(35 72.5 139.5)"/>
+      <rect x="59" y="146" width="13" height="7" rx="1" transform="rotate(35 65.5 149.5)"/>
+    </g>
+    <path d="M102 87L111 93M95 97L104 103M88 107L97 113M81 117L90 123M74 127L83 133M67 137L76 143M60 147L69 153" stroke="#ebead8" stroke-width="1.3"/>
+    <path d="M45 153L62 162L56 181L37 173Z" fill="#715038" stroke="#42372d" stroke-width="1.4"/>
+    <path d="M44 155L60 163L55 171L40 164Z" fill="#99704b" stroke="#543e2e"/>
+    <path d="M47 164L54 168L52 173L45 170Z" fill="url(#metal)" stroke="#424447" stroke-width=".8"/>
+    </g>
+    <g data-part="weapon" data-follow="arm" data-pivot-x="32" data-pivot-y="84">
+    <!-- The bowcaster and gripping fingers share the wrist rotation. -->
+    <g stroke="#252b2f" stroke-width="1.5">
+      <path d="M14 65L38 65L38 61L62 61L67 66L91 68L95 77L75 79L64 74L42 75L38 72H14Z" fill="#414b51"/>
+      <path d="M22 65V58L28 52M22 72V80L28 86" stroke="#687277" stroke-width="3"/>
+      <path d="M30 53L24 66L30 85" stroke="#abb4b4" stroke-width=".7"/>
+      <circle cx="28" cy="52" r="3.3" fill="#49555a"/><circle cx="28" cy="86" r="3.3" fill="#49555a"/>
+      <path d="M13 64H19V73H13Z" fill="#222c32"/>
+      <path d="M42 60V56H60V60M47 55V51H69V57H60" fill="#37434b"/>
+      <path d="M42 65H60M35 69H50M76 71L88 73" stroke="#8a969b" stroke-width="1.2"/>
+      <path d="M51 73L48 86L55 88L61 75" fill="#3d4547"/>
+    </g>
+    <path d="M24 88L24 79C24 77 26 76 28 78L31 82L32 75C33 72 36 73 36 76L37 83L39 78C40 76 43 77 43 80L41 88L35 94L29 95Z" fill="#9d805b" stroke="#514434" stroke-width="1.2"/>
+    <path d="M29 81L30 89M35 80L35 88M39 82L38 89" stroke="#635340" stroke-width="1.1"/>
+    </g>
+    <g data-part="head" data-pivot-x="80" data-pivot-y="83">
+    <!-- Swept-back crown and hanging cheek fur, rather than round animal ears. -->
+    <path d="M56 54C54 37 60 24 73 22C88 17 102 26 106 41L109 53L107 62L111 72L106 76L106 85L100 83L99 93L91 90L87 98L80 92L75 97L71 90L63 94L61 85L56 86L57 75L52 71L56 62Z" fill="url(#face)" stroke="#574733" stroke-width="1.5"/>
+    <path d="M76 24C65 28 62 41 63 49L59 60L58 69M81 24C72 32 69 40 69 47M87 25C94 30 98 39 99 49L104 64M83 27L82 43M92 29L94 45" stroke="#d1b087" stroke-width="1.35"/>
+    <path d="M66 31L64 42L60 51M74 28L69 44M79 27L75 43M88 28L91 44M97 36L101 53" stroke="#735d46" stroke-width="1.2"/>
+    <!-- Deep eye sockets under a continuous hairy brow. -->
+    <path d="M61 51C65 44 72 43 78 47L82 45L88 47C95 44 100 49 103 53L99 60L88 59L82 56L76 60L65 59Z" fill="#554838"/>
+    <path d="M64 52Q69 48 75 52Q70 56 64 52M89 52Q95 48 100 53Q95 57 89 52" fill="#c7bf9c" stroke="#433c31" stroke-width="1"/>
+    <ellipse cx="70" cy="52" rx="2" ry="2.3" fill="#6f8c95"/><ellipse cx="95" cy="52.5" rx="2" ry="2.3" fill="#6f8c95"/>
+    <path d="M70 51V53M95 51.5V53.5" stroke="#182d31" stroke-width="1.8"/>
+    <circle cx="69.5" cy="51" r=".65" fill="#e9e3ce"/><circle cx="94.5" cy="51.5" r=".65" fill="#e9e3ce"/>
+    <path d="M62 48L67 46L71 48L76 46M88 46L92 48L97 47L102 51" stroke="#bc9d72" stroke-width="1.7"/>
+    <!-- Dark nose, compact muzzle and long, parted beard. -->
+    <path d="M78 51L76 58L69 64L71 74L77 79L84 77L90 80L98 73L99 64L90 58L87 51Z" fill="#bda175"/>
+    <path d="M76 59C79 56 87 56 91 60L88 65L80 65Z" fill="#39362d" stroke="#423a2e"/>
+    <path d="M80 59Q84 58 87 60" stroke="#7f7c65" stroke-width="1.3"/>
+    <path d="M83 65V68M73 69C79 66 89 67 96 70C90 77 80 77 73 69Z" fill="#45382c" stroke="#63503b" stroke-width="1"/>
+    <path d="M76 69L77 72L80 71L81 73L85 72L88 73L91 72L93 70" fill="#e0d3ac" stroke="#9f8c65" stroke-width=".6"/>
+    <path d="M73 66L69 74L72 82M77 64L73 74L77 86M79 77L79 90M84 78L84 87L87 92M90 65L95 74L94 86M96 62L102 72L101 80M64 59L61 71L63 82M68 62L65 75L68 87" stroke="#dbc093" stroke-width="1.25"/>
+    <path d="M59 64L60 76M65 65L64 74M68 75L70 86M74 78L74 88M90 78L91 89M98 74L98 83M104 60L106 71M82 81L82 91" stroke="#816548" stroke-width="1.1"/>
+    </g>
+    <g data-part="blink" data-follow="head" data-pivot-x="80" data-pivot-y="83" opacity="0">
+      <path d="M62 49Q70 46 77 50L76 57L63 57ZM88 49Q95 46 102 51L101 58L88 57Z" fill="#89704f"/>
+      <path d="M64 53Q70 56 75 53M90 54Q95 57 100 54" stroke="#413a2f" stroke-width="1.5"/>
+      <path d="M65 49L68 51L72 49M91 50L94 52L98 50" stroke="#c3a478" stroke-width="1.1"/>
+    </g>
+    <g data-part="mouth" data-follow="head" data-pivot-x="80" data-pivot-y="83" opacity="0">
+      <path d="M72 68C78 65 90 65 97 70C96 78 91 83 84 82C77 82 73 76 72 68Z" fill="#352c26" stroke="#8b6b49" stroke-width="1.3"/>
+      <path d="M75 68L77 74L79 70L83 71L87 70L90 71L93 74L95 70" fill="#e0d3ac" stroke="#a7946e" stroke-width=".65"/>
+      <path d="M79 79C81 75 89 76 92 79L87 81L82 81Z" fill="#a77d68"/>
+      <path d="M76 79L78 76L80 80M91 80L93 77L94 78" fill="#ded0a7" stroke="#a7946e" stroke-width=".6"/>
+    </g>
+  </g>
+</svg>

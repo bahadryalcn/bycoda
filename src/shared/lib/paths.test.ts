@@ -1,0 +1,354 @@
+import { describe, expect, it, vi } from "vitest";
+import { resolveDocumentImage } from "./paths";
+
+it("contains and rebases Unix root descendants", () => {
+  expect(isEqualOrInside("/tmp/document.md", "/")).toBe(true);
+  expect(isEqualOrInside("relative/file.txt", "/")).toBe(false);
+  expect(rebasePath("/tmp/file.txt", "/", "/new-root")).toBe("/new-root/tmp/file.txt");
+  expect(rebasePath("/repo/file.txt", "/repo", "/")).toBe("/file.txt");
+  expect(resolveDocumentImage("image.png", "/tmp/document.md", "/")).toEqual({
+    path: "/tmp/image.png",
+    relative: "tmp/image.png",
+  });
+});
+
+it("resolves document images relative to the document or project and rejects escaped references", () => {
+  expect(resolveDocumentImage("../assets/hero.png", "/repo/docs/guide.md", "/repo")).toEqual({
+    path: "/repo/assets/hero.png",
+    relative: "assets/hero.png",
+  });
+  expect(resolveDocumentImage("/assets/a%20b.svg", "/repo/docs/guide.md", "/repo")).toEqual({
+    path: "/repo/assets/a b.svg",
+    relative: "assets/a b.svg",
+  });
+  expect(
+    resolveDocumentImage("logo.png", "remote://mac/repo/docs/guide.md", "remote://mac/repo"),
+  ).toEqual({ path: "remote://mac/repo/docs/logo.png", relative: "docs/logo.png" });
+  for (const src of [
+    "../../private.png",
+    "%2e%2e/%2e%2e/private.png",
+    "https://example.com/a.png",
+    "file:///secret.png",
+    "//host/a.png",
+    "data:image/png;base64,AA",
+    "%5c%5chost/a.png",
+    "notes.txt",
+    "a.png%00.txt",
+  ]) {
+    expect(resolveDocumentImage(src, "/repo/README.md", "/repo"), src).toBeUndefined();
+  }
+});
+import {
+  displayPath,
+  isEqualOrInside,
+  joinPath,
+  parentPath,
+  prettyCwd,
+  projectName,
+  rebasePath,
+  setHomeDir,
+  setPathEnvironment,
+  slash,
+  pathKey,
+  resolveWorkspaceFileReference,
+  resolveWorkspacePath,
+} from "./paths";
+
+describe("workspace file references", () => {
+  it.each([
+    "file://otherhost/share/readme.md",
+    "FILE://OTHERHOST/share/readme.md",
+    "file://%6ftherhost/share/readme.md",
+    "file://localhost.otherhost/share/readme.md",
+    "file://user@localhost/readme.md",
+    "file://localhost:123/readme.md",
+    "file://%zz/readme.md",
+  ])("rejects unsupported file URL authorities through both resolvers: %s", (href) => {
+    for (const cwd of ["C:/work/repo", "/repo", "remote://pc/C:/Work/Repo"]) {
+      expect(resolveWorkspaceFileReference(href, cwd)).toBeUndefined();
+      expect(resolveWorkspacePath(href, cwd)).toBeUndefined();
+    }
+  });
+
+  it("uses URL authority/path semantics for local file URLs", () => {
+    expect(
+      resolveWorkspaceFileReference("FILE://LOCALHOST/C:/Work/My%20File.ts#L3", "C:/repo"),
+    ).toEqual({
+      path: "C:/Work/My File.ts",
+      navigation: { line: 3 },
+    });
+    expect(resolveWorkspacePath("file:///tmp/a.md?download=1", "/repo")).toBe("/tmp/a.md");
+    expect(resolveWorkspacePath("file:///C:/Work/a.ts", "remote://pc/C:/repo")).toBe(
+      "remote://pc/C:/Work/a.ts",
+    );
+    expect(resolveWorkspaceFileReference("file:///tmp/a%23b.md", "/repo")?.path).toBe(
+      "/tmp/a#b.md",
+    );
+  });
+  it("resolves directory variables from the actual Windows environment", () => {
+    setPathEnvironment({
+      LOCALAPPDATA: "D:/User Data/Local",
+      "PROGRAMFILES(X86)": "C:/Program Files (x86)",
+    });
+    try {
+      expect(
+        resolveWorkspaceFileReference("%localappdata%\\Bycoda\\bycoda.exe", "G:/repo")?.path,
+      ).toBe("D:/User Data/Local/Bycoda/bycoda.exe");
+      expect(resolveWorkspaceFileReference("%ProgramFiles(x86)%\\Bycoda", "G:/repo")?.path).toBe(
+        "C:/Program Files (x86)/Bycoda",
+      );
+      expect(
+        resolveWorkspaceFileReference("%LOCALAPPDATA%\\Bycoda", "remote://mac/Users/dev/repo"),
+      ).toBeUndefined();
+      expect(resolveWorkspaceFileReference("%UNKNOWN%\\file.md", "G:/repo")).toBeUndefined();
+    } finally {
+      setPathEnvironment({});
+    }
+  });
+
+  it("normalizes extended Windows drive paths", () => {
+    expect(resolveWorkspaceFileReference("\\\\?\\G:\\My Project\\özet.md:7", "G:/repo")).toEqual({
+      path: "G:/My Project/özet.md",
+      navigation: { line: 7 },
+    });
+  });
+  it.each([
+    ["main.ts:12", "/repo", "/repo/main.ts", { line: 12 }],
+    ["main.ts:12:3", "/repo", "/repo/main.ts", { line: 12, column: 3 }],
+    ["main.ts:12#heading", "/repo", "/repo/main.ts", { line: 12 }],
+    [".gitignore:2", "/repo", "/repo/.gitignore", { line: 2 }],
+    ["Dockerfile:4", "/repo", "/repo/Dockerfile", { line: 4 }],
+    ["src/main.ts:12:3", "/repo", "/repo/src/main.ts", { line: 12, column: 3 }],
+    ["./docs/My%20Guide.md#L7-L9", "/repo", "/repo/docs/My Guide.md", { line: 7 }],
+    ["C:\\repo\\main.ts:4", "C:/repo", "C:/repo/main.ts", { line: 4 }],
+    ["file:///C:/My%20Project/main.ts#L2", "C:/repo", "C:/My Project/main.ts", { line: 2 }],
+    ["file://localhost/repo/main.ts:2", "/repo", "/repo/main.ts", { line: 2 }],
+    ["report%23L2.md", "/repo", "/repo/report#L2.md", undefined],
+    ["docs/guide.md#installation", "/repo", "/repo/docs/guide.md", undefined],
+    ["docs/guide.md#installation:12", "/repo", "/repo/docs/guide.md", undefined],
+    ["report%23L2.md#installation", "/repo", "/repo/report#L2.md", undefined],
+    ["progress%done.md", "/repo", "/repo/progress%done.md", undefined],
+    ["Dockerfile", "/repo", "/repo/Dockerfile", undefined],
+    ["src/main.ts:0", "/repo", "/repo/src/main.ts", undefined],
+  ] as const)("resolves %s with its source location", (href, cwd, path, navigation) => {
+    expect(resolveWorkspaceFileReference(href, cwd)).toEqual({
+      path,
+      navigation,
+    });
+  });
+
+  it.each([
+    "https://example.com/src/main.ts",
+    "//example.com/main.ts",
+    "/%2Fhost/share/file.md",
+    "/%5Chost/share/file.md",
+    "%2f%2fhost/share/file.md:12",
+    "%5C%5Chost/share/file.md",
+    "\\\\host\\share\\file.md",
+    "javascript:../main.ts",
+    "javascript:main.ts:12",
+    "javascript%3A../main.ts",
+    "data:text/html,file.md",
+    "mailto:readme@example.com",
+    "admin-e2e@itms.local",
+    "pm-e2e@itms.local",
+    "assignee-e2e@itms.local",
+    "e2e@itms.local",
+    "user+tag@example.com",
+    "admin-e2e%40itms.local",
+    "#section",
+  ])("does not turn %s into a local file", (href) => {
+    expect(resolveWorkspaceFileReference(href, "/repo")).toBeUndefined();
+  });
+
+  it("does not decode a literal percent sequence again in an already-resolved filesystem path", () => {
+    const file = resolveWorkspaceFileReference("/repo/progress%2520.md", "/repo")!;
+    expect(file.path).toBe("/repo/progress%20.md");
+    expect(resolveWorkspacePath(file.path, "/repo")).toBe(file.path);
+  });
+
+  it("resolves bare file locations without decoding native filesystem names", () => {
+    expect(resolveWorkspacePath("main.ts:12:3", "/repo")).toBe("/repo/main.ts");
+    expect(resolveWorkspacePath("/%2Fhost/share/file.md", "/repo")).toBe("/%2Fhost/share/file.md");
+  });
+
+  it("keeps remote Markdown file links on their machine", () => {
+    const cwd = "remote://env/home/dev/repo";
+    expect(resolveWorkspaceFileReference("src/app.ts:4", cwd)).toEqual({
+      path: "remote://env/home/dev/repo/src/app.ts",
+      navigation: { line: 4 },
+    });
+    expect(resolveWorkspacePath("/home/dev/repo/src/app.ts", cwd)).toBe(
+      "remote://env/home/dev/repo/src/app.ts",
+    );
+    expect(resolveWorkspacePath("~/notes.md", cwd)).toBe("remote://env/home/dev/notes.md");
+    expect(resolveWorkspacePath("remote://env/home/dev/repo/src/app.ts", cwd)).toBe(
+      "remote://env/home/dev/repo/src/app.ts",
+    );
+    expect(resolveWorkspacePath("remote://other/repo/app.ts", cwd)).toBeUndefined();
+  });
+
+  it.each([
+    "file://localhost/%2Fhost/share/file.md",
+    "file://localhost/%5Chost/share/file.md",
+    "file:////host/share/file.md",
+    "file:///%2fhost/share/file.md:12",
+    "file://%5C%5Chost/share/file.md",
+  ])("rejects a network file URL through either resolver: %s", (href) => {
+    expect(resolveWorkspaceFileReference(href, "/repo")).toBeUndefined();
+    expect(resolveWorkspacePath(href, "/repo")).toBeUndefined();
+  });
+
+  it("keeps native UNC filesystem paths separate from untrusted URLs", () => {
+    expect(resolveWorkspacePath("//server/share/file.md", "C:/repo")).toBe(
+      "//server/share/file.md",
+    );
+  });
+
+  it("expands a leading ~/ to the home directory recognised in cwd, not a path relative to cwd", () => {
+    expect(resolveWorkspacePath("~/.codex/skills/zuse/SKILL.md", "/Users/dev/project")).toBe(
+      "/Users/dev/.codex/skills/zuse/SKILL.md",
+    );
+    expect(resolveWorkspacePath("~", "/Users/dev/project")).toBe("/Users/dev");
+    expect(resolveWorkspacePath("~/skills/SKILL.md", "C:/Users/dev/project")).toBe(
+      "C:/Users/dev/skills/SKILL.md",
+    );
+  });
+
+  it("recognises a Windows home directory regardless of the Users segment's case", () => {
+    // A cwd like "C:/users/dev/project" (lowercase "users") is just as valid
+    // a Windows home shape as "C:/Users/dev/project" - the OS itself is not
+    // case-sensitive here, so cwd-based inference should not be either.
+    expect(resolveWorkspacePath("~/notes.md", "c:/users/dev/project")).toBe(
+      "c:/users/dev/notes.md",
+    );
+  });
+
+  it("leaves a ~/ reference unresolved when cwd has no recognisable home directory", () => {
+    expect(resolveWorkspacePath("~/.codex/skills/zuse/SKILL.md", "/data/project")).toBeUndefined();
+    expect(resolveWorkspacePath("~/.codex/skills/zuse/SKILL.md", undefined)).toBeUndefined();
+  });
+
+  it("prefers a primed real home directory over inferring one from cwd", () => {
+    setHomeDir("/opt/ci-runner-home");
+    try {
+      expect(resolveWorkspacePath("~/.codex/skills/zuse/SKILL.md", "/data/project")).toBe(
+        "/opt/ci-runner-home/.codex/skills/zuse/SKILL.md",
+      );
+      // Wins even when cwd itself would resolve to a different home - it is
+      // the real OS home directory, not a guess.
+      expect(resolveWorkspacePath("~/notes.md", "/Users/dev/project")).toBe(
+        "/opt/ci-runner-home/notes.md",
+      );
+    } finally {
+      setHomeDir(undefined);
+    }
+  });
+
+  it("falls back to cwd inference once the primed home directory is cleared", () => {
+    setHomeDir("/opt/ci-runner-home");
+    setHomeDir(undefined);
+    expect(resolveWorkspacePath("~/.codex/skills/zuse/SKILL.md", "/data/project")).toBeUndefined();
+  });
+});
+
+it("normalizes remote Windows path identity without folding the machine ID or Unix path", () => {
+  const first = "remote://PC/C:/Work/Repo/a.ts";
+  const second = "remote://PC/c:/work/repo/A.ts";
+  expect(pathKey(first)).toBe(pathKey(second));
+  expect(pathKey("remote://PC/C:\\Work\\Repo\\a.ts")).toBe(pathKey(first));
+  expect(pathKey(first)).not.toBe(pathKey("remote://pc/C:/Work/Repo/a.ts"));
+  expect(pathKey(first)).not.toBe(pathKey("remote://Other/C:/Work/Repo/a.ts"));
+  expect(isEqualOrInside(second, "remote://PC/C:/WORK/REPO/")).toBe(true);
+  expect(isEqualOrInside(second, "remote://Other/C:/WORK/REPO/")).toBe(false);
+  expect(isEqualOrInside("remote://PC/C:/Work/Repository/a.ts", "remote://PC/c:/work/repo")).toBe(
+    false,
+  );
+  expect(displayPath(second, "remote://PC/C:/WORK/REPO")).toBe("A.ts");
+  expect(rebasePath(first, "remote://PC/c:/work/repo", "remote://PC/D:/New")).toBe(
+    "remote://PC/D:/New/a.ts",
+  );
+  expect(pathKey("remote://mac/home/Dev/A.ts")).not.toBe(pathKey("remote://mac/home/dev/a.ts"));
+  expect(slash("remote://mac/home/dev/literal\\name.ts")).toBe(
+    "remote://mac/home/dev/literal\\name.ts",
+  );
+  expect(pathKey("remote://mac/home/dev/literal\\name.ts")).toBe(
+    "remote://mac/home/dev/literal\\name.ts",
+  );
+});
+
+it("keeps a connected Unix path literal even on a Windows client", async () => {
+  vi.resetModules();
+  vi.doMock("../../platform/tauri/platform", () => ({ IS_WIN: true }));
+  try {
+    const windowsClient = await import("./paths");
+    expect(windowsClient.pathKey("remote://mac/home/Dev/literal\\name.ts")).toBe(
+      "remote://mac/home/Dev/literal\\name.ts",
+    );
+    expect(windowsClient.pathKey("remote://PC/C:\\Work\\Repo\\A.ts")).toBe(
+      "remote://PC/c:/work/repo/a.ts",
+    );
+  } finally {
+    vi.doUnmock("../../platform/tauri/platform");
+    vi.resetModules();
+  }
+});
+
+describe("slash", () => {
+  it("preserves backslashes in absolute Unix filenames", () => {
+    expect(slash("/tmp/a\\b.txt")).toBe("/tmp/a\\b.txt");
+    expect(joinPath("/tmp", "a\\b.txt")).toBe("/tmp/a\\b.txt");
+    expect(parentPath("/tmp/a\\b.txt")).toBe("/tmp");
+  });
+  it("normalizes Windows separators", () => {
+    expect(slash("C:\\Users\\me\\code")).toBe("C:/Users/me/code");
+  });
+});
+
+describe("prettyCwd", () => {
+  it("collapses unix and Windows home prefixes", () => {
+    expect(prettyCwd("/Users/me")).toBe("~");
+    expect(prettyCwd("/Users/me/code")).toBe("~/code");
+    expect(prettyCwd("C:\\Users\\me")).toBe("~");
+    expect(prettyCwd("C:/Users/me/code/app")).toBe("~/code/app");
+  });
+});
+
+describe("parentPath and joinPath", () => {
+  it("preserves Windows filesystem roots", () => {
+    expect(parentPath("//server/share")).toBe("//server/share");
+    expect(rebasePath("C:/old", "C:/old", "D:/")).toBe("D:/");
+  });
+  it("walks Windows drive paths", () => {
+    expect(parentPath("C:/Users/me/code")).toBe("C:/Users/me");
+    expect(parentPath("C:/Users")).toBe("C:/");
+    expect(parentPath("C:/")).toBe("C:/");
+    expect(joinPath("C:/Users/me", "code/app")).toBe("C:/Users/me/code/app");
+    expect(joinPath("C:/Users/me/code", "..")).toBe("C:/Users/me");
+    expect(joinPath("C:/", "Users")).toBe("C:/Users");
+  });
+  it("splits relative paths by the remote host's separators, not the client's", () => {
+    expect(joinPath("remote://env/G:/repo", "src\\a.ts")).toBe("remote://env/G:/repo/src/a.ts");
+    expect(joinPath("remote://env/home/me/repo", "a\\b.txt")).toBe(
+      "remote://env/home/me/repo/a\\b.txt",
+    );
+  });
+});
+
+describe("path relations", () => {
+  it("treats backslash and slash as the same path", () => {
+    expect(isEqualOrInside("C:\\Users\\me\\app\\src", "C:/Users/me/app")).toBe(true);
+    expect(isEqualOrInside("C:/Users/me", "C:/")).toBe(true);
+    expect(rebasePath("C:\\Users\\me\\app\\src\\a.ts", "C:/Users/me/app", "D:/x")).toBe(
+      "D:/x/src/a.ts",
+    );
+    expect(displayPath("C:\\Users\\me\\app\\src\\a.ts", "C:/Users/me/app")).toBe("src/a.ts");
+    expect(projectName("C:\\Users\\me\\app")).toBe("app");
+  });
+
+  it("compares Windows paths without case", () => {
+    expect(isEqualOrInside("c:/USERS/me/App/src", "C:/Users/ME/app")).toBe(true);
+    expect(rebasePath("c:/USERS/me/App/src/a.ts", "C:/Users/ME/app", "D:/x")).toBe("D:/x/src/a.ts");
+    expect(displayPath("c:/USERS/me/App/src/a.ts", "C:/Users/ME/app")).toBe("src/a.ts");
+  });
+});

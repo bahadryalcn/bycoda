@@ -1,0 +1,7 @@
+[data-pointer-hover="true"] > .diff-hover-comment,
+[data-pointer-row="true"] > .diff-hover-stage,
+.diff-hover-comment:focus-visible,
+.diff-hover-stage:focus-visible {
+  opacity: 1;
+  pointer-events: auto;
+}

@@ -1,0 +1,85 @@
+.session-recovery-dialog .modal-panel > div {
+  display: flex;
+  overflow-y: auto;
+}
+.session-recovery {
+  inline-size: 100%;
+  max-block-size: min(640px, calc(100dvh - 110px));
+}
+.session-recovery > :not(.recovery-list) {
+  flex-shrink: 0;
+}
+.recovery-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.recovery-list {
+  flex: 0 1 auto;
+  min-block-size: 0;
+  scrollbar-gutter: stable;
+}
+
+.recovery-row > .bycoda-arc {
+  flex-shrink: 0;
+}
+
+.recovery-rail-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  flex-shrink: 0;
+  gap: 0.25rem;
+}
+.recovery-rail-error {
+  flex-basis: 100%;
+}
+.recovery-rail-control {
+  position: relative;
+  flex-shrink: 0;
+}
+.recovery-rail-count {
+  flex-shrink: 0;
+}
+
+[data-compact-project-rail] .recovery-rail-control {
+  flex: none;
+  justify-content: center;
+}
+[data-compact-project-rail] .recovery-rail-row {
+  padding: 0;
+  margin: 0;
+  justify-content: center;
+}
+[data-compact-project-rail] .recovery-rail-clear {
+  display: none;
+}
+
+[data-compact-project-rail] .recovery-rail-count {
+  position: absolute;
+  inset-block-start: -2px;
+  inset-inline-end: -3px;
+  pointer-events: none;
+}
+
+@container rail (inline-size <= 140px) {
+  .recovery-rail-clear {
+    display: none;
+  }
+  .recovery-rail-row {
+    justify-content: center;
+    padding-inline: 0;
+  }
+  .recovery-rail-control {
+    margin-inline: auto;
+    flex: none;
+    justify-content: center;
+  }
+  .recovery-rail-count {
+    position: absolute;
+    inset-block-start: -2px;
+    inset-inline-end: -3px;
+    pointer-events: none;
+  }
+}

@@ -1,0 +1,18 @@
+{
+  "listing": "100644 aaa 1\tdir/a b.txt\u0000100644 bbb 2\tdir/a b.txt\u0000100644 ccc 3\tünicode\tname.txt\u0000bad record\u0000100644 ddd 4\tignored.txt\u0000",
+  "entries": [
+    { "relative": "dir/a b.txt", "stage": 1, "sha": "aaa" },
+    { "relative": "dir/a b.txt", "stage": 2, "sha": "bbb" },
+    { "relative": "ünicode\tname.txt", "stage": 3, "sha": "ccc" }
+  ],
+  "kinds": [
+    { "stages": [1, 2, 3], "kind": "both-modified" },
+    { "stages": [2, 3], "kind": "both-added" },
+    { "stages": [1, 3], "kind": "deleted-by-us" },
+    { "stages": [1, 2], "kind": "deleted-by-them" },
+    { "stages": [2], "kind": "added-by-us" },
+    { "stages": [3], "kind": "added-by-them" },
+    { "stages": [1], "kind": "both-deleted" },
+    { "stages": [], "kind": "both-deleted" }
+  ]
+}

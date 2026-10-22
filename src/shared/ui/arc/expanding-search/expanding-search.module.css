@@ -1,0 +1,167 @@
+.root {
+  position: relative;
+  inline-size: 100%;
+  min-inline-size: var(--control-height-sm);
+  block-size: var(--control-height-sm);
+  pointer-events: none;
+}
+/* Official field-width spring and radius choreography, scoped to bycoda. */
+.shell {
+  position: absolute;
+  inset-block-start: 0;
+  inset-inline-end: 0;
+  block-size: 100%;
+  border: 1px solid var(--border);
+  border-radius: calc(
+    var(--control-height-sm) / 2 - (var(--control-height-sm) / 2 - var(--radius-control)) *
+      var(--es-open, 0)
+  );
+  background: var(--surface);
+  color: var(--text-secondary);
+  pointer-events: auto;
+}
+.root[data-anchor="start"] .shell {
+  inset-inline-end: auto;
+  inset-inline-start: 0;
+}
+.shell[data-expanded] {
+  border-color: var(--border-strong);
+}
+.shell .trigger {
+  position: absolute;
+  z-index: 1;
+  inset: 0;
+  inline-size: 100%;
+  block-size: 100%;
+  min-block-size: 0;
+  border-radius: inherit;
+}
+.trigger[hidden] {
+  display: none;
+}
+.icon {
+  position: absolute;
+  inset-block-start: 50%;
+  inset-inline-start: calc(var(--control-height-sm) / 2 - 9px);
+  translate: 0 -50%;
+  pointer-events: none;
+}
+.input {
+  position: absolute;
+  inset: 0;
+  inline-size: 100%;
+  block-size: 100%;
+  min-inline-size: 0;
+  padding-inline: var(--control-height-sm);
+  border: 0;
+  border-radius: inherit;
+  background: transparent;
+  color: var(--foreground);
+  font: inherit;
+  font-size: var(--text-sm);
+  text-overflow: ellipsis;
+}
+.input::placeholder {
+  color: var(--text-muted);
+}
+.input[inert] {
+  pointer-events: none;
+}
+.shell .clear {
+  position: absolute;
+  z-index: 1;
+  inset-block-start: 50%;
+  inset-inline-end: 0;
+  translate: 0 -50%;
+}
+.body {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: var(--space-1);
+}
+.view,
+.group {
+  position: relative;
+}
+.listbox {
+  position: relative;
+  isolation: isolate;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+.groupLabel {
+  padding: var(--space-2) var(--space-3);
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  font-weight: 500;
+}
+.option {
+  position: relative;
+  gap: var(--space-2);
+}
+.highlight {
+  position: absolute;
+  z-index: -1;
+  inset: 0;
+  border-radius: inherit;
+  background: var(--ui-tone-neutral-subtle);
+  pointer-events: none;
+}
+.optionIcon {
+  display: grid;
+  flex: none;
+  inline-size: 18px;
+  place-items: center;
+  color: var(--text-muted);
+}
+.optionText {
+  display: grid;
+  min-inline-size: 0;
+}
+.optionTitle,
+.optionMeta {
+  overflow-wrap: anywhere;
+  white-space: normal;
+  line-height: var(--leading-body);
+}
+.optionTitle {
+  color: var(--foreground);
+  font-size: var(--text-sm);
+}
+.optionMeta {
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+}
+.mark {
+  background: transparent;
+  color: var(--foreground);
+  font-weight: 500;
+}
+.empty {
+  display: grid;
+  gap: var(--space-1);
+  padding: var(--space-3);
+}
+.emptyTitle,
+.emptyHint {
+  margin: 0;
+  overflow-wrap: anywhere;
+  line-height: var(--leading-body);
+}
+.emptyTitle {
+  color: var(--foreground);
+  font-size: var(--text-sm);
+}
+.emptyHint {
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+}
+.srOnly {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  overflow: clip;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}

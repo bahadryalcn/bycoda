@@ -1,0 +1,12 @@
+.folder[data-folder-dragging="true"] {
+  opacity: 0.4;
+}
+.folder > [data-folder-insert] {
+  display: none;
+}
+.folder[data-folder-drop="before"] > [data-folder-insert="before"],
+.folder[data-folder-drop="after"] > [data-folder-insert="after"],
+.folder[data-folder-drop="into"] > div > [data-folder-row] > [data-drop-highlight],
+.folder[data-folder-drop="pinned"] > div > [data-folder-row] > [data-drop-highlight] {
+  display: block;
+}
