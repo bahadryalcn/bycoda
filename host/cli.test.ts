@@ -88,7 +88,9 @@ it(
         }
         await vi.waitFor(() => expect(existsSync(join(directory, "running.json"))).toBe(false));
       }
-      rmSync(directory, { recursive: true, force: true });
+      // Windows can retain a short-lived handle after the detached host exits.
+      // Retry transient locks, but still fail if fixture cleanup cannot finish.
+      rmSync(directory, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
     }
   },
   process.platform === "win32" ? 60_000 : 20_000,

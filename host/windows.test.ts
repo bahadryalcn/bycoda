@@ -222,6 +222,9 @@ ${windowsTaskScript({ directory, entry, executable: process.execPath, port: 3776
       expect(log).toContain(`healthy ${version}`);
     }
   },
+  // Two upgrades each launch PowerShell twice; allow their bounded process
+  // operations to finish on a cold Windows runner without changing assertions.
+  90_000,
 );
 
 it.skipIf(process.platform !== "win32")(
