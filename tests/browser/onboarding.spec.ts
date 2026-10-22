@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 const fixture = "/tests/browser/onboarding.html";
-const captures = "temp/verification/2026-10-22-provider-discovery";
+const captures = "temp/verification/2026-10-22-provider-add-ux/browser";
 
 test("saves workspace and appearance choices, finishes directly and can reopen", async ({
   page,
@@ -34,8 +34,9 @@ test("saves workspace and appearance choices, finishes directly and can reopen",
   await page.screenshot({ path: `${captures}/appearance-light.png` });
   await dialog.getByRole("button", { name: /3\s*Agents/ }).click();
   await expect(dialog.getByRole("heading", { name: "Connect your agents" })).toBeVisible();
-  await expect(dialog.locator(".onboarding-agent")).toHaveCount(11);
-  await expect(dialog.getByRole("checkbox", { name: "Use Cursor" })).toBeChecked();
+  await expect(dialog.locator(".onboarding-agent")).toHaveCount(0);
+  await expect(dialog.getByText("No providers found", { exact: true })).toBeVisible();
+  await expect(dialog.getByRole("button", { name: "Add provider", exact: true })).toBeVisible();
   await page.screenshot({ path: `${captures}/providers-light.png` });
   await dialog.getByRole("button", { name: /4\s*Connections/ }).click();
   await expect(dialog.getByRole("button", { name: /Manage connections/ })).toBeVisible();
@@ -55,7 +56,7 @@ test("saves workspace and appearance choices, finishes directly and can reopen",
   await expect(dialog.locator('input[name="onboarding-crew"][value="star-wars"]')).toBeChecked();
   await expect(dialog.getByRole("radio", { name: "Light", exact: true })).toBeChecked();
   await dialog.getByRole("button", { name: /3\s*Agents/ }).click();
-  await expect(dialog.getByRole("checkbox", { name: "Use Cursor" })).toBeChecked();
+  await expect(dialog.locator(".onboarding-agent")).toHaveCount(0);
   expect(errors).toEqual([]);
 });
 
@@ -70,7 +71,7 @@ test("finds existing accounts, links another profile and lets the user choose a 
   const codex = page
     .locator(".onboarding-agent")
     .filter({ has: page.getByRole("checkbox", { name: "Use Codex", exact: true }) });
-  await expect(claude.getByRole("status")).toHaveText("✓ Signed in");
+  await expect(claude.getByRole("status")).toHaveText("Signed in");
   await expect(
     claude.getByRole("button", { name: "Sign in to Claude Code", exact: true }),
   ).toHaveCount(0);
@@ -119,7 +120,7 @@ test("keeps navigation and footer accessible at narrow and short viewports", asy
     ).toBeVisible();
     await expect(dialog.getByRole("button", { name: "Devam et", exact: true })).toBeInViewport();
     await dialog.getByRole("button", { name: /3\s*Ajanlar/ }).click();
-    await expect(dialog.locator(".onboarding-agent")).toHaveCount(11);
+    await expect(dialog.locator(".onboarding-agent")).toHaveCount(0);
     await expect(dialog.getByRole("button", { name: "Devam et", exact: true })).toBeInViewport();
     expect(
       await dialog
@@ -137,6 +138,78 @@ test("keeps navigation and footer accessible at narrow and short viewports", asy
     expect(bounds!.x).toBeGreaterThanOrEqual(0);
     expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(viewport.width);
     expect(bounds!.y + bounds!.height).toBeLessThanOrEqual(viewport.height);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+      true,
+    );
+  }
+});
+
+test("adds only the chosen missing provider after validation and keeps it on rescan", async ({
+  page,
+}) => {
+  await page.goto(`${fixture}?providers&agents`);
+  await expect(page.locator(".onboarding-agent")).toHaveCount(2);
+  await page.getByRole("button", { name: "Add provider", exact: true }).click();
+  const add = page.getByRole("dialog", { name: "Add provider", exact: true });
+  await add.getByRole("button", { name: /^Provider:/ }).click();
+  await expect(page.getByRole("option", { name: "Codex", exact: true })).toHaveCount(0);
+  await page.getByRole("combobox", { name: "Search providers…", exact: true }).fill("cursor");
+  await page.keyboard.press("ArrowDown");
+  await page.keyboard.press("Enter");
+  await expect(add.getByRole("textbox", { name: "CLI path", exact: true })).toBeVisible();
+  await expect(add.getByRole("button", { name: "Add provider", exact: true })).toBeDisabled();
+  await add.getByRole("textbox", { name: "CLI path", exact: true }).fill("D:/invalid.exe");
+  await add.getByRole("button", { name: "Add provider", exact: true }).click();
+  await expect(add.getByRole("alert")).toContainText("Selected file is not a provider CLI");
+  await expect(page.locator(".onboarding-agent")).toHaveCount(2);
+  await add.getByRole("button", { name: "Choose executable", exact: true }).click();
+  await expect(add.getByRole("textbox", { name: "CLI path", exact: true })).toHaveValue(
+    "D:/custom/cursor-agent.exe",
+  );
+  await expect(add.getByRole("alert")).toHaveCount(0);
+  await page.screenshot({ path: `${captures}/add-provider-path.png` });
+  await add.getByRole("button", { name: "Add provider", exact: true }).click();
+  await expect(add).toHaveCount(0);
+  const cursor = page
+    .locator(".onboarding-agent")
+    .filter({ has: page.getByRole("checkbox", { name: "Use Cursor", exact: true }) });
+  await expect(cursor.getByRole("status")).toHaveText("CLI path saved · restart required");
+  await expect(cursor.getByRole("button", { name: "Sign in to Cursor", exact: true })).toHaveCount(
+    0,
+  );
+  await page.getByRole("button", { name: "Refresh agent status", exact: true }).click();
+  await expect(page.locator(".onboarding-agent")).toHaveCount(3);
+  await page.screenshot({ path: `${captures}/providers-found-and-added.png` });
+});
+
+test("keeps the add form and long discovered lists reachable on small and landscape screens", async ({
+  page,
+}) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  for (const viewport of [
+    { width: 375, height: 812 },
+    { width: 812, height: 375 },
+  ]) {
+    await page.setViewportSize(viewport);
+    await page.goto(`${fixture}?providers=none&agents`);
+    await page.getByRole("button", { name: "Add provider", exact: true }).click();
+    const add = page.getByRole("dialog", { name: "Add provider", exact: true });
+    await add.getByRole("button", { name: /^Provider:/ }).click();
+    await page.getByRole("combobox", { name: "Search providers…", exact: true }).fill("cursor");
+    await page.keyboard.press("Enter");
+    await add.getByRole("button", { name: "Choose executable", exact: true }).click();
+    await add.getByRole("button", { name: "Add provider", exact: true }).scrollIntoViewIfNeeded();
+    await expect(add.getByRole("button", { name: "Add provider", exact: true })).toBeInViewport();
+    await page.screenshot({ path: `${captures}/add-provider-${viewport.width}.png` });
+    await add.getByRole("button", { name: "Cancel", exact: true }).click();
+    await expect(page.locator(".onboarding-agent")).toHaveCount(0);
+    expect(
+      await page.evaluate(() => localStorage.getItem("bycoda.providerBinaryPaths.v1")),
+    ).toBeNull();
+    await page.goto(`${fixture}?providers=all&agents`);
+    await expect(page.locator(".onboarding-agent")).toHaveCount(11);
+    await page.locator(".onboarding-agent").last().scrollIntoViewIfNeeded();
+    await expect(page.getByRole("button", { name: "Continue", exact: true })).toBeInViewport();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
       true,
     );

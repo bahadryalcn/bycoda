@@ -55,24 +55,36 @@ export function ProviderBinaryControl({
   provider,
   showLabel = false,
   onPathSaved,
+  inline = false,
+  onCancel,
 }: {
   provider: ConfigurableBinaryProvider;
   showLabel?: boolean;
   onPathSaved?: () => void;
+  /** Embed the existing validated path form in an add-provider dialog. */
+  inline?: boolean;
+  onCancel?: () => void;
 }) {
   useLocale();
   const root = useRef<HTMLSpanElement>(null);
   const trigger = useRef<HTMLButtonElement>(null);
   const editInput = useRef<HTMLInputElement>(null);
   const [open, setOpen] = useState(false);
-  const [editing, setEditing] = useState(false);
+  const [editing, setEditing] = useState(inline);
   const [draft, setDraft] = useState(() => loadProviderBinaryPath(provider) ?? "");
   const [overridden, setOverridden] = useState(() => Boolean(loadProviderBinaryPath(provider)));
   const [inspection, setInspection] = useState<HarnessBinaryInspection & { overridden: boolean }>();
   const [working, setWorking] = useState(false);
   const inspectionBusy = useRef(false);
+  const mounted = useRef(true);
   const [error, setError] = useState<string | null>(null);
   const [revealError, setRevealError] = useState<string | null>(null);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
 
   const inspect = useCallback(
     async (binaryPath?: string | null) => {
@@ -117,11 +129,12 @@ export function ProviderBinaryControl({
     if (working) return;
     const value = draft.trim();
     if (!value) {
+      if (inline) return;
       await useAuto();
       return;
     }
     const next = await inspect(value);
-    if (!next) return;
+    if (!mounted.current || !next) return;
     const validationError = binaryInspectionError(provider, next);
     if (validationError) {
       setError(validationError);
@@ -154,6 +167,96 @@ export function ProviderBinaryControl({
 
   const title = HARNESS_TITLE[provider];
   const restartRequired = providerBinaryPathChangePending(provider);
+  const chooseExecutable = (
+    <SecondaryButton
+      disabled={working}
+      onClick={() => {
+        if (inspectionBusy.current) return;
+        inspectionBusy.current = true;
+        setWorking(true);
+        void pickFile({
+          directory: false,
+          multiple: false,
+          title: t("Select {p0} CLI executable", { p0: title }),
+        })
+          .then((path) => {
+            if (mounted.current && typeof path === "string") {
+              setDraft(path);
+              setError(null);
+            }
+          })
+          .catch((cause) => setError(String(cause)))
+          .finally(() => {
+            inspectionBusy.current = false;
+            setWorking(false);
+          });
+      }}
+    >
+      <FolderOpen className="size-3.5" />
+      {t("Choose executable")}
+    </SecondaryButton>
+  );
+  const pathForm = (
+    <form className="mt-2" onSubmit={submit}>
+      <label
+        htmlFor={`${provider}-binary-path`}
+        className="text-[length:var(--ui-font-caption)] text-(--ui-text-secondary)"
+      >
+        {t("CLI path")}
+      </label>
+      <TextField
+        hideLabel
+        label={t("CLI path")}
+        id={`${provider}-binary-path`}
+        ref={editInput}
+        type="text"
+        value={draft}
+        placeholder={inspection?.path ?? t("Auto-detected path")}
+        disabled={working}
+        autoFocus
+        onChange={(event) => {
+          setDraft(event.target.value);
+          setError(null);
+        }}
+      />
+      {inline ? <div className="mt-2">{chooseExecutable}</div> : null}
+      <p className="mt-1.5 text-[length:var(--ui-font-caption)] text-(--ui-text-secondary)">
+        {t("Enter the absolute path to the CLI executable. Changes apply after restarting ")}
+        {PRODUCT_IDENTITY.displayName}.
+      </p>
+      {error ? <SettingsFeedback state="error">{error}</SettingsFeedback> : null}
+      <div className="mt-3 flex flex-wrap justify-end gap-2">
+        {!inline ? chooseExecutable : null}
+        <SecondaryButton
+          disabled={working}
+          onClick={() => {
+            if (inline) {
+              onCancel?.();
+              return;
+            }
+            setDraft(loadProviderBinaryPath(provider) ?? "");
+            setEditing(false);
+            queueMicrotask(() => trigger.current?.focus());
+          }}
+        >
+          {t("Cancel")}
+        </SecondaryButton>
+        {overridden ? (
+          <SecondaryButton disabled={working} onClick={() => void useAuto()}>
+            {t("Use auto-detected path")}
+          </SecondaryButton>
+        ) : null}
+        <Button
+          variant={inline ? "primary" : "secondary"}
+          type="submit"
+          disabled={working || (inline && !draft.trim())}
+        >
+          {working ? t("Checking path…") : inline ? t("Add provider") : t("Save path")}
+        </Button>
+      </div>
+    </form>
+  );
+  if (inline) return pathForm;
 
   return (
     <span ref={root} className="inline-flex align-middle">
@@ -253,77 +356,7 @@ export function ProviderBinaryControl({
             )}
           </p>
           {editing ? (
-            <form className="mt-2" onSubmit={submit}>
-              <label
-                htmlFor={`${provider}-binary-path`}
-                className="text-[11px] text-(--ui-text-secondary)"
-              >
-                {t("CLI path")}
-              </label>
-              <TextField
-                hideLabel
-                label={t("CLI path")}
-                id={`${provider}-binary-path`}
-                ref={editInput}
-                type="text"
-                value={draft}
-                placeholder={inspection?.path ?? t("Auto-detected path")}
-                disabled={working}
-                autoFocus
-                onChange={(event) => setDraft(event.target.value)}
-              />
-              <p className="mt-1.5 text-[length:var(--ui-font-caption)] text-(--ui-text-secondary)">
-                {t(
-                  "Enter the absolute path to the CLI executable. Changes apply after restarting ",
-                )}
-                {PRODUCT_IDENTITY.displayName}.
-              </p>
-              {error ? <SettingsFeedback state="error">{error}</SettingsFeedback> : null}
-              <div className="mt-3 flex justify-end gap-2">
-                <SecondaryButton
-                  disabled={working}
-                  onClick={() => {
-                    if (inspectionBusy.current) return;
-                    inspectionBusy.current = true;
-                    setWorking(true);
-                    void pickFile({
-                      directory: false,
-                      multiple: false,
-                      title: t("Select {p0} CLI executable", { p0: title }),
-                    })
-                      .then((path) => {
-                        if (typeof path === "string") setDraft(path);
-                      })
-                      .catch((cause) => setError(String(cause)))
-                      .finally(() => {
-                        inspectionBusy.current = false;
-                        setWorking(false);
-                      });
-                  }}
-                >
-                  <FolderOpen className="size-3.5" />
-                  {t("Choose executable")}
-                </SecondaryButton>
-                <SecondaryButton
-                  disabled={working}
-                  onClick={() => {
-                    setDraft(loadProviderBinaryPath(provider) ?? "");
-                    setEditing(false);
-                    queueMicrotask(() => trigger.current?.focus());
-                  }}
-                >
-                  {t("Cancel")}
-                </SecondaryButton>
-                {overridden ? (
-                  <SecondaryButton disabled={working} onClick={() => void useAuto()}>
-                    {t("Use auto-detected path")}
-                  </SecondaryButton>
-                ) : null}
-                <SecondaryButton type="submit" disabled={working}>
-                  {working ? t("Checking path…") : t("Save path")}
-                </SecondaryButton>
-              </div>
-            </form>
+            pathForm
           ) : (
             <>
               <div className="mt-2 rounded-md border border-(--color-stroke) bg-(--ui-surface-muted) px-2.5 py-2">

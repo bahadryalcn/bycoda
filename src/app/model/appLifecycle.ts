@@ -72,9 +72,15 @@ import { readToolWindow } from "./toolWindows";
 export type { ResumedWorkspace };
 import {
   captureSessionRecovery,
+  dropRecoverySessions,
   parseSessionRecovery,
   setSessionRecovery,
 } from "../../features/workspace/model/sessionRecovery";
+import {
+  isUnsentRemoteChat,
+  isUnsentRemoteShell,
+} from "../../features/workspace/model/remoteEmptyChats";
+import { remoteShellState } from "../../features/connections/model/remoteShellState";
 export { hasInFlightSessions };
 
 export type BootWorkspace = {
@@ -344,11 +350,25 @@ async function loadResumedWorkspaceOnce(): Promise<ResumedWorkspace | null> {
   }
   const interrupted = new Set(refs.map((ref) => ref.sessionId));
   const snapshot = parseWorkspaceSnapshot(snapshotRaw);
-  const previousRecovery = parseSessionRecovery(
+  const savedRecovery = parseSessionRecovery(
     snapshotRaw && typeof snapshotRaw === "object" && "sessionRecovery" in snapshotRaw
       ? snapshotRaw.sessionRecovery
       : null,
   );
+  // Entries saved before a remote chat was ever sent are not recoverable history.
+  const previousRecovery =
+    savedRecovery &&
+    dropRecoverySessions(
+      savedRecovery,
+      savedRecovery.workspace.sessions
+        .filter((stub) =>
+          isUnsentRemoteShell(
+            stub,
+            remoteShellState(stub, { bound: !!stub.remoteSessionId, hasDraft: false }),
+          ),
+        )
+        .map((stub) => stub.id),
+    );
   setSessionRecovery(previousRecovery);
 
   const ids = new Set<string>();
@@ -394,6 +414,8 @@ async function loadResumedWorkspaceOnce(): Promise<ResumedWorkspace | null> {
       (session) =>
         !session.inboxAsk &&
         !session.orchestrationLeadId &&
+        // Drafts live in their own store and stay with the tab, so they do not keep it here.
+        !isUnsentRemoteChat(session, remoteShellState(session, { hasDraft: false })) &&
         (session.cwd.startsWith("remote://") ||
           session.blocks.some((block) => block.role === "user") ||
           (session.rewindHistory?.length ?? 0) > 0),

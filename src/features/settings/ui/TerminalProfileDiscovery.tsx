@@ -4,7 +4,7 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { useContext, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
-import { FolderOpen } from "../../../shared/ui/icons";
+import { UserRound } from "../../../shared/ui/icons";
 import { Popover } from "../../../shared/ui/Popover";
 import { RevealedSetting } from "./settingsControls";
 import {
@@ -27,11 +27,13 @@ export function TerminalProfileDiscovery({
   disabled,
   autoDiscover = false,
   onConnected,
+  showLabel = autoDiscover,
 }: {
   provider: ProviderAccountProvider;
   disabled: boolean;
   autoDiscover?: boolean;
   onConnected?: (account: ProviderAccount) => void;
+  showLabel?: boolean;
 }) {
   useLocale();
   const revealedSetting = useContext(RevealedSetting);
@@ -150,7 +152,7 @@ export function TerminalProfileDiscovery({
     <span className="inline-flex">
       <Button
         ref={trigger}
-        iconOnly={!autoDiscover}
+        iconOnly={!showLabel}
         label={t("Terminal account profiles")}
         tooltip={t("Terminal account profiles")}
         size="sm"
@@ -160,8 +162,8 @@ export function TerminalProfileDiscovery({
         aria-controls={`${settingId}-popover`}
         onClick={() => setOpenPopover((current) => !current)}
       >
-        <FolderOpen className="size-4" strokeWidth={1.75} aria-hidden />
-        {autoDiscover
+        <UserRound className="size-4" strokeWidth={1.75} aria-hidden />
+        {showLabel
           ? providerProfiles
             ? t("Profiles ({p0})", { p0: providerProfiles.length })
             : t("Account profiles")

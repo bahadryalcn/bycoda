@@ -145,23 +145,30 @@ export function unlistedTabIds(
 /**
  * Tab ids of other projects whose every session is an empty new chat with
  * nothing unsent, plus no editor or terminal panes. The active, moving and
- * current-project tabs are never returned, and tabs without a project (or
- * with a remote one) are left alone.
+ * current-project tabs are never returned, and tabs without a project are left
+ * alone. A remote project's tab is a candidate only when `remoteUnsent` vouches
+ * for every session in it (see remoteEmptyChats.ts): its history would live on
+ * the host, so the local transcript alone cannot prove it empty.
  */
-export function emptyForeignTabIds(input: IdleTabInput, currentProject: string): string[] {
+export function emptyForeignTabIds(
+  input: IdleTabInput,
+  currentProject: string,
+  remoteUnsent?: (session: Session) => boolean,
+): string[] {
   const sessions = new Map(input.sessions.map((session) => [session.id, session]));
   return input.tabs
     .filter((tab) => {
       if (tab.id === input.activeTabId || input.movingTabIds?.has(tab.id)) return false;
       const project = workspaceTabCwd(tab, input.sessions);
-      if (!project || isRemoteProjectPath(project) || sameProjectPath(project, currentProject))
-        return false;
+      if (!project || sameProjectPath(project, currentProject)) return false;
+      if (isRemoteProjectPath(project) && !remoteUnsent) return false;
       if (tab.editorPanes.length > 0 || (tab.terminalPanes ?? []).length > 0) return false;
       return (
         tabIsIdle(tab, input, sessions) &&
         leafIds(tab.layout).every((id) => {
           const session = sessions.get(id);
-          return session !== undefined && isEmptyNewChat(session);
+          if (session === undefined || !isEmptyNewChat(session)) return false;
+          return !isRemoteProjectPath(project) || remoteUnsent!(session);
         })
       );
     })

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { mockIPC, mockWindows } from "@tauri-apps/api/mocks";
 import OnboardingDialog from "../../src/features/onboarding/ui/OnboardingDialog";
@@ -31,13 +31,34 @@ mockIPC(
       return { id: "terminal-work", provider: args?.provider, label: "Work", path: args?.path };
     }
     if (new URLSearchParams(location.search).has("providers")) {
-      if (command === "harness_resolve_claude" || command === "harness_resolve_codex")
+      if (new URLSearchParams(location.search).get("providers") === "all") {
+        if (command === "generic_acp_list") return [{ id: "fixture-agent" }];
+        if (command.startsWith("harness_resolve_") && command !== "harness_resolve_configured")
+          return { path: `C:/fixture/${command.slice(16)}.exe` };
+      }
+      if (
+        new URLSearchParams(location.search).get("providers") !== "none" &&
+        (command === "harness_resolve_claude" || command === "harness_resolve_codex")
+      )
         return { path: `C:/fixture/${command.slice(16)}.exe` };
-      if (command === "harness_resolve_configured") return { path: args?.binaryPath };
+      if (command === "harness_resolve_configured") {
+        if (String(args?.binaryPath).includes("invalid"))
+          throw new Error("Selected file is not a provider CLI");
+        return { path: args?.binaryPath };
+      }
       if (command === "harness_auth_status")
-        return args?.provider === "claude" ? "signedIn" : "signedOut";
+        return args?.provider === "claude"
+          ? "signedIn"
+          : args?.provider === "codex"
+            ? "signedOut"
+            : "unknown";
       if (command === "harness_exec") return "codex-cli 1.0.0";
-      if (command === "plugin:dialog|open") return "D:/custom/codex.exe";
+      if (command === "plugin:dialog|open") {
+        const options = args?.options as { title?: string } | undefined;
+        return options?.title?.includes("Cursor")
+          ? "D:/custom/cursor-agent.exe"
+          : "D:/custom/codex.exe";
+      }
     }
     if (
       command === "remote_machines" ||
@@ -53,10 +74,21 @@ mockIPC(
   { shouldMockEvents: true },
 );
 registerBuiltinHarnesses();
-applyThemePreference(loadThemePreference());
+applyThemePreference(
+  new URLSearchParams(location.search).get("theme") === "light" ? "light" : loadThemePreference(),
+);
 
 function Fixture() {
   const [open, setOpen] = useState(true);
+  useEffect(() => {
+    if (!new URLSearchParams(location.search).has("agents")) return;
+    const frame = requestAnimationFrame(() => {
+      [...document.querySelectorAll<HTMLButtonElement>("button")]
+        .find((button) => /^3\s*(Agents|Ajanlar)/.test(button.textContent ?? ""))
+        ?.click();
+    });
+    return () => cancelAnimationFrame(frame);
+  }, []);
   if (new URLSearchParams(location.search).has("guide")) {
     return (
       <main className="min-h-screen bg-background-base p-5 text-content">

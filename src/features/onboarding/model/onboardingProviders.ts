@@ -1,15 +1,13 @@
 import { createStoredSetting } from "../../../shared/lib/storedSetting";
 import { HARNESSES, type HarnessId } from "../../sessions/model/session";
 
-const PRIMARY: HarnessId[] = [...HARNESSES];
 const setting = createStoredSetting<HarnessId[]>({
-  key: "bycoda.onboarding.providers.v1",
-  fallback: PRIMARY,
+  // v1 included every provider automatically; it cannot represent explicit choices.
+  key: "bycoda.onboarding.providers.v2",
+  fallback: [],
   parse: (raw) => {
     const value: unknown = JSON.parse(raw);
-    return Array.isArray(value)
-      ? [...new Set([...PRIMARY, ...HARNESSES.filter((id) => value.includes(id))])]
-      : PRIMARY;
+    return Array.isArray(value) ? HARNESSES.filter((id) => value.includes(id)) : [];
   },
   serialize: JSON.stringify,
 });

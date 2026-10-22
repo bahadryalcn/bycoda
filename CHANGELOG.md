@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.68]
+
+### Providers and onboarding
+
+- Show discovered providers first and remember explicitly added providers.
+- Validate custom executable paths before adding a provider, with safer cancellation and clearer inline feedback.
+- Refine provider account actions, onboarding layout and terminal profile controls.
+
+### Workspace reliability
+
+- Close unused remote chat tabs only when they have no host binding, pending work or unsent draft.
+- Keep never-sent remote shells out of recovery history while preserving later recovery eligibility.
+- Expand onboarding, provider settings and remote workspace regression coverage.
+
 ## [0.6.67]
 
 ### Providers and onboarding

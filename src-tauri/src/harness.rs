@@ -5269,17 +5269,18 @@ mod line_batch_tests {
         let worker = thread::spawn(move || {
             coalesce_lines(
                 &rx,
-                LINE_BATCH_WINDOW,
+                Duration::from_secs(30),
                 LINE_BATCH_BYTES,
                 LINE_BATCH_LINES,
-                |batch| out_tx.send((Instant::now(), batch)).unwrap(),
+                |batch| out_tx.send(batch).unwrap(),
             );
         });
-        let sent = Instant::now();
         tx.send("x".to_string()).unwrap();
-        let (at, batch) = out_rx.recv_timeout(Duration::from_secs(2)).unwrap();
+        // Keep the sender open and receive well before the injected batching
+        // window: the first line must go out without waiting for that window.
+        // Leave CI scheduling headroom instead of asserting subsecond latency.
+        let batch = out_rx.recv_timeout(Duration::from_secs(2)).unwrap();
         assert_eq!(batch, vec!["x".to_string()]);
-        assert!(at.duration_since(sent) < LINE_BATCH_WINDOW + Duration::from_millis(100));
         drop(tx);
         worker.join().unwrap();
     }

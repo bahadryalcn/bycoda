@@ -210,6 +210,19 @@ export function rememberRemotePendingWorktree(shellId: string, path?: string) {
   }
 }
 
+/** False when the tab bindings are missing or unreadable (e.g. cleared storage):
+ * then no remote tab can be proven unsent, since its binding may be lost. */
+export function remoteTabBindingsReadable(): boolean {
+  try {
+    const raw = localStorage.getItem(TAB_KEY);
+    if (raw === null) return false;
+    const value: unknown = JSON.parse(raw);
+    return !!value && typeof value === "object" && !Array.isArray(value);
+  } catch {
+    return false;
+  }
+}
+
 /** The host session a tab in a remote project shows; none for a new session. */
 export function remoteSessionFor(shellId: string): string | undefined {
   try {

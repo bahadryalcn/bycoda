@@ -103,7 +103,7 @@ export default function OnboardingDialog({
       title={t("Welcome to {p0}", { p0: PRODUCT_IDENTITY.displayName })}
       size="lg"
       minimalHeader
-      className="onboarding-panel"
+      className={step === 2 ? "onboarding-panel onboarding-panel-agents" : "onboarding-panel"}
       onClose={busy ? () => undefined : onFinish}
     >
       <div className="onboarding-layout" ref={body}>

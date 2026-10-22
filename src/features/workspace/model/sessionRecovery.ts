@@ -88,13 +88,40 @@ export function removeRecoverySessions(
   recovery: SessionRecovery,
   ids: readonly string[],
 ): SessionRecovery {
-  const removed = new Set(ids.filter((id) => recovery.workspace.sessions.some((s) => s.id === id)));
+  const removed = recoveryIdsPresent(recovery, ids);
+  return {
+    ...withoutRecoverySessions(recovery, removed),
+    resolvedIds: [...new Set([...(recovery.resolvedIds ?? []), ...removed])],
+  };
+}
+
+/**
+ * Drop entries that never had a turn, without marking them resolved. Unlike
+ * removeRecoverySessions, the id stays capturable: if that tab later sends a
+ * turn and the app crashes, the chat must still reach recovery.
+ */
+export function dropRecoverySessions(
+  recovery: SessionRecovery,
+  ids: readonly string[],
+): SessionRecovery {
+  const removed = recoveryIdsPresent(recovery, ids);
+  if (removed.size === 0) return recovery;
+  return withoutRecoverySessions(recovery, removed);
+}
+
+function recoveryIdsPresent(recovery: SessionRecovery, ids: readonly string[]): Set<string> {
+  return new Set(ids.filter((id) => recovery.workspace.sessions.some((s) => s.id === id)));
+}
+
+function withoutRecoverySessions(
+  recovery: SessionRecovery,
+  removed: ReadonlySet<string>,
+): SessionRecovery {
   const sessions = recovery.workspace.sessions.filter((s) => !removed.has(s.id));
   const tabs = sessionRecoveryTabs(recovery.workspace.tabs, new Set(sessions.map((s) => s.id)));
   return {
     ...recovery,
     dismissed: sessions.length === 0 ? true : recovery.dismissed,
-    resolvedIds: [...new Set([...(recovery.resolvedIds ?? []), ...removed])],
     workspace: {
       ...recovery.workspace,
       sessions,

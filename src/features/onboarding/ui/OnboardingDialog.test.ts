@@ -65,7 +65,13 @@ vi.mock("../../providers/ui/GenericAcpSettings", () => ({
   GenericAcpSettings: () => createElement("div", null, "Custom agent editor"),
 }));
 vi.mock("../../settings/ui/ProviderBinarySettings", () => ({
-  ProviderBinaryControl: () => null,
+  ProviderBinaryControl: ({
+    inline,
+    onPathSaved,
+  }: {
+    inline?: boolean;
+    onPathSaved?: () => void;
+  }) => (inline ? createElement("button", { onClick: onPathSaved }, "Save fixture path") : null),
 }));
 vi.mock("../../settings/ui/TerminalProfileDiscovery", () => ({
   TerminalProfileDiscovery: () => null,
@@ -300,30 +306,29 @@ describe("onboarding workflow", () => {
     expect(loadCrewSceneEnabled()).toBe(false);
     expect(loadCrewTheme()).toBe("star-wars");
   });
-  it("shows every provider and only offers sign in for an installed supported provider", async () => {
+  it("shows installed providers without listing missing ones and preserves visibility choices", async () => {
     mock.available.mockImplementation((id: string) => id === "codex");
     await render();
     await click("Agents");
-    expect(container.textContent).not.toContain("✓ Signed in");
+    expect(container.textContent).not.toContain("Signed in");
     await act(async () =>
       container.querySelector<HTMLInputElement>('input[aria-label="Use Codex"]')!.click(),
     );
     expect(isPickerProviderVisible("codex")).toBe(false);
-    expect(container.querySelectorAll(".onboarding-agent")).toHaveLength(11);
-    expect(container.textContent).toContain("Cursor");
-    expect(isPickerProviderVisible("cursor")).toBe(true);
+    expect(container.querySelectorAll(".onboarding-agent")).toHaveLength(1);
+    expect(container.textContent).not.toContain("Cursor");
     await click("Connections");
     await click("Agents");
-    expect(container.textContent).toContain("Cursor");
+    expect(container.textContent).not.toContain("Cursor");
     await act(async () =>
       container.querySelector<HTMLButtonElement>('[aria-label="Sign in to Codex"]')!.click(),
     );
     await click("Complete login codex");
-    expect(container.textContent).toContain("✓ Signed in");
+    expect(container.textContent).toContain("Signed in");
     await act(async () => root.render(null));
     await render();
     await click("Agents");
-    expect(container.textContent).toContain("Cursor");
+    expect(container.textContent).not.toContain("Cursor");
     expect(isPickerProviderVisible("codex")).toBe(false);
   });
   it("detects an existing CLI login on a fresh browser without starting login", async () => {
@@ -335,12 +340,35 @@ describe("onboarding workflow", () => {
     const rows = [...container.querySelectorAll(".onboarding-agent")];
     const codex = rows.find((row) => row.textContent?.includes("Codex"))!;
     const claude = rows.find((row) => row.textContent?.includes("Claude"))!;
-    expect(codex.textContent).toContain("✓ Signed in");
+    expect(codex.textContent).toContain("Signed in");
     expect(codex.textContent).not.toContain("Sign in");
     expect(claude.textContent).toContain("not signed in");
     expect(
       [...claude.querySelectorAll("button")].some((node) => node.textContent === "Sign in"),
     ).toBe(true);
+  });
+  it("offers an empty state and adds a missing provider only after its path is saved", async () => {
+    await render();
+    await click("Agents");
+    expect(container.querySelectorAll(".onboarding-agent")).toHaveLength(0);
+    expect(container.textContent).toContain("No providers found");
+    await click("Add provider");
+    await act(async () =>
+      container
+        .querySelector<HTMLButtonElement>('[aria-label="Provider: Choose a provider…"]')!
+        .click(),
+    );
+    const cursor = document.querySelector<HTMLButtonElement>(
+      '[role="option"][data-value="cursor"]',
+    )!;
+    await act(async () => cursor.click());
+    expect(container.querySelectorAll(".onboarding-agent")).toHaveLength(0);
+    await click("Save fixture path");
+    expect(container.querySelectorAll(".onboarding-agent")).toHaveLength(1);
+    expect(container.textContent).toContain("Cursor");
+    await click("Connections");
+    await click("Agents");
+    expect(container.textContent).toContain("Cursor");
   });
   it("keeps unknown authentication distinct from a signed-out account and refreshes it", async () => {
     mock.available.mockImplementation((id: string) => id === "codex");
@@ -349,8 +377,10 @@ describe("onboarding workflow", () => {
     expect(container.textContent).toContain("sign-in status unavailable");
     expect(container.textContent).not.toContain("not signed in");
     mock.auth.mockResolvedValue("signedIn");
-    await click("Refresh agent status");
-    expect(container.textContent).toContain("✓ Signed in");
+    await act(async () =>
+      container.querySelector<HTMLButtonElement>('[aria-label="Refresh agent status"]')!.click(),
+    );
+    expect(container.textContent).toContain("Signed in");
   });
   it("ignores an old profile's scan and signs in to the newly selected profile", async () => {
     mock.available.mockImplementation((id: string) => id === "claude");
@@ -369,7 +399,7 @@ describe("onboarding workflow", () => {
     });
     expect(mock.auth).toHaveBeenCalledWith("claude", "terminal-work");
     await act(async () => finishOld("signedIn"));
-    expect(container.textContent).not.toContain("✓ Signed in");
+    expect(container.textContent).not.toContain("Signed in");
     await act(async () =>
       container.querySelector<HTMLButtonElement>('[aria-label="Sign in to Claude Code"]')!.click(),
     );

@@ -228,6 +228,25 @@ describe("emptyForeignTabIds", () => {
     expect(ids).toEqual(["pending"]);
   });
 
+  it("closes a remote tab only when the caller vouches for each of its sessions", () => {
+    const remote = "remote://machine-1/work/alpha";
+    const tabs = [
+      tab("active", ["z"]),
+      tab("unsent", ["a"]),
+      tab("bound", ["b"]),
+      tab("typed", ["c"]),
+    ];
+    const sessions = [at("z", current), at("a", remote), at("b", remote), at("c", remote)];
+    const vouched = new Set(["a", "b", "c"]);
+    const withPredicate = emptyForeignTabIds(
+      input({ tabs, sessions, hasComposerDraft: (id) => id === "c" }),
+      current,
+      (session) => vouched.has(session.id) && session.id !== "b",
+    );
+    expect(withPredicate).toEqual(["unsent"]);
+    expect(emptyForeignTabIds(input({ tabs, sessions }), current)).toEqual([]);
+  });
+
   it("never returns tabs without a project path", () => {
     expect(
       emptyForeignTabIds(

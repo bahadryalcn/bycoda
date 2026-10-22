@@ -105,6 +105,7 @@ import {
   Save as LucideSave,
   Search as LucideSearch,
   Settings as LucideSettings,
+  UserRound as LucideUserRound,
   Share as LucideShare,
   Shield as LucideShield,
   SlidersHorizontal as LucideSlidersHorizontal,
@@ -262,6 +263,7 @@ export const RotateCcw = wrap(LucideRotateCcw, "RotateCcw");
 export const Save = wrap(LucideSave, "Save");
 export const Search = wrap(LucideSearch, "Search");
 export const Settings = wrap(LucideSettings, "Settings");
+export const UserRound = wrap(LucideUserRound, "UserRound");
 export const Share = wrap(LucideShare, "Share");
 export const Shield = wrap(LucideShield, "Shield");
 export const SlidersHorizontal = wrap(LucideSlidersHorizontal, "SlidersHorizontal");

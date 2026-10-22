@@ -15,6 +15,7 @@ import {
   sessionRecoveryTabs,
   setSessionRecovery,
   removeRecoverySessions,
+  dropRecoverySessions,
 } from "./sessionRecovery";
 import { saveWorkspaceSnapshot } from "../../sessions/data/sessionStore";
 import { invoke } from "@tauri-apps/api/core";
@@ -33,6 +34,18 @@ const snapshot = (ids: string[]) => {
 };
 
 describe("durable session recovery", () => {
+  it("drops never-sent entries without resolving them, so a later sent turn is still captured", () => {
+    const initial = captureSessionRecovery(null, snapshot(["a", "b"]), 100)!;
+    const dropped = dropRecoverySessions(initial, ["a", "missing"]);
+    expect(dropped.workspace.sessions.map((s) => s.id)).toEqual(["b"]);
+    expect(dropped.workspace.tabs.flatMap((tab) => leafIds(tab.layout))).toEqual(["b"]);
+    expect(dropped.resolvedIds ?? []).toEqual([]);
+    expect(dropRecoverySessions(initial, ["missing"])).toBe(initial);
+    const parsed = parseSessionRecovery(JSON.parse(JSON.stringify(dropped)))!;
+    const next = captureSessionRecovery(parsed, snapshot(["a", "b"]), 200)!;
+    expect(next.workspace.sessions.map((s) => s.id)).toEqual(["b", "a"]);
+  });
+
   it("keeps removed entries out across restarts without releasing automatic work", () => {
     const initial = captureSessionRecovery(null, snapshot(["a", "b"]), 100)!;
     const removed = removeRecoverySessions(initial, ["a", "not-in-list"]);
