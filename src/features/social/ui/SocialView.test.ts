@@ -8,6 +8,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { SocialView as QueryComponent } from "./SocialView";
 import { ToolPanel } from "../../../app/shell/ToolNavigation";
 import type { SocialSnapshot } from "../model/social";
+import { t } from "../../../shared/i18n";
 const mocks = vi.hoisted(() => ({
   invoke: vi.fn(),
   request: vi.fn(),
@@ -150,9 +151,10 @@ function buttonName(button: HTMLButtonElement) {
   return copy.textContent?.trim();
 }
 async function click(text: string) {
-  const button = Array.from(container.querySelectorAll("button")).find(
+  const button = Array.from(document.body.querySelectorAll("button")).find(
     (item) =>
       !item.disabled &&
+      !item.closest("[hidden], [inert]") &&
       (item.querySelector(".social-nav-label")?.textContent === text ||
         buttonName(item) === text ||
         item.getAttribute("aria-label") === text),
@@ -211,6 +213,7 @@ describe("Sosyal Medya ürün ekranı", () => {
     expect(
       Array.from(nav.querySelectorAll(".social-nav-label")).map((label) => label.textContent),
     ).not.toContain("Geçmiş");
+    await click(t("More actions"));
     await click("İşlem geçmişi");
     expect(nav.querySelector('[aria-current="page"] .social-nav-label')?.textContent).toBe(
       "Otomasyonlar",
@@ -227,6 +230,7 @@ describe("Sosyal Medya ürün ekranı", () => {
       status.dispatchEvent(new Event("change", { bubbles: true }));
     });
     await click("Hesaplar");
+    await click(t("More actions"));
     await click("İşlem geçmişi");
     expect(history.closest("[hidden]")).toBeNull();
     await act(async () => filters.click());

@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { act, createElement, Fragment } from "react";
 import { createRoot } from "react-dom/client";
-import { afterEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { SidebarUpdateFooter } from "./SidebarUpdate";
 import { installAppUpdate, setAppUpdateSnapshot } from "../model/useAppUpdater";
 
@@ -12,9 +12,17 @@ vi.mock("../model/updater", () => ({
   installPendingUpdate: mocks.install,
 }));
 
+beforeEach(() => {
+  vi.stubGlobal("ResizeObserver", class {
+    observe() {}
+    disconnect() {}
+  });
+});
+
 afterEach(() => {
   vi.useRealTimers();
   vi.clearAllMocks();
+  vi.unstubAllGlobals();
 });
 
 it("shares one check and one download across both entry points and retains install errors", async () => {

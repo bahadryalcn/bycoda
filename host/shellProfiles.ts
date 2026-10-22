@@ -181,7 +181,11 @@ export function listShellProfiles(path = choicePath()): ShellProfiles {
 
 /** Compare the single saved preference before a remotely reviewed update. */
 export function setReviewedProfile(input: Record<string, unknown>, path = choicePath()): ShellProfiles {
-  const valid = (value: unknown): value is string | null => value === null || typeof value === "string" && /^[a-zA-Z0-9._-]{1,128}$/.test(value);
+  // Unix shell IDs are absolute executable paths; selection still requires an
+  // exact match in the detected installed profiles below.
+  const valid = (value: unknown): value is string | null =>
+    value === null || typeof value === "string" && value.length <= 4096 &&
+      value.trim().length > 0 && !/[\x00-\x1f\x7f]/.test(value);
   if (Object.keys(input).some((key) => !["profile", "expectedChosenId"].includes(key)) || !valid(input.profile) || !valid(input.expectedChosenId))
     throw new Error("Invalid reviewed shell preference");
   if (chosenProfileId(path) !== input.expectedChosenId)

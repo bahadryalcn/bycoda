@@ -133,7 +133,7 @@ describe("UsageFooter provider authentication", () => {
     expect(onSelectAccount).not.toHaveBeenCalled();
     await act(async () => button("Claude Code usage details").click());
     await act(async () => button("Refresh usage").click());
-    expect(rateLimitsFetch.fetchClaudeRateLimits).toHaveBeenLastCalledWith("account-work");
+    expect(rateLimitsFetch.fetchClaudeRateLimits).toHaveBeenLastCalledWith("account-work", false);
     act(() => root.unmount());
     root = createRoot(container);
     await act(async () => root.render(createElement(UsageFooter, props)));
@@ -142,7 +142,7 @@ describe("UsageFooter provider authentication", () => {
     expect(button("Claude Code usage details").textContent).not.toContain("work");
     expect(button("Claude Code usage details").textContent).toContain("19%");
     await act(async () => button("Refresh usage").click());
-    expect(rateLimitsFetch.fetchClaudeRateLimits).toHaveBeenLastCalledWith("default");
+    expect(rateLimitsFetch.fetchClaudeRateLimits).toHaveBeenLastCalledWith("default", false);
   });
 
   it("keeps the selected account label visible when usage is unavailable", async () => {

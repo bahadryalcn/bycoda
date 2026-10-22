@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { createHash, createHmac, randomBytes } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
@@ -139,7 +139,7 @@ it("routes history import to the registered source worktree and refuses unrelate
   try {
     const scope = { projectId: s.project.id, sessionId: opened.value.result.sessionId };
     expect((await s.call("history.import.preview", scope)).value.error).toBeUndefined();
-    expect(relay.mock.calls[0][2].replaceAll("\\", "/")).toBe(checkout.replaceAll("\\", "/"));
+    expect(relay.mock.calls[0][2].replaceAll("\\", "/")).toBe(realpathSync.native(checkout).replaceAll("\\", "/"));
     expect(relay.mock.calls[0][4]!()).toBe(true);
     expect((await s.call("history.import.preview", { ...scope, cwd: s.project.cwd })).value.error).toBeTruthy();
     expect((await s.call("commands.dispatch", {

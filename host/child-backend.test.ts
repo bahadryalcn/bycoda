@@ -59,7 +59,7 @@ it("prepares a unique text-only workspace without project files", async () => {
 });
 
 it.each([
-  ["agy.exe", "stream-json"],
+  [process.platform === "win32" ? "agy.exe" : "agy", "stream-json"],
   ["agy_acp_server.par", "acp"],
 ])("detects Antigravity transport for %s", async (name, transport) => {
   const directory = mkdtempSync(join(tmpdir(), "bycoda-agy-transport-"));

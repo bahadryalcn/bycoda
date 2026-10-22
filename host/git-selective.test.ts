@@ -7,7 +7,7 @@ import { hostGitAction } from "./workspace";
 import { gitManagementSnapshot, runGitAction, verifyGitManagementSnapshot } from "./git-actions";
 
 const roots: string[] = [];
-afterEach(() => { for (const root of roots.splice(0)) { if (!resolve(root).startsWith(resolve(tmpdir()) + sep) || !basename(root).startsWith("bycoda-selective-")) throw new Error("Unsafe fixture cleanup path"); rmSync(root, { recursive: true, force: true }); } });
+afterEach(() => { for (const root of roots.splice(0)) { if (!resolve(root).startsWith(realpathSync.native(tmpdir()) + sep) || !basename(root).startsWith("bycoda-selective-")) throw new Error("Unsafe fixture cleanup path"); rmSync(root, { recursive: true, force: true }); } });
 function repo() {
   const root = realpathSync.native(mkdtempSync(join(tmpdir(), "bycoda-selective-"))); roots.push(root);
   const git = (...args: string[]) => execFileSync("git", args, { cwd: root, encoding: "utf8", windowsHide: true });
