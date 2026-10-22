@@ -5,6 +5,10 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
 import { TerminalProfileDiscovery } from "./TerminalProfileDiscovery";
 import { providerAccounts } from "../../providers/model/providerAccounts";
+import {
+  defaultProviderAccountId,
+  setDefaultProviderAccount,
+} from "../../providers/model/providerAccounts";
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
 vi.mock("@tauri-apps/plugin-dialog", () => ({ open: vi.fn() }));
@@ -59,6 +63,35 @@ it("discovers profiles without connecting or logging in, then connects the selec
   expect(providerAccounts("claude").map((account) => account.id)).toContain(profile.id);
   expect(document.body.textContent).toContain("Connected");
   expect(invoke).toHaveBeenCalledTimes(2);
+});
+
+it("automatically finds profiles for setup and uses an explicitly chosen account", async () => {
+  const profile = {
+    id: "terminal-other",
+    provider: "claude" as const,
+    label: "Other",
+    path: "D:/profiles/claude",
+  };
+  vi.mocked(invoke).mockResolvedValueOnce([profile]);
+  const onConnected = vi.fn((account) => setDefaultProviderAccount(account.provider, account.id));
+  await act(async () =>
+    root.render(
+      createElement(TerminalProfileDiscovery, {
+        provider: "claude",
+        disabled: false,
+        autoDiscover: true,
+        onConnected,
+      }),
+    ),
+  );
+  expect(invoke).toHaveBeenLastCalledWith("provider_terminal_profiles", { provider: "claude" });
+  expect(onConnected).not.toHaveBeenCalled();
+  expect(defaultProviderAccountId("claude")).toBe("default");
+  expect(document.body.textContent).toContain(profile.path);
+  vi.mocked(invoke).mockResolvedValueOnce(profile);
+  await click("Use account");
+  expect(onConnected).toHaveBeenCalledWith(profile);
+  expect(defaultProviderAccountId("claude")).toBe(profile.id);
 });
 
 it("shows discovery failures and allows retry", async () => {

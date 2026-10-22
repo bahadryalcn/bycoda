@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.67]
+
+### Providers and onboarding
+
+- Check Claude and Codex sign-in through the provider's own status command and show it in onboarding and provider settings.
+- Refine the onboarding agent step and terminal profile discovery.
+
+### Connections
+
+- Improve Termius import, including reading its local data store.
+
 ## [0.6.66]
 
 ### Workspace performance

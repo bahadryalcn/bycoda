@@ -143,6 +143,41 @@ const TABLES: &[&str] = &[
     "keys",
 ];
 
+// Chromium's IndexedDB value wrapper is separate from LevelDB block compression.
+// See blink/renderer/modules/indexeddb/idb_value_wrapping.cc: FF 11 02 precedes
+// a raw (not framed) Snappy stream; FF 11 01 references an external blob.
+fn record_value(value: RecordValue, remaining: &mut usize) -> Result<V8Value, String> {
+    match value {
+        RecordValue::V8(value) => Ok(value),
+        RecordValue::Undecoded { raw, .. } => {
+            if raw.starts_with(&[0xff, 0x11, 0x01]) {
+                return Err("Termius stores this record in an external file that this importer cannot read. No records were imported.".into());
+            }
+            let Some(compressed) = raw.strip_prefix(&[0xff, 0x11, 0x02]) else {
+                return Err(
+                    "A Termius record could not be decoded. No records were imported.".into(),
+                );
+            };
+            let length = snap::raw::decompress_len(compressed)
+                .map_err(|_| "A compressed Termius record is invalid. No records were imported.")?;
+            if length > 8 * 1024 * 1024 || length > *remaining {
+                return Err("Termius data exceeds the migration size limit".into());
+            }
+            *remaining -= length;
+            let bytes = Zeroizing::new(
+                snap::raw::Decoder::new()
+                    .decompress_vec(compressed)
+                    .map_err(|_| {
+                        "A compressed Termius record is invalid. No records were imported."
+                    })?,
+            );
+            blob_decoder::v8_value::deserialize_blink(&bytes).map_err(|_| {
+                "A Termius record could not be decoded. No records were imported.".into()
+            })
+        }
+    }
+}
+
 fn current_records(records: Vec<IndexedDbRecord>) -> Result<Tables, String> {
     let mut latest = HashMap::new();
     for record in records {
@@ -166,10 +201,9 @@ fn current_records(records: Vec<IndexedDbRecord>) -> Result<Tables, String> {
         }
     }
     let mut by_entity: HashMap<(String, String), (Value, u64)> = HashMap::new();
+    let mut remaining = 128 * 1024 * 1024;
     for record in latest.into_values().filter(|r| !r.deleted) {
-        let RecordValue::V8(value) = record.value else {
-            return Err("A Termius record could not be decoded. No records were imported.".into());
-        };
+        let value = record_value(record.value, &mut remaining)?;
         let value = json(value, 0)?;
         if !value.is_object() {
             continue;
@@ -521,6 +555,64 @@ fn local_key() -> Result<Zeroizing<Vec<u8>>, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    fn compressed_record() -> RecordValue {
+        // Blink v17 + V8 v15 serialization of { id: 1 }.
+        let value = [
+            0xff, 0x11, 0xff, 0x0f, b'o', b'"', 2, b'i', b'd', b'I', 2, b'{', 1,
+        ];
+        let mut raw = vec![0xff, 0x11, 0x02];
+        raw.extend(snap::raw::Encoder::new().compress_vec(&value).unwrap());
+        // This is the exact failure path of the pinned IndexedDB decoder.
+        assert!(blob_decoder::v8_value::deserialize_blink(&raw).is_err());
+        RecordValue::Undecoded {
+            raw,
+            error: "unsupported wrapper".into(),
+        }
+    }
+
+    #[test]
+    fn imports_chromium_snappy_wrapped_records_without_skipping_them() {
+        let record = IndexedDbRecord {
+            database_id: 1,
+            object_store_id: 1,
+            database: Some("hosts".into()),
+            object_store: Some("hosts".into()),
+            key: chromium_storage_indexeddb_core::IdbKey::String("fixture".into()),
+            value: compressed_record(),
+            seq: 1,
+            deleted: false,
+        };
+        let tables = current_records(vec![record]).unwrap();
+        assert_eq!(tables["hosts"][0]["id"], 1);
+    }
+
+    #[test]
+    fn bounds_decompression_and_rejects_corrupt_or_external_records() {
+        let mut remaining = 0;
+        assert_eq!(
+            record_value(compressed_record(), &mut remaining).unwrap_err(),
+            "Termius data exceeds the migration size limit"
+        );
+        let mut remaining = 128 * 1024 * 1024;
+        // Valid Snappy length varint claiming 8 MiB + 1, with no payload.
+        let huge = RecordValue::Undecoded {
+            raw: vec![0xff, 0x11, 0x02, 0x81, 0x80, 0x80, 0x04],
+            error: String::new(),
+        };
+        assert_eq!(
+            record_value(huge, &mut remaining).unwrap_err(),
+            "Termius data exceeds the migration size limit"
+        );
+        for (raw, expected) in [
+            (vec![0xff, 0x11, 0x02, 1], "A compressed Termius record is invalid. No records were imported."),
+            (vec![0xff, 0x11, 0x01, 1, 0], "Termius stores this record in an external file that this importer cannot read. No records were imported."),
+            (vec![0xff, 0x11, 0x03], "A Termius record could not be decoded. No records were imported."),
+        ] {
+            let value = RecordValue::Undecoded { raw, error: "private record content".into() };
+            assert_eq!(record_value(value, &mut remaining).unwrap_err(), expected);
+        }
+    }
+
     #[test]
     fn uses_latest_sequence_and_does_not_resurrect_deleted_hosts() {
         use chromium_storage_indexeddb_core::IdbKey;

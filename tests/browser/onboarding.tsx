@@ -10,12 +10,35 @@ import {
   loadThemePreference,
 } from "../../src/features/settings/model/appearance";
 import { setLanguagePreference, t } from "../../src/shared/i18n";
+import { registerBuiltinHarnesses } from "../../src/integrations/harness/core/register";
 import "../../src/styles/index.css";
 
 // Isolated browser storage and memory-only IPC. Never connects to the owner's host.
 mockWindows("main");
 mockIPC(
-  (command) => {
+  (command, args) => {
+    if (command === "provider_terminal_profiles") {
+      return [
+        {
+          id: "terminal-work",
+          provider: args?.provider,
+          label: "Work",
+          path: `D:/profiles/${args?.provider}`,
+        },
+      ];
+    }
+    if (command === "provider_terminal_profile_connect") {
+      return { id: "terminal-work", provider: args?.provider, label: "Work", path: args?.path };
+    }
+    if (new URLSearchParams(location.search).has("providers")) {
+      if (command === "harness_resolve_claude" || command === "harness_resolve_codex")
+        return { path: `C:/fixture/${command.slice(16)}.exe` };
+      if (command === "harness_resolve_configured") return { path: args?.binaryPath };
+      if (command === "harness_auth_status")
+        return args?.provider === "claude" ? "signedIn" : "signedOut";
+      if (command === "harness_exec") return "codex-cli 1.0.0";
+      if (command === "plugin:dialog|open") return "D:/custom/codex.exe";
+    }
     if (
       command === "remote_machines" ||
       command === "session_import_keys" ||
@@ -29,6 +52,7 @@ mockIPC(
   },
   { shouldMockEvents: true },
 );
+registerBuiltinHarnesses();
 applyThemePreference(loadThemePreference());
 
 function Fixture() {

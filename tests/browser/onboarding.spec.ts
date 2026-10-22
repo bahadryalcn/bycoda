@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 const fixture = "/tests/browser/onboarding.html";
-const captures = "temp/verification/2026-10-16-ui-system/W5a-CONNECTIONS";
+const captures = "temp/verification/2026-10-22-provider-discovery";
 
 test("saves workspace and appearance choices, finishes directly and can reopen", async ({
   page,
@@ -34,9 +34,7 @@ test("saves workspace and appearance choices, finishes directly and can reopen",
   await page.screenshot({ path: `${captures}/appearance-light.png` });
   await dialog.getByRole("button", { name: /3\s*Agents/ }).click();
   await expect(dialog.getByRole("heading", { name: "Connect your agents" })).toBeVisible();
-  await dialog.getByRole("button", { name: /^More providers:/ }).click();
-  await page.getByRole("option").filter({ hasText: "Cursor" }).click();
-  await dialog.getByRole("button", { name: "Add provider" }).click();
+  await expect(dialog.locator(".onboarding-agent")).toHaveCount(11);
   await expect(dialog.getByRole("checkbox", { name: "Use Cursor" })).toBeChecked();
   await page.screenshot({ path: `${captures}/providers-light.png` });
   await dialog.getByRole("button", { name: /4\s*Connections/ }).click();
@@ -61,6 +59,53 @@ test("saves workspace and appearance choices, finishes directly and can reopen",
   expect(errors).toEqual([]);
 });
 
+test("finds existing accounts, links another profile and lets the user choose a CLI executable", async ({
+  page,
+}) => {
+  await page.goto(`${fixture}?providers`);
+  await page.getByRole("button", { name: /3\s*Agents/ }).click();
+  const claude = page
+    .locator(".onboarding-agent")
+    .filter({ has: page.getByRole("checkbox", { name: "Use Claude Code", exact: true }) });
+  const codex = page
+    .locator(".onboarding-agent")
+    .filter({ has: page.getByRole("checkbox", { name: "Use Codex", exact: true }) });
+  await expect(claude.getByRole("status")).toHaveText("✓ Signed in");
+  await expect(
+    claude.getByRole("button", { name: "Sign in to Claude Code", exact: true }),
+  ).toHaveCount(0);
+  await expect(codex.getByRole("status")).toHaveText("CLI installed · not signed in");
+  await expect(codex.getByRole("button", { name: "Sign in to Codex", exact: true })).toBeEnabled();
+  await claude.getByRole("button", { name: "Terminal account profiles", exact: true }).click();
+  await expect(page.getByText("D:/profiles/claude", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Use account", exact: true }).click();
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () =>
+          JSON.parse(localStorage.getItem("bycoda.providerAccounts.v2") ?? "{}").claude?.find(
+            (account: { isDefault?: boolean }) => account.isDefault,
+          )?.id,
+      ),
+    )
+    .toBe("terminal-work");
+  await page.keyboard.press("Escape");
+  await codex.getByRole("button", { name: "Show Codex CLI details", exact: true }).click();
+  await page.getByRole("button", { name: "Edit Codex CLI path", exact: true }).click();
+  await page.getByRole("button", { name: "Choose executable", exact: true }).click();
+  await expect(page.getByRole("textbox", { name: "CLI path", exact: true })).toHaveValue(
+    "D:/custom/codex.exe",
+  );
+  await page.getByRole("button", { name: "Save path", exact: true }).click();
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () => JSON.parse(localStorage.getItem("bycoda.providerBinaryPaths.v1") ?? "{}").codex,
+      ),
+    )
+    .toBe("D:/custom/codex.exe");
+});
+
 test("keeps navigation and footer accessible at narrow and short viewports", async ({ page }) => {
   for (const viewport of [
     { width: 390, height: 760 },
@@ -73,6 +118,15 @@ test("keeps navigation and footer accessible at narrow and short viewports", asy
       dialog.getByRole("heading", { name: "Sana uygun bir çalışma alanı" }),
     ).toBeVisible();
     await expect(dialog.getByRole("button", { name: "Devam et", exact: true })).toBeInViewport();
+    await dialog.getByRole("button", { name: /3\s*Ajanlar/ }).click();
+    await expect(dialog.locator(".onboarding-agent")).toHaveCount(11);
+    await expect(dialog.getByRole("button", { name: "Devam et", exact: true })).toBeInViewport();
+    expect(
+      await dialog
+        .locator(".onboarding-agent-list")
+        .evaluate((element) => element.scrollWidth <= element.clientWidth),
+    ).toBe(true);
+    await page.screenshot({ path: `${captures}/providers-tr-${viewport.width}.png` });
     await expect(dialog.getByRole("button", { name: /5\s*Projeler/ })).toBeInViewport();
     await dialog.getByRole("button", { name: /2\s*Görünüm/ }).click();
     await expect(dialog.getByRole("button", { name: "Devam et", exact: true })).toBeInViewport();

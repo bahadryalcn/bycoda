@@ -61,7 +61,7 @@ pub fn termius_import_preview(
     profile: Option<String>,
 ) -> Result<Preview, String> {
     let profile = match profile {
-        Some(path) => std::path::PathBuf::from(path),
+        Some(path) => crate::fs::expand_home(path.trim()),
         None => termius_reader::default_profile()?,
     };
     let mut scan = termius_reader::scan(&profile)?;

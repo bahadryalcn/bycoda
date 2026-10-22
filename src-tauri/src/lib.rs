@@ -767,6 +767,7 @@ pub fn run() {
             harness::harness_sse_open,
             harness::harness_sse_close,
             harness::harness_exec,
+            harness::harness_auth_status,
             harness::harness_prepare_text_workspace,
             harness::harness_read_task_output,
             harness::run_shell_command,

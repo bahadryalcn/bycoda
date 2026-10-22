@@ -27,6 +27,8 @@ unicode-normalization = "0.1"
 uuid = { version = "1", features = ["v4"] }
 base64 = "0.22"
 chromium-storage-indexeddb-core = "=0.2.0"
+blob-decoder = { version = "=0.2.2", default-features = false }
+snap = "1"
 leveldb-core = "=0.1.2"
 crypto_secretbox = "=0.1.1"
 zeroize = "1"

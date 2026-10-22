@@ -1379,6 +1379,128 @@ fn apply_provider_account(
     Ok(())
 }
 
+/// Only the provider's own status command can establish a sign-in. Never return
+/// raw stdout/stderr: some CLI versions print API-key details there.
+#[tauri::command]
+pub async fn harness_auth_status(
+    app: AppHandle,
+    host: State<'_, HarnessHost>,
+    provider: String,
+    account_id: Option<String>,
+) -> Result<String, String> {
+    let args: &[&str] = match provider.as_str() {
+        "claude" => &["auth", "status", "--json"],
+        "codex" => &["login", "status"],
+        _ => return Ok("unknown".into()),
+    };
+    let configured = host.runtime_binary_path(&provider);
+    tauri::async_runtime::spawn_blocking(move || {
+        let binary = resolve_mcp_binary(&provider, configured.as_deref())?;
+        let command = binary.to_string_lossy();
+        let mut cmd = Command::new(command.as_ref());
+        cmd.args(args)
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+        prepare_child(&mut cmd, &command);
+        apply_provider_account(
+            &app,
+            &mut cmd,
+            Some(&HarnessAccount {
+                provider: provider.clone(),
+                id: account_id.unwrap_or_else(|| DEFAULT_PROVIDER_ACCOUNT_ID.into()),
+            }),
+        )?;
+        if let Some(home) = dirs_home() {
+            cmd.current_dir(home);
+        }
+        let output = exec_command_output(cmd, &command, Duration::from_secs(10))?;
+        Ok(parse_auth_status(
+            &provider,
+            output.status.success(),
+            &String::from_utf8_lossy(&output.stdout),
+            &String::from_utf8_lossy(&output.stderr),
+        )
+        .into())
+    })
+    .await
+    .map_err(|error| error.to_string())?
+}
+
+fn parse_auth_status(provider: &str, success: bool, stdout: &str, stderr: &str) -> &'static str {
+    if provider == "claude" {
+        let logged_in = serde_json::from_str::<serde_json::Value>(stdout)
+            .ok()
+            .and_then(|value| value.get("loggedIn").and_then(|value| value.as_bool()));
+        return match logged_in {
+            Some(true) if success => "signedIn",
+            Some(false) => "signedOut",
+            _ => "unknown",
+        };
+    }
+    if provider == "codex" {
+        for line in stdout.lines().chain(stderr.lines()).map(str::trim) {
+            if line.eq_ignore_ascii_case("Not logged in") {
+                return "signedOut";
+            }
+            if success && line.starts_with("Logged in using ") {
+                return "signedIn";
+            }
+        }
+    }
+    "unknown"
+}
+
+#[cfg(test)]
+mod auth_status_tests {
+    use super::parse_auth_status;
+
+    #[test]
+    fn auth_status_never_assumes_errors_or_cached_identity_are_sign_outs() {
+        assert_eq!(
+            parse_auth_status("claude", true, r#"{"loggedIn":true}"#, ""),
+            "signedIn"
+        );
+        assert_eq!(
+            parse_auth_status("claude", false, r#"{"loggedIn":false}"#, ""),
+            "signedOut"
+        );
+        assert_eq!(
+            parse_auth_status("claude", true, r#"{"email":"cached@example.test"}"#, ""),
+            "unknown"
+        );
+        assert_eq!(
+            parse_auth_status("claude", false, r#"{"loggedIn":true}"#, ""),
+            "unknown"
+        );
+        assert_eq!(
+            parse_auth_status("codex", true, "", "Logged in using ChatGPT\n"),
+            "signedIn"
+        );
+        assert_eq!(
+            parse_auth_status(
+                "codex",
+                true,
+                "",
+                "Logged in using an API key - synthetic-secret"
+            ),
+            "signedIn"
+        );
+        assert_eq!(
+            parse_auth_status("codex", false, "", "Not logged in\n"),
+            "signedOut"
+        );
+        assert_eq!(
+            parse_auth_status("codex", false, "", "Network unavailable"),
+            "unknown"
+        );
+        assert_eq!(
+            parse_auth_status("pi", true, "Logged in using ChatGPT", ""),
+            "unknown"
+        );
+    }
+}
+
 /// Custom subagents are defined in the user's own `~/.claude/agents` or
 /// `~/.codex/agents`. An added account runs its CLI against its own profile,
 /// which would hide every one of them ("Agent type ... not found"), so the

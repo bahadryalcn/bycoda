@@ -2,6 +2,10 @@
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  saveTerminalProviderAccount,
+  setDefaultProviderAccount,
+} from "../../providers/model/providerAccounts";
 import OnboardingDialog from "./OnboardingDialog";
 import type { ImportCandidate } from "../../../platform/tauri/sessionImport";
 import { workspaceFeatureSettings } from "../../settings/model/workspaceFeatures";
@@ -16,6 +20,7 @@ const mock = vi.hoisted(() => ({
   pick: vi.fn(),
   remember: vi.fn(),
   available: vi.fn(),
+  auth: vi.fn(),
 }));
 vi.mock("../../../shared/ui/Modal", () => ({
   Modal: ({ children }: { children: unknown }) => children,
@@ -34,16 +39,19 @@ vi.mock("../../sessions/ui/HarnessIcon", () => ({ HarnessIcon: () => null }));
 vi.mock("../../sessions/ui/ProviderSignInDialog", () => ({
   ProviderSignInDialog: ({
     harness,
+    accountId,
     onSignedIn,
     onClose,
   }: {
     harness: string;
+    accountId?: string;
     onSignedIn: () => void;
     onClose: () => void;
   }) =>
     createElement(
       "button",
       {
+        "data-provider-account": accountId,
         onClick: () => {
           onSignedIn();
           onClose();
@@ -58,6 +66,12 @@ vi.mock("../../providers/ui/GenericAcpSettings", () => ({
 }));
 vi.mock("../../settings/ui/ProviderBinarySettings", () => ({
   ProviderBinaryControl: () => null,
+}));
+vi.mock("../../settings/ui/TerminalProfileDiscovery", () => ({
+  TerminalProfileDiscovery: () => null,
+}));
+vi.mock("../../../integrations/harness/core/authStatus", () => ({
+  readHarnessAuthStatus: mock.auth,
 }));
 vi.mock("../../../integrations/harness/core/availability", () => ({
   getHarnessAvailabilitySnapshot: () => 0,
@@ -131,6 +145,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   localStorage.clear();
   mock.available.mockReturnValue(false);
+  mock.auth.mockResolvedValue("unknown");
   mock.discover.mockResolvedValue({
     candidates: [
       candidate("a"),
@@ -285,7 +300,7 @@ describe("onboarding workflow", () => {
     expect(loadCrewSceneEnabled()).toBe(false);
     expect(loadCrewTheme()).toBe("star-wars");
   });
-  it("adds another provider and only offers sign in for an installed supported provider", async () => {
+  it("shows every provider and only offers sign in for an installed supported provider", async () => {
     mock.available.mockImplementation((id: string) => id === "codex");
     await render();
     await click("Agents");
@@ -294,20 +309,15 @@ describe("onboarding workflow", () => {
       container.querySelector<HTMLInputElement>('input[aria-label="Use Codex"]')!.click(),
     );
     expect(isPickerProviderVisible("codex")).toBe(false);
-    const select = container.querySelector<HTMLSelectElement>(
-      ".onboarding-provider-select select",
-    )!;
-    await act(async () => {
-      select.value = "cursor";
-      select.dispatchEvent(new Event("change", { bubbles: true }));
-    });
-    await click("Add provider");
+    expect(container.querySelectorAll(".onboarding-agent")).toHaveLength(11);
     expect(container.textContent).toContain("Cursor");
     expect(isPickerProviderVisible("cursor")).toBe(true);
     await click("Connections");
     await click("Agents");
     expect(container.textContent).toContain("Cursor");
-    await click("Sign in");
+    await act(async () =>
+      container.querySelector<HTMLButtonElement>('[aria-label="Sign in to Codex"]')!.click(),
+    );
     await click("Complete login codex");
     expect(container.textContent).toContain("✓ Signed in");
     await act(async () => root.render(null));
@@ -316,6 +326,56 @@ describe("onboarding workflow", () => {
     expect(container.textContent).toContain("Cursor");
     expect(isPickerProviderVisible("codex")).toBe(false);
   });
+  it("detects an existing CLI login on a fresh browser without starting login", async () => {
+    mock.available.mockImplementation((id: string) => id === "codex" || id === "claude");
+    mock.auth.mockImplementation(async (id: string) => (id === "codex" ? "signedIn" : "signedOut"));
+    await render();
+    await click("Agents");
+    expect(mock.auth).toHaveBeenCalledWith("codex", "default");
+    const rows = [...container.querySelectorAll(".onboarding-agent")];
+    const codex = rows.find((row) => row.textContent?.includes("Codex"))!;
+    const claude = rows.find((row) => row.textContent?.includes("Claude"))!;
+    expect(codex.textContent).toContain("✓ Signed in");
+    expect(codex.textContent).not.toContain("Sign in");
+    expect(claude.textContent).toContain("not signed in");
+    expect(
+      [...claude.querySelectorAll("button")].some((node) => node.textContent === "Sign in"),
+    ).toBe(true);
+  });
+  it("keeps unknown authentication distinct from a signed-out account and refreshes it", async () => {
+    mock.available.mockImplementation((id: string) => id === "codex");
+    await render();
+    await click("Agents");
+    expect(container.textContent).toContain("sign-in status unavailable");
+    expect(container.textContent).not.toContain("not signed in");
+    mock.auth.mockResolvedValue("signedIn");
+    await click("Refresh agent status");
+    expect(container.textContent).toContain("✓ Signed in");
+  });
+  it("ignores an old profile's scan and signs in to the newly selected profile", async () => {
+    mock.available.mockImplementation((id: string) => id === "claude");
+    let finishOld!: (status: string) => void;
+    const oldScan = new Promise<string>((resolve) => {
+      finishOld = resolve;
+    });
+    mock.auth.mockImplementation((_provider: string, accountId: string) =>
+      accountId === "default" ? oldScan : Promise.resolve("signedOut"),
+    );
+    await render();
+    await click("Agents");
+    await act(async () => {
+      saveTerminalProviderAccount({ provider: "claude", id: "terminal-work", label: "Work" });
+      setDefaultProviderAccount("claude", "terminal-work");
+    });
+    expect(mock.auth).toHaveBeenCalledWith("claude", "terminal-work");
+    await act(async () => finishOld("signedIn"));
+    expect(container.textContent).not.toContain("✓ Signed in");
+    await act(async () =>
+      container.querySelector<HTMLButtonElement>('[aria-label="Sign in to Claude Code"]')!.click(),
+    );
+    expect(container.querySelector('[data-provider-account="terminal-work"]')).not.toBeNull();
+  });
+
   it("opens the existing connection editor without scanning history", async () => {
     await render();
     await click("Connections");

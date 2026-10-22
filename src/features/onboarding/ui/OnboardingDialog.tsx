@@ -28,6 +28,10 @@ import { HarnessIcon } from "../../sessions/ui/HarnessIcon";
 import { type HarnessId } from "../../sessions/model/session";
 import { ProviderSignInDialog } from "../../sessions/ui/ProviderSignInDialog";
 import {
+  defaultProviderAccountId,
+  supportsProviderAccounts,
+} from "../../providers/model/providerAccounts";
+import {
   discoverImportableSessions,
   type ImportCandidate,
 } from "../../../platform/tauri/sessionImport";
@@ -66,8 +70,8 @@ export default function OnboardingDialog({
   const [visited, setVisited] = useState<ReadonlySet<number>>(new Set([0]));
   const [connections, setConnections] = useState(false);
   const [remotePicker, setRemotePicker] = useState(false);
-  const [signIn, setSignIn] = useState<HarnessId | null>(null);
-  const [signedIn, setSignedIn] = useState<ReadonlySet<HarnessId>>(new Set());
+  const [signIn, setSignIn] = useState<{ provider: HarnessId; accountId?: string } | null>(null);
+  const [signedIn, setSignedIn] = useState<ReadonlySet<string>>(new Set());
   const [providers, setProviders] = useState(loadOnboardingProviders);
   const addProviders = useCallback(
     (ids: readonly HarnessId[]) => setProviders(addOnboardingProviders(ids)),
@@ -153,7 +157,14 @@ export default function OnboardingDialog({
               {step === 1 ? <OnboardingAppearance /> : null}
               {step === 2 ? (
                 <OnboardingAgents
-                  onSignIn={setSignIn}
+                  onSignIn={(provider) =>
+                    setSignIn({
+                      provider,
+                      accountId: supportsProviderAccounts(provider)
+                        ? defaultProviderAccountId(provider)
+                        : undefined,
+                    })
+                  }
                   signedIn={signedIn}
                   providers={providers}
                   onAddProviders={addProviders}
@@ -256,10 +267,16 @@ export default function OnboardingDialog({
       ) : null}
       {signIn ? (
         <ProviderSignInDialog
-          harness={signIn}
+          harness={signIn.provider}
+          accountId={signIn.accountId}
           onClose={() => setSignIn(null)}
           completeDescription="Your agent is connected. Continue setting up your workspace."
-          onSignedIn={() => setSignedIn((current) => new Set([...current, signIn]))}
+          onSignedIn={() =>
+            setSignedIn(
+              (current) =>
+                new Set([...current, `${signIn.provider}:${signIn.accountId ?? "default"}`]),
+            )
+          }
         />
       ) : null}
       {remotePicker ? (

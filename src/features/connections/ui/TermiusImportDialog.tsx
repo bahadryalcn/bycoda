@@ -7,6 +7,7 @@ import { Button } from "../../../shared/ui/Button";
 import { Checkbox } from "../../../shared/ui/Checkbox";
 import { Modal } from "../../../shared/ui/Modal";
 import { SearchInput } from "../../../shared/ui/SearchInput";
+import { TextField } from "../../../shared/ui/TextField";
 import type { ServerRecord } from "../model/serverInventory";
 import { refreshServerInventory } from "../model/serverInventory";
 import {
@@ -27,6 +28,7 @@ export function TermiusImportDialog({
   const [preview, setPreview] = useState<TermiusPreview>();
   const [selected, setSelected] = useState<Set<string>>(() => new Set());
   const [query, setQuery] = useState("");
+  const [profilePath, setProfilePath] = useState("");
   const [importKeys, setImportKeys] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
@@ -43,20 +45,24 @@ export function TermiusImportDialog({
     };
   }, []);
 
-  const scan = async (chooseFolder: boolean) => {
-    if (pending.current) return;
+  const scan = async (source: "automatic" | "folder" | "path") => {
+    if (pending.current || (source === "path" && !profilePath.trim())) return;
     pending.current = true;
     setBusy(true);
     setError(undefined);
     try {
-      const profile = chooseFolder
-        ? await open({
-            directory: true,
-            multiple: false,
-            title: t("Choose Termius profile folder"),
-          })
-        : null;
-      if (chooseFolder && !profile) return;
+      const profile =
+        source === "folder"
+          ? await open({
+              directory: true,
+              multiple: false,
+              title: t("Choose Termius profile folder"),
+            })
+          : source === "path"
+            ? profilePath.trim()
+            : null;
+      if (source === "folder" && !profile) return;
+      if (profile) setProfilePath(profile);
       if (ticket.current) await invoke("termius_import_forget", { ticket: ticket.current });
       ticket.current = undefined;
       setPreview(undefined);
@@ -142,14 +148,36 @@ export function TermiusImportDialog({
             variant="secondary"
             loading={busy && !preview}
             disabled={busy}
-            onClick={() => void scan(false)}
+            onClick={() => void scan("automatic")}
           >
             {t("Scan this computer")}
           </Button>
-          <Button variant="ghost" disabled={busy} onClick={() => void scan(true)}>
+          <Button variant="ghost" disabled={busy} onClick={() => void scan("folder")}>
             {t("Choose profile folder")}
           </Button>
         </div>
+        <form
+          className="flex flex-wrap items-end gap-2"
+          onSubmit={(event) => {
+            event.preventDefault();
+            void scan("path");
+          }}
+        >
+          <TextField
+            label={t("Termius profile path")}
+            fieldClassName="min-w-0 flex-1 basis-64"
+            value={profilePath}
+            onChange={(event) => setProfilePath(event.target.value)}
+            placeholder="~/Library/Application Support/Termius"
+            autoCapitalize="none"
+            autoCorrect="off"
+            spellCheck={false}
+            disabled={busy}
+          />
+          <Button type="submit" variant="secondary" disabled={busy || !profilePath.trim()}>
+            {t("Scan profile folder")}
+          </Button>
+        </form>
         {!preview ? (
           <p className="text-sm text-(--ui-text-muted)">
             {t("Read local Termius records without changing Termius data.")}

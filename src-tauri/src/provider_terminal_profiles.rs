@@ -152,9 +152,16 @@ fn candidate(provider: &str, path: PathBuf) -> Result<TerminalProfile, String> {
 }
 
 #[tauri::command(async)]
-pub fn provider_terminal_profiles(provider: String) -> Result<Vec<TerminalProfile>, String> {
+pub fn provider_terminal_profiles(
+    app: AppHandle,
+    provider: String,
+) -> Result<Vec<TerminalProfile>, String> {
     validate_provider(&provider)?;
     let mut paths = vec![default_dir(&provider)?];
+    paths.extend(saved_profile_paths(
+        &app.path().app_data_dir().map_err(|e| e.to_string())?,
+        &provider,
+    )?);
     // Bounded, shallow discovery: standard homes and sibling named profiles.
     // Shell aliases/functions are never executed. Other locations can be selected manually.
     if let Some(home) = crate::dirs_home() {
@@ -182,6 +189,31 @@ pub fn provider_terminal_profiles(provider: String) -> Result<Vec<TerminalProfil
     Ok(profiles.into_values().collect())
 }
 
+fn saved_profile_paths(root: &Path, provider: &str) -> Result<Vec<PathBuf>, String> {
+    let mut paths = Vec::new();
+    // A fresh webview has no browser account metadata. Keep previously linked
+    // nonstandard locations and bycoda's existing profiles discoverable too.
+    for (key, path) in read_registry(&root.join("terminal-profiles.json"))?
+        .into_iter()
+        .take(2048)
+    {
+        if key.starts_with(&format!("{provider}:")) {
+            paths.push(path);
+        }
+    }
+    let managed = root.join("provider-accounts").join(provider);
+    match std::fs::read_dir(managed) {
+        Ok(entries) => paths.extend(entries.take(256).flatten().map(|entry| entry.path())),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => {
+            return Err(format!(
+                "Could not discover saved provider profiles: {error}"
+            ))
+        }
+    }
+    Ok(paths)
+}
+
 #[tauri::command(async)]
 pub fn provider_terminal_profile_connect(
     app: AppHandle,
@@ -203,6 +235,46 @@ pub fn provider_terminal_profile_connect(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn saved_profile_paths_recovers_managed_and_linked_locations_without_browser_metadata() {
+        let stamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!(
+            "bycoda-profile-discovery-{}-{stamp}",
+            std::process::id()
+        ));
+        let managed = root.join("provider-accounts/claude/account-existing");
+        let linked = root.join("elsewhere/claude-work");
+        std::fs::create_dir_all(&managed).unwrap();
+        std::fs::create_dir_all(&linked).unwrap();
+        std::fs::write(managed.join("settings.json"), "{}").unwrap();
+        std::fs::write(linked.join("settings.json"), "{}").unwrap();
+        let registry = root.join("terminal-profiles.json");
+        write_registry(
+            &registry,
+            &Registry::from([
+                ("claude:terminal-work".into(), linked.clone()),
+                ("codex:terminal-other".into(), root.join("other-provider")),
+            ]),
+        )
+        .unwrap();
+        let found = saved_profile_paths(&root, "claude").unwrap();
+        assert_eq!(found.len(), 2);
+        assert!(found.contains(&managed) && found.contains(&linked));
+        assert!(found
+            .into_iter()
+            .all(|path| candidate("claude", path).is_ok()));
+        assert_eq!(
+            std::fs::read_to_string(managed.join("settings.json")).unwrap(),
+            "{}"
+        );
+        // A broken registry is an explicit discovery failure, not "no accounts".
+        std::fs::write(&registry, "broken").unwrap();
+        assert!(saved_profile_paths(&root, "claude").is_err());
+        std::fs::remove_dir_all(root).unwrap();
+    }
     #[test]
     fn ids_are_stable_provider_scoped_and_accepted_by_account_contract() {
         let path = Path::new("/home/example/.claude-work");

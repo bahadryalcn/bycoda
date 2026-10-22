@@ -388,10 +388,11 @@ checksum = "72f5acc6cb2ba439de613abc23857ec3d78374d8ed5ac84e9d11336e87da8649"
 
 [[package]]
 name = "bycoda"
-version = "0.6.66"
+version = "0.6.67"
 dependencies = [
  "arboard",
  "base64 0.22.1",
+ "blob-decoder",
  "block2",
  "chromium-storage-indexeddb-core",
  "crypto_secretbox",
@@ -414,6 +415,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2",
+ "snap",
  "tauri",
  "tauri-build",
  "tauri-plugin-dialog",

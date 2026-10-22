@@ -1,12 +1,19 @@
 import { Alert } from "../../../shared/ui/Alert";
-import { NativeSearchableSelect } from "../../../shared/ui/NativeSearchableSelect";
 import { Button } from "../../../shared/ui/Button";
 import { Checkbox } from "../../../shared/ui/Checkbox";
-import { lazy, Suspense, useEffect, useRef, useState, useSyncExternalStore } from "react";
+import {
+  lazy,
+  Suspense,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { t, useLocale } from "../../../shared/i18n";
 import { Modal } from "../../../shared/ui/Modal";
-import { Plus, RefreshCw } from "../../../shared/ui/icons";
+import { RefreshCw } from "../../../shared/ui/icons";
 import { supportsHarnessLogin } from "../../../integrations/harness/core/authSupport";
 import {
   getHarnessAvailabilitySnapshot,
@@ -23,6 +30,18 @@ import {
   savePickerProviderVisible,
 } from "../../sessions/model/models";
 import { ProviderBinaryControl } from "../../settings/ui/ProviderBinarySettings";
+import { TerminalProfileDiscovery } from "../../settings/ui/TerminalProfileDiscovery";
+import {
+  defaultProviderAccountId,
+  setDefaultProviderAccount,
+  supportsProviderAccounts,
+  subscribeProviderAccounts,
+} from "../../providers/model/providerAccounts";
+import { providerBinaryPathChangePending } from "../../providers/model/providerBinaryPaths";
+import {
+  readHarnessAuthStatus,
+  type HarnessAuthStatus,
+} from "../../../integrations/harness/core/authStatus";
 const GenericAcpSettings = lazy(() =>
   import("../../providers/ui/GenericAcpSettings").then((module) => ({
     default: module.GenericAcpSettings,
@@ -34,6 +53,16 @@ const INSTALL_GUIDES: Partial<Record<HarnessId, string>> = {
   claude: "https://support.claude.com/en/articles/14552382-your-first-day-in-claude-code",
 };
 
+// These providers select upstream credentials interactively rather than offering
+// one account-wide OAuth login. Show their real setup entry point.
+const SETUP_COMMANDS: Partial<Record<HarnessId, string>> = {
+  opencode: "opencode auth login",
+  pi: "pi → /login",
+  omp: "omp → /login",
+  hermes: "hermes model",
+  antigravity: "agy",
+};
+
 export function OnboardingAgents({
   onSignIn,
   signedIn,
@@ -41,7 +70,7 @@ export function OnboardingAgents({
   onAddProviders,
 }: {
   onSignIn: (harness: HarnessId) => void;
-  signedIn: ReadonlySet<HarnessId>;
+  signedIn: ReadonlySet<string>;
   providers: HarnessId[];
   onAddProviders: (ids: readonly HarnessId[]) => void;
 }) {
@@ -56,32 +85,50 @@ export function OnboardingAgents({
     getPickerVisibilitySnapshot,
     getPickerVisibilitySnapshot,
   );
-  const [adding, setAdding] = useState("");
   const [custom, setCustom] = useState(false);
+  const [setup, setSetup] = useState<HarnessId | null>(null);
+  const [auth, setAuth] = useState<Partial<Record<HarnessId, HarnessAuthStatus>>>({});
   const [checking, setChecking] = useState(true);
   const [error, setError] = useState("");
   const alive = useRef(true);
-  const refresh = () => {
+  const scan = useRef(0);
+  const refresh = useCallback(() => {
+    const revision = ++scan.current;
+    const current = () => alive.current && scan.current === revision;
     setChecking(true);
     setError("");
+    setAuth({});
     void probeHarnessAvailability({ force: true })
       .then(() => {
-        if (alive.current) onAddProviders(HARNESSES.filter(isHarnessAvailable));
+        if (!current()) return;
+        onAddProviders(HARNESSES);
+        // Publish each account independently; a slow CLI must not hold up the others.
+        for (const provider of HARNESSES.filter(isHarnessAvailable)) {
+          const accountId = supportsProviderAccounts(provider)
+            ? defaultProviderAccountId(provider)
+            : undefined;
+          void readHarnessAuthStatus(provider, accountId).then((status) => {
+            if (current()) setAuth((previous) => ({ ...previous, [provider]: status }));
+          });
+        }
       })
       .catch((reason) => {
-        if (alive.current) setError(String(reason));
+        if (current()) setError(String(reason));
       })
       .finally(() => {
-        if (alive.current) setChecking(false);
+        if (current()) setChecking(false);
       });
-  };
+  }, [onAddProviders]);
   useEffect(() => {
     alive.current = true;
     refresh();
+    const unsubscribe = subscribeProviderAccounts(refresh);
     return () => {
       alive.current = false;
+      scan.current += 1;
+      unsubscribe();
     };
-  }, []);
+  }, [refresh]);
 
   return (
     <>
@@ -95,20 +142,36 @@ export function OnboardingAgents({
         {providers.map((provider) => {
           const available = isHarnessAvailable(provider);
           const visible = isPickerProviderVisible(provider);
+          const accountId = supportsProviderAccounts(provider)
+            ? defaultProviderAccountId(provider)
+            : "default";
+          const connected =
+            signedIn.has(`${provider}:${accountId}`) || auth[provider] === "signedIn";
+          const restartRequired = providerBinaryPathChangePending(provider);
           return (
             <div className="onboarding-agent" key={provider}>
               <label className="onboarding-agent-choice">
                 <HarnessIcon harness={provider} className="size-5 shrink-0" />
                 <div>
                   <strong>{HARNESS_TITLE[provider]}</strong>
-                  <small>
+                  <small role="status">
                     {checking
                       ? t("Checking installation…")
-                      : signedIn.has(provider)
-                        ? t("✓ Signed in")
-                        : available
-                          ? t("CLI installed · sign in with your provider account")
-                          : t("Install the CLI, then refresh to continue")}
+                      : restartRequired
+                        ? t("CLI path saved · restart required")
+                        : provider === "acp"
+                          ? available
+                            ? t("ACP agents configured")
+                            : t("No ACP agents configured")
+                          : connected
+                            ? t("✓ Signed in")
+                            : available
+                              ? auth[provider] === "signedOut"
+                                ? t("CLI installed · not signed in")
+                                : auth[provider] === undefined
+                                  ? t("Checking existing CLI account…")
+                                  : t("CLI installed · sign-in status unavailable")
+                              : t("CLI not found · choose its executable or install it")}
                   </small>
                 </div>
                 <Checkbox
@@ -118,7 +181,19 @@ export function OnboardingAgents({
                 />
               </label>
               <div className="onboarding-agent-actions">
-                <ProviderBinaryControl provider={provider} />
+                {provider !== "acp" ? (
+                  <ProviderBinaryControl provider={provider} showLabel onPathSaved={refresh} />
+                ) : null}
+                {supportsProviderAccounts(provider) ? (
+                  <TerminalProfileDiscovery
+                    provider={provider}
+                    disabled={checking}
+                    autoDiscover
+                    onConnected={(account) =>
+                      setDefaultProviderAccount(account.provider, account.id)
+                    }
+                  />
+                ) : null}
                 {provider === "acp" ? (
                   <Button onClick={() => setCustom(true)} variant="secondary" type="button">
                     {t("Configure")}
@@ -136,60 +211,32 @@ export function OnboardingAgents({
                   >
                     {t("Install guide ↗")}
                   </Button>
-                ) : supportsHarnessLogin(provider) ? (
+                ) : !checking && available && supportsHarnessLogin(provider) && !connected ? (
                   <Button
-                    disabled={checking || !available}
+                    aria-label={t("Sign in to {p0}", { p0: HARNESS_TITLE[provider] })}
+                    disabled={checking || !available || restartRequired}
                     onClick={() => onSignIn(provider)}
                     variant="secondary"
                     type="button"
                   >
                     {t("Sign in")}
                   </Button>
-                ) : (
-                  <small>{t("Configure authentication in your provider")}</small>
-                )}
+                ) : null}
+                {SETUP_COMMANDS[provider] ? (
+                  <Button onClick={() => setSetup(provider)} variant="secondary" type="button">
+                    {t("Configure")}
+                  </Button>
+                ) : null}
               </div>
             </div>
           );
         })}
       </div>
-      {HARNESSES.some((id) => !providers.includes(id)) ? (
-        <div className="onboarding-add-provider">
-          <label className="onboarding-provider-select">
-            <span>{t("More providers")}</span>
-            <NativeSearchableSelect
-              label={t("More providers")}
-              value={adding}
-              onChange={(event) => setAdding(event.target.value)}
-              options={[
-                { value: "", label: t("Choose a provider") },
-                ...HARNESSES.filter((id) => !providers.includes(id)).map((id) => ({
-                  value: id,
-                  label: HARNESS_TITLE[id],
-                })),
-              ]}
-            />
-          </label>
-          <Button
-            disabled={!adding}
-            onClick={() => {
-              const id = adding as HarnessId;
-              onAddProviders([id]);
-              savePickerProviderVisible(id, true);
-              setAdding("");
-              if (id === "acp") setCustom(true);
-            }}
-            variant="secondary"
-            type="button"
-          >
-            <Plus className="size-3.5" />
-            {t("Add provider")}
-          </Button>
-        </div>
-      ) : null}
       <div className="onboarding-agent-help">
         <p>
-          {t("Already signed in through the CLI? Your existing account is used automatically.")}
+          {t(
+            "Existing CLI accounts are reused. Choose a profile folder if your account is stored elsewhere.",
+          )}
         </p>
         <Button disabled={checking} onClick={refresh} variant="secondary" type="button">
           <RefreshCw className="size-3.5" />
@@ -200,6 +247,25 @@ export function OnboardingAgents({
         <Alert role="alert" tone="danger">
           {error}
         </Alert>
+      ) : null}
+      {setup ? (
+        <Modal
+          title={t("Set up {p0}", { p0: HARNESS_TITLE[setup] })}
+          size="sm"
+          onClose={() => setSetup(null)}
+        >
+          <p>
+            {t(
+              "Run this in a terminal on the computer running your sessions, then refresh agent status.",
+            )}
+          </p>
+          <code className="select-text break-words">{SETUP_COMMANDS[setup]}</code>
+          <p>
+            {t(
+              "Your provider manages its own credentials. Existing accounts are reused when you start a conversation.",
+            )}
+          </p>
+        </Modal>
       ) : null}
       {custom ? (
         <Modal

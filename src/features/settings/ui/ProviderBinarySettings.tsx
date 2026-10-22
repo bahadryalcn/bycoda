@@ -27,6 +27,7 @@ import {
 } from "../../../integrations/harness/providers/opencode/opencodeProtocol";
 
 import { revealPath } from "../../../platform/tauri/fs";
+import { open as pickFile } from "@tauri-apps/plugin-dialog";
 
 import { HARNESS_TITLE } from "../../sessions/model/session";
 
@@ -53,9 +54,11 @@ export function binaryInspectionError(
 export function ProviderBinaryControl({
   provider,
   showLabel = false,
+  onPathSaved,
 }: {
   provider: ConfigurableBinaryProvider;
   showLabel?: boolean;
+  onPathSaved?: () => void;
 }) {
   useLocale();
   const root = useRef<HTMLSpanElement>(null);
@@ -131,6 +134,7 @@ export function ProviderBinaryControl({
     }
     setOverridden(true);
     dismiss(true);
+    onPathSaved?.();
   };
 
   const useAuto = async () => {
@@ -145,6 +149,7 @@ export function ProviderBinaryControl({
     setDraft("");
     setOverridden(false);
     dismiss(true);
+    onPathSaved?.();
   };
 
   const title = HARNESS_TITLE[provider];
@@ -275,6 +280,30 @@ export function ProviderBinaryControl({
               </p>
               {error ? <SettingsFeedback state="error">{error}</SettingsFeedback> : null}
               <div className="mt-3 flex justify-end gap-2">
+                <SecondaryButton
+                  disabled={working}
+                  onClick={() => {
+                    if (inspectionBusy.current) return;
+                    inspectionBusy.current = true;
+                    setWorking(true);
+                    void pickFile({
+                      directory: false,
+                      multiple: false,
+                      title: t("Select {p0} CLI executable", { p0: title }),
+                    })
+                      .then((path) => {
+                        if (typeof path === "string") setDraft(path);
+                      })
+                      .catch((cause) => setError(String(cause)))
+                      .finally(() => {
+                        inspectionBusy.current = false;
+                        setWorking(false);
+                      });
+                  }}
+                >
+                  <FolderOpen className="size-3.5" />
+                  {t("Choose executable")}
+                </SecondaryButton>
                 <SecondaryButton
                   disabled={working}
                   onClick={() => {

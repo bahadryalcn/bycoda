@@ -16,6 +16,7 @@ import type { ChildBackend } from "../src/integrations/harness/core/child";
 import { isRemoteProvider, type RemoteProvider } from "../src/features/connections/model/protocol";
 import { binaryNames, providerLaunch, resolveProvider } from "./process";
 import { providerAccountEnvironment } from "./provider-accounts";
+import { providerAuthStatus } from "./provider-auth";
 import {
   ProviderLines,
   PROVIDER_STDOUT_LINE_BYTES,
@@ -78,7 +79,8 @@ async function configuredBinary(
   requireProviderName: boolean,
 ): Promise<string> {
   const path = expandHome(value.trim());
-  if (!path || !isAbsolute(path)) throw new Error(`Configured ${provider} binary must be an absolute path`);
+  if (!path || !isAbsolute(path))
+    throw new Error(`Configured ${provider} binary must be an absolute path`);
   if (!(await stat(path).catch(() => undefined))?.isFile())
     throw new Error(`Configured ${provider} binary was not found: ${path}`);
   const windows = process.platform === "win32";
@@ -91,7 +93,9 @@ async function configuredBinary(
       windows ? expected.toLowerCase() === name.toLowerCase() : expected === name,
     )
   )
-    throw new Error(`Configured ${provider} binary must be named ${binaryNames[provider].join(" or ")}`);
+    throw new Error(
+      `Configured ${provider} binary must be named ${binaryNames[provider].join(" or ")}`,
+    );
   await providerLaunch(path, []);
   return path;
 }
@@ -177,6 +181,15 @@ export class HostChildBackend implements ChildBackend {
 
   async invoke<T>(command: string, args: Record<string, unknown> = {}): Promise<T> {
     const id = String(args.sessionId ?? "");
+    if (command === "harness_auth_status") {
+      const provider = args.provider;
+      if (provider !== "claude" && provider !== "codex") return "unknown" as T;
+      return (await providerAuthStatus(
+        provider,
+        await this.resolve(provider),
+        typeof args.accountId === "string" ? args.accountId : undefined,
+      )) as T;
+    }
     if (command === "harness_conversation_tools_bridge") {
       return (
         this.conversationAccess?.service.hasSession(id.replace(/#\d+$/, ""))

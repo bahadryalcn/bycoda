@@ -11,6 +11,7 @@ import {
   providerAccounts,
   saveTerminalProviderAccount,
   type ProviderAccountProvider,
+  type ProviderAccount,
 } from "../../providers/model/providerAccounts";
 
 type TerminalProfile = {
@@ -24,9 +25,13 @@ type TerminalProfile = {
 export function TerminalProfileDiscovery({
   provider,
   disabled,
+  autoDiscover = false,
+  onConnected,
 }: {
   provider: ProviderAccountProvider;
   disabled: boolean;
+  autoDiscover?: boolean;
+  onConnected?: (account: ProviderAccount) => void;
 }) {
   useLocale();
   const revealedSetting = useContext(RevealedSetting);
@@ -54,6 +59,22 @@ export function TerminalProfileDiscovery({
     setError(null);
     setMessage(null);
   }, [provider]);
+
+  useEffect(() => {
+    if (!autoDiscover || disabled) return;
+    let cancelled = false;
+    void invoke<TerminalProfile[]>("provider_terminal_profiles", { provider }).then(
+      (found) => {
+        if (!cancelled) setProfiles(found);
+      },
+      () => {
+        if (!cancelled) setProfiles(null);
+      },
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [provider, autoDiscover, disabled]);
 
   useEffect(() => {
     if (!revealProfiles) {
@@ -108,8 +129,13 @@ export function TerminalProfileDiscovery({
       throw new Error("The discovered terminal profile belongs to another provider");
     }
     saveTerminalProviderAccount(profile);
+    onConnected?.(profile);
     setMessage(
-      t("Terminal profile connected. Select it for a conversation or make it the default account."),
+      onConnected
+        ? t("Account selected for new conversations.")
+        : t(
+            "Terminal profile connected. Select it for a conversation or make it the default account.",
+          ),
     );
   };
 
@@ -124,7 +150,7 @@ export function TerminalProfileDiscovery({
     <span className="inline-flex">
       <Button
         ref={trigger}
-        iconOnly
+        iconOnly={!autoDiscover}
         label={t("Terminal account profiles")}
         tooltip={t("Terminal account profiles")}
         size="sm"
@@ -135,6 +161,11 @@ export function TerminalProfileDiscovery({
         onClick={() => setOpenPopover((current) => !current)}
       >
         <FolderOpen className="size-4" strokeWidth={1.75} aria-hidden />
+        {autoDiscover
+          ? providerProfiles
+            ? t("Profiles ({p0})", { p0: providerProfiles.length })
+            : t("Account profiles")
+          : null}
       </Button>
       {openPopover ? (
         <Popover
@@ -240,10 +271,10 @@ export function TerminalProfileDiscovery({
                       <p className="break-all text-(--ui-text-secondary)">{profile.path}</p>
                     </div>
                     <Button
-                      disabled={connected || disabled || busy}
+                      disabled={(connected && !onConnected) || disabled || busy}
                       onClick={() => void run((current) => connect(profile.path, current))}
                     >
-                      {connected ? t("Connected") : t("Connect")}
+                      {onConnected ? t("Use account") : connected ? t("Connected") : t("Connect")}
                     </Button>
                   </li>
                 );
