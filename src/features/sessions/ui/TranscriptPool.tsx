@@ -135,6 +135,7 @@ export class TranscriptPool {
   setProtectedIds(ids: Iterable<string>, knownIds?: Iterable<string>) {
     this.protectedIds = new Set(ids);
     this.knownIds = knownIds ? new Set(knownIds) : undefined;
+    this.pruneStates();
     let changed = false;
     for (const entry of this.entries.values()) {
       if (!entry.mounted && this.protectedEntry(entry)) {
@@ -150,6 +151,17 @@ export class TranscriptPool {
     this.expire();
     if (changed) this.emit();
     this.schedule();
+  }
+
+  /**
+   * Checkpoints outlive their pooled entry so a revisit keeps scroll and
+   * disclosure state. Once a session is gone from the workspace and no entry
+   * holds it, its checkpoint can go too.
+   */
+  private pruneStates() {
+    if (!this.knownIds) return;
+    for (const id of this.states.keys())
+      if (!this.knownIds.has(id) && !this.entries.has(id)) this.states.delete(id);
   }
 
   private protectedEntry(entry: TranscriptPoolEntry) {
@@ -300,6 +312,7 @@ export class TranscriptPool {
       if (entry.host || this.protectedEntry(entry)) continue;
       this.entries.delete(entry.id);
       this.recent = this.recent.filter((id) => id !== entry.id);
+      if (this.knownIds && !this.knownIds.has(entry.id)) this.states.delete(entry.id);
       parked -= 1;
       bytes -= entry.weight;
     }

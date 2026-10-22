@@ -304,7 +304,7 @@ function DockMark({ state }: { state: ActivityDockModel["state"] }) {
       aria-hidden
       className={`size-1.5 shrink-0 rounded-full bg-(--ui-tone-accent-subtle) ${
         state === "working"
-          ? "shadow-[0_0_8px_var(--color-accent)] motion-safe:animate-pulse"
+          ? "shadow-[0_0_8px_var(--color-accent)] motion-safe:animate-[pulse_2s_cubic-bezier(0.4,0,0.6,1)_3]"
           : "activity-dock-waiting"
       }`}
     />
@@ -397,7 +397,7 @@ function AgentStatusDot({ status }: { status: DockAgent["status"] }) {
       aria-hidden
       className={`size-1.5 shrink-0 rounded-full ${
         status === "running"
-          ? "bg-(--ui-tone-accent-subtle) motion-safe:animate-pulse"
+          ? "bg-(--ui-tone-accent-subtle) motion-safe:animate-[pulse_2s_cubic-bezier(0.4,0,0.6,1)_3]"
           : "bg-(--ui-tone-success-subtle)"
       }`}
     />

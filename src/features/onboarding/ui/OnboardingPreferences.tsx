@@ -24,6 +24,7 @@ import {
   loadKeepAwakeEnabled,
   saveKeepAwakeEnabled,
   subscribeKeepAwakeEnabled,
+  type CrewTheme,
 } from "../../settings/model/settings";
 import {
   useWorkspaceFeatures,
@@ -118,12 +119,15 @@ export function OnboardingAppearance() {
         ]}
         onValueChange={(value) => changeTheme(value as ThemePreference)}
       />
-      <div className="grid grid-cols-2 gap-2">
+      <div className="grid grid-cols-3 gap-2">
         <Suspense fallback={<span className="onboarding-crew-preview" />}>
           <OnboardingCrewPreview theme="classic" />
         </Suspense>
         <Suspense fallback={<span className="onboarding-crew-preview" />}>
           <OnboardingCrewPreview theme="star-wars" />
+        </Suspense>
+        <Suspense fallback={<span className="onboarding-crew-preview" />}>
+          <OnboardingCrewPreview theme="lotr" />
         </Suspense>
       </div>
       <RadioGroup
@@ -134,7 +138,7 @@ export function OnboardingAppearance() {
         onValueChange={(value) => {
           if (value === "none") saveCrewSceneEnabled(false);
           else {
-            saveCrewTheme(value as "classic" | "star-wars");
+            saveCrewTheme(value as CrewTheme);
             saveCrewSceneEnabled(true);
           }
         }}
@@ -156,6 +160,18 @@ export function OnboardingAppearance() {
                 )}
               >
                 {t("Star Wars")} · {t("Galaxy crew")}
+              </span>
+            ),
+          },
+          {
+            value: "lotr",
+            label: (
+              <span
+                title={t(
+                  "Gandalf leads, Sauron advises; a Nazgûl, an Orc, a Dwarf and a Hobbit join as subagents.",
+                )}
+              >
+                {t("The Lord of the Rings")} · {t("Fellowship crew")}
               </span>
             ),
           },

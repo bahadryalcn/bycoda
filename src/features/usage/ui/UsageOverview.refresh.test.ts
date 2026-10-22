@@ -62,6 +62,10 @@ vi.mock("../../../shared/ui/DateTimeRangePicker", () => ({
       "Set custom interval",
     ),
 }));
+vi.mock("../../../shared/ui/SearchableSelect", () => ({
+  SearchableSelect: ({ label, onChange }: any) =>
+    createElement("button", { onClick: () => onChange(["missing"]) }, `Exclude ${label}`),
+}));
 import { UsageOverview } from "./UsageOverview";
 let root: Root, host: HTMLDivElement;
 beforeEach(() => {
@@ -142,7 +146,8 @@ it("advances workspace refresh across a bucket and midnight, keeping charts and 
 });
 it("preserves explicit custom intervals during workspace refresh", async () => {
   await render(0);
-  const button = [...host.querySelectorAll("button")].find(
+  await act(async () => host.querySelector<HTMLButtonElement>('[aria-label="Filters"]')!.click());
+  const button = [...document.querySelectorAll("button")].find(
     (b) => b.textContent === "Set custom interval",
   )!;
   await act(async () => button.click());
@@ -151,4 +156,72 @@ it("preserves explicit custom intervals during workspace refresh", async () => {
   vi.setSystemTime(new Date(2026, 9, 21, 12));
   await render(1);
   expect(until()).toBe(original);
+});
+
+it("keeps loading distinct from trustworthy zero usage", async () => {
+  fetchUsage.mockReturnValue(new Promise(() => {}));
+  await render(0);
+  expect(host.textContent).toContain("Loading usage…");
+  expect(host.querySelector(".usage-metrics")).toBeNull();
+  expect(chart).not.toHaveBeenCalled();
+});
+
+it("shows an actionable failure without zero metrics or empty charts", async () => {
+  fetchUsage.mockRejectedValue(new Error("unavailable"));
+  invoke.mockRejectedValue(new Error("unavailable"));
+  await render(0);
+  expect(host.textContent).toContain("Usage could not be read");
+  expect(host.textContent).not.toContain("No usage matches");
+  expect(host.querySelector(".usage-metrics")).toBeNull();
+  expect(chart).not.toHaveBeenCalled();
+  expect(host.querySelector('[role="alert"] button')).toBeTruthy();
+});
+
+it("labels retained results after a failed refresh", async () => {
+  vi.setSystemTime(new Date(2026, 9, 19, 10, 20));
+  await render(0);
+  fetchUsage.mockRejectedValue(new Error("unavailable"));
+  invoke.mockRejectedValue(new Error("unavailable"));
+  await render(1);
+  expect(host.textContent).toContain("Previous usage remains visible");
+  expect(host.querySelector(".usage-metrics")).toBeTruthy();
+  expect(JSON.stringify(chart.mock.lastCall)).toContain('"input":10');
+});
+
+it("marks missing session data as partial without suppressing readable provider usage", async () => {
+  vi.setSystemTime(new Date(2026, 9, 19, 10, 20));
+  invoke.mockRejectedValue(new Error("unavailable"));
+  await render(0);
+  expect(host.textContent).toContain("Duration and session totals may be incomplete");
+  expect(host.querySelector(".usage-metrics")).toBeTruthy();
+  expect(JSON.stringify(chart.mock.lastCall)).toContain('"input":10');
+  chart.mockClear();
+  await act(async () =>
+    [...host.querySelectorAll("button")]
+      .find((button) => button.textContent === "Agent time")!
+      .click(),
+  );
+  expect(chart).not.toHaveBeenCalled();
+  expect(host.querySelector(".usage-metrics")).toBeTruthy();
+});
+
+it("shows true zero usage separately from a filter-empty result", async () => {
+  fetchUsage.mockResolvedValue({ rows: [] });
+  await render(0);
+  expect(host.textContent).toContain("No usage recorded in this period.");
+  expect(host.textContent).not.toContain("No usage matches these filters.");
+  expect(host.querySelector(".usage-metrics")).toBeTruthy();
+});
+
+it("names an empty filtered result and offers a filter reset", async () => {
+  await render(0);
+  await act(async () => host.querySelector<HTMLButtonElement>('[aria-label="Filters"]')!.click());
+  await act(async () =>
+    [...document.querySelectorAll("button")]
+      .find((b) => b.textContent === "Exclude Model")!
+      .click(),
+  );
+  expect(host.textContent).toContain("No usage matches these filters.");
+  expect(document.body.textContent).toContain("Reset filters");
+  expect(host.querySelector('[aria-label="Filters (1)"]')).toBeTruthy();
 });

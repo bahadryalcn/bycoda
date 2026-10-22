@@ -2,6 +2,57 @@ import { expect, test, type Locator } from "@playwright/test";
 import { mkdir } from "node:fs/promises";
 const evidence = "temp/verification/2026-10-19-servers-ux/browser";
 
+test("narrow workspace tools keep labels and keyboard focus across retained panels", async ({
+  page,
+}) => {
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  for (const theme of ["light", "dark"]) {
+    for (const width of [390, 768]) {
+      await page.setViewportSize({ width, height: 844 });
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      await page.goto(`/tests/browser/servers.html?theme=${theme}`);
+      const picker = page.getByRole("button", { name: /^Workspace tools:/ });
+      await expect(picker).toBeVisible();
+      await expect(picker).toContainText("Servers");
+      await expect(page.getByRole("tablist", { name: "Workspace tools" })).toBeHidden();
+      await picker.focus();
+      await page.keyboard.press("Enter");
+      const search = page.getByRole("combobox");
+      await expect(search).toBeFocused();
+      await search.fill("Notes");
+      await page.keyboard.press("Enter");
+      await expect(picker).toContainText("Notes");
+      await expect(picker).toBeFocused();
+      await page.keyboard.press("Enter");
+      await search.fill("Servers");
+      await page.keyboard.press("Escape");
+      await expect(picker).toContainText("Notes");
+      await expect(picker).toBeFocused();
+      await picker.click();
+      await page.getByRole("option", { name: "Servers", exact: true }).click();
+      await expect(picker).toContainText("Servers");
+      await expect(picker).toBeFocused();
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+        true,
+      );
+      await mkdir("temp/verification/2026-10-22-design-audit/usability", { recursive: true });
+      await page.screenshot({
+        path: `temp/verification/2026-10-22-design-audit/usability/tool-picker-${theme}-${width}.png`,
+      });
+      await page.setViewportSize({ width: 1440, height: 900 });
+      const tabs = page.getByRole("tablist", { name: "Workspace tools" });
+      await expect(tabs).toBeVisible();
+      await expect(picker).toBeHidden();
+      const server = tabs.getByRole("tab", { name: "Servers", exact: true });
+      await server.focus();
+      await page.keyboard.press("ArrowRight");
+      await expect(tabs.getByRole("tab", { name: "Social Media", exact: true })).toBeFocused();
+    }
+  }
+  expect(errors).toEqual([]);
+});
+
 async function openAdvancedSshSettings(editor: Locator) {
   const closed = editor
     .locator("details:not([open]) > summary")
@@ -41,11 +92,21 @@ for (const theme of ["light", "dark"]) {
       const session = page.locator("[data-server-terminal-session]:visible");
       const typography = session.getByRole("group", { name: "Terminal text size" });
       await expect(typography).toHaveCount(0);
-      await expect(session.getByRole("button", { name: "Bash suggestions", exact: true })).toBeVisible();
+      await expect(
+        session.getByRole("button", { name: "Bash suggestions", exact: true }),
+      ).toBeVisible();
       expect(await requests()).toHaveLength(1);
-      await page.evaluate((id) => (window as any).serversFixtureTerminalOutput(id,
-        "\x1b[32mubuntu@server-3\x1b[0m:~$ ls -lah\r\ntotal 24K\r\ndrwxr-xr-x  ubuntu ubuntu 4.0K  projects\r\n-rw-r--r--  ubuntu ubuntu 1.2K  README.md\r\n\x1b[32mubuntu@server-3\x1b[0m:~$ "), (await requests())[0].input.id);
-      await page.screenshot({ path: `temp/verification/2026-10-19-server-terminal/session-${theme}-${width}.png` });
+      await page.evaluate(
+        (id) =>
+          (window as any).serversFixtureTerminalOutput(
+            id,
+            "\x1b[32mubuntu@server-3\x1b[0m:~$ ls -lah\r\ntotal 24K\r\ndrwxr-xr-x  ubuntu ubuntu 4.0K  projects\r\n-rw-r--r--  ubuntu ubuntu 1.2K  README.md\r\n\x1b[32mubuntu@server-3\x1b[0m:~$ ",
+          ),
+        (await requests())[0].input.id,
+      );
+      await page.screenshot({
+        path: `temp/verification/2026-10-19-server-terminal/session-${theme}-${width}.png`,
+      });
       await page.getByRole("button", { name: "Servers", exact: true }).click();
       const search = page.getByRole("textbox", { name: "Search servers" });
       await search.fill("Server 02");
@@ -956,7 +1017,9 @@ for (const theme of ["light", "dark"]) {
     await page.keyboard.type("doc");
     const preview = page.getByLabel("Remote suggestion preview", { exact: true });
     await expect(preview).toBeVisible();
-    await expect(page.locator('.xterm-screen [aria-hidden="true"]').filter({ hasText: "ker" })).toBeVisible();
+    await expect(
+      page.locator('.xterm-screen [aria-hidden="true"]').filter({ hasText: "ker" }),
+    ).toBeVisible();
     await expect(preview.getByRole("option", { name: "docker", exact: true })).toBeVisible();
     await expect(input).toBeFocused();
     expect(
@@ -967,7 +1030,8 @@ for (const theme of ["light", "dark"]) {
     const beforeNavigationWrites = (await requests()).filter(
       (r) => r.command === "pty_write",
     ).length;
-    for (const key of ["ArrowUp", "ArrowDown", "Tab", "Enter", "Control+r"]) await page.keyboard.press(key);
+    for (const key of ["ArrowUp", "ArrowDown", "Tab", "Enter", "Control+r"])
+      await page.keyboard.press(key);
     await expect(input).toBeFocused();
     await expect
       .poll(async () =>

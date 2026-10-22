@@ -1007,10 +1007,12 @@ export async function hostGitAction(
   message?: unknown,
   contents?: unknown,
   expectedOriginal?: unknown,
+  expectedCurrent?: unknown,
+  verifyReview?: () => Promise<void>,
 ) {
   const run = () => {
     const execute = () =>
-      runHostGitAction(root, action, input, message, contents, expectedOriginal);
+      runHostGitAction(root, action, input, message, contents, expectedOriginal, expectedCurrent, verifyReview);
     // Only retry index edits. A commit hook or network operation can report a
     // lock error after other side effects, so replaying those is unsafe.
     return ["stage", "unstage", "stageFiles", "unstageFiles", "stageAll", "unstageAll"].includes(
@@ -1052,6 +1054,8 @@ async function runHostGitAction(
   message?: unknown,
   contents?: unknown,
   expectedOriginal?: unknown,
+  expectedCurrent?: unknown,
+  verifyReview?: () => Promise<void>,
 ) {
   const discard = async (file: GitChangedFile) => {
     const path = relative(root, await safeGitPath(root, file.relative));
@@ -1059,7 +1063,9 @@ async function runHostGitAction(
     else await git(root, ["restore", "--worktree", "--", path]);
   };
   switch (action) {
+    case "resolveContents":
     case "stageContents": {
+      const resolving = action === "resolveContents";
       const path = relative(root, await safeGitPath(root, input))
         .split(sep)
         .join("/");
@@ -1067,6 +1073,11 @@ async function runHostGitAction(
         throw new Error("File too large or invalid");
       if (expectedOriginal !== undefined && typeof expectedOriginal !== "string")
         throw new Error("Invalid index base");
+      if (expectedCurrent !== undefined && (typeof expectedCurrent !== "string" || Buffer.byteLength(expectedCurrent) > MAX_FILE || expectedCurrent.includes("\0")))
+        throw new Error("Invalid reviewed worktree content");
+      if (expectedCurrent !== undefined && contents.includes("\0")) throw new Error("Selective staging requires text content");
+      if (!resolving && expectedCurrent !== undefined && typeof expectedOriginal !== "string") throw new Error("A reviewed Git index base is required");
+      if (resolving && (typeof expectedCurrent !== "string" || !verifyReview)) throw new Error("A reviewed conflict snapshot is required");
       const indexPath = resolve(
         root,
         (await git(root, ["rev-parse", "--git-path", "index"])).trim(),
@@ -1082,6 +1093,7 @@ async function runHostGitAction(
         });
         if (index) await lock.writeFile(index);
         await lock.close();
+        await verifyReview?.();
         const staged = await git(root, ["ls-files", "--stage", "--", path]);
         const expectedHash =
           typeof expectedOriginal === "string"
@@ -1094,15 +1106,37 @@ async function runHostGitAction(
               ).trim()
             : null;
         const entry = staged.match(/^([0-7]{6}) ([a-f0-9]+) 0\t/);
+        let mode = entry?.[1] ?? "100644";
+        if (resolving) {
+          const sides = [...staged.matchAll(/^([0-7]{6}) ([a-f0-9]+) ([123])\t/gm)];
+          const versions = sides.filter((side) => side[3] !== "1");
+          if (entry || !versions.length || versions.some((side) => !["100644", "100755"].includes(side[1])) || new Set(versions.map((side) => side[1])).size !== 1)
+            throw new Error("Review a regular text conflict with compatible file modes");
+          mode = versions[0][1];
+        }
         if (
-          expectedHash !== null &&
+          !resolving && expectedHash !== null &&
           ((staged && !entry) || (entry ? entry[2] !== expectedHash : expectedOriginal !== ""))
         )
           throw new Error("The Git index changed. Refresh the diff before staging this hunk.");
+        if (expectedCurrent !== undefined) {
+          if (entry && !["100644", "100755"].includes(entry[1])) throw new Error("Selective staging requires a regular text file");
+          const fullPath = resolve(root, path);
+          const info = await lstat(fullPath);
+          if (!info.isFile() || info.isSymbolicLink()) throw new Error("Selective staging requires a regular text file");
+          if (info.size > MAX_FILE) throw new Error("File too large for selective staging");
+          const current = await readFile(fullPath);
+          const decoded = current.toString("utf8");
+          if (current.includes(0) || !Buffer.from(decoded, "utf8").equals(current)) throw new Error("Selective staging requires valid UTF-8 text");
+          if (decoded !== expectedCurrent) throw new Error("The working file changed. Refresh the diff before staging this selection.");
+          if (!entry && !resolving && info.mode & 0o111) {
+            const fileMode = await git(root, ["config", "--bool", "core.filemode"]).catch(() => "true");
+            if (fileMode.trim() !== "false") mode = "100755";
+          }
+        }
         const hash = (
           await gitWithInput(root, ["hash-object", "-w", "--path", path, "--stdin"], contents)
         ).trim();
-        const mode = entry?.[1] ?? "100644";
         if (!index)
           await exec("git", ["read-tree", "--empty"], {
             cwd: root,
@@ -1116,6 +1150,7 @@ async function runHostGitAction(
           timeout: 10_000,
           env: { ...process.env, GIT_INDEX_FILE: lockPath, GIT_TERMINAL_PROMPT: "0" },
         });
+        if (resolving) await writeHostFile(root, path, expectedCurrent, contents);
         await rename(lockPath, indexPath);
         published = true;
       } finally {

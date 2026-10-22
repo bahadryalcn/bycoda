@@ -17,6 +17,70 @@ import { isActivityBlock, isNoticeBlock } from "../src/features/sessions/model/t
 
 const cleanups: Array<() => Promise<void> | void> = [];
 
+it("sends the reviewed note snapshot once while persisting display metadata without its body", async () => {
+  const { engine, store, id, turns, provider } = setup();
+  const noteCard = { id: "note-a", slug: "review", title: "Review", body: "Reviewed note body", sourceCwd: "/source" };
+  const command = { type: "send", commandId: "note-context", sessionId: id, text: "Check this", noteCard };
+  expect(provider.send).not.toHaveBeenCalled();
+  const receipt = engine.command(command);
+  expect(engine.command(command)).toEqual(receipt);
+  await vi.waitFor(() => expect(turns).toHaveLength(1));
+  expect(turns[0].input.text).toContain('Referenced note "Review":\n\nReviewed note body');
+  const user = store.session(id).session.blocks.find((block) => block.id === command.commandId)!;
+  expect(user.text).toBe("Check this");
+  expect(user.noteCard).toEqual({ id: "note-a", slug: "review", title: "Review", sourceCwd: "/source" });
+  expect(JSON.stringify(user)).not.toContain("Reviewed note body");
+  expect(() => engine.command({ ...command, noteCard: { ...noteCard, body: "Changed snapshot" } })).toThrow();
+  turns[0].finish();
+  await vi.waitFor(() => expect(store.session(id).status).toBe("idle"));
+  engine.command({ ...command, commandId: "note-only", text: "" });
+  await vi.waitFor(() => expect(turns).toHaveLength(2));
+  expect(turns[1].input.text).toContain("Use this note.");
+  turns[1].finish();
+});
+
+it("rejects unsupported note context actions before changing the conversation", () => {
+  const { engine, store, id, provider } = setup();
+  const noteCard = { id: "note-a", slug: "review", title: "Review", body: "Reviewed note body" };
+  const original = store.session(id);
+  const base = { type: "send", commandId: "invalid-note", sessionId: id, text: "Check", noteCard };
+  for (const extra of [{ type: "steer" }, { type: "draft" }, { type: "compact" }, { intent: "plan" }, { text: "/clear" }, { text: "/compact" }, { queued: {} }, { noteCard: { ...noteCard, body: "x".repeat(64_001) } }])
+    expect(() => engine.command({ ...base, ...extra })).toThrow();
+  expect(store.session(id)).toEqual(original);
+  expect(provider.send).not.toHaveBeenCalled();
+});
+
+it("keeps a Codex goal command leading while carrying reviewed note content in runtime instructions", async () => {
+  const { engine, store, id, turns } = setup();
+  engine.command({ type: "send", commandId: "goal-note-context", sessionId: id, text: "/goal Review the changes", noteCard: { id: "note-goal", slug: "goal", title: "Review goals", body: "Check keyboard and focus." } });
+  await vi.waitFor(() => expect(turns).toHaveLength(1));
+  expect(turns[0].input.text).toBe("/goal Review the changes");
+  expect(turns[0].input.runtimeInstructions).toContain("Check keyboard and focus.");
+  expect(store.session(id).session.blocks.find((block) => block.id === "goal-note-context")?.noteCard?.title).toBe("Review goals");
+  turns[0].finish();
+});
+
+it("keeps browser annotation attachments bound to their exact project and conversation", async () => {
+  const { engine, store, id, project, turns, provider } = setup();
+  const fileId = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
+  await writeAttachmentChunk(store, { id: fileId, offset: 0, size: 3, data: Buffer.from("abc").toString("base64") });
+  const annotation = { id: "selection", projectId: project.id, sessionId: id, navigationId: "reviewed-navigation", capturedAt: "2026-10-22T00:00:00.000Z", pageUrl: "https://fixture.invalid", trust: "untrusted-page-data", limitations: [], comment: "Check this element",
+    viewport: { width: 1280, height: 720, scrollX: 0, scrollY: 0 }, devicePixelRatio: 1,
+    element: { tag: "button", text: "Page content", selector: "#fixture", path: "body > button", bounds: { x: 1, y: 2, width: 20, height: 30 }, center: { x: 11, y: 17 }, ancestry: [], computedStyle: {} } };
+  const file = { id: fileId, name: "browser-element.jpg", size: 3, mimeType: "image/jpeg", kind: "image", browserAnnotation: annotation };
+  const base = { type: "send", commandId: "browser-selection", sessionId: id, text: "Review the selected element" };
+  const original = store.session(id);
+  for (const patch of [{ projectId: "foreign-project" }, { sessionId: "foreign-session" }])
+    expect(() => engine.command({ ...base, attachments: [{ ...file, browserAnnotation: { ...annotation, ...patch } }] })).toThrow(/another project or conversation/);
+  for (const type of ["draft", "steer"])
+    expect(() => engine.command({ ...base, type, runId: "not-running", attachments: [{ ...file, browserAnnotation: { ...annotation, sessionId: "foreign-session" } }] })).toThrow(/another project or conversation/);
+  expect(store.session(id)).toEqual(original); expect(provider.send).not.toHaveBeenCalled();
+  engine.command({ ...base, attachments: [file] });
+  await vi.waitFor(() => expect(turns).toHaveLength(1));
+  expect(turns[0].input.attachments?.[0]?.browserAnnotation).toMatchObject({ sessionId: id, projectId: project.id, trust: "untrusted-page-data", comment: "Check this element" });
+  turns[0].finish();
+});
+
 it("clears the same host session durably and starts the next turn without the old binding", async () => {
   const { engine, store, id, provider, turns } = setup();
   engine.command({ type: "send", commandId: "before-clear", sessionId: id, text: "Old context" });
@@ -123,6 +187,144 @@ it("steers the active host turn without replacing it, and deduplicates retries",
     1,
   );
   expect(() => engine.command({ ...command, commandId: "stale", runId: "old" })).toThrow();
+});
+
+it("stops only the exact delegated task of the active host run and deduplicates receipt replay", async () => {
+  const { engine, store, id, provider, turns } = setup("claude");
+  expect(engine.supportsItemStop("claude")).toBe(false);
+  provider.stopItem = vi.fn(async () => {});
+  expect(engine.supportsItemStop("claude")).toBe(true);
+  engine.command({ type: "send", commandId: "parent-start", sessionId: id, text: "Delegate review" });
+  await vi.waitFor(() => expect(turns).toHaveLength(1));
+  turns[0].input.onAccepted?.();
+  turns[0].input.onEvent({ type: "tool.updated", callId: "agent-call", kind: "agent", status: "running", agentPrompt: "Review" });
+  turns[0].input.onEvent({ type: "agent.step", callId: "agent-call", stepId: "step", kind: "message", text: "Inspecting" });
+  await vi.waitFor(() => expect(store.session(id).session.blocks.some((entry) => entry.agentRun && entry.tool?.callId === "agent-call")).toBe(true));
+  const current = store.session(id);
+  const block = current.session.blocks.find((entry) => entry.tool?.callId === "agent-call")!;
+  const command = { type: "stopItem", commandId: "stop-child", sessionId: id, runId: current.runId, blockId: block.id, callId: "agent-call" };
+  expect(() => engine.command({ ...command, commandId: "wrong-call", callId: "different" })).toThrow();
+  expect(() => engine.command({ ...command, commandId: "wrong-run", runId: "earlier" })).toThrow();
+  const receipt = engine.command(command);
+  expect(engine.command(command)).toEqual(receipt);
+  await vi.waitFor(() => expect(provider.stopItem).toHaveBeenCalledExactlyOnceWith(id, "agent-call"));
+  expect(provider.cancel).not.toHaveBeenCalled();
+  expect(provider.stop).not.toHaveBeenCalled();
+  expect(store.session(id).status).toBe("running");
+  expect(store.session(id).session.blocks.find((entry) => entry.id === block.id)?.tool?.status).toBe("running");
+  turns[0].finish();
+  await vi.waitFor(() => expect(store.session(id).status).toBe("idle"));
+});
+
+it("rejects a historical pending agent block during a newer parent run and never cancels unsupported providers", async () => {
+  const { engine, store, id, provider, turns } = setup("claude");
+  engine.command({ type: "send", commandId: "old-parent", sessionId: id, text: "Old task" });
+  await vi.waitFor(() => expect(turns).toHaveLength(1));
+  turns[0].input.onAccepted?.();
+  turns[0].input.onEvent({ type: "tool.updated", callId: "old-call", kind: "agent", status: "running", agentPrompt: "Old review" });
+  turns[0].input.onEvent({ type: "agent.step", callId: "old-call", stepId: "step", kind: "message", text: "Inspecting" });
+  await vi.waitFor(() => expect(store.session(id).session.blocks.some((entry) => entry.agentRun && entry.tool?.callId === "old-call")).toBe(true));
+  const old = store.session(id).session.blocks.find((entry) => entry.tool?.callId === "old-call")!;
+  const unsupported = { type: "stopItem", commandId: "unsupported", sessionId: id, runId: store.session(id).runId, blockId: old.id, callId: "old-call" };
+  expect(() => engine.command(unsupported)).toThrow(/provider cannot stop/);
+  expect(provider.cancel).not.toHaveBeenCalled();
+  turns[0].finish();
+  await vi.waitFor(() => expect(store.session(id).status).toBe("idle"));
+  provider.stopItem = vi.fn(async () => {});
+  const prior = store.session(id);
+  store.save({ ...prior, revision: prior.revision + 1, session: { ...prior.session, blocks: prior.session.blocks.map((entry) => entry.id === old.id
+    ? { ...entry, tool: { ...entry.tool!, status: "running" }, agentRun: { ...entry.agentRun!, endedAt: undefined } } : entry) } }, { type: "test.pendingHistoricalAgent" });
+  engine.command({ type: "send", commandId: "new-parent", sessionId: id, text: "New task" });
+  await vi.waitFor(() => expect(turns).toHaveLength(2));
+  const current = store.session(id);
+  expect(current.session.blocks.find((entry) => entry.id === old.id)?.tool?.status).toBe("running");
+  expect(() => engine.command({ ...unsupported, commandId: "stale-agent", runId: current.runId })).toThrow(/subagent changed/);
+  expect(provider.stopItem).not.toHaveBeenCalled();
+  turns[1].finish();
+  await vi.waitFor(() => expect(store.session(id).status).toBe("idle"));
+});
+
+it("previews contextual transfers without execution and creates an idle handoff with the exact reviewed brief", async () => {
+  const { engine, store, id, provider, turns } = setup();
+  engine.command({ type: "send", commandId: "source-context", sessionId: id, text: "Implement search" });
+  await vi.waitFor(() => expect(turns).toHaveLength(1));
+  turns[0].input.onEvent({ type: "message.delta", text: "Search implemented with keyboard support." });
+  turns[0].finish();
+  await vi.waitFor(() => expect(store.session(id).status).toBe("idle"));
+  const source = store.session(id);
+  const reply = source.session.blocks.find((block) => block.role === "assistant")!;
+  const input = { sessionId: id, sourceBlockId: reply.id, expectedRevision: source.revision,
+    mode: "handoff", harness: "claude", model: "claude:test", modelSettings: {} };
+  const preview = engine.previewContextual(input);
+  expect(provider.send).toHaveBeenCalledTimes(1);
+  expect(preview.account).toBe("host-default");
+  expect(preview.contextText).toContain("Search implemented");
+  const command = { ...input, type: "contextual", commandId: "handoff-context", previewDigest: preview.digest };
+  const receipt = engine.command(command);
+  expect(engine.command(command)).toEqual(receipt);
+  expect(receipt.sessionId).not.toBe(id);
+  const destination = store.session(receipt.sessionId);
+  expect(destination.status).toBe("idle");
+  expect(destination.session.harness).toBe("claude");
+  expect(destination.session.blocks.find((block) => block.handoff)?.text).toBe(preview.contextText);
+  expect(destination.session.cwd).toBe(source.session.cwd);
+  expect(destination.session.runtimeMode).toBe(source.session.runtimeMode);
+  expect(store.session(id)).toEqual(source);
+  expect(provider.send).toHaveBeenCalledTimes(1);
+});
+
+it("binds second opinion to the reviewed source and target with one explicit new request", async () => {
+  const { engine, store, id, provider, turns } = setup();
+  engine.command({ type: "send", commandId: "source-second", sessionId: id, text: "Review search" });
+  await vi.waitFor(() => expect(turns).toHaveLength(1));
+  turns[0].input.onEvent({ type: "message.delta", text: "The search is correct." });
+  turns[0].finish();
+  await vi.waitFor(() => expect(store.session(id).status).toBe("idle"));
+  const source = store.session(id);
+  const reply = source.session.blocks.find((block) => block.role === "assistant")!;
+  const input = { sessionId: id, sourceBlockId: reply.id, expectedRevision: source.revision,
+    mode: "secondOpinion", harness: "claude", model: "claude:test", modelSettings: {} };
+  const preview = engine.previewContextual(input);
+  expect(() => engine.command({ ...input, type: "contextual", commandId: "wrong-target-context", model: "changed", previewDigest: preview.digest })).toThrow(/reviewed context changed/);
+  expect(() => engine.previewContextual({ ...input, providerAccountId: "other-account" })).toThrow(/default account/);
+  const command = { ...input, type: "contextual", commandId: "second-context", previewDigest: preview.digest };
+  const receipt = engine.command(command);
+  expect(engine.command(command)).toEqual(receipt);
+  await vi.waitFor(() => expect(turns).toHaveLength(2));
+  expect(turns[1].input.sessionId).toBe(receipt.sessionId);
+  expect(turns[1].input.text).toContain(preview.contextText);
+  expect(turns[1].input.text).toContain("The search is correct");
+  expect(store.session(receipt.sessionId).session.blocks.find((block) => block.role === "user")?.secondOpinion).toMatchObject({ from: "codex", to: "claude" });
+  expect(store.session(id)).toEqual(source);
+  expect(provider.send).toHaveBeenCalledTimes(2);
+  turns[1].finish();
+  await vi.waitFor(() => expect(store.session(receipt.sessionId).status).toBe("idle"));
+  engine.updateSession(id, { title: "Changed source" });
+  expect(() => engine.command({ ...command, commandId: "stale-source-context" })).toThrow(/source conversation changed/);
+});
+
+it("previews a desktop-only source without adoption and rechecks its exact context after explicit adoption", async () => {
+  const { engine, store, id, provider, turns } = setup();
+  engine.command({ type: "send", commandId: "desktop-source-turn", sessionId: id, text: "Continue search" });
+  await vi.waitFor(() => expect(turns).toHaveLength(1));
+  turns[0].input.onEvent({ type: "message.delta", text: "Search work is ready." });
+  turns[0].finish();
+  await vi.waitFor(() => expect(store.session(id).status).toBe("idle"));
+  const base = store.session(id);
+  const epoch = Date.now();
+  const desktop = { ...base, desktop: undefined, revision: epoch, updatedAt: epoch,
+    session: { ...base.session, id: "desktop-source-only" } };
+  const reply = desktop.session.blocks.find((block) => block.role === "assistant")!;
+  const input = { sessionId: desktop.session.id, sourceBlockId: reply.id, expectedRevision: desktop.revision,
+    mode: "handoff", harness: "claude", model: "claude:test", modelSettings: {} };
+  const preview = engine.previewContextual(input, desktop);
+  expect(() => store.session(desktop.session.id)).toThrow();
+  expect(provider.send).toHaveBeenCalledTimes(1);
+  engine.adoptSession(desktop);
+  const receipt = engine.command({ ...input, type: "contextual", commandId: "desktop-handoff", previewDigest: preview.digest });
+  expect(store.session(receipt.sessionId).session.blocks.find((block) => block.handoff)?.text).toBe(preview.contextText);
+  expect(store.session(desktop.session.id).session.blocks).toEqual(desktop.session.blocks);
+  expect(provider.send).toHaveBeenCalledTimes(1);
 });
 
 it("Stop cancels a host follow-up waiting for provider startup", async () => {
@@ -1352,6 +1554,39 @@ describe("headless session ownership", () => {
     expect(
       store.session(id).session.blocks.find((block) => block.id === plan.id)?.plan?.status,
     ).toBe("built");
+  });
+
+  it("requires an explicit pinned build for edited plan commands", () => {
+    const command = { type: "send", commandId: "edited", sessionId: "s", text: "# Edited", intent: "build", planBlockId: "p", expectedPlanText: "# Original" };
+    expect(parseCommand(command)).toMatchObject(command);
+    for (const invalid of [{ ...command, type: "draft" }, { ...command, intent: "plan" },
+      { ...command, planBlockId: undefined }, { ...command, draftBlockId: "d" },
+      { ...command, expectedPlanText: 42 }, { ...command, expectedPlanText: "bad\0text" }])
+      expect(() => parseCommand(invalid)).toThrow();
+  });
+
+  it("builds exact edited plan text only against the reviewed base", async () => {
+    const { engine, store, turns, id } = setup();
+    engine.command({ type: "send", commandId: "review-plan", sessionId: id, text: "Plan this", intent: "plan" });
+    await vi.waitFor(() => expect(turns).toHaveLength(1));
+    turns[0].input.onEvent({ type: "plan", text: "# Original\n1. First" });
+    turns[0].finish();
+    await vi.waitFor(() => expect(store.session(id).status).toBe("idle"));
+    const plan = store.session(id).session.blocks.find((block) => block.role === "plan")!;
+    expect(() => engine.command({ type: "send", commandId: "stale-review", sessionId: id,
+      text: "# Edited\n1. Second", intent: "build", planBlockId: plan.id, expectedPlanText: "stale" })).toThrow(/reviewed plan changed/);
+    expect(store.session(id).status).toBe("idle");
+    expect(turns).toHaveLength(1);
+    const edited = "# Edited\n1. Second";
+    engine.command({ type: "send", commandId: "build-reviewed", sessionId: id,
+      text: edited, intent: "build", planBlockId: plan.id, expectedPlanText: plan.text });
+    await vi.waitFor(() => expect(turns).toHaveLength(2));
+    expect(turns[1].input.text).toContain(`<approved_plan>\n${edited}\n</approved_plan>`);
+    expect(store.session(id).session.blocks.find((block) => block.id === plan.id)).toMatchObject({
+      text: edited, plan: { status: "building", approvedText: edited, originalText: plan.text, edited: true },
+    });
+    turns[1].finish();
+    await vi.waitFor(() => expect(store.session(id).status).toBe("idle"));
   });
 
   it("captures a text-only host plan and builds its exact stored text after explicit message approval", async () => {

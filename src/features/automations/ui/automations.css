@@ -1,6 +1,31 @@
 .automation-workspace {
   container-type: inline-size;
 }
+.automation-compact-navigation {
+  display: none;
+}
+@container automations (max-width: 639px) {
+  .automation-layout {
+    flex-direction: column;
+  }
+  .automation-compact-navigation {
+    display: flex;
+    flex: none;
+    padding: 0.375rem 0.75rem;
+    border-block-end: 1px solid var(--ui-tone-neutral-border);
+  }
+  .automation-layout:not([data-list-open]) > aside,
+  .automation-layout[data-list-open] > main,
+  .automation-focus-action {
+    display: none;
+  }
+  .automation-layout[data-list-open] > aside {
+    flex: 1;
+    inline-size: 100%;
+    min-block-size: 0;
+    max-block-size: none;
+  }
+}
 .automation-content {
   min-inline-size: 0;
   inline-size: 100%;

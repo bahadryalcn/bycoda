@@ -3345,6 +3345,11 @@ html.theme-light .popover-backdrop {
   background: var(--color-background-base);
 }
 
+/* Opaque popover surface for live canvases; no backdrop sampling. */
+.popover-solid {
+  background: var(--color-background-base);
+}
+
 /* Animate content only; its sibling glass stays still. Finish at `none` and
    do not retain the animation's transform/opacity compositing state with a
    forwards fill. Hover repaints should happen in the ordinary resting state. */
@@ -4013,7 +4018,13 @@ html.theme-light .btw-burst {
 }
 
 html[data-decorative-motion="off"]
-  :is(.activity-dock-waiting, .zen-thinking-pulse, .terminal-live-bar, .bycoda-sigil-active) {
+  :is(.activity-dock-waiting, .zen-thinking-pulse, .terminal-live-bar, .bycoda-sigil-active, .context-speed-bolt) {
+  animation-play-state: paused !important;
+}
+/* Inactive session panes keep their DOM (only the pane root's visibility flag
+   changes), so pause their decorative loops there without per-frame JS. */
+[data-session-visible="false"]
+  :is(.activity-dock-waiting, .zen-thinking-pulse, .terminal-live-bar, .context-speed-bolt) {
   animation-play-state: paused !important;
 }
 @media (prefers-reduced-motion: reduce) {

@@ -20,9 +20,11 @@ import { RemoteConnectionDetails } from "./RemoteConnectionDetails";
 export function MachineStatus({
   machine,
   details = false,
+  compact = false,
 }: {
   machine: RemoteMachine;
   details?: boolean;
+  compact?: boolean;
 }) {
   useRemoteMachineOnline(machine.id);
   const state = useSyncExternalStore(
@@ -54,7 +56,7 @@ export function MachineStatus({
   const badge = (
     <Badge
       size="sm"
-      title={t(indicator.label)}
+      title={label}
       tone={
         needsSignIn(state.status)
           ? "warning"
@@ -63,7 +65,19 @@ export function MachineStatus({
             : "neutral"
       }
     >
-      {label}
+      {compact &&
+      !details &&
+      !state.error &&
+      !degraded &&
+      !needsSignIn(state.status) &&
+      (indicator.tone === "connected" || state.status === "unreachable") ? (
+        <>
+          <span aria-hidden="true" className="size-1.5 rounded-full bg-current" />
+          <span className="sr-only">{label}</span>
+        </>
+      ) : (
+        label
+      )}
     </Badge>
   );
   if (!details) return badge;

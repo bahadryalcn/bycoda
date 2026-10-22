@@ -8,9 +8,15 @@ for (const width of [390, 1440]) {
     await page.setViewportSize({ width, height: 900 });
     await page.emulateMedia({ reducedMotion: "reduce" });
     await page.goto("/tests/browser/automations.html");
+    if (width === 390) await page.getByRole("button", { name: /^Show automation list/ }).click();
     await page.getByRole("button", { name: "Open Daily review", exact: true }).click();
-    const name = page.getByRole("textbox", { name: "Automation name", exact: true });
+    const name = page.getByRole("textbox", {
+      name: "Automation name",
+      exact: true,
+      includeHidden: true,
+    });
     await name.fill("Edited fixture review");
+    if (width === 390) await page.getByRole("button", { name: /^Show automation list/ }).click();
     const filters = page.getByRole("button", { name: "Filter automations", exact: true });
     await filters.click();
     const filter = page.getByRole("searchbox", { name: "Filter automations", exact: true });
@@ -22,10 +28,15 @@ for (const width of [390, 1440]) {
       .click();
     await expect(filter).toHaveValue("");
     await page.keyboard.press("Escape");
+    if (width === 390) await page.getByRole("button", { name: "Back", exact: true }).click();
+    await expect(name).toBeVisible();
+    await expect(name).toHaveValue("Edited fixture review");
     await page.getByRole("button", { name: "Save", exact: true }).click();
+    if (width === 390) await page.getByRole("button", { name: /^Show automation list/ }).click();
     await expect(
       page.getByRole("button", { name: "Open Edited fixture review", exact: true }),
     ).toBeVisible();
+    if (width === 390) await page.getByRole("button", { name: "Back", exact: true }).click();
     const actions = page.getByRole("button", { name: "Automation actions", exact: true });
     await actions.click();
     await expect(
@@ -63,6 +74,7 @@ for (const width of [390, 1440]) {
 test("automation gallery, event picker, focus mode and scoped AI", async ({ page }, testInfo) => {
   await page.setViewportSize({ width: 1440, height: 960 });
   await page.goto("/tests/browser/automations.html");
+  await page.getByRole("button", { name: /^Show all/ }).click();
   await expect(page.getByText("Plan social content", { exact: true })).toBeVisible();
   await page
     .getByRole("textbox", { name: "Search templates", exact: true })

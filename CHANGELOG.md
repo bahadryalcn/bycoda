@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.65]
+
+### Host tools and session workflows
+
+- Expand conversation tools for projects, files, browsers, servers, tasks, goals and crews, with bundled application guidance.
+- Improve contextual handoffs, second opinions, note context and session recovery.
+- Strengthen reviewed desktop actions, Inbox integration and host access controls.
+- Refine provider discovery and process handling, and remove the legacy Gemini CLI integration.
+
+### Workspace and connections
+
+- Improve SSH terminals, server workflows, project navigation and crew controls.
+- Refine shared controls, transcript presentation, usage analytics and translations.
+- Expand regression coverage across host tools, native bridges and workspace interactions.
+
 ## [0.6.64]
 
 ### Terminal and connection workflows

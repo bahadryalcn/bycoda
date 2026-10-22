@@ -2683,7 +2683,8 @@ function UserMessageBlock({
       data-editing-last-turn={editing ? "true" : undefined}
       className="user-message-row group/usermsg flex flex-col items-end overflow-visible pbs-1.5 pe-4 pbe-5 ps-14"
     >
-      <div className="user-message-hover-zone flex w-fit min-w-0 max-w-full flex-col items-end overflow-visible">
+      {/* Give actions the pane width while the bubble keeps its content width. */}
+      <div className="user-message-hover-zone flex w-full min-w-0 max-w-full flex-col items-end overflow-visible">
         <div
           data-draft={block.draft ? "true" : undefined}
           data-follow-up-delivery={delivery}

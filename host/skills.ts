@@ -108,6 +108,9 @@ export function listHostSkillCandidates(
   return { skills, truncated };
 }
 
+/** App-owned skills; `.system` keeps them out of deletion. */
+export const appSkillsRoot = (home = homedir()) => join(home, ".bycoda-host", "skills", ".system");
+
 /** Highest priority first; the same real root is scanned once. */
 function* listSkillRootsInOrder(project: string | null, home: string) {
   const seen = new Set<string>();
@@ -124,6 +127,8 @@ function* listSkillRootsInOrder(project: string | null, home: string) {
       yield namespace ? { ...skill, name: `${namespace}:${skill.name}` } : skill;
   }
 
+  // App-owned name: first, so the skill cap or a stale copy cannot hide this version.
+  yield* add(appSkillsRoot(home), "user", "bycoda");
   if (project) yield* add(join(project, ".agents/skills"), "project", "agents");
   yield* add(join(home, ".agents/skills"), "user", "agents");
   for (const [dir, source] of HARNESS_DIRS) {

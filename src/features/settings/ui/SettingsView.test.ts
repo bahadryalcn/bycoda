@@ -135,44 +135,170 @@ afterEach(async () => {
 });
 
 describe("settings pages", () => {
-  it.each([
-    { section: "appearance", key: "bycoda.collapsedProjectRailMode", initial: "compact", next: "hidden", selector: '[data-setting-id="collapsed-project-rail"] [role="radio"]', index: 1 },
-    { section: "appearance", key: "bycoda.crewSceneEnabled", initial: "1", next: "0", selector: '[role="switch"][aria-label="Agent crew"]' },
-    { section: "appearance", key: "bycoda.crewGrowthEnabled", initial: "1", next: "0", selector: '[data-setting-id="crew-growth"] [role="switch"]' },
-    { section: "chat", key: "bycoda.transcriptLayout", initial: "chat", next: "full", selector: '[data-setting-id="transcript-layout"] [role="radio"]', index: 0 },
-    { section: "chat", key: "bycoda.transcriptAnchor", initial: "1", next: "0", selector: '[aria-label="Anchor prompts to top"][role="switch"]' },
-    { section: "chat", key: "bycoda.modelControls", initial: "menu", next: "beside", selector: '[data-setting-id="model-controls"] [role="radio"]', index: 1 },
-    { section: "worktrees", key: "bycoda.diffViewer", initial: "editor", next: "unified", selector: '[data-setting-id="diff-view"] [role="radio"]', index: 1 },
-    { section: "workspace", key: "bycoda.liveAgentsEnabled", initial: "1", next: "0", selector: '[aria-label="Working agents"][role="switch"]' },
-    { section: "providers", key: "bycoda.hiddenPickerProviders", initial: "[]", next: '["claude"]', selector: '[aria-label="Show Claude Code in the model picker"][role="switch"]' },
-    { section: "providers", key: "bycoda.claudeHooks", initial: "1", next: "0", selector: '[aria-label="Claude Code hooks"][role="switch"]' },
-    { section: "notifications", key: "bycoda.sounds", initial: "1", next: "0", selector: '[aria-label="Sounds"][role="switch"]' },
-    { section: "notifications", key: "bycoda.notifications", initial: "1", next: "0", selector: '[aria-label="Desktop notifications"][role="switch"]' },
-    { section: "notifications", key: "bycoda.notifications.events.v1", initial: '{}', next: '{"finished":false}', selector: '[aria-label="Agent finished"][role="switch"]' },
-    { section: "notifications", key: "bycoda.notifications.dailySummary.enabled", initial: "1", next: "0", selector: '[aria-label="Daily summary"][role="switch"]' },
-    { section: "general", key: "bycoda.closeToTray", initial: "1", next: "0", selector: '[data-setting-id="close-to-tray"] [role="switch"]' },
-  ])("refreshes mounted $section controls after sibling storage changes to $key", async ({ section, key, initial, next, selector, index = 0 }) => {
-    platform.isWindows = true;
-    localStorage.setItem("bycoda.lastModel", JSON.stringify({ harness: "claude", model: "claude:opus-5" }));
-    localStorage.setItem(key, initial);
-    await render(section as SettingsSectionId);
-    const control = () => container.querySelectorAll(selector)[index];
-    expect(control(), key).toBeDefined();
-    const before = control()!.getAttribute("aria-checked");
-    expect(before, key).not.toBeNull();
+  it("offers searchable categories with the current selection and navigates without a settings write", async () => {
+    await render("general");
+    const picker = container.querySelector(
+      ".bycoda-settings-category-picker button",
+    ) as HTMLButtonElement;
+    expect(picker.textContent).toContain("General");
+    await act(async () => picker.click());
+    const input = document.body.querySelector<HTMLInputElement>('[role="combobox"]')!;
     await act(async () => {
-      localStorage.setItem(key, next);
-      window.dispatchEvent(new StorageEvent("storage", { key }));
+      const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
+      setter.call(input, "Terminal");
+      input.dispatchEvent(new Event("input", { bubbles: true }));
     });
-    expect(control()!.getAttribute("aria-checked"), key).not.toBe(before);
-    expect(localStorage.getItem(key)).toBe(next);
+    const option = [...document.body.querySelectorAll<HTMLElement>('[role="option"]')].find(
+      (item) => item.textContent?.includes("Terminal"),
+    )!;
+    expect(option).toBeDefined();
+    await act(async () => option.click());
+    expect(onSelectSection).toHaveBeenCalledWith("terminal");
+    expect(vi.mocked(invoke).mock.calls.some(([method]) => method === "save_settings")).toBe(false);
   });
+  it.each([
+    {
+      section: "appearance",
+      key: "bycoda.collapsedProjectRailMode",
+      initial: "compact",
+      next: "hidden",
+      selector: '[data-setting-id="collapsed-project-rail"] [role="radio"]',
+      index: 1,
+    },
+    {
+      section: "appearance",
+      key: "bycoda.crewSceneEnabled",
+      initial: "1",
+      next: "0",
+      selector: '[role="switch"][aria-label="Agent crew"]',
+    },
+    {
+      section: "appearance",
+      key: "bycoda.crewGrowthEnabled",
+      initial: "1",
+      next: "0",
+      selector: '[data-setting-id="crew-growth"] [role="switch"]',
+    },
+    {
+      section: "chat",
+      key: "bycoda.transcriptLayout",
+      initial: "chat",
+      next: "full",
+      selector: '[data-setting-id="transcript-layout"] [role="radio"]',
+      index: 0,
+    },
+    {
+      section: "chat",
+      key: "bycoda.transcriptAnchor",
+      initial: "1",
+      next: "0",
+      selector: '[aria-label="Anchor prompts to top"][role="switch"]',
+    },
+    {
+      section: "chat",
+      key: "bycoda.modelControls",
+      initial: "menu",
+      next: "beside",
+      selector: '[data-setting-id="model-controls"] [role="radio"]',
+      index: 1,
+    },
+    {
+      section: "worktrees",
+      key: "bycoda.diffViewer",
+      initial: "editor",
+      next: "unified",
+      selector: '[data-setting-id="diff-view"] [role="radio"]',
+      index: 1,
+    },
+    {
+      section: "workspace",
+      key: "bycoda.liveAgentsEnabled",
+      initial: "1",
+      next: "0",
+      selector: '[aria-label="Working agents"][role="switch"]',
+    },
+    {
+      section: "providers",
+      key: "bycoda.hiddenPickerProviders",
+      initial: "[]",
+      next: '["claude"]',
+      selector: '[aria-label="Show Claude Code in the model picker"][role="switch"]',
+    },
+    {
+      section: "providers",
+      key: "bycoda.claudeHooks",
+      initial: "1",
+      next: "0",
+      selector: '[aria-label="Claude Code hooks"][role="switch"]',
+    },
+    {
+      section: "notifications",
+      key: "bycoda.sounds",
+      initial: "1",
+      next: "0",
+      selector: '[aria-label="Sounds"][role="switch"]',
+    },
+    {
+      section: "notifications",
+      key: "bycoda.notifications",
+      initial: "1",
+      next: "0",
+      selector: '[aria-label="Desktop notifications"][role="switch"]',
+    },
+    {
+      section: "notifications",
+      key: "bycoda.notifications.events.v1",
+      initial: "{}",
+      next: '{"finished":false}',
+      selector: '[aria-label="Agent finished"][role="switch"]',
+    },
+    {
+      section: "notifications",
+      key: "bycoda.notifications.dailySummary.enabled",
+      initial: "1",
+      next: "0",
+      selector: '[aria-label="Daily summary"][role="switch"]',
+    },
+    {
+      section: "general",
+      key: "bycoda.closeToTray",
+      initial: "1",
+      next: "0",
+      selector: '[data-setting-id="close-to-tray"] [role="switch"]',
+    },
+  ])(
+    "refreshes mounted $section controls after sibling storage changes to $key",
+    async ({ section, key, initial, next, selector, index = 0 }) => {
+      platform.isWindows = true;
+      localStorage.setItem(
+        "bycoda.lastModel",
+        JSON.stringify({ harness: "claude", model: "claude:opus-5" }),
+      );
+      localStorage.setItem(key, initial);
+      await render(section as SettingsSectionId);
+      const control = () => container.querySelectorAll(selector)[index];
+      expect(control(), key).toBeDefined();
+      const before = control()!.getAttribute("aria-checked");
+      expect(before, key).not.toBeNull();
+      await act(async () => {
+        localStorage.setItem(key, next);
+        window.dispatchEvent(new StorageEvent("storage", { key }));
+      });
+      expect(control()!.getAttribute("aria-checked"), key).not.toBe(before);
+      expect(localStorage.getItem(key)).toBe(next);
+    },
+  );
 
   it("refreshes the mounted daily summary time when another window saves it", async () => {
     await render("notifications");
     const control = () => container.querySelector('[aria-label^="Daily summary time"]');
     expect(control()?.textContent).toContain("09:00");
-    await act(async () => { localStorage.setItem("bycoda.notifications.dailySummary.time", "10:00"); window.dispatchEvent(new StorageEvent("storage", { key: "bycoda.notifications.dailySummary.time" })); });
+    await act(async () => {
+      localStorage.setItem("bycoda.notifications.dailySummary.time", "10:00");
+      window.dispatchEvent(
+        new StorageEvent("storage", { key: "bycoda.notifications.dailySummary.time" }),
+      );
+    });
     expect(control()?.textContent).toContain("10:00");
   });
   it("restores appearance without resetting conversation display or explorer settings", async () => {

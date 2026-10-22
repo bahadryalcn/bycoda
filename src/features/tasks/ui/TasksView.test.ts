@@ -17,6 +17,7 @@ import {
 } from "../model/dailySummaryClient";
 import { TasksView as RawTasksView } from "./TasksView";
 import { withQueryClient } from "../../../../tests/browser/queryTest";
+import { resetRetainedState } from "../../../shared/hooks/useRetainedState";
 const TasksView = withQueryClient(RawTasksView);
 
 const invoke = vi.hoisted(() => vi.fn());
@@ -273,6 +274,7 @@ const card = (title: string) =>
 const panel = () => container.querySelector<HTMLElement>('aside[aria-label="Task details"]');
 
 beforeEach(() => {
+  resetRetainedState();
   vi.stubGlobal(
     "confirm",
     vi.fn(() => true),
@@ -473,6 +475,40 @@ it("searches goal filters in the compact popover, marks active scope and resets 
   expect(requests.some(({ method }) => /\.(create|update|move|delete|approve)$/.test(method))).toBe(
     false,
   );
+});
+
+it("keeps a goal filter when the task tool is reopened without retaining its open menu", async () => {
+  host(
+    [
+      task({ id: "goal-task", title: "Goal task", goalId: "launch", status: "todo" }),
+      task({ id: "independent", title: "Independent task", status: "todo" }),
+    ],
+    ["tasks", "tasks.todo", "goals"],
+    [goal({ status: "running" })],
+  );
+  await render();
+  await act(async () => button(container, "Filters")!.click());
+  await act(async () =>
+    document.querySelector<HTMLButtonElement>('button[aria-label^="Show goal:"]')!.click(),
+  );
+  const choice = Array.from(document.querySelectorAll<HTMLButtonElement>('[role="option"]')).find(
+    (option) => option.dataset.value !== "all",
+  )!;
+  await act(async () => choice.click());
+  const scroller = column("todo").parentElement!.parentElement!;
+  scroller.scrollLeft = 615;
+  scroller.scrollTop = 120;
+  scroller.dispatchEvent(new Event("scroll"));
+  await act(async () => root.unmount());
+  root = createRoot(container);
+  await render();
+  expect(card("Goal task")).toBeTruthy();
+  expect(card("Independent task")).toBeNull();
+  expect(button(container, "Filters")!.getAttribute("aria-pressed")).toBe("true");
+  expect(document.querySelector('[role="dialog"][aria-label="Filters"]')).toBeNull();
+  const restoredScroller = column("todo").parentElement!.parentElement!;
+  expect(restoredScroller.scrollLeft).toBe(615);
+  expect(restoredScroller.scrollTop).toBe(120);
 });
 
 it("shows pending and genuinely empty task board states", async () => {

@@ -67,7 +67,7 @@ it("keeps a leading native command first for slash runtimes", () => {
   expect(withRuntimeHint("claude", "/compact", "hint")).toBe("/compact");
   expect(withRuntimeHint("omp", "  /skill:x do it", "hint")).toBe("  /skill:x do it");
   expect(withRuntimeHint("claude", "fix /tmp path", "hint")).toBe("hint\n\nfix /tmp path");
-  expect(withRuntimeHint("gemini", "/compact", "hint")).toBe("hint\n\n/compact");
+  expect(withRuntimeHint("hermes", "/compact", "hint")).toBe("hint\n\n/compact");
   expect(withRuntimeHint("claude", "hello", "")).toBe("hello");
 });
 

@@ -364,3 +364,31 @@ it("revokes history exposure on a known host/user transition but not unavailable
     vi.useRealTimers();
   }
 });
+
+it("keeps the passive list as a display-only preview across text edits and drops it on control input", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const host = document.createElement("div");
+  document.body.appendChild(host);
+  const root = createRoot(host);
+  let controller!: SshShellController;
+  function Harness() {
+    controller = useSshShellIntegration("ssh-tab", true);
+    return null;
+  }
+  try {
+    await act(async () => root.render(createElement(Harness)));
+    await act(async () => controller.request());
+    await act(async () => native.listeners.at(-1)!({ payload: snapshot }));
+    await act(async () => controller.invalidate(true));
+    expect(controller.state).toBeUndefined();
+    expect(controller.preview).toEqual({ prefix: "git st", suggestions: ["git status"] });
+    await expect(controller.accept("git status")).rejects.toThrow(/stale/);
+    await act(async () => controller.invalidate(true));
+    expect(controller.preview?.suggestions).toEqual(["git status"]);
+    await act(async () => controller.invalidate(false));
+    expect(controller.preview).toBeUndefined();
+  } finally {
+    await act(async () => root.unmount());
+    host.remove();
+  }
+});

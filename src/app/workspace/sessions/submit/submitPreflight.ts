@@ -34,6 +34,7 @@ export function prepareSubmitPreflight(ctx: SubmitDeps, input: SubmitInput): Pre
     if (
       !target ||
       target.busy ||
+      target.continuingElsewhere ||
       target.pendingSwitch ||
       isPreparingHandoff(target) ||
       removingSessionIds.current.has(sessionId)
@@ -53,11 +54,16 @@ export function prepareSubmitPreflight(ctx: SubmitDeps, input: SubmitInput): Pre
   )
     return { settled: true, value: false };
   const storedCurrent = sessionsRef.current.find((s) => s.id === sessionId);
-  if (options?.appRequestId && storedCurrent?.busy) return { settled: true, value: false };
+  // Automated sends never start a local turn while the host runs this one.
+  if (options?.appRequestId && (storedCurrent?.busy || storedCurrent?.continuingElsewhere))
+    return { settled: true, value: false };
   if (
     options?.ciRepair &&
     storedCurrent &&
-    (storedCurrent.busy || storedCurrent.pendingSwitch || isPreparingHandoff(storedCurrent))
+    (storedCurrent.busy ||
+      storedCurrent.continuingElsewhere ||
+      storedCurrent.pendingSwitch ||
+      isPreparingHandoff(storedCurrent))
   )
     return { settled: true, value: false };
   if (

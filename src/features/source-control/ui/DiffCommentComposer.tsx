@@ -89,7 +89,7 @@ export function DiffCommentComposer({
           className="max-h-40 min-h-18 w-full resize-y leading-5"
         />
         <div className="mt-2 flex items-center justify-between gap-3">
-          <span className="text-[10px] text-[var(--ui-text-muted)]">
+          <span className="text-(length:--ui-font-caption) text-(--ui-text-secondary)">
             {MOD}
             {t("↩ to add")}
           </span>

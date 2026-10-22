@@ -35,7 +35,7 @@ export type DevServerStart = {
   cwd?: string;
   expectedPort?: number;
 };
-export type DevServerTarget = { id: string; identity?: DevProcessIdentity; tree?: boolean };
+export type DevServerTarget = { id: string; identity?: DevProcessIdentity; tree?: boolean; expectedImpact?: string };
 export type DevServerStop = {
   state: "stopped" | "running";
   requiresForce: boolean;
@@ -43,6 +43,8 @@ export type DevServerStop = {
   message?: string;
 };
 export type DevServerDetails = {
+  /** Opaque review token for the selected process tree and listening ports. */
+  expectedImpact?: string;
   server: DevServer;
   descendants: DevProcess[];
   affectedPorts: number[];

@@ -174,7 +174,7 @@ export function ModelExtrasPanel({
           <p
             id={descriptionId}
             hidden={!showHelp}
-            className="mb-1 rounded-md bg-selection/60 px-2 py-1.5 text-[10.5px] leading-4 text-(--ui-text-secondary)"
+            className="mb-1 rounded-md bg-(--ui-surface-raised) px-2 py-1.5 text-(length:--ui-font-caption) leading-4 text-(--ui-text-secondary)"
           >
             {t(setting.description)}
           </p>
@@ -202,7 +202,7 @@ export function ModelExtrasPanel({
             {t("Reset extras")}
           </Button>
         </div>
-        <p className="mt-0.5 text-[10.5px] leading-4 text-(--ui-text-secondary)">
+        <p className="mt-0.5 text-(length:--ui-font-caption) leading-4 text-(--ui-text-secondary)">
           {t("Extras apply to this model selection. They do not change the main model.")}
         </p>
       </div>
@@ -210,7 +210,7 @@ export function ModelExtrasPanel({
         {groups.map((group) => (
           <section key={group.title ?? "all"}>
             {group.title && (
-              <h3 className="mb-1 text-[10px] font-medium tracking-wide text-(--ui-text-secondary) uppercase">
+              <h3 className="mb-1 text-(length:--ui-font-caption) font-medium text-(--ui-text-secondary)">
                 {t(group.title)}
               </h3>
             )}
@@ -282,7 +282,7 @@ export function ModelExtras({
         <SlidersHorizontal className="size-3 shrink-0" strokeWidth={1.75} />
         <span data-extras-label>{t("Extras")}</span>
         {changed > 0 && (
-          <span className="rounded bg-selection px-1 text-[10px] text-(--ui-tone-neutral-fg)">
+          <span className="rounded bg-selection px-1 text-(length:--ui-font-caption) text-(--ui-tone-neutral-fg)">
             {changed}
           </span>
         )}

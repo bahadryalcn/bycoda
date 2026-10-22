@@ -188,3 +188,19 @@ describe("Jira inbox", () => {
     expect(peekJiraIssueDetails(issue.identifier)).toBeNull();
   });
 });
+
+describe("jira issue details cache", () => {
+  it("caps at 128 entries, evicting the least recently read", async () => {
+    clearJiraCache();
+    vi.mocked(invoke).mockImplementation(
+      async (_command, args) => ({ key: (args as { key: string }).key }) as never,
+    );
+    for (let i = 0; i < 128; i++) await jiraIssueDetails(`LRU-${i}`);
+    expect(peekJiraIssueDetails("LRU-0")).not.toBeNull();
+    await jiraIssueDetails("LRU-128");
+
+    expect(peekJiraIssueDetails("LRU-0")).not.toBeNull();
+    expect(peekJiraIssueDetails("LRU-1")).toBeNull();
+    expect(peekJiraIssueDetails("LRU-128")).not.toBeNull();
+  });
+});

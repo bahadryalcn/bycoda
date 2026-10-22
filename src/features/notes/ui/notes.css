@@ -184,6 +184,16 @@
 .note-detail-tags {
   grid-area: tags;
   min-inline-size: 0;
+  color: var(--ui-text-secondary);
+  font-size: var(--ui-font-caption);
+}
+.note-detail-tags > summary {
+  cursor: pointer;
+  inline-size: fit-content;
+  padding-block: 4px;
+}
+.note-detail-tags[open] > summary {
+  margin-block-end: 4px;
 }
 .note-detail-status {
   grid-area: status;
@@ -222,15 +232,29 @@
 
 @container (max-width: 620px) {
   .note-detail-header {
-    grid-template-columns: minmax(0, 1fr);
-    grid-template-areas: "identity" "title" "tags" "actions" "status";
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas: "identity identity" "title title" "actions actions" "tags status";
+    gap: 4px 8px;
+  }
+  .note-detail-header:has(.note-detail-tags[open]) {
+    grid-template-areas: "identity identity" "title title" "actions actions" "tags tags" "status status";
   }
   .note-detail-actions {
     justify-content: start;
   }
   .note-detail-status {
-    text-align: start;
-    justify-self: start;
+    text-align: end;
+    justify-self: end;
+  }
+  .note-detail-content {
+    padding: 8px;
+    gap: 6px;
+  }
+  .note-detail-identity {
+    color: var(--ui-text-secondary);
+  }
+  .note-detail-updated {
+    margin-inline-start: auto;
   }
 }
 
@@ -269,11 +293,14 @@
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
-@container (max-width: 780px) {
-  .note-split {
-    grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: repeat(2, minmax(0, 1fr));
-  }
+.note-format-popover {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 4px;
+  padding: 8px;
+}
+.note-format-popover > button {
+  justify-content: start;
 }
 
 .note-editor-pane {
@@ -341,7 +368,7 @@
 
 .note-preview-content {
   cursor: text;
-  padding: 8px;
+  padding: 8px 36px 8px 8px;
   border: 1px solid transparent;
   border-radius: 6px;
 }
@@ -357,6 +384,11 @@
   display: block;
   margin-inline-start: auto;
 }
+.note-preview-edit {
+  position: absolute;
+  inset-block-start: 4px;
+  inset-inline-end: 0;
+}
 
 .note-add-block {
   inline-size: 100%;
@@ -364,6 +396,13 @@
 }
 
 @media (hover: hover) and (pointer: fine) {
+  .note-preview-edit {
+    opacity: 0;
+  }
+  .note-preview-block:hover .note-preview-edit,
+  .note-preview-block:focus-within .note-preview-edit {
+    opacity: 1;
+  }
   .note-preview-content:hover {
     border-color: var(--color-stroke);
     background: var(--ui-surface-muted);

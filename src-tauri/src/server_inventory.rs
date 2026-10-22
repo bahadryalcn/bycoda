@@ -503,6 +503,22 @@ pub fn server_ssh_remove(
 }
 
 pub(crate) fn resolve_ssh_endpoint(app: &AppHandle, id: &str) -> Result<SshEndpoint, String> {
+    resolve_endpoint(app, id, None)
+}
+
+pub(crate) fn resolve_reviewed_ssh_endpoint(
+    app: &AppHandle,
+    id: &str,
+    expected: &str,
+) -> Result<SshEndpoint, String> {
+    resolve_endpoint(app, id, Some(expected))
+}
+
+fn resolve_endpoint(
+    app: &AppHandle,
+    id: &str,
+    expected: Option<&str>,
+) -> Result<SshEndpoint, String> {
     let state = app.state::<remote::RemoteConnections>();
     let _guard = state
         .store
@@ -515,9 +531,17 @@ pub(crate) fn resolve_ssh_endpoint(app: &AppHandle, id: &str) -> Result<SshEndpo
         .ok_or("Server no longer exists")?;
     let projected = project(record)?;
     if projected.ssh_endpoint.is_some() {
+        if let Some(expected) = expected {
+            return ssh_security::prepare_endpoint(
+                crate::ssh_configuration::resolve_record_reviewed(app, record, expected)?,
+            );
+        }
         return ssh_security::prepare_endpoint(crate::ssh_configuration::resolve_record(
             app, record,
         )?);
+    }
+    if expected.is_some() {
+        return Err("Reviewed mobile SSH requires a personal SSH connection".into());
     }
     let target = projected
         .machine

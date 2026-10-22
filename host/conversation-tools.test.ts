@@ -16,6 +16,18 @@ import {
 
 const principal = { kind: "session" as const, projectId: "p", sessionId: "s", provider: "codex" };
 describe("Conversation Tools boundary", () => {
+  it("accepts schema-valid editor saves larger than the old stdio line cap", async () => {
+    const input = new PassThrough(), output = new PassThrough();
+    let raw = "";
+    output.on("data", (chunk) => { raw += String(chunk); });
+    const call = vi.fn(async () => ({ saved: true }));
+    const run = runConversationMcp(input, output, call);
+    input.end(JSON.stringify({ id: 1, method: "tools/call", params: { name: "conversation_files_write",
+      arguments: { path: "large.txt", expectedHash: "a".repeat(64), content: "\n".repeat(200000) } } }) + "\n");
+    await run;
+    expect(call).toHaveBeenCalledOnce();
+    expect(JSON.parse(raw).result.isError).toBeUndefined();
+  });
   it("allows task-backed crews without caller-selected identity or permission overrides", () => {
     const input = {
       taskId: "task",
@@ -362,6 +374,28 @@ describe("Conversation Tools boundary", () => {
     relay.finish(String(requests[0].id), { accepted: true }, undefined, "owner");
     await expect(result).resolves.toEqual({ accepted: true });
     expect(() => relay.finish(String(requests[0].id), {})).toThrow();
+    relay.close();
+  });
+  it("rechecks claimed authority for the exact native owner and action after a pending approval", async () => {
+    const relay = new ConversationDesktopRelay();
+    relay.take("native-owner");
+    let authorized = true;
+    const pending = relay.call("ssh.workspace.approve", {}, "/project", principal, () => authorized);
+    // Checking does not claim or deliver a request.
+    expect(relay.authorize("missing", "ssh.workspace.approve", "native-owner")).toEqual({ authorized: false });
+    const request = relay.take("native-owner")[0];
+    const id = String(request.id);
+    expect(relay.authorize(id, "ssh.workspace.approve", "native-owner")).toEqual({ authorized: true });
+    expect(relay.authorize(id, "ssh.workspace.close.approve", "native-owner")).toEqual({ authorized: false });
+    expect(relay.authorize(id, "ssh.workspace.approve", "other-owner")).toEqual({ authorized: false });
+    const time = vi.spyOn(Date, "now").mockReturnValue(Number(request.deadline));
+    try { expect(relay.authorize(id, "ssh.workspace.approve", "native-owner")).toEqual({ authorized: false }); }
+    finally { time.mockRestore(); }
+    authorized = false;
+    expect(relay.authorize(id, "ssh.workspace.approve", "native-owner")).toEqual({ authorized: false });
+    relay.finish(id, {}, undefined, "native-owner");
+    await expect(pending).rejects.toThrow("revoked");
+    expect(relay.authorize(id, "ssh.workspace.approve", "native-owner")).toEqual({ authorized: false });
     relay.close();
   });
   it("does not deliver revoked or expired queued authority to the desktop", async () => {

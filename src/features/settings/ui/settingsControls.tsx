@@ -17,6 +17,9 @@ export const settingDomId = (id: string) => `setting-${id}`;
 /** The row or group Settings just jumped to, so it can flash where you landed. */
 export const RevealedSetting = createContext<string | null>(null);
 
+/** The page already explains automatic saving; keep operation feedback local. */
+export const PageAutomaticSaveHint = createContext(false);
+
 export type SettingsSaveState = "idle" | "dirty" | "saving" | "saved" | "error";
 export type SettingsPersistence = {
   mode: "automatic" | "explicit";
@@ -67,20 +70,24 @@ export function SettingsFeedback({
 
 function SettingHints({ scope, dependency, persistence }: SettingDetails) {
   useLocale();
+  const pageExplainsSaving = useContext(PageAutomaticSaveHint);
   const state = persistence?.state;
+  const showSaveHint = persistence && !(pageExplainsSaving && persistence.mode === "automatic");
   return (
     <>
       {scope ? <p className="settings-hint">{scope}</p> : null}
       {dependency ? <p className="settings-hint">{dependency}</p> : null}
-      {persistence ? (
+      {persistence && (showSaveHint || (state && state !== "idle")) ? (
         <div className="settings-hint">
-          <span>
-            {t(
-              persistence.mode === "automatic"
-                ? "Changes save automatically"
-                : "Changes require saving",
-            )}
-          </span>
+          {showSaveHint ? (
+            <span>
+              {t(
+                persistence.mode === "automatic"
+                  ? "Changes save automatically"
+                  : "Changes require saving",
+              )}
+            </span>
+          ) : null}
           {state && state !== "idle" ? (
             <Badge
               tone={

@@ -1,5 +1,73 @@
 import { test, expect } from "@playwright/test";
 
+test("hunk targets retain identity and allow keyboard and pointer recovery after a mock failure", async ({
+  page,
+}, testInfo) => {
+  await page.addInitScript(() => localStorage.setItem("bycoda.language.git", "en"));
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.goto("/tests/browser/git-workspace.html?diff-usability");
+  await page.locator("#root > div").evaluate((node) => {
+    node.style.width = "100%";
+  });
+  const repository = "/fixture/engineering/long-repository-name-for-working-tree-review";
+  const relative =
+    "src/features/a-very-long-feature-directory/another-long-nested-directory/selected-hunk-review.ts";
+  await expect(page.getByTitle(repository, { exact: true })).toBeVisible();
+  const file = page.locator(`[data-diff-file="${repository}/${relative}"]`);
+  await expect(file.locator("header span[title]").first()).toHaveAttribute(
+    "title",
+    /selected-hunk-review\.ts/,
+  );
+  const hunks = file.getByRole("button", { name: "Stage hunk", exact: true });
+  await expect(hunks.first()).toBeAttached();
+  await hunks.first().focus();
+  await page.keyboard.press("Enter");
+  await expect(page.getByRole("alert")).toContainText("Fixture index.lock");
+  await expect(file).toBeVisible();
+  await expect(file.locator("header button[aria-expanded]")).toHaveAttribute(
+    "aria-expanded",
+    "true",
+  );
+  await expect(hunks.first()).toBeFocused();
+  const calls = () =>
+    page.evaluate(() =>
+      (
+        window as unknown as {
+          gitFixtureCalls: { command: string; args: Record<string, unknown> }[];
+        }
+      ).gitFixtureCalls.filter((call) => call.command === "git_stage_contents"),
+    );
+  const first = (await calls())[0];
+  expect(first.args.cwd).toBe(repository);
+  expect(first.args.relative).toBe(relative);
+  expect(first.args.contents).toContain("value2 = 200");
+  expect(first.args.contents).toContain("value22 = 22;");
+  expect(first.args.expectedOriginal).toContain("value2 = 2;");
+  await hunks.first().locator("..").hover();
+  await hunks.first().click();
+  await expect(page.getByRole("alert")).toHaveCount(0);
+  await expect.poll(async () => (await calls()).length).toBe(2);
+  expect((await calls())[1].args).toEqual(first.args);
+  await hunks.last().scrollIntoViewIfNeeded();
+  await hunks.last().focus();
+  await page.keyboard.press("Enter");
+  await expect.poll(async () => (await calls()).length).toBe(3);
+  const last = (await calls())[2];
+  expect(last.args.contents).toContain("value2 = 2;");
+  expect(last.args.contents).toContain("value22 = 2200;");
+  for (const light of [false, true]) {
+    await page.evaluate(
+      (value) => document.documentElement.classList.toggle("theme-light", value),
+      light,
+    );
+    await page.screenshot({
+      path: testInfo.outputPath(`hunk-recovery-${light ? "light" : "dark"}.png`),
+      animations: "disabled",
+    });
+  }
+});
+
 test("repository overview collapses with keyboard and preserves open panels and drafts", async ({
   page,
 }, testInfo) => {

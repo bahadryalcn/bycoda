@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { OPEN_SESSION_IMPORT_EVENT, type SessionImportContext } from "../import/importModel";
+import { OPEN_SESSION_IMPORT_EVENT, SESSION_HISTORY_IMPORTED_EVENT, type SessionImportContext } from "../import/importModel";
 import { SessionImportDialog } from "./SessionImportDialog";
 
 /**
@@ -9,6 +9,10 @@ import { SessionImportDialog } from "./SessionImportDialog";
 export function SessionImportHost({ onImported }: { onImported: () => void }) {
   const [open, setOpen] = useState(false);
   const [context, setContext] = useState<SessionImportContext | undefined>();
+  useEffect(() => {
+    window.addEventListener(SESSION_HISTORY_IMPORTED_EVENT, onImported);
+    return () => window.removeEventListener(SESSION_HISTORY_IMPORTED_EVENT, onImported);
+  }, [onImported]);
   useEffect(() => {
     const show = (event: Event) => {
       const detail = (event as CustomEvent<SessionImportContext>).detail;

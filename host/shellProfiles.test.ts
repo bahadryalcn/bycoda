@@ -9,10 +9,22 @@ import {
   listShellProfiles,
   resolveShellProfile,
   setChosenProfile,
+  setReviewedProfile,
 } from "./shellProfiles";
 import { runHostShell } from "./shell";
 
 const cleanups: Array<() => void> = [];
+
+it("updates a reviewed command shell only while the saved preference still matches", () => {
+  const path = join(scratch(), "reviewed", "choice.json");
+  const installed = detectShellProfiles()[0]!;
+  expect(setReviewedProfile({ profile: installed.id, expectedChosenId: null }, path).chosenId).toBe(installed.id);
+  expect(() => setReviewedProfile({ profile: null, expectedChosenId: null }, path)).toThrow(/changed/);
+  expect(chosenProfileId(path)).toBe(installed.id);
+  expect(() => setReviewedProfile({ profile: installed.id, expectedChosenId: installed.id, command: "unsafe" }, path)).toThrow(/Invalid/);
+  expect(() => setReviewedProfile({ profile: "missing-shell", expectedChosenId: installed.id }, path)).toThrow(/not installed/);
+  expect(setReviewedProfile({ profile: null, expectedChosenId: installed.id }, path).chosenId).toBeNull();
+});
 afterEach(() => {
   for (const cleanup of cleanups.splice(0)) cleanup();
 });

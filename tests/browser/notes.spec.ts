@@ -176,12 +176,27 @@ test("narrow library and editor switch without losing a draft", async ({ page },
     .getByRole("button", { name: "Editor", exact: true })
     .click();
   await expect(title).toHaveValue("Narrow layout draft");
+  await expect(page.getByRole("tab", { name: "Source", exact: true })).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
+  await expect(page.locator(".note-editor-pane")).toHaveCount(1);
+  await page.locator(".note-detail-tags > summary").click();
   const tags = page.locator('.note-detail-tags [data-tag="release"]');
   await expect(tags).toBeInViewport();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   await page.screenshot({
     path: `temp/verification/2026-10-19-notes/${testInfo.project.name}-narrow-light.png`,
   });
+  await page.getByRole("tab", { name: "Edit preview", exact: true }).click();
+  await expect(page.locator(".note-editor-pane")).toHaveCount(1);
+  await page.setViewportSize({ width: 1440, height: 950 });
+  await expect(page.getByRole("tab", { name: "Split", exact: true })).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
+  await expect(page.locator(".note-editor-pane")).toHaveCount(2);
+  await expect(title).toHaveValue("Narrow layout draft");
 });
 
 test("shared tags, searchable filters and visible save preserve note drafts", async ({
@@ -189,6 +204,7 @@ test("shared tags, searchable filters and visible save preserve note drafts", as
 }, testInfo) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.goto("/tests/browser/notes.html?theme=light");
+  await page.locator(".note-detail-tags > summary").click();
   const tags = page.getByRole("textbox", { name: "Add note tag", exact: true });
   await tags.fill("#NEWTAG,");
   await expect(page.locator('.note-detail-tags [data-tag="newtag"]')).toBeVisible();

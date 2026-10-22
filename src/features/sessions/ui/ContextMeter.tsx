@@ -329,6 +329,7 @@ function ContextSignal({
           />
         ) : null}
       </svg>
+      <span className="context-speed-pulse">
       <svg
         width={24}
         height={24}
@@ -358,6 +359,7 @@ function ContextSignal({
           />
         ) : null}
       </svg>
+      </span>
     </span>
   );
 }

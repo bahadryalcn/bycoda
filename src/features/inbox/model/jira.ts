@@ -166,8 +166,23 @@ export function listJiraIssues(query: {
   });
 }
 
+/** Detail payloads are bounded LRU entries: get refreshes recency, set evicts the oldest past the cap. */
+const DETAILS_CACHE_LIMIT = 128;
+function boundedGet<T>(cache: Map<string, T>, key: string): T | null {
+  if (!cache.has(key)) return null;
+  const value = cache.get(key)!;
+  cache.delete(key);
+  cache.set(key, value);
+  return value;
+}
+function boundedSet<T>(cache: Map<string, T>, key: string, value: T) {
+  cache.delete(key);
+  cache.set(key, value);
+  while (cache.size > DETAILS_CACHE_LIMIT) cache.delete(cache.keys().next().value!);
+}
+
 export function peekJiraIssueDetails(key: string): JiraIssueDetails | null {
-  return detailsByKey.get(key) ?? null;
+  return boundedGet(detailsByKey, key);
 }
 
 export async function jiraIssueDetails(key: string): Promise<JiraIssueDetails> {
@@ -175,7 +190,7 @@ export async function jiraIssueDetails(key: string): Promise<JiraIssueDetails> {
   const details = await invoke<JiraIssueDetails>("jira_issue_details", {
     key,
   });
-  if (generation === cacheGeneration) detailsByKey.set(key, details);
+  if (generation === cacheGeneration) boundedSet(detailsByKey, key, details);
   return details;
 }
 

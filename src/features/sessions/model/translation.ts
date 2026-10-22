@@ -11,7 +11,6 @@ import { REMOTE_PATH_PREFIX } from "../../../shared/lib/remotePaths";
 
 export type TranslationTarget = "en" | "zh";
 export type TranslationErrorKind =
-  | "gemini-account"
   | "authentication"
   | "timeout"
   | "unsupported-provider"
@@ -22,10 +21,6 @@ export function translationErrorKind(error: unknown): TranslationErrorKind {
   const message = error instanceof Error ? error.message : String(error);
   if (message === "The selected provider does not support isolated translation requests")
     return "unsupported-provider";
-  if (
-    /no longer supported.*Gemini Code Assist|Gemini Code Assist.*no longer supported/i.test(message)
-  )
-    return "gemini-account";
   if (/auth|sign.?in|login|credential|api.?key/i.test(message)) return "authentication";
   if (/timed? out|timeout/i.test(message)) return "timeout";
   return "generic";

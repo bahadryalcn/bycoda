@@ -497,7 +497,7 @@ function FolderSection({
             {prettyCwd(folder.path)}
           </span>
           {!folder.exists ? (
-            <span className="shrink-0 rounded bg-(--ui-tone-warning-subtle) px-1.5 py-0.5 text-[10px] text-(--ui-tone-warning-fg)">
+            <span className="shrink-0 rounded bg-(--ui-tone-warning-subtle) px-1.5 py-0.5 text-(length:--ui-font-caption) text-(--ui-tone-warning-fg)">
               {t("missing folder")}
             </span>
           ) : null}
@@ -532,19 +532,19 @@ function FolderSection({
                   </span>
                   <span className="min-w-0 flex-1 truncate text-[12px]">{item.firstPrompt}</span>
                   {imported ? (
-                    <span className="shrink-0 rounded bg-(--ui-surface-raised) px-1.5 py-0.5 text-[10px]">
+                    <span className="shrink-0 rounded bg-(--ui-surface-raised) px-1.5 py-0.5 text-(length:--ui-font-caption)">
                       {t("imported")}
                     </span>
                   ) : isHistoryOnly(item) ? (
                     <span
-                      className="shrink-0 rounded bg-(--ui-surface-raised) px-1.5 py-0.5 text-[10px] text-(--ui-text-secondary)"
+                      className="shrink-0 rounded bg-(--ui-surface-raised) px-1.5 py-0.5 text-(length:--ui-font-caption) text-(--ui-text-secondary)"
                       title={t("Imported as history; sending a message starts a new conversation")}
                     >
                       {t("history only")}
                     </span>
                   ) : null}
                   {item.kind !== "interactive" ? (
-                    <span className="shrink-0 rounded bg-(--ui-surface-raised) px-1.5 py-0.5 text-[10px] text-(--ui-text-secondary)">
+                    <span className="shrink-0 rounded bg-(--ui-surface-raised) px-1.5 py-0.5 text-(length:--ui-font-caption) text-(--ui-text-secondary)">
                       {item.kind === "exec" ? t("automation") : t("subagent")}
                     </span>
                   ) : null}

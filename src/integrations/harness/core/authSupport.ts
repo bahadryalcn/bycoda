@@ -16,7 +16,7 @@ const LOGIN_ARGS: Partial<Record<HarnessId, readonly string[]>> = {
 };
 
 export function supportsHarnessLogin(harness: HarnessId): boolean {
-  return harness === "gemini" || LOGIN_ARGS[harness] != null;
+  return LOGIN_ARGS[harness] != null;
 }
 
 /** Exposed for login execution, settings copy, and regression tests. */

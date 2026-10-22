@@ -28,6 +28,7 @@ import {
   parseHistoryLog,
   parseHistoryRefs,
   runGitAction,
+  verifyGitManagementSnapshot,
   type GitActionCommand,
 } from "./git-actions";
 import type { HostStore } from "./store";
@@ -100,6 +101,7 @@ export const WORKSPACE_COMMANDS = [
   "git_pull",
   "git_sync",
   "git_pr_status",
+  "git_pr_destination",
   "git_pr_create",
   "git_history",
   "git_commit_files",
@@ -253,6 +255,8 @@ export class WorkspaceCommands {
           undefined,
           input.contents,
           input.expectedOriginal,
+          input.expectedCurrent,
+          input.expectedSnapshot,
         );
       case "git_stage_file":
         return this.gitAction(input.cwd, "stage", input.relative);
@@ -292,8 +296,14 @@ export class WorkspaceCommands {
         );
       case "git_pr_status":
         return this.gitPrStatus(input.cwd);
+      case "git_pr_destination":
+        return this.ghCommand(input.cwd, ["repo", "view", "--json", "nameWithOwner,url"]).then((json) => JSON.parse(json));
       case "git_pr_create":
-        return this.gitPrCreate(input.cwd, input.title, input.body, input.base, input.head);
+        if (input.expectedSnapshot !== undefined) return this.gitRoot(input.cwd).then(async (root) => {
+          await verifyGitManagementSnapshot(root, input.expectedSnapshot);
+          return this.gitPrCreate(root, input.title, input.body, input.base, input.head, input.repository);
+        });
+        return this.gitPrCreate(input.cwd, input.title, input.body, input.base, input.head, input.repository);
       case "git_history":
         return this.gitHistory(input.cwd, input.limit, input.all === true);
       case "git_commit_files":
@@ -771,8 +781,10 @@ export class WorkspaceCommands {
       return this.checkpoints.fileDiff(input.sessionId, cwd, path);
     }
     const session = input.sessionId;
+    if (input.expectedCheckpoint !== undefined && typeof input.expectedCheckpoint !== "string")
+      throw new Error("Invalid expected checkpoint");
     const change = () =>
-      this.checkpoints.change(session, cwd, path, command === "session_checkpoint_undo");
+      this.checkpoints.change(session, cwd, path, command === "session_checkpoint_undo", input.expectedCheckpoint as string | undefined);
     return command === "session_checkpoint_undo" ? withHostGitMutation(cwd, change) : change();
   }
 
@@ -829,14 +841,19 @@ export class WorkspaceCommands {
     message?: unknown,
     contents?: unknown,
     expectedOriginal?: unknown,
+    expectedCurrent?: unknown,
+    expectedSnapshot?: unknown,
   ) {
+    const root = await this.gitRoot(cwd);
     return hostGitAction(
-      await this.gitRoot(cwd),
+      root,
       action,
       relative,
       message,
       contents,
       expectedOriginal,
+      expectedCurrent,
+      expectedSnapshot === undefined ? undefined : () => verifyGitManagementSnapshot(root, expectedSnapshot),
     );
   }
 
@@ -914,14 +931,17 @@ export class WorkspaceCommands {
     body: unknown,
     base: unknown,
     head: unknown,
+    repository?: unknown,
   ) {
     if (
       [title, body, base, head].some((value) => typeof value !== "string" || value.length > 100_000)
     )
       throw new Error("Invalid pull request");
+    if (repository !== undefined && (typeof repository !== "string" || !/^[a-z0-9.-]+\/[a-z0-9_.-]+\/[a-z0-9_.-]+$/i.test(repository))) throw new Error("Invalid pull request repository");
     return this.ghCommand(cwd, [
       "pr",
       "create",
+      ...(typeof repository === "string" ? ["--repo", repository] : []),
       "--title",
       title as string,
       "--body",

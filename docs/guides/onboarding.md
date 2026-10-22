@@ -15,7 +15,7 @@ The language selector applies immediately. Reopen the flow from Settings → Gen
 - Appearance applies Light, Dark or System mode immediately. Still previews show
   the original uncles and Star Wars crew. Users can hide the crew or disable
   decorative animations independently. Existing appearance settings are reused.
-- Agents checks local Codex, Claude Code and Gemini CLI installations. Other
+- Agents checks local Codex, Claude Code and Antigravity installations. Other
   supported providers can be added from a compact selector; ACP configuration
   opens the existing custom-agent editor. Checkboxes control model-picker visibility.
   Added providers remain listed when setup is reopened, even before installation.

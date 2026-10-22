@@ -88,6 +88,7 @@ import {
 } from "../model/inboxFilters";
 import { projectKey, projectName } from "../../../shared/lib/paths";
 import { useRetainedState } from "../../../shared/hooks/useRetainedState";
+import { useRetainedScroll } from "../../../shared/hooks/useRetainedScroll";
 import { IS_MAC } from "../../../platform/tauri/platform";
 import { type RecentProject } from "../../projects/model/recents";
 import { type LinkedWorkItem } from "../../sessions/model/session";
@@ -247,17 +248,10 @@ export function InboxView({
 }: Props) {
   useLocale();
   const [discussionOpen, setDiscussionOpen] = useState(false);
+  const viewStateKey = `inbox:${pullRequestsOnly ? "pull-requests" : "all"}:${projectKey(cwd)}`;
   const listLock = useLockOverscroll<HTMLDivElement>();
   const listScrollRef = useRef<HTMLDivElement>(null);
   const loadMoreRef = useRef<HTMLLIElement>(null);
-  const [listLimit, setListLimit] = useState(LIST_PAGE_SIZE);
-  const setListScrollRef = useCallback(
-    (element: HTMLDivElement | null) => {
-      listLock(element);
-      listScrollRef.current = element;
-    },
-    [listLock],
-  );
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
   const logos = useTabGroupLogos();
@@ -265,7 +259,6 @@ export function InboxView({
   const [groupColors] = useState(loadTabGroupColors);
   const [groupCustomColors] = useState(loadTabGroupCustomColors);
 
-  const viewStateKey = `inbox:${pullRequestsOnly ? "pull-requests" : "all"}:${projectKey(cwd)}`;
   const [searchInput, setSearchInput] = useRetainedState(`${viewStateKey}:search`, "");
   const deferredSearch = useDeferredValue(searchInput);
   const queryClient = useQueryClient();
@@ -294,7 +287,16 @@ export function InboxView({
     return () => window.removeEventListener(WORKSPACE_REFRESH_EVENT, reload);
   }, []);
   const targetSelectionKey = target ? linkedWorkItemInboxKey(target) : null;
-  const [selectedKey, setSelectedKey] = useState<string | null>(targetSelectionKey);
+  const [connections, setConnections] = useState(loadInboxConnections);
+  const [source, setSource] = useState(() =>
+    pullRequestsOnly
+      ? ("github" as InboxSource)
+      : resolveInboxSource(loadInboxSource(), connections),
+  );
+  const [selectedKey, setSelectedKey] = useRetainedState<string | null>(
+    `${viewStateKey}:${source}:selected`,
+    targetSelectionKey,
+  );
   const [targetItem, setTargetItem] = useState<InboxItem | null>(null);
   const [filters, setFilters] = useState(() => {
     const saved = loadInboxFilters();
@@ -303,12 +305,6 @@ export function InboxView({
       : saved;
   });
   const [prSort, setPrSort] = useRetainedState(`${viewStateKey}:pr-sort`, "updated");
-  const [connections, setConnections] = useState(loadInboxConnections);
-  const [source, setSource] = useState(() =>
-    pullRequestsOnly
-      ? ("github" as InboxSource)
-      : resolveInboxSource(loadInboxSource(), connections),
-  );
   const codeScopes = useCodeHostScopes(source, refresh);
   const [connectMenuOpen, setConnectMenuOpen] = useState(false);
   const connectButtonRef = useRef<HTMLButtonElement | null>(null);
@@ -330,6 +326,8 @@ export function InboxView({
       ),
     [filters, projects],
   );
+  const listScope = `${viewStateKey}:${JSON.stringify([source, activeFilters, jiraHiddenProjectIds, linearHiddenTeamIds, searchInput])}`;
+  const [listLimit, setListLimit] = useRetainedState(`${listScope}:list-limit`, LIST_PAGE_SIZE);
   const filtersActive =
     codeScopes.hidden.length > 0 ||
     hasActiveInboxFilters(activeFilters, source, linearHiddenTeamIds, jiraHiddenProjectIds);
@@ -369,7 +367,8 @@ export function InboxView({
     if (!target) return;
     setSource("github");
     setSearchInput("");
-  }, [target]);
+    setSelectedKey(targetSelectionKey);
+  }, [target, targetSelectionKey, setSelectedKey, setSearchInput]);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -719,13 +718,15 @@ export function InboxView({
   const shownItemCount = listWindowSize(visibleItems.length, listLimit);
   const shownItems = visibleItems.slice(0, shownItemCount);
   const hasMoreItems = shownItemCount < visibleItems.length;
-
-  useEffect(() => {
-    setListLimit(LIST_PAGE_SIZE);
-    const scroller = listScrollRef.current;
-    if (scroller) scroller.scrollTop = 0;
-  }, [activeFilters, jiraHiddenProjectIds, linearHiddenTeamIds, searchInput, source]);
-
+  const retainedListScroll = useRetainedScroll<HTMLDivElement>(listScope, { ready: !loading });
+  const setListScrollRef = useCallback(
+    (element: HTMLDivElement | null) => {
+      listLock(element);
+      retainedListScroll(element);
+      listScrollRef.current = element;
+    },
+    [listLock, retainedListScroll],
+  );
   useEffect(() => {
     if (!hasMoreItems) return;
     const sentinel = loadMoreRef.current;
@@ -743,6 +744,7 @@ export function InboxView({
   }, [hasMoreItems, shownItemCount]);
 
   useEffect(() => {
+    if (loading) return;
     if (!selected) {
       if (!targetSelectionKey) setSelectedKey(null);
       return;
@@ -754,7 +756,7 @@ export function InboxView({
       return;
     }
     if (key !== selectedKey) setSelectedKey(key);
-  }, [selected, selectedKey, targetSelectionKey]);
+  }, [loading, selected, selectedKey, targetSelectionKey, setSelectedKey]);
 
   const onFiltersChange = (next: InboxFilters) => {
     const pruned = pruneInboxFilters(

@@ -2,6 +2,7 @@ import { constants, createReadStream } from "node:fs";
 import { copyFile, lstat, mkdir, readdir, stat } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { dirname, join, resolve, relative, sep } from "node:path";
+import { sameHostPath } from "./task-worktree-cleanup";
 import { runGitText } from "../src/shared/lib/processExecution.node";
 
 const ROOT = "temp/local";
@@ -31,7 +32,7 @@ export async function transferTaskArtifacts(
 ): Promise<string[]> {
   signal?.throwIfAborted();
   if (paths?.length === 0) return [];
-  if (resolve(source).toLowerCase() === resolve(target).toLowerCase()) return [];
+  if (sameHostPath(source, target)) return [];
   const sourceRoot = join(source, ROOT);
   if (!(await exists(sourceRoot))) {
     if (paths?.length) throw new Error("The dependency's task artifacts are unavailable.");

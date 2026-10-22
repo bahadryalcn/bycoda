@@ -10,6 +10,7 @@ import {
   Slider,
   Toggle,
   SettingsFeedback,
+  PageAutomaticSaveHint,
 } from "./settingsControls";
 import { playCue } from "../model/sounds";
 
@@ -52,6 +53,34 @@ async function key(target: Element, key: string) {
 }
 
 describe("settings keyboard controls", () => {
+  it("keeps save errors and explicit-save guidance when the page explains automatic saving", async () => {
+    await act(async () =>
+      root.render(
+        createElement(
+          PageAutomaticSaveHint.Provider,
+          { value: true },
+          createElement(Group, {
+            title: "Automatic",
+            persistence: { mode: "automatic" },
+            children: "Setting",
+          }),
+          createElement(Group, {
+            title: "Failed",
+            persistence: { mode: "automatic", state: "error", error: "Retry saving" },
+            children: "Setting",
+          }),
+          createElement(Group, {
+            title: "Explicit",
+            persistence: { mode: "explicit" },
+            children: "Setting",
+          }),
+        ),
+      ),
+    );
+    expect(container.textContent).not.toContain("Changes save automatically");
+    expect(container.textContent).toContain("Changes require saving");
+    expect(container.querySelector('[role="status"]')?.textContent).toContain("Retry saving");
+  });
   it("keeps operation feedback below controls and announces errors separately from progress", async () => {
     const render = (state: "loading" | "error") =>
       root.render(

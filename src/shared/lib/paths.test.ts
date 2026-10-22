@@ -327,6 +327,12 @@ describe("parentPath and joinPath", () => {
     expect(joinPath("C:/Users/me/code", "..")).toBe("C:/Users/me");
     expect(joinPath("C:/", "Users")).toBe("C:/Users");
   });
+  it("splits relative paths by the remote host's separators, not the client's", () => {
+    expect(joinPath("remote://env/G:/repo", "src\\a.ts")).toBe("remote://env/G:/repo/src/a.ts");
+    expect(joinPath("remote://env/home/me/repo", "a\\b.txt")).toBe(
+      "remote://env/home/me/repo/a\\b.txt",
+    );
+  });
 });
 
 describe("path relations", () => {

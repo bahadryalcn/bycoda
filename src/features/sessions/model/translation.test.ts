@@ -68,7 +68,7 @@ describe("offline translation routing", () => {
       }),
     );
   });
-  it.each(["claude", "gemini", "cursor"] as const)(
+  it.each(["claude", "antigravity", "cursor"] as const)(
     "routes translation to the selected %s provider",
     async (harness) => {
       vi.mocked(runHarnessTextPrompt).mockClear().mockResolvedValue("Translated text");
@@ -82,14 +82,7 @@ describe("offline translation routing", () => {
       expect(runHarnessTextPrompt).toHaveBeenCalledOnce();
     },
   );
-  it("reports Gemini account rejection without exposing raw diagnostic text", () => {
-    expect(
-      translationErrorKind(
-        new Error(
-          "This client is no longer supported for Gemini Code Assist for individuals. https://example.com/private?token=secret",
-        ),
-      ),
-    ).toBe("gemini-account");
+  it("classifies provider errors without exposing raw diagnostic text", () => {
     expect(translationErrorKind(new Error("Authentication failed: private-token"))).toBe(
       "authentication",
     );

@@ -897,6 +897,23 @@ export class SocialService {
         this.invalidatePublishingPlans("policy");
         return policies;
       }
+      case "policy.saveReviewed": {
+        this.owner(p);
+        exact(input, ["policies", "expectedPolicies", "confirm"]);
+        if (input.confirm !== "UPDATE_SOCIAL_POLICY") throw new Error("Confirm the reviewed social policy change.");
+        const policies = parseSocialPolicies(input.policies);
+        const expected = parseSocialPolicies(input.expectedPolicies);
+        const key = (value: SocialPolicies) => JSON.stringify([
+          value.global,
+          ...SOCIAL_PLATFORMS.map((platform) => [platform, value.platforms[platform] ?? null]),
+        ]);
+        return this.transaction(() => {
+          if (key(this.policies()) !== key(expected)) throw new Error("Social policy changed. Review the latest settings before saving.");
+          this.setSetting("policies", JSON.stringify(policies));
+          this.invalidatePublishingPlans("policy");
+          return policies;
+        });
+      }
       case "accounts.list":
         return this.accounts(p);
       case "capabilities.get":

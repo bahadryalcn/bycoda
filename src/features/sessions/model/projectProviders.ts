@@ -120,6 +120,11 @@ export function clearProjectProviders(project: string): void {
   writeAll(all);
 }
 
+/** Restore future-session inheritance without changing picker visibility. */
+export function resetProjectSessionPreferences(project: string): void {
+  update(project, (current) => ({ hidden: current.hidden }));
+}
+
 /** Follow a project rename so its overrides are not orphaned. */
 export function rebaseProjectProviders(from: string, to: string): void {
   const fromKey = pathKey(from);

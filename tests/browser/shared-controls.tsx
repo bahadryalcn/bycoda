@@ -4,6 +4,7 @@ import { Modal } from "../../src/shared/ui/Modal";
 import { DateTimePicker } from "../../src/shared/ui/DateTimePicker";
 import { SearchableSelect } from "../../src/shared/ui/SearchableSelect";
 import { ColorPickerPopover } from "../../src/shared/ui/ColorPickerPopover";
+import { NotificationMuteControl } from "../../src/features/notifications/ui/NotificationMuteControl";
 import { languageReady } from "../../src/shared/i18n";
 import "../../src/styles/index.css";
 
@@ -12,6 +13,12 @@ function Fixture() {
   const [date, setDate] = useState("2028-02-20T18:30");
   const [choice, setChoice] = useState("alpha");
   const [color, setColor] = useState("#ff0000");
+  if (new URLSearchParams(location.search).has("mute"))
+    return (
+      <main className="min-h-screen bg-background-base p-2 text-content">
+        <NotificationMuteControl projectIds={["fixture-project"]} />
+      </main>
+    );
   return (
     <main className="min-h-screen bg-background-base p-6 text-content">
       <button onClick={() => setOpen(true)}>Open controls</button>

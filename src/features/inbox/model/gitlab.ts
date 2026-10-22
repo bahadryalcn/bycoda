@@ -73,6 +73,21 @@ const threadInflight = new Map<string, Promise<GitlabWorkItemThread>>();
 const diffByKey = new Map<string, GitlabMrDiff>();
 const diffInflight = new Map<string, Promise<GitlabMrDiff>>();
 
+/** Detail and diff payloads are bounded LRU entries: get refreshes recency, set evicts the oldest past the cap. */
+const DETAILS_CACHE_LIMIT = 128;
+function boundedGet<T>(cache: Map<string, T>, key: string): T | null {
+  if (!cache.has(key)) return null;
+  const value = cache.get(key)!;
+  cache.delete(key);
+  cache.set(key, value);
+  return value;
+}
+function boundedSet<T>(cache: Map<string, T>, key: string, value: T) {
+  cache.delete(key);
+  cache.set(key, value);
+  while (cache.size > DETAILS_CACHE_LIMIT) cache.delete(cache.keys().next().value!);
+}
+
 function itemKey(repo: string, kind: GitlabKind, number: number): string {
   return `${repo.trim().toLowerCase()}:${kind}:${number}`;
 }
@@ -152,7 +167,7 @@ export function peekGitlabWorkItemDetails(
   kind: GitlabKind,
   number: number,
 ): GitlabWorkItemDetails | null {
-  return detailsByKey.get(itemKey(repo, kind, number)) ?? null;
+  return boundedGet(detailsByKey, itemKey(repo, kind, number));
 }
 
 export async function gitlabWorkItemDetails(
@@ -165,7 +180,7 @@ export async function gitlabWorkItemDetails(
     kind,
     number,
   });
-  detailsByKey.set(itemKey(repo, kind, number), details);
+  boundedSet(detailsByKey, itemKey(repo, kind, number), details);
   return details;
 }
 
@@ -226,7 +241,7 @@ export async function gitlabWorkItemComment(
 }
 
 export function peekGitlabMrDiff(repo: string, number: number): GitlabMrDiff | null {
-  return diffByKey.get(itemKey(repo, "pr", number)) ?? null;
+  return boundedGet(diffByKey, itemKey(repo, "pr", number));
 }
 
 export async function gitlabMrDiff(repo: string, number: number): Promise<GitlabMrDiff> {
@@ -235,7 +250,7 @@ export async function gitlabMrDiff(repo: string, number: number): Promise<Gitlab
   if (cached) return cached;
   const pending = invoke<GitlabMrDiff>("gitlab_mr_diff", { repo, number })
     .then((diff) => {
-      diffByKey.set(key, diff);
+      boundedSet(diffByKey, key, diff);
       return diff;
     })
     .finally(() => {

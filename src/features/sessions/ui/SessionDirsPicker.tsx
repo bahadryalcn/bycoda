@@ -193,7 +193,7 @@ export function SessionDirsPicker({
           className="flex min-h-0 flex-col p-1.5"
         >
           <div className="flex items-center justify-between gap-2 px-2 pb-1 pt-0.5">
-            <p className="text-[10px] font-medium uppercase tracking-wide text-(--ui-text-secondary)">
+            <p className="text-(length:--ui-font-caption) font-medium text-(--ui-text-secondary)">
               {mode === "project" ? t("Change project") : t("Folders for this session")}
             </p>
             {onProjectChange ? (
@@ -246,7 +246,9 @@ export function SessionDirsPicker({
                   <Folder className="size-3.5 shrink-0" />
                   {details}
                   {pathKey(path) === pathKey(project) ? (
-                    <span className="text-[10px] text-(--ui-text-secondary)">{t("Current")}</span>
+                    <span className="text-(length:--ui-font-caption) text-(--ui-text-secondary)">
+                      {t("Current")}
+                    </span>
                   ) : null}
                 </Button>
               ) : (
@@ -261,7 +263,7 @@ export function SessionDirsPicker({
                   />
                   {details}
                   {working ? (
-                    <span className="shrink-0 text-[10px] text-(--ui-text-secondary)">
+                    <span className="shrink-0 text-(length:--ui-font-caption) text-(--ui-text-secondary)">
                       {t("Working folder")}
                     </span>
                   ) : null}

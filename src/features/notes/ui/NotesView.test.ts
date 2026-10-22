@@ -346,6 +346,46 @@ function tab(label: string) {
   )!;
 }
 
+it("keeps the desktop split preference and source undo state when a narrow pane switches views", async () => {
+  let resizeDetail: ((width: number) => void) | undefined;
+  vi.stubGlobal(
+    "ResizeObserver",
+    class {
+      constructor(private callback: ResizeObserverCallback) {}
+      observe(node: Element) {
+        if (node.classList.contains("note-detail")) {
+          resizeDetail = (width) =>
+            this.callback(
+              [{ target: node, contentRect: { width } } as ResizeObserverEntry],
+              this as unknown as ResizeObserver,
+            );
+        }
+      }
+      disconnect() {}
+    },
+  );
+  await render();
+  const source = editorView();
+  await act(async () =>
+    source.dispatch({ changes: { from: source.state.doc.length, insert: " Draft survives." } }),
+  );
+  await act(async () => resizeDetail!(390));
+  expect(tab("Source").getAttribute("aria-selected")).toBe("true");
+  expect(tab("Split")).toBeUndefined();
+  expect(container.querySelectorAll(".note-editor-pane")).toHaveLength(1);
+  await act(async () => tab("Edit preview").click());
+  expect(container.querySelector("[data-note-preview]")?.textContent).toContain("Draft survives.");
+  await act(async () => tab("Source").click());
+  expect(editorView()).toBe(source);
+  await act(async () => resizeDetail!(1100));
+  expect(tab("Split").getAttribute("aria-selected")).toBe("true");
+  expect(container.querySelectorAll(".note-editor-pane")).toHaveLength(2);
+  await act(async () => {
+    undo(source);
+  });
+  expect(source.state.doc.toString()).toBe("Keep this text.");
+});
+
 it("moves focus and selection through mode tabs and associates the active panel", async () => {
   await render();
   await act(async () => tab("Source").click());

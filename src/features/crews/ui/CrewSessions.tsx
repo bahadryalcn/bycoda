@@ -333,6 +333,22 @@ function CrewWorkRow({
       ) : null}
       {expanded ? (
         <div className="flex flex-col gap-px border-t border-(--ui-tone-neutral-border) p-1">
+          <div className="flex min-w-0 flex-col gap-1 px-2 py-1 text-xs">
+            <p className="break-words font-medium">{title}</p>
+            <p className="break-words text-(--ui-text-secondary)">
+              {[run.definition.name, status, progress].join(" · ")}
+            </p>
+            {requests.map((request) => (
+              <p key={request.id} className="whitespace-pre-wrap break-words text-warning">
+                {t("Needs decision: {p0}", { p0: request.text })}
+              </p>
+            ))}
+            {blocked.map((task) => (
+              <p key={task.id} className="whitespace-pre-wrap break-words text-danger">
+                {t("Blocked: {p0}", { p0: task.error ?? task.title })}
+              </p>
+            ))}
+          </div>
           <Button
             variant="item"
             motion="none"

@@ -112,15 +112,30 @@ export function listLinearIssues(query: {
   });
 }
 
+/** Detail payloads are bounded LRU entries: get refreshes recency, set evicts the oldest past the cap. */
+const DETAILS_CACHE_LIMIT = 128;
+function boundedGet<T>(cache: Map<string, T>, key: string): T | null {
+  if (!cache.has(key)) return null;
+  const value = cache.get(key)!;
+  cache.delete(key);
+  cache.set(key, value);
+  return value;
+}
+function boundedSet<T>(cache: Map<string, T>, key: string, value: T) {
+  cache.delete(key);
+  cache.set(key, value);
+  while (cache.size > DETAILS_CACHE_LIMIT) cache.delete(cache.keys().next().value!);
+}
+
 export function peekLinearIssueDetails(id: string): LinearIssueDetails | null {
-  return detailsById.get(id) ?? null;
+  return boundedGet(detailsById, id);
 }
 
 export async function linearIssueDetails(id: string): Promise<LinearIssueDetails> {
   const details = await invoke<LinearIssueDetails>("linear_issue_details", {
     id,
   });
-  detailsById.set(id, details);
+  boundedSet(detailsById, id, details);
   return details;
 }
 

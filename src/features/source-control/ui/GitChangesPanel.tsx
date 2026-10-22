@@ -1923,10 +1923,10 @@ export function FileSection({
               strokeWidth={1.75}
             />
           )}
-          <span className="min-w-0 truncate text-[10px] font-semibold tracking-[0.04em] text-[var(--ui-text-secondary)] uppercase">
+          <span className="min-w-0 truncate text-(length:--ui-font-caption) font-semibold tracking-[0.04em] text-[var(--ui-text-secondary)] uppercase">
             {title}
           </span>
-          <span className="ml-1 grid h-4 min-w-4 shrink-0 place-items-center rounded-full bg-[var(--ui-surface-selected)] px-1 text-[10px] font-semibold text-content tabular-nums">
+          <span className="ml-1 grid h-4 min-w-4 shrink-0 place-items-center rounded-full bg-[var(--ui-surface-selected)] px-1 text-(length:--ui-font-caption) font-semibold text-content tabular-nums">
             {count}
           </span>
         </Button>
@@ -2294,7 +2294,7 @@ function ChangeDirRow({
           <FileTypeIcon name={dir.name} isDir isOpen={open} size={16} />
           <span className="min-w-0 flex-1 truncate text-[13px] font-medium">{dir.name}</span>
         </Button>
-        <div className="hidden shrink-0 items-center group-focus-within:flex group-hover:flex">
+        <div className="hidden shrink-0 items-center group-focus-within:flex group-hover:flex pointer-coarse:flex">
           <IconAction
             title={t(kind === "staged" ? "Unstage Changes in {p1}" : "Stage Changes in {p1}", {
               p1: dir.path,
@@ -2522,7 +2522,7 @@ const ChangeRow = memo(function ChangeRow({
         ) : null}
         <div
           className={` shrink-0 items-center ${
-            busy ? "hidden" : active ? "flex" : "hidden group-focus-within:flex group-hover:flex"
+            busy ? "hidden" : active ? "flex" : "hidden group-focus-within:flex group-hover:flex pointer-coarse:flex"
           }`}
         >
           {kind === "unstaged" ? (

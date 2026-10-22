@@ -227,7 +227,7 @@ export function GitGraphList({
         <>
           {wide ? (
             <div
-              className={`sticky top-0 z-[2] grid items-center border-b border-stroke bg-[var(--ui-surface)] text-[10px] text-[var(--ui-text-secondary)] ${workspace ? styles.workspaceHeader : "font-semibold tracking-[0.04em] uppercase"}`}
+              className={`sticky top-0 z-[2] grid items-center border-b border-stroke bg-(--ui-surface) text-(length:--ui-font-caption) text-(--ui-text-secondary) ${workspace ? styles.workspaceHeader : "font-semibold"}`}
               style={{
                 height: WIDE_HEADER_PX,
                 gridTemplateColumns: workspace ? undefined : columns,
@@ -426,7 +426,7 @@ function CompactRow(props: RowProps) {
         <GraphAvatar name={commit.author} className="git-graph-author ml-1.5 self-center" />
         <span
           title={formatAbsoluteTime(commit.timestamp)}
-          className="git-graph-date ml-1.5 w-7 shrink-0 text-right text-[11px] leading-[22px] text-[var(--ui-text-muted)]"
+          className="git-graph-date ml-1.5 w-7 shrink-0 text-right text-(length:--ui-font-caption) leading-[22px] text-(--ui-text-secondary)"
         >
           {formatRelativeTime(commit.timestamp, now)}
         </span>

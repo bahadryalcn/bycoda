@@ -95,3 +95,11 @@ it("places before first paint, coalesces scroll/resize bursts and cancels queued
   await frame();
   expect(measure).toHaveBeenCalledTimes(1);
 });
+
+it("keeps the frame but paints no backdrop glass when solid", async () => {
+  await act(async () =>
+    root.render(createElement(Popover, { anchor, solid: true }, createElement("p", null, "x"))),
+  );
+  expect(document.body.querySelector(".popover-solid")).not.toBeNull();
+  expect(document.body.querySelector(".popover-backdrop, .backdrop-blur-xl")).toBeNull();
+});

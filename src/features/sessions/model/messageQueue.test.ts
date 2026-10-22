@@ -397,3 +397,17 @@ describe("reordering the queue", () => {
     expect(isEditingQueuedHead(reorderSessionQueue(moved, ["a", "b"]))).toBe(true);
   });
 });
+
+it("waits while the host runs the conversation or its turn has not arrived here", () => {
+  const session = chat({
+    queueStatus: "active",
+    queuedMessages: [queued("next")],
+  });
+  expect(canDispatchQueuedHead(session)).toBe(true);
+  expect(canDispatchQueuedHead({ ...session, continuingElsewhere: true })).toBe(
+    false,
+  );
+  expect(canDispatchQueuedHead({ ...session, adoptedSyncConflict: true })).toBe(
+    false,
+  );
+});

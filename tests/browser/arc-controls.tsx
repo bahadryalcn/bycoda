@@ -566,6 +566,9 @@ function ButtonApiControls() {
         <Button size="lg" iconOnly label="Large button">
           <span aria-hidden="true">+</span>
         </Button>
+        <Button motion="none" iconOnly label="Native keyboard hint" shortcut="Ctrl+Shift+K">
+          <span aria-hidden="true">+</span>
+        </Button>
       </div>
       {popupOpen ? <output aria-label="Button popup result">Opened</output> : null}
       <Button variant="item" onClick={() => setCount((value) => value + 1)}>

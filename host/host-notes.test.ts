@@ -38,6 +38,21 @@ function fixture() {
   };
 }
 describe("remote desktop notes", () => {
+  it("filters session notes before the preview limit and keeps worktree associations", () => {
+    const { notes, update } = fixture();
+    notes.save({ id: "old", title: "Session note", body: "long".repeat(300), tags: [], sourceSessionId: "session-a", sourceCwd: "/worktree" }, 0);
+    update(`WITH RECURSIVE rows(n) AS (SELECT 1 UNION ALL SELECT n+1 FROM rows WHERE n<501)
+      INSERT INTO notes(id,slug,title,body,tags_json,source_session_id,source_cwd,slug_pending,created_at,updated_at,content_updated_at)
+      SELECT 'foreign-'||n,'foreign-'||n,'Other note','body','[]','session-b','/project',0,1000+n,1000+n,1000+n FROM rows`);
+    expect(notes.list().notes).toHaveLength(500);
+    const scoped = notes.list(undefined, "session-a");
+    expect(scoped.total).toBe(1);
+    expect(scoped.notes.map((note) => note.id)).toEqual(["old"]);
+    expect(scoped.notes[0].body).toHaveLength(500);
+    expect(notes.get("old")?.body).toHaveLength(1200);
+    expect(notes.list("/project", "session-a")).toEqual({ notes: [], total: 0 });
+    expect(() => notes.list(undefined, "")).toThrow("Invalid note ID");
+  });
   it("invalidates stale writers on project and slug-only changes without reordering content", () => {
     const { notes } = fixture();
     const original = notes.save(

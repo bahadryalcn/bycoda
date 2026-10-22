@@ -2,7 +2,6 @@ import { useState } from "react";
 import { getLocale, t, useLocale } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { SortableDataTable } from "../../../shared/ui/SortableDataTable";
-import { formatUsageCost, formatUsageTokens } from "../../providers/model/providerUsage";
 
 import type { UsageMetric, UsageResolution } from "../model/usageAnalytics";
 
@@ -16,7 +15,13 @@ export const metricNames: Record<UsageMetric, string> = {
   duration: "Agent time",
 };
 export function formatMetric(value: number, metric: UsageMetric): string {
-  if (metric === "cost") return formatUsageCost(value);
+  if (metric === "cost")
+    return new Intl.NumberFormat(getLocale(), {
+      style: "currency",
+      currency: "USD",
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    }).format(value);
   if (metric === "duration") {
     const minutes = Math.floor(value / 60_000);
     return minutes >= 60
@@ -25,7 +30,17 @@ export function formatMetric(value: number, metric: UsageMetric): string {
         ? `${minutes}m`
         : `${Math.round(value / 1000)}s`;
   }
-  return formatUsageTokens(value);
+  return new Intl.NumberFormat(getLocale(), {
+    notation: "compact",
+    maximumFractionDigits: 1,
+  }).format(value);
+}
+export function formatUsagePercent(value: number): string {
+  return new Intl.NumberFormat(getLocale(), {
+    style: "percent",
+    minimumFractionDigits: 1,
+    maximumFractionDigits: 1,
+  }).format(value / 100);
 }
 export function formatBucket(at: number, resolution: UsageResolution): string {
   return new Date(at).toLocaleString(
@@ -124,8 +139,7 @@ export function PagedUsageTable({
             key: "share",
             label: t("Share"),
             numeric: true,
-            render: (_, row) =>
-              `${total ? ((Number(row[metric]) / total) * 100).toFixed(1) : "0"}%`,
+            render: (_, row) => formatUsagePercent(total ? (Number(row[metric]) / total) * 100 : 0),
           },
         ]}
       />

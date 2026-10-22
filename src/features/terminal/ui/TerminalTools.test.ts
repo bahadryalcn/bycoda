@@ -4,6 +4,12 @@ import { createRoot } from "react-dom/client";
 import type { Terminal } from "@xterm/xterm";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { TerminalTools } from "./TerminalTools";
+import type { SshShellController } from "../model/sshShellIntegration";
+
+vi.mock("./TerminalCursorPopover", () => ({
+  TerminalCursorPopover: ({ children }: { children: React.ReactNode }) =>
+    createElement("div", { "data-cursor-popover": true }, children),
+}));
 
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
@@ -195,6 +201,7 @@ it("keeps automatic exposure and source choices explicit without requesting on m
   const root = createRoot(host);
   const shell = {
     state: undefined,
+    preview: undefined,
     waiting: false,
     error: "",
     automatic: false,
@@ -237,6 +244,106 @@ it("keeps automatic exposure and source choices explicit without requesting on m
     expect(shell.setSource).toHaveBeenCalledExactlyOnceWith("paths");
     expect(shell.request).not.toHaveBeenCalled();
     expect(terminal.focus).not.toHaveBeenCalled();
+  } finally {
+    await act(async () => root.unmount());
+    host.remove();
+  }
+});
+
+it("keeps the passive suggestion popover mounted while the next snapshot is pending", async () => {
+  const host = document.createElement("div");
+  document.body.append(host);
+  const root = createRoot(host);
+  let line = "$ git st";
+  const disposable = { dispose() {} };
+  const terminal = {
+    element: document.createElement("div"),
+    focus: vi.fn(),
+    onWriteParsed: () => disposable,
+    hasSelection: () => false,
+    buffer: {
+      onBufferChange: () => disposable,
+      active: {
+        type: "normal",
+        baseY: 0,
+        viewportY: 0,
+        cursorY: 0,
+        get cursorX() {
+          return line.length;
+        },
+        getLine: () => ({
+          isWrapped: false,
+          translateToString: (trim: boolean, start = 0, end = line.length) => {
+            const value = line.slice(start, end);
+            return trim ? value.trimEnd() : value;
+          },
+        }),
+      },
+    },
+  } as unknown as Terminal;
+  const shell = {
+    state: {
+      id: "ssh",
+      status: "suggestions",
+      shell: "bash",
+      user: "alice",
+      host: "server",
+      requestId: "live",
+      prefix: "git s",
+      cursor: 5,
+      suggestions: ["git status", "git stash"],
+    },
+    preview: undefined,
+    waiting: false,
+    error: "",
+    automatic: true,
+    source: "commands",
+    request: vi.fn(async () => {}),
+    accept: vi.fn(async () => {}),
+    dismiss: vi.fn(),
+    invalidate: vi.fn(),
+    notifyInput: vi.fn(),
+    suspendAutomatic: vi.fn(),
+    setAutomatic: vi.fn(),
+    setSource: vi.fn(),
+  } as SshShellController;
+  const render = (remoteShell: SshShellController) =>
+    act(async () =>
+      root.render(
+        createElement(TerminalTools, {
+          terminal,
+          mode: null,
+          onModeChange: vi.fn(),
+          ready: true,
+          suggestionsAllowed: false,
+          remoteShell,
+        }),
+      ),
+    );
+  try {
+    line = "$ git s";
+    await render(shell);
+    const popover = host.querySelector("[data-cursor-popover]");
+    const option = host.querySelector('[role="option"]');
+    expect(option?.textContent).toBe("git status");
+    // A typed "t" invalidated the live snapshot; the next one is still pending.
+    line = "$ git st";
+    await render({
+      ...shell,
+      state: undefined,
+      waiting: true,
+      preview: { prefix: "git s", suggestions: ["git status", "git stash"] },
+    });
+    expect(host.querySelector("[data-cursor-popover]")).toBe(popover);
+    expect(host.querySelector('[role="option"]')).toBe(option);
+    line = "$ git sta";
+    await render({
+      ...shell,
+      state: undefined,
+      preview: { prefix: "git s", suggestions: ["git status", "git stash"] },
+    });
+    expect(host.querySelector("[data-cursor-popover]")).toBe(popover);
+    expect(shell.accept).not.toHaveBeenCalled();
   } finally {
     await act(async () => root.unmount());
     host.remove();

@@ -154,17 +154,13 @@ export function TranslationResultDialog({
                 </div>
               ) : error ? (
                 <Alert tone="info" role="alert">
-                  {error === "gemini-account"
+                  {error === "authentication"
                     ? t(
-                        "Gemini no longer supports this account or client. Check the Gemini account in Settings > Providers, or choose another provider.",
+                        "Sign in to the selected provider in Settings > Providers, then retry translation.",
                       )
-                    : error === "authentication"
-                      ? t(
-                          "Sign in to the selected provider in Settings > Providers, then retry translation.",
-                        )
-                      : error === "timeout"
-                        ? t("The translation request timed out. Try again.")
-                        : t("Could not translate. Try again.")}
+                    : error === "timeout"
+                      ? t("The translation request timed out. Try again.")
+                      : t("Could not translate. Try again.")}
                 </Alert>
               ) : result ? (
                 <div role="status" tabIndex={0} className={styles.text}>

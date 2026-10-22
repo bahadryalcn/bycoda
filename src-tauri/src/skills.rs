@@ -307,6 +307,10 @@ pub(crate) fn list_skills_from(
     };
 
     // Highest priority first so later roots cannot replace a name.
+    // App guides the host installs come first; `.system` keeps them out of deletion.
+    if let Some(home) = home {
+        add_root(home.join(".bycoda-host/skills/.system"), "user", "bycoda");
+    }
     if let Some(project) = project {
         add_root(project.join(".agents/skills"), "project", "agents");
     }

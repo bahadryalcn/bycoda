@@ -10,6 +10,11 @@ import {
   useOpenAgentServerTerminal,
 } from "./ServersTerminalWorkspace";
 import type { ServerRecord } from "../model/serverInventory";
+import {
+  createSshMobileWorkspaceControl,
+  type SshWorkspaceReview,
+  type SshWorkspaceStatus,
+} from "../model/sshMobileWorkspaceControl";
 import { serverTerminalRestoreState } from "../model/serverTerminalRestoreState";
 vi.mock("../model/serverInventory", () => ({
   useServerInventory: () => ({ servers: [server], loaded: true, loading: false }),
@@ -43,6 +48,8 @@ vi.mock("../../terminal/ui/TerminalView", () => ({
     onSshPromptReady,
     onStartupReview,
     onReconnect,
+    onLifecycle,
+    authorizeStart,
   }: {
     id: string;
     sshConnectionId?: string;
@@ -57,6 +64,8 @@ vi.mock("../../terminal/ui/TerminalView", () => ({
     onSshPromptReady?: () => void;
     onStartupReview?: () => Promise<void>;
     onReconnect?: () => Promise<void>;
+    onLifecycle?: (state: "opened-on-computer" | "closed" | "failed") => void;
+    authorizeStart?: () => Promise<boolean>;
   }) => {
     const target =
       sshConnectionId ??
@@ -64,9 +73,21 @@ vi.mock("../../terminal/ui/TerminalView", () => ({
         ? `quick:${sshEndpoint.user ?? ""}@${sshEndpoint.host}:${sshEndpoint.port}`
         : `keygen:${keyGenerationPath}`);
     useEffect(() => {
-      events.mounted.push(target);
+      let closed = false;
+      void (async () => {
+        if (authorizeStart && !(await authorizeStart())) {
+          onLifecycle?.("failed");
+          return;
+        }
+        if (!closed) {
+          events.mounted.push(target);
+          onLifecycle?.("opened-on-computer");
+        }
+      })();
       return () => {
+        closed = true;
         events.unmounted.push(target);
+        onLifecycle?.("closed");
       };
     }, [id, target]);
     return createElement(
@@ -120,6 +141,129 @@ const server: ServerRecord = {
   sshEndpoint: { host: "example.invalid", port: 22 },
   metadata: { tags: [], favorite: false },
 };
+it("mobile review uses the canonical native form and closes its own terminal while preserving an existing desktop terminal", async () => {
+  const digest = "a".repeat(64);
+  configuration.preview.mockResolvedValue({
+    connectionId: server.id,
+    inheritance: null,
+    configuration: { endpoint: server.sshEndpoint, digest, environment: [], provenance: {} },
+  });
+  const handle = createSshMobileWorkspaceControl({
+    catalog: () => ({ ready: true, servers: [server] }),
+    preview: async () => ({ connectionId: server.id, configuration: { digest } }),
+    confirmClose: async () => true,
+  });
+  const context = {
+    actorId: "synthetic-actor",
+    environmentId: "fixture",
+    sourceSessionId: "source",
+    projectCwd: "/fixture",
+    workingCwd: "/fixture",
+    valid: () => true,
+    authorize: async () => true,
+  };
+  await act(async () =>
+    root.render(createElement(ServersTerminalWorkspace, { children: createElement(Inventory) })),
+  );
+  await act(async () =>
+    [...container.querySelectorAll("button")]
+      .find((button) => button.textContent === "Open explicit SSH")!
+      .click(),
+  );
+  const foreignId = container.querySelector("[data-terminal-id]")!.getAttribute("data-terminal-id");
+  const reviewed = (await handle(context, "ssh.workspace.review", {
+    connectionId: server.id,
+  })) as SshWorkspaceReview;
+  let pending!: Promise<unknown>;
+  await act(async () => {
+    pending = handle(context, "ssh.workspace.approve", {
+      reviewId: reviewed.reviewId,
+      requestId: "mobile",
+    });
+  });
+  expect(container.querySelectorAll("[data-terminal-id]")).toHaveLength(1);
+  expect(document.querySelector('[role="dialog"]')).not.toBeNull();
+  await act(async () =>
+    [...document.querySelectorAll('[role="dialog"] button')]
+      .find((button) => button.textContent === "Connect")!
+      .click(),
+  );
+  const opened = (await pending) as SshWorkspaceStatus;
+  expect(opened.state).toBe("opened-on-computer");
+  expect(container.querySelectorAll("[data-terminal-id]")).toHaveLength(2);
+  expect(startup.request).not.toHaveBeenCalled();
+  const close = (await handle(context, "ssh.workspace.close.review", {
+    workspaceId: opened.workspaceId,
+  })) as SshWorkspaceReview;
+  let closing!: Promise<unknown>;
+  await act(async () => {
+    closing = handle(context, "ssh.workspace.close.approve", {
+      reviewId: close.reviewId,
+      requestId: "close-mobile",
+    });
+  });
+  expect(await closing).toMatchObject({ state: "closed", terminalCount: 0 });
+  expect(container.querySelectorAll("[data-terminal-id]")).toHaveLength(1);
+  expect(container.querySelector("[data-terminal-id]")!.getAttribute("data-terminal-id")).toBe(
+    foreignId,
+  );
+});
+it("keeps the approval pending until final live authority settles and refuses revoked native connect", async () => {
+  const digest = "a".repeat(64);
+  configuration.preview.mockResolvedValue({
+    connectionId: server.id,
+    inheritance: null,
+    configuration: { endpoint: server.sshEndpoint, digest, environment: [], provenance: {} },
+  });
+  const handle = createSshMobileWorkspaceControl({
+    catalog: () => ({ ready: true, servers: [server] }),
+    preview: async () => ({ connectionId: server.id, configuration: { digest } }),
+  });
+  let authorize!: (allowed: boolean) => void;
+  const context = {
+    actorId: "synthetic-actor",
+    environmentId: "fixture",
+    sourceSessionId: "source",
+    projectCwd: "/fixture",
+    workingCwd: "/fixture",
+    valid: () => true,
+    authorize: () =>
+      new Promise<boolean>((resolve) => {
+        authorize = resolve;
+      }),
+  };
+  await act(async () =>
+    root.render(createElement(ServersTerminalWorkspace, { children: createElement(Inventory) })),
+  );
+  const review = (await handle(context, "ssh.workspace.review", {
+    connectionId: server.id,
+  })) as SshWorkspaceReview;
+  let completed = false,
+    pending!: Promise<unknown>;
+  await act(async () => {
+    pending = handle(context, "ssh.workspace.approve", {
+      reviewId: review.reviewId,
+      requestId: "delayed",
+    }).then((value) => {
+      completed = true;
+      return value;
+    });
+  });
+  await act(async () =>
+    [...document.querySelectorAll('[role="dialog"] button')]
+      .find((button) => button.textContent === "Connect")!
+      .click(),
+  );
+  expect(authorize).toBeTypeOf("function");
+  expect(completed).toBe(false);
+  expect(events.mounted).toEqual([]);
+  expect(await handle(context, "ssh.workspace.status", { requestId: "delayed" })).toMatchObject({
+    state: "opening",
+  });
+  await act(async () => authorize(false));
+  expect(await pending).toMatchObject({ state: "failed" });
+  expect(events.mounted).toEqual([]);
+});
 it("cold restore previews the current canonical target and connects a fresh shell-assisted tab only explicitly", async () => {
   serverTerminalRestoreState.initialize({
     version: 1,

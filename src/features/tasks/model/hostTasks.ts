@@ -411,7 +411,7 @@ export function parseHostTask(input: unknown): HostTaskInput {
     ...(typeof v.goalId === "string" ? { goalId: v.goalId } : {}),
     ...(typeof v.source === "string" ? { source: v.source as TaskSource } : {}),
     ...(typeof v.stewardId === "string" ? { stewardId: v.stewardId } : {}),
-    ...(Array.isArray(v.dependsOn) && v.dependsOn.length
+    ...(Array.isArray(v.dependsOn)
       ? { dependsOn: [...new Set(v.dependsOn as string[])] }
       : {}),
   };

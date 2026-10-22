@@ -278,7 +278,6 @@ describe("harness registry", () => {
     "omp",
     "fx",
     "hermes",
-    "gemini",
     "antigravity",
     "acp",
   ])(

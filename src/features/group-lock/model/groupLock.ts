@@ -95,6 +95,7 @@ let previousLock: LockSnapshot | null = null;
 const listeners = new Set<() => void>();
 let channel: BroadcastChannel | null = null;
 let lastActivityAt = Date.now();
+let privacyRevision = 0;
 
 function sameSet(a: ReadonlySet<string>, b: ReadonlySet<string>): boolean {
   if (a.size !== b.size) return false;
@@ -143,6 +144,7 @@ function currentView(): GroupLockView {
 }
 
 function invalidate() {
+  privacyRevision += 1;
   view = null;
   for (const listener of [...listeners]) listener();
 }
@@ -273,7 +275,9 @@ export function lockCooldownMs(): number {
  * be sidestepped by switching dialogs.
  */
 export async function verifyLockPassword(password: string): Promise<VerifyResult> {
-  const record = settings.record;
+  const record = settings.record ? { ...settings.record } : null;
+  const recordSnapshot = JSON.stringify(record);
+  const revision = privacyRevision;
   if (!record) return { ok: false, reason: "no-password", retryAfterMs: 0 };
   const wait = blockedForMs(readAttempts(), Date.now());
   if (wait > 0) return { ok: false, reason: "blocked", retryAfterMs: wait };
@@ -283,6 +287,10 @@ export async function verifyLockPassword(password: string): Promise<VerifyResult
   } catch {
     matches = false;
   }
+  // Hashing is asynchronous. A result for a prior record/state must neither
+  // grant access nor reset/increment the current record's attempt counter.
+  if (privacyRevision !== revision || JSON.stringify(settings.record) !== recordSnapshot)
+    return staleVerification();
   if (matches) {
     writeAttempts(NO_ATTEMPTS);
     return { ok: true };
@@ -295,17 +303,28 @@ export async function verifyLockPassword(password: string): Promise<VerifyResult
     retryAfterMs: blockedForMs(failed, Date.now()),
   };
 }
+function staleVerification(): VerifyResult {
+  return { ok: false, reason: settings.record ? "wrong" : "no-password", retryAfterMs: 0 };
+}
+function groupFingerprint(groupId: string): string | null {
+  const group = loadProjectGroups().find((value) => value.id === groupId);
+  return group ? JSON.stringify(group) : null;
+}
 
 // ---- password --------------------------------------------------------------
 
 export async function setLockPassword(password: string): Promise<void> {
+  const revision = privacyRevision; const previous = JSON.stringify(settings.record);
   const record = await createPasswordRecord(password);
+  if (privacyRevision !== revision || JSON.stringify(settings.record) !== previous) throw new Error("Privacy settings changed. Review the current state before setting a password.");
   saveSettings({ ...settings, record }, true);
   writeAttempts(NO_ATTEMPTS);
 }
 
 export async function changeLockPassword(current: string, next: string): Promise<VerifyResult> {
+  const revision = privacyRevision;
   const result = await verifyLockPassword(current);
+  if (result.ok && privacyRevision !== revision) return staleVerification();
   if (result.ok) await setLockPassword(next);
   return result;
 }
@@ -322,7 +341,9 @@ function clearPassword() {
 }
 
 export async function removeLockPassword(current: string): Promise<VerifyResult> {
+  const revision = privacyRevision;
   const result = await verifyLockPassword(current);
+  if (result.ok && privacyRevision !== revision) return staleVerification();
   if (result.ok) clearPassword();
   return result;
 }
@@ -354,7 +375,9 @@ export function hideGroup(groupId: string): boolean {
 }
 
 export async function authorizeHiddenGroups(password: string): Promise<VerifyResult> {
+  const revision = privacyRevision;
   const result = await verifyLockPassword(password);
+  if (result.ok && privacyRevision !== revision) return staleVerification();
   if (result.ok) {
     hiddenGroupsAuthorized = true;
     invalidate();
@@ -406,8 +429,11 @@ export function lockAllGroups() {
 
 /** Opens the group when the password is right, and expands it. */
 export async function unlockGroup(groupId: string, password: string): Promise<VerifyResult> {
+  const revision = privacyRevision; const group = groupFingerprint(groupId);
+  if (!group) return staleVerification();
   const result = await verifyLockPassword(password);
   if (!result.ok) return result;
+  if (privacyRevision !== revision || groupFingerprint(groupId) !== group) return staleVerification();
   const locked = currentView().lock.lockedGroupIds;
   dispatch({
     type: "unlock",
@@ -419,8 +445,11 @@ export async function unlockGroup(groupId: string, password: string): Promise<Ve
 
 /** Takes the lock off one group. Asks for the password even when it is open. */
 export async function removeGroupLock(groupId: string, password: string): Promise<VerifyResult> {
+  const revision = privacyRevision; const group = groupFingerprint(groupId);
+  if (!group) return staleVerification();
   const result = await verifyLockPassword(password);
   if (!result.ok) return result;
+  if (privacyRevision !== revision || groupFingerprint(groupId) !== group) return staleVerification();
   updateProjectGroup(groupId, ({ lockable: _lockable, ...group }) => group);
   dispatch({ type: "lock", groupIds: [groupId] });
   return result;

@@ -53,7 +53,7 @@
 }
 .usage-metrics {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 9rem), 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   border-block: 1px solid var(--color-stroke);
 }
 .usage-metrics > div {
@@ -64,6 +64,9 @@
 }
 .usage-metrics > div > button {
   justify-self: start;
+  max-inline-size: 100%;
+  white-space: normal;
+  text-align: start;
 }
 .usage-metrics strong {
   font-size: clamp(1.125rem, 2.5cqi, 1.5rem);
@@ -334,6 +337,15 @@
   }
 }
 @container (max-width: 540px) {
+  .usage-metrics > div {
+    padding: 8px 6px;
+    gap: 4px;
+  }
+  .usage-filter-panel .usage-controls {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    align-items: stretch;
+  }
   .usage-analytics-actions {
     inline-size: 100%;
   }

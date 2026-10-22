@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
-import { randomBytes } from "node:crypto";
+import { createHash, createHmac, randomBytes } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -17,6 +17,11 @@ import { RuntimeLogsService } from "./runtime-logs";
 import { HostChildBackend } from "./child-backend";
 import { HostTasks } from "./tasks";
 import { HostNotes } from "./host-notes";
+import { GenericAcpService } from "./generic-acp";
+import * as accessCenter from "./access-center";
+import { ConversationDesktopRelay } from "./conversation-tools";
+import { DevicePreviews } from "./device-preview";
+import { ProviderInboxBridge } from "./provider-inbox";
 import { configureChildBackend } from "../src/integrations/harness/core/child";
 import type { SendTurnInput } from "../src/integrations/harness/core/types";
 import type { RemoteProvider } from "../src/features/connections/model/protocol";
@@ -26,17 +31,451 @@ vi.mock("../src/integrations/harness/providers/codex/codexCatalog", () => ({
   discoverCodexModels: modelProbe,
   refreshCodexCatalog: async () => {},
 }));
-const geminiProbe = vi.hoisted(() => vi.fn());
-vi.mock("../src/integrations/harness/providers/gemini/geminiCatalog", () => ({
-  discoverGeminiModels: geminiProbe,
-  refreshGeminiCatalog: async () => {},
-  loginGemini: async () => {},
-}));
 // Catalog tests point the host at a stand-in provider CLI.
 const binaries: { codex?: string } = {};
 configureChildBackend(new HostChildBackend(binaries));
 
 const cleanups: Array<() => Promise<void>> = [];
+
+it("requires the dedicated review confirmation before queuing an exact PR review", async () => {
+  const s = await setup([]);
+  const request = vi.spyOn(ProviderInboxBridge.prototype, "request").mockReturnValue({ id: "job", state: "queued" });
+  try {
+    const input = { action: "review", projectId: s.project.id, requestId: "review-rpc", item: { provider: "github", kind: "pr", number: 7, repo: "owner/project", projectPath: s.project.cwd }, commitId: "a".repeat(40), event: "COMMENT", body: "Reviewed summary", comments: [] };
+    expect((await s.call("inbox.provider.request", { ...input, confirm: "CHANGE_PR_STATE" })).value.error).toMatch(/explicit owner/);
+    expect(request).not.toHaveBeenCalled();
+    expect((await s.call("inbox.provider.request", { ...input, confirm: "SUBMIT_PR_REVIEW" }, "invalid")).status).toBe(401);
+    expect((await s.call("inbox.provider.request", { ...input, confirm: "SUBMIT_PR_REVIEW" })).value.result).toEqual({ id: "job", state: "queued" });
+    expect(request).toHaveBeenCalledWith(expect.stringMatching(/^[a-f0-9]{64}$/), "review-rpc", expect.objectContaining({ action: "review", commitId: "a".repeat(40), body: "Reviewed summary", cwd: s.project.cwd }));
+    expect(s.send).not.toHaveBeenCalled();
+  } finally { request.mockRestore(); }
+});
+
+it("requires a dedicated owner confirmation and derives project identity for Jira board writes", async () => {
+  const s = await setup([]);
+  expect((await s.call("environment.describe")).value.result.capabilities).toContain("inbox.jiraBoard.v1");
+  const request = vi.spyOn(ProviderInboxBridge.prototype, "request").mockReturnValue({ id: "job", state: "queued" });
+  try {
+    const input = { action: "jira-board-transition", projectId: s.project.id, requestId: "jira-rpc", snapshotId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", key: "ENG-7", transitionId: "9" };
+    expect((await s.call("inbox.provider.request", { ...input, confirm: "CHANGE_PR_STATE" })).value.error).toMatch(/explicit owner/);
+    expect(request).not.toHaveBeenCalled();
+    expect((await s.call("inbox.provider.request", { ...input, confirm: "CHANGE_JIRA_BOARD" }, "invalid")).status).toBe(401);
+    expect((await s.call("inbox.provider.request", { ...input, confirm: "CHANGE_JIRA_BOARD" })).value.result).toEqual({ id: "job", state: "queued" });
+    expect(request).toHaveBeenCalledWith(expect.stringMatching(/^[a-f0-9]{64}$/), "jira-rpc", { action: "jira-board-transition", cwd: s.project.cwd, snapshotId: input.snapshotId, key: "ENG-7", transitionId: "9" });
+    expect((await s.call("inbox.provider.request", { ...input, projectId: "foreign", confirm: "CHANGE_JIRA_BOARD" })).value.error).toBeTruthy();
+    expect((await s.call("inbox.provider.request", { ...input, cwd: "/foreign", confirm: "CHANGE_JIRA_BOARD" })).value.error).toBeTruthy();
+    expect(request).toHaveBeenCalledOnce();
+    expect(s.send).not.toHaveBeenCalled();
+  } finally { request.mockRestore(); }
+});
+
+it("derives mobile preview ownership from the paired credential and project and guards service stop", async () => {
+  const s = await setup([]);
+  const job = { id: "job-id", requestId: "attempt", deviceId: "device", state: "running" as const, stages: [], verification: "launch-only" as const, updatedAt: new Date().toISOString() };
+  let owner = "";
+  const start = vi.spyOn(DevicePreviews.prototype, "start").mockImplementation((_input, currentOwner) => { owner = currentOwner; return job; });
+  const status = vi.spyOn(DevicePreviews.prototype, "mobileStatus").mockImplementation((currentOwner) => { if (currentOwner !== owner) throw new Error("PREVIEW_NOT_FOUND"); return job; });
+  const impact = vi.spyOn(DevicePreviews.prototype, "stopImpact").mockReturnValue({ activeCount: 1, owned: [], otherActiveCount: 1 });
+  const stop = vi.spyOn(DeviceHost.prototype, "stop").mockResolvedValue({ running: false, installed: true, agentInstalled: false, platform: "win32", platforms: [] });
+  const idle = vi.spyOn(DevicePreviews.prototype, "stopIdle").mockRejectedValue(new Error("PREVIEW_BUSY"));
+  try {
+    const scope = { projectId: s.project.id };
+    const input = { ...scope, requestId: "attempt", deviceId: "device", url: "exp://127.0.0.1:8081" };
+    expect((await s.call("devices.preview.mobile.start", input)).value.result.id).toBe(job.id);
+    expect(owner).toMatch(new RegExp(`^mobile:[a-f0-9]{64}:${s.project.id}$`));
+    expect(owner).not.toContain(s.first.token);
+    expect((await s.call("devices.preview.mobile.status", { ...scope, requestId: "attempt" })).value.result.id).toBe(job.id);
+    expect((await s.call("devices.preview.mobile.status", { ...scope, requestId: "attempt" }, s.second.token)).value.error).toContain("PREVIEW_NOT_FOUND");
+    const other = s.store.addProject(join(s.directory, "other"), "Other");
+    expect((await s.call("devices.preview.mobile.status", { projectId: other.id, requestId: "attempt" })).value.error).toContain("PREVIEW_NOT_FOUND");
+    expect((await s.call("devices.preview.mobile.start", { ...input, previewOwner: owner })).value.error).toBeTruthy();
+    expect((await s.call("devices.preview.mobile.start", input, "invalid")).status).toBe(401);
+    expect(start).toHaveBeenCalledOnce();
+    expect((await s.call("devices.preview.impact", scope)).value.result).toEqual({ activeCount: 1, owned: [], otherActiveCount: 1 });
+    expect((await s.call("devices.stop", scope)).value.error).toContain("PREVIEW_BUSY");
+    expect(idle).toHaveBeenCalledOnce(); expect(stop).not.toHaveBeenCalled();
+    expect(s.send).not.toHaveBeenCalled();
+  } finally { start.mockRestore(); status.mockRestore(); impact.mockRestore(); stop.mockRestore(); idle.mockRestore(); }
+});
+
+it("routes history import only through the authenticated desktop owner with frozen project and conversation identity", async () => {
+  const s = await setup();
+  expect((await s.call("environment.describe")).value.result.capabilities).toContain("history.import.desktop.v1");
+  const created = s.engine.command({ type: "create", commandId: "history-rpc-source", projectId: s.project.id, harness: "codex", model: "codex:test", runtimeMode: "supervised" });
+  const source = s.store.session(created.sessionId);
+  const relay = vi.spyOn(ConversationDesktopRelay.prototype, "call").mockResolvedValue({ state: "unknown" });
+  try {
+    const scope = { projectId: s.project.id, sessionId: created.sessionId };
+    expect((await s.call("history.import.preview", scope)).value.error).toBeUndefined();
+    expect(relay).toHaveBeenLastCalledWith("historyImport.discover", { sessionId: created.sessionId }, s.project.cwd,
+      { kind: "session", projectId: s.project.id, sessionId: created.sessionId, provider: "codex" }, expect.any(Function));
+    expect(s.store.session(created.sessionId)).toEqual(source);
+    expect((await s.call("history.import.status", { ...scope, operationId: "attempt" })).value.result).toEqual({ state: "unknown" });
+    expect(relay.mock.calls.at(-1)?.[0]).toBe("historyImport.status");
+    const authorize = relay.mock.calls.at(-1)![4]!;
+    expect(authorize()).toBe(true);
+    expect((await s.call("history.import.preview", { ...scope, projectId: "foreign" })).value.error).toBeTruthy();
+    expect((await s.call("history.import.preview", { ...scope, projectCwd: "/foreign" })).value.error).toBeTruthy();
+    expect((await s.call("history.import.commit", scope, "invalid")).status).toBe(401);
+    expect(relay).toHaveBeenCalledTimes(2);
+    s.store.revokeToken(s.first.token); expect(authorize()).toBe(false);
+    expect(s.send).not.toHaveBeenCalled();
+  } finally { relay.mockRestore(); }
+});
+
+it("routes history import to the registered source worktree and refuses unrelated checkouts", async () => {
+  const s = await setup();
+  const git = (...args: string[]) => execFileSync("git", args, { cwd: s.project.cwd });
+  git("init", "-q");
+  git("-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "--allow-empty", "-qm", "initial");
+  const checkout = join(s.directory, "history-worktree");
+  git("worktree", "add", "-qb", "history-source", checkout);
+  const opened = await s.call("commands.dispatch", {
+    type: "create", commandId: "history-worktree-source", projectId: s.project.id,
+    worktreeCwd: checkout, harness: "codex", model: "codex:test", runtimeMode: "supervised",
+  });
+  expect(opened.value.error).toBeUndefined();
+  const relay = vi.spyOn(ConversationDesktopRelay.prototype, "call").mockResolvedValue({ state: "unknown" });
+  try {
+    const scope = { projectId: s.project.id, sessionId: opened.value.result.sessionId };
+    expect((await s.call("history.import.preview", scope)).value.error).toBeUndefined();
+    expect(relay.mock.calls[0][2].replaceAll("\\", "/")).toBe(checkout.replaceAll("\\", "/"));
+    expect(relay.mock.calls[0][4]!()).toBe(true);
+    expect((await s.call("history.import.preview", { ...scope, cwd: s.project.cwd })).value.error).toBeTruthy();
+    expect((await s.call("commands.dispatch", {
+      type: "create", commandId: "unrelated-history-source", projectId: s.project.id,
+      worktreeCwd: tmpdir(), harness: "codex", model: "codex:test", runtimeMode: "supervised",
+    })).value.error).toContain("available worktree");
+    expect(relay).toHaveBeenCalledOnce();
+    expect(s.send).not.toHaveBeenCalled();
+  } finally { relay.mockRestore(); }
+});
+
+it("binds organization metadata operations to the authenticated owning conversation", async () => {
+  const s = await setup();
+  expect((await s.call("environment.describe")).value.result.capabilities).toContain("projects.organization.desktop.v1");
+  const created = s.engine.command({ type: "create", commandId: "organization-source", projectId: s.project.id, harness: "codex", model: "codex:test", runtimeMode: "supervised" });
+  const relay = vi.spyOn(ConversationDesktopRelay.prototype, "call").mockResolvedValue({ state: "unknown" });
+  const scope = { projectId: s.project.id, sessionId: created.sessionId };
+  try {
+    expect((await s.call("projects.organization.read", scope)).value.error).toBeUndefined();
+    const change = { kind: "projectName", name: "Reviewed" };
+    const patch = { ...scope, expectedRevision: "a".repeat(64), operationId: "attempt", change };
+    expect((await s.call("projects.organization.patch", patch)).value.error).toBeUndefined();
+    expect(relay).toHaveBeenLastCalledWith("organization.patch", { sessionId: scope.sessionId, expectedRevision: patch.expectedRevision, operationId: "attempt", change }, s.project.cwd,
+      { kind: "session", projectId: s.project.id, sessionId: scope.sessionId, provider: "codex" }, expect.any(Function));
+    const authorize = relay.mock.calls.at(-1)![4]!;
+    expect(authorize()).toBe(true);
+    expect((await s.call("projects.organization.patch", patch, "invalid")).status).toBe(401);
+    expect((await s.call("projects.organization.read", { ...scope, projectId: "foreign" })).value.error).toBeTruthy();
+    expect((await s.call("projects.organization.patch", { ...patch, cwd: "/foreign" })).value.error).toBeTruthy();
+    expect(relay).toHaveBeenCalledTimes(2);
+    s.store.revokeToken(s.first.token); expect(authorize()).toBe(false);
+    expect(s.send).not.toHaveBeenCalled();
+  } finally { relay.mockRestore(); }
+});
+
+it("keeps new canonical desktop preference, provider and worktree facades finite and scoped", async () => {
+  const s = await setup([]);
+  const capabilities = (await s.call("environment.describe")).value.result.capabilities;
+  for (const capability of ["preferences.desktop.v1", "providers.desktop.v1", "worktrees.removal.desktop.v1"])
+    expect(capabilities).toContain(capability);
+  const created = s.engine.command({ type: "create", commandId: "desktop-settings-source", projectId: s.project.id, harness: "codex", model: "codex:test", runtimeMode: "supervised" });
+  const scope = { projectId: s.project.id, sessionId: created.sessionId };
+  const relay = vi.spyOn(ConversationDesktopRelay.prototype, "call").mockImplementation(async (action, args) => ({ state: "unknown",
+    ...(action === "providerManagement.patch" || action === "providerManagement.status" ? { operationId: args.operationId } : {}) }));
+  const routes = [
+    ["preferences.desktop.read", "preferences.read", {}],
+    ["preferences.desktop.template.read", "preferences.templateRead", { templateId: "snippet", expectedRevision: "a".repeat(64) }],
+    ["preferences.desktop.status", "preferences.status", { operationId: "attempt" }],
+    ["preferences.desktop.patch", "preferences.patch", { operationId: "attempt", expectedRevision: "a".repeat(64), change: { kind: "templateDelete", templateId: "snippet" } }],
+    ["providers.desktop.read", "providerManagement.read", {}],
+    ["providers.desktop.status", "providerManagement.status", { operationId: "account-operation" }],
+    ["providers.desktop.patch", "providerManagement.patch", { operationId: "account-operation", expectedAccountRevision: "a".repeat(64), provider: "codex", accountId: "default", change: { kind: "default", confirm: "DEFAULT_FOR_FUTURE_SESSIONS" } }],
+  ] as const;
+  try {
+    for (const [method, action, fields] of routes) {
+      const input = { ...scope, ...fields };
+      expect((await s.call(method, input, "invalid")).status).toBe(401);
+      expect((await s.call(method, { ...input, cwd: "/injected", command: "unsafe" })).value.error).toBeTruthy();
+      const actorScoped = action === "providerManagement.patch" || action === "providerManagement.status";
+      expect((await s.call(method, input)).value.result).toEqual({ state: "unknown", ...(actorScoped ? { operationId: (fields as Record<string, unknown>).operationId } : {}) });
+      expect(relay).toHaveBeenLastCalledWith(action, { sessionId: scope.sessionId, ...fields, ...(actorScoped ? { operationId: expect.stringMatching(/^[A-Za-z0-9_-]{43}$/) } : {}) }, s.project.cwd,
+        { kind: "session", projectId: s.project.id, sessionId: scope.sessionId, provider: "codex" }, expect.any(Function));
+    }
+    expect(relay).toHaveBeenCalledTimes(routes.length);
+    expect(s.send).not.toHaveBeenCalled();
+  } finally { relay.mockRestore(); }
+});
+
+it("binds a native worktree review and status receipt to its paired device without exposing the host signing key", async () => {
+  const s = await setup([]);
+  const created = s.engine.command({ type: "create", commandId: "worktree-device-source", projectId: s.project.id, harness: "codex", model: "codex:test", runtimeMode: "supervised" });
+  const scope = { projectId: s.project.id, sessionId: created.sessionId };
+  const nativeId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+  const expiresAt = Date.now() + 120_000;
+  const path = join(s.project.cwd, "checkout");
+  const receipts = new Map<string, unknown>();
+  const relay = vi.spyOn(ConversationDesktopRelay.prototype, "call").mockImplementation(async (action, args) => {
+    if (action === "worktrees.removal.review") return { reviewId: nativeId, expiresAt, path };
+    if (action === "worktrees.removal.approve") {
+      expect(args.reviewId).toBe(nativeId);
+      receipts.set(String(args.requestId), { state: "applied", path });
+    }
+    return receipts.get(String(args.requestId)) ?? { state: "unknown" };
+  });
+  try {
+    const reviewed = (await s.call("worktrees.removal.review", { ...scope, path })).value.result;
+    expect(reviewed.reviewId).not.toBe(nativeId);
+    expect(reviewed.reviewId.length).toBeLessThanOrEqual(200);
+    const input = { ...scope, reviewId: reviewed.reviewId, requestId: "phone-operation" };
+    expect((await s.call("worktrees.removal.approve", input, s.second.token)).value.error).toMatch(/does not belong/);
+    const actorHash = createHash("sha256").update(s.second.token).digest("hex");
+    const forgedMac = createHmac("sha256", s.second.token).update(JSON.stringify(["bycoda:worktree-removal:v1", actorHash, s.store.environmentId, scope.projectId, scope.sessionId, "review", nativeId, expiresAt])).digest("base64url");
+    const forged = `v1.${nativeId}.${expiresAt}.${forgedMac}`;
+    expect((await s.call("worktrees.removal.approve", { ...input, reviewId: forged }, s.second.token)).value.error).toMatch(/does not belong/);
+    expect((await s.call("worktrees.removal.approve", { ...input, reviewId: nativeId })).value.error).toBeTruthy();
+    expect(relay).toHaveBeenCalledOnce();
+    expect((await s.call("worktrees.removal.approve", input)).value.result).toEqual({ state: "applied", path });
+    const firstNativeRequest = relay.mock.calls.at(-1)![1].requestId;
+    expect(firstNativeRequest).not.toBe("phone-operation");
+    expect((await s.call("worktrees.removal.status", { ...scope, requestId: "phone-operation" })).value.result).toEqual({ state: "applied", path });
+    expect((await s.call("worktrees.removal.status", { ...scope, requestId: "phone-operation" }, s.second.token)).value.result).toEqual({ state: "unknown" });
+    expect(relay.mock.calls.at(-1)![1].requestId).not.toBe(firstNativeRequest);
+    expect(JSON.stringify(reviewed)).not.toContain(s.first.token);
+    expect(s.send).not.toHaveBeenCalled();
+  } finally { relay.mockRestore(); }
+});
+
+it("isolates SSH approvals, workspace handles and uncertain receipts per actor and source", async () => {
+  const s = await setup([]);
+  const created = s.engine.command({ type: "create", commandId: "ssh-owned-source", projectId: s.project.id, harness: "codex", model: "codex:test", runtimeMode: "supervised" });
+  const scope = { projectId: s.project.id, sessionId: created.sessionId };
+  const reviewId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+  const workspaceId = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+  const receipts = new Map<string, unknown>();
+  const relay = vi.spyOn(ConversationDesktopRelay.prototype, "call").mockImplementation(async (action, args) => {
+    expect(args.actorId).toMatch(/^[A-Za-z0-9_-]{43}$/);
+    if (action === "ssh.workspace.review" || action === "ssh.workspace.close.review") return { reviewId, expiresAt: Date.now() + 60_000, ...(action.includes("close") ? { workspaceId } : {}) };
+    if (action === "ssh.workspace.approve") {
+      expect(args.reviewId).toBe(reviewId);
+      receipts.set(String(args.actorId) + args.requestId, { state: "opening", workspaceId });
+    }
+    if (args.workspaceId) { expect(args.workspaceId).toBe(workspaceId); return { state: "opened-on-computer", workspaceId }; }
+    return receipts.get(String(args.actorId) + args.requestId) ?? { state: "unknown" };
+  });
+  try {
+    expect((await s.call("ssh.workspace.review", { ...scope, connectionId: "saved" }, "invalid")).status).toBe(401);
+    const review = (await s.call("ssh.workspace.review", { ...scope, connectionId: "saved" })).value.result;
+    const approve = { ...scope, reviewId: review.reviewId, requestId: "one-open" };
+    expect((await s.call("ssh.workspace.approve", approve, s.second.token)).value.error).toBeTruthy();
+    expect((await s.call("ssh.workspace.approve", { ...approve, actorId: "spoof" })).value.error).toBeTruthy();
+    expect(relay).toHaveBeenCalledOnce();
+    const opening = (await s.call("ssh.workspace.approve", approve)).value.result;
+    expect(opening.workspaceId).not.toBe(workspaceId);
+    expect((await s.call("ssh.workspace.status", { ...scope, workspaceId: opening.workspaceId }, s.second.token)).value.error).toBeTruthy();
+    expect((await s.call("ssh.workspace.status", { ...scope, requestId: "one-open" }, s.second.token)).value.result).toEqual({ state: "unknown" });
+    expect((await s.call("ssh.workspace.status", { ...scope, requestId: "one-open" })).value.result).toEqual(opening);
+    expect((await s.call("ssh.workspace.status", { ...scope, workspaceId: opening.workspaceId })).value.result.state).toBe("opened-on-computer");
+    expect((await s.call("ssh.workspace.status", { ...scope, workspaceId: opening.workspaceId, requestId: "one-open" })).value.error).toMatch(/exactly one/);
+    const close = (await s.call("ssh.workspace.close.review", { ...scope, workspaceId: opening.workspaceId })).value.result;
+    expect(close.workspaceId).toBe(opening.workspaceId);
+    expect(close.reviewId).not.toBe(reviewId);
+    expect(s.send).not.toHaveBeenCalled();
+  } finally { relay.mockRestore(); }
+});
+
+it("seals fresh owned PTY identifiers by role and injects actor identity only after public validation", async () => {
+  const s = await setup([]);
+  const created = s.engine.command({ type: "create", commandId: "pty-owned-source", projectId: s.project.id, harness: "codex", model: "codex:test", runtimeMode: "supervised" });
+  const scope = { projectId: s.project.id, sessionId: created.sessionId };
+  const terminalId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+  const epoch = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+  const leaseId = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
+  const terminal = { terminalId, epoch, state: "running" };
+  let ownerActor: unknown;
+  let createRequest: unknown;
+  const createdLease = { terminal, leaseId, expiresAt: Date.now() + 30_000 };
+  const relay = vi.spyOn(ConversationDesktopRelay.prototype, "call").mockImplementation(async (action, args) => {
+    expect(args.actorId).toMatch(/^[A-Za-z0-9_-]{43}$/);
+    if (action === "ptyMobile.create") { ownerActor = args.actorId; createRequest = args.requestId; expect(args.requestId).not.toBe("new-pty"); return createdLease; }
+    if (action === "ptyMobile.status" && args.requestId) return args.actorId === ownerActor && args.requestId === createRequest ? createdLease : { state: "unknown" };
+    if (action === "ptyMobile.list") return { terminals: args.actorId === ownerActor ? [terminal] : [] };
+    expect(args.terminalId).toBe(terminalId);
+    expect(args.epoch).toBe(epoch);
+    if (args.leaseId) expect(args.leaseId).toBe(leaseId);
+    if (action === "ptyMobile.read") return { terminalId, epoch, dataBase64: "YQ==", after: 0, next: 1 };
+    return { accepted: true };
+  });
+  try {
+    expect((await s.call("terminals.pty.desktop.create", { ...scope, requestId: "new-pty", cols: 80, rows: 24 }, "invalid")).status).toBe(401);
+    const lease = (await s.call("terminals.pty.desktop.create", { ...scope, requestId: "new-pty", cols: 80, rows: 24 })).value.result;
+    expect(lease.terminal.terminalId).not.toBe(terminalId);
+    expect((await s.call("terminals.pty.desktop.status", { ...scope, requestId: "new-pty" })).value.result).toEqual(lease);
+    expect((await s.call("terminals.pty.desktop.status", { ...scope, requestId: "new-pty" }, s.second.token)).value.result).toEqual({ state: "unknown" });
+    expect((await s.call("terminals.pty.desktop.status", { ...scope, requestId: "new-pty", terminalId: lease.terminal.terminalId })).value.error).toBeTruthy();
+    const input = { ...scope, terminalId: lease.terminal.terminalId, epoch: lease.terminal.epoch, leaseId: lease.leaseId, inputSequence: 1, dataBase64: "YQ==" };
+    for (const invalid of [{ ...input, actorId: "spoof" }, { ...input, epoch: input.terminalId }, { ...input, terminalId }])
+      expect((await s.call("terminals.pty.desktop.write", invalid)).value.error).toBeTruthy();
+    expect((await s.call("terminals.pty.desktop.write", input, s.second.token)).value.error).toBeTruthy();
+    expect(relay).toHaveBeenCalledTimes(3);
+    expect((await s.call("terminals.pty.desktop.write", input)).value.result).toEqual({ accepted: true });
+    const listed = (await s.call("terminals.pty.desktop.list", scope)).value.result.terminals;
+    expect(listed[0]).toEqual(lease.terminal);
+    expect((await s.call("terminals.pty.desktop.list", scope, s.second.token)).value.result.terminals).toEqual([]);
+    const read = (await s.call("terminals.pty.desktop.read", { ...scope, terminalId: input.terminalId, epoch: input.epoch, after: 0 })).value.result;
+    expect(read.terminalId).toBe(input.terminalId);
+    expect(read.dataBase64).toBe("YQ==");
+    expect(s.send).not.toHaveBeenCalled();
+  } finally { relay.mockRestore(); }
+});
+
+it("authenticates exact native pre-effect authority checks without accepting a caller-selected owner", async () => {
+  const s = await setup([]);
+  const authorize = vi.spyOn(ConversationDesktopRelay.prototype, "authorize").mockReturnValue({ authorized: false });
+  try {
+    const input = { id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", action: "ssh.workspace.approve" };
+    expect((await s.call("conversation.desktop.authorize", input, "invalid")).status).toBe(401);
+    expect((await s.call("conversation.desktop.authorize", { ...input, owner: "foreign" })).value.error).toBeTruthy();
+    expect((await s.call("conversation.desktop.authorize", { ...input, action: "ptyMobile.list" })).value.error).toBeTruthy();
+    expect(authorize).not.toHaveBeenCalled();
+    expect((await s.call("conversation.desktop.authorize", input, s.second.token)).value.result).toEqual({ authorized: false });
+    expect(authorize).toHaveBeenCalledWith(input.id, input.action, createHash("sha256").update(s.second.token).digest("hex"));
+    for (const action of ["ssh.workspace.close.approve", "ptyMobile.create", "ptyMobile.attach", "ptyMobile.write", "ptyMobile.resize", "ptyMobile.detach", "ptyMobile.close"])
+      expect((await s.call("conversation.desktop.authorize", { ...input, action }, s.second.token)).value.result).toEqual({ authorized: false });
+    expect(s.send).not.toHaveBeenCalled();
+  } finally { authorize.mockRestore(); }
+});
+
+it("partitions provider metadata and quota receipts without leaking internal operation identities", async () => {
+  const s = await setup([]);
+  const created = s.engine.command({ type: "create", commandId: "account-owned-source", projectId: s.project.id, harness: "codex", model: "codex:test", runtimeMode: "supervised" });
+  const scope = { projectId: s.project.id, sessionId: created.sessionId };
+  const receipts = new Map<string, unknown>();
+  const relay = vi.spyOn(ConversationDesktopRelay.prototype, "call").mockImplementation(async (action, args) => {
+    expect(args.operationId).toMatch(/^[A-Za-z0-9_-]{43}$/);
+    if (action !== "providerManagement.status") receipts.set(String(args.operationId), { state: "applied", operationId: args.operationId, atomic: false });
+    return receipts.get(String(args.operationId)) ?? { state: "unknown", operationId: args.operationId, atomic: false };
+  });
+  try {
+    const identity = { ...scope, operationId: "phone-account-op" };
+    const patch = { ...identity, expectedAccountRevision: "revision", provider: "claude", accountId: "profile", change: { kind: "rename", label: "Work" } };
+    expect((await s.call("providers.desktop.patch", patch, "invalid")).status).toBe(401);
+    const applied = { state: "applied", operationId: identity.operationId, atomic: false };
+    expect((await s.call("providers.desktop.patch", patch)).value.result).toEqual(applied);
+    expect((await s.call("providers.desktop.status", identity)).value.result).toEqual(applied);
+    expect((await s.call("providers.desktop.status", identity, s.second.token)).value.result).toEqual({ ...applied, state: "unknown" });
+    expect((await s.call("providers.desktop.quota.refresh", { ...identity, operationId: "quota-once", expectedAccountRevision: "revision", provider: "claude", accountId: "profile", confirm: "REFRESH_PROVIDER_QUOTA" })).value.result.operationId).toBe("quota-once");
+    expect((await s.call("providers.desktop.patch", { ...patch, cwd: "foreign" })).value.error).toBeTruthy();
+    expect(s.send).not.toHaveBeenCalled();
+  } finally { relay.mockRestore(); }
+});
+
+it("authenticates reviewed social policy updates without enabling sends or creating work", async () => {
+  const s = await setup();
+  expect((await s.call("environment.describe")).value.result.capabilities).toContain("social.policy.reviewed.v1");
+  const expectedPolicies = (await s.call("social.request", { action: "policy.get", input: {} })).value.result;
+  const input = { policies: { global: { maxContentCharacters: 200 }, platforms: {} }, expectedPolicies, confirm: "UPDATE_SOCIAL_POLICY" };
+  expect((await s.call("social.request", { action: "policy.saveReviewed", input }, "invalid")).status).toBe(401);
+  expect((await s.call("social.request", { action: "policy.saveReviewed", input: { ...input, confirm: "SEND" } })).value.error).toMatch(/Confirm/);
+  expect((await s.call("social.request", { action: "policy.saveReviewed", input })).value.result).toEqual(input.policies);
+  expect((await s.call("social.request", { action: "policy.saveReviewed", input })).value.error).toMatch(/changed/);
+  const snapshot = (await s.call("social.request", { action: "snapshot", input: {} })).value.result;
+  expect(snapshot.sendingEnabled).toBe(false);
+  expect(snapshot.jobs).toEqual([]);
+  expect(s.send).not.toHaveBeenCalled();
+});
+
+it("validates note context before special-command side effects and sends only an explicit authenticated request", async () => {
+  const s = await setup();
+  const created = s.engine.command({ type: "create", commandId: "note-rpc-source", projectId: s.project.id, harness: "codex", model: "codex:test", runtimeMode: "supervised" });
+  const noteCard = { id: "reviewed-note", slug: "review", title: "Review", body: "Exact note snapshot" };
+  const source = s.store.session(created.sessionId);
+  const command = { type: "send", commandId: "note-rpc-send", sessionId: created.sessionId, text: "Review this", noteCard };
+  expect((await s.call("environment.describe")).value.result.capabilities).toContain("sessions.noteContext.v1");
+  expect((await s.call("commands.dispatch", { ...command, text: "/clear" })).value.error).toMatch(/regular message/);
+  expect(s.store.session(created.sessionId)).toEqual(source);
+  expect((await s.call("commands.dispatch", command, "invalid")).status).toBe(401);
+  const response = await s.call("commands.dispatch", command);
+  expect(response.value.error).toBeUndefined();
+  expect((await s.call("commands.dispatch", command)).value.result).toEqual(response.value.result);
+  await vi.waitFor(() => expect(s.send).toHaveBeenCalledOnce());
+  expect(s.turn().text).toContain("Exact note snapshot");
+  const user = s.store.session(created.sessionId).session.blocks.find((block) => block.id === command.commandId)!;
+  expect(user.noteCard).toEqual({ id: "reviewed-note", slug: "review", title: "Review" });
+  expect(JSON.stringify(user)).not.toContain("Exact note snapshot");
+  s.finish();
+});
+
+it("scopes access-center device identity and revocation to authenticated paired devices", async () => {
+  const s = await setup([]);
+  const descriptor = (await s.call("environment.describe")).value.result;
+  expect(descriptor.capabilities).toContain("host.access.read");
+  expect(descriptor.capabilities).toContain("devices.revokeOther");
+  const read = vi.spyOn(accessCenter, "readHostAccess").mockImplementation(async (environmentId, dependencies) => ({ environmentId, sampledAt: 1, ...dependencies.devices(), lan: { state: "unavailable" }, privateNetwork: { state: "unavailable" }, tunnels: null }));
+  try {
+    const report = (await s.call("host.access.read")).value.result;
+    expect(report.devices).toHaveLength(2);
+    expect(report.devices[0]).toEqual({ id: s.first.id, name: "Laptop", isCurrent: true });
+    expect(JSON.stringify(report)).not.toContain(s.second.token);
+    expect(JSON.stringify(report)).not.toContain('"hash"');
+    expect((await s.call("devices.revokeOther", { id: s.first.id })).value.error).toMatch(/revoke-self/);
+    expect((await s.call("devices.revokeOther", { id: s.second.id }, "invalid")).status).toBe(401);
+    expect((await s.call("devices.revokeOther", { id: s.second.id })).value.result).toEqual({ revoked: true });
+    expect((await s.call("host.access.read", {}, s.second.token)).status).toBe(401);
+    expect((await s.call("host.access.read")).value.result.devices).toHaveLength(1);
+    expect(s.send).not.toHaveBeenCalled();
+  } finally { read.mockRestore(); }
+});
+
+it("exposes a safe authenticated provider center and applies only reviewed ACP metadata", async () => {
+  const s = await setup([]);
+  const center = { revision: "a".repeat(64), agents: [{ id: "agent", name: "Agent", argumentCount: 1, environmentKeyCount: 1 }] };
+  const read = vi.spyOn(GenericAcpService.prototype, "center").mockResolvedValue(center);
+  const patch = vi.spyOn(GenericAcpService.prototype, "patchMetadata").mockResolvedValue(undefined);
+  try {
+    const descriptor = (await s.call("environment.describe")).value.result;
+    expect(descriptor.capabilities).toContain("providers.center.read");
+    expect(descriptor.capabilities).toContain("providers.acp.patchMetadata");
+    expect((await s.call("providers.center.read")).value.result).toEqual({ environmentId: s.store.environmentId, sampledAt: expect.any(Number), providers: [], acp: center });
+    const update = { id: "agent", name: "Reviewed", expectedRevision: center.revision, contextWindow: 4096 };
+    expect((await s.call("providers.acp.patchMetadata", update)).value.result).toBeNull();
+    expect(patch).toHaveBeenCalledExactlyOnceWith(update);
+    expect((await s.call("providers.center.read", {}, "invalid")).status).toBe(401);
+    expect((await s.call("providers.acp.patchMetadata", update, "invalid")).status).toBe(401);
+    expect(read).toHaveBeenCalledOnce();
+    expect(patch).toHaveBeenCalledOnce();
+    expect(s.send).not.toHaveBeenCalled();
+  } finally { read.mockRestore(); patch.mockRestore(); }
+});
+
+it("binds contextual RPC creation to the reviewed source and reconciles the original receipt after source changes", async () => {
+  const s = await setup(["codex", "claude"], true);
+  const created = s.engine.command({ type: "create", commandId: "context-rpc-source", projectId: s.project.id, harness: "codex", model: "codex:test", runtimeMode: "supervised" });
+  s.engine.command({ type: "send", commandId: "context-rpc-turn", sessionId: created.sessionId, text: "Review search" });
+  await vi.waitFor(() => expect(s.send).toHaveBeenCalledOnce());
+  s.turn().onEvent({ type: "message.delta", text: "Search review complete." });
+  s.finish();
+  await vi.waitFor(() => expect(s.store.session(created.sessionId).status).toBe("idle"));
+  const source = s.store.session(created.sessionId);
+  const reply = source.session.blocks.find((block) => block.role === "assistant")!;
+  const input = { sessionId: created.sessionId, sourceBlockId: reply.id, expectedRevision: source.revision, mode: "handoff", harness: "claude", model: "claude:test", modelSettings: {} };
+  const response = await s.call("sessions.contextual.preview", input);
+  expect(response.value.error).toBeUndefined();
+  const preview = response.value.result;
+  expect(preview.contextText).toContain("Search review complete.");
+  expect(s.store.session(created.sessionId)).toEqual(source);
+  expect((await s.call("sessions.contextual.preview", input, "invalid")).status).toBe(401);
+  const command = { ...input, type: "contextual", commandId: "context-rpc-handoff", previewDigest: preview.digest };
+  expect((await s.call("commands.dispatch", { ...command, model: "changed" })).value.error).toMatch(/context changed/);
+  const receipt = (await s.call("commands.dispatch", command)).value.result;
+  expect(receipt.sessionId).not.toBe(created.sessionId);
+  expect(s.store.session(receipt.sessionId).status).toBe("idle");
+  s.engine.updateSession(created.sessionId, { title: "Changed source" });
+  expect((await s.call("commands.dispatch", command)).value.result).toEqual(receipt);
+  expect((await s.call("commands.dispatch", { ...command, commandId: "stale-context-rpc" })).value.error).toMatch(/source conversation changed/);
+  expect(s.send).toHaveBeenCalledOnce();
+});
 
 it("previews automation schedules over authenticated RPC without saving or running work", async () => {
   const s = await setup();
@@ -53,6 +492,45 @@ it("previews automation schedules over authenticated RPC without saving or runni
 });
 afterEach(async () => {
   for (const cleanup of cleanups.splice(0)) await cleanup();
+});
+
+it("scopes note reads to the authoritative session before accessing notes", async () => {
+  const s = await setup();
+  const created = s.engine.command({ type: "create", commandId: "notes-session", projectId: s.project.id, harness: "codex", model: "gpt", runtimeMode: "supervised" });
+  const list = vi.spyOn(HostNotes.prototype, "list").mockReturnValue({ notes: [], total: 0 });
+  const get = vi.spyOn(HostNotes.prototype, "get").mockReturnValue({ id: "foreign", slug: "foreign", title: "Foreign", body: "body", tags: [], sourceSessionId: "another", slugPending: false, createdAt: 1, updatedAt: 1 });
+  try {
+    expect((await s.call("notes.list", { projectId: s.project.id, sessionId: created.sessionId })).value.result).toEqual({ notes: [], total: 0 });
+    expect(list).toHaveBeenCalledExactlyOnceWith(undefined, created.sessionId);
+    expect((await s.call("notes.list", { projectId: "another-project", sessionId: created.sessionId })).value.error).toMatch(/another project/);
+    expect((await s.call("notes.list", { sessionId: "missing-session" })).value.error).toBeTruthy();
+    expect(list).toHaveBeenCalledTimes(1);
+    expect((await s.call("notes.get", { id: "foreign", projectId: s.project.id, sessionId: created.sessionId })).value.error).toMatch(/another session/);
+    expect(s.send).not.toHaveBeenCalled();
+  } finally { list.mockRestore(); get.mockRestore(); }
+});
+
+it("serves bounded session usage over authenticated RPC without a provider call", async () => {
+  const s = await setup();
+  expect((await s.call("environment.describe")).value.result.capabilities).toContain("usage.sessions.read");
+  const params = { projectId: s.project.id, sinceMs: 100, untilMs: 200, limit: 10 };
+  expect((await s.call("usage.sessions.read", params)).value.result).toMatchObject({
+    environmentId: s.store.environmentId, projectId: s.project.id, scope: "host-observed-sessions",
+    window: { start: 100, end: 200, timeZone: "UTC", attribution: "turn-start" }, rows: [], nextCursor: null,
+  });
+  expect((await s.call("usage.sessions.read", { ...params, projectId: "foreign-project" })).value.error).toBeTruthy();
+  expect((await s.call("usage.sessions.read", { ...params, untilMs: 100 })).value.error).toBeTruthy();
+  expect((await s.call("usage.sessions.read", params, "invalid-device-token")).status).toBe(401);
+  expect(s.send).not.toHaveBeenCalled();
+});
+
+it("advertises individual Claude stopping only with an installed provider hook", async () => {
+  const s = await setup(["codex", "claude"]);
+  expect((await s.call("environment.describe")).value.result.capabilities).not.toContain("sessions.stopItem.claude");
+  const supported = vi.spyOn(s.engine, "supportsItemStop").mockImplementation((provider) => provider === "claude");
+  try {
+    expect((await s.call("environment.describe")).value.result.capabilities).toContain("sessions.stopItem.claude");
+  } finally { supported.mockRestore(); }
 });
 
 describe("scoped Conversation Tools RPC", () => {
@@ -149,6 +627,38 @@ describe("scoped Conversation Tools RPC", () => {
       s.call("conversation.tools.call", { action, input }, grant.token);
     return { ...s, created, grant, tool };
   }
+  it("routes the expanded project catalog through scoped RPC", async () => {
+    const s = await sessionTools();
+    writeFileSync(join(s.project.cwd, "mcp-parity.txt"), "api_key=private-value\nhello");
+    const catalog = (await s.tool("tools.list")).value.result.tools;
+    for (const action of ["files.read", "git.index", "crews.agents.list", "servers.list", "goals.list", "providers.list", "checkpoints.status"])
+      expect(catalog.some((tool: { action: string }) => tool.action === action)).toBe(true);
+    expect((await s.tool("files.read", { path: "mcp-parity.txt" })).value.result.text).toBe("api_key=[REDACTED]\nhello");
+    expect((await s.tool("files.read", { path: "../outside" })).value.error).toBeTruthy();
+    expect((await s.tool("files.read", { path: "mcp-parity.txt", cwd: "/other" })).value.error).toBeTruthy();
+    expect((await s.tool("providers.list")).value.result.providers).toContain("codex");
+    expect((await s.tool("goals.list")).value.result.items).toEqual([]);
+    expect((await s.tool("stewards.list")).value.result.items).toEqual([]);
+    expect((await s.tool("automations.preview", { scheduleKind: "daily" })).value.result.nextRunAt).toEqual(expect.any(Number));
+    expect((await s.tool("usage.sessions.read", { sinceMs: 100, untilMs: 200 })).value.result.projectId).toBe(s.project.id);
+    expect((await s.tool("crews.agents.list", { limit: 1 })).value.result.items.length).toBeLessThanOrEqual(1);
+    expect((await s.tool("checkpoints.status", { sessionId: "foreign" })).value.error).toBeTruthy();
+    expect((await s.tool("devServers.logs", { id: "foreign" })).value.error).toBeTruthy();
+    expect((await s.tool("devServers.openExternal", { id: "foreign", port: 5173 })).value.error).toBeTruthy();
+    expect(s.send).not.toHaveBeenCalled();
+  });
+  it("routes task dependencies, evidence and queue ordering without starting work", async () => {
+    const s = await sessionTools();
+    const first = (await s.tool("tasks.create", { taskId: "dependency", title: "First", prompt: "first" })).value.result;
+    const second = (await s.tool("tasks.create", { taskId: "dependent", title: "Second", prompt: "second", dependsOn: [first.id], verifyCommand: "pnpm test" })).value.result;
+    expect(second.dependsOn).toEqual([first.id]);
+    expect((await s.tool("tasks.dependencies.list", { taskId: second.id })).value.result.blockingCount).toBe(1);
+    expect((await s.tool("tasks.artifacts.list", { taskId: second.id })).value.result.items).toEqual([]);
+    expect((await s.tool("tasks.update", { taskId: second.id, dependsOn: [], verifyCommand: "" })).value.result.dependsOn).toEqual([]);
+    expect((await s.tool("tasks.update", { taskId: second.id, dependsOn: ["foreign"] })).value.error).toBeTruthy();
+    expect((await s.tool("tasks.reorder", { order: [{ taskId: first.id, expectedUpdatedAt: first.updatedAt }] })).value.error).toBeUndefined();
+    expect(s.send).not.toHaveBeenCalled();
+  });
   it("allows paired owner browser takeover while denying takeover by conversation tools", async () => {
     const s = await sessionTools();
     const agent = (await s.tool("browser.claim")).value.result;
@@ -536,7 +1046,7 @@ describe("conversation browser runtime", () => {
   });
 });
 
-async function setup(providers: RemoteProvider[] = ["codex"]) {
+async function setup(providers: RemoteProvider[] = ["codex"], includeClaude = false) {
   const directory = mkdtempSync(join(tmpdir(), "bycoda-server-test-"));
   const store = new HostStore(join(directory, "host.db"));
   let turn: SendTurnInput | undefined;
@@ -548,6 +1058,7 @@ async function setup(providers: RemoteProvider[] = ["codex"]) {
     });
   });
   const engine = new HostEngine(store, {
+    ...(includeClaude ? { claude: { send, stop: async () => finish(), cancel: async () => finish(), bind: () => {}, approve: () => {}, answer: () => {} } } : {}),
     codex: {
       send,
       stop: async () => finish(),
@@ -1593,14 +2104,6 @@ describe("remote host API", () => {
     const second = await s.call("models.list", { projectId: s.project.id });
     expect(second.value.result.models.codex).toEqual([{ id: "codex:test", name: "Test" }]);
     expect(modelProbe).toHaveBeenCalledTimes(2);
-  });
-  it("does not spawn legacy Gemini CLI for model discovery without Gemini sessions", async () => {
-    const s = await setup(["codex", "gemini"]);
-    modelProbe.mockResolvedValueOnce([{ id: "codex:test", name: "Test" }]);
-    const result = (await s.call("models.list", { projectId: s.project.id })).value.result;
-    expect(result.models.codex).toEqual([{ id: "codex:test", name: "Test" }]);
-    expect(result.models.gemini).toBeUndefined();
-    expect(geminiProbe).not.toHaveBeenCalled();
   });
   it("advertises newer providers only to desktops that request them", async () => {
     const s = await setup(["codex", "cursor"]);

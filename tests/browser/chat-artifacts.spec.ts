@@ -88,6 +88,23 @@ for (const layout of ["chat", "full"] as const) {
         const longBox = (await long.boundingBox())!;
         const row = (await page.locator('[data-prompt-anchor="short-user"]').boundingBox())!;
         expect(shortBox.width).toBeLessThan(130);
+        await short.hover();
+        const actions = page.locator('[data-prompt-anchor="short-user"] .user-message-actions');
+        await expect(actions).toHaveCSS("opacity", "1");
+        const geometry = await actions.evaluate((node) => {
+          const bounds = node.getBoundingClientRect();
+          const children = [...node.children].map((child) => child.getBoundingClientRect());
+          return {
+            left: bounds.left,
+            right: bounds.right,
+            oneLine: children.every(
+              (child) => child.top < children[0].bottom && child.bottom > children[0].top,
+            ),
+          };
+        });
+        expect(geometry.oneLine).toBe(true);
+        expect(geometry.left).toBeGreaterThanOrEqual(row.x);
+        expect(geometry.right).toBeLessThanOrEqual(row.x + row.width);
         expect(shortBox.x + shortBox.width).toBeCloseTo(row.x + row.width - 16, 0);
         expect(longBox.x + longBox.width).toBeCloseTo(shortBox.x + shortBox.width, 0);
         expect(longBox.width).toBeGreaterThan(shortBox.width);

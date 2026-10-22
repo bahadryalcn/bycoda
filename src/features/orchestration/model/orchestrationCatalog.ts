@@ -11,9 +11,7 @@ import { validateOrchestrationSettings } from "./orchestrationPlan";
 export async function discoverOrchestrationSettings() {
   await probeHarnessAvailability();
   const installed = HARNESSES.filter(isHarnessAvailable);
-  // Legacy Gemini CLI can open a browser sign-in from discovery; its built-in
-  // configured-model entry stays selectable without spawning it.
-  await refreshHarnessCatalogs(installed.filter((harness) => harness !== "gemini"));
+  await refreshHarnessCatalogs(installed);
   return validateOrchestrationSettings({
     maxWorkers: 2,
     choices: installed.filter(isHarnessAvailable).flatMap((harness) =>

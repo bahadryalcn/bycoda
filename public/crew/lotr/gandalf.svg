@@ -1,0 +1,78 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 240" fill="none">
+  <defs>
+    <linearGradient id="robe" x1="50" y1="96" x2="112" y2="226" gradientUnits="userSpaceOnUse"><stop stop-color="#656a7c"/><stop offset="1" stop-color="#3a3e4d"/></linearGradient>
+    <linearGradient id="cloak" x1="40" y1="96" x2="120" y2="216" gradientUnits="userSpaceOnUse"><stop stop-color="#4c5062"/><stop offset="1" stop-color="#2b2e3b"/></linearGradient>
+    <linearGradient id="hat" x1="60" y1="14" x2="100" y2="56" gradientUnits="userSpaceOnUse"><stop stop-color="#8a8fa4"/><stop offset="1" stop-color="#585d70"/></linearGradient>
+    <linearGradient id="beard" x1="64" y1="70" x2="96" y2="120" gradientUnits="userSpaceOnUse"><stop stop-color="#f1f2f6"/><stop offset="1" stop-color="#b3b6c2"/></linearGradient>
+    <linearGradient id="skin" x1="66" y1="54" x2="94" y2="82" gradientUnits="userSpaceOnUse"><stop stop-color="#ffdcb4"/><stop offset="1" stop-color="#d9a37c"/></linearGradient>
+    <radialGradient id="burst"><stop stop-color="#ffffff"/><stop offset=".45" stop-color="#bfe4ff"/><stop offset="1" stop-color="#7cb8ff" stop-opacity="0"/></radialGradient>
+  </defs>
+  <g stroke="#232733" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+    <g data-part="cape" data-pivot-x="80" data-pivot-y="96">
+      <path d="M58 96Q80 88 102 96L122 214Q80 224 38 214Z" fill="url(#cloak)"/>
+      <path d="M50 150L46 208M110 150L114 208" stroke="#1e212b" stroke-width="1"/>
+    </g>
+    <g data-part="body">
+      <path d="M58 214L56 226H72L74 214M86 214L88 226H106L102 214" fill="#4a3322"/>
+      <path d="M58 220Q50 222 52 228H73L74 220M102 220Q110 222 108 228H87L86 220" fill="#5a3f2a"/>
+      <path d="M60 94Q80 86 100 94L108 128L116 222Q80 232 44 222L52 128Z" fill="url(#robe)"/>
+      <path d="M66 92L80 112L94 92L90 90L80 100L70 90Z" fill="#2b2e3b" stroke="none"/>
+      <path d="M80 112L78 220M62 150L56 218M98 150L104 218" stroke="#2f3341" stroke-width="1"/>
+      <path d="M53 138H107L106 146H54Z" fill="#6a4a2e"/>
+      <rect x="74" y="136.5" width="12" height="11" rx="2" fill="#a89a74"/><rect x="77.5" y="140" width="5" height="4" fill="#4a3a28" stroke="none"/>
+      <path d="M92 146L94 172L97 166L98 146Z" fill="#6a4a2e" stroke-width="1.2"/>
+      <path d="M54 96Q80 82 106 96Q104 108 98 112L80 102L62 112Q56 108 54 96Z" fill="#555a6d"/>
+    </g>
+    <g data-part="arm-b" data-pivot-x="57" data-pivot-y="104">
+      <path d="M57 104L47 128" stroke="#232733" stroke-width="18.5"/><path d="M57 104L47 128" stroke="#5a5f72" stroke-width="15.5"/>
+    </g>
+    <g data-part="forearm-b" data-follow="arm-b" data-pivot-x="47" data-pivot-y="128">
+      <path d="M47 128L42 148" stroke="#232733" stroke-width="16.5"/><path d="M47 128L42 148" stroke="#5a5f72" stroke-width="13.5"/>
+      <path d="M33 142Q31 154 36 158L50 156Q52 148 50 142Z" fill="#4b4f61"/>
+      <path d="M35 156Q33 166 37 172Q43 175 47 170L50 157Z" fill="url(#skin)"/>
+      <path d="M38 166L45 168M39 161L47 162" stroke="#b88660" stroke-width="1"/>
+    </g>
+    <g data-part="arm" data-pivot-x="104" data-pivot-y="104">
+      <path d="M104 104L112 128" stroke="#232733" stroke-width="18.5"/><path d="M104 104L112 128" stroke="#656a7c" stroke-width="15.5"/>
+    </g>
+    <g data-part="forearm" data-follow="arm" data-pivot-x="112" data-pivot-y="128">
+      <path d="M112 128L118 148" stroke="#232733" stroke-width="16.5"/><path d="M112 128L118 148" stroke="#656a7c" stroke-width="13.5"/>
+      <path d="M107 144Q103 154 108 158L128 158Q132 150 129 144Z" fill="#555a6d"/>
+    </g>
+    <g data-part="weapon" data-trail="true" data-follow="forearm" data-pivot-x="118" data-pivot-y="152">
+      <path d="M118 226V30" stroke="#2a1a10" stroke-width="7.2"/><path d="M118 226V30" stroke="#7a4f30" stroke-width="4.6"/>
+      <path d="M120 66L118 90M116 170L118 196" stroke="#a6724a" stroke-width="1.4"/>
+      <path d="M118 36Q108 30 110 20Q112 14 117 16Q112 22 118 26Q120 20 124 18Q128 24 124 32Q123 38 118 40Z" fill="#7a4f30"/>
+      <circle cx="118" cy="27" r="5" fill="#2c3040"/><path d="M116 25Q117.5 23.5 119 25" stroke="#9fb4e0" stroke-width="1.2"/>
+      <ellipse cx="118" cy="153" rx="7.2" ry="6.6" fill="url(#skin)"/>
+      <path d="M112.5 150H123.5M112.5 154H123.5" stroke="#b88660" stroke-width="1.1"/>
+      <path d="M111 148Q108 152 112 158" stroke="#232733" stroke-width="1.2"/>
+    </g>
+    <g data-part="head" data-pivot-x="80" data-pivot-y="90">
+      <path d="M56 58Q54 84 62 100Q66 80 70 70L90 70Q94 80 98 100Q106 84 104 58Z" fill="#c4c7d2"/>
+      <ellipse cx="80" cy="67" rx="17.5" ry="15" fill="url(#skin)"/>
+      <path d="M63 72Q62 96 72 108Q78 120 80 122Q82 120 88 108Q98 96 97 72Q92 82 80 80Q68 82 63 72Z" fill="url(#beard)"/>
+      <path d="M80 82V114M72 86L75 106M88 86L85 106" stroke="#9a9eab" stroke-width="1"/>
+      <path d="M68 76Q74 70 80 75Q86 70 92 76Q86 80 80 79Q74 80 68 76Z" fill="#e6e7ee"/>
+      <ellipse cx="80" cy="70" rx="4.6" ry="4" fill="#e6b088"/>
+      <path d="M68 58L76 62M92 58L84 62" stroke="#dfe0e8" stroke-width="3.2"/>
+      <ellipse cx="73" cy="64" rx="2" ry="1.7" fill="#24283a" stroke="none"/><ellipse cx="87" cy="64" rx="2" ry="1.7" fill="#24283a" stroke="none"/>
+      <path d="M54 54Q68 42 72 26Q76 14 92 12Q86 20 90 30Q100 42 106 54Z" fill="url(#hat)"/>
+      <path d="M58 56Q80 50 102 56Q80 62 58 56Z" fill="#3f4356" stroke="none"/>
+      <path d="M38 55Q38 62 80 62Q122 62 122 55Q110 47 80 47Q50 47 38 55Z" fill="#656a7d"/>
+      <path d="M52 52Q80 60 108 52L106 56Q80 64 54 56Z" fill="#454a5c" stroke="none"/>
+    </g>
+    <g data-part="blink" data-follow="head" data-pivot-x="80" data-pivot-y="90" opacity="0">
+      <path d="M68 60H79V68H68ZM81 60H92V68H81Z" fill="#f2c9a0" stroke="none"/>
+      <path d="M69 65Q73 68 77 65M83 65Q87 68 91 65" stroke="#24283a"/>
+    </g>
+    <g data-part="mouth" data-follow="head" data-pivot-x="80" data-pivot-y="90" opacity="0">
+      <path d="M71 80H89V90H71Z" fill="#dcdde5" stroke="none"/>
+      <ellipse cx="80" cy="84" rx="5" ry="3.6" fill="#5a2a2a" stroke="#6a4a3a"/>
+    </g>
+    <g data-part="glow" data-follow="weapon" data-pivot-x="118" data-pivot-y="152" opacity="0">
+      <circle cx="118" cy="26" r="26" fill="url(#burst)" stroke="none"/>
+      <path d="M118 -2L121 18L142 8L124 22L146 30L124 30L136 46L120 34L118 50L116 34L100 46L112 30L90 30L112 22L94 8L115 18Z" fill="#ffffff" stroke="none" opacity=".9"/>
+    </g>
+  </g>
+</svg>

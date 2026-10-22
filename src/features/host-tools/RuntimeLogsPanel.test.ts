@@ -205,6 +205,26 @@ it("keeps automatic refresh out of the user-action busy indicator", async () => 
   await act(async () => finish(result([], 4)));
 });
 
+it("keeps selected log text in place while new output arrives and resumes following after selection clears", async () => {
+  await mount();
+  const timeline = container.querySelector<HTMLElement>(".runtime-logs-timeline")!;
+  Object.defineProperty(timeline, "scrollHeight", { configurable: true, value: 900 });
+  timeline.scrollTop = 120;
+  const selection = window.getSelection()!;
+  selection.selectAllChildren(rows()[0]);
+  vi.mocked(hostToolRequest).mockResolvedValueOnce(
+    result([{ ...base, id: "next", cursor: 5, message: "More output" }], 5),
+  );
+  await act(async () => vi.advanceTimersByTimeAsync(1_500));
+  expect(timeline.scrollTop).toBe(120);
+  selection.removeAllRanges();
+  vi.mocked(hostToolRequest).mockResolvedValueOnce(
+    result([{ ...base, id: "later", cursor: 6, message: "Later output" }], 6),
+  );
+  await act(async () => vi.advanceTimersByTimeAsync(1_500));
+  expect(timeline.scrollTop).toBe(900);
+});
+
 it("sends the retained stream generation and replaces equal-cursor history after restart", async () => {
   vi.mocked(hostToolRequest).mockResolvedValueOnce({ ...result(entries, 4), streamId: "old" });
   await mount({}, false);

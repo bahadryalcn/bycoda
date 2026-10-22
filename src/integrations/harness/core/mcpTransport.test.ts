@@ -58,7 +58,7 @@ describe("verified provider HTTP MCP configuration", () => {
       });
       for (const input of [["login"], ["--strict-mcp-config"], ["--max-turns", "1"]])
         expect(configure("codex", input, bridge)).toEqual(input);
-      expect(configure("gemini", ["--print"], bridge)).toEqual(["--print"]);
+      expect(configure("hermes", ["--print"], bridge)).toEqual(["--print"]);
     }
     expect(args.join(" ")).not.toContain(".command=");
     expect(args.at(-1)).toBe("app-server");

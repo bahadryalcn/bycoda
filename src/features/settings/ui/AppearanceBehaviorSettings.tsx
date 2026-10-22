@@ -11,6 +11,7 @@ import {
   saveCrewSceneEnabled,
   saveTabAnimationsEnabled,
   loadCrewTheme,
+  type CrewTheme,
   saveCrewTheme,
   subscribeCrewTheme,
 } from "../model/settings";
@@ -44,8 +45,8 @@ export function TabMotionSettings() {
 export function CrewSettings() {
   useLocale();
   const crewTheme = useSyncExternalStore(subscribeCrewTheme, loadCrewTheme, loadCrewTheme);
-  const starWars = crewTheme === "star-wars";
-  const growthLabel = starWars ? t("Color with context") : t("Grow with context");
+  const characterTheme = crewTheme !== "classic";
+  const growthLabel = characterTheme ? t("Color with context") : t("Grow with context");
   const [crewSceneEnabled, setCrewSceneEnabled] = useStoredPreferenceState(loadCrewSceneEnabled, subscribeCrewSceneEnabled);
   const onCrewSceneEnabled = (next: boolean) => {
     saveCrewSceneEnabled(next);
@@ -80,11 +81,15 @@ export function CrewSettings() {
           }
           label={t("Crew theme")}
           description={
-            starWars
+            crewTheme === "star-wars"
               ? t(
                   "Obi-Wan leads, Yoda advises; Darth Vader, Luke, Leia and Chewbacca join as subagents. R2-D2 joins when the crew grows beyond six.",
                 )
-              : t("The original tea crew, drawn in monochrome code art.")
+              : crewTheme === "lotr"
+                ? t(
+                    "Gandalf leads, Sauron advises; a Nazgûl, an Orc, a Dwarf and a Hobbit join as subagents.",
+                  )
+                : t("The original tea crew, drawn in monochrome code art.")
           }
         >
           <Select
@@ -94,8 +99,9 @@ export function CrewSettings() {
             options={[
               { value: "classic", label: t("Classic crew") },
               { value: "star-wars", label: "Star Wars" },
+              { value: "lotr", label: t("The Lord of the Rings") },
             ]}
-            onChange={(value) => saveCrewTheme(value === "star-wars" ? "star-wars" : "classic")}
+            onChange={(value) => saveCrewTheme(value as CrewTheme)}
           />
         </Row>
         <Row
@@ -107,7 +113,7 @@ export function CrewSettings() {
           }
           label={growthLabel}
           description={
-            starWars
+            characterTheme
               ? t(
                   "Each character fills with color from the feet up as its context fills. Compaction lowers the level. Unknown context stays neutral. When off, all characters stay in full color.",
                 )

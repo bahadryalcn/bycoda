@@ -2,6 +2,7 @@ import { execFileAsync as exec } from "../src/shared/lib/processExecution.node";
 import { gitMutationScope, isHostGitMutation, withHostGitMutation } from "./git-mutations";
 import { relative, sep } from "node:path";
 import { realpath } from "node:fs/promises";
+import { createHash } from "node:crypto";
 import {
   hostConflictStages,
   hostConflictStageSet,
@@ -9,7 +10,7 @@ import {
   hostUnmerged,
   unmergedMessage,
 } from "./git-conflicts";
-import { invalidateHostGitIndex, safeGitPath } from "./workspace";
+import { hostGitAction, invalidateHostGitIndex, safeGitPath } from "./workspace";
 
 /** Source-control commands beyond staging and committing: branches, tags,
  * remotes, stashes, history rewriting, conflicts, blame. They take the same
@@ -17,6 +18,7 @@ import { invalidateHostGitIndex, safeGitPath } from "./workspace";
  * `git_*_for` functions in src-tauri/src/fs.rs, which are the reference for
  * git invocations and input validation). Advertised as `git.actions`. */
 export const GIT_ACTION_COMMANDS = [
+  "git_management_snapshot",
   "git_trust_repository",
   "git_stash",
   "git_stash_list",
@@ -452,7 +454,7 @@ export async function runGitAction(
   input: Record<string, unknown>,
 ): Promise<unknown> {
   const run = () => runGitActionSerialized(command, root, input);
-  return isHostGitMutation(command)
+  return isHostGitMutation(command) || command === "git_management_snapshot"
     ? withHostGitMutation(root, run, undefined, gitMutationScope(command))
     : run();
 }
@@ -481,6 +483,7 @@ async function runGitActionSerialized(
     return;
   }
   try {
+    if (input.expectedSnapshot !== undefined) await verifyGitManagementSnapshot(root, input.expectedSnapshot);
     return await runGitActionUncached(command, root, input);
   } finally {
     if (isHostGitMutation(command)) invalidateHostGitIndex(root);
@@ -491,6 +494,7 @@ async function runGitActionSerialized(
 
 /** Reads (some polled) that never move HEAD. */
 const HEAD_PRESERVING: ReadonlySet<string> = new Set<GitActionCommand>([
+  "git_management_snapshot",
   "git_commit_message",
   "git_stash_list",
   "git_tags",
@@ -504,6 +508,35 @@ const HEAD_PRESERVING: ReadonlySet<string> = new Set<GitActionCommand>([
   "git_fetch",
 ]);
 
+/** An opaque receipt: credentials in remote configuration never leave the host. */
+export async function gitManagementSnapshot(root: string): Promise<{ token: string; refs: Record<string, string> }> {
+  await ensureWorkTree(root);
+  const read = (args: string[]) => git(root, args, { timeout: 10_000, maxBuffer: 2 * 1024 * 1024 }).catch(() => {
+    throw new Error("Git management snapshot is unavailable or exceeds the safe size/time limit. No action was executed.");
+  });
+  const parts = await Promise.all([
+    realpath(root), gitOrNull(root, ["rev-parse", "--verify", "HEAD"]),
+    gitOrNull(root, ["symbolic-ref", "--quiet", "HEAD"]),
+    read(["for-each-ref", "--format=%(refname)%00%(objectname)%00%(symref)"]),
+    read(["config", "--list", "--null", "--includes"]),
+    read(["status", "--porcelain=v1", "-z", "--untracked-files=all"]),
+    read(["diff", "--no-ext-diff", "--binary", "--"]),
+    read(["diff", "--cached", "--no-ext-diff", "--binary", "--"]),
+    read(["remote", "-v"]),
+    read(["ls-files", "--stage", "-z"]),
+  ]);
+  const refs: Record<string, string> = Object.fromEntries((parts[3] ?? "").split("\n").filter(Boolean).map((line) => {
+    const [name, sha] = line.split("\0"); return [name, sha];
+  }));
+  if (Object.keys(refs).length > 10000) throw new Error("Git management snapshot has too many references. No action was executed.");
+  return { token: createHash("sha256").update(JSON.stringify(parts)).digest("hex"), refs };
+}
+
+export async function verifyGitManagementSnapshot(root: string, expected: unknown): Promise<void> {
+  if (typeof expected !== "string" || !/^[a-f0-9]{64}$/.test(expected)) throw new Error("Invalid Git management snapshot");
+  if ((await gitManagementSnapshot(root)).token !== expected) throw new Error("Repository state changed. Reload and review this action again.");
+}
+
 async function runGitActionUncached(
   command: GitActionCommand,
   root: string,
@@ -512,6 +545,7 @@ async function runGitActionUncached(
   // Cheap, polled reads skip the work-tree check: they return "nothing" in a
   // folder that is not a repository.
   switch (command) {
+    case "git_management_snapshot": return gitManagementSnapshot(root);
     case "git_operation_state":
       return operationState(root);
     case "git_conflicts":
@@ -595,6 +629,17 @@ async function runGitActionUncached(
       return;
     }
     case "git_stash_clear":
+      if (input.expectedShas !== undefined) {
+        if (!Array.isArray(input.expectedShas) || input.expectedShas.length > 1000 ||
+          !input.expectedShas.every((sha: unknown) => typeof sha === "string" && /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/i.test(sha)))
+          throw new Error("Invalid expected stash snapshot");
+        const current = (await git(root, ["stash", "list", "--format=%H"])).trim().split("\n").filter(Boolean);
+        if (JSON.stringify(current) !== JSON.stringify(input.expectedShas))
+          throw new Error("Stash list changed; refresh and review the list again");
+        // Compare-and-swap also protects against Git clients outside the host's mutation queue.
+        if (current.length) await git(root, ["update-ref", "-d", "refs/stash", current[0]!]);
+        return;
+      }
       await git(root, ["stash", "clear"]);
       return;
     case "git_checkout_commit":
@@ -627,7 +672,11 @@ async function runGitActionUncached(
       const name = await tagName(root, input.name);
       if (!(await refExists(root, `refs/tags/${name}`)))
         throw new Error(`Tag ${name} does not exist`);
-      await git(root, ["tag", "-d", name]);
+      if (input.expectedTargetSha !== undefined) {
+        if (typeof input.expectedTargetSha !== "string" || !/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/i.test(input.expectedTargetSha)) throw new Error("Invalid expected tag object");
+        await git(root, ["update-ref", "-d", `refs/tags/${name}`, input.expectedTargetSha]);
+      }
+      else await git(root, ["tag", "-d", name]);
       return;
     }
     case "git_cherry_pick":
@@ -699,16 +748,19 @@ async function runGitActionUncached(
     case "git_delete_remote_branch": {
       const remote = await knownRemote(root, input.remote);
       const name = await branchName(root, input.name);
-      await git(root, ["push", remote, "--delete", name], { timeout: NETWORK_MS });
+      if (input.expectedTargetSha !== undefined) {
+        const sha = await commitArg(root, input.expectedTargetSha);
+        await git(root, ["push", `--force-with-lease=refs/heads/${name}:${sha}`, remote, `:refs/heads/${name}`], { timeout: NETWORK_MS });
+      } else await git(root, ["push", remote, "--delete", name], { timeout: NETWORK_MS });
       return;
     }
     case "git_merge":
-      await git(root, ["merge", "--no-edit", await branchRef(root, input.reference)], {
+      await git(root, ["merge", "--no-edit", input.expectedTargetSha === undefined ? await branchRef(root, input.reference) : await commitArg(root, input.expectedTargetSha)], {
         timeout: NETWORK_MS,
       });
       return;
     case "git_rebase":
-      await git(root, ["rebase", await branchRef(root, input.reference)], {
+      await git(root, ["rebase", input.expectedTargetSha === undefined ? await branchRef(root, input.reference) : await commitArg(root, input.expectedTargetSha)], {
         timeout: NETWORK_MS,
       });
       return;
@@ -735,6 +787,11 @@ async function runGitActionUncached(
       return;
     case "git_resolve_conflict": {
       const path = await repoPath(root, input.relative);
+      if (input.contents !== undefined) {
+        if (input.side !== "reviewed") throw new Error("Invalid reviewed conflict side");
+        return hostGitAction(root, "resolveContents", path, undefined, input.contents, undefined, input.expectedCurrent,
+          () => verifyGitManagementSnapshot(root, input.expectedSnapshot));
+      }
       if (input.side !== "ours" && input.side !== "theirs") throw new Error("Invalid side");
       const stages = await hostConflictStageSet(root, path);
       if (!stages.size) throw new Error("This file has no merge conflict");

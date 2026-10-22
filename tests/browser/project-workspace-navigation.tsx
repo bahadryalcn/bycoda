@@ -16,6 +16,7 @@ import {
 } from "../../src/features/projects/model/projectGroups";
 import { savePinnedProjects } from "../../src/features/projects/model/recents";
 import { languageReady } from "../../src/shared/i18n";
+import { Button } from "../../src/shared/ui/Button";
 import "./w7-shell.css";
 
 // Exercise the production rail without changing a real repository or session.
@@ -114,17 +115,27 @@ function ShellLayoutFixture() {
 }
 
 function InboxLayoutFixture() {
+  const review = new URL(location.href).searchParams.has("inbox-review");
+  const [visible, setVisible] = useState(true);
   return (
     <QueryClientProvider client={layoutClient}>
-      <div className="flex h-dvh min-w-0 bg-background-base text-content">
-        <InboxView
-          cwd="G:/wallet/api"
-          recents={[{ path: "G:/wallet/api", openedAt: 1 }]}
-          onAsk={async () => ""}
-          onAskRestart={async () => ""}
-          onAskMount={() => {}}
-          onOpenIntegrations={() => {}}
-        />
+      <div className="flex h-dvh min-w-0 flex-col bg-background-base text-content">
+        {review ? (
+          <Button variant="ghost" onClick={() => setVisible(!visible)}>
+            {visible ? "Leave Inbox" : "Return to Inbox"}
+          </Button>
+        ) : null}
+        {visible ? (
+          <InboxView
+            pullRequestsOnly={review}
+            cwd="G:/wallet/api"
+            recents={[{ path: "G:/wallet/api", openedAt: 1 }]}
+            onAsk={async () => ""}
+            onAskRestart={async () => ""}
+            onAskMount={() => {}}
+            onOpenIntegrations={() => {}}
+          />
+        ) : null}
       </div>
     </QueryClientProvider>
   );
@@ -181,6 +192,17 @@ function Fixture() {
   );
 }
 await languageReady;
+if (new URL(location.href).searchParams.has("inbox-review")) {
+  localStorage.setItem("bycoda.inboxSeen", JSON.stringify({ seeded: true, items: {} }));
+  saveInboxConnections({
+    github: true,
+    linear: false,
+    jira: false,
+    gitlab: false,
+    azuredevops: false,
+  });
+  saveInboxSource("github");
+}
 if (new URL(location.href).searchParams.has("inbox-layout")) {
   saveInboxConnections({
     github: false,
@@ -194,7 +216,8 @@ if (new URL(location.href).searchParams.has("inbox-layout")) {
 createRoot(document.getElementById("root")!).render(
   new URL(location.href).searchParams.has("session-preview") ? (
     <SessionPreviewFixture />
-  ) : new URL(location.href).searchParams.has("inbox-layout") ? (
+  ) : new URL(location.href).searchParams.has("inbox-layout") ||
+    new URL(location.href).searchParams.has("inbox-review") ? (
     <InboxLayoutFixture />
   ) : new URL(location.href).searchParams.has("layout") ? (
     <ShellLayoutFixture />

@@ -42,7 +42,7 @@ export function ServerItem({
   const tags = server.metadata.tags;
   const groupTags = [group, ...tags].filter(Boolean).join(" · ");
   const status = server.machine ? (
-    <MachineStatus machine={server.machine} />
+    <MachineStatus machine={server.machine} compact={!cards} />
   ) : (
     <Badge size="sm">SSH</Badge>
   );
@@ -102,6 +102,7 @@ export function ServerItem({
         onContextMenu={onContextMenu}
         onDoubleClick={(event) => {
           if (
+            !canConnect ||
             event.button !== 0 ||
             event.ctrlKey ||
             event.metaKey ||
@@ -124,7 +125,10 @@ export function ServerItem({
                 </span>
                 {favorite}
               </span>
-              <span title={address} className="truncate text-xs text-(--ui-text-muted)">
+              <span
+                title={address}
+                className={`text-xs text-(--ui-text-muted) ${selected ? "break-all whitespace-normal" : "truncate"}`}
+              >
                 {address}
               </span>
               <span className="flex min-w-0 items-center justify-between gap-2">
@@ -147,14 +151,19 @@ export function ServerItem({
           <>
             {accentBar}
             <Server aria-hidden className="size-4 shrink-0 text-(--ui-text-muted)" />
-            <span title={server.name} className="max-w-[40%] min-w-0 shrink truncate font-medium">
-              {server.name}
-            </span>
-            <span
-              title={address}
-              className="min-w-0 flex-1 truncate text-xs text-(--ui-text-muted)"
-            >
-              {address}
+            <span className="min-w-0 flex-1 @min-[36rem]/servers:flex @min-[36rem]/servers:items-center @min-[36rem]/servers:gap-3">
+              <span
+                title={server.name}
+                className="block min-w-0 truncate font-medium @min-[36rem]/servers:max-w-[40%]"
+              >
+                {server.name}
+              </span>
+              <span
+                title={address}
+                className={`block min-w-0 flex-1 text-xs text-(--ui-text-secondary) ${selected ? "break-all whitespace-normal" : "truncate"}`}
+              >
+                {address}
+              </span>
             </span>
             {groupTags ? (
               <span

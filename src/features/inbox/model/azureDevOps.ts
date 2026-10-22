@@ -75,6 +75,21 @@ const threadInflight = new Map<string, Promise<AzureDevOpsWorkItemThread>>();
 const diffByKey = new Map<string, AzureDevOpsMrDiff>();
 const diffInflight = new Map<string, Promise<AzureDevOpsMrDiff>>();
 
+/** Detail and diff payloads are bounded LRU entries: get refreshes recency, set evicts the oldest past the cap. */
+const DETAILS_CACHE_LIMIT = 128;
+function boundedGet<T>(cache: Map<string, T>, key: string): T | null {
+  if (!cache.has(key)) return null;
+  const value = cache.get(key)!;
+  cache.delete(key);
+  cache.set(key, value);
+  return value;
+}
+function boundedSet<T>(cache: Map<string, T>, key: string, value: T) {
+  cache.delete(key);
+  cache.set(key, value);
+  while (cache.size > DETAILS_CACHE_LIMIT) cache.delete(cache.keys().next().value!);
+}
+
 function itemKey(repo: string, kind: AzureDevOpsKind, number: number): string {
   return `${repo.trim().toLowerCase()}:${kind}:${number}`;
 }
@@ -158,7 +173,7 @@ export function peekAzureDevOpsWorkItemDetails(
   kind: AzureDevOpsKind,
   number: number,
 ): AzureDevOpsWorkItemDetails | null {
-  return detailsByKey.get(itemKey(repo, kind, number)) ?? null;
+  return boundedGet(detailsByKey, itemKey(repo, kind, number));
 }
 
 export async function azureDevOpsWorkItemDetails(
@@ -177,7 +192,7 @@ export async function azureDevOpsWorkItemDetails(
     .then((details) => {
       // A cache clear (e.g. org change) supersedes this request: skip the
       // write so a stale completion cannot repopulate the cache.
-      if (detailsInflight.get(key) === pending) detailsByKey.set(key, details);
+      if (detailsInflight.get(key) === pending) boundedSet(detailsByKey, key, details);
       return details;
     })
     .finally(() => {
@@ -246,7 +261,7 @@ export async function azureDevOpsWorkItemComment(
 }
 
 export function peekAzureDevOpsMrDiff(repo: string, number: number): AzureDevOpsMrDiff | null {
-  return diffByKey.get(itemKey(repo, "pr", number)) ?? null;
+  return boundedGet(diffByKey, itemKey(repo, "pr", number));
 }
 
 export async function azureDevOpsMrDiff(repo: string, number: number): Promise<AzureDevOpsMrDiff> {
@@ -259,7 +274,7 @@ export async function azureDevOpsMrDiff(repo: string, number: number): Promise<A
   })
     .then((diff) => {
       // Same staleness guard as the thread cache above.
-      if (diffInflight.get(key) === pending) diffByKey.set(key, diff);
+      if (diffInflight.get(key) === pending) boundedSet(diffByKey, key, diff);
       return diff;
     })
     .finally(() => {

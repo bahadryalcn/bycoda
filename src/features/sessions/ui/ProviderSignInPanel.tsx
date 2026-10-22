@@ -37,20 +37,14 @@ export function ProviderSignInPanel({
       className="flex min-h-68 flex-col items-center justify-center px-5 py-6"
       aria-live="polite"
     >
-      <span className="grid size-16 place-items-center rounded-2xl bg-(--ui-tone-neutral-solid)/[0.06] text-(--ui-tone-neutral-fg) ring-1 ring-inset ring-(--ui-focus-ring-color)/[0.08] shadow-sm">
+      <span className="grid size-16 place-items-center rounded-2xl bg-(--ui-surface-raised) text-(--ui-tone-neutral-fg) ring-1 ring-inset ring-(--color-stroke) shadow-sm">
         <HarnessIcon harness={harness} className="size-9" />
       </span>
       <h2 className="mt-3.5 text-[15px] font-medium leading-5 text-(--ui-tone-neutral-fg)">
         {complete ? t("Signed in to {p0}", { p0: title }) : idleTitle}
       </h2>
       <p className="mt-1 max-w-56 text-[11px] leading-4 text-(--ui-text-secondary)">
-        {complete
-          ? completeDescription
-          : harness === "gemini"
-            ? t(
-                "Sign in with your Google account. Your browser will open to complete authentication.",
-              )
-            : t("Sign in to continue using {p0}.", { p0: title })}
+        {complete ? completeDescription : t("Sign in to continue using {p0}.", { p0: title })}
       </p>
       <Button
         variant="ghost"
@@ -69,13 +63,11 @@ export function ProviderSignInPanel({
           ? t("Waiting for browser…")
           : complete
             ? (completeActionLabel ?? t("Signed in"))
-            : harness === "gemini"
-              ? t("Sign in with Google")
-              : t("Sign in to {p0}", { p0: title })}
+            : t("Sign in to {p0}", { p0: title })}
       </Button>
       {state === "error" && error ? (
         <p
-          className="mt-2.5 max-w-60 text-[10px] leading-4 text-(--ui-tone-danger-fg)"
+          className="mt-2.5 max-w-60 text-(length:--ui-font-caption) leading-4 text-(--ui-tone-danger-fg)"
           role="status"
         >
           {error}

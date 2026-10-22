@@ -33,7 +33,7 @@ export function ProjectIconPicker({
           className="size-7 shrink-0"
         />
         <div className="min-w-0 flex-1">
-          <p className="text-[11px] text-[var(--ui-text-muted)]">{t("Project icon")}</p>
+          <p className="text-[11px] text-(--ui-text-secondary)">{t("Project icon")}</p>
           <p className="truncate text-xs text-[var(--color-content)]" title={selected.label}>
             {selected.label}
           </p>
@@ -91,19 +91,22 @@ export function ProjectIconPicker({
               className={` flex min-h-16 min-w-0 flex-col items-center justify-center gap-1    `}
             >
               <ProjectMascot project={project} name={icon.name} className="size-7 shrink-0" />
-              <span className="max-w-full truncate text-[10px] text-[var(--ui-text-muted)]">
+              <span className="max-w-full truncate text-(length:--ui-font-caption) text-(--ui-text-secondary)">
                 {icon.label.split(" / ")[0]}
               </span>
             </Button>
           ))}
         </div>
         {icons.length === 0 ? (
-          <p className="py-5 text-center text-xs text-[var(--ui-text-muted)]">
+          <p className="py-5 text-center text-xs text-(--ui-text-secondary)">
             {t("No matching icons")}
           </p>
         ) : null}
       </div>
-      <p className="mt-1 text-[10px] text-[var(--ui-text-muted)]" aria-live="polite">
+      <p
+        className="mt-1 text-(length:--ui-font-caption) text-(--ui-text-secondary)"
+        aria-live="polite"
+      >
         {icons.length}
         {t(" icons · ")}
         {category === "All" ? t("All types") : category}

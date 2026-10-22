@@ -7,11 +7,11 @@ import { Modal } from "../../../shared/ui/Modal";
 import { NumberField } from "../../../shared/ui/NumberField";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
+import { Select } from "../../../shared/ui/Select";
 import { TextField } from "../../../shared/ui/TextField";
 import {
   AiIdea,
   Bot,
-  ChevronDown,
   ChevronLeft,
   ChevronRight,
   CodeBlock,
@@ -35,6 +35,8 @@ import {
   type CrewAppearance,
 } from "../model/crewAppearance";
 import {
+  COST_LEVELS,
+  QUALITY_LEVELS,
   candidateLabel,
   catalogCandidate,
   catalogModels,
@@ -98,9 +100,9 @@ function starterRoster(data: ProjectCrews): CrewAgent[] {
     ? catalogCandidate(data.catalog, `${first.harness}/${first.id}`)
     : undefined;
   return [
-    newCrewMember("coordinator", t("Coordinator"), candidate),
-    newCrewMember("specialist", t("Specialist"), candidate),
-    newCrewMember("reviewer", t("Reviewer"), candidate),
+    newCrewMember("coordinator", t("Project lead"), candidate),
+    newCrewMember("specialist", t("Developer"), candidate),
+    newCrewMember("reviewer", t("Code reviewer"), candidate),
   ];
 }
 
@@ -239,7 +241,6 @@ function ConnectedCrewEditor({
   const [showIssues, setShowIssues] = useState(false);
   const [addIssues, setAddIssues] = useState(false);
   const body = useRef<HTMLFieldSetElement>(null);
-  const [advancedPolicy, setAdvancedPolicy] = useState(false);
   const [bulkModel, setBulkModel] = useState("");
   // Add members page.
   const [addMode, setAddMode] = useState<MemberPickerMode>(data.agents.length ? "library" : "new");
@@ -718,15 +719,53 @@ function ConnectedCrewEditor({
     />
   ) : null;
 
+  const automatic = draft.agents.filter((agent) => agent.selection === "automatic").length;
+  const levelSelect = (
+    key: "maxEstimatedCost" | "minimumQuality",
+    label: string,
+    levels: readonly number[],
+    names: string[],
+  ) => {
+    const current = draft.policy[key];
+    return (
+      <Select
+        label={label}
+        value={current === undefined ? "" : String(current)}
+        options={[
+          { value: "", label: t("Any") },
+          ...levels.map((level, index) => ({ value: String(level), label: names[index]! })),
+          ...(current !== undefined && !levels.includes(current)
+            ? [{ value: String(current), label: t("Custom ({p0})", { p0: current }) }]
+            : []),
+        ]}
+        onValueChange={(value) => updatePolicy({ [key]: value ? Number(value) : undefined })}
+      />
+    );
+  };
   const settings = (
     <div className="flex min-w-0 flex-col gap-4">
       <Group
-        title={t("Working style")}
-        description={t("Used when members choose models automatically.")}
+        title={t("Automatic model choice")}
+        description={
+          automatic === 1
+            ? t("Used by the member set to Automatic.")
+            : automatic
+              ? t("Used by {p0} members set to Automatic.", { p0: automatic })
+              : t("No member chooses its model automatically. These apply once one does.")
+        }
       >
-        <Row label={t("Preference")}>
+        <Row
+          label={t("Priority")}
+          description={
+            draft.policy.preset === "economy"
+              ? t("Prefers models you rated cheaper.")
+              : draft.policy.preset === "quality"
+                ? t("Prefers models you rated higher quality.")
+                : t("Weighs cost and quality equally.")
+          }
+        >
           <SegmentedControl
-            label={t("Working style")}
+            label={t("Priority")}
             value={draft.policy.preset}
             options={[
               { value: "economy", label: t("Economy") },
@@ -747,16 +786,48 @@ function ConnectedCrewEditor({
             {t("Custom weights are active. Choose a preset to reset them.")}
           </p>
         ) : null}
-        {fixed.length ? (
+        <Row
+          label={t("Highest cost allowed")}
+          description={t("Models rated above this cost are skipped.")}
+        >
+          {levelSelect("maxEstimatedCost", t("Highest cost allowed"), COST_LEVELS, [
+            t("Low"),
+            t("Medium"),
+            t("High"),
+          ])}
+        </Row>
+        <Row
+          label={t("Lowest quality allowed")}
+          description={t("Models rated below this quality are skipped.")}
+        >
+          {levelSelect("minimumQuality", t("Lowest quality allowed"), QUALITY_LEVELS, [
+            t("Basic"),
+            t("Good"),
+            t("Best"),
+          ])}
+        </Row>
+        <Row
+          label={t("Use models without a cost rating")}
+          description={t("When off, only models you rated for cost can be chosen.")}
+        >
+          <Toggle
+            label={t("Use models without a cost rating")}
+            on={draft.policy.allowUnknownCost}
+            onChange={(value) => updatePolicy({ allowUnknownCost: value })}
+          />
+        </Row>
+      </Group>
+      {fixed.length ? (
+        <Group title={t("Models")}>
           <Row
-            label={t("Model for every fixed member")}
+            label={t("Same model for every fixed member")}
             description={t("Replaces the model of {p0} members with a fixed model.", {
               p0: fixed.length,
             })}
           >
             <div className="flex min-w-0 items-center gap-2">
               <SearchableSelect
-                label={t("Model for every fixed member")}
+                label={t("Same model for every fixed member")}
                 options={modelOptions}
                 value={bulkModel}
                 placeholder={t("Choose a model")}
@@ -788,13 +859,16 @@ function ConnectedCrewEditor({
               </Button>
             </div>
           </Row>
-        ) : null}
-      </Group>
+        </Group>
+      ) : null}
       <Group title={t("Limits")}>
-        <Row label={t("Parallel assignments")}>
+        <Row
+          label={t("Members working at once")}
+          description={t("How many assignments can run at the same time.")}
+        >
           <NumberField
             hideLabel
-            label={t("Parallel assignments")}
+            label={t("Members working at once")}
             min={1}
             max={4}
             value={draft.policy.maxParallel}
@@ -802,10 +876,13 @@ function ConnectedCrewEditor({
             onChange={(e) => updatePolicy({ maxParallel: Number(e.target.value) })}
           />
         </Row>
-        <Row label={t("Assignment limit")}>
+        <Row
+          label={t("Assignments per job")}
+          description={t("The most assignments the coordinator can hand out for one job.")}
+        >
           <NumberField
             hideLabel
-            label={t("Assignment limit")}
+            label={t("Assignments per job")}
             min={1}
             max={20}
             value={draft.policy.maxAssignments}
@@ -813,10 +890,13 @@ function ConnectedCrewEditor({
             onChange={(e) => updatePolicy({ maxAssignments: Number(e.target.value) })}
           />
         </Row>
-        <Row label={t("Minutes per execution")}>
+        <Row
+          label={t("Minutes per assignment")}
+          description={t("An assignment running longer than this is stopped.")}
+        >
           <NumberField
             hideLabel
-            label={t("Minutes per execution")}
+            label={t("Minutes per assignment")}
             min={1}
             max={240}
             value={draft.policy.maxRunMinutes}
@@ -826,75 +906,29 @@ function ConnectedCrewEditor({
         </Row>
       </Group>
       <Group title={t("Permissions")}>
-        <Row label={t("Allow unknown cost")}>
+        <Row
+          label={t("Coordinator answers permission requests")}
+          description={t(
+            "When a member asks to run a tool, the coordinator decides instead of you.",
+          )}
+        >
           <Toggle
-            label={t("Allow unknown cost")}
-            on={draft.policy.allowUnknownCost}
-            onChange={(value) => updatePolicy({ allowUnknownCost: value })}
-          />
-        </Row>
-        <Row label={t("Coordinator handles runtime approvals")}>
-          <Toggle
-            label={t("Coordinator handles runtime approvals")}
+            label={t("Coordinator answers permission requests")}
             on={draft.policy.delegateApprovals === true}
             onChange={(value) => updatePolicy({ delegateApprovals: value })}
           />
         </Row>
-        <Row label={t("Native subagents")}>
+        <Row
+          label={t("Allow provider sub-agents")}
+          description={t("Members may start their provider's own helper agents.")}
+        >
           <Toggle
-            label={t("Native subagents")}
+            label={t("Allow provider sub-agents")}
             on={draft.policy.allowSubagents}
             onChange={(value) => updatePolicy({ allowSubagents: value })}
           />
         </Row>
       </Group>
-      <div className="flex flex-col gap-2">
-        <Button
-          variant="ghost"
-          motion="none"
-          aria-expanded={advancedPolicy}
-          className="self-start"
-          startIcon={
-            advancedPolicy ? (
-              <ChevronDown className="size-3.5" aria-hidden />
-            ) : (
-              <ChevronRight className="size-3.5" aria-hidden />
-            )
-          }
-          onClick={() => setAdvancedPolicy((value) => !value)}
-        >
-          {t("Budget and weights")}
-        </Button>
-        {advancedPolicy ? (
-          <div className="grid gap-3 sm:grid-cols-2">
-            {(
-              [
-                ["maxEstimatedCost", t("Estimated assignment budget"), 0, undefined, undefined],
-                ["minimumQuality", t("Minimum quality estimate"), 0, 100, undefined],
-                ["costWeight", t("Cost preference weight"), 0, 1, 0.1],
-                ["qualityWeight", t("Quality preference weight"), 0, 1, 0.1],
-              ] as const
-            ).map(([key, label, min, max, step]) => (
-              <NumberField
-                key={key}
-                label={label}
-                min={min}
-                max={max}
-                step={step}
-                value={draft.policy[key] ?? ""}
-                onChange={(e) =>
-                  updatePolicy({
-                    [key]: e.target.value === "" ? undefined : Number(e.target.value),
-                  })
-                }
-              />
-            ))}
-            <p className="text-xs text-(--ui-text-secondary) sm:col-span-2">
-              {t("These are your own estimates. Changes apply to new crew work.")}
-            </p>
-          </div>
-        ) : null}
-      </div>
       {latest ? (
         <div className="flex flex-wrap items-start justify-between gap-2 border-t border-(--ui-tone-neutral-border) pt-3">
           <Button

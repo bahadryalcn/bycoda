@@ -3,6 +3,7 @@ import type { HostEngine } from "./engine";
 import type { HostStore } from "./store";
 import type { HostTasks } from "./tasks";
 import { launchSessionRun } from "./sessionRuns";
+import { callConversationCrewRead, CONVERSATION_CREW_READ_TOOLS } from "./conversation-crew-tools";
 import {
   parseCrewDefinition,
   parseCrewAgent,
@@ -649,6 +650,10 @@ export class HostCrews {
     projectId: string,
     principal?: Principal,
   ): Promise<unknown> {
+    if (Object.hasOwn(CONVERSATION_CREW_READ_TOOLS, action)) {
+      const view = await this.call("crews.list", {}, projectId, principal);
+      return callConversationCrewRead(action, input, view as ReturnType<HostCrews["list"]>);
+    }
     if (action === "crews.list") {
       const view = this.list(projectId);
       return principal

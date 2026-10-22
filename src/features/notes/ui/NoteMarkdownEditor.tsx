@@ -1,12 +1,13 @@
 import { t, useLocale } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
+import { Popover } from "../../../shared/ui/Popover";
 import { indentWithTab, redo } from "@codemirror/commands";
 import { markdown } from "@codemirror/lang-markdown";
 import { openSearchPanel } from "@codemirror/search";
 import { Annotation, Compartment, Prec } from "@codemirror/state";
 import { EditorView, keymap, lineNumbers, placeholder } from "@codemirror/view";
 import { minimalSetup } from "codemirror";
-import { useEffect, useLayoutEffect, useRef } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { MOD } from "../../../platform/tauri/platform";
 import { useColorScheme } from "../../../shared/hooks/useColorScheme";
 import {
@@ -21,6 +22,7 @@ import {
   ListBullet,
   ListNumbered,
   Minus,
+  MoreHorizontal,
   Search,
   Strikethrough,
   Table,
@@ -332,6 +334,8 @@ export function NoteMarkdownToolbar({
   onInsertImage: () => void;
 }) {
   useLocale();
+  const [expanded, setExpanded] = useState(false);
+  const moreRef = useRef<HTMLButtonElement>(null);
   const run = (action: (view: EditorView) => void) => {
     const view = viewRef.current;
     if (view) action(view);
@@ -340,7 +344,7 @@ export function NoteMarkdownToolbar({
     <div
       role="toolbar"
       aria-label={t("Markdown formatting")}
-      className="ms-auto flex min-w-0 flex-wrap items-center gap-0.5"
+      className="note-markdown-toolbar ms-auto flex min-w-0 items-center gap-0.5"
       // Keep the selection in the editor while a button is pressed.
       onMouseDown={(event) => event.preventDefault()}
     >
@@ -359,7 +363,7 @@ export function NoteMarkdownToolbar({
         <ImagePlus className="size-3.5" />
       </Button>
       {editing ? <span aria-hidden className="mx-1 h-4 w-px shrink-0 bg-content/10" /> : null}
-      {(editing ? TOOLBAR : []).map(({ command, label, icon: Icon }) => (
+      {(editing ? TOOLBAR.slice(0, 2) : []).map(({ command, label, icon: Icon }) => (
         <Button
           variant="ghost"
           size="sm"
@@ -377,7 +381,41 @@ export function NoteMarkdownToolbar({
       ))}
       {editing ? (
         <>
-          <span aria-hidden className="mx-1 h-4 w-px shrink-0 bg-content/10" />
+          <Button
+            ref={moreRef}
+            variant="ghost"
+            size="sm"
+            iconOnly
+            label={t("Markdown formatting")}
+            aria-expanded={expanded}
+            onClick={() => setExpanded((current) => !current)}
+          >
+            <MoreHorizontal className="size-3.5" />
+          </Button>
+          {expanded ? (
+            <Popover
+              anchor={moreRef}
+              align="end"
+              onDismiss={() => setExpanded(false)}
+              className="note-format-popover"
+            >
+              {TOOLBAR.slice(2).map(({ command, label, icon: Icon }) => (
+                <Button
+                  key={command}
+                  variant="ghost"
+                  size="sm"
+                  onMouseDown={(event) => event.preventDefault()}
+                  onClick={() => {
+                    run((view) => runMarkdownCommand(view, command));
+                    setExpanded(false);
+                  }}
+                >
+                  <Icon className="size-3.5" />
+                  {label}
+                </Button>
+              ))}
+            </Popover>
+          ) : null}
           <Button
             variant="ghost"
             size="sm"

@@ -244,7 +244,7 @@ export function WorktreePicker({
                   <span className="block truncate text-[12px]">
                     {tree.branch ?? t("Detached {p0}", { p0: tree.head.slice(0, 7) })}
                   </span>
-                  <span className="block truncate text-[10px] text-[var(--ui-text-muted)]">
+                  <span className="block truncate text-(length:--ui-font-caption) text-(--ui-text-secondary)">
                     {tree.isMain ? t("Project folder") : prettyCwd(tree.path)}
                     {tree.missing ? t(" · Missing") : ""}
                   </span>
@@ -255,7 +255,7 @@ export function WorktreePicker({
               </Button>
             ))}
             {data && !rows.length && (
-              <p className="p-2 text-[12px] text-[var(--ui-text-muted)]">
+              <p className="p-2 text-[12px] text-(--ui-text-secondary)">
                 {t("No matching working copies")}
               </p>
             )}

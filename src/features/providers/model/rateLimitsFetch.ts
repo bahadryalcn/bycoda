@@ -73,11 +73,17 @@ type ClaudeUsageFetch = {
   error?: string | null;
 };
 
-export async function fetchClaudeRateLimits(accountId = "default"): Promise<ProviderRateLimits> {
+export async function fetchClaudeRateLimits(
+  accountId = "default",
+  oneShot = false,
+): Promise<ProviderRateLimits> {
   try {
-    const result = await invoke<ClaudeUsageFetch>("fetch_claude_usage", {
-      accountId,
-    });
+    const result = await invoke<ClaudeUsageFetch>(
+      oneShot ? "fetch_claude_usage_once" : "fetch_claude_usage",
+      {
+        accountId,
+      },
+    );
     if (result.status === "ok" && result.body) {
       const parsed = parseClaudeOAuthUsage(result.body);
       if (parsed.session || parsed.weekly) return parsed;

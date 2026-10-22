@@ -1,5 +1,40 @@
 import { expect, test } from "@playwright/test";
 
+test("keyboard button hints stay visible without stealing focus while tabbing", async ({
+  page,
+}) => {
+  await page.goto("/tests/browser/arc-controls.html");
+  for (const width of [390, 768, 1440]) {
+    await page.setViewportSize({ width, height: 900 });
+    for (const theme of ["light", "dark"]) {
+      await page.evaluate(
+        (theme) => document.documentElement.classList.toggle("theme-light", theme === "light"),
+        theme,
+      );
+      for (const name of ["Button API filters", "Native keyboard hint"]) {
+        const button = page.getByRole("button", { name, exact: true });
+        await button.focus();
+        // A key establishes keyboard focus even after pointer-oriented earlier scenarios.
+        await page.keyboard.press("Tab");
+        await page.keyboard.press("Shift+Tab");
+        const hint = page.getByRole("tooltip");
+        await expect(hint).toBeVisible();
+        await expect(hint).toContainText(name);
+        if (name === "Native keyboard hint") await expect(hint).toContainText("Ctrl+Shift+K");
+        await expect(button).toBeFocused();
+        const bounds = (await hint.boundingBox())!;
+        expect(bounds.x).toBeGreaterThanOrEqual(0);
+        expect(bounds.x + bounds.width).toBeLessThanOrEqual(width);
+        await page.keyboard.press("Escape");
+        await expect(hint).toHaveCount(0);
+        await expect(button).toBeFocused();
+        await page.keyboard.press("Tab");
+        await expect(button).not.toBeFocused();
+      }
+    }
+  }
+});
+
 test("AI question choices stay readable and support native selection", async ({
   page,
 }, testInfo) => {
@@ -145,6 +180,40 @@ test("field families preserve native editing, radio keys, secret reveal and acti
   await page.keyboard.press("Escape");
   await expect(trigger).toBeFocused();
   expect(await region.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
+});
+
+test("shared editing remains reachable at browser zoom 125 150 and 200 percent", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.goto("/tests/browser/arc-controls.html");
+  const region = page.getByRole("region", { name: "Shared field families", exact: true });
+  for (const light of [true, false]) {
+    for (const zoom of [1.25, 1.5, 2]) {
+      await page.evaluate(
+        ({ light, zoom }) => {
+          document.documentElement.classList.toggle("theme-light", light);
+          document.documentElement.style.zoom = String(zoom);
+        },
+        { light, zoom },
+      );
+      const number = region.getByLabel("Fixture limit", { exact: true });
+      await number.fill("12");
+      await region.getByRole("button", { name: "Save fixture fields", exact: true }).click();
+      await expect(region.getByLabel("Saved fixture fields")).toContainText("12/");
+      expect(await region.evaluate((node) => node.scrollWidth <= node.clientWidth)).toBe(true);
+      const secret = region.getByLabel("Fixture credential", { exact: true });
+      await secret.focus();
+      await page.keyboard.press("Tab");
+      const reveal = region.getByRole("button", { name: "Show fixture credential", exact: true });
+      await expect(reveal).toBeFocused();
+      await page.keyboard.press("Space");
+      await expect(secret).toHaveAttribute("type", "text");
+      await expect(secret).toBeFocused();
+      await region.getByRole("button", { name: "Hide fixture credential", exact: true }).click();
+    }
+  }
 });
 
 test("shared feedback preserves semantic states, recovery and narrow theme layouts", async ({

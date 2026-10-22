@@ -1263,7 +1263,7 @@ function NoteCard({
             </Badge>
           ))}
           {note.tags.length > 3 ? (
-            <span className="shrink-0 text-[10px] text-content/40">+{note.tags.length - 3}</span>
+            <span className="shrink-0 text-(length:--ui-font-caption) text-(--ui-text-secondary)">+{note.tags.length - 3}</span>
           ) : null}
         </span>
       ) : null}
@@ -1327,17 +1327,32 @@ function NoteEditor({
   const modesId = useId();
   const panelId = `${modesId}-panel`;
   const lockOverscroll = useLockOverscroll<HTMLDivElement>();
+  const detailRef = useRef<HTMLDivElement>(null);
+  const [narrow, setNarrow] = useState(false);
+  const [narrowPane, setNarrowPane] = useState<"source" | "preview">("source");
+  useEffect(() => {
+    const node = detailRef.current;
+    if (!node || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(([entry]) => {
+      if (entry) setNarrow(entry.contentRect.width <= 780);
+    });
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, []);
   const blank = !note.body.trim() && note.title === "Untitled";
   const [mode, setModeState] = useRetainedState<NoteViewMode>(
     `note-editor:${note.id}:mode`,
     "split",
   );
   const setMode = (next: NoteViewMode) => {
-    setModeState(next);
+    if (narrow && mode === "split" && next !== "split") setNarrowPane(next);
+    else setModeState(next);
     setToolbarTarget("source");
   };
-  const modeRef = useRef(mode);
-  modeRef.current = mode;
+  // Narrow panels show one pane without overwriting the retained desktop mode.
+  const visibleMode = narrow && mode === "split" ? narrowPane : mode;
+  const modeRef = useRef(visibleMode);
+  modeRef.current = visibleMode;
   const [draftState] = useState(() => {
     const existing = drafts.get(note.id);
     const recover =
@@ -1679,14 +1694,14 @@ function NoteEditor({
     }
     if (key !== "f" && key !== "h") return;
     event.preventDefault();
-    if (mode === "preview") setMode("source");
+    if (visibleMode === "preview") setMode("source");
     window.requestAnimationFrame(() => {
       const view = editorViewRef.current;
       if (view) (key === "h" ? openReplacePanel : openSearchPanel)(view);
     });
   };
 
-  const editing = mode !== "preview" || previewEditing;
+  const editing = visibleMode !== "preview" || previewEditing;
   const dirty =
     title !== note.title ||
     body !== note.body ||
@@ -1703,7 +1718,10 @@ function NoteEditor({
 
   return (
     <div
-      ref={lockOverscroll}
+      ref={(node) => {
+        detailRef.current = node;
+        lockOverscroll(node);
+      }}
       // Focusable so a paste over the preview reaches onPreviewPaste.
       tabIndex={-1}
       onKeyDown={onEditorShortcut}
@@ -1763,7 +1781,11 @@ function NoteEditor({
             fieldClassName="note-detail-title"
             placeholder={t("Untitled")}
           />
-          <div className="note-detail-tags">
+          <details className="note-detail-tags">
+            <summary>
+              {t("Tags")}
+              {tags.length ? ` · ${tags.length}` : ""}
+            </summary>
             <NoteTagsEditor
               tags={tags}
               onChange={(next) => {
@@ -1771,7 +1793,7 @@ function NoteEditor({
                 scheduleSave();
               }}
             />
-          </div>
+          </details>
           <div className="note-detail-actions">
             <Button
               variant="primary"
@@ -1901,23 +1923,25 @@ function NoteEditor({
               id={`${modesId}-preview`}
               controls={panelId}
               label={t("Edit preview")}
-              selected={mode === "preview"}
+              selected={visibleMode === "preview"}
               onSelect={() => setMode("preview")}
             />
             <NoteDetailTab
               id={`${modesId}-source`}
               controls={panelId}
               label={t("Source")}
-              selected={mode === "source"}
+              selected={visibleMode === "source"}
               onSelect={() => setMode("source")}
             />
-            <NoteDetailTab
-              id={`${modesId}-split`}
-              controls={panelId}
-              label={t("Split")}
-              selected={mode === "split"}
-              onSelect={() => setMode("split")}
-            />
+            {narrow ? null : (
+              <NoteDetailTab
+                id={`${modesId}-split`}
+                controls={panelId}
+                label={t("Split")}
+                selected={mode === "split"}
+                onSelect={() => setMode("split")}
+              />
+            )}
           </div>
           <NoteMarkdownToolbar
             viewRef={previewEditing && toolbarTarget === "preview" ? previewViewRef : editorViewRef}
@@ -1930,7 +1954,7 @@ function NoteEditor({
           ref={dropZoneRef}
           id={panelId}
           role="tabpanel"
-          aria-labelledby={`${modesId}-${mode}`}
+          aria-labelledby={`${modesId}-${visibleMode}`}
           data-external-drop-owner="note-images"
           aria-busy={imageBusy}
           className={`note-editor-body relative rounded-lg border transition-colors ${
@@ -1966,9 +1990,9 @@ function NoteEditor({
               {imageBusy ? t("Adding images…") : t("Drop images here")}
             </div>
           ) : null}
-          <div className={mode === "split" ? "note-layout note-split" : "note-layout"}>
+          <div className={visibleMode === "split" ? "note-layout note-split" : "note-layout"}>
             {/* Stays mounted in preview so undo history survives the switch. */}
-            <NoteEditorPane label={t("Source")} hidden={mode === "preview"}>
+            <NoteEditorPane label={t("Source")} hidden={visibleMode === "preview"}>
               <NoteMarkdownEditor
                 viewRef={editorViewRef}
                 minHeight={0}
@@ -1983,7 +2007,7 @@ function NoteEditor({
                 onFocus={() => setToolbarTarget("source")}
               />
             </NoteEditorPane>
-            {mode === "source" ? null : (
+            {visibleMode === "source" ? null : (
               <NoteEditorPane label={t("Edit preview")}>
                 <NoteEditablePreview
                   value={body}

@@ -11,25 +11,30 @@ async function setup(
   duplicates = false,
   shellMode: "bash" | "zsh" | "powershell" = "bash",
   selectionMode = true,
+  preview?: SshShellController["preview"],
+  live = true,
 ) {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   const host = document.createElement("div");
   document.body.appendChild(host);
   const root = createRoot(host);
   const shell: SshShellController = {
-    state: {
-      id: "terminal",
-      status: "suggestions",
-      shell: shellMode,
-      user: "remote-alice",
-      host: "server-a",
-      prefix: "git ",
-      cursor: 4,
-      requestId: "fresh",
-      suggestions: duplicates
-        ? ["git status", "git status", "git diff", "git status"]
-        : ["git status", "git diff"],
-    },
+    state: live
+      ? {
+          id: "terminal",
+          status: "suggestions",
+          shell: shellMode,
+          user: "remote-alice",
+          host: "server-a",
+          prefix: "git ",
+          cursor: 4,
+          requestId: "fresh",
+          suggestions: duplicates
+            ? ["git status", "git status", "git diff", "git status"]
+            : ["git status", "git diff"],
+        }
+      : undefined,
+    preview: undefined,
     waiting: false,
     error: "",
     request: vi.fn(async () => {}),
@@ -52,16 +57,25 @@ async function setup(
   const close = vi.fn();
   await act(async () =>
     root.render(
-      createElement(RemoteShellSuggestions, { shell, terminal, onClose: close, selectionMode }),
+      createElement(RemoteShellSuggestions, {
+        shell,
+        terminal,
+        onClose: close,
+        selectionMode,
+        preview,
+      }),
     ),
   );
   const key = async (key: string, extra: KeyboardEventInit = {}) =>
     act(async () =>
-      host
-        .querySelector('[aria-label="Remote suggestion selection"]')!
-        .dispatchEvent(
-          new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true, ...extra }),
-        ),
+      host.querySelector('[aria-label="Remote suggestion selection"]')!.dispatchEvent(
+        new KeyboardEvent("keydown", {
+          key,
+          bubbles: true,
+          cancelable: true,
+          ...extra,
+        }),
+      ),
     );
   return {
     host,
@@ -201,6 +215,29 @@ it("browses the automatic list with Alt arrows without taking shell history keys
     );
     expect(context.shell.accept).toHaveBeenCalledExactlyOnceWith("git diff");
     expect(context.terminal.input).not.toHaveBeenCalled();
+  } finally {
+    await context.cleanup();
+  }
+});
+
+it("keeps a retained passive list on screen without taking completion keys", async () => {
+  const preview = { prefix: "git s", suggestions: ["git status", "git stash"] };
+  const context = await setup(false, false, "bash", false, preview, false);
+  try {
+    const options = [...context.host.querySelectorAll('[role="option"]')];
+    expect(options.map((option) => option.textContent)).toEqual(["git status", "git stash"]);
+    expect(context.host.textContent).not.toContain("Waiting for the shell prompt");
+    for (const value of ["Tab", "ArrowRight"]) {
+      const event = new KeyboardEvent("keydown", {
+        key: value,
+        bubbles: true,
+        cancelable: true,
+      });
+      await act(async () => context.terminal.element!.dispatchEvent(event));
+      expect(event.defaultPrevented).toBe(false);
+    }
+    await act(async () => (options[0] as HTMLElement).click());
+    expect(context.shell.accept).not.toHaveBeenCalled();
   } finally {
     await context.cleanup();
   }

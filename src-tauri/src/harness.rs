@@ -389,15 +389,6 @@ pub fn harness_resolve_codex() -> Result<CursorBinary, String> {
         })
 }
 
-#[tauri::command(async)]
-pub fn harness_resolve_gemini() -> Result<CursorBinary, String> {
-    resolve_gui_binary("gemini")
-        .map(|path| CursorBinary {
-            path: path.to_string_lossy().into_owned(),
-        })
-        .ok_or_else(|| "Gemini CLI not found. Install @google/gemini-cli, then retry.".into())
-}
-
 /// Resolve the OpenCode CLI (`opencode`).
 #[tauri::command(async)]
 pub fn harness_resolve_opencode() -> Result<CursorBinary, String> {
@@ -2359,9 +2350,7 @@ fn terminate_after(pid: u32, escalate: Duration) {
 pub(crate) fn terminate_all(pids: &[u32]) {
     let pids: Vec<u32> = pids.iter().copied().filter(|pid| *pid > 1).collect();
     #[cfg(windows)]
-    for pid in pids {
-        signal_tree(pid, TreeSignal::Kill);
-    }
+    taskkill_trees_until(&pids, Instant::now() + WINDOWS_KILL_DEADLINE);
     #[cfg(not(windows))]
     {
         if pids.is_empty() {
@@ -2383,6 +2372,106 @@ pub(crate) fn terminate_all(pids: &[u32]) {
             signal_tree(*pid, TreeSignal::Kill);
         }
         wait_until_dead(&remaining, Instant::now() + KILL_ALL_KILL_WAIT);
+    }
+}
+
+/// Upper bound on the Windows tree kill. Past it, the taskkill helpers are
+/// abandoned so quit and window teardown never wait on a wedged process.
+#[cfg(windows)]
+const WINDOWS_KILL_DEADLINE: Duration = Duration::from_secs(3);
+
+/// Starts `taskkill /T /F` for every pid at once, then waits for all of them
+/// together. Waiting per pid cost ~0.2 s each, so 27 ConPTY shells stalled the
+/// caller for seconds.
+#[cfg(windows)]
+fn taskkill_trees_until(pids: &[u32], deadline: Instant) {
+    let children: Vec<std::process::Child> = pids
+        .iter()
+        .filter_map(|pid| {
+            let mut cmd = Command::new("taskkill");
+            crate::hide_window_console(&mut cmd);
+            cmd.args(["/PID", &pid.to_string(), "/T", "/F"])
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .spawn()
+                .ok()
+        })
+        .collect();
+    wait_children_until(children, deadline);
+}
+
+/// Polls all children together until each exits or `deadline` passes, then
+/// kills and reaps the stragglers. Returns how many had to be killed.
+#[cfg(any(windows, test))]
+fn wait_children_until(mut children: Vec<std::process::Child>, deadline: Instant) -> usize {
+    while !children.is_empty() {
+        children.retain_mut(|child| matches!(child.try_wait(), Ok(None)));
+        if children.is_empty() || Instant::now() >= deadline {
+            break;
+        }
+        thread::sleep(Duration::from_millis(10));
+    }
+    let stragglers = children.len();
+    for child in &mut children {
+        let _ = child.kill();
+        let _ = child.wait();
+    }
+    stragglers
+}
+
+#[cfg(test)]
+mod wait_children_tests {
+    use super::*;
+
+    fn long_sleeper() -> std::process::Child {
+        let mut cmd = if cfg!(windows) {
+            let mut cmd = Command::new("ping");
+            cmd.args(["-n", "60", "127.0.0.1"]);
+            cmd
+        } else {
+            let mut cmd = Command::new("sleep");
+            cmd.arg("60");
+            cmd
+        };
+        cmd.stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .expect("spawn sleeper")
+    }
+
+    fn quick_exit() -> std::process::Child {
+        let mut cmd = if cfg!(windows) {
+            let mut cmd = Command::new("cmd");
+            cmd.args(["/C", "exit 0"]);
+            cmd
+        } else {
+            Command::new("true")
+        };
+        cmd.stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .expect("spawn quick exit")
+    }
+
+    #[test]
+    fn wait_children_until_kills_every_straggler_at_the_deadline() {
+        let children: Vec<_> = (0..4).map(|_| long_sleeper()).collect();
+        let started = Instant::now();
+        let killed = wait_children_until(children, started + Duration::from_millis(300));
+        assert_eq!(killed, 4, "all four sleepers outlive the deadline");
+        assert!(
+            started.elapsed() < Duration::from_secs(5),
+            "waiting must stop at the deadline, not on the children"
+        );
+    }
+
+    #[test]
+    fn wait_children_until_returns_once_children_exit() {
+        let children: Vec<_> = (0..4).map(|_| quick_exit()).collect();
+        let started = Instant::now();
+        let killed = wait_children_until(children, started + Duration::from_secs(20));
+        assert_eq!(killed, 0, "quick exits are reaped, not killed");
+        assert!(started.elapsed() < Duration::from_secs(10));
     }
 }
 
@@ -2554,7 +2643,6 @@ fn is_harness_argv_token(part: &str) -> bool {
             | "omp"
             | "fx"
             | "hermes"
-            | "gemini"
             | "agy_acp_server.par"
             | "pi"
             | "worker-server"
@@ -2795,7 +2883,6 @@ fn resolve_harness_binary_default(provider: &str) -> Option<PathBuf> {
         "fx" => resolve_fx(),
         "hermes" => resolve_hermes(),
         "antigravity" => resolve_antigravity(),
-        "gemini" => resolve_gui_binary("gemini"),
         _ => None,
     }
 }
@@ -2837,7 +2924,6 @@ fn resolve_harness_binary_override(provider: &str, binary_path: &str) -> Result<
         "omp" => &["omp"],
         "fx" => &["fx"],
         "hermes" => &["hermes"],
-        "gemini" => &["gemini"],
         "antigravity" if cfg!(windows) => &["agy_acp_server", "agy"],
         "antigravity" => &["agy_acp_server.par", "agy"],
         _ => {

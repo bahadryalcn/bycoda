@@ -4,7 +4,7 @@ import { EventEmitter } from "node:events";
 import { authorizeSocialAcpFrame } from "./social-tools";
 import { authorizeRuntimeLogsAcpFrame, type RuntimeLogAccess } from "./runtime-log-tools";
 import { authorizeConversationAcpFrame } from "./conversation-tools";
-import { join, basename, dirname, isAbsolute } from "node:path";
+import { join, basename, dirname, extname, isAbsolute } from "node:path";
 import { readFile, stat, mkdtemp, mkdir, writeFile, open, realpath } from "node:fs/promises";
 import { createServer } from "node:net";
 import { fileURLToPath } from "node:url";
@@ -14,7 +14,7 @@ import type { GenericAcpConfig } from "../src/features/providers/model/genericAc
 import { saveHostGeneratedImage, deleteHostGeneratedImages } from "./generated-images";
 import type { ChildBackend } from "../src/integrations/harness/core/child";
 import { isRemoteProvider, type RemoteProvider } from "../src/features/connections/model/protocol";
-import { providerLaunch, resolveProvider } from "./process";
+import { binaryNames, providerLaunch, resolveProvider } from "./process";
 import { providerAccountEnvironment } from "./provider-accounts";
 import {
   ProviderLines,
@@ -67,6 +67,65 @@ function loopbackUrl(value: unknown): string {
 }
 
 /** Native process implementation for the headless execution proof. */
+const expandHome = (path: string) =>
+  path === "~" || /^~[\\/]/.test(path) ? join(homedir(), path.slice(1)) : path;
+
+/** A configured provider binary: absolute, existing and launchable. Paths that arrive from a
+ * client must also be named like the provider, as the desktop requires. */
+async function configuredBinary(
+  provider: RemoteProvider,
+  value: string,
+  requireProviderName: boolean,
+): Promise<string> {
+  const path = expandHome(value.trim());
+  if (!path || !isAbsolute(path)) throw new Error(`Configured ${provider} binary must be an absolute path`);
+  if (!(await stat(path).catch(() => undefined))?.isFile())
+    throw new Error(`Configured ${provider} binary was not found: ${path}`);
+  const windows = process.platform === "win32";
+  // Windows matches the file stem, like the desktop (agy_acp_server.par, agy.exe).
+  const name = windows ? basename(path, extname(path)) : basename(path);
+  if (
+    requireProviderName &&
+    provider !== "acp" &&
+    !binaryNames[provider].some((expected) =>
+      windows ? expected.toLowerCase() === name.toLowerCase() : expected === name,
+    )
+  )
+    throw new Error(`Configured ${provider} binary must be named ${binaryNames[provider].join(" or ")}`);
+  await providerLaunch(path, []);
+  return path;
+}
+
+/** Spawn reports a missing cwd as the executable being missing; name the folder instead. */
+async function workingDirectory(value: string): Promise<string> {
+  const cwd = expandHome(value);
+  if (!(await stat(cwd).catch(() => undefined))?.isDirectory())
+    throw new Error(`Working directory does not exist on this host: ${cwd}`);
+  return cwd;
+}
+
+/** Host-owned provider binary overrides from `<host dir>/provider-binaries.json`. */
+export async function readProviderBinaryOverrides(
+  directory: string,
+): Promise<Partial<Record<RemoteProvider, string>>> {
+  try {
+    const value: unknown = JSON.parse(
+      await readFile(join(directory, "provider-binaries.json"), "utf8"),
+    );
+    if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+    return Object.fromEntries(
+      Object.entries(value).filter(
+        ([provider, path]) =>
+          isRemoteProvider(provider) && typeof path === "string" && path.trim().length > 0,
+      ),
+    );
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT")
+      console.error("Ignoring invalid provider-binaries.json:", error);
+    return {};
+  }
+}
+
 export class HostChildBackend implements ChildBackend {
   private readonly socialEnvironments = new Map<string, NodeJS.ProcessEnv>();
   private readonly runtimeLogEnvironments = new Map<string, NodeJS.ProcessEnv>();
@@ -100,7 +159,8 @@ export class HostChildBackend implements ChildBackend {
   }
 
   async resolve(provider: RemoteProvider): Promise<string> {
-    if (this.binaries[provider]) return this.binaries[provider]!;
+    const configured = this.binaries[provider];
+    if (configured) return configuredBinary(provider, configured, false);
     return resolveProvider(provider);
   }
 
@@ -179,9 +239,14 @@ export class HostChildBackend implements ChildBackend {
       }
     }
     if (command.startsWith("harness_resolve_")) {
-      const provider = command.slice("harness_resolve_".length);
+      const configured = command === "harness_resolve_configured";
+      const provider = configured
+        ? String(args.provider)
+        : command.slice("harness_resolve_".length);
       if (!isRemoteProvider(provider)) throw new Error(`Unsupported provider: ${provider}`);
-      const path = await this.resolve(provider);
+      const path = configured
+        ? await configuredBinary(provider, String(args.binaryPath ?? ""), true)
+        : await this.resolve(provider);
       const transport = /^(agy|agy\.exe|agy\.cmd)$/i.test(basename(path)) ? "stream-json" : "acp";
       return {
         path,
@@ -432,6 +497,7 @@ export class HostChildBackend implements ChildBackend {
     const account = await providerAccountEnvironment(
       args.account as { provider?: string; id?: string } | undefined,
     );
+    const cwd = await workingDirectory(String(args.cwd));
     const launch = await providerLaunch(String(args.command), args.args as string[]);
     if (this.closing) throw new Error("Host is stopping");
     const env = await this.runtimeLogEnvironment(
@@ -448,7 +514,7 @@ export class HostChildBackend implements ChildBackend {
         ...launch.args,
       ],
       {
-        cwd: String(args.cwd),
+        cwd,
         stdio: ["pipe", "pipe", "pipe", "pipe"],
         detached: process.platform !== "win32",
         windowsHide: true,

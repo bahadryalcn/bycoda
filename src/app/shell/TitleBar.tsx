@@ -314,7 +314,7 @@ function TabHarnesses({
       })}
       {extra > 0 ? (
         <span
-          className={`pl-0.5 text-[10px] leading-none ${dimmed ? "text-content/50" : "text-content"}`}
+          className={`pl-0.5 text-(length:--ui-font-caption) leading-none ${dimmed ? "text-(--ui-text-secondary)" : "text-content"}`}
         >
           +{extra}
         </span>
@@ -438,7 +438,7 @@ function TitleTabItem({
             <TabLabel
               className={`leading-tight ${tab.previewFileId || tab.previewSessionId ? "italic" : ""} ${
                 meta
-                  ? "text-[13px] @min-[11rem]:text-[10px] @min-[11rem]:font-medium"
+                  ? "text-[13px] @min-[11rem]:text-(length:--ui-font-caption) @min-[11rem]:font-medium"
                   : "text-[13px]"
               }`}
             >
@@ -470,7 +470,7 @@ function TitleTabItem({
             ) : null}
           </span>
           {meta ? (
-            <TabLabel className="hidden text-[10px] leading-tight text-content/45 @min-[11rem]:block">
+            <TabLabel className="hidden text-(length:--ui-font-caption) leading-tight text-(--ui-text-secondary) @min-[11rem]:block">
               {meta}
             </TabLabel>
           ) : null}
@@ -598,7 +598,7 @@ export function DevModeLabel() {
   return (
     <span
       title={t("Development build")}
-      className="mr-1 min-w-0 truncate rounded-md bg-skill/15 px-1.5 py-0.5 text-[10px] font-medium tracking-wide text-skill"
+      className="mr-1 min-w-0 truncate rounded-md bg-(--ui-tone-info-subtle) px-1.5 py-0.5 text-(length:--ui-font-caption) font-medium text-(--ui-tone-info-fg)"
     >
       {t("Development")}
     </span>
@@ -670,15 +670,16 @@ export function OverlayNav({
 }) {
   useLocale();
   const navigation = useContext(ToolNavigationContext)?.history;
-  if (navigation) return (
-    <TabVisitNav
-      canGoBack={navigation.canBack}
-      canGoForward={navigation.canForward}
-      onGoBack={navigation.onBack}
-      onGoForward={navigation.onForward}
-      onTogglePanel={onToggleSidebar}
-    />
-  );
+  if (navigation)
+    return (
+      <TabVisitNav
+        canGoBack={navigation.canBack}
+        canGoForward={navigation.canForward}
+        onGoBack={navigation.onBack}
+        onGoForward={navigation.onForward}
+        onTogglePanel={onToggleSidebar}
+      />
+    );
   if (!onBack && !onToggleSidebar) return null;
   return (
     <div className="flex shrink-0 items-center px-1.5">

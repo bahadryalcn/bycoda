@@ -12,36 +12,8 @@ import {
   sessionPerformanceTrace,
 } from "../../../shared/lib/performanceTrace";
 
-export type CheckpointFile = {
-  path: string;
-  relative: string;
-  status: string;
-  additions: number;
-  deletions: number;
-  /** False when changes between this session's edits prevent an exact diff. */
-  exact: boolean;
-  /** False when restoring could overwrite a change made outside this session. */
-  undoable: boolean;
-};
-
-export type CheckpointStatus = {
-  files: CheckpointFile[];
-};
-
-export type CheckpointFileDiff = {
-  path: string;
-  relative: string;
-  status: string;
-  original: string;
-  current: string;
-  binary: boolean;
-  tooLarge: boolean;
-};
-
-export type CheckpointApplyResult = {
-  files: string[];
-  alreadyApplied: number;
-};
+import type { CheckpointStatus, CheckpointFileDiff, CheckpointApplyResult } from "./checkpoint-types";
+export type { CheckpointFile, CheckpointStatus, CheckpointFileDiff, CheckpointApplyResult } from "./checkpoint-types";
 
 const REVIEW_CHANGED = "bycoda-review-changed";
 const checkpointQueues = new Map<string, Promise<void>>();

@@ -55,7 +55,7 @@
   grid-template-columns: auto minmax(0, 1fr);
   gap: 4px 8px;
   color: var(--host-tool-muted);
-  font-size: 10px;
+  font-size: var(--ui-font-caption);
   font-variant-numeric: tabular-nums;
 }
 .resource-chart-cpu {

@@ -134,7 +134,10 @@ export class SharedBrowser {
     const matches =
       this.logSource?.projectId === params.projectId &&
       this.logSource?.sessionId === params.sessionId;
-    if (["browser.frame", "browser.input", "browser.close"].includes(method)) {
+    if (
+      ["browser.frame", "browser.input", "browser.close"].includes(method) ||
+      method.startsWith("browser.annotation.")
+    ) {
       if (!matches) throw new Error("Open a browser for this session before using it.");
       if (!this.lease || this.lease.expiresAt <= this.now())
         throw new Error("Claim browser control before using it.");

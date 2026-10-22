@@ -2,7 +2,7 @@
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { expect, it, vi } from "vitest";
-import { OPEN_SESSION_IMPORT_EVENT, requestSessionImport } from "../import/importModel";
+import { OPEN_SESSION_IMPORT_EVENT, SESSION_HISTORY_IMPORTED_EVENT, requestSessionImport } from "../import/importModel";
 import { SessionImportHost } from "./SessionImportHost";
 
 vi.mock("./SessionImportDialog", () => ({
@@ -40,4 +40,16 @@ it("passes the command context to import and resets it for a Settings request", 
     container.remove();
     vi.unstubAllGlobals();
   }
+});
+
+it("refreshes the existing history owner after bridge imports without opening another import dialog", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const container = document.createElement("div"); const root = createRoot(container); const onImported = vi.fn();
+  try {
+    await act(async () => root.render(createElement(SessionImportHost, { onImported })));
+    await act(async () => window.dispatchEvent(new Event(SESSION_HISTORY_IMPORTED_EVENT)));
+    expect(onImported).toHaveBeenCalledTimes(1); expect(container.childElementCount).toBe(0);
+    await act(async () => root.unmount()); window.dispatchEvent(new Event(SESSION_HISTORY_IMPORTED_EVENT));
+    expect(onImported).toHaveBeenCalledTimes(1);
+  } finally { vi.unstubAllGlobals(); }
 });

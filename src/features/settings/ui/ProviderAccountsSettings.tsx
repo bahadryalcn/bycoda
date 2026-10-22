@@ -391,7 +391,7 @@ export function ProviderAccountsSettings({ harness }: { harness?: HarnessId }) {
                           </div>
                           {duplicateOf ? (
                             <p
-                              className="mt-1 truncate text-[10px] leading-4 text-warning dark:text-warning"
+                              className="mt-1 truncate text-[length:var(--ui-font-caption)] leading-4 text-warning dark:text-warning"
                               role="note"
                             >
                               {t("Same sign-in as ")}
@@ -455,7 +455,7 @@ export function ProviderAccountsSettings({ harness }: { harness?: HarnessId }) {
                     );
                   })}
                   {accounts.length === 0 ? (
-                    <p className="px-4 py-3 text-[12px] text-content/50">
+                    <p className="px-4 py-3 text-[12px] text-(--ui-text-secondary)">
                       {t("No accounts. Add an account to sign in.")}
                     </p>
                   ) : null}
@@ -477,9 +477,9 @@ export function ProviderAccountsSettings({ harness }: { harness?: HarnessId }) {
         </div>
         <div
           hidden={harness !== "cursor" && harness !== "grok"}
-          className="flex flex-wrap items-center gap-2 border-t border-content/5 px-3 py-2.5"
+          className="flex flex-wrap items-center gap-2 border-t border-(--color-stroke) px-3 py-2.5"
         >
-          <span className="min-w-[12rem] flex-1 text-[11px] text-content/45">
+          <span className="min-w-[12rem] flex-1 text-[11px] text-(--ui-text-secondary)">
             {harness === "cursor"
               ? t("Use the Cursor CLI sign-in on this machine.")
               : t("Use the Grok Build CLI sign-in on this machine.")}
@@ -487,7 +487,7 @@ export function ProviderAccountsSettings({ harness }: { harness?: HarnessId }) {
           {standaloneHarness &&
           hasProbedHarnessAvailability() &&
           !isHarnessAvailable(standaloneHarness) ? (
-            <span className="text-[11px] text-content/45">
+            <span className="text-[11px] text-(--ui-text-secondary)">
               {t("Install the CLI first, then sign in.")}
             </span>
           ) : (
@@ -544,7 +544,7 @@ export function ProviderAccountEditor({
   const adding = !editor.accountId;
   return (
     <form
-      className="flex min-h-11 items-center border-b border-content/5 px-3 py-1.5 last:border-b-0"
+      className="flex min-h-11 items-center border-b border-(--color-stroke) px-3 py-1.5 last:border-b-0"
       onSubmit={onSubmit}
     >
       <div data-provider-account-editor-field className="flex min-w-0 flex-1 items-center gap-1.5">

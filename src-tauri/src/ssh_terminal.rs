@@ -79,7 +79,11 @@ pub fn ssh_terminal_spawn(
     http_proxy_ticket_id: Option<String>,
 ) -> Result<(), String> {
     let owner_lease = crate::ssh_window_lifecycle::capture(window.label())?;
-    let endpoint = crate::server_inventory::resolve_ssh_endpoint(&app, &connection_id)?;
+    let endpoint = if let Some(expected) = expected_configuration_digest.as_deref() {
+        crate::server_inventory::resolve_reviewed_ssh_endpoint(&app, &connection_id, expected)?
+    } else {
+        crate::server_inventory::resolve_ssh_endpoint(&app, &connection_id)?
+    };
     let proxy_grant = http_proxy_ticket_id
         .as_deref()
         .map(|ticket| {

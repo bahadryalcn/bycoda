@@ -680,11 +680,7 @@ function ProviderCliHeader({ harness }: { harness: HarnessId }) {
         <HarnessIcon harness={harness} className="size-4 shrink-0" />
         <div className="provider-cli-header-copy">
           <div className="provider-cli-title-line">
-            <h3>
-              {harness === "gemini"
-                ? t("Gemini CLI (enterprise / API key)")
-                : HARNESS_TITLE[harness]}
-            </h3>
+            <h3>{HARNESS_TITLE[harness]}</h3>
             <span className="provider-cli-status">
               <span
                 className={`size-1.5 rounded-full ${available ? "bg-success" : "bg-content/30"}`}
@@ -796,8 +792,7 @@ export function ProviderRow({
     : [];
 
   useEffect(() => {
-    // Gemini discovery may start a browser sign-in; it loads when the model list is opened.
-    if (!available || harness === "gemini" || hasLiveCatalog(harness)) return;
+    if (!available || hasLiveCatalog(harness)) return;
     void refreshHarnessCatalogs([harness]);
   }, [available, harness]);
 

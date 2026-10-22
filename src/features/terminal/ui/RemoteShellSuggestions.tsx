@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { Terminal } from "@xterm/xterm";
 import { Button } from "../../../shared/ui/Button";
 import { t } from "../../../shared/i18n";
-import type { SshShellController } from "../model/sshShellIntegration";
+import type { SshShellController, SshShellPreview } from "../model/sshShellIntegration";
 import styles from "./TerminalTools.module.css";
 import { TerminalGhostText } from "./TerminalGhostText";
 
@@ -11,11 +11,14 @@ export function RemoteShellSuggestions({
   shell,
   terminal,
   onClose,
+  preview,
   selectionMode = true,
 }: {
   shell: SshShellController;
   terminal: Terminal | null;
   onClose: () => void;
+  /** Display-only list shown between passive snapshots; keys pass to the shell. */
+  preview?: SshShellPreview;
   selectionMode?: boolean;
 }) {
   const [selection, setSelection] = useState({ prefix: "", value: "" });
@@ -24,7 +27,11 @@ export function RemoteShellSuggestions({
   const host = useRef<HTMLDivElement>(null);
   const pending = useRef(false);
   const snapshot = shell.state?.status === "suggestions" ? shell.state : undefined;
+  // Only a live snapshot is interactive; the retained preview never accepts.
   const suggestions = [...new Set(snapshot?.suggestions ?? [])];
+  const retained = !snapshot && !selectionMode ? preview : undefined;
+  const shown = snapshot ? suggestions : [...new Set(retained?.suggestions ?? [])];
+  const shownPrefix = (snapshot ? snapshot.prefix : retained?.prefix) ?? "";
   const choice =
     selection.prefix === snapshot?.prefix ? Math.max(0, suggestions.indexOf(selection.value)) : 0;
   const select = (index: number) =>
@@ -151,24 +158,25 @@ export function RemoteShellSuggestions({
             · {t("Prefix")}: <code>{snapshot.prefix || "∅"}</code>
           </p>
         ) : null}
-        {shell.waiting ? (
+        {/* Passive previews stay a fixed list; status text would resize them per pause. */}
+        {selectionMode && shell.waiting ? (
           <p role="status" className={styles.hint}>
             {t("Waiting for the shell prompt…")}
           </p>
         ) : null}
-        {shell.error || error ? (
+        {(selectionMode && shell.error) || error ? (
           <p role="status" className={styles.hint}>
-            {t(shell.error || error)}
+            {t((selectionMode && shell.error) || error)}
           </p>
         ) : null}
-        {snapshot ? (
+        {snapshot || retained?.suggestions.length ? (
           <div
             role="listbox"
             aria-label={t("Remote command suggestions")}
             className={styles.list}
             aria-busy={busy}
           >
-            {suggestions.map((value, index) => (
+            {shown.map((value, index) => (
               <Button
                 key={value}
                 role="option"
@@ -179,17 +187,15 @@ export function RemoteShellSuggestions({
                 aria-selected={index === choice}
                 disabled={busy}
                 onMouseDown={(event) => event.preventDefault()}
-                onClick={() => void accept(value)}
+                onClick={snapshot ? () => void accept(value) : undefined}
               >
                 <span className={styles.text} title={value}>
-                  <span className={styles.match}>
-                    {value.slice(0, snapshot.prefix?.length ?? 0)}
-                  </span>
-                  {value.slice(snapshot.prefix?.length ?? 0)}
+                  <span className={styles.match}>{value.slice(0, shownPrefix.length)}</span>
+                  {value.slice(shownPrefix.length)}
                 </span>
               </Button>
             ))}
-            {!suggestions.length ? (
+            {snapshot && !suggestions.length ? (
               <p className={styles.hint}>{t("No safe matching suggestions.")}</p>
             ) : null}
           </div>

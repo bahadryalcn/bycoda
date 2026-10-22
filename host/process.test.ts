@@ -28,26 +28,6 @@ it("resolves the Antigravity CLI without requiring the separate ACP server", asy
   }
 });
 
-it.each(["bundle/gemini.js", "dist/index.js"])(
-  "launches the Gemini Windows npm package at %s without interpreting a shell wrapper",
-  async (relative) => {
-    const directory = mkdtempSync(join(tmpdir(), "bycoda-gemini-launch-"));
-    const launcher = join(directory, "gemini.cmd");
-    const entry = join(directory, "node_modules/@google/gemini-cli", relative);
-    mkdirSync(join(entry, ".."), { recursive: true });
-    writeFileSync(entry, "// fixture");
-    writeFileSync(launcher, "@echo wrapper must not execute");
-    try {
-      expect(await providerLaunch(launcher, ["--experimental-acp"], "win32")).toEqual({
-        command: process.execPath,
-        args: [entry, "--experimental-acp"],
-      });
-    } finally {
-      rmSync(directory, { recursive: true, force: true });
-    }
-  },
-);
-
 it.each(["cursor", "pi", "fx"] as const)(
   "does not execute an unrelated ambiguous %s binary while resolving providers",
   async (provider) => {
@@ -96,6 +76,79 @@ it.runIf(process.platform !== "win32")(
     }
   },
 );
+
+it("prefers the Antigravity ACP server over an agy CLI found earlier on PATH", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "bycoda-agy-order-"));
+  const cli = join(directory, "cli");
+  const server = join(directory, "server");
+  mkdirSync(cli);
+  mkdirSync(server);
+  const windows = process.platform === "win32";
+  const agy = join(cli, windows ? "agy.exe" : "agy");
+  const acp = join(server, windows ? "agy_acp_server.exe" : "agy_acp_server.par");
+  for (const file of [agy, acp]) {
+    writeFileSync(file, "fixture");
+    chmodSync(file, 0o755);
+  }
+  vi.stubEnv("PATH", [cli, server].join(windows ? ";" : ":"));
+  clearProviderResolution();
+  try {
+    expect(await resolveProvider("antigravity")).toBe(acp);
+  } finally {
+    clearProviderResolution();
+    vi.unstubAllEnvs();
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+it("launches npm cmd-shim targets without a shell and rejects unsafe shims", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "bycoda-cmd-shim-"));
+  const shim = (name: string, body: string) => {
+    const path = join(directory, `${name}.cmd`);
+    writeFileSync(path, `@ECHO off\r\nGOTO start\r\n:start\r\nSETLOCAL\r\n${body}\r\n`);
+    return path;
+  };
+  const script = join(directory, "node_modules", "opencode-ai", "bin", "opencode.js");
+  const binary = join(directory, "node_modules", "grok", "bin", "grok.exe");
+  const bundled = join(directory, "versions", "1", "node.exe");
+  const bundledScript = join(directory, "versions", "1", "index.js");
+  for (const file of [script, binary, bundled, bundledScript]) {
+    mkdirSync(join(file, ".."), { recursive: true });
+    writeFileSync(file, "fixture");
+  }
+  mkdirSync(join(directory, "nested"));
+  try {
+    const node = shim(
+      "opencode",
+      'IF EXIST "%dp0%\\node.exe" (\r\n  SET "_prog=%dp0%\\node.exe"\r\n) ELSE (\r\n  SET "_prog=node"\r\n)\r\n' +
+        'endLocal & goto #_undefined_# 2>NUL || title %COMSPEC% & "%_prog%"  "%dp0%\\node_modules\\opencode-ai\\bin\\opencode.js" %*',
+    );
+    expect(await providerLaunch(node, ["acp"], "win32")).toEqual({
+      command: process.execPath,
+      args: [script, "acp"],
+    });
+    const exe = shim("grok", '"%dp0%\\node_modules\\grok\\bin\\grok.exe"   %*');
+    expect(await providerLaunch(exe, ["--version"], "win32")).toEqual({
+      command: binary,
+      args: ["--version"],
+    });
+    const installer = shim("agent", '"%~dp0versions\\1\\node.exe" "%~dp0versions\\1\\index.js" %*');
+    expect(await providerLaunch(installer, ["-p"], "win32")).toEqual({
+      command: bundled,
+      args: [bundledScript, "-p"],
+    });
+    for (const unsafe of [
+      shim("nested/escape", '"%dp0%\\..\\node_modules\\grok\\bin\\grok.exe" %*'),
+      shim("sh", 'SET "_prog=%dp0%\\sh.exe"\r\n"%_prog%" "%dp0%\\node_modules\\opencode-ai\\bin\\opencode.js" %*'),
+      shim("custom", "powershell -File run.ps1 %*"),
+    ])
+      await expect(providerLaunch(unsafe, [], "win32")).rejects.toThrow(
+        "Unsupported Windows provider launcher",
+      );
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
 
 it.each(["@earendil-works/pi-coding-agent", "@mariozechner/pi-coding-agent"])(
   "launches the supported Pi npm shim for %s without a shell",

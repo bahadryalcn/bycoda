@@ -61,11 +61,12 @@
   opacity: 0.28;
   max-inline-size: 1280px;
 }
-.crew-scene[data-theme="star-wars"] .crew-scene__label {
+.crew-scene:is([data-theme="star-wars"], [data-theme="lotr"]) .crew-scene__label {
   opacity: 0.85;
   line-height: 1.4;
 }
-.crew-scene[data-theme="star-wars"] .crew-scene__label[data-working="true"] {
+.crew-scene:is([data-theme="star-wars"], [data-theme="lotr"])
+  .crew-scene__label[data-working="true"] {
   opacity: 1;
 }
 .crew-scene__name {

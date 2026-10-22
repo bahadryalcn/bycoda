@@ -19,7 +19,7 @@ import { SearchInput } from "../../../shared/ui/SearchInput";
 import { SlotText } from "../../../shared/ui/SlotText";
 import { useDecorativeMotionPreference } from "../../settings/model/decorativeMotion";
 import { DateTimeRangePicker } from "../../../shared/ui/DateTimeRangePicker";
-import { ArrowDownCircle, ListFilter, RefreshCw, X } from "../../../shared/ui/icons";
+import { ArrowDownCircle, ListFilter, RefreshCw } from "../../../shared/ui/icons";
 import {
   PROVIDER_ACCOUNT_PROVIDERS,
   providerAccounts,
@@ -56,7 +56,7 @@ import {
   type UsageTurnReport,
   type UsageWindow,
 } from "../model/usageAnalytics";
-import { formatMetric, metricNames, PagedUsageTable } from "./UsageCharts";
+import { formatMetric, formatUsagePercent, metricNames, PagedUsageTable } from "./UsageCharts";
 import { Contribution, TimeDistribution, UsageShare, UsageTrend } from "./UsageVisualizations";
 import { usageColorMap } from "../model/usageColors";
 import { QuotaHistory } from "./UsageQuotaHistory";
@@ -77,6 +77,8 @@ type Load = {
   usage: AccountUsage[];
   turns: UsageTurnReport | null;
   failed: number;
+  turnsFailed: boolean;
+  stale: boolean;
   refreshedAt: number;
   error: string | null;
 };
@@ -85,6 +87,8 @@ const initialLoad: Load = {
   usage: [],
   turns: null,
   failed: 0,
+  turnsFailed: false,
+  stale: false,
   refreshedAt: 0,
   error: null,
 };
@@ -148,6 +152,7 @@ export function UsageOverview({
   const [dimension, setDimension] = useState<UsageDimension>("provider");
   const [resolution, setResolution] = useState<UsageResolution>("day");
   const [openFilters, setOpenFilters] = useState(false);
+  const [showDetails, setShowDetails] = useState(false);
   const [reload, setReload] = useState(0);
   const [version, setVersion] = useState(0);
   const [load, setLoad] = useState<Load>(initialLoad);
@@ -197,8 +202,21 @@ export function UsageOverview({
               )?.rows ?? [])
             : rows,
         })),
-        turns,
+        turns: turns ?? previousLoad.turns,
         failed,
+        turnsFailed: turns === null,
+        stale:
+          (turns === null && previousLoad.turns !== null) ||
+          reports.some(
+            ({ account, failed }) =>
+              failed &&
+              previousLoad.usage.some(
+                (report) =>
+                  report.account.id === account.id &&
+                  report.account.provider === account.provider &&
+                  report.rows.length > 0,
+              ),
+          ),
         refreshedAt: Date.now(),
         error:
           accounts.length > 0 && failed === accounts.length
@@ -384,6 +402,16 @@ export function UsageOverview({
         : [],
     [selectedSession, turns, window, filters, pricing, groupFor, locale],
   );
+  const hasCachedUsage = load.usage.some(({ rows }) => rows.length > 0);
+  const firstLoad = !load.refreshedAt;
+  const unavailable =
+    !firstLoad &&
+    ((!!load.error && !hasCachedUsage) || (!accounts.length && load.turnsFailed && !load.turns));
+  const stale = load.stale;
+  const partial = !unavailable && (load.failed > 0 || load.turnsFailed);
+  const hasFilteredData = filtered.length > 0 || runtime.length > 0;
+  const showAnalytics = !firstLoad && !unavailable;
+  const metricUnavailable = metric === "duration" && load.turns === null;
   const refreshData = () => {
     if (preset !== "custom") setInterval(presetWindow(preset, Date.now()));
     setReload((v) => v + 1);
@@ -410,12 +438,17 @@ export function UsageOverview({
       }
       aria-busy={refreshing}
     >
+      {view === "projects" && (!showAnalytics || metricUnavailable) && (
+        <div id="setting-provider-usage" data-setting-id="provider-usage" />
+      )}
       <div className="usage-analytics-header">
         <div>
           <p>
             {t(limitsOnly ? "This machine" : "This machine · Local session logs")} ·{" "}
             {Intl.DateTimeFormat().resolvedOptions().timeZone}
             {load.refreshedAt > 0 &&
+              !partial &&
+              !unavailable &&
               ` · ${t("Updated")} ${new Date(load.refreshedAt).toLocaleTimeString(locale, { hour: "2-digit", minute: "2-digit", hour12: false })}`}
           </p>
         </div>
@@ -432,21 +465,11 @@ export function UsageOverview({
             }}
           />
 
-          <DateTimeRangePicker
-            minDate={new Date(0)}
-            maxDate={new Date(new Date().setHours(24, 0, 0, 0))}
-            value={{ start: new Date(window.start), end: new Date(window.end) }}
-            onChange={(range) => {
-              setPreset("custom");
-              setInterval({ start: range.start.getTime(), end: range.end.getTime() });
-              setSelectedSession(null);
-            }}
-          />
           <Button
             ref={filterAnchor}
             variant="ghost"
             iconOnly
-            label={t("Filters")}
+            label={`${t("Filters")}${activeFilters.length ? ` (${activeFilters.length})` : ""}`}
             selected={!!activeFilters.length}
             aria-haspopup="dialog"
             aria-expanded={openFilters}
@@ -479,6 +502,60 @@ export function UsageOverview({
         >
           <div className="usage-filter-panel">
             <h3>{t("Filters")}</h3>
+            <DateTimeRangePicker
+              minDate={new Date(0)}
+              maxDate={new Date(new Date().setHours(24, 0, 0, 0))}
+              value={{ start: new Date(window.start), end: new Date(window.end) }}
+              onChange={(range) => {
+                setPreset("custom");
+                setInterval({ start: range.start.getTime(), end: range.end.getTime() });
+                setSelectedSession(null);
+              }}
+            />
+            {!limitsOnly && view !== "limits" && (
+              <>
+                <h3>{t("Chart options")}</h3>
+                <div className="usage-controls">
+                  <Select
+                    label={t("Chart metric")}
+                    value={metric}
+                    onValueChange={(v) => setMetric(v as UsageMetric)}
+                    options={Object.entries(metricNames).map(([value, label]) => ({
+                      value,
+                      label: t(label),
+                    }))}
+                  />
+                  {view !== "time" && (
+                    <Select
+                      label={t("Group by")}
+                      value={dimension}
+                      onValueChange={(v) => setDimension(v as UsageDimension)}
+                      options={(["provider", "account", "model", "project"] as const).map(
+                        (value) => ({
+                          value,
+                          label: t(names[value]),
+                        }),
+                      )}
+                    />
+                  )}
+                  {view === "overview" && (
+                    <>
+                      <Select
+                        label={t("Resolution")}
+                        value={resolution}
+                        onValueChange={(v) => setResolution(v as UsageResolution)}
+                        options={[
+                          { value: "15m", label: t("15 minutes") },
+                          { value: "hour", label: t("Hourly") },
+                          { value: "day", label: t("Daily") },
+                          { value: "week", label: t("Weekly") },
+                        ]}
+                      />
+                    </>
+                  )}
+                </div>
+              </>
+            )}
             {(Object.keys(filters) as (keyof UsageFilters)[]).map((key) => (
               <SearchableSelect
                 key={key}
@@ -506,26 +583,6 @@ export function UsageOverview({
         </Popover>
       )}
 
-      {!!activeFilters.length && (
-        <div className="usage-filter-chips">
-          {activeFilters.map(({ key, value }) => (
-            <Button
-              key={`${key}:${value}`}
-              variant="secondary"
-              tooltip={t("Remove filter")}
-              onClick={() =>
-                setFilters((f) => ({ ...f, [key]: f[key].filter((v) => v !== value) }))
-              }
-            >
-              {t(names[key])}: {t(options[key].get(value) ?? value)}
-              <X className="size-3" />
-            </Button>
-          ))}
-          <Button variant="ghost" onClick={() => setFilters(emptyUsageFilters())}>
-            {t("Clear all")}
-          </Button>
-        </div>
-      )}
       {!limitsOnly && (
         <SegmentedControl
           label={t("Usage views")}
@@ -539,17 +596,45 @@ export function UsageOverview({
           ]}
         />
       )}
-      {load.error && (
+      {view !== "limits" && firstLoad && (
+        <p role="status" className="usage-empty">
+          {t("Loading usage…")}
+        </p>
+      )}
+      {view !== "limits" && unavailable && (
         <Alert tone="danger" role="alert">
-          {t(load.error)}
+          <p>
+            {t(
+              load.error ??
+                "Recorded session logs could not be read. Duration and session totals may be incomplete.",
+            )}
+          </p>
+          <Button variant="secondary" loading={refreshing} onClick={refreshData}>
+            {t("Refresh usage")}
+          </Button>
         </Alert>
       )}
-      {load.failed > 0 && !load.error && (
+      {view !== "limits" && partial && (
         <Alert tone="warning">
-          {t("Some account logs could not be read. Totals are partial.")} ({load.failed})
+          {(load.failed > 0 || stale) &&
+            t(
+              stale
+                ? "Previous usage remains visible. Some sources could not be refreshed."
+                : "Some account logs could not be read. Totals are partial.",
+            )}
+          {load.turnsFailed && (
+            <p>
+              {t(
+                "Recorded session logs could not be read. Duration and session totals may be incomplete.",
+              )}
+            </p>
+          )}
+          <Button variant="ghost" loading={refreshing} onClick={refreshData}>
+            {t("Refresh usage")}
+          </Button>
         </Alert>
       )}
-      {view !== "limits" && (
+      {view !== "limits" && showAnalytics && (
         <>
           {refreshing && load.refreshedAt > 0 && (
             <p role="status" className="usage-muted">
@@ -562,11 +647,9 @@ export function UsageOverview({
                 {(
                   [
                     "cost",
-                    "input",
-                    "output",
-                    "cacheRead",
-                    "cacheWrite",
+                    "tokens",
                     "duration",
+                    ...(showDetails ? ["input", "output", "cacheRead", "cacheWrite"] : []),
                   ] as UsageMetric[]
                 ).map((key) => {
                   const previousValue = previousTotals[key];
@@ -609,80 +692,52 @@ export function UsageOverview({
                                   ? "Recorded turn elapsed time"
                                   : "tokens",
                             )
-                          : `${change >= 0 ? "+" : ""}${change.toFixed(1)}% ${t("vs previous period")}`}
+                          : `${change >= 0 ? "+" : ""}${formatUsagePercent(change)} ${t("vs previous period")}`}
                       </small>
                     </div>
                   );
                 })}
               </div>
-              <div className="usage-facts">
-                <span>
-                  {t("Total tokens")} <b>{formatMetric(totals.tokens, "tokens")}</b>
-                </span>
-                <span>
-                  {t("Cache hit rate")}{" "}
-                  <b>
-                    {inputTotal ? `${((totals.cacheRead / inputTotal) * 100).toFixed(1)}%` : "—"}
-                  </b>
-                </span>
-                <span>
-                  {t("Cache savings")}{" "}
-                  <b>
-                    {unpriced.length ? "≥ " : ""}
-                    {formatMetric(cacheSavings, "cost")}
-                  </b>
-                </span>
-                <span>
-                  {t("Active days")} <b>{activeDays}</b>
-                </span>
-                <span>
-                  {t("Cost per active day")}{" "}
-                  <b>
-                    {activeDays
-                      ? `${unpriced.length ? "≥ " : ""}${formatMetric(totals.cost / activeDays, "cost")}`
-                      : "—"}
-                  </b>
-                </span>
-              </div>
+              <Button
+                variant="ghost"
+                aria-expanded={showDetails}
+                onClick={() => setShowDetails(!showDetails)}
+              >
+                {t("Usage details")}
+              </Button>
+              {showDetails && (
+                <div className="usage-facts">
+                  <span>
+                    {t("Total tokens")} <b>{formatMetric(totals.tokens, "tokens")}</b>
+                  </span>
+                  <span>
+                    {t("Cache hit rate")}{" "}
+                    <b>
+                      {inputTotal ? formatUsagePercent((totals.cacheRead / inputTotal) * 100) : "—"}
+                    </b>
+                  </span>
+                  <span>
+                    {t("Cache savings")}{" "}
+                    <b>
+                      {unpriced.length ? "≥ " : ""}
+                      {formatMetric(cacheSavings, "cost")}
+                    </b>
+                  </span>
+                  <span>
+                    {t("Active days")} <b>{activeDays}</b>
+                  </span>
+                  <span>
+                    {t("Cost per active day")}{" "}
+                    <b>
+                      {activeDays
+                        ? `${unpriced.length ? "≥ " : ""}${formatMetric(totals.cost / activeDays, "cost")}`
+                        : "—"}
+                    </b>
+                  </span>
+                </div>
+              )}
             </>
           )}
-          <div className="usage-controls">
-            <Select
-              label={t("Chart metric")}
-              value={metric}
-              onValueChange={(v) => setMetric(v as UsageMetric)}
-              options={Object.entries(metricNames).map(([value, label]) => ({
-                value,
-                label: t(label),
-              }))}
-            />
-            {view !== "time" && (
-              <Select
-                label={t("Group by")}
-                value={dimension}
-                onValueChange={(v) => setDimension(v as UsageDimension)}
-                options={(["provider", "account", "model", "project"] as const).map((value) => ({
-                  value,
-                  label: t(names[value]),
-                }))}
-              />
-            )}
-            {view === "overview" && (
-              <>
-                <Select
-                  label={t("Resolution")}
-                  value={resolution}
-                  onValueChange={(v) => setResolution(v as UsageResolution)}
-                  options={[
-                    { value: "15m", label: t("15 minutes") },
-                    { value: "hour", label: t("Hourly") },
-                    { value: "day", label: t("Daily") },
-                    { value: "week", label: t("Weekly") },
-                  ]}
-                />
-              </>
-            )}
-          </div>
           {view === "overview" && actualResolution !== resolution && (
             <p className="usage-muted">
               {t(
@@ -690,10 +745,16 @@ export function UsageOverview({
               )}
             </p>
           )}
-          {!refreshing && !filtered.length && (
-            <Alert tone="info">{t("No usage matches these filters.")}</Alert>
+          {!refreshing && !hasFilteredData && !partial && (
+            <Alert tone="info">
+              {t(
+                activeFilters.length
+                  ? "No usage matches these filters."
+                  : "No usage recorded in this period.",
+              )}
+            </Alert>
           )}
-          {view === "overview" && (
+          {view === "overview" && !metricUnavailable && (
             <>
               <div className="usage-overview-main">
                 <UsageTrend
@@ -732,7 +793,7 @@ export function UsageOverview({
               </div>
             </>
           )}
-          {view === "time" && (
+          {view === "time" && !metricUnavailable && (
             <TimeDistribution
               samples={chartSamples}
               metric={metric}
@@ -740,7 +801,7 @@ export function UsageOverview({
               onSelect={chooseInterval}
             />
           )}
-          {view === "projects" && (
+          {view === "projects" && !metricUnavailable && (
             <>
               <div
                 className="usage-section-heading"
@@ -833,7 +894,7 @@ export function UsageOverview({
                 "API-equivalent estimates from local session logs, not what a subscription plan bills.",
               )}{" "}
               {t("Priced token coverage")}:{" "}
-              {totals.tokens ? ((pricedTokens / totals.tokens) * 100).toFixed(1) : "—"}%.
+              {totals.tokens ? formatUsagePercent((pricedTokens / totals.tokens) * 100) : "—"}.
             </p>
             {unpriced.length > 0 && (
               <p>

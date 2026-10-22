@@ -2,6 +2,8 @@ import { createHash, randomUUID } from "node:crypto";
 import { readFile, realpath, stat } from "node:fs/promises";
 import { basename, isAbsolute, dirname, join } from "node:path";
 import { HostCheckpoints } from "./checkpoints";
+import { previewContextualSession } from "./contextual-session";
+import { composeNoteContext, noteContextMeta, readNoteContext } from "../src/features/notes/noteContext";
 import { isEditTool } from "../src/integrations/harness/core/preview";
 import { homedir } from "node:os";
 import { HandoffHistoryStore } from "./handoff-history";
@@ -33,6 +35,7 @@ import {
   formatSessionTitle,
   titleFromPrompt,
   type Session,
+  type SecondOpinionMeta,
 } from "../src/features/sessions/model/session";
 import { namedWorktreeBranch } from "../src/features/source-control/model/worktrees";
 import {
@@ -41,6 +44,7 @@ import {
   type HostSession,
   type CommandReceipt,
   type RemoteProvider,
+  type ContextualSessionInput,
 } from "../src/features/connections/model/protocol";
 import type { HostProvider } from "./providers";
 import { HostStore } from "./store";
@@ -114,11 +118,36 @@ function modelSettings(value: unknown): Record<string, string> {
   return Object.fromEntries(entries) as Record<string, string>;
 }
 
+function contextualInput(v: Record<string, unknown>): ContextualSessionInput {
+  if (!isRemoteProvider(v.harness) || !["handoff", "secondOpinion"].includes(String(v.mode)) ||
+      !Number.isSafeInteger(v.expectedRevision) || Number(v.expectedRevision) < 0)
+    throw new Error("Invalid contextual session request");
+  if (v.providerAccountId !== undefined || v.account !== undefined && v.account !== "host-default")
+    throw new Error("Only the host default account is supported for contextual sessions");
+  return { sessionId: text(v.sessionId, "source session ID"), sourceBlockId: text(v.sourceBlockId, "source reply ID"),
+    expectedRevision: Number(v.expectedRevision), mode: v.mode as ContextualSessionInput["mode"], harness: v.harness,
+    model: text(v.model, "model", 200), modelSettings: modelSettings(v.modelSettings) };
+}
+
+function secondOpinionMeta(value: unknown): SecondOpinionMeta | undefined {
+  if (value === undefined) return undefined;
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Invalid second opinion metadata");
+  const row = value as Record<string, unknown>;
+  if (!isRemoteProvider(row.from) || !isRemoteProvider(row.to) || row.kind !== undefined && row.kind !== "handoff" ||
+      row.request !== undefined && (typeof row.request !== "string" || row.request.length > 240) ||
+      row.files !== undefined && (!Number.isSafeInteger(row.files) || Number(row.files) < 0 || Number(row.files) > 40))
+    throw new Error("Invalid second opinion metadata");
+  return { from: row.from, to: row.to, ...(row.request ? { request: row.request as string } : {}),
+    ...(row.files !== undefined ? { files: Number(row.files) } : {}), ...(row.kind ? { kind: "handoff" as const } : {}) };
+}
+
 export function parseCommand(input: unknown): HostCommand {
   if (!input || typeof input !== "object" || Array.isArray(input))
     throw new Error("Invalid command");
   const v = input as Record<string, unknown>;
   const commandId = text(v.commandId, "command ID");
+  if (v.noteCard !== undefined && (v.type !== "send" || v.queued !== undefined || typeof v.text !== "string" || /^\s*\/(?:clear|compact|new|plan)(?:\s|$)/i.test(v.text)))
+    throw new Error("Send note context as a new regular message");
   if (v.type === "create") {
     if (!isRemoteProvider(v.harness) || !RUNTIME_MODES.includes(v.runtimeMode as never))
       throw new Error("Invalid provider or permission mode");
@@ -146,6 +175,8 @@ export function parseCommand(input: unknown): HostCommand {
     };
   }
   const sessionId = text(v.sessionId, "session ID");
+  if (v.type === "contextual") return { type: "contextual", commandId, ...contextualInput(v),
+    previewDigest: text(v.previewDigest, "reviewed context digest", 64) };
   if (v.type === "configure") {
     if (v.harness !== undefined && !isRemoteProvider(v.harness))
       throw new Error("Invalid provider");
@@ -178,12 +209,16 @@ export function parseCommand(input: unknown): HostCommand {
     };
   }
   if (v.type === "send" || v.type === "draft" || v.type === "steer") {
+    if (v.noteCard !== undefined && (v.type !== "send" || v.intent && v.intent !== "default" || v.planBlockId || v.draftBlockId || v.secondOpinion))
+      throw new Error("Send note context as a new regular message");
+    const noteCard = v.noteCard === undefined ? undefined : readNoteContext(v.noteCard);
     const attachments = parseRemoteAttachments(v.attachments);
     if (
       typeof v.text !== "string" ||
       v.text.length > 256_000 ||
       v.text.includes("\0") ||
       (!v.text.trim() &&
+        !noteCard &&
         attachments.length === 0 &&
         !(v.type === "send" && v.draftBlockId !== undefined))
     )
@@ -196,6 +231,11 @@ export function parseCommand(input: unknown): HostCommand {
       throw new Error("Invalid turn intent");
     if (v.planBlockId !== undefined && (v.type !== "send" || v.intent !== "build"))
       throw new Error("Invalid plan build");
+    if (v.expectedPlanText !== undefined &&
+        (v.type !== "send" || v.intent !== "build" || !v.planBlockId ||
+          typeof v.expectedPlanText !== "string" || v.expectedPlanText.length > 256_000 ||
+          v.expectedPlanText.includes("\0") || v.draftBlockId !== undefined || attachments.length > 0))
+      throw new Error("Invalid reviewed plan");
     if (v.type === "steer")
       return {
         type: "steer",
@@ -221,6 +261,11 @@ export function parseCommand(input: unknown): HostCommand {
       ...(v.type === "send" && v.planBlockId !== undefined
         ? { planBlockId: text(v.planBlockId, "plan block ID") }
         : {}),
+      ...(v.type === "send" && v.expectedPlanText !== undefined
+        ? { expectedPlanText: v.expectedPlanText as string }
+        : {}),
+      ...(v.type === "send" && v.secondOpinion !== undefined ? { secondOpinion: secondOpinionMeta(v.secondOpinion) } : {}),
+      ...(v.type === "send" && noteCard ? { noteCard } : {}),
     };
   }
   if (v.type === "removeDraft")
@@ -252,6 +297,8 @@ export function parseCommand(input: unknown): HostCommand {
       line: text(v.line, "shell command", SHELL_COMMAND_LIMIT),
     };
   const runId = text(v.runId, "run ID");
+  if (v.type === "stopItem") return { type: "stopItem", commandId, sessionId, runId,
+    blockId: text(v.blockId, "agent block ID"), callId: text(v.callId, "agent call ID") };
   if (v.type === "cancel") return { type: "cancel", commandId, sessionId, runId };
   if (!Number.isSafeInteger(v.requestId) || Number(v.requestId) < 0)
     throw new Error("Invalid request ID");
@@ -324,6 +371,7 @@ export class HostEngine {
     string,
     {
       runId: string;
+      priorBlockIds: Set<string>;
       ready: Promise<void>;
       steers: Promise<void>;
       done: Promise<void>;
@@ -443,6 +491,46 @@ export class HostEngine {
     const provider = this.providers[id as RemoteProvider];
     if (!provider) throw new Error(`${id} is not available on this host`);
     return provider;
+  }
+
+  supportsItemStop(harness: RemoteProvider): boolean {
+    return typeof this.providers[harness]?.stopItem === "function";
+  }
+
+  previewContextual(raw: Record<string, unknown>, source?: HostSession) {
+    const input = contextualInput(raw);
+    this.provider(input.harness);
+    return previewContextualSession(source ?? this.store.session(input.sessionId), input);
+  }
+
+  private contextualCommand(command: Extract<HostCommand, { type: "contextual" }>, signature: string): CommandReceipt {
+    if (this.rewinding.has(command.sessionId) || this.running.has(command.sessionId))
+      throw new Error("Wait for the source conversation to finish before transferring context");
+    this.provider(command.harness);
+    this.flush(command.sessionId);
+    const source = this.store.session(command.sessionId);
+    const preview = previewContextualSession(source, contextualInput(command), true);
+    if (preview.digest !== command.previewDigest) throw new Error("The reviewed context changed. Review it again before continuing.");
+    return this.store.transaction(() => {
+      const created = this.command({ type: "create", commandId: `${command.commandId}:create`, projectId: source.projectId,
+        worktreeCwd: preview.cwd, harness: command.harness, model: command.model, modelSettings: command.modelSettings,
+        runtimeMode: source.session.runtimeMode });
+      const destination = this.store.session(created.sessionId);
+      const session = command.mode === "handoff" ? appendReadyHandoff(destination.session,
+        preview.sourceProvider, command.harness, preview.contextText) : destination.session;
+      const prepared = this.save({ ...destination, session: { ...session,
+        title: formatSessionTitle(command.harness, command.mode === "handoff" ? "Handoff" : "Second opinion"),
+        ...(source.session.worktreeCwd ? { worktreeCwd: source.session.worktreeCwd } : {}),
+        ...(source.session.branch ? { branch: source.session.branch } : {}),
+      } }, { type: "session.contextualOrigin", sourceSessionId: source.session.id, sourceBlockId: command.sourceBlockId,
+        sourceRevision: command.expectedRevision, previewDigest: preview.digest, mode: command.mode });
+      const result = command.mode === "secondOpinion" ? this.command({ type: "send", commandId: `${command.commandId}:send`,
+        sessionId: created.sessionId, text: preview.contextText, secondOpinion: preview.secondOpinion }) :
+        { commandId: command.commandId, sessionId: created.sessionId, revision: prepared.revision };
+      const receipt = { ...result, commandId: command.commandId };
+      this.store.recordReceipt(signature, receipt);
+      return receipt;
+    });
   }
 
   private save(
@@ -708,6 +796,7 @@ export class HostEngine {
     const signature = createHash("sha256").update(JSON.stringify(command)).digest("hex");
     const previous = this.store.receipt(command.commandId, signature);
     if (previous) return previous;
+    if (command.type === "contextual") return this.contextualCommand(command, signature);
     if (command.type !== "create" && this.rewinding.has(command.sessionId))
       throw new Error("A conversation change is in progress");
     // Commands apply to the latest state, including batched stream output.
@@ -748,6 +837,8 @@ export class HostEngine {
         };
       } else {
         value = this.store.session(command.sessionId);
+        if ((command.type === "send" || command.type === "steer" || command.type === "draft") && command.attachments?.some((file) => file.browserAnnotation && (file.browserAnnotation.projectId !== value.projectId || file.browserAnnotation.sessionId !== value.session.id)))
+          throw new Error("Browser selection belongs to another project or conversation");
         if (
           (command.type === "send" || command.type === "compact") &&
           this.switchingProjects.has(value.projectId)
@@ -895,10 +986,19 @@ export class HostEngine {
             (!plan || !isBuildablePlan(plan))
           )
             throw new Error("Plan is not ready to build");
+          if (command.type === "send" && command.expectedPlanText !== undefined &&
+              plan?.text !== command.expectedPlanText)
+            throw new Error("The reviewed plan changed. Review the current plan before building.");
+          const approvedPlanText = plan && command.type === "send" && command.expectedPlanText !== undefined
+            ? command.text : plan?.text;
           const attachments =
             command.type === "send"
               ? (draft?.attachments ?? resolveAttachments(this.store, command.attachments ?? []))
               : [];
+          if (attachments.some((file) => file.browserAnnotation && (file.browserAnnotation.projectId !== value.projectId || file.browserAnnotation.sessionId !== value.session.id)))
+            throw new Error("Browser selection belongs to another project or conversation");
+          if (command.type === "send" && command.secondOpinion && command.secondOpinion.to !== value.session.harness)
+            throw new Error("The second opinion target does not match this conversation");
           // Read before the turn's own block lands after them.
           let handoffText: string | undefined;
           let handoffFrom: RemoteProvider | undefined;
@@ -971,10 +1071,15 @@ export class HostEngine {
                     block === plan
                       ? {
                           ...block,
+                          text: approvedPlanText ?? block.text,
                           plan: {
                             ...(block.plan ?? { status: "ready" as const }),
                             status: "building" as const,
-                            approvedText: block.text,
+                            approvedText: approvedPlanText ?? block.text,
+                            ...(approvedPlanText !== block.text ? {
+                              originalText: block.plan?.originalText ?? block.text,
+                              edited: true,
+                            } : {}),
                           },
                         }
                       : block,
@@ -983,6 +1088,8 @@ export class HostEngine {
                   id: command.commandId,
                   role: "user",
                   text: command.type === "compact" ? "/compact" : command.text,
+                  ...(command.type === "send" && command.secondOpinion ? { secondOpinion: command.secondOpinion } : {}),
+                  ...(command.type === "send" && command.noteCard ? { noteCard: noteContextMeta(command.noteCard) } : {}),
                   ...(attachments.length ? { attachments } : {}),
                   startedAt: Date.now(),
                   turnModel: {
@@ -999,8 +1106,8 @@ export class HostEngine {
           };
           effect = (saved) => {
             const turnText = command.type === "send"
-              ? plan ? buildPlanPrompt(plan.text)
-                : turnIntent === "plan" ? planTurnPrompt(command.text) : command.text
+              ? plan ? buildPlanPrompt(approvedPlanText ?? plan.text)
+                : turnIntent === "plan" ? planTurnPrompt(command.text) : command.noteCard ? composeNoteContext(command.noteCard, command.text) : command.text
               : "";
             const handoffBlock = handoffText
               ? `<previous_agent_context>\n${handoffText}\n</previous_agent_context>\n\n`
@@ -1022,7 +1129,7 @@ export class HostEngine {
               command.resumeAtReset,
               handoffText ? handoffFrom : undefined,
               rewindReplay,
-              codexGoal ? withShellContext(shellRuns, handoffBlock).trim() : "",
+              codexGoal ? withShellContext(shellRuns, `${handoffBlock}${command.type === "send" && command.noteCard ? composeNoteContext(command.noteCard, "") : ""}`).trim() : "",
             );
             if (firstTurn && command.type === "send") {
               this.generateFirstTurnNames(saved, command.text, placeholderTitle);
@@ -1036,6 +1143,33 @@ export class HostEngine {
               const active = this.running.get(command.sessionId);
               if (active) active.cancelled = true;
               void provider.cancel(command.sessionId).catch(() => provider.stop(command.sessionId));
+            };
+          } else if (command.type === "stopItem") {
+            const active = this.running.get(command.sessionId);
+            if (!provider.stopItem) throw new Error("This provider cannot stop an individual task");
+            if (!active || active.runId !== command.runId || active.cancelled || active.ending)
+              throw new Error("Only an active host-owned turn can stop an individual task");
+            const block = value.session.blocks.find((entry) => entry.id === command.blockId);
+            if (!block?.agentRun || block.agentRun.endedAt !== undefined || block.tool?.callId !== command.callId ||
+                active.priorBlockIds.has(block.id) ||
+                value.session.blocks.filter((entry) => entry.tool?.callId === command.callId).length !== 1 ||
+                !["running", "in_progress", "pending"].includes(block.tool.status ?? "") ||
+                block.approval && !block.approval.decided)
+              throw new Error("This subagent changed or is no longer running");
+            effect = () => {
+              void active.ready.then(async () => {
+                if (this.running.get(command.sessionId) !== active || active.cancelled || active.ending) return;
+                this.flush(command.sessionId);
+                const current = this.store.session(command.sessionId);
+                const target = current.session.blocks.find((entry) => entry.id === command.blockId);
+                if (current.runId !== command.runId || target?.tool?.callId !== command.callId || !target.agentRun || target.agentRun.endedAt !== undefined ||
+                    !["running", "in_progress", "pending"].includes(target.tool.status ?? "")) return;
+                await provider.stopItem!(command.sessionId, command.callId);
+              }).catch((reason) => {
+                if (this.running.get(command.sessionId) === active) this.event(command.sessionId, command.runId, {
+                  type: "status", text: `Could not confirm the subagent stop request. Inspect its current status before taking further action: ${String(reason)}`,
+                });
+              });
             };
           } else if (command.type === "steer") {
             const active = this.running.get(command.sessionId);
@@ -1528,6 +1662,7 @@ export class HostEngine {
     });
     const active = {
       runId: runId!,
+      priorBlockIds: new Set(session.blocks.map((block) => block.id)),
       ready: readyPromise,
       steers: Promise.resolve(),
       done: Promise.resolve(),

@@ -1612,13 +1612,26 @@ describe("Merkezi sosyal servis", () => {
       error: expect.stringContaining("no longer shared"),
     });
   });
+  it("compares reviewed social policies atomically and requires an explicit owner change", async () => {
+    const s = fixture();
+    const expectedPolicies = await s.call("policy.get", {});
+    const policies = { global: { maxContentCharacters: 400 }, platforms: { x: { maxCommentCharacters: 90 } } };
+    const input = { expectedPolicies, policies, confirm: "UPDATE_SOCIAL_POLICY" };
+    await expect(s.call("policy.saveReviewed", { ...input, confirm: "SEND" })).rejects.toThrow("Confirm");
+    await expect(s.call("policy.saveReviewed", input, s.session().principal)).rejects.toThrow("owner");
+    expect(await s.call("policy.saveReviewed", input)).toEqual(policies);
+    await expect(s.call("policy.saveReviewed", { ...input, policies: { global: {}, platforms: {} } })).rejects.toThrow("changed");
+    expect(await s.call("policy.get", {})).toEqual(policies);
+    expect(s.social.snapshot(owner).sendingEnabled).toBe(false);
+    expect(s.social.snapshot(owner).jobs).toEqual([]);
+  });
   it("owner policies persist; scoped sessions read effective platform overrides but cannot write settings", async () => {
     const s = fixture();
     const account = await s.account();
     const session = s.session();
     const policies = {
       global: {
-        agent: { provider: "gemini", model: "chosen-gemini" },
+        agent: { provider: "antigravity", model: "chosen-gemini" },
         maxContentCharacters: 400,
         maxCommentCharacters: 200,
         maxMessageCharacters: 500,
@@ -1628,7 +1641,7 @@ describe("Merkezi sosyal servis", () => {
     await s.call("policy.save", { policies });
     expect(await s.call("policy.get", { accountId: account.id }, session.principal)).toMatchObject({
       effective: {
-        agent: { provider: "gemini" },
+        agent: { provider: "antigravity" },
         maxCommentCharacters: 90,
         maxMessageCharacters: 500,
       },
@@ -1694,7 +1707,7 @@ describe("Merkezi sosyal servis", () => {
         },
         platforms: {
           x: {
-            agent: { provider: "gemini", model: "chosen-gemini" },
+            agent: { provider: "antigravity", model: "chosen-gemini" },
             maxMessageCharacters: 50,
           },
         },
@@ -1734,14 +1747,14 @@ describe("Merkezi sosyal servis", () => {
     await s.enable();
     await s.social.tick();
     expect(generator.mock.calls[0][0]).toEqual({
-      provider: "gemini",
+      provider: "antigravity",
       model: "chosen-gemini",
     });
     expect(generator.mock.calls[0][1]).toContain('"maxCharacters":50');
     expect(generator.mock.calls[0][1]).not.toContain("synthetic-private-token");
     expect(s.social.snapshot(owner).drafts[0].generation?.status).toBe("completed");
     expect(s.social.snapshot(owner).jobs[0]).toMatchObject({
-      provider: "gemini",
+      provider: "antigravity",
       status: "succeeded",
     });
     expect(s.send).toHaveBeenCalledTimes(1);
@@ -1759,7 +1772,7 @@ describe("Merkezi sosyal servis", () => {
       const account = await s.account();
       await s.call("policy.save", {
         policies: {
-          global: { agent: { provider: "gemini" }, maxMessageCharacters: 100 },
+          global: { agent: { provider: "antigravity" }, maxMessageCharacters: 100 },
           platforms: {},
         },
       });
@@ -1829,7 +1842,7 @@ describe("Merkezi sosyal servis", () => {
       accountId: account.id,
       projectId: s.a.id,
       name: "AI",
-      agent: { provider: "gemini" },
+      agent: { provider: "antigravity" },
       mode: "automatic",
       trigger: "message",
       topics: ["release"],
@@ -1899,7 +1912,7 @@ describe("Merkezi sosyal servis", () => {
       accountId: account.id,
       projectId: s.a.id,
       name: "AI",
-      agent: { provider: "gemini", model: "rule-model" },
+      agent: { provider: "antigravity", model: "rule-model" },
       mode: "approval",
       trigger: "message",
       topics: ["release"],
@@ -1913,7 +1926,7 @@ describe("Merkezi sosyal servis", () => {
       expect(s.social.snapshot(owner).drafts[0].generation?.status).toBe("completed"),
     );
     expect(generator.mock.calls[0][0]).toEqual({
-      provider: "gemini",
+      provider: "antigravity",
       model: "rule-model",
     });
     expect(generator.mock.calls[0][1]).not.toContain("unique-incoming-text");
@@ -1928,7 +1941,7 @@ describe("Merkezi sosyal servis", () => {
     const s = fixture(generator);
     const account = await s.account();
     await s.call("policy.save", {
-      policies: { global: { agent: { provider: "gemini" } }, platforms: {} },
+      policies: { global: { agent: { provider: "antigravity" } }, platforms: {} },
     });
     await s.call("profiles.save", {
       projectId: s.a.id,
@@ -1965,7 +1978,7 @@ describe("Merkezi sosyal servis", () => {
     // The newer inbound event invalidates the pending draft, while the injection requires review.
     expect(generator).not.toHaveBeenCalled();
     expect(s.social.snapshot(owner).drafts).toHaveLength(2);
-    expect(s.social.snapshot(owner).policies?.global.agent?.provider).toBe("gemini");
+    expect(s.social.snapshot(owner).policies?.global.agent?.provider).toBe("antigravity");
     expect(s.social.snapshot(owner).sendingEnabled).toBe(false);
     expect(s.send).not.toHaveBeenCalled();
   });
@@ -1981,7 +1994,7 @@ describe("Merkezi sosyal servis", () => {
     const account = await s.account();
     await s.call("policy.save", {
       policies: {
-        global: { agent: { provider: "gemini" }, maxMessageCharacters: 100 },
+        global: { agent: { provider: "antigravity" }, maxMessageCharacters: 100 },
         platforms: {},
       },
     });
@@ -2018,7 +2031,7 @@ describe("Merkezi sosyal servis", () => {
     await vi.waitFor(() => expect(generator).toHaveBeenCalledTimes(1));
     await s.call("policy.save", {
       policies: {
-        global: { agent: { provider: "gemini" }, maxMessageCharacters: 5 },
+        global: { agent: { provider: "antigravity" }, maxMessageCharacters: 5 },
         platforms: {},
       },
     });

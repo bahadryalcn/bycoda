@@ -11,6 +11,7 @@ mod control;
 pub mod control_cli;
 mod conversation_tools_bridge;
 mod cursor_store;
+mod desktop_inbox_review;
 mod external_editor;
 mod file_access;
 mod fs;
@@ -37,6 +38,7 @@ mod macos;
 mod macos_background;
 mod mcp;
 mod menu;
+mod mobile_pty;
 mod native_language;
 mod notes;
 mod notifications;
@@ -310,6 +312,36 @@ async fn open_tool_window(
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
+/// wry's own WebView2 browser arguments; replacing them must keep these.
+const WEBVIEW_DEFAULT_ARGS: &str =
+    "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection --autoplay-policy=no-user-gesture-required";
+
+/// The browser arguments for an opt-in local DevTools port, or None. WebView2
+/// ignores `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS` because wry always passes
+/// explicit arguments, so profiling a release build needs this switch. Chromium
+/// binds the port to 127.0.0.1 only; it is never on unless the variable is set.
+fn webview_debug_args(port: Option<&str>) -> Option<String> {
+    let port: u16 = port?.trim().parse().ok().filter(|port| *port >= 1024)?;
+    Some(format!(
+        "{WEBVIEW_DEFAULT_ARGS} --remote-debugging-port={port}"
+    ))
+}
+
+/// Every window shares one WebView2 environment, which rejects windows whose
+/// arguments differ, so the switch is applied to the config all windows copy.
+fn webview_debug_context(mut context: tauri::Context<tauri::Wry>) -> tauri::Context<tauri::Wry> {
+    if cfg!(windows) {
+        let port = std::env::var("BYCODA_WEBVIEW_DEBUG_PORT").ok();
+        if let Some(args) = webview_debug_args(port.as_deref()) {
+            eprintln!("WebView DevTools protocol enabled on 127.0.0.1 (BYCODA_WEBVIEW_DEBUG_PORT)");
+            for window in &mut context.config_mut().app.windows {
+                window.additional_browser_args = Some(args.clone());
+            }
+        }
+    }
+    context
+}
+
 pub fn run() {
     #[cfg(windows)]
     windows::initialize().expect("Failed to initialize Windows process safety");
@@ -335,6 +367,7 @@ pub fn run() {
         .manage(keep_awake::KeepAwakeState::new())
         .manage(git_watch::GitWatchHost::default())
         .manage(pty::PtyHost::new())
+        .manage(mobile_pty::MobilePtyHost::default())
         .manage(remote::RemoteConnections::default())
         .manage(ssh_forward::SshForwards::default())
         .manage(ssh_agent_forwarding::AgentForwardingReviews::default())
@@ -468,6 +501,7 @@ pub fn run() {
             control::control_enable,
             control::control_disable,
             control::control_reply,
+            control::control_desktop_authorize_effect,
             control::control_save,
             control::control_load,
             control::control_scopes,
@@ -475,6 +509,8 @@ pub fn run() {
             control::control_attach_worker,
             control::control_authorize_turn,
             control::control_turn_finished,
+            control::control_history_sources,
+            mobile_pty::mobile_pty_call,
             control::app_cli_path,
             social_bridge::harness_social_bridge,
             runtime_logs_bridge::harness_runtime_logs_bridge,
@@ -558,6 +594,7 @@ pub fn run() {
             fs::git_github_work_item_comment,
             github_review::git_github_pr_review_context,
             github_review::git_github_pr_review,
+            desktop_inbox_review::desktop_inbox_review,
             fs::git_github_pr_action,
             fs::git_github_pr_diff,
             fs::git_github_pr_checks,
@@ -607,6 +644,12 @@ pub fn run() {
             jira::board::jira_issue_transitions,
             jira::board::jira_issue_transition,
             jira::board::jira_board_move,
+            jira::board::mobile_board::jira_mobile_boards,
+            jira::board::mobile_board::jira_mobile_board_read,
+            jira::board::mobile_board::jira_mobile_issue_transitions,
+            jira::board::mobile_board::jira_mobile_board_prepare,
+            jira::board::mobile_board::jira_mobile_board_commit,
+            jira::board::mobile_board::jira_mobile_board_discard_approval,
             link_preview::fetch_link_preview,
             fs::git_branches,
             fs::git_checkout,
@@ -653,6 +696,7 @@ pub fn run() {
             worktrees::git_orchestration_worktree_create,
             worktrees::git_worktree_rename_branch,
             worktrees::git_worktree_check_remove,
+            worktrees::git_worktree_removal_review,
             worktrees::git_worktree_remove,
             worktrees::git_orchestration_worktree_remove,
             worktrees::git_orchestration_branch_remove,
@@ -713,7 +757,6 @@ pub fn run() {
             harness::harness_resolve_grok,
             harness::harness_resolve_hermes,
             harness::harness_resolve_antigravity,
-            harness::harness_resolve_gemini,
             harness::harness_free_port,
             harness::harness_spawn,
             harness::harness_write,
@@ -738,6 +781,7 @@ pub fn run() {
             provider_terminal_profiles::provider_terminal_profile_connect,
             pi_usage::fetch_pi_usage,
             rate_limits::fetch_claude_usage,
+            rate_limits::fetch_claude_usage_once,
             rate_limits::fetch_opencode_go_usage,
             provider_usage::provider_usage_report,
             session_store::usage::session_usage_report,
@@ -863,7 +907,7 @@ pub fn run() {
             project_logo::remove_project_logo,
             project_logo::forget_logo_file,
         ])
-        .build(tauri::generate_context!())
+        .build(webview_debug_context(tauri::generate_context!()))
         .expect("error while building bycoda");
 
     app.run(|handle, event| match event {
@@ -938,7 +982,9 @@ pub fn run() {
                 state.window_closed(&label);
             }
             if !other_window {
-                reap_harness_children(handle);
+                // Off the event loop: each tree kill waits for its taskkill.
+                // Exit joins this reaper, so the children are gone before quit.
+                spawn_tracked_reap(handle, reap_harness_children);
             } else {
                 // A page unload no longer kills its terminals, because a
                 // reload keeps them. The window going away is what ends them.
@@ -984,20 +1030,52 @@ pub fn run() {
                 .state::<ssh_agent_forwarding::AgentForwardingReviews>()
                 .kill_all();
             handle.state::<remote::RemoteConnections>().shutdown();
-            reap_harness_children(handle);
+            finish_reaping_on_exit(handle);
         }
         _ => {}
     });
 }
 
+/// Kills every harness and terminal child. Blocks on taskkill, so callers
+/// either run it off the event loop or accept the wait (exit).
 fn reap_harness_children(handle: &tauri::AppHandle) {
     if let Some(host) = handle.try_state::<harness::HarnessHost>() {
         host.kill_all();
     }
     if let Some(host) = handle.try_state::<pty::PtyHost>() {
         host.kill_all();
-        host.join_reapers();
     }
+}
+
+/// Runs `work` on a background thread that `PtyHost::join_reapers` waits for
+/// at exit, so its kills land before the process ends.
+pub(crate) fn spawn_tracked_reap(
+    handle: &tauri::AppHandle,
+    work: impl FnOnce(&tauri::AppHandle) + Send + 'static,
+) {
+    let app = handle.clone();
+    let reaper = std::thread::spawn(move || work(&app));
+    match handle.try_state::<pty::PtyHost>() {
+        Some(host) => host.track_reaper(reaper),
+        None => drop(reaper),
+    }
+}
+
+/// Exit must reap children before the process ends, but a wedged taskkill
+/// must not hang quit. The kills and the join of background reapers share one
+/// deadline; past it the process exits and the OS drops what is left.
+fn finish_reaping_on_exit(handle: &tauri::AppHandle) {
+    const EXIT_REAP_DEADLINE: std::time::Duration = std::time::Duration::from_secs(3);
+    let (done, finished) = std::sync::mpsc::channel();
+    let app = handle.clone();
+    std::thread::spawn(move || {
+        reap_harness_children(&app);
+        if let Some(host) = app.try_state::<pty::PtyHost>() {
+            host.join_reapers();
+        }
+        let _ = done.send(());
+    });
+    let _ = finished.recv_timeout(EXIT_REAP_DEADLINE);
 }
 
 #[cfg(all(debug_assertions, target_os = "macos"))]
@@ -1007,7 +1085,18 @@ pub fn ensure_macos_dev_bundle() {
 
 #[cfg(test)]
 mod tests {
-    use super::should_request_quit;
+    use super::{should_request_quit, webview_debug_args, WEBVIEW_DEFAULT_ARGS};
+
+    #[test]
+    fn webview_debug_port_is_opt_in_and_keeps_default_arguments() {
+        assert_eq!(webview_debug_args(None), None);
+        assert_eq!(webview_debug_args(Some("")), None);
+        assert_eq!(webview_debug_args(Some("abc")), None);
+        assert_eq!(webview_debug_args(Some("80")), None);
+        let args = webview_debug_args(Some(" 9222 ")).unwrap();
+        assert!(args.starts_with(WEBVIEW_DEFAULT_ARGS));
+        assert!(args.ends_with(" --remote-debugging-port=9222"));
+    }
 
     #[test]
     fn explicit_exit_requests_quit() {

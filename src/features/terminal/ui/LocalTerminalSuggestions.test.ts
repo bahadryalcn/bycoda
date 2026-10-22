@@ -6,7 +6,9 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { LocalTerminalSuggestions } from "./LocalTerminalSuggestions";
 
 const native = vi.hoisted(() => ({ get: vi.fn() }));
-vi.mock("../../../platform/tauri/pty", () => ({ getPtySuggestions: native.get }));
+vi.mock("../../../platform/tauri/pty", () => ({
+  getPtySuggestions: native.get,
+}));
 vi.mock("./TerminalGhostText", () => ({
   TerminalGhostText: ({ suffix }: { suffix: string }) =>
     createElement("span", { "data-ghost": true }, suffix),
@@ -51,8 +53,14 @@ beforeEach(() => {
       parsed = fn;
       return disposable;
     },
-    onScroll: (fn: () => void) => { scrolled = fn; return disposable; },
-    onResize: (fn: () => void) => { resized = fn; return disposable; },
+    onScroll: (fn: () => void) => {
+      scrolled = fn;
+      return disposable;
+    },
+    onResize: (fn: () => void) => {
+      resized = fn;
+      return disposable;
+    },
     buffer: {
       onBufferChange: () => disposable,
       active: {
@@ -102,7 +110,11 @@ async function type(value: string) {
   });
 }
 async function key(value: string) {
-  const event = new KeyboardEvent("keydown", { key: value, bubbles: true, cancelable: true });
+  const event = new KeyboardEvent("keydown", {
+    key: value,
+    bubbles: true,
+    cancelable: true,
+  });
   await act(async () => {
     element.dispatchEvent(event);
   });
@@ -122,10 +134,17 @@ it("shows a suffix and completes with Tab without executing; ordinary Enter keep
 
 it("preserves the keyboard choice when native suggestions arrive late", async () => {
   let resolve!: (values: string[]) => void;
-  native.get.mockImplementation(() => new Promise<string[]>((done) => { resolve = done; }));
+  native.get.mockImplementation(
+    () =>
+      new Promise<string[]>((done) => {
+        resolve = done;
+      }),
+  );
   await mount(true);
   await type("git ");
-  await act(async () => { await vi.advanceTimersByTimeAsync(100); });
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(100);
+  });
   await key("ArrowDown");
   expect(host.querySelector('[aria-selected="true"]')?.textContent).toBe("git diff");
   await act(async () => resolve(["git status", "git diff", "git log"]));
@@ -137,7 +156,10 @@ it("preserves the keyboard choice when native suggestions arrive late", async ()
 it("retains suggestions when terminal fitting or scrolling keeps the prompt visible", async () => {
   await mount();
   await type("git s");
-  await act(async () => { resized(); scrolled(); });
+  await act(async () => {
+    resized();
+    scrolled();
+  });
   expect(host.querySelector("[data-ghost]")?.textContent).toBe("tatus");
   expect(await key("Tab")).toBe(true);
   expect(paste).toHaveBeenCalledExactlyOnceWith("tatus");
@@ -164,6 +186,36 @@ it("rejects delayed responses after an edit or focus loss", async () => {
     await vi.advanceTimersByTimeAsync(100);
   });
   expect(native.get).toHaveBeenCalledTimes(1);
+});
+
+it("keeps the list mounted between a keystroke and its echo but never completes from the un-echoed buffer", async () => {
+  await mount();
+  await type("git st");
+  expect(host.querySelector("[data-ghost]")?.textContent).toBe("atus");
+  await act(async () => data("a"));
+  expect(host.querySelector("[data-ghost]")).not.toBeNull();
+  expect(await key("Tab")).toBe(false);
+  expect(paste).not.toHaveBeenCalled();
+  await act(async () => {
+    line = "$ git sta";
+    parsed();
+  });
+  expect(host.querySelector("[data-ghost]")?.textContent).toBe("tus");
+  expect(await key("Tab")).toBe(true);
+  expect(paste).toHaveBeenCalledExactlyOnceWith("tus");
+});
+
+it("drops the list on control input or when the echo never arrives", async () => {
+  await mount();
+  await type("git st");
+  await act(async () => data("[A"));
+  expect(host.querySelector("[data-ghost]")).toBeNull();
+  await type("git st");
+  await act(async () => {
+    data("a");
+    await vi.advanceTimersByTimeAsync(200);
+  });
+  expect(host.querySelector("[data-ghost]")).toBeNull();
 });
 
 it("learns submitted local commands in memory and excludes sensitive and multiline input", async () => {

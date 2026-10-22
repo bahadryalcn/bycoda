@@ -83,7 +83,7 @@ it("reports Servers foreground and its actual mount instead of a retained conver
     expect(listing.views).toContainEqual({
       id: "servers",
       available: true,
-      operations: ["status"],
+      operations: ["open", "close", "status"],
     });
     deps.isDetachedSessionWindow = () => true;
     await act(() => root.render(createElement(Harness)));
@@ -91,7 +91,7 @@ it("reports Servers foreground and its actual mount instead of a retained conver
     expect(detached.views).toContainEqual({
       id: "servers",
       available: false,
-      operations: ["status"],
+      operations: ["open", "close", "status"],
     });
     deps.isDetachedSessionWindow = () => false;
     rects.mockReturnValue([] as unknown as DOMRectList);
@@ -108,6 +108,33 @@ it("reports Servers foreground and its actual mount instead of a retained conver
     });
     expect(deps.focusOpenSession).not.toHaveBeenCalled();
     for (const callback of Object.values(deps.actions)) expect(callback).not.toHaveBeenCalled();
+    await expect(
+      requestAppUi(context, "terminals.create", { requestId: "create" }),
+    ).rejects.toThrow("unavailable");
+    deps.isDetachedSessionWindow = () => true;
+    await act(() => root.render(createElement(Harness)));
+    await expect(requestAppUi(context, "ui.workspace.open", { view: "servers" })).rejects.toThrow(
+      "unavailable",
+    );
+    deps.isDetachedSessionWindow = () => false;
+    rects.mockReturnValue([{}] as unknown as DOMRectList);
+    deps.actions.onOpenServers = vi.fn(() => {
+      deps.surface.serversViewOpen = true;
+      act(() => root.render(createElement(Harness)));
+    });
+    deps.actions.setServersViewOpen = vi.fn((value) => {
+      deps.surface.serversViewOpen = value as boolean;
+      act(() => root.render(createElement(Harness)));
+    });
+    await act(() => root.render(createElement(Harness)));
+    await expect(
+      requestAppUi(context, "ui.workspace.open", { view: "servers" }),
+    ).resolves.toMatchObject({ view: "servers", mounted: true, sessionId: "owner" });
+    expect(deps.actions.onOpenServers).toHaveBeenCalledOnce();
+    await expect(
+      requestAppUi(context, "ui.workspace.close", { view: "servers" }),
+    ).resolves.toMatchObject({ view: "conversation", sessionId: "owner" });
+    expect(deps.focusOpenSession).not.toHaveBeenCalled();
   } finally {
     await act(() => root.unmount());
     container.remove();

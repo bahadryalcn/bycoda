@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { DatabaseSync } from "node:sqlite";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { AddressInfo } from "node:net";
@@ -14,6 +14,7 @@ import { conversationToolCatalog } from "./conversation-tools";
 import { HOST_PROTOCOL_VERSION } from "../src/features/connections/model/protocol";
 import { SOCIAL_TOOLS, socialToolName } from "../src/features/social/model/social";
 import { SOCIAL_TOOL_SCHEMAS } from "./social-tools";
+import { SharedBrowser } from "./shared-browser";
 
 const cleanup: (() => Promise<void>)[] = [];
 afterEach(async () => {
@@ -99,6 +100,50 @@ async function setup() {
 }
 
 describe("Streamable HTTP MCP", () => {
+  it("accepts escaped editor saves for a session while keeping external request limits", async () => {
+    const s = await setup();
+    const created = s.engine.command({ type: "create", commandId: "large-editor-save", projectId: s.project.id,
+      harness: "codex", model: "test", runtimeMode: "supervised" });
+    const token = s.server.conversationAccess.issueSessionGrant(created.sessionId).token;
+    writeFileSync(join(s.project.cwd, "large.txt"), "");
+    const snapshot = JSON.parse((await s.send(token, "tools/call", { name: "conversation_files_read", arguments: { path: "large.txt" } })).body.result.content[0].text);
+    const content = "\n".repeat(600000);
+    const params = { name: "conversation_files_write", arguments: { path: "large.txt", expectedHash: snapshot.hash, content } };
+    const saved = await s.send(token, "tools/call", params);
+    expect(saved.status).toBe(200);
+    expect(saved.body.result.isError).toBeUndefined();
+    expect(JSON.parse(saved.body.result.content[0].text).saved).toBe(true);
+    expect(readFileSync(join(s.project.cwd, "large.txt"), "utf8")).toBe(content);
+    const external = s.grant({ conversation: ["write"] });
+    expect((await s.send(external.token, "tools/call", params)).status).toBe(413);
+  });
+  it("uses the shared annotation image adapter over session HTTP MCP", async () => {
+    const s = await setup();
+    const created = s.engine.command({ type: "create", commandId: "annotation-mcp", projectId: s.project.id,
+      harness: "codex", model: "fixture", runtimeMode: "supervised" });
+    const token = s.server.conversationAccess.issueSessionGrant(created.sessionId).token;
+    const data = Buffer.alloc(64 * 1024, "a").toString("base64");
+    const dispatch = vi.spyOn(SharedBrowser.prototype, "dispatchForSession").mockResolvedValue({
+      annotationId: "selection", selection: { sessionId: created.sessionId, projectId: s.project.id,
+        trust: "untrusted-page-data", element: { text: "Save" }, limitations: ["Private fields masked"],
+        screenshot: { mimeType: "image/jpeg", data, width: 1280, height: 720 },
+      },
+    });
+    try {
+      for (const action of ["select", "read"]) {
+        const result = await s.send(token, "tools/call", { name: `conversation_browser_annotation_${action}`,
+          arguments: { leaseId: "lease", navigationId: "navigation", annotationId: "selection", ...(action === "select" ? { x: 50, y: 35 } : {}) },
+        }, "/mcp/conversation");
+        expect(result.body.result.isError).not.toBe(true);
+        const content = result.body.result.content;
+        expect(content[1]).toEqual({ type: "image", mimeType: "image/jpeg", data });
+        expect(content[0].text.length).toBeLessThan(1000);
+        expect(content[0].text).not.toContain(data);
+        expect(JSON.parse(content[0].text)).toMatchObject({ selection: { trust: "untrusted-page-data", limitations: ["Private fields masked"] } });
+      }
+      expect(dispatch).toHaveBeenCalledWith("browser.annotation.select", expect.objectContaining({ sessionId: created.sessionId, projectId: s.project.id }), token);
+    } finally { dispatch.mockRestore(); }
+  });
   it("negotiates stateless HTTP and serves the existing catalogs and schemas", async () => {
     const s = await setup();
     const grant = s.grant({

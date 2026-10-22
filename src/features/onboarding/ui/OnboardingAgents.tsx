@@ -32,7 +32,6 @@ const GenericAcpSettings = lazy(() =>
 const INSTALL_GUIDES: Partial<Record<HarnessId, string>> = {
   codex: "https://help.openai.com/en/articles/11096431",
   claude: "https://support.claude.com/en/articles/14552382-your-first-day-in-claude-code",
-  gemini: "https://geminicli.com/docs/get-started/installation/",
 };
 
 export function OnboardingAgents({

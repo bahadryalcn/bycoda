@@ -159,28 +159,31 @@ export function TerminalProfileDiscovery({
             aria-label={t("Terminal account profiles")}
             aria-busy={busy}
           >
-            <p className="text-[11px] leading-relaxed text-content/55">
+            <p className="text-[11px] leading-relaxed text-(--ui-text-secondary)">
               {t(
                 "Accounts on this machine. The default account belongs to its provider; it does not select the default provider or model.",
               )}
             </p>
-            <p className="text-[11px] leading-relaxed text-content/55">
+            <p className="text-[11px] leading-relaxed text-(--ui-text-secondary)">
               {t(
                 "Separate sign-ins per provider. New conversations use the default account; each conversation can pick its own account from the composer.",
               )}
             </p>
-            <p className="text-[10px] leading-relaxed text-content/40">
+            <p className="text-[length:var(--ui-font-caption)] leading-relaxed text-(--ui-text-secondary)">
               {t(
                 "Uses existing CLI sign-ins. Finds standard and named home profiles; choose a folder for other locations.",
               )}
             </p>
-            <p className="text-[10px] leading-relaxed text-content/40">
+            <p className="text-[length:var(--ui-font-caption)] leading-relaxed text-(--ui-text-secondary)">
               {t(
                 "Discovery reads profile folders on this computer. Connecting stores a path, not credentials.",
               )}
             </p>
             {disabled ? (
-              <p role="status" className="text-[10px] leading-relaxed text-content/45">
+              <p
+                role="status"
+                className="text-[length:var(--ui-font-caption)] leading-relaxed text-(--ui-text-secondary)"
+              >
                 {t(
                   "Wait for the current account operation to finish, then discover or connect a terminal profile.",
                 )}
@@ -234,7 +237,7 @@ export function TerminalProfileDiscovery({
                   <li key={profile.id} className="mbs-2 flex flex-wrap items-center gap-2">
                     <div className="min-w-0 flex-1">
                       <span>{profile.label}</span>
-                      <p className="break-all text-content/40">{profile.path}</p>
+                      <p className="break-all text-(--ui-text-secondary)">{profile.path}</p>
                     </div>
                     <Button
                       disabled={connected || disabled || busy}

@@ -7,7 +7,6 @@ import {
 } from "../../../features/sessions/model/session";
 import {
   resolveAntigravityBinary,
-  resolveGeminiBinary,
   resolveClaudeBinary,
   resolveCodexBinary,
   resolveCursorBinary,
@@ -60,11 +59,6 @@ const CLI: Record<HarnessId, { name: string; install?: string }> = {
   hermes: {
     name: "Hermes Agent CLI",
     install: "Install from hermes-agent.nousresearch.com, then run hermes model",
-  },
-  gemini: {
-    name: "Gemini CLI (enterprise / API key)",
-    install:
-      "For individual Google accounts, install Antigravity CLI: https://antigravity.google/docs/cli/install/",
   },
   antigravity: {
     name: "Antigravity CLI",
@@ -172,14 +166,6 @@ export function probeHarnessAvailability(options?: { force?: boolean }): Promise
       if (id === "hermes") {
         try {
           await resolveHermesBinary();
-          return [id, true] as const;
-        } catch {
-          return [id, false] as const;
-        }
-      }
-      if (id === "gemini") {
-        try {
-          await resolveGeminiBinary();
           return [id, true] as const;
         } catch {
           return [id, false] as const;

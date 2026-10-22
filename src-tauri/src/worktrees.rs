@@ -497,6 +497,105 @@ fn check_removal(root: &Path, path: &Path, force: bool, has_terminals: bool) -> 
     Ok(())
 }
 
+/// An optimistic snapshot, compared again while the native removal reservation is held.
+/// External Git/filesystem writers do not participate in that reservation.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct WorktreeRemovalReview {
+    project_cwd: String,
+    common_dir: String,
+    path: String,
+    branch: Option<String>,
+    head: String,
+    status: String,
+    unpushed: u64,
+    session_ids: Vec<String>,
+    has_terminals: bool,
+    has_agents: bool,
+}
+
+fn removal_review(
+    conn: &rusqlite::Connection,
+    root: &Path,
+    path: &Path,
+    has_terminals: bool,
+    has_agents: bool,
+) -> Result<WorktreeRemovalReview, String> {
+    let tree = removal_target(root, path)?;
+    let trees = list(root)?;
+    let main = trees.first().ok_or("No working copies found")?;
+    let status = git(path, &["status", "--porcelain", "--untracked-files=normal"])?;
+    if status.len() > 1024 * 1024 {
+        return Err("Worktree status exceeds the removal review budget".into());
+    }
+    let unpushed = git(path, &["rev-list", "--count", "HEAD", "--not", "--remotes"])?
+        .trim()
+        .parse::<u64>()
+        .map_err(|_| "Cannot verify unpublished commits")?;
+    let mut session_ids = session_ids(conn, path)?;
+    session_ids.sort();
+    if session_ids.len() > 500 {
+        return Err("Too many linked sessions to review".into());
+    }
+    Ok(WorktreeRemovalReview {
+        project_cwd: path_to_js(
+            &expand_home(&main.path)
+                .canonicalize()
+                .map_err(|e| e.to_string())?,
+        ),
+        common_dir: git(
+            root,
+            &["rev-parse", "--path-format=absolute", "--git-common-dir"],
+        )?
+        .trim()
+        .to_owned(),
+        path: path_to_js(&path.canonicalize().map_err(|e| e.to_string())?),
+        branch: tree.branch,
+        head: tree.head,
+        status,
+        unpushed,
+        session_ids,
+        has_terminals,
+        has_agents,
+    })
+}
+
+fn assert_removal_review(
+    expected: &WorktreeRemovalReview,
+    current: &WorktreeRemovalReview,
+) -> Result<(), String> {
+    if expected != current {
+        return Err("Worktree changed. Review it again before removing it.".into());
+    }
+    if !current.status.is_empty()
+        || current.unpushed != 0
+        || current.has_terminals
+        || current.has_agents
+    {
+        return Err("Worktree has changes, unpublished commits, or active processes.".into());
+    }
+    Ok(())
+}
+
+#[tauri::command(async)]
+pub fn git_worktree_removal_review(
+    cwd: String,
+    path: String,
+    store: State<'_, SessionStore>,
+    terminals: State<'_, crate::pty::PtyHost>,
+    agents: State<'_, crate::harness::HarnessHost>,
+) -> Result<WorktreeRemovalReview, String> {
+    let path = expand_home(&path);
+    let conn = store.lock_conn()?;
+    removal_review(
+        &conn,
+        &expand_home(&cwd),
+        &path,
+        terminals.has_working_dir(&path),
+        agents.has_working_dir(&path),
+    )
+}
+
 fn remove(root: &Path, path: &Path, force: bool) -> Result<(), String> {
     let tree = removal_target(root, path)?;
     // Git for Windows can unregister the worktree even when MAX_PATH prevents
@@ -709,6 +808,7 @@ pub fn git_worktree_remove(
     path: String,
     force: bool,
     keep_sessions: Option<bool>,
+    expected_review: Option<WorktreeRemovalReview>,
     store: State<'_, SessionStore>,
     terminals: State<'_, crate::pty::PtyHost>,
     agents: State<'_, crate::harness::HarnessHost>,
@@ -723,6 +823,19 @@ pub fn git_worktree_remove(
             );
         }
         let conn = store.lock_conn()?;
+        if let Some(expected) = expected_review.as_ref() {
+            if force {
+                return Err("Reviewed removal cannot use force".into());
+            }
+            let current = removal_review(
+                &conn,
+                &root,
+                &path,
+                terminals.has_working_dir(&path),
+                agents.has_working_dir(&path),
+            )?;
+            assert_removal_review(expected, &current)?;
+        }
         remove_with_sessions(&conn, &root, &path, force, keep_sessions.unwrap_or(false))
     })
 }
@@ -815,6 +928,69 @@ mod tests {
         )
         .unwrap();
         Repo(dir)
+    }
+
+    #[test]
+    fn reviewed_removal_detects_git_session_and_process_drift() {
+        let repo = repo();
+        let root = repo.0.join("repo");
+        let tree = create(&root, "reviewed", "main", false).unwrap();
+        let path = Path::new(&tree.path);
+        // Publish the fixture HEAD locally; no network or owner repository is used.
+        git_checked(&root, &["update-ref", "refs/remotes/fixture/main", "HEAD"]).unwrap();
+        let store = SessionStore::open_in_memory().unwrap();
+        let conn = store.lock_conn().unwrap();
+        let before = removal_review(&conn, &root, path, false, false).unwrap();
+        assert_removal_review(&before, &before).unwrap();
+        std::fs::write(path.join("new-file"), "private fixture").unwrap();
+        let dirty = removal_review(&conn, &root, path, false, false).unwrap();
+        assert!(assert_removal_review(&before, &dirty).is_err());
+        assert!(assert_removal_review(&dirty, &dirty).is_err());
+        std::fs::remove_file(path.join("new-file")).unwrap();
+        conn.execute("INSERT INTO sessions (id,cwd,harness,model,runtime_mode,title,blocks_json,created_at,updated_at) VALUES ('new-session',?1,'codex','test','supervised','Fixture','[]',1,1)", [&tree.path]).unwrap();
+        let linked = removal_review(&conn, &root, path, false, false).unwrap();
+        assert!(assert_removal_review(&before, &linked).is_err());
+        let processes = removal_review(&conn, &root, path, true, true).unwrap();
+        assert!(assert_removal_review(&processes, &processes).is_err());
+        assert!(removal_review(&conn, &root, &root, false, false).is_err());
+        git_checked(&root, &["worktree", "lock", &tree.path]).unwrap();
+        assert!(removal_review(&conn, &root, path, false, false).is_err());
+        assert!(path.exists());
+    }
+
+    #[test]
+    fn reviewed_removal_preserves_branch_and_canonical_session_cleanup() {
+        let repo = repo();
+        let root = repo.0.join("repo");
+        let tree = create(&root, "reviewed-cleanup", "main", false).unwrap();
+        let path = Path::new(&tree.path);
+        git_checked(&root, &["update-ref", "refs/remotes/fixture/main", "HEAD"]).unwrap();
+        let store = SessionStore::open_in_memory().unwrap();
+        let conn = store.lock_conn().unwrap();
+        conn.execute("INSERT INTO sessions (id,cwd,harness,model,runtime_mode,title,blocks_json,created_at,updated_at) VALUES ('idle',?1,'codex','test','supervised','Keep fixture','[]',1,1)", [&tree.path]).unwrap();
+        let review = removal_review(&conn, &root, path, false, false).unwrap();
+        crate::fs::with_git_mutation(&root, || {
+            let _reservation = crate::worktree_lifecycle::reserve_removal(path)?;
+            let current = removal_review(&conn, &root, path, false, false)?;
+            assert_removal_review(&review, &current)?;
+            remove_with_sessions(&conn, &root, path, false, true)
+        })
+        .unwrap();
+        assert!(!path.exists());
+        assert_eq!(
+            git(&root, &["rev-parse", "refs/heads/reviewed-cleanup"])
+                .unwrap()
+                .trim(),
+            review.head
+        );
+        let retained: (String, i64) = conn
+            .query_row(
+                "SELECT title,worktree_removed FROM sessions WHERE id='idle'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(retained, ("Keep fixture".into(), 1));
     }
 
     #[test]

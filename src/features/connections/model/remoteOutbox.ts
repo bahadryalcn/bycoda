@@ -47,6 +47,12 @@ function validCommand(value: unknown, followup = false): value is HostCommand {
     return false;
   if (value.resumeAtReset !== undefined && typeof value.resumeAtReset !== "boolean") return false;
   switch (value.type) {
+    case "contextual":
+      return typeof value.sourceBlockId === "string" && !!value.sourceBlockId &&
+        Number.isSafeInteger(value.expectedRevision) && Number(value.expectedRevision) >= 0 &&
+        ["handoff", "secondOpinion"].includes(String(value.mode)) && isRemoteProvider(value.harness) &&
+        typeof value.model === "string" && !!value.model && strings(value.modelSettings) &&
+        typeof value.previewDigest === "string" && /^[a-f0-9]{64}$/.test(value.previewDigest);
     case "configure":
       return (
         (value.harness === undefined || isRemoteProvider(value.harness)) &&
@@ -77,7 +83,8 @@ function validCommand(value: unknown, followup = false): value is HostCommand {
         (value.intent === undefined ||
           ["default", "plan", "build"].includes(value.intent as string)) &&
         optionalString(value.draftBlockId) &&
-        optionalString(value.planBlockId)
+        optionalString(value.planBlockId) &&
+        optionalString(value.expectedPlanText)
       );
     case "removeDraft":
       return typeof value.draftBlockId === "string" && !!value.draftBlockId;
@@ -94,6 +101,8 @@ function validCommand(value: unknown, followup = false): value is HostCommand {
       );
     case "cancel":
       return typeof value.runId === "string" && !!value.runId;
+    case "stopItem":
+      return [value.runId, value.blockId, value.callId].every((entry) => typeof entry === "string" && !!entry);
     case "approve":
     case "answer": {
       if (

@@ -7,6 +7,7 @@ import { isMarkdownBlockquotePosition } from "../sessions/model/quoteDraft";
 
 import { looksLikeProject } from "../projects/model/recents";
 import { t } from "../../shared/i18n";
+import { composeNoteContext, noteContextMeta } from "./noteContext";
 
 export const NOTE_TITLE_MAX = 200;
 export function noteTitleError(title: string): string | undefined {
@@ -70,12 +71,7 @@ export type NoteComposerCard = NoteCardMeta & {
 };
 
 export function noteCardMeta(card: NoteComposerCard): NoteCardMeta {
-  return {
-    id: card.id,
-    slug: card.slug,
-    title: card.title,
-    ...(card.sourceCwd ? { sourceCwd: card.sourceCwd } : {}),
-  };
+  return noteContextMeta(card);
 }
 
 export const ADD_NOTE_TO_CHAT_EVENT = "bycoda:add-note-to-chat";
@@ -482,19 +478,7 @@ export function requestAddNoteToChat(note: Note) {
 }
 
 export function composeNoteMessage(card: NoteComposerCard | undefined, text: string): string {
-  if (!card) return text.trim();
-  const lead = text.trim() || "Use this note.";
-  return injectNotePrompt(lead, [
-    {
-      id: card.id,
-      slug: card.slug,
-      title: card.title,
-      body: card.body,
-      tags: [],
-      createdAt: 0,
-      updatedAt: 0,
-    },
-  ]);
+  return composeNoteContext(card, text);
 }
 
 function unwrapMarkdown(value: string): string {

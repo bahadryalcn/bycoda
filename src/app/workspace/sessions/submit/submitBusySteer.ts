@@ -53,6 +53,39 @@ export function steerBusySubmit(
     harnessText,
     pendingSwitch,
   } = pre;
+  const queueFollowUp = (): SubmissionAcceptance => {
+    // A queue-row action already owns retained content. Falling back to
+    // the queue must leave that row in place rather than append a copy.
+    if (options?.queuedMessageId) return false;
+    setSessions((prev) =>
+      prev.map((s) =>
+        s.id === sessionId
+          ? appendQueuedMessage(
+              {
+                ...s,
+                inboxCard: rawCommand ? s.inboxCard : undefined,
+                noteCard: rawCommand ? s.noteCard : undefined,
+                handoffCard: rawCommand ? s.handoffCard : undefined,
+              },
+              {
+                id: crypto.randomUUID(),
+                text,
+                attachments,
+                noteCard,
+                handoffCard,
+                intent,
+                modelTarget: queuedModelTarget(options?.buildTarget ?? storedCurrent),
+              },
+            )
+          : s,
+      ),
+    );
+    dismissNoticesForContinuedSession(sessionId);
+    return true;
+  };
+  // The host runs this conversation for another computer. The shared queue
+  // takes the message; it starts here once the host's turn has arrived.
+  if (current.continuingElsewhere && !current.busy && !pendingSwitch) return queueFollowUp();
   if (current.busy && !pendingSwitch) {
     if (
       operatorCommand.matched &&
@@ -83,36 +116,8 @@ export function steerBusySubmit(
     });
     // A native command (/goal, /review) must start its own turn; steering would
     // deliver it to the running turn as plain text.
-    if (followUpRoute === "queue" || rawCommand || !canSteerHarness(current.harness)) {
-      // A queue-row action already owns retained content. Falling back to
-      // the queue must leave that row in place rather than append a copy.
-      if (options?.queuedMessageId) return false;
-      setSessions((prev) =>
-        prev.map((s) =>
-          s.id === sessionId
-            ? appendQueuedMessage(
-                {
-                  ...s,
-                  inboxCard: rawCommand ? s.inboxCard : undefined,
-                  noteCard: rawCommand ? s.noteCard : undefined,
-                  handoffCard: rawCommand ? s.handoffCard : undefined,
-                },
-                {
-                  id: crypto.randomUUID(),
-                  text,
-                  attachments,
-                  noteCard,
-                  handoffCard,
-                  intent,
-                  modelTarget: queuedModelTarget(options?.buildTarget ?? storedCurrent),
-                },
-              )
-            : s,
-        ),
-      );
-      dismissNoticesForContinuedSession(sessionId);
-      return true;
-    }
+    if (followUpRoute === "queue" || rawCommand || !canSteerHarness(current.harness))
+      return queueFollowUp();
     if (!isLiveHarness(current.harness) || !canSteerHarness(current.harness)) {
       // Harnesses that cannot steer (fx) used to drop the message on the
       // floor here, so a follow-up sent mid-turn just vanished. Say so.

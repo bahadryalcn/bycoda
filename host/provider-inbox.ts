@@ -247,12 +247,13 @@ export class ProviderInboxBridge {
       .all(Math.max(0, 2 - executing.total)) as JobRow[];
     const jobs: DesktopInboxJob[] = [];
     for (const row of pending) {
+      const deadline = this.now() + RUN_DEADLINE_MS;
       this.db
         .prepare(
           "UPDATE remote_inbox_jobs SET state='running',client_key=?,deadline=? WHERE id=? AND state='queued'",
         )
-        .run(clientKey, this.now() + RUN_DEADLINE_MS, row.id);
-      jobs.push({ id: row.id, operation: JSON.parse(row.operation_json) as RemoteInboxOperation });
+        .run(clientKey, deadline, row.id);
+      jobs.push({ id: row.id, operation: JSON.parse(row.operation_json) as RemoteInboxOperation, deadline });
     }
     return { jobs, acked };
   }

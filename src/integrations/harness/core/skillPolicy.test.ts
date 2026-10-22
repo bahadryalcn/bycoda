@@ -51,7 +51,6 @@ describe.each([
   "fx",
   "hermes",
   "antigravity",
-  "gemini",
   "acp",
 ])("%s owner restrictions", (harness) => {
   it("carries current restrictions and preserves native command position", () => {

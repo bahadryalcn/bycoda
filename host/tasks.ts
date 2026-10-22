@@ -43,7 +43,7 @@ import {
 } from "./git-worktrees";
 import { taskWorkspace } from "./task-workspace";
 import { hashTaskArtifact, transferTaskArtifacts } from "./task-artifacts";
-import { cleanupTaskWorktree } from "./task-worktree-cleanup";
+import { cleanupTaskWorktree, sameHostPath } from "./task-worktree-cleanup";
 import { resolve } from "node:path";
 import { parseTaskWorkspace } from "../src/features/tasks/model/taskWorkspace";
 import type { HostGoal } from "../src/features/tasks/model/hostGoals";
@@ -2694,8 +2694,7 @@ export class HostTasks {
   private async cleanupDelivered(task: HostTask, now: number): Promise<HostTask> {
     if (task.status !== "done" || !task.merged || (task.cleanupRetryAfter ?? 0) > now) return task;
     const project = this.store.project(task.projectId);
-    const same = (a: string | undefined, b: string) =>
-      a != null && resolve(a).toLowerCase() === resolve(b).toLowerCase();
+    const same = (a: string | undefined, b: string) => a != null && sameHostPath(a, b);
     const inUse = (path: string) =>
       Array.from(this.taskIndex().values()).some(
         (other) =>

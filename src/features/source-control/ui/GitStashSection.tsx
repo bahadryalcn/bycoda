@@ -121,7 +121,7 @@ export function GitStashSection({ cwd, enabled, hasChanges, onOpenCommit }: Prop
           <span className="min-w-0 truncate text-xs font-medium text-[var(--ui-text-secondary)]">
             {t("Stashes")}
           </span>
-          <span className="text-[10px] tabular-nums text-[var(--ui-text-muted)]">
+          <span className="text-(length:--ui-font-caption) tabular-nums text-(--ui-text-secondary)">
             {entries.length}
           </span>
         </Button>
@@ -163,7 +163,7 @@ export function GitStashSection({ cwd, enabled, hasChanges, onOpenCommit }: Prop
       ) : null}
       {open ? (
         entries.length === 0 && !loading && !error ? (
-          <p className="px-3 pb-2 text-[12px] text-[var(--ui-text-muted)]">{t("No stashes")}</p>
+          <p className="px-3 pb-2 text-[12px] text-(--ui-text-secondary)">{t("No stashes")}</p>
         ) : (
           <ul className="max-h-[min(10rem,20vh)] overflow-y-auto pb-1">
             {entries.map((entry) => (

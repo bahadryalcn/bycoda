@@ -1104,6 +1104,19 @@ pub(crate) fn local_editor_format_rpc(app: &AppHandle, params: Value) -> Result<
     )
 }
 
+pub(crate) fn local_conversation_environment(app: &AppHandle) -> Result<String, String> {
+    let state: State<'_, RemoteConnections> = app.state();
+    let _guard = state
+        .store
+        .lock()
+        .map_err(|_| "Connection store is locked")?;
+    read(&store_path(app)?)?
+        .into_iter()
+        .find(|machine| is_local_sync(machine, "This computer (local sync)"))
+        .map(|machine| machine.environment_id)
+        .ok_or("Connect the local bycoda Host for history import".into())
+}
+
 pub(crate) fn local_conversation_rpc(
     app: &AppHandle,
     method: &str,
@@ -1115,6 +1128,7 @@ pub(crate) fn local_conversation_rpc(
             | "conversation.access.issue"
             | "conversation.desktop.take"
             | "conversation.desktop.finish"
+            | "conversation.desktop.authorize"
     ) {
         return Err("Unsupported native conversation bridge operation".into());
     }

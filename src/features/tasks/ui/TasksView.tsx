@@ -114,6 +114,8 @@ import {
   resolveModel,
 } from "../../sessions/model/models";
 import { projectKey } from "../../../shared/lib/paths";
+import { useRetainedState } from "../../../shared/hooks/useRetainedState";
+import { useRetainedScroll } from "../../../shared/hooks/useRetainedScroll";
 import { loadTabGroupLabels, resolveTabGroupLabel } from "../../workspace/model/tabGroups";
 import {
   EMPTY_PROMPT_ERROR,
@@ -343,6 +345,7 @@ function TasksContent({
 }: Pick<Props, "cwd" | "recents" | "onOpenBackgroundSession">) {
   useLocale();
   // Tasks for a project in a locked group are not shown.
+  const viewStateKey = `tasks:${cwd ? projectKey(cwd) : "global"}`;
   const lock = useLockSnapshot();
   // Machines whose host keeps a task board, this computer's included.
   const [machines, setMachines] = useState<RemoteMachine[]>([]);
@@ -368,6 +371,10 @@ function TasksContent({
   const [deliveryValid, setDeliveryValid] = useState(true);
   const [draggedKey, setDraggedKey] = useState<string | null>(null);
   const [dropColumn, setDropColumn] = useState<TaskColumn | null>(null);
+  const [compactColumn, setCompactColumn] = useRetainedState<TaskColumn | "all">(
+    `${viewStateKey}:column`,
+    "all",
+  );
   const [saving, setSaving] = useState(false);
   const [acting, setActing] = useState<string | null>(null);
   const openingSessionRequests = useRef(new Set<string>());
@@ -380,7 +387,18 @@ function TasksContent({
   const [goalDraft, setGoalDraft] = useState<GoalDraft | null>(null);
   const [editingGoal, setEditingGoal] = useState<BoardGoal | null>(null);
   const [goalSettingsError, setGoalSettingsError] = useState<string | null>(null);
-  const [goalFilter, setGoalFilter] = useState(ALL_GOALS);
+  const [goalFilter, setGoalFilter] = useRetainedState(`${viewStateKey}:goal`, ALL_GOALS);
+  const boardScroll = useRetainedScroll<HTMLDivElement>(
+    `${viewStateKey}:${goalFilter}:${compactColumn}`,
+    { ready: !loading },
+  );
+  const boardRef = useCallback(
+    (node: HTMLDivElement | null) => {
+      boardLock(node);
+      boardScroll(node);
+    },
+    [boardLock, boardScroll],
+  );
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [boardActionMenu, setBoardActionMenu] = useState<HTMLElement | null>(null);
   const filterTrigger = useRef<HTMLButtonElement>(null);
@@ -1480,7 +1498,7 @@ function TasksContent({
           </Modal>
         ) : null}
         <div
-          ref={boardLock}
+          ref={boardRef}
           className="min-h-0 min-w-0 flex-1 overflow-x-scroll overflow-y-auto overscroll-none p-3 [scrollbar-gutter:stable] @max-[640px]/task-area:has-[+aside]:hidden"
         >
           {loading ? (
@@ -1488,124 +1506,149 @@ function TasksContent({
               <LoaderCircle className="size-4 animate-spin" />
             </div>
           ) : (
-            <div className="task-board-columns">
-              {TASK_COLUMNS.map((status) => {
-                const column = boardIndexes.columns.get(status)!;
-                return (
-                  <section
-                    key={status}
-                    aria-label={t(COLUMN_LABELS[status])}
-                    data-task-column={status}
-                    data-drop-active={dropColumn === status || undefined}
-                    onDragOver={(event) => {
-                      const dragged = visibleTasks.find(
-                        (task) => `${task.machineId}:${task.id}` === draggedKey,
-                      );
-                      if (
-                        dragged &&
-                        ((taskColumn(dragged.status) === status &&
-                          dragged.workspaceControlsSupported &&
-                          (status === "todo" || status === "queued")) ||
-                          canMoveTask(
-                            dragged.status,
-                            status,
-                            dragged.crewRunId ?? dragged.crewDefinitionId,
-                          ))
-                      ) {
-                        event.preventDefault();
-                        setDropColumn(status);
-                        event.dataTransfer.dropEffect = "move";
+            <>
+              <div className="task-board-column-picker">
+                <SearchableSelect
+                  label={t("Status")}
+                  searchable={false}
+                  value={compactColumn}
+                  options={[
+                    { value: "all", label: t("All") },
+                    ...TASK_COLUMNS.map((status) => ({
+                      value: status,
+                      label: `${t(COLUMN_LABELS[status])} · ${boardIndexes.columns.get(status)!.length}`,
+                    })),
+                  ]}
+                  onChange={(value) => setCompactColumn(value as TaskColumn | "all")}
+                />
+              </div>
+              <div className="task-board-columns">
+                {TASK_COLUMNS.map((status) => {
+                  const column = boardIndexes.columns.get(status)!;
+                  return (
+                    <section
+                      key={status}
+                      aria-label={t(COLUMN_LABELS[status])}
+                      data-task-column={status}
+                      data-compact-selected={
+                        compactColumn === "all" || compactColumn === status || undefined
                       }
-                    }}
-                    onDragLeave={(event) => {
-                      if (!event.currentTarget.contains(event.relatedTarget as Node))
-                        setDropColumn(null);
-                    }}
-                    onDrop={(event) => {
-                      event.preventDefault();
-                      const dragged = visibleTasks.find(
-                        (task) => `${task.machineId}:${task.id}` === draggedKey,
-                      );
-                      if (dragged) void onTaskDrop(dragged, status);
-                    }}
-                    className="bycoda-task-column flex min-h-0 min-w-0 flex-col rounded-md bg-(--ui-surface-raised)"
-                  >
-                    <h2 className="flex h-9 shrink-0 items-center gap-2 px-3 text-[12px] font-medium text-(--ui-text-secondary)">
-                      <span className="min-w-0 flex-1 truncate">{t(COLUMN_LABELS[status])}</span>
-                      <Badge className="shrink-0 tabular-nums">{column.length}</Badge>
-                    </h2>
-                    <ul className="min-h-0 flex-1 space-y-1.5 overflow-y-auto px-1.5 pb-1.5">
-                      {column.map((task) => (
-                        <li
-                          key={`${task.machineId}:${task.id}`}
-                          draggable={
-                            !acting &&
-                            !task.stale &&
-                            (task.status === "todo" ||
-                              task.status === "queued" ||
-                              TASK_COLUMNS.some((column) =>
-                                canMoveTask(
-                                  task.status,
-                                  column,
-                                  task.crewRunId ?? task.crewDefinitionId,
+                      data-drop-active={dropColumn === status || undefined}
+                      onDragOver={(event) => {
+                        const dragged = visibleTasks.find(
+                          (task) => `${task.machineId}:${task.id}` === draggedKey,
+                        );
+                        if (
+                          dragged &&
+                          ((taskColumn(dragged.status) === status &&
+                            dragged.workspaceControlsSupported &&
+                            (status === "todo" || status === "queued")) ||
+                            canMoveTask(
+                              dragged.status,
+                              status,
+                              dragged.crewRunId ?? dragged.crewDefinitionId,
+                            ))
+                        ) {
+                          event.preventDefault();
+                          setDropColumn(status);
+                          event.dataTransfer.dropEffect = "move";
+                        }
+                      }}
+                      onDragLeave={(event) => {
+                        if (!event.currentTarget.contains(event.relatedTarget as Node))
+                          setDropColumn(null);
+                      }}
+                      onDrop={(event) => {
+                        event.preventDefault();
+                        const dragged = visibleTasks.find(
+                          (task) => `${task.machineId}:${task.id}` === draggedKey,
+                        );
+                        if (dragged) void onTaskDrop(dragged, status);
+                      }}
+                      className="bycoda-task-column flex min-h-0 min-w-0 flex-col rounded-md bg-(--ui-surface-raised)"
+                    >
+                      <h2 className="flex h-9 shrink-0 items-center gap-2 px-3 text-[12px] font-medium text-(--ui-text-secondary)">
+                        <span className="min-w-0 flex-1 truncate">{t(COLUMN_LABELS[status])}</span>
+                        <Badge className="shrink-0 tabular-nums">{column.length}</Badge>
+                      </h2>
+                      <ul className="min-h-0 flex-1 space-y-1.5 overflow-y-auto px-1.5 pb-1.5">
+                        {column.map((task) => (
+                          <li
+                            key={`${task.machineId}:${task.id}`}
+                            draggable={
+                              !acting &&
+                              !task.stale &&
+                              (task.status === "todo" ||
+                                task.status === "queued" ||
+                                TASK_COLUMNS.some((column) =>
+                                  canMoveTask(
+                                    task.status,
+                                    column,
+                                    task.crewRunId ?? task.crewDefinitionId,
+                                  ),
+                                ))
+                            }
+                            onDragStart={(event) => {
+                              if (
+                                (event.target as Element).closest("button,input,textarea,select")
+                              ) {
+                                event.preventDefault();
+                                return;
+                              }
+                              const key = `${task.machineId}:${task.id}`;
+                              event.dataTransfer.setData("application/x-bycoda-task", key);
+                              event.dataTransfer.effectAllowed = "move";
+                              setDraggedKey(key);
+                            }}
+                            onDragEnd={() => {
+                              setDraggedKey(null);
+                              setDropColumn(null);
+                            }}
+                            onDrop={(event) => {
+                              const dragged = visibleTasks.find(
+                                (item) => `${item.machineId}:${item.id}` === draggedKey,
+                              );
+                              if (dragged && taskColumn(dragged.status) === status) {
+                                event.preventDefault();
+                                event.stopPropagation();
+                                void onTaskDrop(dragged, status, task);
+                              }
+                            }}
+                          >
+                            <TaskCard
+                              task={task}
+                              now={now}
+                              project={taskContext(task).project}
+                              goal={taskContext(task).goal}
+                              waitingForText={JSON.stringify(taskContext(task).waitingFor)}
+                              actionsFor={cardActions}
+                              busy={acting != null}
+                              openingState={JSON.stringify(
+                                [taskSessionIds(task).worker, taskSessionIds(task).review].map(
+                                  (id) =>
+                                    !!id &&
+                                    openingSessions.has(JSON.stringify([task.machineId, id])),
                                 ),
-                              ))
-                          }
-                          onDragStart={(event) => {
-                            if ((event.target as Element).closest("button,input,textarea,select")) {
-                              event.preventDefault();
-                              return;
-                            }
-                            const key = `${task.machineId}:${task.id}`;
-                            event.dataTransfer.setData("application/x-bycoda-task", key);
-                            event.dataTransfer.effectAllowed = "move";
-                            setDraggedKey(key);
-                          }}
-                          onDragEnd={() => {
-                            setDraggedKey(null);
-                            setDropColumn(null);
-                          }}
-                          onDrop={(event) => {
-                            const dragged = visibleTasks.find(
-                              (item) => `${item.machineId}:${item.id}` === draggedKey,
-                            );
-                            if (dragged && taskColumn(dragged.status) === status) {
-                              event.preventDefault();
-                              event.stopPropagation();
-                              void onTaskDrop(dragged, status, task);
-                            }
-                          }}
-                        >
-                          <TaskCard
-                            task={task}
-                            now={now}
-                            project={taskContext(task).project}
-                            goal={taskContext(task).goal}
-                            waitingForText={JSON.stringify(taskContext(task).waitingFor)}
-                            actionsFor={cardActions}
-                            busy={acting != null}
-                            openingState={JSON.stringify(
-                              [taskSessionIds(task).worker, taskSessionIds(task).review].map(
-                                (id) =>
-                                  !!id && openingSessions.has(JSON.stringify([task.machineId, id])),
-                              ),
-                            )}
-                            orderKey={boardIndexes.orders.get(task.machineId + ":" + task.id) ?? ""}
-                            selected={task.machineId + ":" + task.id === selectedKey}
-                            onOpen={openCard}
-                          />
-                        </li>
-                      ))}
-                      {column.length === 0 ? (
-                        <li>
-                          <EmptyState description={t(COLUMN_EMPTY[status])} />
-                        </li>
-                      ) : null}
-                    </ul>
-                  </section>
-                );
-              })}
-            </div>
+                              )}
+                              orderKey={
+                                boardIndexes.orders.get(task.machineId + ":" + task.id) ?? ""
+                              }
+                              selected={task.machineId + ":" + task.id === selectedKey}
+                              onOpen={openCard}
+                            />
+                          </li>
+                        ))}
+                        {column.length === 0 ? (
+                          <li>
+                            <EmptyState description={t(COLUMN_EMPTY[status])} />
+                          </li>
+                        ) : null}
+                      </ul>
+                    </section>
+                  );
+                })}
+              </div>
+            </>
           )}
         </div>
         {selected ? (
@@ -1722,7 +1765,7 @@ function TaskCardBody({
         <p
           data-task-goal
           title={t("Part of the goal “{p0}”", { p0: goal })}
-          className="mb-1 flex min-w-0 items-center gap-1 text-[10px] text-(--ui-text-secondary)"
+          className="mb-1 flex min-w-0 items-center gap-1 text-(length:--ui-font-caption) text-(--ui-text-secondary)"
         >
           <Sparkles className="size-2.5 shrink-0" />
           <span className="min-w-0 truncate">{goal}</span>
@@ -2476,7 +2519,7 @@ function VerificationSummary({ verification }: { verification: TaskVerification 
                     : t("failed (exit code {p0})", { p0: command.exitCode })}
             </span>
           </summary>
-          <pre className="mt-1 max-h-40 overflow-auto whitespace-pre-wrap break-words rounded bg-(--ui-surface-raised) px-1.5 py-1 font-mono text-[10px] text-(--ui-text-secondary)">
+          <pre className="mt-1 max-h-40 overflow-auto whitespace-pre-wrap break-words rounded bg-(--ui-surface-raised) px-1.5 py-1 font-mono text-(length:--ui-font-caption) text-(--ui-text-secondary)">
             {command.output.trim() || "No output."}
           </pre>
         </details>
@@ -3745,7 +3788,9 @@ function GoalForm({
             >
               <span className="min-w-0 truncate">{projectDisplayName(cwd)}</span>
               {cwd === lead ? (
-                <span className="shrink-0 text-[10px] text-(--ui-text-secondary)">{t("lead")}</span>
+                <span className="shrink-0 text-(length:--ui-font-caption) text-(--ui-text-secondary)">
+                  {t("lead")}
+                </span>
               ) : null}
               <Button
                 iconOnly

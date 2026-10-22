@@ -1,9 +1,4 @@
-import {
-  useCallback,
-  type Dispatch,
-  type MutableRefObject,
-  type SetStateAction,
-} from "react";
+import { useCallback, type Dispatch, type MutableRefObject, type SetStateAction } from "react";
 import { queueTerminalCommand } from "../../../features/terminal/model/terminalLaunchCommand";
 import {
   addTerminalToDock,
@@ -62,12 +57,8 @@ export function useProjectTerminalOpen(deps: ProjectTerminalOpenDeps) {
     sidebarCwd,
     terminalCwd,
   } = deps;
-  const {
-    setProjectTerminals,
-    setProjectTerminalFocused,
-    lastDockSideRef,
-    projectTerminalsRef,
-  } = dock;
+  const { setProjectTerminals, setProjectTerminalFocused, lastDockSideRef, projectTerminalsRef } =
+    dock;
 
   const focusProjectTerminal = useCallback(() => {
     setProjectTerminalFocused(true);
@@ -75,7 +66,7 @@ export function useProjectTerminalOpen(deps: ProjectTerminalOpenDeps) {
   }, []);
 
   const openProjectTerminal = useCallback(
-    (cwd: string, profile?: string) => {
+    (cwd: string, profile?: string, terminalId?: string) => {
       const workdir = cwd || projectCwdRef.current;
       const projectPath = projectCwdRef.current;
       if (!canOpenTerminalIn(projectPath)) return false;
@@ -83,12 +74,15 @@ export function useProjectTerminalOpen(deps: ProjectTerminalOpenDeps) {
       const shellProfile = profile ?? loadTerminalProfile();
       setProjectTerminals((prev) => {
         const existing = findProjectTerminal(prev, projectPath);
+        if (terminalId && existing?.pane.files.some((file) => file.id === terminalId))
+          return mapProjectTerminal(prev, projectPath, (dock) => withDockOpen(dock, true));
         const file = newTerminalFile(
           workdir,
           existing ? nextDockTerminalTitle(existing, workdir) : undefined,
           projectPath,
           shellProfile,
         );
+        if (terminalId) file.id = terminalId;
         if (!existing) {
           return [
             ...prev,

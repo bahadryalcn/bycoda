@@ -125,7 +125,6 @@ describe("provider session defaults", () => {
     "codex",
     "cursor",
     "grok",
-    "gemini",
     "antigravity",
     "opencode",
     "pi",

@@ -219,8 +219,8 @@ export function InboxLabel({ label, compact = false }: { label: GithubLabel; com
   const color = labelColor(label.color);
   return (
     <span
-      className={`inline-flex min-w-0 items-center gap-1 rounded px-1.5 py-px text-(--ui-text-secondary) bg-(--ui-surface-raised) ${
-        compact ? "max-w-20 text-[10px]" : "text-[11px]"
+      className={`inline-flex min-w-0 items-center gap-1 rounded px-1.5 py-px text-(length:--ui-font-caption) text-(--ui-text-secondary) bg-(--ui-surface-raised) ${
+        compact ? "max-w-20" : ""
       }`}
     >
       {color ? (

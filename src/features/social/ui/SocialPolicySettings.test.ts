@@ -10,7 +10,7 @@ let container: HTMLDivElement, root: Root;
 const request = vi.fn();
 const policies: SocialPolicies = {
   global: {
-    agent: { provider: "gemini", model: "owner-model" },
+    agent: { provider: "antigravity", model: "owner-model" },
     maxContentCharacters: 500,
     maxCommentCharacters: 120,
     maxMessageCharacters: 300,
@@ -91,7 +91,7 @@ it("saves only platform overrides, retains global policy and shows inherited eff
   await mount(policies);
   await change(select("Ayar kapsamı"), "youtube");
   expect(select("AI ajanı").value).toBe("");
-  expect(container.textContent).toContain("Gemini · owner-model");
+  expect(container.textContent).toContain("Antigravity · owner-model");
   expect(container.textContent).toContain("Kayıtlı sınır: 300 · ortak ayar");
   container.querySelector<HTMLInputElement>('[name="maxCommentCharacters"]')!.value = "80";
   await save();

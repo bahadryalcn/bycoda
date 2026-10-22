@@ -6,7 +6,7 @@ import {
   loadCrewSignLogo,
   type CodeArtPainter,
 } from "../../sessions/ui/crewCodeArt";
-import { createStarWarsPainter, loadStarWarsCrew } from "../../sessions/ui/starWarsPainter";
+import { riggedCrewTheme } from "../../sessions/ui/crewThemes";
 import type { CrewActivity } from "../../sessions/ui/crewMotion";
 
 const CREW: CrewActivity[] = Array.from({ length: 6 }, (_, id) => ({
@@ -24,13 +24,13 @@ export function OnboardingCrewPreview({ theme }: { theme: CrewTheme }) {
     let alive = true;
     let paint: CodeArtPainter | undefined;
     setFailed(false);
-    void (theme === "star-wars" ? loadStarWarsCrew() : loadCrewSignLogo())
+    const rigged = riggedCrewTheme(theme);
+    void (rigged ? rigged.load() : loadCrewSignLogo())
       .then(() => {
         if (!alive || !canvas.current) return;
-        paint =
-          theme === "star-wars"
-            ? createStarWarsPainter(canvas.current)
-            : createCodeArtPainter(canvas.current, { renderer: "canvas" });
+        paint = rigged
+          ? rigged.createPainter(canvas.current)
+          : createCodeArtPainter(canvas.current, { renderer: "canvas" });
         paint(Array(6).fill("idle"), CREW, 1280, 0);
       })
       .catch(() => {

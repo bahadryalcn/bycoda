@@ -892,7 +892,7 @@ ${t("The new address is saved. Edit it again, or choose Reconnect to retry.")}`
                     <div className="flex min-w-0 flex-wrap items-center gap-2">
                       <span className="truncate text-[13px] font-medium">{machine.name}</span>
                       {isLocalSyncMachine(machine) ? (
-                        <span className="shrink-0 rounded bg-(--ui-surface-raised) px-1.5 py-0.5 text-[10px] text-(--ui-text-muted)">
+                        <span className="shrink-0 rounded bg-(--ui-surface-raised) px-1.5 py-0.5 text-(length:--ui-font-caption) text-(--ui-text-secondary)">
                           {t("Local")}
                         </span>
                       ) : (

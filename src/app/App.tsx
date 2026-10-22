@@ -1,6 +1,7 @@
 import { useSidebarActions } from "./workspace/layout/useSidebarActions";
 import { SOCIAL_PANEL_EVENT } from "../features/social/ui/SocialShortcut";
 import { useAppUiControl } from "./workspace/control/useAppUiControl";
+import { createConversationTerminalControl, type ConversationTerminalDeps } from "./workspace/control/conversationTerminalControl";
 import { type ToolWindow } from "./model/toolWindows";
 import { useWindowNavigation } from "./model/windowNavigation";
 import { useTraySessions } from "./model/useTraySessions";
@@ -2337,7 +2338,20 @@ function Workspace({
     onSelectHistorySession,
   });
 
+  const conversationTerminalDeps = useRef<ConversationTerminalDeps | null>(null);
+  conversationTerminalDeps.current = {
+    docks: projectTerminalsRef,
+    setDocks: setProjectTerminals,
+    open: openProjectTerminal,
+    stillActive: context => projectCwdRef.current === context.cwd && tabsRef.current.some(tab =>
+      tab.id === activeTabIdRef.current && tab.kind === "session" && tab.focusedId === context.sessionId),
+  };
+  const conversationTerminalControl = useRef<ReturnType<typeof createConversationTerminalControl> | null>(null);
+  if (!conversationTerminalControl.current)
+    conversationTerminalControl.current = createConversationTerminalControl(() => conversationTerminalDeps.current!);
+
   useAppUiControl({
+    terminalControl: conversationTerminalControl.current,
     surface: {
       settingsOpen,
       searchViewOpen,
@@ -2369,6 +2383,7 @@ function Workspace({
       onOpenInbox,
       onOpenAutomations,
       onOpenTasks,
+      onOpenServers,
       onOpenSearch,
       openSettings,
     },

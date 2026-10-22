@@ -266,8 +266,9 @@ function MessageBubblesFixture() {
   return (
     <div className="h-full min-w-0">
       <AgentTranscript
+        onSaveNote={() => {}}
         blocks={[
-          { id: "short-user", role: "user", text: "Merhaba" },
+          { id: "short-user", role: "user", text: "Merhaba", startedAt: 1792612800000 },
           { id: "short-reply", role: "assistant", text: "Merhaba, nasıl yardımcı olabilirim?" },
           {
             id: "long-user",

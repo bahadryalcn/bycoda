@@ -258,8 +258,17 @@ function ScopedRuntimeLogsPanel({
   );
 
   useLayoutEffect(() => {
-    if (follow && !paused && timeline.current)
-      timeline.current.scrollTop = timeline.current.scrollHeight;
+    const area = timeline.current;
+    if (!follow || paused || !area) return;
+    // Reading/copying selected output must not be pulled away by the next poll.
+    const selection = window.getSelection();
+    if (
+      selection &&
+      !selection.isCollapsed &&
+      (area.contains(selection.anchorNode) || area.contains(selection.focusNode))
+    )
+      return;
+    area.scrollTop = area.scrollHeight;
   }, [buffer.cursor, filtered.length, source, sourceIds, level, search, grouped, follow, paused]);
 
   const togglePause = () => {

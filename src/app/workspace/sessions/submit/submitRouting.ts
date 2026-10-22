@@ -9,6 +9,7 @@ import { isClearSessionCommand } from "../../../../features/sessions/model/newSe
 import { submitClearConversation } from "./submitClearConversation";
 import { type SubmissionAcceptance } from "../../../model/submissionAcceptance";
 import { sameQueueValue } from "../../../../features/connections/model/sharedQueue";
+import { ADOPTED_RUNNING_REASON } from "../../../../features/connections/model/adoptedSessions";
 
 export function routeSubmitSession(ctx: SubmitDeps, input: SubmitInput): SubmissionAcceptance | undefined {
   const { getSubmitSessionRef, runSessionShell } = ctx;
@@ -67,6 +68,14 @@ export function routeSubmitSession(ctx: SubmitDeps, input: SubmitInput): Submiss
     (options?.intent ?? "default") === "default"
       ? parseShellCommand(text)
       : undefined;
-  if (shellCommand) return runSessionShell(sessionId, shellCommand);
+  if (shellCommand) {
+    // Its output joins the transcript the host is still writing.
+    if (remote?.continuingElsewhere && !remote.busy) {
+      ctx.enqueueHarnessEvent(sessionId, { type: "status", text: ADOPTED_RUNNING_REASON });
+      ctx.flushHarnessEvents();
+      return false;
+    }
+    return runSessionShell(sessionId, shellCommand);
+  }
 }
 

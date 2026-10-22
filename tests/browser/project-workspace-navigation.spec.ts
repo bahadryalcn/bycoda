@@ -199,6 +199,74 @@ test("Inbox keeps long issue titles readable and list actions available", async 
   await expect(card).toHaveAttribute("aria-current", "true");
 });
 
+test("Inbox review separates unread, draft, review and pending checks and restores filtered work", async ({
+  page,
+}, testInfo) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.goto("/tests/browser/project-workspace-navigation.html?inbox-review=1");
+  const first = page.locator('button[title$="checks 1"]');
+  const draft = page.locator('button[title$="checks 2"]');
+  await expect(first.locator("[data-inbox-unread]")).toHaveCount(1);
+  await first.click();
+  await expect(first.locator("[data-inbox-unread]")).toHaveCount(0);
+  await expect(page.getByText("Review required", { exact: true })).toBeVisible();
+  await draft.click();
+  await expect(page.getByRole("button", { name: "Ready for review", exact: true })).toBeVisible();
+  await expect(draft.locator("[data-inbox-unread]")).toHaveCount(0);
+  await first.click();
+  await page.getByRole("tab", { name: /^Checks/ }).click();
+  const failure = page.getByRole("button", {
+    name: "Browser regression checks for keyboard focus and long pull request titles details",
+    exact: true,
+  });
+  await failure.focus();
+  if ((await failure.getAttribute("aria-expanded")) === "true") await page.keyboard.press("Enter");
+  await page.keyboard.press("Enter");
+  await expect(
+    page.getByRole("paragraph").filter({
+      hasText:
+        "The focused control must remain visible after returning to the filtered pull request list.",
+    }),
+  ).toBeVisible();
+  await expect(page.getByText("In progress", { exact: true }).first()).toBeVisible();
+  for (const width of [768, 1440]) {
+    await page.setViewportSize({ width, height: 900 });
+    const heading = page.getByRole("heading", { name: /Review the shared interface keyboard/ });
+    expect(await heading.evaluate((node) => node.scrollHeight <= node.clientHeight + 1)).toBe(true);
+    expect(
+      await page
+        .locator("[data-check-name]")
+        .first()
+        .evaluate((node) => node.scrollWidth <= node.clientWidth + 1),
+    ).toBe(true);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+      true,
+    );
+  }
+  await page.screenshot({ path: testInfo.outputPath("inbox-review-checks.png") });
+  const search = page.getByRole("textbox", { name: "Search pull requests", exact: true });
+  await search.fill("checks 1");
+  const selected = page.locator('button[title$="checks 12"]');
+  await selected.click();
+  const scroller = selected.locator("xpath=ancestor::ul/parent::div");
+  await scroller.evaluate((node) => {
+    node.scrollTop = 200;
+  });
+  const scroll = await scroller.evaluate((node) => node.scrollTop);
+  expect(scroll).toBeGreaterThan(0);
+  await page.getByRole("button", { name: "Leave Inbox", exact: true }).click();
+  await expect(selected).toHaveCount(0);
+  await page.getByRole("button", { name: "Return to Inbox", exact: true }).click();
+  await expect(search).toHaveValue("checks 1");
+  await expect(selected).toHaveAttribute("aria-current", "true");
+  await expect.poll(() => scroller.evaluate((node) => node.scrollTop)).toBe(scroll);
+  const calls = await page.evaluate(() => (window as any).inboxReviewCalls as string[]);
+  expect(calls.filter((command) => /comment|pr_action|review_submit|merge/.test(command))).toEqual(
+    [],
+  );
+});
+
 test("compact rail centers group and social icons without wrapping labels", async ({
   page,
 }, testInfo) => {
@@ -348,11 +416,101 @@ test.beforeEach(async ({ page }) => {
     localStorage.clear();
     localStorage.setItem("bycoda.language", "en");
     Object.assign(window, {
+      __TAURI_EVENT_PLUGIN_INTERNALS__: { unregisterListener: () => {} },
       __TAURI_INTERNALS__: {
         metadata: { currentWebview: { label: "fixture" }, currentWindow: { label: "fixture" } },
         transformCallback: () => 1,
         invoke: async (command: string, args: Record<string, unknown> = {}) => {
           const cwd = String(args.cwd ?? "G:/wallet/api");
+          if (new URL(location.href).searchParams.has("inbox-review")) {
+            const calls = ((window as any).inboxReviewCalls ??= []) as string[];
+            calls.push(command);
+            const title =
+              "Review the shared interface keyboard navigation and preserve every long pull request title while repairing failed browser checks";
+            const item = (number: number) => ({
+              kind: "pr",
+              number,
+              title: `${title} ${number}`,
+              repo: "fixture/repository",
+              url: `https://github.com/fixture/repository/pull/${number}`,
+              state: "open",
+              draft: number === 2,
+              updatedAt: new Date(Date.now() - number * 1000).toISOString(),
+              labels: [],
+              assignees: [],
+            });
+            if (command.endsWith("_status"))
+              return { connected: command === "git_github_status", login: "fixture" };
+            if (command === "git_github_repositories") return ["fixture/repository"];
+            if (command === "git_github_work_items")
+              return Array.from({ length: 40 }, (_, index) => item(index + 1));
+            if (command === "git_github_work_item") return item(Number(args.number));
+            if (command === "git_github_work_item_details")
+              return {
+                body: "Offline review fixture. No remote writes are allowed.",
+                author: "fixture",
+                headRefOid: "a".repeat(40),
+                baseRefName: "main",
+                headRefName: "review-ui",
+                reviewDecision: "REVIEW_REQUIRED",
+              };
+            if (command === "git_github_work_item_thread")
+              return {
+                comments: [],
+                commits: [],
+                truncated: false,
+                reviewDecision: "REVIEW_REQUIRED",
+                baseRefName: "main",
+                headRefName: "review-ui",
+              };
+            if (command === "git_github_pr_diff")
+              return {
+                headOid: "a".repeat(40),
+                additions: 1,
+                deletions: 0,
+                files: [],
+                patch: "",
+                truncated: false,
+              };
+            if (command === "git_github_pr_checks")
+              return {
+                headOid: "a".repeat(40),
+                checks: [
+                  {
+                    name: "Browser regression checks for keyboard focus and long pull request titles",
+                    workflow: "UI verification",
+                    state: "fail",
+                    url: "https://github.com/fixture/repository/actions/runs/1/job/2",
+                    startedAt: null,
+                    completedAt: null,
+                  },
+                  {
+                    name: "Pending integration checks",
+                    workflow: "UI verification",
+                    state: "pending",
+                    url: null,
+                    startedAt: null,
+                    completedAt: null,
+                  },
+                ],
+              };
+            if (command === "git_github_check_details")
+              return {
+                steps: [],
+                annotations: [
+                  {
+                    path: "src/interface.tsx",
+                    line: 12,
+                    level: "failure",
+                    message:
+                      "The focused control must remain visible after returning to the filtered pull request list.",
+                  },
+                ],
+                notice: null,
+              };
+            if (/comment|pr_action|review_submit|merge/.test(command))
+              throw new Error("Read-only review fixture rejected a write");
+          }
           if (new URL(location.href).searchParams.has("inbox-layout")) {
             if (command.endsWith("_status"))
               return { connected: command === "jira_status", login: "fixture" };

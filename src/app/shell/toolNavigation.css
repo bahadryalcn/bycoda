@@ -9,10 +9,18 @@
   padding-inline: 8px;
   font-size: 12px;
 }
-@container tool-navigation (inline-size < 36rem) {
-  .tool-tabs button span,
+.tool-picker {
+  display: none;
+  flex: 1;
+  min-inline-size: 0;
+}
+@container tool-navigation (inline-size < 48rem) {
+  .tool-navigation[data-tool-picker] > .tool-tabs,
   .tool-action-label {
     display: none;
+  }
+  .tool-picker {
+    display: block;
   }
 }
 .tool-tabs {

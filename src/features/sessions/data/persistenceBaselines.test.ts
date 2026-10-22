@@ -15,7 +15,7 @@ function baseline(text: string, revision: number): PersistenceBaseline {
 
 describe("persistence baseline retention", () => {
   it("drops old block graphs but preserves revision and timestamp for guarded checkpoints", () => {
-    const cache = new PersistenceBaselines(1_000_000, 1);
+    const cache = new PersistenceBaselines(1_000_000, 1, 0);
     cache.set("old", baseline("old", 7));
     cache.set("active", baseline("new", 8));
     expect(cache.get("old")).toEqual({
@@ -31,12 +31,44 @@ describe("persistence baseline retention", () => {
     expect(cache.get("old")?.revision).toBe(9);
   });
 
-  it("does not retain a single oversized transcript", () => {
-    const cache = new PersistenceBaselines(100, 16);
+  it("keeps the just-set oversized transcript normalized while stubbing older entries", () => {
+    const cache = new PersistenceBaselines(100, 16, 0);
+    cache.set("older", baseline("y", 3));
     cache.set("large", baseline("x".repeat(1000), 4));
-    expect(cache.get("large")?.blocks).toEqual([]);
-    expect(cache.get("large")?.revision).toBe(4);
-    expect(cache.get("large")?.normalized).toBe(false);
+    expect(cache.get("large")?.normalized).toBe(true);
+    expect(cache.get("large")?.blocks).toHaveLength(1);
+    expect(cache.get("older")).toEqual({
+      blocks: [],
+      revision: 3,
+      updatedAt: 123,
+      writes: 2,
+      normalized: false,
+    });
+  });
+
+  it("keeps two large busy sessions normalized while they alternate writes", () => {
+    let now = 0;
+    const cache = new PersistenceBaselines(1000, 16, 30_000, () => now);
+    const text = "z".repeat(400);
+    for (let tick = 0; tick < 6; tick += 1) {
+      now += 1500;
+      const id = tick % 2 === 0 ? "busy-a" : "busy-b";
+      cache.set(id, baseline(text, tick + 1));
+      // Neither stubs the other, so neither falls back to a full-transcript save.
+      for (const busy of ["busy-a", "busy-b"].slice(0, Math.min(2, tick + 1)))
+        expect(cache.get(busy)?.normalized).toBe(true);
+    }
+  });
+
+  it("evicts a large baseline once it has gone cold", () => {
+    let now = 0;
+    const cache = new PersistenceBaselines(1000, 16, 30_000, () => now);
+    const text = "z".repeat(400);
+    cache.set("idle", baseline(text, 1));
+    now += 31_000;
+    cache.set("busy", baseline(text, 2));
+    expect(cache.get("idle")?.normalized).toBe(false);
+    expect(cache.get("busy")?.normalized).toBe(true);
   });
 
   it("releases accounting on delete and clear", () => {

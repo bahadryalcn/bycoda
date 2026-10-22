@@ -1,4 +1,5 @@
 import { Button } from "../../../shared/ui/Button";
+import { Pencil } from "../../../shared/ui/icons";
 import {
   useDeferredValue,
   useEffect,
@@ -121,10 +122,12 @@ export function NoteEditablePreview({
             variant="ghost"
             size="sm"
             type="button"
-            className="note-edit-block"
+            iconOnly
+            label={t("Edit note block")}
+            className="note-edit-block note-preview-edit"
             onClick={() => start(block.from, block.to)}
           >
-            {t("Edit block")}
+            <Pencil className="size-3.5" />
           </Button>
         </div>
       ));

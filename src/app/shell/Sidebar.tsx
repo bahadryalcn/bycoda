@@ -2704,7 +2704,9 @@ function SidebarComponent({
               onClose={closeFilesSearch}
             />
           ) : (
-            <p className="px-3 py-2 text-[12px] text-content/50">{t("No project folder")}</p>
+            <p className="px-3 py-2 text-[12px] text-(--ui-text-secondary)">
+              {t("No project folder")}
+            </p>
           )}
         </div>
         {tab === "sessions" && cwd && cwd !== "~" ? (
@@ -2764,7 +2766,7 @@ function SidebarComponent({
             aria-label={t("Selected conversations")}
             data-session-bulk-bar
             data-session-selection-keep
-            className="flex min-h-8 shrink-0 flex-wrap items-center gap-x-1 gap-y-0.5 border-b border-stroke bg-content/5 px-2 py-1 text-[11px] text-content/70"
+            className="flex min-h-8 shrink-0 flex-wrap items-center gap-x-1 gap-y-0.5 border-b border-stroke bg-(--ui-surface-raised) px-2 py-1 text-(length:--ui-font-caption) text-(--ui-text-secondary)"
           >
             <span className="mr-auto shrink-0 pl-0.5 tabular-nums text-content">
               {selectedSessionIds.size}
@@ -2848,7 +2850,7 @@ function SidebarComponent({
             aria-live={deleteNoticeError && !deleteProgress ? "assertive" : "polite"}
             aria-atomic="true"
             data-session-delete-status
-            className={`flex shrink-0 items-start gap-2 border-b border-stroke px-3 py-2 text-[12px] ${deleteNoticeError && !deleteProgress ? "text-danger" : "text-content/70"}`}
+            className={`flex shrink-0 items-start gap-2 border-b border-stroke px-3 py-2 text-[12px] ${deleteNoticeError && !deleteProgress ? "text-danger" : "text-(--ui-text-secondary)"}`}
           >
             {deleteProgress ? (
               <Loader className="mt-0.5 size-3.5 shrink-0 motion-safe:animate-spin" aria-hidden />
@@ -2909,7 +2911,9 @@ function SidebarComponent({
           }`}
         >
           {!cwd || cwd === "~" ? (
-            <p className="px-3 py-2 text-[12px] text-content/50">{t("No project folder")}</p>
+            <p className="px-3 py-2 text-[12px] text-(--ui-text-secondary)">
+              {t("No project folder")}
+            </p>
           ) : (
             <div>
               {onOpenCrewSession && (
@@ -2928,7 +2932,7 @@ function SidebarComponent({
               !["ready", "empty"].includes(remote.dataState.phase) ? null : pendingFirstLoad ? (
                 <p
                   role="status"
-                  className="flex items-center gap-2 px-3 py-2 text-[12px] text-content/50"
+                  className="flex items-center gap-2 px-3 py-2 text-[12px] text-(--ui-text-secondary)"
                 >
                   <Loader
                     className="size-3.5 shrink-0 motion-safe:animate-spin"
@@ -2967,7 +2971,7 @@ function SidebarComponent({
                 // just typed, so it stays a quiet line of text. Only the genuine
                 // "this project has nothing in it" case earns the illustration.
                 narrowedByUser ? (
-                  <div className="flex flex-col items-start gap-1.5 px-3 py-2 text-[12px] text-content/50">
+                  <div className="flex flex-col items-start gap-1.5 px-3 py-2 text-[12px] text-(--ui-text-secondary)">
                     <p>
                       {searchNarrowed
                         ? t("No matching sessions")
@@ -2988,7 +2992,7 @@ function SidebarComponent({
                     ) : null}
                   </div>
                 ) : remoteProject && !remote.machine ? (
-                  <p className="px-3 py-2 text-[12px] text-content/45">
+                  <p className="px-3 py-2 text-[12px] text-(--ui-text-secondary)">
                     {t("This project’s machine isn’t connected on this computer.")}
                   </p>
                 ) : (
@@ -3227,14 +3231,33 @@ function SidebarComponent({
       {copyIdFailure ? (
         <Modal title={t("Session ID")} size="sm" onClose={() => setCopyIdFailure(null)}>
           <div className="flex flex-col gap-3">
-            <Alert tone="danger" role="alert">{t("Could not copy the session ID. Select it below to copy manually, or retry.")} {copyIdFailure.error}</Alert>
-            <TextField label={t("Session ID")} aria-label={t("Session ID")} value={copyIdFailure.value} readOnly onFocus={(event) => event.currentTarget.select()} />
-            <Button loading={copyIdRetrying} onClick={() => {
-              if (copyIdRetrying) return;
-              const value = copyIdFailure.value;
-              setCopyIdRetrying(true);
-              void copyText(value).then(() => setCopyIdFailure(null), (error) => setCopyIdFailure({ value, error: String(error) })).finally(() => setCopyIdRetrying(false));
-            }}>{t("Retry")}</Button>
+            <Alert tone="danger" role="alert">
+              {t("Could not copy the session ID. Select it below to copy manually, or retry.")}{" "}
+              {copyIdFailure.error}
+            </Alert>
+            <TextField
+              label={t("Session ID")}
+              aria-label={t("Session ID")}
+              value={copyIdFailure.value}
+              readOnly
+              onFocus={(event) => event.currentTarget.select()}
+            />
+            <Button
+              loading={copyIdRetrying}
+              onClick={() => {
+                if (copyIdRetrying) return;
+                const value = copyIdFailure.value;
+                setCopyIdRetrying(true);
+                void copyText(value)
+                  .then(
+                    () => setCopyIdFailure(null),
+                    (error) => setCopyIdFailure({ value, error: String(error) }),
+                  )
+                  .finally(() => setCopyIdRetrying(false));
+              }}
+            >
+              {t("Retry")}
+            </Button>
           </div>
         </Modal>
       ) : null}
@@ -3886,7 +3909,7 @@ function CompactRailAction({
         <span aria-hidden className="absolute right-1.5 top-1.5 size-1.5 rounded-full bg-accent" />
       ) : null}
       {badge ? (
-        <span className="pointer-events-none absolute -right-1 -top-1 [&>span]:ml-0 [&>span]:h-4 [&>span]:min-w-4 [&>span]:text-[10px]">
+        <span className="pointer-events-none absolute -right-1 -top-1 [&>span]:ml-0 [&>span]:min-h-4 [&>span]:h-auto [&>span]:min-w-4 [&>span]:text-(length:--ui-font-caption) [&>span]:leading-4">
           {badge}
         </span>
       ) : null}
@@ -4274,7 +4297,7 @@ function FolderRow({
       <span className="relative min-w-0 flex-1 truncate text-[13px] font-semibold leading-snug text-content">
         {folder.name}
       </span>
-      <span className="relative flex shrink-0 items-center gap-1 text-[11px] tabular-nums text-content/45">
+      <span className="relative flex shrink-0 items-center gap-1 text-(length:--ui-font-caption) tabular-nums text-(--ui-text-secondary)">
         {busy ? (
           <span role="img" aria-label={t("Working")} title={t("Working")}>
             <TerminalSpinner className="inline-block w-3 select-none text-center text-[11px] leading-none text-active" />
@@ -4368,7 +4391,7 @@ function FolderRenameRow({
         }}
         className="relative min-w-0 flex-1 leading-snug"
       />
-      <span className="relative shrink-0 text-[11px] tabular-nums text-content/45">
+      <span className="relative shrink-0 text-(length:--ui-font-caption) tabular-nums text-(--ui-text-secondary)">
         {memberCount}
       </span>
     </div>
@@ -4958,7 +4981,7 @@ const SessionCard = memo(function SessionCard({
     <span
       data-session-row-model
       title={model}
-      className="flex min-w-0 shrink items-center gap-1 text-[11px] font-medium text-content/55"
+      className="flex min-w-0 shrink items-center gap-1 text-(length:--ui-font-caption) font-medium text-(--ui-text-secondary)"
     >
       <HarnessIcon harness={session.harness} className="size-3 shrink-0" />
       {compact ? null : <span className="session-row-model-full min-w-0 truncate">{model}</span>}
@@ -4974,7 +4997,7 @@ const SessionCard = memo(function SessionCard({
     showBranch && !compact && branchText ? (
       <span
         data-session-row-branch
-        className="session-row-branch flex min-w-0 items-center gap-1 text-[11px] text-content/45"
+        className="session-row-branch flex min-w-0 items-center gap-1 text-(length:--ui-font-caption) text-(--ui-text-secondary)"
         title={session.worktreeCwd ? `${gitLabel}\n${session.worktreeCwd}` : gitLabel}
       >
         <BranchIcon className="size-3 shrink-0" strokeWidth={1.75} />
@@ -5274,8 +5297,10 @@ const SessionCard = memo(function SessionCard({
           className="pointer-events-none overflow-y-auto p-2.5"
         >
           <div className="flex items-center justify-between gap-3">
-            <span className="text-[11px] font-semibold text-content/85">{t("Subagents")}</span>
-            <span className="shrink-0 text-[10px] tabular-nums text-content/45">
+            <span className="text-(length:--ui-font-caption) font-semibold text-content">
+              {t("Subagents")}
+            </span>
+            <span className="shrink-0 text-(length:--ui-font-caption) tabular-nums text-(--ui-text-secondary)">
               {orchestrationDone}/{orchestration.tasks.length}
               {t(" done")}
             </span>
@@ -5289,11 +5314,11 @@ const SessionCard = memo(function SessionCard({
                   className="flex min-w-0 items-center gap-1.5 rounded-md px-1 py-1"
                 >
                   <HarnessIcon harness={task.harness} className="size-3.5 shrink-0 opacity-75" />
-                  <span className="min-w-0 flex-1 truncate text-[11px] text-content/75">
+                  <span className="min-w-0 flex-1 truncate text-(length:--ui-font-caption) text-(--ui-text-secondary)">
                     {task.title}
                   </span>
                   <span
-                    className={`shrink-0 text-[10px] ${
+                    className={`shrink-0 text-(length:--ui-font-caption) ${
                       task.needsInput ||
                       task.status === "failed" ||
                       task.status === "blocked" ||
@@ -5303,7 +5328,7 @@ const SessionCard = memo(function SessionCard({
                           ? "text-accent"
                           : task.status === "completed"
                             ? "text-success"
-                            : "text-content/45"
+                            : "text-(--ui-text-secondary)"
                     }`}
                   >
                     {label}

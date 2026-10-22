@@ -96,7 +96,7 @@ describe("harnessesForTurns", () => {
     id: "u4",
     role: "user",
     text: "x",
-    turnModel: { harness: "gemini", id: "gemini:x", name: "X" },
+    turnModel: { harness: "antigravity", id: "antigravity:x", name: "X" },
   };
 
   it("matches harnessForTurn for every turn", () => {

@@ -4,6 +4,12 @@ function windowsPath(path: string): boolean {
   return /^[A-Za-z]:[\\/]/.test(path) || path.startsWith("\\\\") || path.startsWith("//");
 }
 
+/** Separator semantics follow the machine that owns the path, including remote:// paths. */
+function hostWindowsPath(path: string): boolean {
+  const remote = /^remote:\/\/[^/]+\/(.*)$/.exec(path);
+  return windowsPath(remote ? remote[1] : path);
+}
+
 export function slash(path: string): string {
   const remote = /^(remote:\/\/[^/]+\/)(.*)$/.exec(path);
   if (remote) {
@@ -93,7 +99,7 @@ export function isEqualOrInside(path: string, root: string): boolean {
 export function joinPath(parent: string, relative: string): string {
   const base = trimSlash(parent);
   const parts = relative
-    .split(windowsPath(parent) ? /[/\\]/ : /\//)
+    .split(hostWindowsPath(parent) ? /[/\\]/ : /\//)
     .filter((part) => part && part !== ".");
   let out = base;
   for (const part of parts) {

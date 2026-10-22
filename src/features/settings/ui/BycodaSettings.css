@@ -59,7 +59,10 @@
   min-height: 0;
   min-width: 0;
 }
-/* Wide: a grouped list beside the page. Narrow: one scrolling strip above it. */
+/* Wide: grouped tabs. Narrow: one searchable category picker. */
+.bycoda-settings-category-picker {
+  display: none;
+}
 .bycoda-settings-categories {
   display: flex;
   flex-direction: column;
@@ -111,10 +114,16 @@
 }
 
 @container (max-width: 760px) {
+  .bycoda-settings-category-picker {
+    display: block;
+    min-inline-size: 0;
+    padding: 8px 16px;
+  }
   .bycoda-settings-body {
     flex-direction: column;
   }
   .bycoda-settings-categories {
+    display: none;
     flex-direction: row;
     align-items: center;
     gap: 0;
@@ -516,6 +525,32 @@
 }
 .bycoda-settings-workbench .chat-settings #setting-prompt-templates {
   grid-column: 1 / -1;
+}
+/* Shell topics contain independent content, not paired heading/content tracks.
+   Stretching the local picker alongside a tall remote list leaves a large gap. */
+.bycoda-settings-workbench .bycoda-settings-form .terminal-settings {
+  grid-template-columns: minmax(0, 1fr);
+  align-content: start;
+}
+.bycoda-settings-workbench
+  .bycoda-settings-form
+  .terminal-settings
+  > .settings-group[data-settings-layout] {
+  display: block;
+  grid-row: auto;
+  align-self: start;
+}
+/* Match the named container that stacks rows in index.css. The wrapping basis
+   from the 760px rule is a width only while the row remains horizontal. */
+@container settings (width < 560px) {
+  .bycoda-settings-workbench .bycoda-settings-form .settings-row > .settings-row-label {
+    flex-basis: auto;
+  }
+  .bycoda-settings-workbench
+    .bycoda-settings-form
+    .settings-row:not(:has(> .settings-row-control > [role="switch"]:only-child)) {
+    align-items: stretch;
+  }
 }
 .bycoda-settings-workbench .settings-templates {
   padding: 16px;

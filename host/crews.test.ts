@@ -465,4 +465,86 @@ describe("crew deletion", () => {
       source: { id: "ui", updatedAt: 1000 },
     });
   });
+
+  it("discovers library groups with bounded summaries and keeps foreign projects hidden", async () => {
+    const f = setup();
+    const other = f.store.addProject("/foreign-crew", "Foreign");
+    for (const [id, projectId] of [
+      ["shared", undefined],
+      ["local", f.project.id],
+      ["foreign", other.id],
+    ] as const)
+      await f.service.call(
+        "crews.agent.save",
+        {
+          agent: {
+            ...f.definition.agents[1]!,
+            id,
+            projectId,
+            groups: ["Mobile"],
+            instructions: "Private instructions",
+          },
+        },
+        f.project.id,
+      );
+    const call = (action: string, input = {}) =>
+      f.service.call(action, input, f.project.id, f.principal);
+    const first = await call("crews.agents.list", {
+      group: "Mobile",
+      role: "specialist",
+      limit: 1,
+    });
+    expect(first).toMatchObject({
+      total: 2,
+      offset: 0,
+      nextOffset: 1,
+      items: [{ id: "shared", candidateCount: 1 }],
+    });
+    expect(JSON.stringify(first)).not.toContain("instructions");
+    expect(await call("crews.agents.list", { scope: "project", search: "LOCAL" })).toMatchObject({
+      total: 1,
+      items: [{ id: "local" }],
+    });
+    expect(await call("crews.agent.get", { agentId: "shared" })).toMatchObject({
+      instructions: "",
+    });
+    await expect(call("crews.agent.get", { agentId: "foreign" })).rejects.toThrow("not available");
+    await expect(call("crews.agents.list", { limit: 101 })).rejects.toThrow("bounded");
+    await expect(call("crews.agents.list", { offset: -1 })).rejects.toThrow("bounded");
+  });
+
+  it("discovers definitions and run summaries without exposing prompts or snapshots", async () => {
+    const f = setup();
+    const other = f.store.addProject("/foreign-definition", "Foreign");
+    f.service.save({ ...f.definition, id: "global", projectId: undefined });
+    f.service.save({ ...f.definition, id: "foreign", projectId: other.id });
+    const call = (action: string, input = {}) =>
+      f.service.call(action, input, f.project.id, f.principal);
+    expect(await call("crews.definitions.list", { scope: "global" })).toMatchObject({
+      total: 1,
+      items: [{ id: "global", memberCount: 3 }],
+    });
+    expect(await call("crews.definition.get", { definitionId: "crew" })).toMatchObject({
+      agents: [{ instructions: "" }, { instructions: "" }, { instructions: "" }],
+    });
+    await expect(call("crews.definition.get", { definitionId: "foreign" })).rejects.toThrow(
+      "not available",
+    );
+    await f.start();
+    const runs = await call("crews.runs.list", {
+      definitionId: "crew",
+      status: "active",
+      search: "Build",
+    });
+    expect(runs).toMatchObject({
+      total: 1,
+      items: [{ id: "run", definitionId: "crew", taskCount: 0 }],
+    });
+    expect(JSON.stringify(runs)).not.toContain("launch");
+    expect(JSON.stringify(runs)).not.toContain("instructions");
+    expect(await call("crews.runs.list", { status: "finished" })).toMatchObject({
+      total: 0,
+      items: [],
+    });
+  });
 });

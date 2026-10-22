@@ -78,6 +78,8 @@ export interface LineChartProps {
   loading?: boolean;
   /** Shown when there are no points. */
   emptyLabel?: string;
+  /** Shown when the user has hidden every series. */
+  selectSeriesLabel?: string;
   /** Series toggles above the plot. Shown by default when there is more than one series. */
   legend?: boolean;
   /** Header of the first column in the data table read by screen readers. */
@@ -303,6 +305,7 @@ export function LineChart({
   onActiveChange,
   loading = false,
   emptyLabel = "No data for this range",
+  selectSeriesLabel = "Choose a series to show",
   legend,
   categoryLabel = "Date",
   curve = "smooth",
@@ -804,7 +807,7 @@ export function LineChart({
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0, transition: fadeFast }}
               >
-                {empty ? emptyLabel : "Choose a series to show"}
+                {empty ? emptyLabel : selectSeriesLabel}
               </motion.p>
             )}
             {loading && empty && (

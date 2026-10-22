@@ -271,7 +271,7 @@ function PrCheckRow({
           <span
             data-check-name
             title={check.name}
-            className="min-w-0 truncate text-[14px] font-medium leading-snug tracking-[-0.15px] text-(--ui-tone-neutral-fg) @max-[420px]/checks:text-[12px]"
+            className={`min-w-0 ${expanded ? "break-words" : "truncate"} text-[14px] font-medium leading-snug tracking-[-0.15px] text-(--ui-tone-neutral-fg) @max-[420px]/checks:text-[12px]`}
           >
             {check.name}
           </span>
@@ -347,7 +347,7 @@ function PrCheckRow({
             </span>
           )}
         </span>
-        <span className="mr-1 w-11 shrink-0 whitespace-nowrap text-right text-[10px] tabular-nums text-(--ui-text-secondary) @max-[480px]/checks:hidden">
+        <span className="mr-1 w-11 shrink-0 whitespace-nowrap text-right text-(length:--ui-font-caption) tabular-nums text-(--ui-text-secondary) @max-[480px]/checks:hidden">
           {duration}
         </span>
         {onFix ? (
@@ -449,7 +449,7 @@ function PrCheckRow({
                   <summary className="flex cursor-pointer list-none items-center gap-1 text-[11px] text-(--ui-text-secondary) hover:text-(--ui-tone-neutral-fg) [&::-webkit-details-marker]:hidden">
                     <ChevronRight className="size-3 transition-transform group-open/steps:rotate-90 motion-reduce:transition-none" />
                     {t("View run steps")}
-                    <span className="ml-auto pl-2 text-right text-[10px] text-(--ui-text-secondary) @max-[420px]/checks:hidden">
+                    <span className="ml-auto pl-2 text-right text-(length:--ui-font-caption) text-(--ui-text-secondary) @max-[420px]/checks:hidden">
                       {describeCheckCounts(countChecks(details.steps))}
                     </span>
                   </summary>
@@ -651,7 +651,7 @@ export function InboxPrChecks({
               {t("Fix all failed")}
               <span
                 aria-hidden="true"
-                className="ml-1 border-l border-current/20 pl-2 text-[10px] opacity-55"
+                className="ml-1 border-l border-current/20 pl-2 text-(length:--ui-font-caption) opacity-55"
               >
                 {counts.fail}
               </span>
@@ -739,7 +739,7 @@ export function InboxPrChecks({
               </Button>
             ))}
           </div>
-          <span className="text-[10px] text-(--ui-text-secondary) @max-[420px]/checks:hidden">
+          <span className="text-(length:--ui-font-caption) text-(--ui-text-secondary) @max-[420px]/checks:hidden">
             {counts.fail ? t("Failures first") : ""}
           </span>
         </div>
@@ -753,7 +753,7 @@ export function InboxPrChecks({
               <div key={group.state} hidden={group.hidden} className={group.hidden ? "hidden" : ""}>
                 <h3 className="mb-1.5 mt-3 flex items-center gap-2 px-2 text-[12px] font-normal text-(--ui-text-secondary)">
                   {checkStateLabel(group.state)}
-                  <span className="text-[10px] text-(--ui-text-secondary)">
+                  <span className="text-(length:--ui-font-caption) text-(--ui-text-secondary)">
                     {group.rows.length}
                   </span>
                 </h3>

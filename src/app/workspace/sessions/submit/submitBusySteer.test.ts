@@ -121,3 +121,46 @@ it.each(["unreviewed", "kept", "kept-with-new-send", "edited"])(
       expect(readDeliveryProgress(session.id, owner.messageId)?.stage).toBe("accepted");
   },
 );
+
+it("queues a message sent while the host runs the conversation for another computer", () => {
+  const session = {
+    ...newSession("codex", "/fake"),
+    id: "steer-test",
+    continuingElsewhere: true,
+  };
+  resetSessionsStore([session]);
+  const ctx = {
+    dismissNoticesForContinuedSession: vi.fn(),
+    enqueueHarnessEvent: vi.fn(),
+    flushHarnessEvents: vi.fn(),
+    refs: { turnGen: { current: new Map([[session.id, 1]]) } },
+  } as unknown as SubmitDeps;
+  const input = {
+    sessionId: session.id,
+    text: "from this desk",
+    attachments: [],
+  } as SubmitInput;
+  const pre = {
+    storedCurrent: session,
+    current: session,
+    intent: "default",
+    submittedText: input.text,
+    harnessText: input.text,
+    operatorCommand: { matched: false },
+    initialWorkCwd: session.cwd,
+  } as unknown as SubmitPreflight;
+  expect(steerBusySubmit(ctx, input, pre)).toBe(true);
+  expect(getSessions()[0].queuedMessages?.map((row) => row.text)).toEqual([
+    "from this desk",
+  ]);
+  expect(transport.steer).not.toHaveBeenCalled();
+  // A queue-row action keeps its row instead of appending a copy.
+  expect(
+    steerBusySubmit(
+      ctx,
+      { ...input, options: { queuedMessageId: "row" } },
+      pre,
+    ),
+  ).toBe(false);
+  expect(getSessions()[0].queuedMessages).toHaveLength(1);
+});

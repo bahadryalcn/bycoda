@@ -279,7 +279,7 @@ test("busy composer keeps Send, Queue and Stop visible with shortcut hints", asy
   const stop = page.getByRole("button", { name: "Stop", exact: true });
   await expect(send).toHaveAttribute("title", "Steer (Enter)");
   await expect(queue).toHaveAttribute("title", /Shift\+Tab/);
-  await expect(stop).toHaveAttribute("title", "Stop (Esc)");
+  await expect(stop).toHaveAttribute("title", "Stop (Esc / Ctrl+C)");
   for (const theme of ["light", "dark"]) {
     await page.evaluate(
       (value) => document.documentElement.classList.toggle("theme-light", value === "light"),
@@ -291,6 +291,15 @@ test("busy composer keeps Send, Queue and Stop visible with shortcut hints", asy
       const bounds = await Promise.all([queue, send, stop].map((control) => control.boundingBox()));
       expect(bounds[0]!.x + bounds[0]!.width).toBeLessThanOrEqual(bounds[1]!.x);
       expect(bounds[1]!.x + bounds[1]!.width).toBeLessThanOrEqual(bounds[2]!.x);
+      const plus = await page
+        .getByRole("button", { name: "Add files or choose a mode", exact: true })
+        .boundingBox();
+      const context = await page.locator(".context-meter-summary").boundingBox();
+      for (const box of [plus, context, ...bounds]) {
+        expect(box).not.toBeNull();
+        expect(Math.abs(box!.height - bounds[2]!.height)).toBeLessThanOrEqual(1);
+        expect(Math.abs(box!.y - bounds[2]!.y)).toBeLessThanOrEqual(1);
+      }
     }
   }
   await stop.focus();

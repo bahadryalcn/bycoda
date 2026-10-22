@@ -13,6 +13,7 @@ export function LineChart(props: LineChartProps) {
   return (
     <ArcLineChart
       emptyLabel={t("No records")}
+      selectSeriesLabel={t("Choose a series to show")}
       categoryLabel={t("Time")}
       {...props}
       className={["bycoda-arc bycoda-arc-chart", props.className].filter(Boolean).join(" ")}

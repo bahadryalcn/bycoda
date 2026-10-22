@@ -127,7 +127,7 @@ export function ProviderAccountMenu({
                 <AccountColorDot account={account} />
                 <span className="flex min-w-0 flex-1 flex-col gap-0.5">
                   <span className="truncate">{account.label}</span>
-                  <span className="text-[10px]">
+                  <span className="text-(length:--ui-font-caption)">
                     <AccountStatusLabel status={status} />
                   </span>
                 </span>

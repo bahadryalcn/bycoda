@@ -46,6 +46,49 @@ function repo() {
 }
 
 describe("validation", () => {
+  it("rejects a stale management snapshot after target ref, config or dirty changes", async () => {
+    const r = repo();
+    const sha = r.commit("file.txt", "base\n");
+    const snapshot = await r.run("git_management_snapshot") as { token: string; refs: Record<string, string> };
+    expect(snapshot.refs["refs/heads/main"]).toBe(sha);
+    r.git("tag", "v1", sha);
+    await expect(r.run("git_rename_branch", { from: "main", to: "renamed", expectedSnapshot: snapshot.token })).rejects.toThrow("Repository state changed");
+    const afterTag = await r.run("git_management_snapshot") as { token: string };
+    r.git("remote", "add", "origin", "https://user:secret@example.test/repo");
+    await expect(r.run("git_delete_tag", { name: "v1", expectedSnapshot: afterTag.token })).rejects.toThrow("Repository state changed");
+    const afterRemote = await r.run("git_management_snapshot") as { token: string };
+    expect(JSON.stringify(afterRemote)).not.toContain("secret");
+    r.write("file.txt", "changed\n");
+    await expect(r.run("git_undo_last_commit", { expectedSnapshot: afterRemote.token })).rejects.toThrow("Repository state changed");
+    expect(r.git("branch", "--show-current")).toBe("main");
+  });
+
+  it("deletes an annotated tag only with its exact reviewed object identity", async () => {
+    const r = repo();
+    r.commit("file.txt", "base\n");
+    r.git("tag", "-a", "v1", "-m", "release");
+    const snapshot = await r.run("git_management_snapshot") as { token: string; refs: Record<string, string> };
+    await r.run("git_delete_tag", { name: "v1", expectedSnapshot: snapshot.token, expectedTargetSha: snapshot.refs["refs/tags/v1"] });
+    expect(r.git("tag", "--list")).toBe("");
+  });
+
+  it("remote branch deletion uses a lease and preserves a newer remote commit", async () => {
+    const r = repo();
+    r.commit("file.txt", "base\n");
+    const remote = temp("bycoda-management-remote-");
+    execFileSync("git", ["init", "--bare", "-q", remote], { windowsHide: true });
+    r.git("remote", "add", "origin", remote);
+    r.git("push", "-q", "origin", "main");
+    const snapshot = await r.run("git_management_snapshot") as { token: string; refs: Record<string, string> };
+    const reviewed = snapshot.refs["refs/remotes/origin/main"];
+    // Update the bare remote without updating this checkout's tracking reference.
+    const newer = r.commit("file.txt", "newer\n");
+    r.git("push", "-q", "origin", "main");
+    r.git("update-ref", "refs/remotes/origin/main", reviewed);
+    const current = await r.run("git_management_snapshot") as { token: string };
+    await expect(r.run("git_delete_remote_branch", { remote: "origin", name: "main", expectedSnapshot: current.token, expectedTargetSha: reviewed })).rejects.toThrow();
+    expect(execFileSync("git", ["--git-dir", remote, "rev-parse", "refs/heads/main"], { encoding: "utf8", windowsHide: true }).trim()).toBe(newer);
+  });
   it.each(["git_merge", "git_rebase", "git_create_branch_from"] as const)(
     "%s targets the selected local branch when a tag has the same name",
     async (command) => {
@@ -214,6 +257,21 @@ describe("validation", () => {
 });
 
 describe("stashes", () => {
+  it("clears only the reviewed stash snapshot and refuses concurrent list changes", async () => {
+    const r = repo();
+    r.commit("a.txt", "base\n");
+    r.write("a.txt", "first\n");
+    await r.run("git_stash", { message: "First" });
+    const reviewed = [r.git("rev-parse", "stash@{0}")];
+    r.write("a.txt", "second\n");
+    await r.run("git_stash", { message: "Second" });
+    const before = r.git("stash", "list", "--format=%H");
+    await expect(r.run("git_stash_clear", { expectedShas: reviewed })).rejects.toThrow("Stash list changed");
+    expect(r.git("stash", "list", "--format=%H")).toBe(before);
+    await expect(r.run("git_stash_clear", { expectedShas: ["HEAD"] })).rejects.toThrow("Invalid expected");
+    await r.run("git_stash_clear", { expectedShas: before.split("\n") });
+    expect(r.git("stash", "list")).toBe("");
+  });
   it.each(["apply", "pop", "drop"])(
     "rejects stale stash identity for %s without touching either stash",
     async (action) => {

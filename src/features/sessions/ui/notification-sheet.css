@@ -2,9 +2,9 @@
   position: absolute;
   inset-block-start: -10px;
   inset-inline-end: -4px;
-  font-size: 10px;
+  font-size: var(--ui-font-caption);
   font-weight: 500;
-  line-height: 10px;
+  line-height: 1.2;
   font-variant-numeric: tabular-nums;
   color: var(--ui-tone-warning-fg);
   pointer-events: none;

@@ -86,7 +86,7 @@ function InboxMiniLabel({ label }: { label: GithubLabel }) {
   useLocale();
   const color = labelColor(label.color);
   return (
-    <span className="inline-flex min-w-0 max-w-20 items-center gap-1 rounded bg-(--ui-surface-raised) px-1.5 py-px text-[10px] text-(--ui-text-secondary)">
+    <span className="inline-flex min-w-0 max-w-20 items-center gap-1 rounded bg-(--ui-surface-raised) px-1.5 py-px text-(length:--ui-font-caption) text-(--ui-text-secondary)">
       {color ? (
         <span
           aria-hidden

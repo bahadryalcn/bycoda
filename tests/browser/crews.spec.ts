@@ -55,18 +55,29 @@ test("adds a new member when the library is empty and shows role problems in pla
   await dialog.getByRole("radio", { name: "New member" }).click();
   await page.getByRole("button", { name: "Add to crew" }).click();
   await expect(dialog.getByText("Add a name").first()).toBeVisible();
-  await dialog.getByRole("textbox", { name: "Name" }).fill("Lead");
+  // The role name is the owner's own; suggestions follow the chosen responsibility.
   await dialog
-    .getByRole("radiogroup", { name: "Role" })
+    .getByRole("radiogroup", { name: "Responsibility in the crew" })
     .getByRole("radio", { name: "Coordinator" })
     .click();
+  await expect(
+    dialog.getByText("Plans the work and hands out assignments. A crew has one."),
+  ).toBeVisible();
+  await dialog
+    .getByRole("group", { name: "Suggested roles" })
+    .getByRole("button", { name: "Project lead" })
+    .click();
+  await expect(dialog.getByRole("textbox", { name: "Role" })).toHaveValue("Project lead");
+  await dialog.getByRole("textbox", { name: "Role" }).fill("Mobile release lead");
   await dialog.getByLabel("Also save to member library").check();
   await dialog
     .getByRole("radiogroup", { name: "Library availability" })
     .getByRole("radio", { name: "All projects" })
     .click();
   await page.getByRole("button", { name: "Add to crew" }).click();
-  await expect(dialog.getByRole("region", { name: "Coordinator" })).toContainText("Lead");
+  await expect(dialog.getByRole("region", { name: "Coordinator" })).toContainText(
+    "Mobile release lead",
+  );
   await expect(dialog.getByText("Add a reviewer.").first()).toBeVisible();
   await expect(dialog.getByText("Add at least one specialist.").first()).toBeVisible();
   // The saved profile is now in the library for every project on this host.
@@ -86,6 +97,8 @@ test("opens ongoing work from the rail and keeps the delivery while editing the 
   await row.hover();
   await row.getByRole("button", { name: "Start work with Website Crew" }).click();
   const start = page.getByRole("dialog", { name: "Start crew work" });
+  // Members named like their responsibility are not repeated.
+  await expect(start.locator("dl")).toHaveText("CoordinatorSpecialist:UIReviewer");
   await start
     .getByRole("textbox", { name: "What should the crew deliver?" })
     .fill("Mobile sign-in");
@@ -144,6 +157,35 @@ test("crew work lists deliveries with status, progress and conversations", async
   await expect(page.locator('[data-crew-run="old-run"]')).toContainText("Audit landing page");
 });
 
+test("crew work details expose long decisions and blockers by keyboard in a narrow pane", async ({
+  page,
+}, testInfo) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.goto("/tests/browser/crews.html?blocked");
+  const work = page.locator('[data-crew-run="run"]');
+  const details = work.getByRole("button", { name: "Show details", exact: true });
+  await details.focus();
+  await page.keyboard.press("Enter");
+  await expect(work.getByRole("button", { name: "Hide details", exact: true })).toHaveAttribute(
+    "aria-expanded",
+    "true",
+  );
+  const decision = work.locator("p").filter({ hasText: /^Needs decision:/ });
+  const blocker = work.locator("p").filter({ hasText: /^Blocked:/ });
+  await expect(decision).toContainText("confirm the next provider and budget.");
+  await expect(blocker).toContainText("select a replacement before retrying this task.");
+  for (const detail of [decision, blocker]) {
+    expect(await detail.evaluate((node) => node.scrollWidth <= node.clientWidth)).toBe(true);
+    expect(await detail.evaluate((node) => getComputedStyle(node).whiteSpace)).toBe("pre-wrap");
+  }
+  await expect(page.getByLabel("Opened session")).toBeEmpty();
+  await page.screenshot({ path: testInfo.outputPath("crew-work-details-narrow.png") });
+  await page.keyboard.press("Enter");
+  await expect(work.getByRole("button", { name: "Show details", exact: true })).toBeFocused();
+  await expect(decision).toHaveCount(0);
+});
+
 test("editing keeps the roster first, settings one tab away, and fits narrow windows", async ({
   page,
 }, testInfo) => {
@@ -153,7 +195,10 @@ test("editing keeps the roster first, settings one tab away, and fits narrow win
   const dialog = page.getByRole("dialog", { name: "Website Crew" });
   await expect(dialog.getByRole("region", { name: "Coordinator" })).toBeVisible();
   await dialog.getByRole("button", { name: /UI Build accessible UI/ }).click();
-  await dialog.getByRole("textbox", { name: "Name" }).fill("Frontend");
+  // Automatic members rate their models with plain levels instead of raw numbers.
+  await expect(dialog.getByRole("list", { name: "Model ratings" })).toBeVisible();
+  await expect(dialog.getByText("Owner quality estimate")).toHaveCount(0);
+  await dialog.getByRole("textbox", { name: "Role" }).fill("Frontend");
   await dialog.getByRole("textbox", { name: "Groups" }).fill("Web");
   await dialog.getByRole("textbox", { name: "Groups" }).press("Enter");
   await dialog.getByRole("button", { name: "Save to library" }).click();
@@ -164,9 +209,9 @@ test("editing keeps the roster first, settings one tab away, and fits narrow win
   // Returning from a member page restores focus to its row.
   await expect(dialog.getByRole("button", { name: /^Frontend/ })).toBeFocused();
   await dialog.getByRole("radio", { name: "Working settings" }).click();
-  await dialog.getByRole("spinbutton", { name: "Parallel assignments" }).fill("9");
+  await dialog.getByRole("spinbutton", { name: "Members working at once" }).fill("9");
   await expect(dialog.getByText("Use a whole number from 1 to 4.").first()).toBeVisible();
-  await dialog.getByRole("spinbutton", { name: "Parallel assignments" }).fill("2");
+  await dialog.getByRole("spinbutton", { name: "Members working at once" }).fill("2");
   await page.screenshot({
     path: `${shots}/settings-${testInfo.project.name}.png`,
   });

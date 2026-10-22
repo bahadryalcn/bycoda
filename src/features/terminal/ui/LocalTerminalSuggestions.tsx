@@ -8,11 +8,24 @@ import {
   localTerminalPrefix,
   safeHistoryCommand,
 } from "../model/localTerminalCompletion";
+import { isTerminalTextEdit } from "../model/terminalKeys";
 import { TerminalCursorPopover } from "./TerminalCursorPopover";
 import { TerminalGhostText } from "./TerminalGhostText";
 import styles from "./TerminalTools.module.css";
 
 type Snapshot = ReturnType<typeof localTerminalCompletion>;
+
+/** A text edit whose echo never arrives (e.g. echo off) drops the stale list. */
+const ECHO_GRACE_MS = 150;
+
+function sameSnapshot(a: Snapshot, b: Snapshot) {
+  if (!a || !b) return a === b;
+  return (
+    a.prefix === b.prefix &&
+    a.suggestions.length === b.suggestions.length &&
+    a.suggestions.every((value, index) => value === b.suggestions[index])
+  );
+}
 
 export function LocalTerminalSuggestions({
   terminal,
@@ -33,15 +46,19 @@ export function LocalTerminalSuggestions({
   const closeRef = useRef(onClose);
   const armed = useRef(false);
   const completing = useRef(false);
+  // Typed but not yet echoed: the visible list stays mounted, but accepting
+  // would read the un-echoed buffer, so keys pass through to the shell.
+  const stale = useRef(false);
+  const nativeValues = useRef<string[]>([]);
   const sessionHistory = useRef<string[]>([]);
   const request = useRef(0);
   const refreshRef = useRef<() => void>(() => {});
   const publish = (value: Snapshot) => {
     const previous = current.current;
     const chosen = previous?.suggestions[choice.current];
-    const next = value && previous?.prefix === value.prefix && chosen
-      ? Math.max(0, value.suggestions.indexOf(chosen))
-      : 0;
+    if (sameSnapshot(previous, value)) return;
+    const next =
+      value && chosen && value.suggestions.includes(chosen) ? value.suggestions.indexOf(chosen) : 0;
     current.current = value;
     choice.current = next;
     setSnapshot(value);
@@ -78,14 +95,20 @@ export function LocalTerminalSuggestions({
     if (!element) return;
     sessionHistory.current = [];
     let timer: ReturnType<typeof setTimeout> | undefined;
+    let echoTimer: ReturnType<typeof setTimeout> | undefined;
     const suspend = () => {
       clearTimeout(timer);
+      clearTimeout(echoTimer);
+      stale.current = false;
+      nativeValues.current = [];
       armed.current = false;
       request.current++;
       publish(null);
     };
     const refresh = () => {
       clearTimeout(timer);
+      clearTimeout(echoTimer);
+      stale.current = false;
       const generation = ++request.current;
       if (!armed.current || !element.contains(document.activeElement)) {
         publish(null);
@@ -97,7 +120,9 @@ export function LocalTerminalSuggestions({
         return;
       }
       const history = sessionHistory.current;
-      publish(localTerminalCompletion(terminal, history));
+      // Keep earlier native matches until the new lookup lands so the list
+      // narrows in place instead of collapsing to static entries first.
+      publish(localTerminalCompletion(terminal, [...history, ...nativeValues.current]));
       if (!terminalId) return;
       timer = setTimeout(() => {
         void getPtySuggestions(terminalId, prefix)
@@ -109,6 +134,7 @@ export function LocalTerminalSuggestions({
               localTerminalPrefix(terminal) !== prefix
             )
               return;
+            nativeValues.current = values;
             publish(localTerminalCompletion(terminal, [...history, ...values]));
           })
           .catch(() => {
@@ -121,10 +147,19 @@ export function LocalTerminalSuggestions({
       if (completing.current) return;
       request.current++;
       clearTimeout(timer);
+      clearTimeout(echoTimer);
       // Inspect shell echo only. Never retain keystrokes, passwords or pasted multiline input.
-      // oxlint-disable-next-line no-control-regex -- input classification only
-      armed.current = data === "\x7f" || data === "\b" || !/[\x00-\x1f\x7f]/.test(data);
-      publish(null);
+      armed.current = isTerminalTextEdit(data);
+      if (!armed.current || !current.current) {
+        stale.current = false;
+        publish(null);
+        return;
+      }
+      stale.current = true;
+      echoTimer = setTimeout(() => {
+        stale.current = false;
+        publish(null);
+      }, ECHO_GRACE_MS);
     });
     const parsed = terminal.onWriteParsed(refresh);
     const subscriptions = [
@@ -138,7 +173,7 @@ export function LocalTerminalSuggestions({
     ];
     const keydown = (event: KeyboardEvent) => {
       if (event.isComposing || event.ctrlKey || event.metaKey || event.altKey) return;
-      const values = current.current?.suggestions;
+      const values = stale.current ? undefined : current.current?.suggestions;
       if (
         values?.length &&
         ((event.key === "Tab" && !event.shiftKey) ||

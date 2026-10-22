@@ -31,17 +31,34 @@ const assistance = vi.hoisted(() => ({
 vi.mock("../model/sshShellIntegration", () => ({ useSshShellIntegration: () => assistance }));
 vi.mock("@tauri-apps/api/core", () => native);
 const xterm = vi.hoisted(() => ({
+  fit: vi.fn(() => null as { cols: number; rows: number } | null),
+  writes: vi.fn((callback?: () => void) => callback?.()),
+  webgl: [] as Array<{ dispose: ReturnType<typeof vi.fn> }>,
   instances: [] as Array<{
     options: { theme?: { foreground?: string; cursor?: string } };
     osc: Map<number, (data: string) => boolean>;
     dataHandler?: (data: string) => void;
+    write: ReturnType<typeof vi.fn>;
+    refresh: ReturnType<typeof vi.fn>;
   }>,
 }));
 vi.mock("../../../platform/tauri/pty", () => pty);
 vi.mock("../model/terminalLayout", () => ({
-  fitTerminal: () => null,
+  fitTerminal: xterm.fit,
   applyTerminalChrome: () => {},
   resetGridStretch: () => {},
+}));
+vi.mock("@xterm/addon-webgl", () => ({
+  WebglAddon: class {
+    dispose = vi.fn();
+    constructor() {
+      xterm.webgl.push(this);
+    }
+    activate() {}
+    onContextLoss() {
+      return { dispose() {} };
+    }
+  },
 }));
 vi.mock("@xterm/xterm", () => ({
   Terminal: class {
@@ -74,6 +91,8 @@ vi.mock("@xterm/xterm", () => ({
     focus() {}
     dispose() {}
     writeln() {}
+    write = vi.fn((_data: string | Uint8Array, callback?: () => void) => xterm.writes(callback));
+    refresh = vi.fn();
     onData(handler: (data: string) => void) {
       this.dataHandler = handler;
       return { dispose() {} };
@@ -150,6 +169,114 @@ it("zooms only the hovered terminal, clamps size and applies saved typography wi
     await act(async () => root.unmount());
     host.remove();
     localStorage.clear();
+  }
+});
+
+it("refuses a reviewed SSH spawn after source privacy changes across bridge readiness", async () => {
+  const { host, root } = setup();
+  let release!: () => void,
+    allowed = true;
+  pty.readyPtyBridge.mockImplementationOnce(
+    () =>
+      new Promise<void>((resolve) => {
+        release = resolve;
+      }),
+  );
+  const lifecycle = vi.fn();
+  try {
+    await act(async () =>
+      root.render(
+        createElement(TerminalView, {
+          id: "mobile-source-guard",
+          cwd: "",
+          sshConnectionId: "saved",
+          active: true,
+          canStart: () => allowed,
+          onLifecycle: lifecycle,
+        }),
+      ),
+    );
+    allowed = false;
+    await act(async () => release());
+    expect(native.invoke.mock.calls.some(([command]) => command === "ssh_terminal_spawn")).toBe(
+      false,
+    );
+    expect(lifecycle).toHaveBeenCalledWith("failed");
+  } finally {
+    await act(async () => root.unmount());
+    host.remove();
+  }
+});
+
+it("checks live pending authority after bridge readiness and refuses a revoked SSH spawn", async () => {
+  const { host, root } = setup();
+  let release!: () => void;
+  pty.readyPtyBridge.mockImplementationOnce(
+    () =>
+      new Promise<void>((resolve) => {
+        release = resolve;
+      }),
+  );
+  let authorized = true;
+  const authorizeStart = vi.fn(async () => authorized),
+    lifecycle = vi.fn();
+  try {
+    await act(async () =>
+      root.render(
+        createElement(TerminalView, {
+          id: "mobile-pending-authority",
+          cwd: "",
+          sshConnectionId: "saved",
+          active: true,
+          canStart: () => true,
+          authorizeStart,
+          onLifecycle: lifecycle,
+        }),
+      ),
+    );
+    authorized = false;
+    await act(async () => release());
+    expect(authorizeStart).toHaveBeenCalledTimes(1);
+    expect(native.invoke.mock.calls.some(([command]) => command === "ssh_terminal_spawn")).toBe(
+      false,
+    );
+    expect(lifecycle).toHaveBeenCalledWith("failed");
+  } finally {
+    await act(async () => root.unmount());
+    host.remove();
+  }
+});
+
+it("reports terminal closure only after its own canonical PTY cleanup completes", async () => {
+  const { host, root } = setup();
+  let finish!: () => void;
+  pty.killPty.mockImplementationOnce(
+    () =>
+      new Promise<void>((resolve) => {
+        finish = resolve;
+      }),
+  );
+  const lifecycle = vi.fn();
+  try {
+    await act(async () =>
+      root.render(
+        createElement(TerminalView, {
+          id: "mobile-close-proof",
+          cwd: "",
+          sshConnectionId: "saved",
+          active: true,
+          onLifecycle: lifecycle,
+        }),
+      ),
+    );
+    expect(lifecycle).toHaveBeenCalledWith("opened-on-computer");
+    await act(async () => root.unmount());
+    expect(lifecycle).not.toHaveBeenCalledWith("closed");
+    await act(async () => finish());
+    expect(lifecycle).toHaveBeenCalledWith("closed");
+    expect(pty.killPty).toHaveBeenCalledWith("mobile-close-proof");
+  } finally {
+    host.remove();
   }
 });
 
@@ -358,6 +485,9 @@ it("runs an action once after shell startup, without replaying it on remount", a
 afterEach(() => {
   assistance.state = undefined;
   xterm.instances.length = 0;
+  xterm.webgl.length = 0;
+  xterm.fit.mockReset().mockReturnValue(null);
+  xterm.writes.mockReset().mockImplementation((callback) => callback?.());
   vi.clearAllMocks();
   vi.unstubAllGlobals();
 });
@@ -461,6 +591,113 @@ function setup() {
   document.body.appendChild(host);
   return { host, root: createRoot(host) };
 }
+
+it("fits before replaying hidden output and redraws on return even at the same size", async () => {
+  const { host, root } = setup();
+  let intersect!: (entries: { isIntersecting: boolean }[]) => void;
+  vi.stubGlobal(
+    "IntersectionObserver",
+    class {
+      constructor(callback: typeof intersect) {
+        intersect = callback;
+      }
+      observe() {}
+      disconnect() {}
+    },
+  );
+  const events: string[] = [];
+  xterm.fit.mockImplementation(() => {
+    events.push("fit");
+    return { cols: 80, rows: 24 };
+  });
+  try {
+    await act(async () =>
+      root.render(
+        createElement(TerminalView, {
+          id: "visibility-replay",
+          cwd: "",
+          active: false,
+        }),
+      ),
+    );
+    const term = xterm.instances[0];
+    const receive = (
+      pty.subscribePty.mock.calls as unknown as Array<[string, (data: string) => void]>
+    )[0][1];
+    term.write.mockImplementation((data, callback) => {
+      events.push(data ? `write:${data}` : "drain");
+      callback?.();
+    });
+    await act(async () => intersect([{ isIntersecting: true }]));
+    expect(xterm.webgl).toHaveLength(1);
+    const firstRenderer = xterm.webgl[0];
+    await act(async () => intersect([{ isIntersecting: false }]));
+    expect(firstRenderer.dispose).toHaveBeenCalledOnce();
+    term.write.mockClear();
+    receive("background output");
+    expect(term.write).not.toHaveBeenCalled();
+    events.length = 0;
+    term.refresh.mockClear();
+    pty.resizePty.mockClear();
+    await act(async () => intersect([{ isIntersecting: true }]));
+    expect(events.slice(0, 4)).toEqual(["fit", "write:background output", "drain", "fit"]);
+    expect(term.refresh).toHaveBeenCalledWith(0, 23);
+    expect(xterm.webgl).toHaveLength(2);
+    expect(pty.resizePty).not.toHaveBeenCalled();
+    expect(pty.spawnPty).toHaveBeenCalledOnce();
+    expect(pty.killPty).not.toHaveBeenCalled();
+  } finally {
+    await act(async () => root.unmount());
+    host.remove();
+  }
+});
+
+it("ignores a stale output drain after hiding and restores a visible window without resizing", async () => {
+  const { host, root } = setup();
+  vi.stubGlobal("IntersectionObserver", undefined);
+  let hidden = false;
+  const hiddenSpy = vi.spyOn(document, "hidden", "get").mockImplementation(() => hidden);
+  const drains: (() => void)[] = [];
+  xterm.writes.mockImplementation((callback) => {
+    if (callback) drains.push(callback);
+  });
+  try {
+    await act(async () =>
+      root.render(
+        createElement(TerminalView, {
+          id: "window-restore",
+          cwd: "",
+          active: false,
+        }),
+      ),
+    );
+    const term = xterm.instances[0];
+    hidden = true;
+    await act(async () => document.dispatchEvent(new Event("visibilitychange")));
+    await act(async () => drains.shift()!());
+    expect(term.refresh).not.toHaveBeenCalled();
+    expect(xterm.webgl).toHaveLength(0);
+    hidden = false;
+    await act(async () => document.dispatchEvent(new Event("visibilitychange")));
+    expect(term.refresh).not.toHaveBeenCalled();
+    await act(async () => drains.shift()!());
+    expect(term.refresh).toHaveBeenCalledWith(0, 23);
+    expect(xterm.webgl).toHaveLength(1);
+    hidden = true;
+    await act(async () => document.dispatchEvent(new Event("visibilitychange")));
+    expect(xterm.webgl[0].dispose).toHaveBeenCalledOnce();
+    hidden = false;
+    await act(async () => document.dispatchEvent(new Event("visibilitychange")));
+    await act(async () => root.unmount());
+    term.refresh.mockClear();
+    await act(async () => drains.shift()!());
+    expect(term.refresh).not.toHaveBeenCalled();
+  } finally {
+    await act(async () => root.unmount());
+    hiddenSpy.mockRestore();
+    host.remove();
+  }
+});
 
 it("shows the native exit status and returns to servers without offering input resume or spawning again", async () => {
   const { host, root } = setup();

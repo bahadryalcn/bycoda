@@ -124,7 +124,7 @@ export type HarnessTelemetryEvent =
   | "image.generated";
 /** Events mapped by live provider protocols. These are optional when the CLI
  * omits their source data; availability is not a promise of emission every turn.
- * Cursor/Hermes/Gemini/generic ACP currently expose no compatible usage payload.
+ * Cursor/Hermes/generic ACP currently expose no compatible usage payload.
  */
 export const HARNESS_TELEMETRY_CAPABILITIES: Record<HarnessId, readonly HarnessTelemetryEvent[]> = {
   claude: ["context", "turn.metrics", "usage", "usage.limited"],
@@ -137,7 +137,6 @@ export const HARNESS_TELEMETRY_CAPABILITIES: Record<HarnessId, readonly HarnessT
   fx: ["context", "turn.metrics"],
   hermes: [],
   antigravity: ["context", "turn.metrics"],
-  gemini: [],
   acp: [],
 };
 export type HarnessCapabilities = {

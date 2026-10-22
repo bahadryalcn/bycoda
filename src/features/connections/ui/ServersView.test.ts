@@ -3,6 +3,7 @@ import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { ServersView } from "./ServersView";
+import { ServerItem } from "./ServerItem";
 import { resetRetainedState } from "../../../shared/hooks/useRetainedState";
 import {
   disconnectMachine,
@@ -171,6 +172,37 @@ it("shows real recovery progress and keeps degraded features visible after Host 
   );
   await act(async () => recordFeatureHealth(machine.environmentId, "files", true));
   expect(container.querySelector("[data-server-row]")?.textContent).toContain("Connected");
+});
+
+it("prevents double-click connection when the target cannot connect", async () => {
+  const onConnect = vi.fn();
+  await act(async () =>
+    root.render(
+      createElement(ServerItem, {
+        server: {
+          id: "offline",
+          name: "Offline server",
+          kind: "ssh",
+          metadata: { tags: [], favorite: false },
+        },
+        address: "user@long-address.example.test:2222",
+        layout: "cards",
+        selected: true,
+        canConnect: false,
+        onSelect: vi.fn(),
+        onConnect,
+        onMenu: vi.fn(),
+      }),
+    ),
+  );
+  const row = container.querySelector<HTMLButtonElement>("[data-server-row]")!;
+  await act(async () =>
+    row.dispatchEvent(new MouseEvent("dblclick", { bubbles: true, button: 0, detail: 2 })),
+  );
+  expect(onConnect).not.toHaveBeenCalled();
+  expect(row.querySelector('[title="user@long-address.example.test:2222"]')?.className).toContain(
+    "whitespace-normal",
+  );
 });
 
 it("selects on a single click and opens the canonical SSH record once on double click", async () => {

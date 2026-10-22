@@ -300,17 +300,18 @@ html.theme-light .project-sigil {
 [data-selected] .project-sigil-base {
   stroke-width: 1.1px;
 }
-/* Running: opacity-only pulse; scaling would blur the pixel-aligned edge. */
+/* Running: opacity-only pulse, finite so it stops on full opacity instead of
+   looping forever on the main thread; scaling would blur the pixel-aligned edge. */
 .bycoda-sigil-active {
-  animation: bycoda-sigil-breathe 1800ms ease-in-out infinite;
+  animation: bycoda-sigil-breathe 1800ms ease-in-out 3;
 }
 @keyframes bycoda-sigil-breathe {
   0%,
   100% {
-    opacity: 0.88;
+    opacity: 1;
   }
   50% {
-    opacity: 1;
+    opacity: 0.88;
   }
 }
 .bycoda-welcome {

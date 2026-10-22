@@ -716,7 +716,7 @@ export function QuickComposer({ onShown }: { onShown: () => void }) {
             <ChevronDown className="size-3 shrink-0 opacity-60" />
           </Button>
         ) : null}
-        <span className="ml-auto flex shrink-0 items-center gap-3 text-[11px] text-content/45">
+        <span className="ml-auto flex shrink-0 items-center gap-3 text-[11px] text-(--ui-text-secondary)">
           {attachments.loading ? (
             <span role="status">{t("Adding attachment…")}</span>
           ) : error ? (
@@ -804,7 +804,9 @@ export function QuickComposer({ onShown }: { onShown: () => void }) {
               className="shrink-0 border-t border-stroke p-2"
             >
               {commandOptions.length === 0 ? (
-                <p className="px-2 py-2 text-[12px] text-content/45">{t("No matching commands")}</p>
+                <p className="px-2 py-2 text-[12px] text-(--ui-text-secondary)">
+                  {t("No matching commands")}
+                </p>
               ) : (
                 commandOptions.map((command, index) => (
                   <Button
@@ -822,7 +824,7 @@ export function QuickComposer({ onShown }: { onShown: () => void }) {
                     onClick={() => chooseAt(index)}
                   >
                     <CommandLabel name={command.name} />
-                    <span className="text-[11px] leading-4 text-content/50">
+                    <span className="text-[11px] leading-4 text-(--ui-text-secondary)">
                       {command.description}
                     </span>
                   </Button>
@@ -854,7 +856,7 @@ export function QuickComposer({ onShown }: { onShown: () => void }) {
           ) : null}
           {picker === "project" ? (
             <div className="flex min-h-0 flex-col border-t border-stroke">
-              <label className="flex shrink-0 items-center gap-2 px-4 py-2 text-content/45">
+              <label className="flex shrink-0 items-center gap-2 px-4 py-2 text-(--ui-text-secondary)">
                 <Search className="size-3.5 shrink-0" />
                 <SearchInput
                   ref={queryRef}
@@ -883,7 +885,9 @@ export function QuickComposer({ onShown }: { onShown: () => void }) {
                 className="min-h-0 max-h-64 overflow-y-auto overscroll-none px-2 pb-2"
               >
                 {optionCount === 0 ? (
-                  <p className="px-2 py-2 text-[12px] text-content/45">{t("No matches")}</p>
+                  <p className="px-2 py-2 text-[12px] text-(--ui-text-secondary)">
+                    {t("No matches")}
+                  </p>
                 ) : (
                   projectOptions.map((path, index) => (
                     <Button
@@ -905,7 +909,7 @@ export function QuickComposer({ onShown }: { onShown: () => void }) {
                         className="size-3 shrink-0"
                       />
                       <span className="truncate">{projectDisplayName(path)}</span>
-                      <span className="ml-auto truncate pl-3 text-[11px] text-content/40">
+                      <span className="ml-auto truncate pl-3 text-[11px] text-(--ui-text-secondary)">
                         {prettyParent(path)}
                       </span>
                     </Button>
@@ -936,7 +940,7 @@ function CommandLabel({ name }: { name: string }) {
 function Kbd({ children }: { children: string }) {
   useLocale();
   return (
-    <kbd className="rounded border border-content/12 px-1 font-sans text-[10px] text-content/55">
+    <kbd className="rounded border border-stroke px-1 font-sans text-(length:--ui-font-caption) text-(--ui-text-secondary)">
       {children}
     </kbd>
   );

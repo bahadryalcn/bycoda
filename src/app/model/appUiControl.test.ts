@@ -8,7 +8,6 @@ describe("direct workspace navigation boundary", () => {
     try {
       for (const input of [
         { view: "unknown" },
-        { view: "servers" },
         { view: "notes", section: "providers" },
         { view: "settings", section: "unknown" },
         { view: "tasks", cwd: "foreign" },
@@ -22,9 +21,40 @@ describe("direct workspace navigation boundary", () => {
       expect(APP_UI_VIEWS).toContain("tasks");
       expect(APP_UI_VIEWS).toContain("servers");
       await expect(
+        requestAppUi(context, "ui.workspace.open", { view: "servers" }),
+      ).resolves.toEqual({});
+      await expect(
         requestAppUi(context, "ui.workspace.close", { view: "servers" }),
-      ).rejects.toThrow("field");
+      ).resolves.toEqual({});
       expect(APP_UI_SETTINGS).toContain("connections");
+    } finally {
+      dispose();
+    }
+  });
+  it("allows session-owned terminal lifecycle without commands, identity or approval overrides", async () => {
+    const handler = vi.fn(async () => ({}));
+    const dispose = registerAppUiControl(handler);
+    try {
+      for (const input of [
+        {},
+        { requestId: "bad/id" },
+        { requestId: "request", cwd: "/foreign" },
+        { requestId: "request", command: "run" },
+      ])
+        await expect(requestAppUi(context, "terminals.create", input)).rejects.toThrow("field");
+      for (const input of [
+        {},
+        { terminalId: "own", force: true },
+        { terminalId: "own", approved: true },
+      ])
+        await expect(requestAppUi(context, "terminals.close", input)).rejects.toThrow("field");
+      expect(handler).not.toHaveBeenCalled();
+      await expect(
+        requestAppUi(context, "terminals.create", { requestId: "request" }),
+      ).resolves.toEqual({});
+      await expect(
+        requestAppUi(context, "terminals.close", { terminalId: "own" }),
+      ).resolves.toEqual({});
     } finally {
       dispose();
     }

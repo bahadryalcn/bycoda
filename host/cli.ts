@@ -232,7 +232,7 @@ Connect another computer using an SSH forward to the loopback port.`);
   // esbuild keeps these initializers lazy even in the single-file runtime package.
   const { configureChildBackend, acquireHarnessBridge } =
     await import("../src/integrations/harness/core/child");
-  const { HostChildBackend } = await import("./child-backend");
+  const { HostChildBackend, readProviderBinaryOverrides } = await import("./child-backend");
   const { GenericAcpService } = await import("./generic-acp");
   const { ensureGenericAcpRegistered } =
     await import("../src/integrations/harness/providers/generic-acp/genericAcpAdapter");
@@ -245,7 +245,16 @@ Connect another computer using an SSH forward to the loopback port.`);
   const { HostGoals } = await import("./goals");
   const { HostStewards } = await import("./stewards");
   const releaseOwner = await acquireHostOwner(directory);
-  const backend = new HostChildBackend({}, store.attachmentDir);
+  try {
+    const { installAppSkills } = await import("./app-skills");
+    installAppSkills();
+  } catch (error) {
+    console.error("Could not install the bycoda app skills:", error);
+  }
+  const backend = new HostChildBackend(
+    await readProviderBinaryOverrides(directory),
+    store.attachmentDir,
+  );
   let cleanup = () => {
     rmSync(statePath, { force: true });
     store.close();
@@ -377,7 +386,7 @@ async function entry() {
     return;
   }
   if (command === "conversation") {
-    const { callConversationTool, conversationToolCatalog } = await import("./conversation-tools");
+    const { callConversationTool, conversationToolCatalog, CONVERSATION_MAX_INPUT_BYTES } = await import("./conversation-tools");
     if (!args[1] || args[1] === "--help") {
       console.log(
         JSON.stringify({
@@ -391,9 +400,11 @@ async function entry() {
       if (args.includes("--input") && option("input", "-") !== "-")
         throw new Error("Conversation CLI accepts JSON on stdin only.");
       let raw = "";
+      let inputBytes = 0;
       for await (const chunk of process.stdin) {
+        inputBytes += Buffer.byteLength(chunk);
+        if (inputBytes > CONVERSATION_MAX_INPUT_BYTES) throw new Error("Conversation input too large.");
         raw += String(chunk);
-        if (raw.length > 128000) throw new Error("Conversation input too large.");
       }
       console.log(
         JSON.stringify({

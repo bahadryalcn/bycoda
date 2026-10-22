@@ -4,7 +4,7 @@ describe("Social global/platform policy", () => {
   it("inherits global fields and overrides only configured platform fields", () => {
     const policies = parseSocialPolicies({
       global: {
-        agent: { provider: "gemini", model: "gemini-owner-model" },
+        agent: { provider: "antigravity", model: "antigravity-owner-model" },
         maxContentCharacters: 800,
         maxCommentCharacters: 300,
         maxMessageCharacters: 500,
@@ -18,7 +18,7 @@ describe("Social global/platform policy", () => {
       },
     });
     expect(effectiveSocialPolicy(policies, "x")).toEqual({
-      agent: { provider: "gemini", model: "gemini-owner-model" },
+      agent: { provider: "antigravity", model: "antigravity-owner-model" },
       maxContentCharacters: 800,
       maxCommentCharacters: 120,
       maxMessageCharacters: 500,

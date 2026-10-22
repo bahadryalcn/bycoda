@@ -1,6 +1,7 @@
 import { useLayoutEffect, useState, type ReactNode } from "react";
 import type { Terminal } from "@xterm/xterm";
 import { Popover } from "../../../shared/ui/Popover";
+import { localTerminalPrefix } from "../model/localTerminalCompletion";
 
 /** Use the public buffer and rendered screen bounds; never xterm internals. */
 export function TerminalCursorPopover({
@@ -24,13 +25,23 @@ export function TerminalCursorPopover({
         setAnchor(undefined);
         return;
       }
-      setAnchor(
-        new DOMRect(
-          rect.left + (buffer.cursorX * rect.width) / terminal.cols,
-          rect.top + (row * rect.height) / terminal.rows,
-          rect.width / terminal.cols,
-          rect.height / terminal.rows,
-        ),
+      // Anchor at the start of the typed command, read from the same buffer
+      // state as the cursor, so the popover stays put while its list updates.
+      const column = Math.max(0, buffer.cursorX - (localTerminalPrefix(terminal)?.length ?? 0));
+      const next = new DOMRect(
+        rect.left + (column * rect.width) / terminal.cols,
+        rect.top + (row * rect.height) / terminal.rows,
+        rect.width / terminal.cols,
+        rect.height / terminal.rows,
+      );
+      setAnchor((previous) =>
+        previous &&
+        previous.x === next.x &&
+        previous.y === next.y &&
+        previous.width === next.width &&
+        previous.height === next.height
+          ? previous
+          : next,
       );
     };
     update();
@@ -57,6 +68,7 @@ export function TerminalCursorPopover({
       width={360}
       maxHeight={220}
       autoFocus={false}
+      solid
       onDismiss={onDismiss}
       ignore=".xterm"
       dismissOnEscape={false}

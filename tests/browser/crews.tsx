@@ -115,7 +115,9 @@ let runs = [
       {
         id: "request",
         from: "ui-session",
-        text: "Need image generation for the hero",
+        text: params.has("blocked")
+          ? "Choose a fallback image provider before continuing. The current account has no remaining image generation capacity, so the owner needs to confirm the next provider and budget."
+          : "Need image generation for the hero",
         createdAt: 1,
       },
     ],
@@ -128,7 +130,10 @@ let runs = [
         title: "Build settings",
         harness: "codex",
         model: "codex:fixture",
-        status: "review",
+        status: params.has("blocked") ? "blocked" : "review",
+        error: params.has("blocked")
+          ? "The design asset is unavailable. Keep the existing layout draft and select a replacement before retrying this task."
+          : undefined,
         sessionId: "ui-session",
         verification: {
           review: { verdict: "pass", sessionId: "review-session" },

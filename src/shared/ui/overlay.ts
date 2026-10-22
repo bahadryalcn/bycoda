@@ -12,11 +12,12 @@ type Entry = {
   escape?: () => void;
   previous: HTMLElement | null;
   initialFocusSelector?: string;
+  passive: boolean;
 };
 const entries: Entry[] = [];
 /** Outer window listeners must leave Escape to the active overlay stack. */
 export function hasActiveOverlay() {
-  return entries.length > 0;
+  return entries.some((entry) => !entry.passive);
 }
 /** A modal owns workspace keyboard scope, including its portalled children. */
 export function hasActiveModalOverlay() {
@@ -112,7 +113,7 @@ function syncInert() {
 function onKey(event: KeyboardEvent) {
   if (event.defaultPrevented || isImeComposition(event)) return;
   if (event.key === "Escape") {
-    const top = entries[entries.length - 1];
+    const top = [...entries].reverse().find((entry) => !entry.passive);
     if (!top?.escape) return;
     event.preventDefault();
     event.stopImmediatePropagation();
@@ -144,6 +145,8 @@ export function useOverlay(
   escape?: () => void,
   enabled = true,
   initialFocusSelector?: string,
+  restoreFocus = true,
+  passive = false,
 ) {
   const id = useRef(Symbol("overlay")).current;
   // Capture before descendant layout effects can move focus into their portals.
@@ -165,6 +168,7 @@ export function useOverlay(
       escape: escape ? () => close.current?.() : undefined,
       previous: previous.current,
       initialFocusSelector,
+      passive,
     };
     // Child layout effects run first: insert ancestors before their descendants.
     const child = entries.findIndex((item) => descendant(item, id));
@@ -193,12 +197,23 @@ export function useOverlay(
         observer?.disconnect();
       }
       if (
+        restoreFocus &&
         (wasTop || entry.modal) &&
         entry.previous?.isConnected &&
         !entry.previous.closest("[inert]")
       )
         entry.previous.focus({ preventScroll: true });
     };
-  }, [id, parent, root, modal, Boolean(escape), enabled, initialFocusSelector]);
+  }, [
+    id,
+    parent,
+    root,
+    modal,
+    Boolean(escape),
+    enabled,
+    initialFocusSelector,
+    restoreFocus,
+    passive,
+  ]);
   return id;
 }

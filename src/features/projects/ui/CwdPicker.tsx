@@ -236,7 +236,7 @@ export function CwdPicker({
         )}
         {chevron ? (
           <ChevronDown
-            className={`size-3 shrink-0 text-[var(--ui-text-muted)] ${open ? "rotate-180" : ""}`}
+            className={`size-3 shrink-0 text-(--ui-text-secondary) ${open ? "rotate-180" : ""}`}
             strokeWidth={1.75}
           />
         ) : null}
@@ -270,10 +270,10 @@ export function CwdPicker({
           <div ref={lockOverscroll} className="min-h-0 flex-1 overflow-y-auto overscroll-none py-1">
             {inProject ? (
               <>
-                <p className="px-2.5 pb-1 pt-2 text-[10px] uppercase tracking-widest text-[var(--ui-text-muted)]">
+                <p className="px-2.5 pb-1 pt-2 text-(length:--ui-font-caption) font-medium text-(--ui-text-secondary)">
                   {t("Current project")}
                 </p>
-                <div className="px-2.5 py-1.5 text-[var(--ui-text-muted)]">
+                <div className="px-2.5 py-1.5 text-(--ui-text-secondary)">
                   <p className="truncate text-[13px] text-content">
                     {renderProjectLabel?.(cwd) ?? basename(cwd)}
                   </p>
@@ -283,11 +283,11 @@ export function CwdPicker({
             ) : null}
             {previewRecents.length > 0 || mode === "move" ? (
               <>
-                <p className="px-2.5 pb-1 pt-2 text-[10px] uppercase tracking-widest text-[var(--ui-text-muted)]">
+                <p className="px-2.5 pb-1 pt-2 text-(length:--ui-font-caption) font-medium text-(--ui-text-secondary)">
                   {mode === "move" ? t("Move to project") : t("Recent projects")}
                 </p>
                 {mode === "move" && previewRecents.length === 0 ? (
-                  <p className="px-2.5 py-2 text-[13px] text-[var(--ui-text-muted)]">
+                  <p className="px-2.5 py-2 text-[13px] text-(--ui-text-secondary)">
                     {t("No other projects")}
                   </p>
                 ) : null}
@@ -314,7 +314,7 @@ export function CwdPicker({
                     <span className="min-w-0 truncate text-[13px]">
                       {renderProjectLabel?.(item.path) ?? basename(item.path)}
                     </span>
-                    <span className="max-w-28 shrink-0 truncate font-mono text-[11px] text-[var(--ui-text-muted)]">
+                    <span className="max-w-28 shrink-0 truncate font-mono text-[11px] text-(--ui-text-secondary)">
                       {prettyParent(item.path)}
                     </span>
                   </Button>
@@ -369,7 +369,7 @@ export function CwdPicker({
                 }  `}
               >
                 <span className="text-[13px]">{t("New terminal")}</span>
-                <span className="shrink-0 font-mono text-[11px] text-[var(--ui-text-muted)]">
+                <span className="shrink-0 font-mono text-[11px] text-(--ui-text-secondary)">
                   {MOD}`
                 </span>
               </Button>
@@ -407,7 +407,7 @@ export function CwdPicker({
               <span className="min-w-0 truncate text-[13px]">
                 {renderProjectLabel?.(item.path) ?? basename(item.path)}
               </span>
-              <span className="max-w-28 shrink-0 truncate font-mono text-[11px] text-[var(--ui-text-muted)]">
+              <span className="max-w-28 shrink-0 truncate font-mono text-[11px] text-(--ui-text-secondary)">
                 {prettyParent(item.path)}
               </span>
             </Button>

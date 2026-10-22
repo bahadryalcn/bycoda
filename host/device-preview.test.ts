@@ -46,6 +46,31 @@ function fixture() {
   return { host, previews };
 }
 describe("observable device previews", () => {
+  it("reconciles only an exact owned request and hides foreign active identity from stop impact", async () => {
+    const { host, previews } = fixture();
+    let finish!: (value: unknown) => void;
+    host.preflight.mockImplementationOnce(() => new Promise((resolve) => { finish = resolve; }));
+    const job = previews.start(input, "owner");
+    expect(previews.mobileStatus("owner", { requestId: input.requestId })).toMatchObject({ id: job.id, requestId: input.requestId });
+    expect(() => previews.mobileStatus("other", { id: job.id })).toThrow("PREVIEW_NOT_FOUND");
+    expect(() => previews.mobileStatus("owner", { id: job.id, requestId: "wrong" })).toThrow("PREVIEW_NOT_FOUND");
+    expect(previews.stopImpact("other")).toEqual({ activeCount: 1, owned: [], otherActiveCount: 1 });
+    expect(previews.stopImpact("owner")).toEqual({ activeCount: 1, owned: [{ id: job.id, deviceId: "sim", state: "running" }], otherActiveCount: 0 });
+    const stop = vi.fn(async () => undefined); await expect(previews.stopIdle(stop)).rejects.toThrow("PREVIEW_BUSY"); expect(stop).not.toHaveBeenCalled();
+    finish({ device: { id: "sim", platform: "ios", booted: true }, checks: { sdk: true, tools: true, agentControl: true } });
+    await vi.waitFor(() => expect(previews.status(job.id, "owner").state).toBe("ready"));
+    expect(previews.mobileStatus("owner", { requestId: input.requestId })).not.toHaveProperty("frame");
+    expect(previews.mobileStatus("owner", { id: job.id }, true)).toHaveProperty("frame");
+  });
+  it("holds the stop lease across async stop completion and releases it after a failed stop", async () => {
+    const { previews } = fixture(); let finish!: () => void;
+    const stopping = previews.stopIdle(() => new Promise<void>((resolve) => { finish = resolve; }));
+    expect(() => previews.start(input, "owner")).toThrow("PREVIEW_HOST_STOPPING");
+    await expect(previews.stopIdle(async () => undefined)).rejects.toThrow("PREVIEW_HOST_STOPPING");
+    finish(); await stopping;
+    await expect(previews.stopIdle(async () => { throw new Error("Stop failed"); })).rejects.toThrow("Stop failed");
+    const job = previews.start(input, "owner"); await vi.waitFor(() => expect(previews.status(job.id, "owner").state).toBe("ready"));
+  });
   it("deduplicates setup, verifies content and keeps frame reads in their conversation", async () => {
     const { host, previews } = fixture();
     const first = previews.start(input, "owner");

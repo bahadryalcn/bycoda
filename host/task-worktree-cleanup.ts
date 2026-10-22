@@ -4,10 +4,12 @@ import { basename, dirname, join, resolve, relative, sep } from "node:path";
 import { runGitText } from "../src/shared/lib/processExecution.node";
 import { hostWorktrees, invalidateHostWorktrees } from "./git-worktrees";
 
-const same = (a: string, b: string) =>
+/** Same filesystem path; only Windows paths are case-insensitive. */
+export const sameHostPath = (a: string, b: string) =>
   process.platform === "win32"
     ? resolve(a).toLowerCase() === resolve(b).toLowerCase()
     : resolve(a) === resolve(b);
+const same = sameHostPath;
 
 /** Only retire a recorded host-managed checkout. Retain outputs and partial Windows removals. */
 export async function cleanupTaskWorktree(

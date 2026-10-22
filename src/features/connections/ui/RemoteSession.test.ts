@@ -2353,8 +2353,10 @@ it("shows host activity alongside a preserved local conversation conflict", asyn
   };
   await render(session);
   expect(
-    container.querySelector('button[aria-label*="running in the background"] svg'),
+    container.querySelector('button[aria-label^="This conversation is running in the background"]'),
   ).not.toBeNull();
+  // Sending is not refused: the message waits in the shared queue instead.
+  expect(container.querySelector('button[aria-label^="Send."]')).toBeNull();
   expect(container.textContent).not.toContain("running in the background");
   expect(container.querySelector('[role="alert"]')?.textContent).toContain(
     "Your messages were kept",

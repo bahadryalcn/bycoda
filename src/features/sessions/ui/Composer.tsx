@@ -418,6 +418,8 @@ function ToolButton({
       className="shrink-0"
       selected={active}
       variant="ghost"
+      iconOnly
+      label={label}
       type="button"
       title={label}
       aria-label={label}
@@ -3162,7 +3164,7 @@ export const Composer = memo(function Composer({
                 ) : null}
               </div>
             </div>
-            <div ref={plusRef} className={compact ? "hidden" : "relative shrink-0"}>
+            <div ref={plusRef} className={compact ? "hidden" : "relative flex shrink-0"}>
               <ToolButton
                 label={t("Add files or choose a mode")}
                 active={plusOpen}
@@ -3180,7 +3182,7 @@ export const Composer = memo(function Composer({
                   data-composer-plus
                   className="p-1.5"
                 >
-                  <p className="px-2 pb-1 pt-0.5 text-[10px] font-medium uppercase tracking-wide text-(--ui-text-secondary)">
+                  <p className="px-2 pb-1 pt-0.5 text-(length:--ui-font-caption) font-medium text-(--ui-text-secondary)">
                     {t("Add to message")}
                   </p>
                   <Button

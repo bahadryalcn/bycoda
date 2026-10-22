@@ -1,9 +1,32 @@
-import type { Block, Session, RuntimeMode } from "../../sessions/model/session";
+import type { Block, Session, RuntimeMode, SecondOpinionMeta } from "../../sessions/model/session";
 import type { UserQuestionReply } from "../../sessions/model/userQuestion";
 import type { AgentModel } from "../../sessions/model/models";
 import type { LinkedWorkItem } from "../../sessions/model/session";
 
 export const HOST_PROTOCOL_VERSION = 1;
+
+export type ContextualSessionInput = {
+  sessionId: string;
+  sourceBlockId: string;
+  expectedRevision: number;
+  mode: "handoff" | "secondOpinion";
+  harness: RemoteProvider;
+  model: string;
+  modelSettings: Record<string, string>;
+};
+export type ContextualSessionPreview = ContextualSessionInput & {
+  digest: string;
+  sourceProvider: RemoteProvider;
+  account: "host-default";
+  cwd: string;
+  projectId: string;
+  runtimeMode: RuntimeMode;
+  request: string;
+  files: string[];
+  turnBlockIds: string[];
+  contextText: string;
+  secondOpinion?: SecondOpinionMeta;
+};
 export const REMOTE_PROVIDERS = [
   "codex",
   "claude",
@@ -15,7 +38,6 @@ export const REMOTE_PROVIDERS = [
   "fx",
   "hermes",
   "antigravity",
-  "gemini",
   "acp",
 ] as const;
 export type RemoteProvider = (typeof REMOTE_PROVIDERS)[number];
@@ -307,6 +329,7 @@ type HostCommandBody =
       modelSettings: Record<string, string>;
       runtimeMode: RuntimeMode;
     }
+  | (ContextualSessionInput & { type: "contextual"; commandId: string; previewDigest: string })
   | {
       type: "compact";
       commandId: string;
@@ -324,6 +347,11 @@ type HostCommandBody =
       intent?: "default" | "plan" | "build";
       draftBlockId?: string;
       planBlockId?: string;
+      secondOpinion?: SecondOpinionMeta;
+      /** Explicitly reviewed note snapshot; only metadata appears on the user block. */
+      noteCard?: import("../../notes/notes").NoteComposerCard;
+      /** Exact reviewed base; when present, text is the explicitly approved edited plan. */
+      expectedPlanText?: string;
     }
   | {
       type: "draft";
@@ -354,6 +382,7 @@ type HostCommandBody =
       action: "arm" | "disarm" | "dismiss";
     }
   | { type: "cancel"; commandId: string; sessionId: string; runId: string }
+  | { type: "stopItem"; commandId: string; sessionId: string; runId: string; blockId: string; callId: string }
   | {
       type: "approve";
       commandId: string;

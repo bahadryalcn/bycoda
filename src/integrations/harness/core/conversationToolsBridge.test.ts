@@ -69,6 +69,7 @@ describe("Provider conversation tool bridge", () => {
     const hint = conversationToolsCliHint(bridge);
     expect(hint).toContain("conversation_tools_list");
     expect(hint).toContain("native owner approval");
+    expect(hint).toContain('skills.read name "bycoda"');
     expect(hint).not.toContain("TOKEN");
     expect(conversationToolsCliHint(null)).toBe("");
   });

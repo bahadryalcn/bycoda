@@ -371,11 +371,13 @@ describe("crew growth setting", () => {
 
 describe("crew theme setting", () => {
   beforeEach(mockLocalStorage);
-  it("preserves the classic default, persists Star Wars, and recovers invalid stored values", () => {
+  it("preserves the classic default, persists character themes, and recovers invalid stored values", () => {
     expect(loadCrewTheme()).toBe("classic");
     saveCrewTheme("star-wars");
     expect(localStorage.getItem("bycoda.crewTheme")).toBe("star-wars");
     expect(loadCrewTheme()).toBe("star-wars");
+    saveCrewTheme("lotr");
+    expect(loadCrewTheme()).toBe("lotr");
     saveCrewTheme("classic");
     expect(loadCrewTheme()).toBe("classic");
     localStorage.setItem("bycoda.crewTheme", "invalid-theme");

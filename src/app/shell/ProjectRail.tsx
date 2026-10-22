@@ -1228,7 +1228,7 @@ function ProjectSection({
         onToggleCollapsed={onToggleCollapsed}
       />
       {items.length === 0 && emptyLabel && !drag.folded && !collapsed ? (
-        <p className="px-4 pb-1 text-[11px] leading-tight text-content/40 @max-[140px]/rail:hidden">
+        <p className="px-4 pb-1 text-(length:--ui-font-caption) leading-tight text-(--ui-text-secondary) @max-[140px]/rail:hidden">
           {emptyLabel}
         </p>
       ) : null}
@@ -1470,7 +1470,7 @@ function ProjectSectionHeader({
           <span className="truncate">{label}</span>
         </Button>
       ) : (
-        <span className="min-w-0 flex-1 truncate px-1 text-xs font-medium text-content/70 @max-[140px]/rail:hidden">
+        <span className="min-w-0 flex-1 truncate px-1 text-xs font-medium text-(--ui-text-secondary) @max-[140px]/rail:hidden">
           {label}
         </span>
       )}
@@ -1723,7 +1723,7 @@ function ProjectGroupSection({
             <span className={`${nameClassName} ps-1.5`}>{group.name}</span>
           )}
           {group.workspaceFile && !locked ? (
-            <span className="shrink-0 rounded bg-content/8 px-1 text-[10px] text-content/65 @max-[200px]/rail:hidden">
+            <span className="shrink-0 rounded bg-(--ui-surface-raised) px-1 text-(length:--ui-font-caption) leading-4 text-(--ui-text-secondary) @max-[200px]/rail:hidden">
               {t("Workspace")}
             </span>
           ) : null}
@@ -2123,7 +2123,7 @@ function ProjectCard({
           <span className={labelClassName}>{name}</span>
         )}
         {machine ? (
-          <span className="min-w-0 flex-1 truncate text-[11px] leading-tight text-content/45 @max-[140px]/rail:hidden">
+          <span className="min-w-0 flex-1 truncate text-(length:--ui-font-caption) leading-tight text-(--ui-text-secondary) @max-[140px]/rail:hidden">
             {machine.name}
           </span>
         ) : null}

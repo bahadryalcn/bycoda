@@ -377,7 +377,7 @@ export function InboxFiltersMenu({
 function SectionLabel({ children }: { children: string }) {
   useLocale();
   return (
-    <div className="px-2 pb-0.5 pt-2 text-[10px] font-medium text-(--ui-text-secondary)">
+    <div className="px-2 pb-0.5 pt-2 text-(length:--ui-font-caption) font-medium text-(--ui-text-secondary)">
       {children}
     </div>
   );

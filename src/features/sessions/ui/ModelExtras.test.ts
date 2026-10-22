@@ -154,8 +154,8 @@ it("offers only the provider catalog options and removes unsupported settings fr
   act(() =>
     root.render(
       createElement(ModelExtras, {
-        harness: "gemini",
-        model: "gemini:default",
+        harness: "hermes",
+        model: "hermes:default",
         values: {},
         onSettingsChange: onChange,
       }),

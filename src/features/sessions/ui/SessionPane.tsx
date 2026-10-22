@@ -139,7 +139,6 @@ import { RemoteSession } from "../../connections/ui/RemoteSession";
 import { useSession } from "../model/sessionsStore";
 import { isRemoteProjectPath } from "../../projects/model/recents";
 import type { HostSession } from "../../connections/model/protocol";
-import { ADOPTED_RUNNING_REASON } from "../../connections/model/adoptedSessions";
 import {
   AdoptedSessionNotice,
   BackgroundSessionIndicator,
@@ -1054,9 +1053,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
       sendHeldReason={
         windowMovingSessionIds?.has(session.id)
           ? "Opening new window… Your draft will move with the conversation."
-          : session.continuingElsewhere
-            ? t(ADOPTED_RUNNING_REASON)
-            : undefined
+          : undefined
       }
       remoteFeatures={stableRemoteFeatures}
       allowedModelHarnesses={stableAllowedHarnesses}

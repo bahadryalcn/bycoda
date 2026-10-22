@@ -367,7 +367,7 @@ export function InboxDetail({
               {panel ? null : identityRow}
               <h1
                 title={item.title}
-                className={`line-clamp-2 font-semibold leading-tight text-(--ui-tone-neutral-fg) ${
+                className={`break-words font-semibold leading-tight text-(--ui-tone-neutral-fg) ${
                   panel ? "text-[18px]" : "text-[20px]"
                 }`}
               >

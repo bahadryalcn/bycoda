@@ -34,6 +34,7 @@ const OPEN_LABELS = ["Open", "Aç", "Öffnen", "Ouvrir", "Abrir", "打开", "開
 export class DevicePreviews {
   private jobs = new Map<string, Preview>();
   private disposed = false;
+  private stopping = false;
   private owners = new Map<string, string>();
   private authorizations = new Map<string, () => boolean>();
   constructor(
@@ -54,6 +55,7 @@ export class DevicePreviews {
         );
       return this.status(existing.id, owner);
     }
+    if (this.stopping) throw new Error("PREVIEW_HOST_STOPPING: Wait for the device service to finish stopping.");
     if (this.disposed) throw new Error("PREVIEW_HOST_STOPPED: The device host is stopping.");
     if ([...this.jobs.values()].some((job) => job.state === "queued" || job.state === "running"))
       throw new Error("PREVIEW_BUSY: Wait for the active device preview before starting another.");
@@ -89,6 +91,28 @@ export class DevicePreviews {
       throw new Error("PREVIEW_SCOPE_MISMATCH: This preview belongs to another conversation.");
     const { frame, ...summary } = job;
     return structuredClone({ ...summary, ...(includeFrame && frame ? { frame } : {}) });
+  }
+  mobileStatus(owner: string, query: { id?: string; requestId?: string }, includeFrame = false) {
+    if (!owner || typeof owner !== "string" || owner.length > 256 ||
+      (typeof query.id !== "string" && typeof query.requestId !== "string") ||
+      query.id !== undefined && (!query.id || query.id.length > 128) || query.requestId !== undefined && (!query.requestId || query.requestId.length > 128))
+      throw new Error("PREVIEW_INVALID_QUERY: Choose an exact preview ID or request ID.");
+    const job = query.id ? this.jobs.get(query.id) : [...this.jobs.values()].find((row) => row.requestId === query.requestId && this.owners.get(row.id) === owner);
+    if (!job || this.owners.get(job.id) !== owner || query.requestId !== undefined && job.requestId !== query.requestId)
+      throw new Error("PREVIEW_NOT_FOUND: This preview is unknown or its host restarted. Inspect the device before starting a new request.");
+    return this.status(job.id, owner, includeFrame);
+  }
+  stopImpact(owner: string) {
+    const active = [...this.jobs.values()].filter((row) => row.state === "queued" || row.state === "running");
+    const owned = active.filter((row) => this.owners.get(row.id) === owner).map(({ id, deviceId, state }) => ({ id, deviceId, state }));
+    return { activeCount: active.length, owned, otherActiveCount: active.length - owned.length };
+  }
+  /** Acquire before awaiting the service stop, so a new preview cannot cross it. */
+  async stopIdle<T>(work: () => Promise<T>): Promise<T> {
+    if (this.stopping) throw new Error("PREVIEW_HOST_STOPPING: The device service is already stopping.");
+    if (this.stopImpact("").activeCount) throw new Error("PREVIEW_BUSY: Wait for active device previews before stopping the service.");
+    this.stopping = true;
+    try { return await work(); } finally { this.stopping = false; }
   }
   dispose() {
     this.disposed = true;

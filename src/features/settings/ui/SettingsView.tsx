@@ -1,4 +1,5 @@
 import { Button } from "../../../shared/ui/Button";
+import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import { CrewsSettings } from "../../crews/ui/CrewsSettings";
 import { t, useLocale } from "../../../shared/i18n";
 import { ConnectionsSettings } from "../../connections/ui/ConnectionsSettings";
@@ -36,6 +37,7 @@ import type { Session } from "../../sessions/model/session";
 import {
   settingDomId,
   RevealedSetting,
+  PageAutomaticSaveHint,
   PageHeader,
   Group,
   Row,
@@ -293,6 +295,19 @@ export function SettingsView({
       </header>
 
       <div className="bycoda-settings-body">
+        <div className="bycoda-settings-category-picker">
+          <SearchableSelect
+            label={t("Settings categories")}
+            value={section}
+            disabled={!onSelectSection}
+            options={categories.map((category) => ({
+              value: category.id,
+              label: category.label,
+              keywords: settingsSectionDescription(category.id),
+            }))}
+            onChange={(value) => onReveal(value as SettingsSectionId, null)}
+          />
+        </div>
         <nav
           ref={navigationRef}
           className="bycoda-settings-categories"
@@ -382,108 +397,112 @@ export function SettingsView({
             </RevealedSetting.Provider>
           ) : (
             <RevealedSetting.Provider value={revealed}>
-              <div
-                key={section}
-                data-settings-scroller
-                ref={lockOverscroll}
-                className="@container/settings min-h-0 flex-1 overflow-y-auto overscroll-none [scrollbar-gutter:stable]"
+              <PageAutomaticSaveHint.Provider
+                value={["general", "appearance", "workspace", "chat", "terminal"].includes(section)}
               >
                 <div
-                  data-settings-section={section}
-                  className="bycoda-settings-content bycoda-settings-form mx-auto w-full px-5 py-6 pb-16 @min-[560px]/settings:px-8 @min-[560px]/settings:py-8"
+                  key={section}
+                  data-settings-scroller
+                  ref={lockOverscroll}
+                  className="@container/settings min-h-0 flex-1 overflow-y-auto overscroll-none [scrollbar-gutter:stable]"
                 >
-                  <PageHeader
-                    title={settingsSectionLabel(section)}
-                    description={settingsSectionDescription(section)}
-                  />
-                  {section === "general" ? <GeneralPage onOpenWhatsNew={onOpenWhatsNew} /> : null}
-                  {section === "crews" ? <CrewsSettings cwd={cwd} /> : null}
-                  {section === "connections" ? (
-                    <>
-                      <ConnectionsSettings />
-                    </>
-                  ) : null}
-                  {section === "appearance" ? <AppearancePage appearance={appearance} /> : null}
-                  {section === "workspace" ? (
-                    <WorkspacePage>
-                      <Group title={t("Explorer")} layout="full">
-                        <Row
-                          id="show-excluded-files"
-                          label={t("Show excluded files")}
-                          description={t(
-                            "Show files and folders Git excludes, such as build output and dependencies, in the explorer.",
-                          )}
-                        >
-                          <Toggle
-                            label={t("Show excluded files")}
-                            on={appearance.showExcludedFiles}
-                            onChange={appearance.onShowExcludedFiles}
-                          />
-                        </Row>
-                      </Group>
-                      <WorkspaceEditorSettings />
-                    </WorkspacePage>
-                  ) : null}
-                  {section === "notifications" ? (
-                    <>
-                      <NotificationAlerts />
-                      <div
-                        id={settingDomId("project-notifications")}
-                        data-setting-id="project-notifications"
-                      >
-                        <ProjectNotificationSettings
-                          cwd={cwd}
-                          recents={recents}
-                          notificationProjectPath={notificationProjectPath}
-                          notificationSettingsRequest={notificationSettingsRequest}
-                          highlighted={notificationHighlight}
-                        />
-                      </div>
-                    </>
-                  ) : null}
-                  {section === "chat" ? <ChatPage appearance={appearance} /> : null}
-                  {section === "policies" ? <PoliciesSettings /> : null}
-                  {section === "keybindings" ? <KeybindingsPage /> : null}
-                  {section === "terminal" ? <TerminalPage /> : null}
-                  {section === "mcp" ? <McpSettings cwd={cwd} recents={recents} /> : null}
-                  {section === "providers" ? <ProvidersPage cwd={cwd} recents={recents} /> : null}
-                  {section === "usage" ? <UsagePage /> : null}
-                  {section === "limits" ? <UsagePage limitsOnly /> : null}
-                  {section === "worktrees" ? (
-                    <>
-                      <SourceControlSettings />
-                      <Group title={t("Worktrees")} layout="full">
-                        <WorktreesPage
-                          cwd={cwd}
-                          recents={recents}
-                          liveSessions={liveSessions}
-                          onRemove={onRemoveWorktree}
-                          onCheckRemove={onCheckWorktreeRemoval}
-                          onDeleteSessions={onDeleteWorktreeSessions}
-                        />
-                      </Group>
-                    </>
-                  ) : null}
-                  {section === "groupLock" ? (
-                    <div className="group-privacy">
-                      <PrivacyStartupSettings />
-                      <GroupLockSettings controls={{ Group, Row, Toggle, Select }} />
-                    </div>
-                  ) : null}
-                  {section === "inbox" ? <InboxPage /> : null}
-                  {section === "archive" ? (
-                    <ArchivePage
-                      cwd={cwd}
-                      sessions={sessions}
-                      onOpenSession={onOpenSession}
-                      onArchiveSession={onArchiveSession}
-                      onDeleteSession={onDeleteSession}
-                      onRestoreProject={onRestoreProject}
-                      onDeleteProject={onDeleteProject}
+                  <div
+                    data-settings-section={section}
+                    className="bycoda-settings-content bycoda-settings-form mx-auto w-full px-5 py-6 pb-16 @min-[560px]/settings:px-8 @min-[560px]/settings:py-8"
+                  >
+                    <PageHeader
+                      title={settingsSectionLabel(section)}
+                      description={settingsSectionDescription(section)}
                     />
-                  ) : null}
+                    {section === "general" ? <GeneralPage onOpenWhatsNew={onOpenWhatsNew} /> : null}
+                    {section === "crews" ? <CrewsSettings cwd={cwd} /> : null}
+                    {section === "connections" ? (
+                      <>
+                        <ConnectionsSettings />
+                      </>
+                    ) : null}
+                    {section === "appearance" ? <AppearancePage appearance={appearance} /> : null}
+                    {section === "workspace" ? (
+                      <WorkspacePage>
+                        <Group title={t("Explorer")} layout="full">
+                          <Row
+                            id="show-excluded-files"
+                            label={t("Show excluded files")}
+                            description={t(
+                              "Show files and folders Git excludes, such as build output and dependencies, in the explorer.",
+                            )}
+                          >
+                            <Toggle
+                              label={t("Show excluded files")}
+                              on={appearance.showExcludedFiles}
+                              onChange={appearance.onShowExcludedFiles}
+                            />
+                          </Row>
+                        </Group>
+                        <WorkspaceEditorSettings />
+                      </WorkspacePage>
+                    ) : null}
+                    {section === "notifications" ? (
+                      <>
+                        <NotificationAlerts />
+                        <div
+                          id={settingDomId("project-notifications")}
+                          data-setting-id="project-notifications"
+                        >
+                          <ProjectNotificationSettings
+                            cwd={cwd}
+                            recents={recents}
+                            notificationProjectPath={notificationProjectPath}
+                            notificationSettingsRequest={notificationSettingsRequest}
+                            highlighted={notificationHighlight}
+                          />
+                        </div>
+                      </>
+                    ) : null}
+                    {section === "chat" ? <ChatPage appearance={appearance} /> : null}
+                    {section === "policies" ? <PoliciesSettings /> : null}
+                    {section === "keybindings" ? <KeybindingsPage /> : null}
+                    {section === "terminal" ? <TerminalPage /> : null}
+                    {section === "mcp" ? <McpSettings cwd={cwd} recents={recents} /> : null}
+                    {section === "providers" ? <ProvidersPage cwd={cwd} recents={recents} /> : null}
+                    {section === "usage" ? <UsagePage /> : null}
+                    {section === "limits" ? <UsagePage limitsOnly /> : null}
+                    {section === "worktrees" ? (
+                      <>
+                        <SourceControlSettings />
+                        <Group title={t("Worktrees")} layout="full">
+                          <WorktreesPage
+                            cwd={cwd}
+                            recents={recents}
+                            liveSessions={liveSessions}
+                            onRemove={onRemoveWorktree}
+                            onCheckRemove={onCheckWorktreeRemoval}
+                            onDeleteSessions={onDeleteWorktreeSessions}
+                          />
+                        </Group>
+                      </>
+                    ) : null}
+                    {section === "groupLock" ? (
+                      <div className="group-privacy">
+                        <PrivacyStartupSettings />
+                        <GroupLockSettings controls={{ Group, Row, Toggle, Select }} />
+                      </div>
+                    ) : null}
+                    {section === "inbox" ? <InboxPage /> : null}
+                    {section === "archive" ? (
+                      <ArchivePage
+                        cwd={cwd}
+                        sessions={sessions}
+                        onOpenSession={onOpenSession}
+                        onArchiveSession={onArchiveSession}
+                        onDeleteSession={onDeleteSession}
+                        onRestoreProject={onRestoreProject}
+                        onDeleteProject={onDeleteProject}
+                      />
+                    ) : null}
+                  </div>
                 </div>
-              </div>
+              </PageAutomaticSaveHint.Provider>
             </RevealedSetting.Provider>
           )}
         </div>

@@ -22,6 +22,7 @@ import { isOscColorQuery, oscColorReply } from "../model/terminalChrome";
 import { shouldPollTerminalMeta } from "../model/terminalMetaPolling";
 import {
   isMacTerminalClearShortcut,
+  isTerminalTextEdit,
   macTerminalShortcutData,
   terminalToolShortcut,
 } from "../model/terminalKeys";
@@ -73,6 +74,12 @@ type Props = {
   httpProxyTicketId?: string;
   /** A structured native integration prompt, never inferred from terminal text. */
   onSshPromptReady?: () => void;
+  /** Lifecycle facts only; private terminal bytes and prompts remain in this view. */
+  onLifecycle?: (state: "opened-on-computer" | "exited" | "failed" | "closed") => void;
+  /** Optional reviewed source guard immediately before a new native spawn. */
+  canStart?: () => boolean;
+  /** A pending mobile request must still be authorized immediately before native spawn. */
+  authorizeStart?: () => Promise<boolean>;
   onStartupReview?: () => Promise<void>;
   onEnableShellIntegration?: (shell?: "bash" | "zsh" | "powershell") => void;
   /** Explicit local ssh-keygen in a private PTY; never restored or replayed. */
@@ -252,6 +259,9 @@ export function TerminalView({
   expectedConfigurationDigest,
   httpProxyTicketId,
   onSshPromptReady,
+  onLifecycle,
+  canStart,
+  authorizeStart,
   onStartupReview,
   onEnableShellIntegration,
   keyGenerationPath,
@@ -261,6 +271,18 @@ export function TerminalView({
   onMetaChange,
 }: Props) {
   const typographyRef = useRef({ fontSize, lineHeight });
+  const lifecycleRef = useRef(onLifecycle);
+  const canStartRef = useRef(canStart);
+  const authorizeStartRef = useRef(authorizeStart);
+  useLayoutEffect(() => {
+    authorizeStartRef.current = authorizeStart;
+  }, [authorizeStart]);
+  useLayoutEffect(() => {
+    canStartRef.current = canStart;
+  }, [canStart]);
+  useLayoutEffect(() => {
+    lifecycleRef.current = onLifecycle;
+  }, [onLifecycle]);
   const fontSizeCallback = useRef(onFontSizeChange);
   useLayoutEffect(() => {
     fontSizeCallback.current = onFontSizeChange;
@@ -387,7 +409,7 @@ export function TerminalView({
       webglLoading = true;
       try {
         const { WebglAddon } = await import("@xterm/addon-webgl");
-        if (closed || !visible) return;
+        if (closed || !visible || document.hidden) return;
         const addon = new WebglAddon();
         addon.onContextLoss(() => {
           if (webgl === addon) webgl = null;
@@ -395,6 +417,8 @@ export function TerminalView({
         });
         term.loadAddon(addon);
         webgl = addon;
+        // A new renderer has no previous frame, even when the grid size is unchanged.
+        term.refresh(0, term.rows - 1);
       } catch {
         webgl = null;
       } finally {
@@ -403,20 +427,6 @@ export function TerminalView({
     };
     const output = terminalOutputBuffer((data) => term.write(data));
     let visible = typeof IntersectionObserver === "undefined";
-    const syncOutputVisibility = () => output.setVisible(visible && !document.hidden);
-    syncOutputVisibility();
-    document.addEventListener("visibilitychange", syncOutputVisibility);
-    const visibility =
-      typeof IntersectionObserver === "undefined"
-        ? null
-        : new IntersectionObserver((entries) => {
-            visible = entries[entries.length - 1]?.isIntersecting ?? false;
-            setOnScreen(visible);
-            syncOutputVisibility();
-            if (visible) void loadWebgl();
-            else dropWebgl();
-          });
-    visibility?.observe(host);
 
     host.addEventListener("copy", onCopy);
     host.addEventListener("paste", onPaste);
@@ -473,6 +483,7 @@ export function TerminalView({
           input.dispose();
           setShellReady(false);
           setExitCode(code ?? null);
+          lifecycleRef.current?.("exited");
           term.options.disableStdin = true;
           runningProcessRef.current = null;
           if (!privateTerminal) {
@@ -488,6 +499,12 @@ export function TerminalView({
       );
       await readyPtyBridge();
       if (closed) return;
+      if (canStartRef.current && !canStartRef.current())
+        throw new Error("Reviewed terminal source changed or became private");
+      if (authorizeStartRef.current && !(await authorizeStartRef.current()))
+        throw new Error("Reviewed terminal authority expired or was revoked");
+      if (closed || (canStartRef.current && !canStartRef.current()))
+        throw new Error("Reviewed terminal source changed or became private");
       didStart = true;
       if (keyGenerationPath)
         return invoke("ssh_key_generate", {
@@ -532,6 +549,7 @@ export function TerminalView({
         }
       })
       .catch((error) => {
+        lifecycleRef.current?.("failed");
         spawned.current = false;
         if (!closed) {
           const message = error instanceof Error ? error.message : String(error);
@@ -546,6 +564,12 @@ export function TerminalView({
         throw error;
       });
     void starting.catch(() => undefined);
+    void starting.then(
+      () => {
+        if (!closed && !exited) lifecycleRef.current?.("opened-on-computer");
+      },
+      () => {},
+    );
 
     const input = terminalInput(
       async (data) => {
@@ -575,10 +599,9 @@ export function TerminalView({
       const composingInput = composingRef.current;
       // Do not inject a snapshot chord between native history/completion/search
       // keystrokes. PSReadLine/Readline own those navigation groups.
-      // oxlint-disable-next-line no-control-regex -- classify transient input without storing or logging it
-      const textEdit = data === "\x7f" || data === "\b" || !/[\x00-\x1f\x7f]/.test(data);
+      const textEdit = isTerminalTextEdit(data);
       if (integrated) {
-        invalidateRemoteShell();
+        invalidateRemoteShell(textEdit);
         setTool((current) => (current === "remote" ? null : current));
       }
       void input.enqueue(data).then((written) => {
@@ -739,6 +762,38 @@ export function TerminalView({
     };
 
     applySizeRef.current = applySize;
+    let visibilityRevision = 0;
+    const syncOutputVisibility = () => {
+      const revision = ++visibilityRevision;
+      if (!visible || document.hidden) {
+        output.setVisible(false);
+        dropWebgl();
+        return;
+      }
+      // Fit before replay: hidden output must not wrap at the previous panel size.
+      // ResizeObserver and IntersectionObserver delivery order is not guaranteed.
+      applySize();
+      output.setVisible(true);
+      // xterm parses writes asynchronously. Redraw only after the queued output,
+      // including alternate-screen switches, has reached its buffer.
+      term.write("", () => {
+        if (closed || revision !== visibilityRevision || !visible || document.hidden) return;
+        applySize();
+        term.refresh(0, term.rows - 1);
+        void loadWebgl();
+      });
+    };
+    syncOutputVisibility();
+    document.addEventListener("visibilitychange", syncOutputVisibility);
+    const visibility =
+      typeof IntersectionObserver === "undefined"
+        ? null
+        : new IntersectionObserver((entries) => {
+            visible = entries[entries.length - 1]?.isIntersecting ?? false;
+            setOnScreen(visible);
+            syncOutputVisibility();
+          });
+    visibility?.observe(host);
     const renderSub = term.onRender(() => {
       if (!spawned.current) applySize();
     });
@@ -782,6 +837,15 @@ export function TerminalView({
           unsubscribe();
           return didStart ? killPty(id) : undefined;
         })
+        .then(
+          () => {
+            lifecycleRef.current?.("closed");
+          },
+          (error) => {
+            lifecycleRef.current?.("failed");
+            throw error;
+          },
+        )
         .finally(() => {
           if (stoppingPtys.get(id) === stopping) stoppingPtys.delete(id);
         });

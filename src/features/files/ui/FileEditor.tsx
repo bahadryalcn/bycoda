@@ -750,7 +750,9 @@ export function FileEditor({
           {chromeError}
         </p>
       ) : null}
-      <footer className="flex h-6 shrink-0 items-center border-t border-stroke px-2.5 font-mono text-[10.5px] text-[var(--ui-text-muted)]">
+      <footer
+        className={`flex min-h-6 shrink-0 items-center border-t border-stroke px-2.5 font-mono text-[10.5px] text-[var(--ui-text-muted)] ${saveState.status === "error" ? "flex-wrap" : "h-6"}`}
+      >
         <span className="min-w-0 flex-1 truncate" title={path}>
           {relativePath}
         </span>
@@ -795,7 +797,11 @@ export function FileEditor({
         <span
           role="status"
           aria-live="polite"
-          className="min-w-0 max-w-64 truncate"
+          className={
+            saveState.status === "error"
+              ? "min-w-0 basis-full break-words py-1 text-danger"
+              : "min-w-0 max-w-64 truncate"
+          }
           title={saveState.status === "error" ? saveState.message : undefined}
         >
           {saveState.status === "saving" ? (
@@ -803,7 +809,7 @@ export function FileEditor({
           ) : saveState.status === "saved" && !dirty ? (
             <span>{t("Saved")}</span>
           ) : saveState.status === "error" ? (
-            <span className="max-w-64 truncate text-danger" title={saveState.message}>
+            <span>
               {t("Save failed: ")}
               {saveState.message}
             </span>

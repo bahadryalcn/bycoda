@@ -478,7 +478,7 @@ function SessionChip({ session }: { session: UsageFooterSession }) {
         <HarnessIcon harness={session.harness} className="size-3.5 shrink-0" />
         <span>{HARNESS_LABEL[session.harness]}</span>
         {authRequired ? (
-          <span className="text-[10px] text-warning dark:text-warning">{t("sign in")}</span>
+          <span className="text-(length:--ui-font-caption) text-warning dark:text-warning">{t("sign in")}</span>
         ) : null}
       </Button>
       {open ? (

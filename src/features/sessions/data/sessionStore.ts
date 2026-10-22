@@ -1632,6 +1632,8 @@ function recordToSession(record: SessionRecord): Session {
     : [];
   const linkedWorkItem = sanitizeLinkedWorkItem(record.linkedWorkItem);
   const rewindHistory = sanitizeRewindHistory(record.rewindHistory);
+  // Removed Gemini CLI sessions continue in a fresh Antigravity conversation.
+  const legacyGemini = record.harness === LEGACY_GEMINI;
   return {
     id: record.id,
     cwd: record.cwd,
@@ -1647,8 +1649,12 @@ function recordToSession(record: SessionRecord): Session {
       record.orchestrationLeadId ??
       blocks.find((block) => block.orchestrationLeadId && block.orchestrationLeadId !== record.id)
         ?.orchestrationLeadId,
-    ...(record.providerSessionId ? { providerSessionId: record.providerSessionId } : {}),
-    ...(record.providerAccountId ? { providerAccountId: record.providerAccountId } : {}),
+    ...(record.providerSessionId && !legacyGemini
+      ? { providerSessionId: record.providerSessionId }
+      : {}),
+    ...(record.providerAccountId && !legacyGemini
+      ? { providerAccountId: record.providerAccountId }
+      : {}),
     ...(record.branch ? { branch: record.branch } : {}),
     ...(record.worktreeCwd ? { worktreeCwd: record.worktreeCwd } : {}),
     ...(record.worktreeRemoved ? { worktreeRemoved: true } : {}),
@@ -1682,7 +1688,10 @@ function contextFromRecord(record: SessionRecord): { context: ContextUsage } | u
   };
 }
 
+const LEGACY_GEMINI = "gemini";
+
 function asHarness(value: string): HarnessId {
+  if (value === LEGACY_GEMINI) return "antigravity";
   return (HARNESSES as string[]).includes(value) ? (value as HarnessId) : "cursor";
 }
 

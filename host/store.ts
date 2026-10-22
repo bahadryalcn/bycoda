@@ -19,6 +19,7 @@ import { streamingTextUpdate } from "../src/features/sessions/model/stableBlocks
 import { snapshotWeight } from "../src/features/connections/model/snapshotWeight";
 import { blockRevisions } from "./block-revisions";
 import type { BlockChanges } from "../src/features/sessions/model/blockChanges";
+import type { UsageMetadataPage, UsageTurnMetadata } from "./usage-report";
 export { blockRevisions } from "./block-revisions";
 
 const CACHED_SESSIONS = 32;
@@ -588,6 +589,56 @@ export class HostStore {
       .sort((a, b) => b.updatedAt - a.updatedAt);
   }
 
+  /** Usage reads expose only timing/token metadata. SQLite projects persisted JSON;
+   * no transcript text or full snapshot is parsed into JS on this read path. */
+  usageMetadataPage(projectId: string, cursor: string | undefined, limit: number): UsageMetadataPage {
+    this.project(projectId);
+    if (!Number.isInteger(limit) || limit < 1 || limit > 100) throw new Error("Invalid usage page limit");
+    const candidates = this.db.prepare("SELECT st.id,CASE WHEN j.revision>s.revision THEN json_extract(j.metadata,'$.session.harness') ELSE st.harness END AS harness FROM session_state st JOIN sessions s ON s.id=st.id LEFT JOIN session_journal j ON j.session_id=st.id WHERE st.project_id=? AND st.id>? ORDER BY st.id LIMIT ?").all(projectId, cursor ?? "", limit + 1);
+    const selected = candidates.slice(0, limit);
+    const sessions: UsageMetadataPage["sessions"] = [];
+    let budget = 32 * 1024 * 1024; let skippedSessions = 0;
+    const cap = 4000;
+    for (const candidate of selected) {
+      const sessionId = String(candidate.id);
+      const pending = this.pending.get(sessionId)?.value;
+      if (pending) {
+        const turns: UsageTurnMetadata[] = [];
+        let visited = 0;
+        for (const block of pending.session.blocks) {
+          if (++visited > 10000 || turns.length > cap) break;
+          if (block.role !== "user") continue;
+          turns.push({ startedAt: block.startedAt, durationMs: block.durationMs, draft: block.draft, continuationOf: block.continuationOf,
+            inputTokens: block.turnMetrics?.inputTokens, outputTokens: block.turnMetrics?.outputTokens, cacheReadTokens: block.turnMetrics?.cacheReadTokens, cacheWriteTokens: block.turnMetrics?.cacheWriteTokens });
+        }
+        sessions.push({ sessionId, provider: pending.session.harness, turns: turns.slice(0, cap), turnsTruncated: visited > 10000 || turns.length > cap });
+        continue;
+      }
+      const size = this.db.prepare("SELECT length(CAST(snapshot AS BLOB)) + COALESCE((SELECT SUM(length(CAST(payload AS BLOB))) FROM session_journal_blocks WHERE session_id=?),0) + COALESCE((SELECT length(CAST(metadata AS BLOB))+length(CAST(block_ids AS BLOB)) FROM session_journal WHERE session_id=?),0) AS bytes FROM sessions WHERE id=?").get(sessionId, sessionId, sessionId);
+      const bytes = Number(size?.bytes ?? 0);
+      if (bytes > 4 * 1024 * 1024 || bytes > budget) { skippedSessions++; continue; }
+      budget -= bytes;
+      const turns = this.db.prepare(`WITH base AS MATERIALIZED (
+          SELECT json_extract(value,'$.id') AS block_id,value AS payload
+          FROM sessions,json_each(snapshot,'$.session.blocks') WHERE sessions.id=?
+        ), current_journal AS (
+          SELECT j.* FROM session_journal j JOIN sessions s ON s.id=j.session_id
+          WHERE j.session_id=? AND j.revision>s.revision
+        ), effective AS (
+          SELECT COALESCE(d.payload,b.payload) AS payload FROM current_journal j,json_each(j.block_ids) ids
+          LEFT JOIN session_journal_blocks d ON d.session_id=j.session_id AND d.block_id=ids.value
+          LEFT JOIN base b ON b.block_id=ids.value
+          UNION ALL SELECT payload FROM base WHERE NOT EXISTS(SELECT 1 FROM current_journal)
+        ) SELECT json_extract(payload,'$.startedAt') AS startedAt,json_extract(payload,'$.durationMs') AS durationMs,
+          json_extract(payload,'$.draft') AS draft,json_extract(payload,'$.continuationOf') AS continuationOf,
+          json_extract(payload,'$.turnMetrics.inputTokens') AS inputTokens,json_extract(payload,'$.turnMetrics.outputTokens') AS outputTokens,
+          json_extract(payload,'$.turnMetrics.cacheReadTokens') AS cacheReadTokens,json_extract(payload,'$.turnMetrics.cacheWriteTokens') AS cacheWriteTokens
+        FROM effective WHERE json_extract(payload,'$.role')='user' LIMIT ?`).all(sessionId, sessionId, cap + 1) as unknown as UsageTurnMetadata[];
+      sessions.push({ sessionId, provider: String(candidate.harness ?? "unknown"), turns: turns.slice(0, cap), turnsTruncated: turns.length > cap });
+    }
+    return { sessions, scannedSessions: selected.length, skippedSessions, nextCursor: candidates.length > limit ? String(selected.at(-1)!.id) : null };
+  }
+
   /** Reads the indexed revision column without parsing the transcript snapshot. */
   sessionRevision(id: string): number | undefined {
     const pending = this.pending.get(id);
@@ -1022,6 +1073,24 @@ export class HostStore {
   revokeDevice(id: string): boolean {
     this.authCache.clear();
     return Number(this.db.prepare("DELETE FROM devices WHERE id=?").run(id).changes) > 0;
+  }
+
+  /** Owner-facing metadata only: device token hashes must never leave the store. */
+  pairedDevices(currentToken: string): { devices: { id: string; name: string; isCurrent: boolean }[]; devicesTruncated: boolean } {
+    const hash = this.hash(currentToken);
+    if (!this.db.prepare("SELECT id FROM devices WHERE hash=?").get(hash)) throw new Error("Device authorization was revoked");
+    const rows = this.db.prepare("SELECT id, name, hash=? AS is_current FROM devices ORDER BY is_current DESC, id LIMIT 257").all(hash);
+    return { devices: rows.slice(0, 256).map((row) => ({ id: String(row.id), name: String(row.name).replace(/[\u0000-\u001f\u007f]/g, " ").trim().slice(0, 160) || String(row.id), isCurrent: Number(row.is_current) === 1 })), devicesTruncated: rows.length > 256 };
+  }
+
+  /** The current device has a separate explicit revoke-self flow. */
+  revokeOtherDevice(id: string, currentToken: string): boolean {
+    const hash = this.hash(currentToken);
+    const caller = this.db.prepare("SELECT id FROM devices WHERE hash=?").get(hash);
+    if (!caller) throw new Error("Device authorization was revoked");
+    if (caller.id === id) throw new Error("Use the revoke-self action for this device");
+    this.authCache.clear();
+    return Number(this.db.prepare("DELETE FROM devices WHERE id=? AND hash<>? AND EXISTS (SELECT 1 FROM devices WHERE hash=?)").run(id, hash, hash).changes) > 0;
   }
 
   /** Lets a desktop revoke only the credential it is using. */

@@ -114,7 +114,7 @@ export function NotificationMuteControl({ projectIds, onChanged }: Props) {
         <Popover
           anchor={trigger}
           align="end"
-          width={280}
+          width={360}
           role="dialog"
           aria-label={t("Mute project notifications")}
           onDismiss={(reason) => close(reason === "escape")}

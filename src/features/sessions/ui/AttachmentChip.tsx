@@ -55,7 +55,7 @@ export function AttachmentChip({
   const label = token ? tokenLabel(token) : null;
   const labelClass = image
     ? "block max-w-14 truncate text-center text-(length:--ui-font-caption) leading-5 text-(--ui-text-secondary)"
-    : "shrink-0 rounded bg-(--ui-surface-raised) px-1 text-[10px] leading-4 text-(--ui-text-secondary)";
+    : "shrink-0 rounded bg-(--ui-surface-raised) px-1 text-(length:--ui-font-caption) leading-4 text-(--ui-text-secondary)";
   const labelNode =
     image && label && onInsertToken ? (
       <Button
@@ -180,12 +180,15 @@ export function AttachmentChip({
               </Button>
             ) : null}
             {previewError ? (
-              <span role="alert" className="text-[10px] text-(--ui-tone-warning-fg)">
+              <span
+                role="alert"
+                className="text-(length:--ui-font-caption) text-(--ui-tone-warning-fg)"
+              >
                 {t("Preview unavailable. Try again.")}
               </span>
             ) : null}
             {attachment.missing ? (
-              <span className="shrink-0 text-[10px] leading-none text-(--ui-tone-warning-fg)">
+              <span className="shrink-0 text-(length:--ui-font-caption) leading-4 text-(--ui-tone-warning-fg)">
                 {t("missing")}
               </span>
             ) : null}

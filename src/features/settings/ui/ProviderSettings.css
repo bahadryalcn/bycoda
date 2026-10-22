@@ -311,7 +311,7 @@
     align-items: flex-start;
   }
   .provider-cli-header > .settings-advanced > h3 {
-    font-size: 10px;
+    font-size: var(--ui-font-caption);
   }
 }
 @container (max-width: 430px) {

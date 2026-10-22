@@ -23,6 +23,7 @@ import { TerminalCursorPopover } from "./TerminalCursorPopover";
 import styles from "./TerminalTools.module.css";
 import type { SshShellController } from "../model/sshShellIntegration";
 import { RemoteShellSuggestions } from "./RemoteShellSuggestions";
+import { localTerminalPrefix } from "../model/localTerminalCompletion";
 
 export type TerminalTool = "search" | "command" | "remote" | null;
 
@@ -61,6 +62,22 @@ export function TerminalTools({
   const helpAnchor = useRef<HTMLButtonElement>(null);
   const searchRef = useRef<SearchAddon | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  // undefined: not measured yet; null: the prompt line cannot be read.
+  const [promptPrefix, setPromptPrefix] = useState<string | null>();
+  const retaining = !!remoteShell?.preview && mode === null;
+
+  // Presentation only: narrows the retained passive list to the echoed prompt
+  // text while the next native snapshot is pending. Never used for insertion.
+  useEffect(() => {
+    if (!terminal || !retaining) return;
+    const sync = () => setPromptPrefix(localTerminalPrefix(terminal));
+    sync();
+    const subscription = terminal.onWriteParsed(sync);
+    return () => {
+      subscription.dispose();
+      setPromptPrefix(undefined);
+    };
+  }, [terminal, retaining]);
 
   useEffect(() => {
     if (!terminal) return;
@@ -324,6 +341,17 @@ export function TerminalTools({
       ) : null}
     </div>
   );
+  // Before the first measurement the screen still shows the retained prefix.
+  const shownPrefix = promptPrefix === undefined ? remoteShell?.preview?.prefix : promptPrefix;
+  const preview =
+    retaining && remoteShell?.preview && shownPrefix != null
+      ? {
+          prefix: shownPrefix,
+          suggestions: remoteShell.preview.suggestions.filter(
+            (value) => value.startsWith(shownPrefix) && value !== shownPrefix,
+          ),
+        }
+      : undefined;
   const showRemote =
     terminal &&
     remoteShell &&
@@ -331,8 +359,8 @@ export function TerminalTools({
     (mode === "remote" ||
       (mode === null &&
         remoteShell.automatic &&
-        remoteShell.state?.status === "suggestions" &&
-        !!remoteShell.state.suggestions?.length));
+        ((remoteShell.state?.status === "suggestions" && !!remoteShell.state.suggestions?.length) ||
+          !!preview?.suggestions.length)));
   return (
     <>
       {mode === "search" ? (
@@ -359,7 +387,7 @@ export function TerminalTools({
                 variant="ghost"
                 size="sm"
                 disabled={!ready || alternate}
-                loading={remoteShell.waiting}
+                loading={mode === "remote" && remoteShell.waiting}
                 shortcut="Ctrl+Space"
                 onClick={() => {
                   changeMode("remote");
@@ -478,6 +506,7 @@ export function TerminalTools({
             <RemoteShellSuggestions
               shell={remoteShell}
               terminal={terminal}
+              preview={preview}
               selectionMode={mode === "remote"}
               onClose={() => changeMode(null)}
             />

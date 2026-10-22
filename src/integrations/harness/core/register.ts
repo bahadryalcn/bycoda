@@ -9,7 +9,6 @@ import { ensureOmpRegistered } from "../providers/omp/ompAdapter";
 import { ensurePiRegistered } from "../providers/pi/piAdapter";
 import { ensureAntigravityRegistered } from "../providers/antigravity/antigravityAdapter";
 
-import { ensureGeminiRegistered } from "../providers/gemini/geminiAdapter";
 import { ensureGenericAcpRegistered } from "../providers/generic-acp/genericAcpAdapter";
 
 /** Register all known live harness adapters. Idempotent. */
@@ -24,6 +23,5 @@ export function registerBuiltinHarnesses(): void {
   ensureFxRegistered();
   ensureHermesRegistered();
   ensureAntigravityRegistered();
-  ensureGeminiRegistered();
   ensureGenericAcpRegistered();
 }

@@ -1,0 +1,71 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 240" fill="none">
+  <defs>
+    <linearGradient id="plate" x1="40" y1="90" x2="120" y2="200" gradientUnits="userSpaceOnUse"><stop stop-color="#5a5e69"/><stop offset="1" stop-color="#23252c"/></linearGradient>
+    <linearGradient id="dark" x1="40" y1="90" x2="120" y2="200" gradientUnits="userSpaceOnUse"><stop stop-color="#33353d"/><stop offset="1" stop-color="#16171b"/></linearGradient>
+    <linearGradient id="helm" x1="56" y1="14" x2="104" y2="90" gradientUnits="userSpaceOnUse"><stop stop-color="#6b707c"/><stop offset="1" stop-color="#2a2c33"/></linearGradient>
+    <linearGradient id="iron" x1="100" y1="50" x2="140" y2="170" gradientUnits="userSpaceOnUse"><stop stop-color="#6a6e79"/><stop offset="1" stop-color="#2b2d34"/></linearGradient>
+  </defs>
+  <g stroke="#101115" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+    <g data-part="cape" data-pivot-x="80" data-pivot-y="100">
+    <path d="M46 98L28 214L40 208L47 226L64 214L80 224L96 214L113 226L120 208L132 214L114 98Z" fill="#17181d"/>
+    <path d="M62 120L58 206M80 130V218M98 120L102 206" stroke="#25272e"/>
+    </g>
+    <g data-part="body">
+    <path d="M55 150L52 214H77L79 166M105 150L108 214H83L81 166" fill="url(#dark)"/>
+    <path d="M47 213Q45 224 49 228H78V213ZM113 213Q115 224 111 228H82V213Z" fill="url(#plate)"/>
+    <path d="M51 176L66 170L77 180L70 198L54 196ZM109 176L94 170L83 180L90 198L106 196Z" fill="url(#plate)"/>
+    <path d="M60 183L64 170L68 183ZM100 183L96 170L92 183Z" fill="#8a8f9b"/>
+    <path d="M50 98H110L106 134L98 162H62L54 134Z" fill="url(#plate)"/>
+    <path d="M62 162L98 162L96 172L80 178L64 172Z" fill="#1a1b20"/>
+    <path d="M69 168H91L85 200L80 212L75 200Z" fill="#202228"/>
+    <path d="M80 104L90 130L80 158L70 130Z" fill="#7a7f8b"/><path d="M80 112V152" stroke="#33353d"/>
+    <path d="M58 112L72 140L62 150ZM102 112L88 140L98 150Z" fill="#3a3d46"/>
+    <path d="M54 146H106" stroke="#7a7f8b" stroke-width="1"/>
+    </g>
+    <g data-part="arm-b" data-pivot-x="44" data-pivot-y="106">
+    <path d="M44 106L36 134" stroke="#101115" stroke-width="18"/><path d="M44 106L36 134" stroke="url(#dark)" stroke-width="15"/>
+    <path d="M27 100L33 84L40 94L46 80L52 96L54 110L40 120L28 112Z" fill="url(#plate)"/>
+    </g>
+    <g data-part="forearm-b" data-follow="arm-b" data-pivot-x="36" data-pivot-y="134">
+    <path d="M36 134L36 158" stroke="#101115" stroke-width="16"/><path d="M36 134L36 158" stroke="url(#plate)" stroke-width="13"/>
+    <path d="M26 144L19 150L27 152M46 146L50 140L47 154" fill="#5a5e69"/>
+    <path d="M28 156H44L45 172Q40 178 35 178Q28 178 28 170Z" fill="url(#dark)"/>
+    <path d="M30 172L28 182M35 175V184M40 172L42 181" stroke="#6a6e79" stroke-width="2"/>
+    </g>
+    <g data-part="body">
+    <path d="M70 90L90 90L96 102L80 110L64 102Z" fill="#1a1b20"/>
+    </g>
+    <g data-part="arm" data-pivot-x="116" data-pivot-y="106">
+    <path d="M116 106L124 134" stroke="#101115" stroke-width="18"/><path d="M116 106L124 134" stroke="url(#dark)" stroke-width="15"/>
+    <path d="M133 100L128 84L120 94L114 80L108 96L106 110L120 120L132 112Z" fill="url(#plate)"/>
+    </g>
+    <g data-part="forearm" data-follow="arm" data-pivot-x="124" data-pivot-y="134">
+    <path d="M124 134L122 156" stroke="#101115" stroke-width="16"/><path d="M124 134L122 156" stroke="url(#plate)" stroke-width="13"/>
+    <path d="M114 140L110 146L114 150M134 142L138 148L134 152" fill="#5a5e69"/>
+    <path d="M113 152H131L130 162H114Z" fill="#2a2c33"/>
+    </g>
+    <g data-part="weapon" data-trail="true" data-follow="forearm" data-pivot-x="122" data-pivot-y="160">
+    <path d="M122 176V96" stroke="#101115" stroke-width="7"/><path d="M122 176V96" stroke="#3c3f48" stroke-width="4"/>
+    <path d="M122 172L117 186L122 194L127 186Z" fill="#6a6e79"/>
+    <path d="M116 120H128M116 130H128" stroke="#6a6e79" stroke-width="2"/>
+    <path d="M122.0 52.0L125.7 66.6L137.3 57.0L131.7 70.9L146.7 70.0L134.0 78.0L146.7 86.0L131.7 85.1L137.3 99.0L125.7 89.4L122.0 104.0L118.3 89.4L106.7 99.0L112.3 85.1L97.3 86.0L110.0 78.0L97.3 70.0L112.3 70.9L106.7 57.0L118.3 66.6Z" fill="url(#iron)"/>
+    <circle cx="122" cy="78" r="12" fill="#2f3138"/><circle cx="118" cy="74" r="4" fill="#6a6e79" stroke="none"/>
+    <rect x="113" y="154" width="18" height="12" rx="4" fill="url(#plate)"/><path d="M117 155V165M122 155V165M127 155V165" stroke="#101115" stroke-width="1"/>
+    </g>
+    <g data-part="head" data-pivot-x="80" data-pivot-y="90">
+    <path d="M80 12L85 40H75Z" fill="url(#helm)"/>
+    <path d="M65 16L72 42H60ZM95 16L88 42H100Z" fill="url(#helm)"/>
+    <path d="M52 26L62 46H50ZM108 26L98 46H110Z" fill="url(#helm)"/>
+    <path d="M57 38H103L106 64Q102 84 80 92Q58 84 54 64Z" fill="url(#helm)"/>
+    <path d="M54 50L48 56L54 66ZM106 50L112 56L106 66Z" fill="#3a3d46"/>
+    <path d="M73 40H87L85 76L80 92L75 76Z" fill="#0b0b0e" stroke="none"/><path d="M80 38V92" stroke="#7a7f8b" stroke-width="1"/>
+    <path d="M60 56L75 62L74 66L60 62ZM100 56L85 62L86 66L100 62Z" fill="#14100f" stroke="none"/>
+    <path d="M62 57L74 62L73 64L62 61ZM98 57L86 62L87 64L98 61Z" fill="#e6521b" stroke="none"/>
+    </g>
+    <g data-part="glow" data-follow="head" data-pivot-x="80" data-pivot-y="90" opacity="0">
+    <path d="M56 52L77 62L76 68L56 62ZM104 52L83 62L84 68L104 62Z" fill="#ff7a2a" stroke="none" opacity=".55"/>
+    <path d="M61 57L75 62L74 65L61 61ZM99 57L85 62L86 65L99 61Z" fill="#ffd27a" stroke="none"/>
+    <path d="M64 58L74 62M96 58L86 62" stroke="#fff4d0" stroke-width="1.2"/>
+    </g>
+  </g>
+</svg>

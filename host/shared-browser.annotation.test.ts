@@ -18,7 +18,7 @@ const inspection: ElementInspection = {
     center: { x: 60, y: 40 },
   },
 };
-async function fixture() {
+async function fixture(sessionScoped = false) {
   let now = 1000;
   let navigation = (_frame: { parentFrame(): unknown }) => {};
   const page = {
@@ -50,10 +50,14 @@ async function fixture() {
     })) as BrowserLoader,
     () => now,
   );
-  const claim = await browser.dispatch("browser.claim", {}, "owner");
-  const opened = await browser.dispatch(
+  const dispatch = sessionScoped
+    ? browser.dispatchForSession.bind(browser)
+    : browser.dispatch.bind(browser);
+  const context = sessionScoped ? { projectId: "project-a", sessionId: "session-a" } : {};
+  const claim = await dispatch("browser.claim", context, "owner");
+  const opened = await dispatch(
     "browser.open",
-    { leaseId: claim.leaseId, url: "https://example.test" },
+    { ...context, leaseId: claim.leaseId, url: "https://example.test" },
     "owner",
   );
   const scope = {
@@ -62,7 +66,7 @@ async function fixture() {
     leaseId: claim.leaseId,
     navigationId: opened.navigationId,
   };
-  const start = await browser.dispatch("browser.annotation.start", scope, "owner");
+  const start = await dispatch("browser.annotation.start", scope, "owner");
   const params = { ...scope, annotationId: start.annotationId, x: 50, y: 35 };
   return {
     browser,
@@ -107,6 +111,59 @@ it("selects without dispatching page input and binds the masked snapshot to its 
     expect(read.selection).toEqual(result.selection);
   } finally {
     await browser.close();
+  }
+});
+
+it("keeps every conversation annotation action in its source session and current lease", async () => {
+  const f = await fixture(true);
+  try {
+    for (const name of ["start", "hover", "select", "read", "clear", "cancel"]) {
+      const action = `browser.annotation.${name}`;
+      for (const changes of [{ projectId: "foreign" }, { sessionId: "foreign" }])
+        await expect(
+          f.browser.dispatchForSession(action, { ...f.params, ...changes }, "owner"),
+        ).rejects.toThrow("this session");
+      await expect(
+        f.browser.dispatchForSession(action, { ...f.params, leaseId: "foreign" }, "owner"),
+      ).rejects.toThrow("Claim");
+    }
+    expect(f.page.evaluate).not.toHaveBeenCalled();
+    const selected = await f.browser.dispatchForSession(
+      "browser.annotation.select",
+      f.params,
+      "owner",
+    );
+    expect(selected.selection).toMatchObject({ sessionId: "session-a", projectId: "project-a" });
+    expect(f.page.mouse.click).not.toHaveBeenCalled();
+    await f.browser.dispatchForSession("browser.annotation.read", f.params, "owner");
+    f.expire();
+    await expect(
+      f.browser.dispatchForSession("browser.annotation.read", f.params, "owner"),
+    ).rejects.toThrow("Claim");
+  } finally {
+    await f.browser.close();
+  }
+});
+
+it("supports the conversation selection lifecycle without dispatching page input", async () => {
+  const f = await fixture(true);
+  try {
+    const hover = await f.browser.dispatchForSession("browser.annotation.hover", f.params, "owner");
+    expect(hover.hover).toEqual(inspection.element);
+    await f.browser.dispatchForSession("browser.annotation.select", f.params, "owner");
+    await f.browser.dispatchForSession("browser.annotation.clear", f.params, "owner");
+    await expect(
+      f.browser.dispatchForSession("browser.annotation.read", f.params, "owner"),
+    ).rejects.toThrow("Select an element");
+    await f.browser.dispatchForSession("browser.annotation.select", f.params, "owner");
+    await f.browser.dispatchForSession("browser.annotation.cancel", f.params, "owner");
+    await expect(
+      f.browser.dispatchForSession("browser.annotation.read", f.params, "owner"),
+    ).rejects.toThrow("expired");
+    expect(f.page.mouse.click).not.toHaveBeenCalled();
+    expect(f.page.keyboard.press).not.toHaveBeenCalled();
+  } finally {
+    await f.browser.close();
   }
 });
 

@@ -62,8 +62,54 @@ it.each([
   ["agy.exe", "stream-json"],
   ["agy_acp_server.par", "acp"],
 ])("detects Antigravity transport for %s", async (name, transport) => {
-  const backend = new HostChildBackend({ antigravity: join(tmpdir(), name) });
-  expect(await backend.invoke("harness_resolve_antigravity")).toMatchObject({ transport });
+  const directory = mkdtempSync(join(tmpdir(), "bycoda-agy-transport-"));
+  const binary = join(directory, name);
+  writeFileSync(binary, "fixture");
+  try {
+    const backend = new HostChildBackend({ antigravity: binary });
+    expect(await backend.invoke("harness_resolve_antigravity")).toMatchObject({ transport });
+    expect(
+      await new HostChildBackend().invoke("harness_resolve_configured", {
+        provider: "antigravity",
+        binaryPath: binary,
+      }),
+    ).toMatchObject({ path: binary, transport });
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+it("validates configured binaries and reports a missing working directory by name", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "bycoda-configured-binary-"));
+  const wrong = join(directory, "not-codex.exe");
+  writeFileSync(wrong, "fixture");
+  const backend = new HostChildBackend({ codex: join(directory, "missing-codex") });
+  try {
+    await expect(backend.invoke("harness_resolve_codex")).rejects.toThrow(
+      "Configured codex binary was not found",
+    );
+    await expect(
+      backend.invoke("harness_resolve_configured", { provider: "codex", binaryPath: "codex" }),
+    ).rejects.toThrow("must be an absolute path");
+    await expect(
+      backend.invoke("harness_resolve_configured", { provider: "codex", binaryPath: wrong }),
+    ).rejects.toThrow("must be named codex");
+    await expect(
+      backend.invoke("harness_resolve_configured", { provider: "gemini", binaryPath: wrong }),
+    ).rejects.toThrow("Unsupported provider: gemini");
+    const missing = join(directory, "gone");
+    await expect(
+      backend.invoke("harness_spawn", {
+        sessionId: "missing-cwd",
+        command: process.execPath,
+        args: ["-e", ""],
+        cwd: missing,
+      }),
+    ).rejects.toThrow(`Working directory does not exist on this host: ${missing}`);
+  } finally {
+    await backend.close();
+    rmSync(directory, { recursive: true, force: true });
+  }
 });
 
 it.each(["stdout", "stderr"])(

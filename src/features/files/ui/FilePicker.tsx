@@ -424,7 +424,7 @@ function ActionList({
               <MatchText text={action.label} positions={action.positions} active={Boolean(query)} />
             </span>
             {action.hint ? (
-              <kbd className="ml-auto shrink-0 rounded border border-[var(--color-stroke)] bg-[var(--ui-surface)] px-1.5 py-0.5 font-mono text-[10px] text-[var(--ui-text-secondary)]">
+              <kbd className="ml-auto shrink-0 rounded border border-(--ui-tone-neutral-border) bg-(--ui-surface) px-1.5 py-0.5 font-mono text-(length:--ui-font-caption) text-(--ui-text-secondary)">
                 {action.hint}
               </kbd>
             ) : null}
@@ -521,7 +521,7 @@ function FileList({
               />
             </span>
             {dir ? (
-              <span className="min-w-0 max-w-[45%] truncate font-mono text-[11px] text-[var(--ui-text-muted)]">
+              <span className="min-w-0 max-w-[45%] truncate font-mono text-(length:--ui-font-caption) text-(--ui-text-secondary)">
                 <MatchText
                   text={dir}
                   positions={file.positions.filter((pos) => pos < slash)}

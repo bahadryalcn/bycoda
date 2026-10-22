@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import {
   chmod,
   lstat,
@@ -15,7 +15,7 @@ import { execFileAsync as exec } from "../src/shared/lib/processExecution.node";
 import type {
   CheckpointFileDiff,
   CheckpointStatus,
-} from "../src/features/sessions/model/checkpoint";
+} from "../src/features/sessions/model/checkpoint-types";
 import { safeGitPath } from "./workspace";
 import { CheckpointLeases } from "./checkpoint-leases";
 
@@ -47,6 +47,10 @@ type Record = {
 };
 const MAX_FILES = 2000;
 const MAX_BYTES = 8 * 1024 * 1024;
+/** Opaque identity of the authoritative captured delta, including its completed turn. */
+const checkpointToken = (record: Record) => createHash("sha256").update(JSON.stringify([
+  record.cwd, record.head, record.settledTurnId ?? null, record.files,
+])).digest("hex");
 const id = (v: unknown) => {
   if (typeof v !== "string" || !/^[A-Za-z0-9_-]{1,128}$/.test(v))
     throw new Error("Invalid checkpoint ID");
@@ -174,11 +178,15 @@ export class HostCheckpoints {
       await rm(index + ".lock", { force: true });
     }
   }
-  private async raw(cwd: string, path: string): Promise<string | undefined> {
+  /** Lenient reads skip symlinks, submodules and nested repositories; Git trees still capture them. */
+  private async raw(cwd: string, path: string, lenient = false): Promise<string | undefined> {
     const abs = await safeGitPath(cwd, path);
     try {
       const meta = await lstat(abs);
-      if (!meta.isFile() || meta.isSymbolicLink()) throw new Error("Unsupported checkpoint file");
+      if (!meta.isFile() || meta.isSymbolicLink()) {
+        if (lenient) return;
+        throw new Error("Unsupported checkpoint file");
+      }
       if (meta.size > MAX_BYTES) throw new Error("Checkpoint file is too large");
       return (await readFile(abs)).toString("base64");
     } catch (e) {
@@ -244,7 +252,7 @@ export class HostCheckpoints {
         if (paths.length > MAX_FILES) throw new Error("Too many dirty files for checkpoint");
         let bytes = 0;
         for (const path of paths) {
-          const raw = await this.raw(cwd, path);
+          const raw = await this.raw(cwd, path, true);
           if (raw !== undefined) {
             bytes += raw.length;
             if (bytes > 64 * 1024 * 1024) throw new Error("Checkpoint baseline is too large");
@@ -337,7 +345,7 @@ export class HostCheckpoints {
             ? old.rawBefore
             : (record.active.dirty[path] ??
               (await this.contents(record.cwd, path, before)).toString("base64")),
-          rawAfter: await this.raw(record.cwd, path),
+          rawAfter: await this.raw(record.cwd, path, true),
           exact: !old || (old.exact && same(old.after, before)),
         };
         if (same(record.files[path].before, next)) delete record.files[path];
@@ -433,7 +441,7 @@ export class HostCheckpoints {
       return false;
     }
   }
-  status(session: string, cwd: string): Promise<CheckpointStatus> {
+  status(session: string, cwd: string): Promise<CheckpointStatus & { expectedCheckpoint?: string }> {
     return this.queue(async () => {
       const record = await this.matching(session, cwd);
       if (!record) return { files: [] };
@@ -455,7 +463,7 @@ export class HostCheckpoints {
           };
         }),
       );
-      return { files };
+      return { files, expectedCheckpoint: checkpointToken(record) };
     });
   }
   private async contents(cwd: string, path: string, blob: Blob, raw?: string) {
@@ -516,7 +524,7 @@ export class HostCheckpoints {
       },
     };
   }
-  fileDiff(session: string, cwd: string, path: string): Promise<CheckpointFileDiff> {
+  fileDiff(session: string, cwd: string, path: string): Promise<CheckpointFileDiff & { expectedCheckpoint: string }> {
     return this.queue(async () => {
       const record = await this.matching(session, cwd);
       const pair = record?.files[path];
@@ -528,6 +536,7 @@ export class HostCheckpoints {
       await safeGitPath(record.cwd, path);
       const diff = await this.diff(record.cwd, path, pair);
       return {
+        expectedCheckpoint: checkpointToken(record),
         path: resolve(record.cwd, path),
         relative: path,
         status: !pair.before ? "untracked" : !pair.after ? "deleted" : "modified",
@@ -538,9 +547,12 @@ export class HostCheckpoints {
       };
     });
   }
-  change(session: string, cwd: string, path: string | undefined, undo: boolean) {
+  change(session: string, cwd: string, path: string | undefined, undo: boolean, expectedCheckpoint?: string) {
     return this.queue(async () => {
       const record = await this.matching(session, cwd);
+      if (expectedCheckpoint !== undefined &&
+          (!/^[a-f0-9]{64}$/.test(expectedCheckpoint) || !record || checkpointToken(record) !== expectedCheckpoint))
+        throw new Error("The session checkpoint changed; review it again before keeping or undoing files");
       if (!record) return;
       const paths = path === undefined ? Object.keys(record.files) : [path];
       if (

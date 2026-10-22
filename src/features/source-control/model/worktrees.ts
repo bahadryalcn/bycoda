@@ -20,6 +20,14 @@ export type Worktree = {
 };
 export type Worktrees = { worktrees: Worktree[]; defaultRoot: string };
 
+export type WorktreeRemovalReview = {
+  projectCwd: string; commonDir: string; path: string; branch: string | null;
+  head: string; status: string; unpushed: number; sessionIds: string[];
+  hasTerminals: boolean; hasAgents: boolean;
+};
+export const reviewWorktreeRemoval = (cwd: string, path: string) =>
+  invoke<WorktreeRemovalReview>("git_worktree_removal_review", { cwd, path });
+
 export const listWorktrees = (cwd: string) => invokeWorkspace<Worktrees>("git_worktrees", { cwd });
 
 /** A missing parent may be an unmounted volume, not a deleted worktree. */
@@ -87,12 +95,14 @@ export async function removeWorktree(
   path: string,
   force = false,
   keepSessions = false,
+  expectedReview?: WorktreeRemovalReview,
 ) {
   const result = await invoke<{ sessionIds: string[]; projectCwd: string }>("git_worktree_remove", {
     cwd,
     path,
     force,
     keepSessions,
+    ...(expectedReview ? { expectedReview } : {}),
   });
   notifyGitChanged();
   return result;

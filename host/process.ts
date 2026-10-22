@@ -17,10 +17,9 @@ import type { RemoteProvider } from "../src/features/connections/model/protocol"
 const npmEntries: Record<string, string> = {
   codex: "node_modules/@openai/codex/bin/codex.js",
   claude: "node_modules/@anthropic-ai/claude-code/cli.js",
-  gemini: "node_modules/@google/gemini-cli/bundle/gemini.js",
 };
 
-const binaryNames: Record<RemoteProvider, string[]> = {
+export const binaryNames: Record<RemoteProvider, string[]> = {
   codex: ["codex"],
   claude: ["claude"],
   cursor: ["cursor-agent", "agent"],
@@ -30,14 +29,25 @@ const binaryNames: Record<RemoteProvider, string[]> = {
   omp: ["omp"],
   fx: ["fx"],
   hermes: ["hermes"],
-  antigravity: ["agy_acp_server.par", "agy"],
-  gemini: ["gemini"],
+  // The ACP server is preferred over the agy CLI, matching the desktop resolver.
+  antigravity:
+    process.platform === "win32" ? ["agy_acp_server", "agy"] : ["agy_acp_server.par", "agy"],
   acp: [],
 };
 
 const providerDirectories = (provider: RemoteProvider): string[] => {
   const home = homedir();
+  const localAppData = process.env.LOCALAPPDATA ?? join(home, "AppData", "Local");
+  const windows = process.platform === "win32";
   const extra: Partial<Record<RemoteProvider, string[]>> = {
+    // The Codex app bundles a CLI it never puts on PATH; a real install wins.
+    codex:
+      process.platform === "darwin"
+        ? [
+            join(home, "Applications", "Codex.app", "Contents", "Resources"),
+            "/Applications/Codex.app/Contents/Resources",
+          ]
+        : [],
     claude: [join(home, ".claude", "local"), join(home, ".local", "share", "claude")],
     grok: [join(home, ".grok", "bin")],
     opencode: [join(home, ".opencode", "bin")],
@@ -45,11 +55,18 @@ const providerDirectories = (provider: RemoteProvider): string[] => {
     hermes: [
       join(home, ".hermes", "hermes-agent", "venv", "bin"),
       join(home, ".hermes", "hermes-agent", ".venv", "bin"),
+      ...(windows
+        ? [
+            join(localAppData, "hermes", "bin"),
+            join(localAppData, "hermes", "hermes-agent", "venv", "Scripts"),
+          ]
+        : []),
     ],
     antigravity: [
       join(home, ".local", "share", "agy-acp"),
+      ...(windows ? [join(localAppData, "agy-acp")] : []),
       join(home, ".local", "agy", "bin"),
-      join(process.env.LOCALAPPDATA ?? join(home, "AppData", "Local"), "agy", "bin"),
+      join(localAppData, "agy", "bin"),
     ],
   };
   return [
@@ -61,7 +78,7 @@ const providerDirectories = (provider: RemoteProvider): string[] => {
       join(home, "n", "bin"),
       join(home, ".bun", "bin"),
       ...(extra[provider] ?? []),
-      ...(process.platform === "win32"
+      ...(windows
         ? [join(process.env.APPDATA ?? join(home, "AppData", "Roaming"), "npm")]
         : ["/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/snap/bin"]),
     ]),
@@ -247,26 +264,73 @@ export async function resolveProvider(provider: RemoteProvider): Promise<string>
 
 async function scanProvider(provider: RemoteProvider): Promise<{ path: string; name: string }> {
   const windows = process.platform === "win32";
-  for (const directory of providerDirectories(provider)) {
-    if (!directory) continue;
-    for (const name of binaryNames[provider]) {
-      for (const extension of windows ? [".exe", ".cmd", ".bat", ".com"] : [""]) {
-        const candidate = join(directory.replace(/^"|"$/g, ""), name + extension);
-        try {
-          await access(candidate, windows ? constants.F_OK : constants.X_OK);
-          if (!(await stat(candidate)).isFile()) continue;
-          await providerLaunch(candidate, []);
-          if (!(await matchesProvider(candidate, provider, name))) continue;
-          return { path: candidate, name };
-        } catch {
-          /* try the next installed launcher */
-        }
+  const directories = providerDirectories(provider).filter(Boolean);
+  const names = binaryNames[provider];
+  // Antigravity prefers its ACP server anywhere over the agy CLI, like the desktop.
+  const pairs =
+    provider === "antigravity"
+      ? names.flatMap((name) => directories.map((directory) => [directory, name] as const))
+      : directories.flatMap((directory) => names.map((name) => [directory, name] as const));
+  for (const [directory, name] of pairs) {
+    for (const extension of windows ? [".exe", ".cmd", ".bat", ".com"] : [""]) {
+      const candidate = join(directory.replace(/^"|"$/g, ""), name + extension);
+      try {
+        await access(candidate, windows ? constants.F_OK : constants.X_OK);
+        if (!(await stat(candidate)).isFile()) continue;
+        await providerLaunch(candidate, []);
+        if (!(await matchesProvider(candidate, provider, name))) continue;
+        return { path: candidate, name };
+      } catch {
+        /* try the next installed launcher */
       }
     }
   }
   throw new Error(
     `${provider} is not installed on this host or is missing from its PATH. Install its native CLI or standard npm package.`,
   );
+}
+
+/** A path inside `root` after resolving links, or undefined when it escapes. */
+async function containedFile(root: string, path: string): Promise<string | undefined> {
+  try {
+    const realRoot = await realpath(root);
+    const real = await realpath(path);
+    const inside = relative(realRoot, real);
+    if (!inside || inside.startsWith("..") || isAbsolute(inside)) return;
+    return (await stat(real)).isFile() ? path : undefined;
+  } catch {
+    return;
+  }
+}
+
+const SHIM_PATH = String.raw`"(?:%dp0%\\|%~dp0)([^"%]+)"`;
+/** `"%_prog%" | "<bundled node.exe>"`, then the target and `%*`, as written by npm's cmd-shim. */
+const SHIM_LAUNCH = new RegExp(String.raw`(?:("%_prog%")|${SHIM_PATH})?\s*${SHIM_PATH}\s+%\*`, "gi");
+
+/** Read the target of an npm/installer `.cmd` shim instead of running it through cmd.exe.
+ * Only targets inside the shim's directory are accepted; nested shims are not followed. */
+async function npmShimLaunch(
+  command: string,
+  args: string[],
+): Promise<{ command: string; args: string[] } | undefined> {
+  const text = (await readFile(command, "utf8").catch(() => "")).slice(0, 64 * 1024);
+  const match = [...text.matchAll(SHIM_LAUNCH)].at(-1);
+  if (!match) return;
+  const root = dirname(command);
+  const local = (path: string) => resolve(root, path.replace(/\\/g, "/"));
+  const entry = await containedFile(root, local(match[3]));
+  if (!entry || /\.(cmd|bat)$/i.test(entry)) return;
+  if (match[2]) {
+    // Installer shims that ship their own node.exe next to the script.
+    if (!/(^|[\\/])node\.exe$/i.test(match[2])) return;
+    const node = await containedFile(root, local(match[2]));
+    return node ? { command: node, args: [entry, ...args] } : undefined;
+  }
+  // "%_prog%" is node only when the shim selects node; other interpreters are unsupported.
+  if (match[1] && !/SET\s+"_prog=(?:%dp0%\\node\.exe|node)"/i.test(text)) return;
+  if (match[1] || /\.[cm]?js$/i.test(entry))
+    return { command: process.execPath, args: [entry, ...args] };
+  return /\.(exe|com)$/i.test(entry) ? { command: entry, args } : undefined;
 }
 
 /** npm's Windows .cmd wrappers cannot be spawned directly. Run their known
@@ -309,25 +373,14 @@ export async function providerLaunch(
       throw new Error("Missing Pi npm entry point");
     }
     const npmEntry = npmEntries[provider];
-    if (!npmEntry) throw new Error("Unsupported Windows provider launcher");
-    const entry = join(dirname(command), npmEntry);
-    if (provider === "gemini") {
-      // Gemini moved its npm entry point from dist to bundle. Support both.
-      for (const candidate of [
-        entry,
-        join(dirname(command), "node_modules/@google/gemini-cli/dist/index.js"),
-      ]) {
-        try {
-          if ((await stat(candidate)).isFile())
-            return { command: process.execPath, args: [candidate, ...args] };
-        } catch {
-          /* try the other supported package layout */
-        }
-      }
-      throw new Error("Missing Gemini npm entry point");
+    if (npmEntry) {
+      const entry = join(dirname(command), npmEntry);
+      if ((await stat(entry).catch(() => undefined))?.isFile())
+        return { command: process.execPath, args: [entry, ...args] };
     }
-    if (!(await stat(entry)).isFile()) throw new Error("Missing npm provider entry point");
-    return { command: process.execPath, args: [entry, ...args] };
+    const shim = await npmShimLaunch(command, args);
+    if (shim) return shim;
+    throw new Error("Unsupported Windows provider launcher");
   }
   if (/\.(cjs|mjs|js)$/i.test(command))
     return { command: process.execPath, args: [command, ...args] };

@@ -64,6 +64,15 @@ export function validSshShellState(value: unknown, id: string): value is SshShel
 
 export type SshShellController = ReturnType<typeof useSshShellIntegration>;
 
+/**
+ * The last passive list, kept on screen while the next snapshot is pending so
+ * the preview does not unmount on every keystroke. Display only: it is never
+ * accepted, and native code still verifies every insertion.
+ */
+export type SshShellPreview = { prefix: string; suggestions: string[] };
+
+const PREVIEW_RETENTION_MS = 1500;
+
 export function useSshShellIntegration(id: string, enabled: boolean) {
   // A session explicitly launched with shell integration previews safe commands
   // by default. Never inherit a previous session's history/path source.
@@ -122,6 +131,25 @@ export function useSshShellIntegration(id: string, enabled: boolean) {
     if (timer.current) clearTimeout(timer.current);
     timer.current = undefined;
   }, []);
+  const [retained, setRetained] = useState<SshShellPreview & { id: string; revision: number }>();
+  const retentionTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const clearPreview = useCallback(() => {
+    clearTimeout(retentionTimer.current);
+    retentionTimer.current = undefined;
+    setRetained(undefined);
+  }, []);
+  const preview =
+    enabled &&
+    automatic &&
+    retained?.id === id &&
+    retained.revision === savedPreferences.revision &&
+    state?.status !== "suggestions"
+      ? { prefix: retained.prefix, suggestions: retained.suggestions }
+      : undefined;
+  const stateRef = useRef(state);
+  useLayoutEffect(() => {
+    stateRef.current = state;
+  }, [state]);
 
   useEffect(() => {
     epoch.current += 1;
@@ -148,6 +176,7 @@ export function useSshShellIntegration(id: string, enabled: boolean) {
           clearTimer();
           setWaitingFor(null);
           setFailure(undefined);
+          clearPreview();
           const reset = {
             ...preferences.current,
             revision: preferences.current.revision + 1,
@@ -178,6 +207,7 @@ export function useSshShellIntegration(id: string, enabled: boolean) {
       buffered.current = undefined;
       clearTimer();
       setWaitingFor(null);
+      clearPreview();
       setFailure(
         value.status === "unavailable"
           ? { id, message: "No safe matching suggestions." }
@@ -196,9 +226,10 @@ export function useSshShellIntegration(id: string, enabled: boolean) {
       pending.current = false;
       epoch.current += 1;
       clearTimer();
+      clearPreview();
       void listener.then((unlisten) => unlisten()).catch(() => undefined);
     };
-  }, [id, enabled, clearTimer, cancelPassive]);
+  }, [id, enabled, clearTimer, cancelPassive, clearPreview]);
 
   const request = useCallback(
     async (requestedSource?: RemoteSuggestionSource) => {
@@ -219,6 +250,7 @@ export function useSshShellIntegration(id: string, enabled: boolean) {
         if (current === epoch.current) {
           pending.current = false;
           setWaitingFor(null);
+          clearPreview();
           setFailure({
             id,
             message:
@@ -249,11 +281,12 @@ export function useSshShellIntegration(id: string, enabled: boolean) {
           pending.current = false;
           clearTimer();
           setWaitingFor(null);
+          clearPreview();
           setFailure({ id, message: String(reason) });
         }
       }
     },
-    [id, enabled, clearTimer],
+    [id, enabled, clearTimer, clearPreview],
   );
 
   const requestRef = useRef(request);
@@ -283,8 +316,9 @@ export function useSshShellIntegration(id: string, enabled: boolean) {
     pending.current = false;
     clearTimer();
     setWaitingFor(null);
+    clearPreview();
     setState(undefined);
-  }, [cancelPassive, clearTimer]);
+  }, [cancelPassive, clearTimer, clearPreview]);
   const setAutomatic = useCallback(
     (value: boolean) => {
       cancelPassive();
@@ -313,13 +347,14 @@ export function useSshShellIntegration(id: string, enabled: boolean) {
     clearTimer();
     setWaitingFor(null);
     setFailure(undefined);
+    clearPreview();
     setState((previous) =>
       previous?.id === id
         ? { ...previous, status: "ready", suggestions: undefined, requestId: undefined }
         : undefined,
     );
     if (enabled) void invoke("ssh_terminal_suggestions_dismiss", { id }).catch(() => undefined);
-  }, [id, enabled, clearTimer, cancelPassive]);
+  }, [id, enabled, clearTimer, cancelPassive, clearPreview]);
 
   const accept = useCallback(
     async (value: string) => {
@@ -336,19 +371,37 @@ export function useSshShellIntegration(id: string, enabled: boolean) {
     [id, enabled, state, dismiss],
   );
 
-  const invalidate = useCallback(() => {
-    cancelPassive();
-    epoch.current += 1;
-    acknowledgement.current = undefined;
-    buffered.current = undefined;
-    pending.current = false;
-    clearTimer();
-    setWaitingFor(null);
-    setState(undefined);
-  }, [clearTimer, cancelPassive]);
+  /** `textEdit` keeps the passive list visible (display only) until the next snapshot. */
+  const invalidate = useCallback(
+    (textEdit = false) => {
+      cancelPassive();
+      epoch.current += 1;
+      acknowledgement.current = undefined;
+      buffered.current = undefined;
+      pending.current = false;
+      clearTimer();
+      setWaitingFor(null);
+      const live = stateRef.current;
+      if (!textEdit || !preferences.current.automatic) clearPreview();
+      else {
+        if (live?.status === "suggestions" && live.suggestions?.length)
+          setRetained({
+            id: live.id,
+            revision: preferences.current.revision,
+            prefix: live.prefix ?? "",
+            suggestions: live.suggestions,
+          });
+        clearTimeout(retentionTimer.current);
+        retentionTimer.current = setTimeout(clearPreview, PREVIEW_RETENTION_MS);
+      }
+      setState(undefined);
+    },
+    [clearTimer, cancelPassive, clearPreview],
+  );
 
   return {
     state,
+    preview,
     waiting,
     error,
     request,

@@ -131,6 +131,9 @@ export function sentQueuedMessage(session: Session, messageId: string): Session 
  */
 export function canDispatchQueuedHead(session: Session): boolean {
   if (session.busy) return false;
+  // The host is running this conversation, or its finished turn has not been
+  // applied here yet: a local turn now would fork the transcript.
+  if (session.continuingElsewhere || session.adoptedSyncConflict) return false;
   if (session.usageLimit) return false;
   if (
     session.queueStatus === "paused" ||

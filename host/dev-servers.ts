@@ -1,5 +1,5 @@
 import { spawn, type ChildProcess } from "node:child_process";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { statSync } from "node:fs";
 import { isAbsolute, relative, resolve, win32 } from "node:path";
 import { StringDecoder } from "node:string_decoder";
@@ -473,6 +473,8 @@ export class DevServersService {
         descendants: [] as DevProcess[],
         affectedPorts: [] as number[],
       };
+    // Impact confirmation must not be checked against a discovery cache.
+    if (mutation) this.discovery.invalidate?.();
     const [listeners, processes] = await this.snapshot();
     if (mutation) {
       const protectedPids = new Set([process.pid]);
@@ -548,6 +550,7 @@ export class DevServersService {
       false,
     );
     return {
+      expectedImpact: this.impact(selected),
       server: selected.server,
       descendants: selected.descendants,
       affectedPorts: selected.affectedPorts,
@@ -560,6 +563,8 @@ export class DevServersService {
     force: boolean,
   ): Promise<DevServerStop> {
     const selected = await this.selection(params, projects, true);
+    if (params.expectedImpact !== undefined && params.expectedImpact !== this.impact(selected))
+      throw new Error("The reviewed process tree or ports changed; refresh and review before continuing. No process was signalled.");
     if (selected.targets.some((process) => !process.startedAt || process.pid <= 0))
       throw new Error(
         "A process birth identity in the selected tree is unavailable; no process was signalled.",
@@ -624,6 +629,16 @@ export class DevServersService {
     } finally {
       this.invalidate();
     }
+  }
+
+  private impact(selected: { server: DevServer; targets: DevProcess[]; affectedPorts: number[] }) {
+    return createHash("sha256").update(JSON.stringify({
+      id: selected.server.id,
+      command: selected.server.command,
+      cwd: selected.server.cwd,
+      targets: selected.targets.map(({ pid, startedAt }) => ({ pid, startedAt })).sort((a, b) => a.pid - b.pid),
+      ports: selected.affectedPorts,
+    })).digest("hex");
   }
 
   private async start(

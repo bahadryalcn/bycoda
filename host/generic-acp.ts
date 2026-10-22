@@ -1,7 +1,8 @@
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
-import { join, resolve, sep } from "node:path";
+import { mkdir, open, readFile, realpath, rename, writeFile } from "node:fs/promises";
+import { basename, delimiter, dirname, join, resolve, sep } from "node:path";
+import { existsSync } from "node:fs";
 import { execFile } from "node:child_process";
-import { randomUUID } from "node:crypto";
+import { createHmac, randomBytes, randomUUID } from "node:crypto";
 import {
   ACP_PINNED_PACKAGE,
   ACP_REGISTRY_URL,
@@ -12,19 +13,68 @@ import {
   type GenericAcpSummary,
 } from "../src/features/providers/model/genericAcp";
 
+const directoryWrites = new Map<string, Promise<unknown>>();
+const revisionSecret = randomBytes(32);
+const CONFIG_BYTES = 1024 * 1024;
+export type GenericAcpCenter = { revision: string; agents: { id: string; name: string; argumentCount: number; environmentKeyCount: number; contextWindow?: number }[] };
+export type GenericAcpMetadataPatch = { id: string; expectedRevision: string; name: string; contextWindow?: number | null };
+
+/** Canonical existing ancestor prevents aliases from acquiring independent write queues. */
+async function directoryKey(directory: string): Promise<string> {
+  let cursor = resolve(directory); const suffix: string[] = [];
+  for (;;) {
+    try {
+      const key = resolve(await realpath(cursor), ...suffix);
+      return process.platform === "win32" ? key.toLowerCase() : key;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+      const parent = dirname(cursor);
+      if (parent === cursor) throw new Error("ACP configuration directory is unavailable");
+      suffix.unshift(basename(cursor)); cursor = parent;
+    }
+  }
+}
+const configRevision = (configs: GenericAcpConfig[]) => createHmac("sha256", revisionSecret).update(JSON.stringify(configs)).digest("hex");
+/** The packaged host ships only node.exe, so npm comes from the user's Node install or PATH. */
+export function windowsNpmCli(env: NodeJS.ProcessEnv = process.env, nodePath = process.execPath): string | undefined {
+  return [
+    dirname(nodePath),
+    ...(env.PATH ?? env.Path ?? "").split(delimiter),
+    env.APPDATA ? join(env.APPDATA, "npm") : "",
+    env.ProgramFiles ? join(env.ProgramFiles, "nodejs") : "",
+  ]
+    .filter(Boolean)
+    .map((directory) => join(directory.replace(/^"|"$/g, ""), "node_modules", "npm", "bin", "npm-cli.js"))
+    .find(existsSync);
+}
+
 export class GenericAcpService {
-  private tail: Promise<unknown> = Promise.resolve();
   private registryCache?: { entries: AcpRegistryEntry[]; at: number };
   private installs = new Map<string, AbortController>();
   constructor(private readonly directory: string) {}
   private async configs(): Promise<GenericAcpConfig[]> {
     try {
-      return JSON.parse(
-        await readFile(join(this.directory, "generic-acp.json"), "utf8"),
-      ) as GenericAcpConfig[];
+      const file = await open(join(this.directory, "generic-acp.json"), "r");
+      try {
+        if ((await file.stat()).size > CONFIG_BYTES) throw new Error("ACP configuration exceeds the read limit");
+        const bytes = Buffer.alloc(CONFIG_BYTES + 1);
+        let bytesRead = 0;
+        while (bytesRead < bytes.length) {
+          const chunk = await file.read(bytes, bytesRead, bytes.length - bytesRead, bytesRead);
+          if (!chunk.bytesRead) break;
+          bytesRead += chunk.bytesRead;
+        }
+        if (bytesRead > CONFIG_BYTES) throw new Error("ACP configuration exceeds the read limit");
+        const value: unknown = JSON.parse(bytes.subarray(0, bytesRead).toString("utf8"));
+        if (!Array.isArray(value) || value.length > 256) throw new Error("Invalid ACP configuration collection");
+        const configs = value.map((entry) => validateGenericAcpConfig(entry));
+        if (new Set(configs.map((entry) => entry.id)).size !== configs.length) throw new Error("Duplicate ACP configuration identity");
+        return configs;
+      } finally { await file.close(); }
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
-      throw error;
+      // Parser and filesystem errors can contain source fragments or private paths.
+      throw new Error("ACP configuration could not be read");
     }
   }
   async list(): Promise<GenericAcpSummary[]> {
@@ -33,23 +83,51 @@ export class GenericAcpService {
       envKeys: Object.keys(env ?? {}),
     }));
   }
+  /** Project before transport: command, arguments, environment keys/values and auth ids stay on the host. */
+  async center(): Promise<GenericAcpCenter> {
+    const configs = await this.configs();
+    return { revision: configRevision(configs), agents: configs.map((entry) => ({
+      id: entry.id, name: entry.name, argumentCount: entry.args.length, environmentKeyCount: Object.keys(entry.env ?? {}).length,
+      ...(entry.contextWindow === undefined ? {} : { contextWindow: entry.contextWindow }),
+    })) };
+  }
+  patchMetadata(input: GenericAcpMetadataPatch): Promise<void> {
+    if (!input || Object.keys(input).some((key) => !["id", "expectedRevision", "name", "contextWindow"].includes(key)) ||
+      !/^[a-z0-9][a-z0-9._-]{0,127}$/.test(input.id) || !/^[a-f0-9]{64}$/.test(input.expectedRevision) ||
+      typeof input.name !== "string" || !input.name.trim() || input.name.length > 160 || /[\r\n\0]/.test(input.name) ||
+      input.contextWindow !== undefined && input.contextWindow !== null && (!Number.isSafeInteger(input.contextWindow) || input.contextWindow < 1024 || input.contextWindow > 10_000_000))
+      return Promise.reject(new Error("Invalid ACP metadata update"));
+    return this.mutate((configs) => {
+      if (input.expectedRevision !== configRevision(configs)) throw new Error("ACP configuration changed; refresh and review before saving");
+      if (!configs.some((entry) => entry.id === input.id)) throw new Error("ACP configuration is no longer available");
+      return configs.map((entry) => {
+        if (entry.id !== input.id) return entry;
+        const updated = { ...entry, name: input.name.trim() };
+        if (input.contextWindow === null) delete updated.contextWindow;
+        else if (input.contextWindow !== undefined) updated.contextWindow = input.contextWindow;
+        return validateGenericAcpConfig(updated);
+      });
+    });
+  }
   async get(id: string): Promise<GenericAcpConfig> {
     const config = (await this.configs()).find((entry) => entry.id === id);
     if (!config) throw new Error("ACP agent is not configured on this host");
     return validateGenericAcpConfig(config);
   }
-  private mutate(operation: (configs: GenericAcpConfig[]) => GenericAcpConfig[]): Promise<void> {
-    const task = this.tail
+  private async mutate(operation: (configs: GenericAcpConfig[]) => GenericAcpConfig[]): Promise<void> {
+    const key = await directoryKey(this.directory);
+    const task = (directoryWrites.get(key) ?? Promise.resolve())
       .catch(() => undefined)
       .then(async () => {
         const configs = operation(await this.configs());
+        if (configs.length > 256 || Buffer.byteLength(JSON.stringify(configs)) > CONFIG_BYTES) throw new Error("ACP configuration exceeds the write limit");
         await mkdir(this.directory, { recursive: true });
         const temporary = join(this.directory, `generic-acp-${randomUUID()}.tmp`);
         await writeFile(temporary, JSON.stringify(configs), { mode: 0o600 });
         await rename(temporary, join(this.directory, "generic-acp.json"));
       });
-    this.tail = task;
-    return task;
+    directoryWrites.set(key, task);
+    try { await task; } finally { if (directoryWrites.get(key) === task) directoryWrites.delete(key); }
   }
   save(input: GenericAcpConfig): Promise<void> {
     const config = validateGenericAcpConfig(input);
@@ -115,7 +193,8 @@ export class GenericAcpService {
       let command = "npm";
       let args = ["install", "--prefix", prefix, "--no-audit", "--no-fund", "--", entry.package];
       if (process.platform === "win32") {
-        const npmCli = join(process.execPath, "..", "node_modules", "npm", "bin", "npm-cli.js");
+        const npmCli = windowsNpmCli();
+        if (!npmCli) throw new Error("ACP installation requires npm beside Node.js or on this host's PATH");
         command = process.execPath;
         args = [npmCli, ...args];
       }

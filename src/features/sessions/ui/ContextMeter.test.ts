@@ -258,3 +258,18 @@ it("changes bolt fill with the completed speed while keeping context independent
     expect(trigger.querySelector("svg")!.getAttribute("data-speed-fill")).toBe(String(fill));
   }
 });
+
+it("animates only the HTML pulse box around the bolt SVG, and only while working", async () => {
+  await act(async () => root.render(createElement(ContextMeter, { usage, working: true })));
+  const frame = container.querySelector(".context-signal-frame")!;
+  expect(frame.getAttribute("data-working")).toBe("true");
+  const pulse = frame.querySelector("span.context-speed-pulse")!;
+  expect(pulse.querySelector(":scope > svg.context-speed-bolt")).not.toBeNull();
+  // The signal ring keeps its own fill contract as the first svg.
+  expect(container.querySelector("svg")!.getAttribute("data-speed-fill")).not.toBeNull();
+
+  await act(async () => root.render(createElement(ContextMeter, { usage, working: false })));
+  expect(container.querySelector(".context-signal-frame")!.hasAttribute("data-working")).toBe(
+    false,
+  );
+});

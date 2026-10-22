@@ -294,7 +294,7 @@ function WorkspaceModePicker({
         >
           <Icon className="size-3.5 shrink-0" />
           <span className="truncate">{label}</span>
-          <ChevronDown className="size-3 shrink-0 text-content/40" />
+          <ChevronDown className="size-3 shrink-0 text-(--ui-text-secondary)" />
         </Button>
       ) : null}
       {open ? (
@@ -310,10 +310,12 @@ function WorkspaceModePicker({
           data-workspace-picker
           className="overflow-hidden p-1.5"
         >
-          <div className="flex items-center justify-between gap-3 px-2 py-1 text-[11px] font-medium text-content/45">
+          <div className="flex items-center justify-between gap-3 px-2 py-1 text-[11px] font-medium text-(--ui-text-secondary)">
             <span>{t("Workspace")}</span>
             {shortcut ? (
-              <kbd className="font-sans text-[10px] font-normal text-content/35">{shortcut}</kbd>
+              <kbd className="font-sans text-(length:--ui-font-caption) font-normal text-(--ui-text-secondary)">
+                {shortcut}
+              </kbd>
             ) : null}
           </div>
           {(
@@ -336,7 +338,7 @@ function WorkspaceModePicker({
               }}
               className={`flex w-full items-center gap-2 `}
             >
-              <RowIcon className="size-4 shrink-0 text-content/55" />
+              <RowIcon className="size-4 shrink-0 text-(--ui-text-secondary)" />
               <span className="flex-1">{text}</span>
               {mode === value ? <Check className="size-3.5" /> : null}
             </Button>
@@ -366,9 +368,9 @@ function WorkspaceModePicker({
               }}
               className={`flex w-full items-center gap-2 `}
             >
-              <FolderTree className="size-4 shrink-0 text-content/55" />
+              <FolderTree className="size-4 shrink-0 text-(--ui-text-secondary)" />
               <span className="flex-1">{t("Existing worktree…")}</span>
-              <ChevronRight className="size-3.5 shrink-0 text-content/45" />
+              <ChevronRight className="size-3.5 shrink-0 text-(--ui-text-secondary)" />
             </Button>
           ) : null}
           {onOpenSettings ? (
@@ -387,7 +389,10 @@ function WorkspaceModePicker({
                 }}
                 className="flex h-full w-full items-center gap-2"
               >
-                <Settings className="size-4 shrink-0 text-content/45" strokeWidth={1.75} />
+                <Settings
+                  className="size-4 shrink-0 text-(--ui-text-secondary)"
+                  strokeWidth={1.75}
+                />
                 <span className="flex-1">{t("Worktree settings")}</span>
               </Button>
             </div>
@@ -417,7 +422,7 @@ function WorkspaceModePicker({
           }}
         >
           {!data && !loadError ? (
-            <p className="flex items-center gap-2 px-2 py-3 text-[12px] text-content/50">
+            <p className="flex items-center gap-2 px-2 py-3 text-[12px] text-(--ui-text-secondary)">
               <Loader className="size-3.5 animate-spin" />
               {t("Loading worktrees…")}
             </p>
@@ -437,22 +442,24 @@ function WorkspaceModePicker({
                 className="flex min-h-11 w-full items-center gap-2"
               >
                 {busyPath === tree.path ? (
-                  <Loader className="size-4 shrink-0 animate-spin text-content/55" />
+                  <Loader className="size-4 shrink-0 animate-spin text-(--ui-text-secondary)" />
                 ) : (
-                  <FolderTree className="size-4 shrink-0 text-content/55" />
+                  <FolderTree className="size-4 shrink-0 text-(--ui-text-secondary)" />
                 )}
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-[13px]">
                     {tree.branch ?? t("Detached {p0}", { p0: tree.head.slice(0, 7) })}
                   </span>
-                  <span className="block truncate font-mono text-[10px] text-content/40">
+                  <span className="block truncate font-mono text-(length:--ui-font-caption) text-(--ui-text-secondary)">
                     {prettyCwd(tree.path)}
                   </span>
                 </span>
               </Button>
             ))}
             {data && worktrees.length === 0 ? (
-              <p className="px-2 py-3 text-[12px] text-content/50">{t("No existing worktrees")}</p>
+              <p className="px-2 py-3 text-[12px] text-(--ui-text-secondary)">
+                {t("No existing worktrees")}
+              </p>
             ) : null}
           </div>
           {pickError || loadError ? (
@@ -555,7 +562,7 @@ export function WorktreeBasePicker({
           aria-label={t("Worktree base branch")}
           className="flex flex-col overflow-hidden"
         >
-          <label className="flex shrink-0 items-center gap-2 border-b border-stroke px-2 py-2.5 text-content/50">
+          <label className="flex shrink-0 items-center gap-2 border-b border-stroke px-2 py-2.5 text-(--ui-text-secondary)">
             <Search className="size-3.5 shrink-0" />
             <SearchInput
               ref={search}
@@ -617,7 +624,7 @@ export function WorktreeBasePicker({
                   {selectedRow ? (
                     <Check className="size-3.5 shrink-0" />
                   ) : (
-                    <GitBranch className="size-3.5 shrink-0 text-content/45" />
+                    <GitBranch className="size-3.5 shrink-0 text-(--ui-text-secondary)" />
                   )}
                   <span className={`min-w-0 flex-1 truncate ${selectedRow ? "font-medium" : ""}`}>
                     {ref}
@@ -626,7 +633,9 @@ export function WorktreeBasePicker({
               );
             })}
             {rows.length === 0 ? (
-              <p className="px-2 py-3 text-[12px] text-content/45">{t("No matching branches")}</p>
+              <p className="px-2 py-3 text-[12px] text-(--ui-text-secondary)">
+                {t("No matching branches")}
+              </p>
             ) : null}
           </div>
         </Popover>

@@ -377,6 +377,7 @@ pub(crate) fn extract_opencode_go_api_key(raw: &str) -> Option<String> {
     }
 }
 
+#[derive(PartialEq, Eq)]
 pub(crate) struct ClaudeCredentials {
     pub(crate) access_token: String,
     pub(crate) expires_at_ms: Option<i64>,
@@ -412,26 +413,112 @@ pub async fn fetch_claude_usage(
         .map_err(|e| e.to_string())?
 }
 
+/// Explicit phone refresh: fixed read-only endpoint, no credential renewal and a
+/// process-wide cooldown shared by all desktop windows.
+#[tauri::command]
+pub async fn fetch_claude_usage_once(
+    app: AppHandle,
+    account_id: String,
+) -> Result<ClaudeUsageFetch, String> {
+    let config_dir = crate::harness::provider_account_dir(&app, "claude", Some(&account_id))?;
+    let key = config_dir
+        .as_ref()
+        .map(|path| {
+            std::fs::canonicalize(path)
+                .unwrap_or_else(|_| path.clone())
+                .to_string_lossy()
+                .into_owned()
+        })
+        .unwrap_or_else(|| "default".into());
+    static REQUESTS: std::sync::OnceLock<
+        std::sync::Mutex<std::collections::HashMap<String, std::time::Instant>>,
+    > = std::sync::OnceLock::new();
+    {
+        let mut requests = REQUESTS
+            .get_or_init(Default::default)
+            .lock()
+            .map_err(|_| "Quota refresh unavailable")?;
+        reserve_claude_refresh(&mut requests, key, std::time::Instant::now())?;
+    }
+    tauri::async_runtime::spawn_blocking(move || fetch_claude_usage_sync(config_dir))
+        .await
+        .map_err(|_| "Quota refresh unavailable".to_string())?
+}
+
+fn reserve_claude_refresh(
+    requests: &mut std::collections::HashMap<String, std::time::Instant>,
+    key: String,
+    now: std::time::Instant,
+) -> Result<(), String> {
+    let cooldown = Duration::from_secs(300);
+    requests.retain(|_, started| now.saturating_duration_since(*started) < cooldown);
+    if requests.contains_key(&key) {
+        return Err("Wait before refreshing this account's quota again".into());
+    }
+    if requests.len() >= 128 {
+        return Err("Quota refresh capacity reached".into());
+    }
+    requests.insert(key, now);
+    Ok(())
+}
+
 fn fetch_claude_usage_sync(config_dir: Option<PathBuf>) -> Result<ClaudeUsageFetch, String> {
-    let Some(creds) = read_claude_credentials(config_dir.as_deref()) else {
-        return Ok(usage_result(
+    let canonical = config_dir
+        .as_ref()
+        .map(std::fs::canonicalize)
+        .transpose()
+        .ok()
+        .flatten();
+    Ok(guarded_claude_usage(
+        || {
+            if config_dir
+                .as_ref()
+                .map(std::fs::canonicalize)
+                .transpose()
+                .ok()
+                .flatten()
+                != canonical
+            {
+                return None;
+            }
+            read_claude_credentials(config_dir.as_deref())
+        },
+        fetch_usage_with_token,
+        now_ms(),
+    ))
+}
+
+fn guarded_claude_usage(
+    mut read: impl FnMut() -> Option<ClaudeCredentials>,
+    fetch: impl FnOnce(&str) -> ClaudeUsageFetch,
+    now: i64,
+) -> ClaudeUsageFetch {
+    let Some(creds) = read() else {
+        return usage_result(
             "unavailable",
             None,
             None,
             Some("Claude not signed in".into()),
-        ));
+        );
     };
 
     // Claude Code owns this credential and rotates its refresh token. The
     // usage footer must remain read-only: independently refreshing here can
     // race a live CLI (or another Bycoda window) and leave one process with
     // a spent refresh token, which forces the user through sign-in again.
-    let now = now_ms();
     if token_expired(creds.expires_at_ms, now) {
-        return Ok(expired_claude_usage(&creds, now));
+        return expired_claude_usage(&creds, now);
     }
-
-    Ok(fetch_usage_with_token(&creds.access_token))
+    let result = fetch(&creds.access_token);
+    if read().as_ref() != Some(&creds) {
+        return usage_result(
+            "unavailable",
+            None,
+            None,
+            Some("Account identity changed while reading quota".into()),
+        );
+    }
+    result
 }
 
 /// How long after local access-token expiry the footer defers to the Claude CLI
@@ -928,6 +1015,74 @@ mod tests {
         assert!(token_expired(Some(now), now));
         assert!(token_expired(Some(now - 1), now));
         assert!(!token_expired(None, now));
+    }
+
+    #[test]
+    fn explicit_claude_quota_identity_guard_never_refreshes_or_leaks_a_replaced_credential_result()
+    {
+        let credential = |token: &str, expiry: i64| {
+            credentials_from_blob(&serde_json::json!({"claudeAiOauth":{"accessToken":token,"expiresAt":expiry,"refreshToken":"synthetic-refresh"}}).to_string())
+        };
+        let mut reads = 0;
+        let changed = guarded_claude_usage(
+            || {
+                reads += 1;
+                credential(if reads == 1 { "old" } else { "new" }, 200)
+            },
+            |_| usage_result("ok", Some(200), Some("private-provider-body".into()), None),
+            100,
+        );
+        assert_eq!(changed.status, "unavailable");
+        assert!(changed.body.is_none());
+        let expired = guarded_claude_usage(
+            || credential("expired", 99),
+            |_| panic!("expired credentials must not make a request"),
+            100,
+        );
+        assert_eq!(expired.status, "renewal_pending");
+        assert!(expired.body.is_none());
+        let same = guarded_claude_usage(
+            || credential("same", 200),
+            |token| {
+                assert_eq!(token, "same");
+                usage_result("ok", Some(200), Some("synthetic".into()), None)
+            },
+            100,
+        );
+        assert_eq!(same.status, "ok");
+    }
+
+    #[test]
+    fn explicit_claude_quota_cooldown_is_bounded_and_consumed_before_dispatch() {
+        let mut requests = std::collections::HashMap::new();
+        let now = std::time::Instant::now();
+        assert!(reserve_claude_refresh(&mut requests, "profile".into(), now).is_ok());
+        assert!(reserve_claude_refresh(
+            &mut requests,
+            "profile".into(),
+            now + Duration::from_secs(299)
+        )
+        .is_err());
+        assert!(reserve_claude_refresh(
+            &mut requests,
+            "profile".into(),
+            now + Duration::from_secs(300)
+        )
+        .is_ok());
+        for i in 0..127 {
+            assert!(reserve_claude_refresh(
+                &mut requests,
+                format!("profile-{i}"),
+                now + Duration::from_secs(300)
+            )
+            .is_ok());
+        }
+        assert!(reserve_claude_refresh(
+            &mut requests,
+            "overflow".into(),
+            now + Duration::from_secs(300)
+        )
+        .is_err());
     }
 
     #[test]

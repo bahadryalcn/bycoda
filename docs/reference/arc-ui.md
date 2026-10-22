@@ -94,7 +94,7 @@ by their existing interactions.
 | `variant`                  | `primary`, `secondary` (default), `ghost`, `danger`, `link`, `item`, `tab`.                                                                                                    |
 | `size`                     | Existing Arc `sm` (default), `md`, `lg`; bycoda's shared control-height tokens remain authoritative.                                                                           |
 | `iconOnly` / `label`       | `iconOnly: true` requires a translated `label` at the type level. It creates a square control and supplies its accessible name and fallback native tooltip.                    |
-| `tooltip`                  | Translated native tooltip. Explicit native `title` takes precedence. No new floating tooltip owner is created.                                                                 |
+| `tooltip`                  | Translated hint; explicit native `title` takes precedence. Native hover titles remain. Keyboard focus on icon, shortcut or explicit-tooltip actions shows the same text through the existing Popover. |
 | `shortcut`                 | Optional display hint appended to the tooltip. Resolve configurable bindings with `useKeybindingShortcut`; disabled bindings return null. Does not register keyboard handlers. |
 | `shape`                    | `default` (existing control radius) or `pill`.                                                                                                                                 |
 | `selected`                 | Optional visual state; otherwise derived from the caller's `aria-selected`, `aria-pressed` or `aria-checked`. It does not invent or change ARIA roles/states.                  |
@@ -237,7 +237,10 @@ not a new product build or UI test suite.
 - `FloatingButtonGroup` supplies shared action rows and roving keyboard focus
   inside TranscriptSelectionMenu's existing Popover. Terminal delegates to that
   same menu. Selection preservation, dismissal and pending/error/retry remain
-  feature-owned. Native Button tooltips avoid another tooltip/overlay dependency.
+  feature-owned. Button keyboard hints reuse Popover without another tooltip dependency.
+  These passive hints preserve the active dialog/menu's Escape handling, never
+  take focus and do not restore focus when the trigger blurs. Button refs,
+  native events and loading/disabled guards remain with the existing owner.
 - ConfirmMorph action nodes delegate to Button with its own label motion off;
   the composite retains hold/countdown/arming, async retry, actual undo and focus.
 - `MorphSelect` handles small property lists and registers with the shared Escape

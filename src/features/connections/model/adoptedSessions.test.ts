@@ -571,7 +571,13 @@ describe("mirrorAdoptedSessions", () => {
     };
     await mirrorAdoptedSessions(deps);
     await mirrorAdoptedSessions({ ...deps, list: async () => [entry()] });
-    expect(onRunning.mock.calls).toEqual([[new Set(["s1"])], [new Set()]]);
+    // Each pass reports before and after its fetches.
+    expect(onRunning.mock.calls).toEqual([
+      [new Set(["s1"])],
+      [new Set(["s1"])],
+      [new Set()],
+      [new Set()],
+    ]);
     expect(load).not.toHaveBeenCalled();
   });
 
@@ -1080,4 +1086,237 @@ describe("divergence judged by conversation content", () => {
     expect(preserve).toHaveBeenCalledOnce();
     expect(current.blocks.map((item) => item.id)).toEqual(["u1", "theirs"]);
   });
+});
+
+describe("a session adopted while the host was still writing it", () => {
+  const prompt = { id: "u1", role: "user", text: "Explain the cache" } as Block;
+  const partial = {
+    id: "a1",
+    role: "assistant",
+    text: "The cache",
+    streaming: true,
+  } as Block;
+  const complete = {
+    id: "a1",
+    role: "assistant",
+    text: "The cache keeps pages.",
+  } as Block;
+  const followUp = { id: "u2", role: "user", text: "And eviction?" } as Block;
+  // Desktop storage drops the stream flag: the restored reply is closed but cut short.
+  const stored = (session: Session): Session => ({
+    ...session,
+    blocks: session.blocks.map(
+      ({ streaming: _streaming, ...rest }) => rest as Block,
+    ),
+  });
+
+  it("takes the host's finished reply without saving a local copy", async () => {
+    const midTurn = host({ blocks: [prompt, partial] }, "running");
+    const finished = { ...host({ blocks: [prompt, complete] }), revision: 6 };
+    let snapshot: HostSession = midTurn;
+    let saved: Session | null = null;
+    let loaded: Session[] = [];
+    const preserve = vi.fn(async () => true);
+    const conflict = vi.fn();
+    const deps: AdoptedMirrorDeps = {
+      list: async () => [
+        entry({ revision: snapshot.revision, status: snapshot.status }),
+      ],
+      load: async () => snapshot,
+      local: () => loaded,
+      apply: (merged) => {
+        loaded = loaded.map((session) =>
+          session.id === merged.id ? merged : session,
+        );
+      },
+      mirrored: new Map(),
+      stored: async () => saved,
+      save: vi.fn(async () => true),
+      adopt: async () => {
+        saved = stored(desktopCopyOf(snapshot, "C:/proj", (a, b) => a === b));
+        return true;
+      },
+      preserve,
+      conflict,
+    };
+    await mirrorAdoptedSessions(deps);
+    // The Working card loads the running session from storage.
+    loaded = [{ ...saved!, continuingElsewhere: true }];
+    snapshot = finished;
+    await mirrorAdoptedSessions(deps);
+    expect(preserve).not.toHaveBeenCalled();
+    expect(conflict).not.toHaveBeenCalled();
+    expect(loaded[0].blocks).toEqual([prompt, complete]);
+    expect(loaded[0].continuingElsewhere).toBeUndefined();
+  });
+
+  it("does the same without a baseline, e.g. after the app restarted", async () => {
+    let current = stored(local({ blocks: [prompt, partial] }));
+    const preserve = vi.fn(async () => true);
+    await mirrorAdoptedSessions({
+      list: async () => [entry({ revision: 6 })],
+      load: async () => ({
+        ...host({ blocks: [prompt, complete, followUp] }),
+        revision: 6,
+      }),
+      local: () => [current],
+      apply: (merged) => {
+        current = merged;
+      },
+      mirrored: new Map(),
+      preserve,
+      autoRefreshConflicts: true,
+    });
+    expect(preserve).not.toHaveBeenCalled();
+    expect(current.blocks).toEqual([prompt, complete, followUp]);
+  });
+
+  it("reports a truncated local reply as the host leading, never as the same transcript", () => {
+    const local_ = stored(local({ blocks: [prompt, partial] }));
+    const remote = host({ blocks: [prompt, complete] }).session;
+    // The host refresh accepts only "local" or "same"; a stale tail must not win.
+    expect(adoptedTranscriptLead(local_, remote)).toBe("host");
+  });
+
+  it("still treats a differing reply as divergence", () => {
+    const other = {
+      id: "a1",
+      role: "assistant",
+      text: "Something else entirely.",
+    } as Block;
+    expect(
+      adoptedTranscriptLead(
+        stored(local({ blocks: [prompt, partial] })),
+        host({ blocks: [prompt, other] }).session,
+      ),
+    ).toBeUndefined();
+    // Only the tail can be cut short: an earlier truncated block is a real edit.
+    expect(
+      adoptedTranscriptLead(
+        local({
+          blocks: [prompt, { ...complete, text: "The cache" }, followUp],
+        }),
+        host({ blocks: [prompt, complete, followUp] }).session,
+      ),
+    ).toBeUndefined();
+  });
+
+  it("waits for a long transcript to finish loading before comparing it", async () => {
+    let current = local({ blocks: [complete], historyLoading: true });
+    const load = vi.fn(async () => ({
+      ...host({ blocks: [prompt, complete] }),
+      revision: 6,
+    }));
+    const preserve = vi.fn(async () => true);
+    await mirrorAdoptedSessions({
+      list: async () => [entry({ revision: 6 })],
+      load,
+      local: () => [current],
+      apply: (merged) => {
+        current = merged;
+      },
+      mirrored: new Map(),
+      preserve,
+      autoRefreshConflicts: true,
+    });
+    expect(load).not.toHaveBeenCalled();
+    expect(preserve).not.toHaveBeenCalled();
+    expect(current.blocks).toEqual([complete]);
+  });
+});
+
+describe("a host turn that just finished", () => {
+  it("stays continuing elsewhere until its transcript is applied here", async () => {
+    let current = local({ blocks: [block("a")] });
+    let listing = entry({ status: "running" });
+    let snapshot: HostSession | Error = host(
+      { blocks: [block("a")] },
+      "running",
+    );
+    const reported: string[][] = [];
+    const deps: AdoptedMirrorDeps = {
+      list: async () => [listing],
+      load: async () => {
+        if (snapshot instanceof Error) throw snapshot;
+        return snapshot;
+      },
+      local: () => [current],
+      apply: (merged) => {
+        current = merged;
+      },
+      mirrored: new Map(),
+      onRunning: (ids) => reported.push([...ids]),
+    };
+    await mirrorAdoptedSessions(deps);
+    expect(reported.at(-1)).toEqual(["s1"]);
+    // Finished on the host, but its transcript could not be fetched yet.
+    listing = entry({ revision: 6 });
+    snapshot = new Error("offline");
+    await mirrorAdoptedSessions(deps);
+    expect(reported.at(-1)).toEqual(["s1"]);
+    snapshot = { ...host({ blocks: [block("a"), block("b")] }), revision: 6 };
+    await mirrorAdoptedSessions(deps);
+    expect(reported.at(-1)).toEqual([]);
+    expect(current.blocks.map((item) => item.id)).toEqual(["a", "b"]);
+  });
+
+  it("is released for an explicit sync once flagged as a conflict", async () => {
+    let current = local({
+      blocks: [{ id: "a", role: "user", text: "edited here" } as Block],
+    });
+    const reported: string[][] = [];
+    const deps: AdoptedMirrorDeps = {
+      list: async () => [entry({ status: "running" })],
+      load: async () => host({ blocks: [block("a")] }, "running"),
+      local: () => [current],
+      apply: vi.fn(),
+      mirrored: new Map(),
+      onRunning: (ids) => reported.push([...ids]),
+      conflict: (session) => {
+        current = { ...session, adoptedSyncConflict: true };
+      },
+    };
+    await mirrorAdoptedSessions(deps);
+    await mirrorAdoptedSessions({
+      ...deps,
+      list: async () => [entry({ revision: 6 })],
+      load: async () => ({
+        ...host({ blocks: [block("a"), block("b")] }),
+        revision: 6,
+      }),
+    });
+    expect(reported.at(-1)).toEqual([]);
+  });
+});
+
+it("hands a finished host turn that keeps failing to arrive to an explicit sync", async () => {
+  vi.useFakeTimers();
+  try {
+    let current = local();
+    let listing = entry({ status: "running" });
+    const reported: string[][] = [];
+    const deps: AdoptedMirrorDeps = {
+      list: async () => [listing],
+      load: async () => {
+        throw new Error("offline");
+      },
+      local: () => [current],
+      apply: vi.fn(),
+      mirrored: new Map(),
+      onRunning: (ids) => reported.push([...ids]),
+      conflict: (session) => {
+        current = { ...session, adoptedSyncConflict: true };
+      },
+    };
+    await mirrorAdoptedSessions(deps);
+    listing = entry({ revision: 6 });
+    await mirrorAdoptedSessions(deps);
+    expect(reported.at(-1)).toEqual(["s1"]);
+    vi.advanceTimersByTime(61_000);
+    await mirrorAdoptedSessions(deps);
+    expect(current.adoptedSyncConflict).toBe(true);
+    expect(reported.at(-1)).toEqual([]);
+  } finally {
+    vi.useRealTimers();
+  }
 });

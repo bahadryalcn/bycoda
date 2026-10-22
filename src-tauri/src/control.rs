@@ -24,11 +24,48 @@ struct Grant {
 struct Pending {
     window: String,
     reply: mpsc::Sender<Value>,
+    authority: Option<DesktopAuthority>,
+}
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct DesktopAuthority {
+    pub relay_id: String,
+    pub action: String,
+    pub deadline: u64,
+}
+pub(crate) fn desktop_effect_action(action: &str) -> bool {
+    matches!(
+        action,
+        "ssh.workspace.approve"
+            | "ssh.workspace.close.approve"
+            | "ptyMobile.create"
+            | "ptyMobile.attach"
+            | "ptyMobile.write"
+            | "ptyMobile.resize"
+            | "ptyMobile.detach"
+            | "ptyMobile.close"
+    )
+}
+fn clock_millis() -> Result<u64, String> {
+    Ok(std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(|_| "Clock unavailable")?
+        .as_millis() as u64)
 }
 struct ActiveTurn {
     window: String,
     cwd: String,
     app_allowed: bool,
+}
+#[derive(Clone, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct HistorySource {
+    session_id: String,
+    cwd: String,
+}
+struct HistoryWindow {
+    environment: String,
+    seen: std::time::Instant,
+    sources: HashMap<String, String>,
 }
 #[derive(Default)]
 struct Inner {
@@ -38,6 +75,7 @@ struct Inner {
     workers: HashMap<String, String>,
     scratch: HashMap<String, PathBuf>,
     active: HashMap<String, ActiveTurn>,
+    history_sources: HashMap<String, HistoryWindow>,
 }
 impl Inner {
     // Provider processes can stay alive between turns, so install the token
@@ -101,6 +139,7 @@ impl Inner {
         ids
     }
     fn close_window(&mut self, label: &str) -> Vec<String> {
+        self.history_sources.remove(label);
         let ids = self.window_sessions(label);
         self.grants.retain(|id, _| !ids.contains(id));
         self.app_grants.retain(|id, _| !ids.contains(id));
@@ -280,6 +319,7 @@ fn serve(mut stream: TcpStream, app: &AppHandle, inner: &Arc<Mutex<Inner>>) {
                 Pending {
                     window: grant.window.clone(),
                     reply: tx,
+                    authority: None,
                 },
             );
             grant
@@ -368,6 +408,227 @@ fn conversation_ui_window(
     Ok(active.window.clone())
 }
 
+fn history_import_input(
+    action: &str,
+    input: &Value,
+    session: &str,
+    cwd: &str,
+    environment: &str,
+) -> Result<Value, String> {
+    let allowed: &[&str] = match action {
+        "historyImport.discover" => &["sessionId"],
+        "historyImport.commit" => &[
+            "sessionId",
+            "reviewId",
+            "digest",
+            "candidateIds",
+            "operationId",
+        ],
+        "historyImport.status" | "historyImport.cancel" => &["sessionId", "operationId"],
+        "organization.read" | "providerManagement.read" => &["sessionId"],
+        "providerManagement.patch" => &[
+            "sessionId",
+            "operationId",
+            "expectedAccountRevision",
+            "provider",
+            "accountId",
+            "change",
+        ],
+        "providerManagement.status" => &["sessionId", "operationId"],
+        "providerManagement.quotaRefresh" => &[
+            "sessionId",
+            "operationId",
+            "expectedAccountRevision",
+            "provider",
+            "accountId",
+            "confirm",
+        ],
+        "organization.patch" => &["sessionId", "expectedRevision", "operationId", "change"],
+        "organization.status" => &["sessionId", "operationId"],
+        "preferences.read" => &["sessionId"],
+        "preferences.templateRead" => &["sessionId", "templateId", "expectedRevision"],
+        "preferences.patch" => &["sessionId", "expectedRevision", "operationId", "change"],
+        "preferences.status" => &["sessionId", "operationId"],
+        "worktrees.removal.review" => &["sessionId", "path"],
+        "worktrees.removal.approve" => &["sessionId", "reviewId", "requestId"],
+        "worktrees.removal.status" => &["sessionId", "requestId"],
+        "ptyMobile.list" => &["sessionId", "actorId"],
+        "ptyMobile.create" => &[
+            "sessionId",
+            "actorId",
+            "requestId",
+            "profileId",
+            "cols",
+            "rows",
+        ],
+        "ptyMobile.attach" => &[
+            "sessionId",
+            "actorId",
+            "terminalId",
+            "epoch",
+            "requestId",
+            "after",
+            "freshRenderer",
+        ],
+        "ptyMobile.read" => &[
+            "sessionId",
+            "actorId",
+            "terminalId",
+            "epoch",
+            "after",
+            "limit",
+        ],
+        "ptyMobile.write" => &[
+            "sessionId",
+            "actorId",
+            "terminalId",
+            "epoch",
+            "leaseId",
+            "inputSequence",
+            "dataBase64",
+        ],
+        "ptyMobile.resize" => &[
+            "sessionId",
+            "actorId",
+            "terminalId",
+            "epoch",
+            "leaseId",
+            "cols",
+            "rows",
+        ],
+        "ptyMobile.status" => &[
+            "sessionId",
+            "actorId",
+            "terminalId",
+            "epoch",
+            "leaseId",
+            "requestId",
+        ],
+        "ptyMobile.detach" => &["sessionId", "actorId", "terminalId", "epoch", "leaseId"],
+        "ptyMobile.close" => &["sessionId", "actorId", "terminalId", "epoch", "requestId"],
+        "ssh.workspace.catalog.read" => &["sessionId", "actorId"],
+        "ssh.workspace.review" => &["sessionId", "actorId", "connectionId"],
+        "ssh.workspace.approve" | "ssh.workspace.close.approve" => {
+            &["sessionId", "actorId", "reviewId", "requestId"]
+        }
+        "ssh.workspace.status" => &["sessionId", "actorId", "requestId", "workspaceId"],
+        "ssh.workspace.close.review" => &["sessionId", "actorId", "workspaceId"],
+        _ => return Err("Unsupported history import action".into()),
+    };
+    let mut fields = input
+        .as_object()
+        .cloned()
+        .ok_or("Invalid history import request")?;
+    if fields.keys().any(|key| !allowed.contains(&key.as_str()))
+        || fields.get("sessionId").and_then(Value::as_str) != Some(session)
+    {
+        return Err("History import source identity mismatch".into());
+    }
+    fields.insert("environmentId".into(), Value::String(environment.into()));
+    fields.insert("projectCwd".into(), Value::String(cwd.into()));
+    Ok(Value::Object(fields))
+}
+
+fn history_source_window(
+    host: &Inner,
+    session: &str,
+    cwd: &str,
+    environment: &str,
+) -> Result<String, String> {
+    let canonical = |path: &str| {
+        let path = std::fs::canonicalize(path)
+            .map(|value| value.to_string_lossy().into_owned())
+            .unwrap_or_else(|_| path.into());
+        let path = path
+            .replace('\\', "/")
+            .trim_start_matches("//?/")
+            .trim_end_matches('/')
+            .to_owned();
+        if path.as_bytes().get(1) == Some(&b':') || path.starts_with("//") {
+            path.to_lowercase()
+        } else {
+            path
+        }
+    };
+    let mut owners = host.history_sources.iter().filter(|(_, owner)| {
+        owner.environment == environment
+            && owner.seen.elapsed() < Duration::from_secs(45)
+            && owner.sources.get(session).is_some_and(|actual| {
+                !actual.starts_with("remote://") && canonical(actual) == canonical(cwd)
+            })
+    });
+    let (window, _) = owners
+        .next()
+        .ok_or("Open the source conversation in the local bycoda desktop")?;
+    if owners.next().is_some() {
+        return Err("History source is open in multiple desktop windows".into());
+    }
+    Ok(window.clone())
+}
+
+pub(crate) fn validate_history_source_owner(
+    app: &AppHandle,
+    window: &str,
+    session: &str,
+    cwd: &str,
+    environment: &str,
+) -> Result<(), String> {
+    let state = app.state::<ControlHost>();
+    let host = state.inner.lock().unwrap_or_else(|e| e.into_inner());
+    if history_source_window(&host, session, cwd, environment)? != window {
+        return Err("Source owner window changed".into());
+    }
+    Ok(())
+}
+
+/// Only advertises local open sources for the history-import relay. It grants no agent/operator access.
+#[tauri::command]
+pub fn control_history_sources(
+    app: AppHandle,
+    window: WebviewWindow,
+    host: State<'_, ControlHost>,
+    sources: Vec<HistorySource>,
+) -> Result<(), String> {
+    if sources.len() > 1000
+        || sources.iter().any(|source| {
+            source.session_id.is_empty()
+                || source.session_id.len() > 200
+                || source.cwd.len() > 4096
+                || source.cwd.contains('\0')
+                || source.cwd.starts_with("remote://")
+                || !Path::new(&source.cwd).is_absolute()
+        })
+    {
+        return Err("Invalid local history sources".into());
+    }
+    let environment = if sources.is_empty() {
+        None
+    } else {
+        Some(crate::remote::local_conversation_environment(&app)?)
+    };
+    let mut inner = host
+        .inner
+        .lock()
+        .map_err(|_| "Control service unavailable")?;
+    if sources.is_empty() {
+        inner.history_sources.remove(window.label());
+        return Ok(());
+    }
+    let environment = environment.ok_or("Local history environment unavailable")?;
+    inner.history_sources.insert(
+        window.label().into(),
+        HistoryWindow {
+            environment,
+            seen: std::time::Instant::now(),
+            sources: sources
+                .into_iter()
+                .map(|source| (source.session_id, source.cwd))
+                .collect(),
+        },
+    );
+    Ok(())
+}
+
 /// Host-granted UI and project session reads; never enables general /operator access.
 pub(crate) fn conversation_ui_request(
     app: &AppHandle,
@@ -377,6 +638,27 @@ pub(crate) fn conversation_ui_request(
     action: &str,
     input: Value,
 ) -> Result<Value, String> {
+    conversation_ui_request_with_authority(app, session, cwd, environment, action, input, None)
+}
+
+pub(crate) fn conversation_ui_request_with_authority(
+    app: &AppHandle,
+    session: &str,
+    cwd: &str,
+    environment: &str,
+    action: &str,
+    input: Value,
+    authority: Option<DesktopAuthority>,
+) -> Result<Value, String> {
+    if let Some(authority) = authority.as_ref() {
+        if authority.action != action
+            || !desktop_effect_action(action)
+            || uuid::Uuid::parse_str(&authority.relay_id).is_err()
+            || authority.deadline <= clock_millis()?
+        {
+            return Err("Invalid desktop effect authority".into());
+        }
+    }
     if !matches!(
         action,
         "ui.tools.status"
@@ -387,12 +669,66 @@ pub(crate) fn conversation_ui_request(
             | "ui.workspace.status"
             | "ui.workspace.open"
             | "ui.workspace.close"
+            | "terminals.create"
+            | "terminals.interrupt"
+            | "terminals.close"
             | "sessions.list"
             | "sessions.read"
+            | "historyImport.discover"
+            | "historyImport.commit"
+            | "historyImport.status"
+            | "historyImport.cancel"
+            | "organization.read"
+            | "providerManagement.read"
+            | "providerManagement.patch"
+            | "providerManagement.status"
+            | "providerManagement.quotaRefresh"
+            | "organization.patch"
+            | "organization.status"
+            | "preferences.read"
+            | "preferences.templateRead"
+            | "preferences.patch"
+            | "preferences.status"
+            | "ptyMobile.list"
+            | "ptyMobile.create"
+            | "ptyMobile.attach"
+            | "ptyMobile.read"
+            | "ptyMobile.write"
+            | "ptyMobile.status"
+            | "ptyMobile.resize"
+            | "ptyMobile.detach"
+            | "ptyMobile.close"
+            | "ssh.workspace.catalog.read"
+            | "ssh.workspace.review"
+            | "ssh.workspace.approve"
+            | "ssh.workspace.status"
+            | "ssh.workspace.close.review"
+            | "ssh.workspace.close.approve"
+            | "worktrees.removal.review"
+            | "worktrees.removal.approve"
+            | "worktrees.removal.status"
     ) || !input.is_object()
     {
         return Err("Unsupported Conversation UI action".into());
     }
+    let history = action.starts_with("ptyMobile.")
+        || action.starts_with("ssh.workspace.")
+        || action.starts_with("historyImport.")
+        || action.starts_with("organization.")
+        || action.starts_with("preferences.")
+        || matches!(
+            action,
+            "providerManagement.read"
+                | "providerManagement.patch"
+                | "providerManagement.status"
+                | "providerManagement.quotaRefresh"
+        )
+        || action.starts_with("worktrees.removal.");
+    let input = if history {
+        history_import_input(action, &input, session, cwd, environment)?
+    } else {
+        input
+    };
     let state = app.state::<ControlHost>();
     let id = uuid::Uuid::new_v4().to_string();
     let (tx, rx) = mpsc::channel();
@@ -401,7 +737,11 @@ pub(crate) fn conversation_ui_request(
             .inner
             .lock()
             .map_err(|_| "Control service unavailable")?;
-        let window = conversation_ui_window(&host, session, cwd, environment)?;
+        let window = if history {
+            history_source_window(&host, session, cwd, environment)?
+        } else {
+            conversation_ui_window(&host, session, cwd, environment)?
+        };
         if host.pending.len() >= 24 {
             return Err("Too many pending control requests".into());
         }
@@ -410,6 +750,7 @@ pub(crate) fn conversation_ui_request(
             Pending {
                 window: window.clone(),
                 reply: tx,
+                authority,
             },
         );
         window
@@ -437,7 +778,19 @@ pub(crate) fn conversation_ui_request(
     {
         Err("Conversation window is unavailable".into())
     } else {
-        rx.recv_timeout(Duration::from_secs(15)).map_err(|_| {
+        // Terminal close retains the existing native foreground-process confirmation.
+        // Its renderer deadline expires before this wait, so a late approval cannot kill work.
+        let timeout = if matches!(
+            action,
+            "ssh.workspace.approve" | "ssh.workspace.close.approve"
+        ) {
+            240
+        } else if action == "terminals.close" {
+            120
+        } else {
+            15
+        };
+        rx.recv_timeout(Duration::from_secs(timeout)).map_err(|_| {
             "Conversation UI request timed out; read ui.tools.status before retrying".to_owned()
         })
     };
@@ -626,8 +979,14 @@ pub fn window_closed(app: &AppHandle, label: &str) {
         let Ok(inner) = host.inner.lock() else { return };
         inner.window_sessions(label)
     };
-    for id in &ids {
-        let _ = crate::harness::harness_kill(app.state(), id.clone());
+    // Each kill waits for taskkill, so run them off the event loop. The reaper
+    // is tracked, so exit still waits for these children to die.
+    if !ids.is_empty() {
+        crate::spawn_tracked_reap(app, move |handle| {
+            for id in &ids {
+                let _ = crate::harness::harness_kill(handle.state(), id.clone());
+            }
+        });
     }
     if let Ok(mut inner) = host.inner.lock() {
         inner.close_window(label);
@@ -685,6 +1044,82 @@ pub fn control_reply(
         }
     }
     Ok(())
+}
+
+fn pending_desktop_authority(
+    inner: &Inner,
+    window: &str,
+    id: &str,
+    action: &str,
+    now: u64,
+) -> Result<DesktopAuthority, String> {
+    let pending = inner
+        .pending
+        .get(id)
+        .filter(|entry| entry.window == window)
+        .ok_or("Desktop effect request is no longer pending in this window")?;
+    let authority = pending
+        .authority
+        .as_ref()
+        .filter(|value| {
+            desktop_effect_action(action) && value.action == action && value.deadline > now
+        })
+        .ok_or("Desktop effect authority is missing or expired")?;
+    Ok(authority.clone())
+}
+
+fn authorize_desktop_effect_with(
+    inner: &Mutex<Inner>,
+    window: &str,
+    id: &str,
+    action: &str,
+    now: impl Fn() -> Result<u64, String>,
+    query: impl FnOnce(&DesktopAuthority) -> Result<bool, String>,
+) -> Result<bool, String> {
+    let authority = {
+        let guard = inner.lock().map_err(|_| "Control service unavailable")?;
+        pending_desktop_authority(&guard, window, id, action, now()?)?
+    };
+    if !query(&authority)? {
+        return Ok(false);
+    }
+    let current = {
+        let guard = inner.lock().map_err(|_| "Control service unavailable")?;
+        pending_desktop_authority(&guard, window, id, action, now()?)?
+    };
+    if current != authority {
+        return Err("Desktop effect authority changed during authorization".into());
+    }
+    Ok(true)
+}
+
+/// Live pre-effect check. The original upstream ID is retained only in native memory.
+#[tauri::command(async)]
+pub fn control_desktop_authorize_effect(
+    app: AppHandle,
+    window: WebviewWindow,
+    host: State<'_, ControlHost>,
+    id: String,
+    action: String,
+) -> Result<bool, String> {
+    authorize_desktop_effect_with(
+        &host.inner,
+        window.label(),
+        &id,
+        &action,
+        clock_millis,
+        |authority| {
+            let result = crate::remote::local_conversation_rpc(
+                &app,
+                "conversation.desktop.authorize",
+                json!({"id": authority.relay_id, "action": authority.action}),
+            )
+            .map_err(|_| "Desktop effect authorization is unavailable".to_string())?;
+            Ok(result.as_object().is_some_and(|value| {
+                value.len() == 1 && value.get("authorized") == Some(&Value::Bool(true))
+            }))
+        },
+    )
 }
 
 #[tauri::command(async)]
@@ -794,6 +1229,388 @@ pub fn control_scopes(cwd: String, files: Vec<String>) -> Result<Vec<String>, St
 
 #[cfg(test)]
 mod tests {
+    fn effect_fixture() -> std::sync::Mutex<super::Inner> {
+        let mut inner = super::Inner::default();
+        let (reply, _) = std::sync::mpsc::channel();
+        inner.pending.insert(
+            "native-request".into(),
+            super::Pending {
+                window: "source-window".into(),
+                reply,
+                authority: Some(super::DesktopAuthority {
+                    relay_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa".into(),
+                    action: "ssh.workspace.approve".into(),
+                    deadline: 200,
+                }),
+            },
+        );
+        std::sync::Mutex::new(inner)
+    }
+
+    #[test]
+    fn desktop_effect_authority_uses_original_host_id_and_checks_live_owner() {
+        let inner = effect_fixture();
+        assert!(super::authorize_desktop_effect_with(
+            &inner,
+            "source-window",
+            "native-request",
+            "ssh.workspace.approve",
+            || Ok(100),
+            |authority| {
+                assert_ne!(authority.relay_id, "native-request");
+                assert_eq!(authority.relay_id, "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa");
+                Ok(true)
+            }
+        )
+        .unwrap());
+        assert!(!super::authorize_desktop_effect_with(
+            &inner,
+            "source-window",
+            "native-request",
+            "ssh.workspace.approve",
+            || Ok(100),
+            |_| Ok(false)
+        )
+        .unwrap());
+        for (window, action) in [
+            ("foreign", "ssh.workspace.approve"),
+            ("source-window", "ssh.workspace.close.approve"),
+            ("source-window", "ssh.workspace.status"),
+        ] {
+            assert!(super::authorize_desktop_effect_with(
+                &inner,
+                window,
+                "native-request",
+                action,
+                || Ok(100),
+                |_| panic!("invalid owner/action must not query host")
+            )
+            .is_err());
+        }
+    }
+
+    #[test]
+    fn desktop_effect_authority_refuses_missing_expired_and_unlinked_requests() {
+        let inner = effect_fixture();
+        assert!(super::authorize_desktop_effect_with(
+            &inner,
+            "source-window",
+            "native-request",
+            "ssh.workspace.approve",
+            || Ok(200),
+            |_| panic!("expired authority must not query host")
+        )
+        .is_err());
+        inner
+            .lock()
+            .unwrap()
+            .pending
+            .get_mut("native-request")
+            .unwrap()
+            .authority = None;
+        assert!(super::authorize_desktop_effect_with(
+            &inner,
+            "source-window",
+            "native-request",
+            "ssh.workspace.approve",
+            || Ok(100),
+            |_| panic!("local/unlinked authority must not query host")
+        )
+        .is_err());
+        assert!(super::authorize_desktop_effect_with(
+            &inner,
+            "source-window",
+            "missing",
+            "ssh.workspace.approve",
+            || Ok(100),
+            |_| panic!("missing authority must not query host")
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn desktop_effect_authority_rechecks_pending_and_deadline_after_host_response() {
+        let inner = effect_fixture();
+        assert!(super::authorize_desktop_effect_with(
+            &inner,
+            "source-window",
+            "native-request",
+            "ssh.workspace.approve",
+            || Ok(100),
+            |_| {
+                inner.lock().unwrap().pending.remove("native-request");
+                Ok(true)
+            }
+        )
+        .is_err());
+        let inner = effect_fixture();
+        let now = std::cell::Cell::new(100);
+        assert!(super::authorize_desktop_effect_with(
+            &inner,
+            "source-window",
+            "native-request",
+            "ssh.workspace.approve",
+            || Ok(now.get()),
+            |_| {
+                now.set(201);
+                Ok(true)
+            }
+        )
+        .is_err());
+        let inner = effect_fixture();
+        assert!(super::authorize_desktop_effect_with(
+            &inner,
+            "source-window",
+            "native-request",
+            "ssh.workspace.approve",
+            || Ok(100),
+            |_| Err("host unavailable".into())
+        )
+        .is_err());
+    }
+    #[test]
+    fn history_import_exact_inputs_pin_native_identity() {
+        let value = super::history_import_input(
+            "historyImport.discover",
+            &serde_json::json!({"sessionId":"source"}),
+            "source",
+            "/project",
+            "native-host",
+        )
+        .unwrap();
+        assert_eq!(value["environmentId"], "native-host");
+        assert_eq!(value["projectCwd"], "/project");
+        for input in [
+            serde_json::json!({"sessionId":"other"}),
+            serde_json::json!({"sessionId":"source", "environmentId":"forged"}),
+            serde_json::json!({"sessionId":"source", "projectCwd":"/private"}),
+            serde_json::json!({"sessionId":"source", "invoke":"session_import"}),
+        ] {
+            assert!(super::history_import_input(
+                "historyImport.discover",
+                &input,
+                "source",
+                "/project",
+                "native-host"
+            )
+            .is_err());
+        }
+        assert!(super::history_import_input(
+            "historyImport.arbitrary",
+            &serde_json::json!({"sessionId":"source"}),
+            "source",
+            "/project",
+            "native-host"
+        )
+        .is_err());
+    }
+    #[test]
+    fn preferences_exact_actions_reject_injected_identity_and_native_invokes() {
+        for (action, input) in [
+            (
+                "preferences.read",
+                serde_json::json!({"sessionId":"source"}),
+            ),
+            (
+                "preferences.templateRead",
+                serde_json::json!({"sessionId":"source","templateId":"one","expectedRevision":"review"}),
+            ),
+            (
+                "preferences.patch",
+                serde_json::json!({"sessionId":"source","expectedRevision":"review","operationId":"operation","change":{"kind":"projectReset"}}),
+            ),
+            (
+                "preferences.status",
+                serde_json::json!({"sessionId":"source","operationId":"operation"}),
+            ),
+        ] {
+            let result =
+                history_import_input(action, &input, "source", "G:/project/worktree", "native")
+                    .unwrap();
+            assert_eq!(result["environmentId"], "native");
+            assert_eq!(result["projectCwd"], "G:/project/worktree");
+            for field in ["cwd", "projectCwd", "environmentId", "invoke"] {
+                let mut injected = input.clone();
+                injected[field] = Value::String("injected".into());
+                assert!(history_import_input(
+                    action,
+                    &injected,
+                    "source",
+                    "G:/project/worktree",
+                    "native"
+                )
+                .is_err());
+            }
+            assert!(history_import_input(
+                action,
+                &input,
+                "other-source",
+                "G:/project/worktree",
+                "native"
+            )
+            .is_err());
+        }
+        assert!(history_import_input(
+            "preferences.invoke",
+            &serde_json::json!({"sessionId":"source"}),
+            "source",
+            "G:/project",
+            "native"
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn organization_exact_actions_reject_injected_identity_and_native_invokes() {
+        assert!(history_import_input(
+            "organization.read",
+            &serde_json::json!({"sessionId":"source"}),
+            "source",
+            "G:/project/worktree",
+            "host"
+        )
+        .is_ok());
+        assert!(history_import_input("organization.patch", &serde_json::json!({"sessionId":"source", "expectedRevision":"review", "operationId":"operation", "change":{"kind":"projectName","name":"Display"}}), "source", "G:/project/worktree", "host").is_ok());
+        for input in [
+            serde_json::json!({"sessionId":"source","projectCwd":"G:/private"}),
+            serde_json::json!({"sessionId":"source","environmentId":"foreign"}),
+            serde_json::json!({"sessionId":"source","invoke":"session_import"}),
+        ] {
+            assert!(history_import_input(
+                "organization.read",
+                &input,
+                "source",
+                "G:/project/worktree",
+                "host"
+            )
+            .is_err());
+        }
+    }
+    #[test]
+    fn provider_management_read_pins_native_source_and_rejects_injected_fields() {
+        let value = history_import_input(
+            "providerManagement.read",
+            &serde_json::json!({"sessionId":"source"}),
+            "source",
+            "G:/project",
+            "host",
+        )
+        .unwrap();
+        assert_eq!(value["environmentId"], "host");
+        assert_eq!(value["projectCwd"], "G:/project");
+        for field in [
+            "environmentId",
+            "projectCwd",
+            "workingCwd",
+            "invoke",
+            "fetch",
+            "approved",
+        ] {
+            let mut input = serde_json::json!({"sessionId":"source"});
+            input[field] = serde_json::json!("injected");
+            assert!(history_import_input(
+                "providerManagement.read",
+                &input,
+                "source",
+                "G:/project",
+                "host"
+            )
+            .is_err());
+        }
+        assert!(history_import_input(
+            "providerManagement.write",
+            &serde_json::json!({"sessionId":"source"}),
+            "source",
+            "G:/project",
+            "host"
+        )
+        .is_err());
+        let patch = serde_json::json!({"sessionId":"source", "operationId":"operation", "expectedAccountRevision":"review", "provider":"claude", "accountId":"one", "change":{"kind":"rename","label":"Display"}});
+        assert!(history_import_input(
+            "providerManagement.patch",
+            &patch,
+            "source",
+            "G:/project",
+            "host"
+        )
+        .is_ok());
+        assert!(history_import_input(
+            "providerManagement.status",
+            &serde_json::json!({"sessionId":"source","operationId":"operation"}),
+            "source",
+            "G:/project",
+            "host"
+        )
+        .is_ok());
+        let quota = serde_json::json!({"sessionId":"source","operationId":"quota","expectedAccountRevision":"review","provider":"claude","accountId":"one","confirm":"REFRESH_PROVIDER_QUOTA"});
+        assert!(history_import_input(
+            "providerManagement.quotaRefresh",
+            &quota,
+            "source",
+            "G:/project",
+            "host"
+        )
+        .is_ok());
+        let mut forged_quota = quota;
+        forged_quota["url"] = serde_json::json!("https://private");
+        assert!(history_import_input(
+            "providerManagement.quotaRefresh",
+            &forged_quota,
+            "source",
+            "G:/project",
+            "host"
+        )
+        .is_err());
+        for action in ["providerManagement.patch", "providerManagement.status"] {
+            let mut forged = patch.clone();
+            forged["approved"] = serde_json::json!(true);
+            assert!(history_import_input(action, &forged, "source", "G:/project", "host").is_err());
+        }
+    }
+    #[test]
+    fn history_import_routes_idle_sources_without_active_turn_or_app_grants() {
+        let mut host = Inner::default();
+        host.history_sources.insert(
+            "owner".into(),
+            HistoryWindow {
+                environment: "host".into(),
+                seen: std::time::Instant::now(),
+                sources: HashMap::from([("idle".into(), "G:/project/worktree".into())]),
+            },
+        );
+        assert!(host.active.is_empty());
+        assert!(host.app_grants.is_empty());
+        assert_eq!(
+            history_source_window(&host, "idle", "g:/PROJECT/worktree", "host").unwrap(),
+            "owner"
+        );
+        assert!(history_source_window(&host, "idle", "G:/project", "host").is_err());
+        assert!(history_source_window(&host, "idle", "G:/project/worktree", "other-host").is_err());
+        assert!(conversation_ui_window(&host, "idle", "G:/project/worktree", "host").is_err());
+        host.history_sources.insert(
+            "duplicate".into(),
+            HistoryWindow {
+                environment: "host".into(),
+                seen: std::time::Instant::now(),
+                sources: HashMap::from([("idle".into(), "G:/project/worktree".into())]),
+            },
+        );
+        assert!(history_source_window(&host, "idle", "G:/project/worktree", "host").is_err());
+        host.history_sources.remove("duplicate");
+        host.history_sources.get_mut("owner").unwrap().seen =
+            std::time::Instant::now() - Duration::from_secs(46);
+        assert!(history_source_window(&host, "idle", "G:/project/worktree", "host").is_err());
+        host.history_sources.get_mut("owner").unwrap().seen = std::time::Instant::now();
+        host.history_sources
+            .get_mut("owner")
+            .unwrap()
+            .sources
+            .insert("idle".into(), "G:/moved".into());
+        assert!(history_source_window(&host, "idle", "G:/project/worktree", "host").is_err());
+        host.close_window("owner");
+        assert!(host.history_sources.is_empty());
+        assert!(history_source_window(&host, "idle", "G:/moved", "host").is_err());
+    }
     use super::*;
     #[test]
     fn conversation_ui_routes_only_the_active_owning_window_without_operator_access() {
@@ -1002,6 +1819,7 @@ mod tests {
             Pending {
                 window: "closing".into(),
                 reply,
+                authority: None,
             },
         );
         let (reply, other_response) = mpsc::channel();
@@ -1010,6 +1828,7 @@ mod tests {
             Pending {
                 window: "open".into(),
                 reply,
+                authority: None,
             },
         );
 

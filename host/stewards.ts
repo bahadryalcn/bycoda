@@ -188,7 +188,7 @@ export class HostStewards {
       declined: previous?.declined ?? [],
       run: previous?.run,
       createdAt: previous?.createdAt ?? now,
-      updatedAt: now,
+      updatedAt: Math.max(now, (previous?.updatedAt ?? -1) + 1),
     });
   }
 
@@ -215,6 +215,15 @@ export class HostStewards {
     if (!steward) throw new Error("Steward not found.");
     await this.begin(steward, this.now());
     return this.find(id) ?? steward;
+  }
+
+  /** Cancels only the named active turn. The normal tick settles and cleans it. */
+  stopRun(id: string, runId: string): { requested: true; run: NonNullable<HostSteward["run"]> } {
+    const steward = this.find(id);
+    if (!steward?.run || steward.run.runId !== runId)
+      throw new Error("Steward run is no longer active. Read it before stopping.");
+    cancelSessionRun(this.engine, steward.run);
+    return { requested: true, run: steward.run };
   }
 
   /** Deletes a to-do proposal and remembers its title, so the steward does not

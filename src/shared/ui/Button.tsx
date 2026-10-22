@@ -1,4 +1,15 @@
-import type { ComponentPropsWithRef, KeyboardEvent, ReactNode, SyntheticEvent } from "react";
+import {
+  useId,
+  useState,
+  type ComponentPropsWithRef,
+  type FocusEvent,
+  type MouseEvent,
+  type PointerEvent,
+  type KeyboardEvent,
+  type ReactNode,
+  type SyntheticEvent,
+} from "react";
+import { Popover } from "./Popover";
 import {
   Button as ArcButton,
   type ButtonSize,
@@ -99,6 +110,8 @@ export function Button({
   onAnimationStart,
   ...props
 }: ButtonProps) {
+  const hintId = useId();
+  const [hintAnchor, setHintAnchor] = useState<HTMLButtonElement | null>(null);
   // Keep legacy aliases at this boundary; render one hierarchy/tone implementation.
   const hierarchy = variant === "danger" ? "secondary" : variant;
   const resolvedTone: ButtonTone =
@@ -150,6 +163,7 @@ export function Button({
       handler?.(event);
     };
   const guardKey = (handler: typeof onKeyDown) => (event: KeyboardEvent<HTMLButtonElement>) => {
+    if (event.key === "Escape") setHintAnchor(null);
     if (blocked && (event.key === "Enter" || event.key === " " || event.key === "Spacebar")) {
       event.preventDefault();
       event.stopPropagation();
@@ -158,11 +172,16 @@ export function Button({
     handler?.(event);
   };
   const tooltipText = props.title ?? tooltip ?? (iconOnly || shortcut ? label : undefined);
+  const hintText = shortcut && tooltipText ? `${tooltipText} (${shortcut})` : tooltipText;
+  const hintVisible = !!hintAnchor && !!hintText;
   const attributes = {
     ...props,
     type,
     disabled,
-    title: shortcut && tooltipText ? `${tooltipText} (${shortcut})` : tooltipText,
+    title: hintText,
+    "aria-describedby":
+      [props["aria-describedby"], hintVisible ? hintId : undefined].filter(Boolean).join(" ") ||
+      undefined,
     "aria-label": loading && loadingLabel ? loadingLabel : (props["aria-label"] ?? label),
     "aria-busy": loading || props["aria-busy"] || undefined,
     "aria-disabled": blocked || props["aria-disabled"] || undefined,
@@ -176,9 +195,29 @@ export function Button({
     "data-button-layout":
       structural || variant === "link" || layout === "media" ? layout : undefined,
     "data-button-size": size,
-    onClick: guard(onClick),
+    onClick: guard((event: MouseEvent<HTMLButtonElement>) => {
+      setHintAnchor(null);
+      onClick?.(event);
+    }),
     onClickCapture: guard(onClickCapture),
-    onPointerDown: guard(onPointerDown),
+    onPointerDown: guard((event: PointerEvent<HTMLButtonElement>) => {
+      setHintAnchor(null);
+      onPointerDown?.(event);
+    }),
+    onFocus: (event: FocusEvent<HTMLButtonElement>) => {
+      props.onFocus?.(event);
+      if (
+        !event.defaultPrevented &&
+        (iconOnly || shortcut || tooltip) &&
+        hintText &&
+        event.currentTarget.matches(":focus-visible")
+      )
+        setHintAnchor(event.currentTarget);
+    },
+    onBlur: (event: FocusEvent<HTMLButtonElement>) => {
+      setHintAnchor(null);
+      props.onBlur?.(event);
+    },
     onPointerDownCapture: guard(onPointerDownCapture),
     onMouseDown: guard(onMouseDown),
     onKeyDown: guardKey(onKeyDown),
@@ -206,8 +245,27 @@ export function Button({
       ) : null}
     </>
   );
+  const withHint = (control: ReactNode) => (
+    <>
+      {control}
+      {hintVisible ? (
+        <Popover
+          anchor={hintAnchor}
+          role="tooltip"
+          id={hintId}
+          side="bottom"
+          restoreFocus={false}
+          passive
+          onDismiss={() => setHintAnchor(null)}
+          className="pointer-events-none max-w-60 break-words p-2 text-(length:--ui-font-caption) text-content"
+        >
+          {hintText}
+        </Popover>
+      ) : null}
+    </>
+  );
   if (native) {
-    return (
+    return withHint(
       <button
         {...attributes}
         className={[arcStyles.button, arcStyles[arcVariant], arcStyles[size], classes].join(" ")}
@@ -240,10 +298,10 @@ export function Button({
             <span className={arcStyles.spinner} />
           </span>
         ) : null}
-      </button>
+      </button>,
     );
   }
-  return (
+  return withHint(
     <ArcButton
       {...attributes}
       variant={arcVariant}
@@ -252,6 +310,6 @@ export function Button({
       className={classes}
     >
       {content}
-    </ArcButton>
+    </ArcButton>,
   );
 }

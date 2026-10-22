@@ -282,21 +282,19 @@ export function GitHistoryGraph({
   const list = (variant: "compact" | "workspace") => {
     const empty =
       !cwd || cwd === "~" ? (
-        <p className="px-3 py-2 text-[12px] text-[var(--ui-text-muted)]">
-          {t("No project folder")}
-        </p>
+        <p className="px-3 py-2 text-[12px] text-(--ui-text-secondary)">{t("No project folder")}</p>
       ) : commits.length === 0 ? (
         loading ? (
           <GitLoading text="Loading commit graph…" />
         ) : error || failure ? (
-          <p className="px-3 py-2 text-[12px] text-[var(--ui-text-muted)]">
+          <p className="px-3 py-2 text-[12px] text-(--ui-text-secondary)">
             {t("Commit history unavailable")}
           </p>
         ) : (
-          <p className="px-3 py-2 text-[12px] text-[var(--ui-text-muted)]">{t("No commits yet")}</p>
+          <p className="px-3 py-2 text-[12px] text-(--ui-text-secondary)">{t("No commits yet")}</p>
         )
       ) : items.length === 0 ? (
-        <p className="px-3 py-2 text-[12px] text-[var(--ui-text-muted)]">
+        <p className="px-3 py-2 text-[12px] text-(--ui-text-secondary)">
           {t("No matching commits in the ")}
           {commits.length}
           {t(" loaded")}
@@ -367,7 +365,7 @@ export function GitHistoryGraph({
               strokeWidth={1.75}
             />
           )}
-          <span className="min-w-0 truncate text-[10px] font-semibold tracking-[0.04em] text-[var(--ui-text-secondary)] uppercase">
+          <span className="min-w-0 truncate text-(length:--ui-font-caption) font-semibold text-(--ui-text-secondary)">
             {t("Graph")}
           </span>
         </Button>

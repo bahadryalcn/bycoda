@@ -106,6 +106,8 @@ export async function withHostGitMutation<T>(
 }
 
 const READ_COMMANDS = new Set([
+  "git_management_snapshot",
+  "git_pr_destination",
   "git_diff_index",
   "git_diff_files",
   "git_diff_stats",

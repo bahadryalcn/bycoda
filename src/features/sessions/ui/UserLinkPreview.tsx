@@ -357,7 +357,7 @@ function GithubWorkItemCard({
       )}
 
       {details?.author || updated ? (
-        <div className="mt-2.5 flex min-w-0 items-center gap-1.5 text-[10px] text-(--ui-text-secondary)">
+        <div className="mt-2.5 flex min-w-0 items-center gap-1.5 text-(length:--ui-font-caption) text-(--ui-text-secondary)">
           {details?.author ? (
             <GithubPerson name={details.author} avatarUrl={details.authorAvatarUrl} />
           ) : null}
@@ -372,7 +372,7 @@ function GithubWorkItemCard({
       ) : null}
 
       {hasBranches ? (
-        <div className="mt-2 flex min-w-0 items-center gap-1.5 rounded-md bg-(--ui-tone-neutral-solid)/[0.045] px-2 py-1.5 text-[10px] text-(--ui-text-secondary)">
+        <div className="mt-2 flex min-w-0 items-center gap-1.5 rounded-md bg-(--ui-tone-neutral-solid)/[0.045] px-2 py-1.5 text-(length:--ui-font-caption) text-(--ui-text-secondary)">
           <GitCompare className="size-3.5 shrink-0" aria-hidden="true" />
           <span className="min-w-0 truncate font-mono">
             {details.baseRefName} ← {details.headRefName}
@@ -394,7 +394,7 @@ function GithubWorkItemCard({
               </Badge>
             ))}
             {labels.length > 3 ? (
-              <span className="px-1 text-[9px] text-(--ui-text-secondary)">
+              <span className="px-1 text-(length:--ui-font-caption) text-(--ui-text-secondary)">
                 +{labels.length - 3}
               </span>
             ) : null}
@@ -419,7 +419,7 @@ function GithubWorkItemCard({
         </div>
       ) : null}
 
-      <div className="mt-3 flex items-center gap-1.5 border-t border-(--ui-tone-neutral-border)/[0.07] pt-2 text-[10px] text-(--ui-text-secondary)">
+      <div className="mt-3 flex items-center gap-1.5 border-t border-(--ui-tone-neutral-border)/[0.07] pt-2 text-(length:--ui-font-caption) text-(--ui-text-secondary)">
         <ExternalLink className="size-3" aria-hidden="true" />
         {t("Click the chip to open on GitHub")}
       </div>

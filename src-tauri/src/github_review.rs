@@ -122,7 +122,7 @@ pub struct ReviewContext {
     diff: GitHubPrDiff,
 }
 
-fn pull_endpoint(repo: &str, number: i64) -> Result<String, String> {
+pub(crate) fn pull_endpoint(repo: &str, number: i64) -> Result<String, String> {
     if number <= 0 {
         return Err("Invalid pull request number".into());
     }
@@ -212,31 +212,54 @@ pub async fn git_github_pr_review(
     review: ReviewInput,
 ) -> Result<String, String> {
     tauri::async_runtime::spawn_blocking(move || {
-        let root = expand_home(&cwd);
-        submit_review_with(&repo, number, &review, |endpoint, payload| {
-            if let Some(payload) = payload {
-                with_temp_markdown(&payload.to_string(), |path| {
-                    gh_checked(
-                        &root,
-                        &[
-                            "api",
-                            "--hostname",
-                            "github.com",
-                            "--method",
-                            "POST",
-                            endpoint,
-                            "--input",
-                            path,
-                        ],
-                    )
-                })
-            } else {
-                gh_checked(&root, &["api", "--hostname", "github.com", endpoint])
-            }
-        })
+        execute_review_guarded(&cwd, &repo, number, &review, || Ok(()))
     })
     .await
     .map_err(|error| error.to_string())?
+}
+
+pub(crate) fn execute_review_guarded(
+    cwd: &str,
+    repo: &str,
+    number: i64,
+    review: &ReviewInput,
+    guard: impl Fn() -> Result<(), String>,
+) -> Result<String, String> {
+    let root = expand_home(cwd);
+    submit_review_guarded_with(repo, number, review, guard, |endpoint, payload| {
+        if let Some(payload) = payload {
+            with_temp_markdown(&payload.to_string(), |path| {
+                gh_checked(
+                    &root,
+                    &[
+                        "api",
+                        "--hostname",
+                        "github.com",
+                        "--method",
+                        "POST",
+                        endpoint,
+                        "--input",
+                        path,
+                    ],
+                )
+            })
+        } else {
+            gh_checked(&root, &["api", "--hostname", "github.com", endpoint])
+        }
+    })
+}
+
+fn submit_review_guarded_with(
+    repo: &str,
+    number: i64,
+    review: &ReviewInput,
+    guard: impl Fn() -> Result<(), String>,
+    mut request: impl FnMut(&str, Option<&Value>) -> Result<String, String>,
+) -> Result<String, String> {
+    submit_review_with(repo, number, review, |endpoint, payload| {
+        guard()?;
+        request(endpoint, payload)
+    })
 }
 
 #[cfg(test)]
@@ -245,6 +268,33 @@ mod tests {
     fn review() -> ReviewInput {
         serde_json::from_value(json!({"commitId":"a".repeat(40),"event":"REQUEST_CHANGES",
             "body":"Şu üç noktaya bakalım.","comments":[{"path":"src/a.ts","line":8,"startLine":6,"side":"RIGHT","body":"Burada yetki kontrolü eksik."}]})).unwrap()
+    }
+    #[test]
+    fn approval_expiring_after_head_check_never_posts() {
+        let guards = std::cell::Cell::new(0);
+        let mut reads = 0;
+        let result = submit_review_guarded_with(
+            "owner/repo",
+            7,
+            &review(),
+            || {
+                let at = guards.get();
+                guards.set(at + 1);
+                if at == 0 {
+                    Ok(())
+                } else {
+                    Err("Approval deadline expired".into())
+                }
+            },
+            |_, payload| {
+                assert!(payload.is_none());
+                reads += 1;
+                Ok(json!({"head":{"sha":"a".repeat(40)}}).to_string())
+            },
+        );
+        assert_eq!(result.unwrap_err(), "Approval deadline expired");
+        assert_eq!(reads, 1);
+        assert_eq!(guards.get(), 2);
     }
     #[test]
     fn submits_one_review_with_exact_unicode_content_and_ranges() {

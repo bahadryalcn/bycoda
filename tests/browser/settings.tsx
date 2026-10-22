@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { initAppearancePreferences } from "../../src/features/settings/model/appearancePreferences";
 import { createRoot } from "react-dom/client";
 import { mockIPC, mockWindows } from "@tauri-apps/api/mocks";
@@ -284,4 +285,12 @@ void Promise.all([
   setLanguagePreference(isLocale(language) ? language : "en"),
   setDomainLanguagePreference("git", "app"),
   setDomainLanguagePreference("technical", "app"),
-]).then(() => createRoot(document.getElementById("root")!).render(<Fixture />));
+]).then(() =>
+  createRoot(document.getElementById("root")!).render(
+    <QueryClientProvider
+      client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
+    >
+      <Fixture />
+    </QueryClientProvider>,
+  ),
+);

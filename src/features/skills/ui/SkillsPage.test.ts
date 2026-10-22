@@ -83,6 +83,25 @@ async function render() {
   await act(async () => root.render(createElement(SkillsPage, { cwd: "D:/repo" })));
 }
 
+it("keeps policy explanations collapsed without changing owner restrictions", async () => {
+  saveDisabledSkillPaths([skills[0].path]);
+  await render();
+  const target = container.querySelector<HTMLElement>('[data-setting-id="skill-folders"]')!;
+  const disclosure = target.closest("details")!;
+  expect(disclosure.open).toBe(false);
+  expect(
+    container
+      .querySelector('[role="switch"][aria-label="Enable Project guide in bycoda"]')
+      ?.getAttribute("aria-checked"),
+  ).toBe("false");
+  expect(container.textContent).toContain("Disabled");
+  await act(async () => disclosure.querySelector("summary")!.click());
+  expect(disclosure.open).toBe(true);
+  expect(vi.mocked(invoke).mock.calls.some(([method]) => method === "skill_policy_set")).toBe(
+    false,
+  );
+});
+
 function deferred<T>() {
   let resolve!: (value: T) => void;
   let reject!: (error: unknown) => void;

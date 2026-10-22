@@ -50,6 +50,16 @@ type Props = Omit<ComponentPropsWithoutRef<"div">, "style"> & {
   layer?: number;
   /** Drops the glass frame and keeps only placement and the content animation. */
   bare?: boolean;
+  /** Non-interactive hints must not return focus when their trigger blurs. */
+  restoreFocus?: boolean;
+  /** A non-interactive hint participates in modal containment without owning Escape. */
+  passive?: boolean;
+  /**
+   * Keeps the frame but paints an opaque surface instead of backdrop glass.
+   * For popovers over live canvases (terminal WebGL): a backdrop-filter that
+   * samples a moving canvas makes Chromium recomposite, and flash, the canvas.
+   */
+  solid?: boolean;
   style?: CSSProperties;
   autoFocus?: boolean;
   /** Wiring this in hands Popover the outside-click and Escape handling. */
@@ -145,6 +155,8 @@ function NativePopover({
   style,
   autoFocus,
   dismissOnEscape = true,
+  restoreFocus = true,
+  passive = false,
   ...props
 }: Props & { host: HTMLElement }) {
   const surface = useRef<HTMLDivElement | null>(null);
@@ -152,6 +164,10 @@ function NativePopover({
     surface,
     false,
     onDismiss && dismissOnEscape ? () => onDismiss("escape") : undefined,
+    true,
+    undefined,
+    restoreFocus,
+    passive,
   );
   useEffect(() => {
     if (autoFocus) surface.current?.focus({ preventScroll: true });
@@ -185,6 +201,7 @@ function NativePopover({
     constrainHeight: _constrainHeight,
     layer: _layer,
     bare: _bare,
+    solid: _solid,
     ...rest
   } = props;
   return createPortal(
@@ -216,11 +233,14 @@ function WebPopover({
   constrainHeight = true,
   layer = LAYER.popover,
   bare = false,
+  solid = false,
   className,
   style,
   autoFocus = false,
   onDismiss,
   dismissOnEscape = true,
+  restoreFocus = true,
+  passive = false,
   ignore,
   ref,
   children,
@@ -234,6 +254,10 @@ function WebPopover({
     frame,
     false,
     onDismiss && dismissOnEscape ? () => onDismiss("escape") : undefined,
+    true,
+    undefined,
+    restoreFocus,
+    passive,
   );
   const surface = useRef<HTMLDivElement | null>(null);
   const [position, setPosition] = useState<PopoverPosition | null>(null);
@@ -356,7 +380,14 @@ function WebPopover({
       style={{ ...placed, zIndex: effectiveLayer }}
       className={bare ? undefined : FRAME}
     >
-      {bare ? null : <GlassBackdrop />}
+      {bare ? null : solid ? (
+        <div
+          aria-hidden="true"
+          className="popover-solid pointer-events-none absolute inset-0 z-0 rounded-[inherit]"
+        />
+      ) : (
+        <GlassBackdrop />
+      )}
       <div
         {...rest}
         ref={(el) => {

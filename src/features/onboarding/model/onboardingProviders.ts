@@ -1,7 +1,7 @@
 import { createStoredSetting } from "../../../shared/lib/storedSetting";
 import { HARNESSES, type HarnessId } from "../../sessions/model/session";
 
-const PRIMARY: HarnessId[] = ["codex", "claude", "gemini"];
+const PRIMARY: HarnessId[] = ["codex", "claude", "antigravity"];
 const setting = createStoredSetting<HarnessId[]>({
   key: "bycoda.onboarding.providers.v1",
   fallback: PRIMARY,

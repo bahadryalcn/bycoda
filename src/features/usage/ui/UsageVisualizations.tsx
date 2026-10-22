@@ -17,7 +17,7 @@ import {
   type UsageWindow,
 } from "../model/usageAnalytics";
 import { usageChartColor } from "../model/usageColors";
-import { formatBucket, formatMetric, PagedUsageTable } from "./UsageCharts";
+import { formatBucket, formatMetric, formatUsagePercent, PagedUsageTable } from "./UsageCharts";
 
 type Colors = ReadonlyMap<string, string>;
 export function UsageTrend({
@@ -41,7 +41,7 @@ export function UsageTrend({
   const [active, setActive] = useState<string | null>(null);
   const point = buckets.find((bucket) => bucket.key === active);
   const format = (value: number) =>
-    percent ? `${value.toFixed(1)}%` : formatMetric(value, metric);
+    percent ? formatUsagePercent(value) : formatMetric(value, metric);
   const data = useMemo(
     () =>
       buckets.map((bucket, index) => ({
@@ -83,7 +83,9 @@ export function UsageTrend({
       </div>
       <LineChart
         label={t("Usage over time")}
-        data={data}
+        data={series.length ? data : []}
+        emptyLabel={t("No usage recorded in this period.")}
+        selectSeriesLabel={t("Choose a series to show")}
         series={series.map((s) => ({
           key: s.key,
           label: s.label,
@@ -180,7 +182,7 @@ export function Contribution({
             </Button>
             <span>
               {formatMetric(row[metric], metric)}{" "}
-              <small>{total ? ((row[metric] / total) * 100).toFixed(1) : "0"}%</small>
+              <small>{formatUsagePercent(total ? (row[metric] / total) * 100 : 0)}</small>
             </span>
             <div className="usage-rank-track" aria-hidden="true">
               <span

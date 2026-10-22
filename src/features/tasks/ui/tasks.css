@@ -74,6 +74,26 @@
   block-size: 100%;
   min-block-size: 0;
 }
+.task-board-column-picker {
+  display: none;
+}
+/* Adapt to the actual task pane, including a narrow pane in a wide window. */
+@container task-area (max-width: 640px) {
+  .task-board-column-picker {
+    display: block;
+    margin-block-end: 0.75rem;
+  }
+  .task-board-columns {
+    grid-template-columns: minmax(0, 1fr);
+    block-size: auto;
+  }
+  .task-board-columns > section:not([data-compact-selected]) {
+    display: none;
+  }
+  .task-board-columns > section > ul {
+    overflow-y: visible;
+  }
+}
 .task-board-card {
   display: grid;
   gap: 0.25rem;

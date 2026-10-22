@@ -32,7 +32,7 @@ function Field({
       <span>{label}</span>
       {children}
       {hint ? (
-        <span className="text-[11px] font-normal leading-snug text-content/45">{hint}</span>
+        <span className="text-[11px] font-normal leading-snug text-(--ui-text-secondary)">{hint}</span>
       ) : null}
     </div>
   );
@@ -81,10 +81,10 @@ function AcpSettingsShell({
       className="min-w-0"
       aria-label={t("ACP agents")}
     >
-      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-content/5 px-3 py-2">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-(--ui-tone-neutral-border) px-3 py-2">
         <div className="min-w-0">
-          <p className="text-[10px] leading-snug text-content/55">{scope}</p>
-          <p className="text-[10px] text-content/45">{t("Changes require saving")}</p>
+          <p className="text-(length:--ui-font-caption) leading-snug text-(--ui-text-secondary)">{scope}</p>
+          <p className="text-(length:--ui-font-caption) text-(--ui-text-secondary)">{t("Changes require saving")}</p>
         </div>
         {action}
       </div>
@@ -293,13 +293,13 @@ function GenericAcpMachineSettings({ cwd, embedded }: { cwd: string; embedded: b
         {configs.map((config) => (
           <div
             key={config.id}
-            className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 border-b border-content/5 px-3 py-2 last:border-b-0"
+            className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 border-b border-(--ui-tone-neutral-border) px-3 py-2 last:border-b-0"
           >
             <div className="min-w-0 flex-1">
               <div className="truncate text-[12px] font-medium text-content" title={config.name}>
                 {config.name}
               </div>
-              <div className="truncate text-[10px] text-content/50" title={config.command}>
+              <div className="truncate text-(length:--ui-font-caption) text-(--ui-text-secondary)" title={config.command}>
                 {config.command} · {config.envKeys.length}
                 {t(" environment values")}
               </div>
@@ -359,7 +359,7 @@ function GenericAcpMachineSettings({ cwd, embedded }: { cwd: string; embedded: b
                 });
               }}
             >
-              <p className="text-[11px] font-normal leading-snug text-content/55 sm:col-span-2">
+              <p className="text-[11px] font-normal leading-snug text-(--ui-text-secondary) sm:col-span-2">
                 {t(
                   "Configure an executable on the session's machine. Credentials and environment values stay on that machine. Arguments are a JSON array; commands are launched without a shell.",
                 )}
@@ -499,10 +499,10 @@ function GenericAcpMachineSettings({ cwd, embedded }: { cwd: string; embedded: b
         <div
           id="setting-acp-registry"
           data-setting-id="acp-registry"
-          className="border-t border-content/5"
+          className="border-t border-(--ui-tone-neutral-border)"
         >
           <div className="flex flex-wrap items-center justify-between gap-2 px-3 py-2">
-            <span className="text-[11px] text-content/55">
+            <span className="text-[11px] text-(--ui-text-secondary)">
               {t("Install compatible ACP agents from the registry.")}
             </span>
             <SecondaryButton
@@ -516,10 +516,10 @@ function GenericAcpMachineSettings({ cwd, embedded }: { cwd: string; embedded: b
           </div>
           <div
             id="setting-acp-registry-results"
-            className="border-t border-content/5"
+            className="border-t border-(--ui-tone-neutral-border)"
             hidden={!registryOpen}
           >
-            <p className="px-3 py-2 text-[10px] leading-snug text-content/45">
+            <p className="px-3 py-2 text-(length:--ui-font-caption) leading-snug text-(--ui-text-secondary)">
               {t(
                 "Install downloads an exact package version into isolated host storage and may run package installation scripts. Binary and Python distributions can be configured as local commands.",
               )}
@@ -541,9 +541,9 @@ function GenericAcpMachineSettings({ cwd, embedded }: { cwd: string; embedded: b
                         className="truncate text-[12px] font-medium text-content"
                         title={`${entry.name} ${entry.version}`}
                       >
-                        {entry.name} <span className="text-content/50">{entry.version}</span>
+                        {entry.name} <span className="text-(--ui-text-secondary)">{entry.version}</span>
                       </div>
-                      <p className="mt-0.5 text-[10px] leading-snug text-content/55">
+                      <p className="mt-0.5 text-(length:--ui-font-caption) leading-snug text-(--ui-text-secondary)">
                         {entry.supported
                           ? entry.description
                           : `${entry.description} ${entry.unsupportedReason ?? ""}`.trim()}
@@ -583,7 +583,7 @@ function GenericAcpMachineSettings({ cwd, embedded }: { cwd: string; embedded: b
                 ))}
               </div>
             ) : registryState === "loaded" ? (
-              <p className="px-3 pb-2 text-[11px] text-content/55">
+              <p className="px-3 pb-2 text-[11px] text-(--ui-text-secondary)">
                 {t("No ACP registry entries found.")}
               </p>
             ) : null}

@@ -8,6 +8,9 @@ use tauri::AppHandle;
 use tauri::Manager;
 use tauri_plugin_dialog::{DialogExt, MessageDialogButtons};
 
+#[path = "conversation_servers.rs"]
+mod servers;
+
 pub fn start_desktop_relay(app: AppHandle) {
     std::thread::spawn(move || loop {
         if let Ok(requests) =
@@ -47,8 +50,67 @@ fn execute_desktop_request(app: &AppHandle, request: &Value) -> Result<Value, St
     }
     let action = request["action"].as_str().ok_or("Invalid desktop action")?;
     let input = &request["input"];
-    if action.starts_with("ui.") || matches!(action, "sessions.list" | "sessions.read") {
-        return crate::control::conversation_ui_request(
+    if action.starts_with("servers.") {
+        return servers::call(app, action, input);
+    }
+    if action.starts_with("ui.")
+        || matches!(
+            action,
+            "sessions.list"
+                | "sessions.read"
+                | "historyImport.discover"
+                | "historyImport.commit"
+                | "historyImport.status"
+                | "historyImport.cancel"
+                | "organization.read"
+                | "providerManagement.read"
+                | "providerManagement.patch"
+                | "providerManagement.status"
+                | "providerManagement.quotaRefresh"
+                | "organization.patch"
+                | "organization.status"
+                | "preferences.read"
+                | "preferences.templateRead"
+                | "preferences.patch"
+                | "preferences.status"
+                | "ptyMobile.list"
+                | "ptyMobile.create"
+                | "ptyMobile.attach"
+                | "ptyMobile.read"
+                | "ptyMobile.write"
+                | "ptyMobile.status"
+                | "ptyMobile.resize"
+                | "ptyMobile.detach"
+                | "ptyMobile.close"
+                | "ssh.workspace.catalog.read"
+                | "ssh.workspace.review"
+                | "ssh.workspace.approve"
+                | "ssh.workspace.status"
+                | "ssh.workspace.close.review"
+                | "ssh.workspace.close.approve"
+                | "worktrees.removal.review"
+                | "worktrees.removal.approve"
+                | "worktrees.removal.status"
+                | "terminals.create"
+                | "terminals.close"
+                | "terminals.interrupt"
+        )
+    {
+        let authority = if crate::control::desktop_effect_action(action) {
+            Some(crate::control::DesktopAuthority {
+                relay_id: request["id"]
+                    .as_str()
+                    .ok_or("Original desktop request identity required")?
+                    .to_string(),
+                action: action.to_string(),
+                deadline: request["deadline"]
+                    .as_u64()
+                    .ok_or("Desktop request deadline required")?,
+            })
+        } else {
+            None
+        };
+        return crate::control::conversation_ui_request_with_authority(
             app,
             request["sessionId"]
                 .as_str()
@@ -59,6 +121,7 @@ fn execute_desktop_request(app: &AppHandle, request: &Value) -> Result<Value, St
                 .ok_or("Host identity required")?,
             action,
             input.clone(),
+            authority,
         );
     }
     if action == "inbox.write.authorize" {
@@ -152,7 +215,8 @@ fn execute_desktop_request(app: &AppHandle, request: &Value) -> Result<Value, St
     let ptys = app.state::<crate::pty::PtyHost>();
     match action {
         "terminals.list" => Ok(ptys.conversation_list(&cwd)),
-        "terminals.write" => ptys.conversation_write(
+        "terminals.write" => ptys.conversation_write_checked(
+            app,
             &cwd,
             input["terminalId"].as_str().ok_or("Terminal ID required")?,
             input["data"].as_str().ok_or("Terminal data required")?,
@@ -188,7 +252,7 @@ fn inbox_reply_approval_context(operation: &Value) -> Result<String, String> {
     Ok(format!("\n\nVerified review thread:\n{context}"))
 }
 
-fn inbox_approval_message(operation: &Value, cwd: &str) -> Result<String, String> {
+pub(crate) fn inbox_approval_message(operation: &Value, cwd: &str) -> Result<String, String> {
     let action = operation["action"]
         .as_str()
         .ok_or("Invalid inbox approval")?;

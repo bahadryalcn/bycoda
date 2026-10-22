@@ -72,6 +72,7 @@ export const SelectOption = forwardRef<HTMLButtonElement, ComponentPropsWithoutR
 
 export function SelectValue({ value, label }: { value: string; label: string }) {
   const reduced = useReducedMotion();
+  if (reduced) return <span className={styles.valueText}>{label}</span>;
   return (
     <span className={styles.valueText}>
       <AnimatePresence initial={false} mode="popLayout">

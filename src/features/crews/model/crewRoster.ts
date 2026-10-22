@@ -150,3 +150,11 @@ export function saveLibraryProfile(
     expectedUpdatedAt: same?.updatedAt,
   });
 }
+
+/**
+ * Owner ratings stored as plain numbers: cost is a relative level compared with the
+ * crew's cost limit, quality a 0–100 score compared with its minimum. Levels keep
+ * both readable; any other stored value stays as a custom rating.
+ */
+export const COST_LEVELS = [1, 2, 3] as const;
+export const QUALITY_LEVELS = [40, 70, 90] as const;

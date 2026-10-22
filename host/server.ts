@@ -1,6 +1,16 @@
 import { ModelCatalogCache } from "./model-catalog-cache";
+import { readSessionUsage } from "./usage-report";
+import { desktopActorId, desktopOperationId, desktopReviewSecret, openDesktopReview, sealDesktopReview, openDesktopResource, sealDesktopResource, type DesktopReviewScope } from "./reviewed-desktop-scope";
+import { readHostAccess } from "./access-center";
 import { inlineSessionSync } from "./inlineSessionSync";
 import { HostCrews } from "./crews";
+import { ConversationProjectTools, isProjectConversationTool } from "./conversation-project-tools";
+import { callFileConversationTool, isFileConversationTool } from "./conversation-file-tools";
+import { TASK_READ_TOOLS, callConversationTaskRead, normalizeConversationTaskConfiguration } from "./conversation-task-tools";
+import { ConversationGoalTools, isGoalWriteTool } from "./conversation-goal-tools";
+import { ConversationTaskQueueTools, isTaskQueueTool } from "./conversation-task-queue-tools";
+import { ConversationStewardTools, isStewardConversationTool } from "./conversation-steward-tools";
+import { ConversationRuntimeReadTools, isRuntimeReadConversationTool } from "./conversation-runtime-read-tools";
 import { probeNativeCodexImageCapability } from "./social-images";
 import { execFileAsync as exec } from "../src/shared/lib/processExecution.node";
 import { sessionConversationPage } from "../src/features/agent-app/model/sessionConversation";
@@ -38,7 +48,7 @@ import { basename, dirname, join } from "node:path";
 import { DeviceHost } from "./device-host";
 import { DevicePreviews } from "./device-preview";
 import type { DeviceAction } from "../src/features/devices/types";
-import { GenericAcpService } from "./generic-acp";
+import { GenericAcpService, type GenericAcpMetadataPatch } from "./generic-acp";
 import { HandoffHistoryStore } from "./handoff-history";
 import { ResourceDiagnostics } from "./resource-diagnostics";
 import { perfMetrics, mcpMetricName } from "./perf-metrics";
@@ -126,7 +136,7 @@ import { discoverFxModels } from "../src/integrations/harness/providers/fx/fxCat
 import { discoverHermesModels } from "../src/integrations/harness/providers/hermes/hermesCatalog";
 import { discoverAntigravityModels } from "../src/integrations/harness/providers/antigravity/antigravityCatalog";
 import { setHarnessModels, type AgentModel } from "../src/features/sessions/model/models";
-import { listShellProfiles, setChosenProfile } from "./shellProfiles";
+import { listShellProfiles, setChosenProfile, setReviewedProfile } from "./shellProfiles";
 import {
   resolveAntigravityBinary,
   resolveClaudeBinary,
@@ -140,8 +150,6 @@ import {
   resolvePiBinary,
 } from "../src/integrations/harness/core/child";
 
-import { resolveGeminiBinary } from "../src/integrations/harness/core/child";
-import { discoverGeminiModels } from "../src/integrations/harness/providers/gemini/geminiCatalog";
 
 // Providers also add models server-side, without a CLI update.
 const resolveBinary: Record<RemoteProvider, () => Promise<{ path: string }>> = {
@@ -155,7 +163,6 @@ const resolveBinary: Record<RemoteProvider, () => Promise<{ path: string }>> = {
   fx: () => resolveFxBinary(),
   hermes: () => resolveHermesBinary(),
   antigravity: () => resolveAntigravityBinary(),
-  gemini: () => resolveGeminiBinary(),
   acp: async () => ({ path: "configured-acp" }),
 };
 // A 1 MiB text file can expand to 6 MiB when JSON escapes control characters.
@@ -172,7 +179,6 @@ const discoverModels: Record<RemoteProvider, (cwd: string) => Promise<AgentModel
   fx: discoverFxModels,
   hermes: discoverHermesModels,
   antigravity: discoverAntigravityModels,
-  gemini: discoverGeminiModels,
   acp: async () => [],
 };
 
@@ -349,6 +355,33 @@ export function createHostServer(
   const runtimeLogAccess = new RuntimeLogAccess(social);
   const conversationAccess = new RuntimeLogAccess(social);
   const conversationDesktop = new ConversationDesktopRelay(engine.store.environmentId);
+  let desktopSigningKey: string | undefined;
+  const desktopSigningSecret = () => desktopSigningKey ??= desktopReviewSecret(engine.store);
+  const scopedDesktopCall = async (
+    token: string,
+    action: string,
+    params: Record<string, unknown>,
+    fields: readonly string[],
+    trusted: Readonly<Record<string, unknown>> = {},
+  ) => {
+    const allowed = ["projectId", "sessionId", ...fields];
+    if (Object.keys(params).some((key) => !allowed.includes(key)) || typeof params.sessionId !== "string" || typeof params.projectId !== "string")
+      throw new Error("Invalid desktop feature identity");
+    const target = featureSession(params.sessionId);
+    const project = engine.store.project(params.projectId);
+    if (target.projectId !== project.id) throw new Error("Desktop feature belongs to another project");
+    const sourceCwd = sessionWorkCwd(target.session);
+    const cwd = await resolveHostWorktreeAsync(project.cwd, sourceCwd);
+    const { projectId: _projectId, ...request } = params;
+    return conversationDesktop.call(action, { ...request, ...trusted }, cwd,
+      { kind: "session", sessionId: target.session.id, projectId: project.id, provider: target.session.harness },
+      () => {
+        try {
+          const current = featureSession(target.session.id);
+          return engine.store.authenticated(token) && current.projectId === project.id && desktop.samePath(sessionWorkCwd(current.session), sourceCwd);
+        } catch { return false; }
+      });
+  };
   const socialTransport = new SocialTransport(social, xBrowser);
   const socialPeers = new SocialPeers(
     social,
@@ -414,6 +447,11 @@ export function createHostServer(
       while (viewMemo.size > MAX_MEMOIZED_VIEWS) viewMemo.delete(viewMemo.keys().next().value!);
     }
     return view;
+  };
+  /** The same authoritative read owner used for transcript and context previews. */
+  const readSessionView = (id: string) => {
+    const watch = desktopWatch(id);
+    return (watch && desktopView(id, watch.projectId)) ?? engine.store.session(id);
   };
   const viewMemo = new Map<string, HostSession>();
   const buildDesktopView = (id: string, projectId?: string): HostSession | undefined => {
@@ -511,14 +549,9 @@ export function createHostServer(
       /* the desktop is mid-turn; serve the host copy */
     }
   };
-  // Legacy Gemini CLI opens a browser sign-in from session/new when its cached
-  // OAuth is unusable, so it is discovered only for hosts that already run it.
-  // Individual Google accounts use Antigravity; turns still route to Gemini.
-  const usesGemini = engine.store.startupStates().some((state) => state.harness === "gemini");
-  const catalogProviders = providers.filter((provider) => provider !== "gemini" || usesGemini);
   const catalogs = new ModelCatalogCache(
-    [...new Set([...catalogProviders, "acp" as const])],
-    () => providerBinaries(catalogProviders),
+    [...new Set([...providers, "acp" as const])],
+    () => providerBinaries(providers),
     async (provider, cwd) => {
       const discovered =
         provider === "acp"
@@ -559,6 +592,11 @@ export function createHostServer(
       typeof projectId === "string" ? engine.store.project(projectId).cwd : homedir(),
       progressive,
     );
+  const conversationProject = new ConversationProjectTools(engine.store, goals, engine.checkpoints, providers, models, { stewards, automations });
+  const conversationGoals = new ConversationGoalTools(engine.store, goals, tasks);
+  const conversationTaskQueue = new ConversationTaskQueueTools(tasks);
+  const conversationStewards = new ConversationStewardTools(engine.store, stewards);
+  const conversationRuntimeReads = new ConversationRuntimeReadTools(engine.store, tasks.limits);
   let imageCapability: { at: number; value: Promise<boolean> } | undefined;
   const crews = new HostCrews(
     engine.store,
@@ -618,7 +656,9 @@ export function createHostServer(
       ...session,
       repo: project.name,
       branch: branches.get(session.cwd ?? project.cwd) || undefined,
-      worktreeCwd: session.cwd && session.cwd !== project.cwd ? session.cwd : undefined,
+      // Desktop rows keep the desktop's path spelling; compare normalized paths.
+      worktreeCwd:
+        session.cwd && !desktop.samePath(session.cwd, project.cwd) ? session.cwd : undefined,
     }));
     return {
       list,
@@ -897,6 +937,29 @@ export function createHostServer(
             );
           else if (action.startsWith("crews."))
             result = await crews.call(action, args, projectId, conversationPrincipal);
+          else if (isRuntimeReadConversationTool(action))
+            result = await conversationRuntimeReads.call(action, args, conversationPrincipal,
+              () => !!conversationAccess.principalForToken(token));
+          else if (isStewardConversationTool(action))
+            result = await conversationStewards.call(action, args, conversationPrincipal,
+              featureSession(conversationPrincipal.sessionId).session,
+              () => !!conversationAccess.principalForToken(token));
+          else if (isTaskQueueTool(action))
+            result = await conversationTaskQueue.call(action, args, conversationPrincipal,
+              () => !!conversationAccess.principalForToken(token));
+          else if (isGoalWriteTool(action))
+            result = await conversationGoals.call(action, args, conversationPrincipal,
+              () => !!conversationAccess.principalForToken(token));
+          else if (isProjectConversationTool(action))
+            result = await conversationProject.call(action, args, conversationPrincipal,
+              () => !!conversationAccess.principalForToken(token));
+          else if (isFileConversationTool(action)) {
+            const own = featureSession(conversationPrincipal.sessionId);
+            if (own.projectId !== projectId) throw new Error("Conversation belongs to another project.");
+            const root = await resolveHostWorktreeAsync(project.cwd, sessionWorkCwd(own.session));
+            result = await callFileConversationTool(root, action, args);
+            if (!conversationAccess.principalForToken(token)) throw new Error("Session authority revoked.");
+          }
           else if (isWorkspaceConversationTool(action))
             result = await conversationWorkspace.call(
               action,
@@ -913,8 +976,12 @@ export function createHostServer(
             };
           else if (
             action.startsWith("ui.") ||
+            action.startsWith("servers.") ||
             action === "machines.list" ||
             action === "terminals.list" ||
+            action === "terminals.create" ||
+            action === "terminals.close" ||
+            action === "terminals.interrupt" ||
             action === "terminals.write" ||
             (action.startsWith("devices.") && args.machineId !== undefined)
           )
@@ -980,6 +1047,7 @@ export function createHostServer(
             if (action === "tasks.create") {
               const own = featureSession(conversationPrincipal.sessionId).session;
               const input = {
+                ...normalizeConversationTaskConfiguration(args, String(args.taskId), projectId, tasks.list()),
                 id: String(args.taskId),
                 projectId,
                 title: String(args.title),
@@ -1027,12 +1095,13 @@ export function createHostServer(
               const task = list.find((task) => task.id === args.taskId);
               if (!task) throw new Error("Task is not in this project.");
               if (
-                !["tasks.get", "tasks.notes.read", "tasks.session.read"].includes(action) &&
+                !["tasks.get", "tasks.notes.read", "tasks.session.read", ...Object.keys(TASK_READ_TOOLS)].includes(action) &&
                 (task.sessionId === conversationPrincipal.sessionId ||
                   task.reviewer?.sessionId === conversationPrincipal.sessionId)
               )
                 throw new Error("An agent cannot change its own active task.");
               if (action === "tasks.get") result = task;
+              else if (Object.hasOwn(TASK_READ_TOOLS, action)) result = callConversationTaskRead(action, args, task, list);
               else if (action === "tasks.session.read") {
                 const sessionId =
                   args.role === "reviewer" ? task.reviewer?.sessionId : task.sessionId;
@@ -1063,11 +1132,12 @@ export function createHostServer(
                   throw new Error("Task is not running.");
                 result = await tasks.move(task.id, "blocked");
               } else if (action === "tasks.update") {
-                if (args.title === undefined && args.prompt === undefined)
-                  throw new Error("Supply a title or prompt.");
+                if (args.title === undefined && args.prompt === undefined && args.dependsOn === undefined && args.verifyCommand === undefined)
+                  throw new Error("Supply a title, prompt, dependencies or check command.");
                 const { status: _status, ...input } = task;
                 result = tasks.save({
                   ...input,
+                  ...normalizeConversationTaskConfiguration(args, task.id, projectId, tasks.list()),
                   ...(args.title !== undefined ? { title: args.title } : {}),
                   ...(args.prompt !== undefined ? { prompt: args.prompt } : {}),
                 });
@@ -1077,7 +1147,7 @@ export function createHostServer(
           } else if (action.startsWith("devServers.")) {
             const projects = [{ id: project.id, name: project.name, path: project.cwd }];
             if (action === "devServers.list") {
-              const list = (await devServers.handle(action, { projectId }, projects)) as {
+              const list = (await devServers.handle(action, { projectId, refresh: args.refresh }, projects)) as {
                 servers: { projectId?: string }[];
               };
               result = {
@@ -1085,8 +1155,9 @@ export function createHostServer(
                 servers: list.servers.filter((server) => server.projectId === projectId),
               };
             } else {
+              let details: DevServerDetails | undefined;
               if (action !== "devServers.start") {
-                const details = (await devServers.handle(
+                details = (await devServers.handle(
                   "devServers.details",
                   { ...args, projectId },
                   projects,
@@ -1096,11 +1167,22 @@ export function createHostServer(
                     "Dev server belongs to another project or has no verified project association.",
                   );
               }
-              result = await devServers.handle(
-                action,
-                { ...args, projectId, cwd: project.cwd },
-                projects,
-              );
+              if (action === "devServers.openExternal") {
+                const endpoint = details!.server.endpoints.find((value) =>
+                  value.port === args.port && (args.address === undefined || value.address === args.address));
+                if (!endpoint) throw new Error("The selected server is no longer listening on this port");
+                result = await openDevServerBrowser(endpoint.url);
+              } else {
+                result = await devServers.handle(action, { ...args, projectId, cwd: project.cwd }, projects);
+                if (action === "devServers.logs") {
+                  const logs = result as { available: boolean; output: string };
+                  const clean = scrubRuntimeLogText(logs.output, Number.MAX_SAFE_INTEGER);
+                  const limit = Number(args.maxBytes ?? 32000);
+                  const bytes = Buffer.from(clean);
+                  result = { available: logs.available, output: bytes.subarray(Math.max(0, bytes.length - limit)).toString("utf8"),
+                    truncated: bytes.length > limit };
+                }
+              }
             }
           } else if (action === "resources.read")
             result = diagnostics.read(`session:${conversationPrincipal.sessionId}`);
@@ -1212,6 +1294,14 @@ export function createHostServer(
               typeof params.error === "string" ? params.error : undefined,
               createHash("sha256").update(token).digest("hex"),
             );
+            break;
+          case "conversation.desktop.authorize":
+            if (Object.keys(params).some((key) => key !== "id" && key !== "action") ||
+              typeof params.id !== "string" || typeof params.action !== "string" ||
+              !["ssh.workspace.approve", "ssh.workspace.close.approve", "ptyMobile.create", "ptyMobile.attach", "ptyMobile.write", "ptyMobile.resize", "ptyMobile.detach", "ptyMobile.close"].includes(params.action))
+              throw new Error("Invalid desktop authority check");
+            result = conversationDesktop.authorize(params.id, params.action,
+              createHash("sha256").update(token).digest("hex"));
             break;
           case "conversation.bridge.describe":
             result = mcpBridgeMetadata("conversation");
@@ -1417,6 +1507,10 @@ export function createHostServer(
                 "sessions.harnessSwitch",
                 "sessions.steer",
                 "sessions.rewind",
+                "sessions.checkpoint-review",
+                "sessions.plan.review",
+                "sessions.contextual",
+                ...(providers.includes("claude") && engine.supportsItemStop("claude") ? ["sessions.stopItem.claude"] : []),
                 "projects.browse",
                 "projects.directory.v1",
                 "projects.createDirectory",
@@ -1446,6 +1540,8 @@ export function createHostServer(
                 "git.fileDiff",
                 "git.action",
                 "git.actions",
+                "git.stash.clearSnapshot",
+                "git.management.snapshot.v1",
                 "git.conflicts",
                 "attachments.upload",
                 "attachments.resume",
@@ -1455,6 +1551,7 @@ export function createHostServer(
                 "sessions.plan",
                 "sessions.shell",
                 "shell.profiles",
+                "shell.profile.compare.v1",
                 "sessions.desktop",
                 "sessions.desktopLive",
                 "sessions.queue",
@@ -1473,9 +1570,30 @@ export function createHostServer(
                 "stewards",
                 "host.settings",
                 "notes",
+                "notes.sessionFilter.v1",
+                "sessions.noteContext.v1",
+                "history.import.desktop.v1",
+                "projects.organization.desktop.v1",
+                "preferences.desktop.v1",
+                "worktrees.removal.desktop.v1",
+                "git.selective.review",
+                "usage.sessions.read",
+                "providers.center.read",
+                "providers.desktop.v1",
+                "providers.desktop.metadata.v1",
+                "ssh.workspace.desktop.v1",
+                "terminals.pty.desktop.v1",
+                "providers.desktop.quotaRefresh.v1",
+                "providers.acp.patchMetadata",
+                "host.access.read",
+                "devices.revokeOther",
+                "dev.servers.reviewed-impact",
                 "inbox.attention",
                 "inbox.providers.desktop",
+                "inbox.review.v1",
+                "inbox.jiraBoard.v1",
                 "device.host",
+                "devices.preview.mobile.v1",
                 "host.tools.machine-targets",
                 "generic-acp-v1",
                 "handoff-history-v1",
@@ -1489,9 +1607,27 @@ export function createHostServer(
                 "dev.servers",
                 "dev.servers.private-access",
                 "social.v1",
+                "social.policy.reviewed.v1",
                 "social.programs.v2",
               ],
             };
+            break;
+          case "providers.center.read": {
+            const entries = await Promise.all([...new Set(providers)].filter((id) => id !== "acp").map(async (id) => {
+              let timer: ReturnType<typeof setTimeout> | undefined;
+              const launcher = await Promise.race([
+                resolveBinary[id]().then(() => "resolved" as const, () => "unavailable" as const),
+                new Promise<"unknown">((resolve) => { timer = setTimeout(() => resolve("unknown"), 1500); }),
+              ]).finally(() => { if (timer) clearTimeout(timer); });
+              return { id, label: id, launcher, accountState: "desktop-only" as const };
+            }));
+            result = { environmentId: engine.store.environmentId, sampledAt: Date.now(), providers: entries, acp: await genericAcp.center() };
+            break;
+          }
+          case "providers.acp.patchMetadata":
+            await genericAcp.patchMetadata(params as GenericAcpMetadataPatch);
+            catalogs.clear();
+            result = null;
             break;
           case "generic_acp_list":
             result = await genericAcp.list();
@@ -1539,6 +1675,32 @@ export function createHostServer(
                   );
             break;
           }
+          case "devices.preview.mobile.start":
+          case "devices.preview.mobile.status":
+          case "devices.preview.impact": {
+            const starting = input.method === "devices.preview.mobile.start";
+            const impact = input.method === "devices.preview.impact";
+            const allowed = ["projectId", ...(starting ? ["requestId", "deviceId", "url", "installExpoGo", "expectedText"] : impact ? [] : ["id", "requestId", "includeFrame"])];
+            if (Object.keys(params).some((key) => !allowed.includes(key)) || typeof params.projectId !== "string")
+              throw new Error("Invalid mobile device preview scope");
+            const project = engine.store.project(params.projectId);
+            const owner = `mobile:${createHash("sha256").update(token).digest("hex")}:${project.id}`;
+            const { projectId: _projectId, ...args } = params;
+            if (impact) result = devicePreviews.stopImpact(owner);
+            else if (starting) {
+              validateConversationTool("devices.preview", args);
+              result = devicePreviews.start(args as Parameters<DevicePreviews["start"]>[0], owner, () => {
+                try { return engine.store.authenticated(token) && engine.store.project(project.id).cwd === project.cwd; }
+                catch { return false; }
+              });
+            } else {
+              const id = (value: unknown) => typeof value === "string" && /^[a-zA-Z0-9_-]{1,200}$/.test(value);
+              if ((!id(args.id) && !id(args.requestId)) || args.id !== undefined && !id(args.id) || args.requestId !== undefined && !id(args.requestId) || args.includeFrame !== undefined && typeof args.includeFrame !== "boolean")
+                throw new Error("Invalid mobile device preview identity");
+              result = devicePreviews.mobileStatus(owner, { ...(args.id === undefined ? {} : { id: args.id as string }), ...(args.requestId === undefined ? {} : { requestId: args.requestId as string }) }, args.includeFrame === true);
+            }
+            break;
+          }
           case "devices.status":
           case "devices.preflight":
           case "devices.preview":
@@ -1575,7 +1737,7 @@ export function createHostServer(
                 throw new Error("Choose whether agents may control devices");
               result = await deviceHost.setup(params.agentAccess);
             } else if (input.method === "devices.start") result = await deviceHost.start();
-            else if (input.method === "devices.stop") result = await deviceHost.stop();
+            else if (input.method === "devices.stop") result = await devicePreviews.stopIdle(() => deviceHost.stop());
             else if (input.method === "devices.list") result = await deviceHost.list();
             else if (input.method === "devices.boot")
               result = await deviceHost.boot(String(params.deviceId ?? ""));
@@ -1616,6 +1778,9 @@ export function createHostServer(
                 : null,
             );
             result = listShellProfiles();
+            break;
+          case "shell.setProfileReviewed":
+            result = setReviewedProfile(params);
             break;
           case "models.list":
             result = await models(params.projectId, params.progressive === true);
@@ -2034,8 +2199,7 @@ export function createHostServer(
           }
           case "sessions.get": {
             const id = String(params.sessionId ?? "");
-            const watch = desktopWatch(id);
-            const value = (watch && desktopView(id, watch.projectId)) ?? engine.store.session(id);
+            const value = readSessionView(id);
             result =
               value.revision === params.revision
                 ? null
@@ -2073,8 +2237,161 @@ export function createHostServer(
             result = engine.store.events(String(params.sessionId ?? ""), Number(params.after));
             break;
           }
+          case "history.import.preview":
+          case "history.import.commit":
+          case "history.import.status":
+          case "history.import.cancel": {
+            const mode = input.method.slice("history.import.".length);
+            const action = mode === "preview" ? "discover" : mode;
+            result = await scopedDesktopCall(token, `historyImport.${action}`, params,
+              mode === "commit" ? ["reviewId", "digest", "candidateIds", "operationId"] : mode === "preview" ? [] : ["operationId"]);
+            break;
+          }
+          case "projects.organization.read":
+          case "projects.organization.patch":
+          case "projects.organization.status": {
+            const mode = input.method.slice("projects.organization.".length);
+            result = await scopedDesktopCall(token, `organization.${mode}`, params,
+              mode === "patch" ? ["expectedRevision", "operationId", "change"] : mode === "status" ? ["operationId"] : []);
+            break;
+          }
+          case "worktrees.removal.review":
+          case "worktrees.removal.approve":
+          case "worktrees.removal.status": {
+            const mode = input.method.slice("worktrees.removal.".length);
+            const reviewSecret = desktopSigningSecret();
+            const reviewScope = { environmentId: engine.store.environmentId, projectId: String(params.projectId ?? ""), sessionId: String(params.sessionId ?? "") };
+            const bound = mode === "review" ? params : {
+              ...params,
+              requestId: desktopOperationId(reviewSecret, token, reviewScope, params.requestId),
+              ...(mode === "approve" ? { reviewId: openDesktopReview(reviewSecret, token, reviewScope, params.reviewId) } : {}),
+            };
+            result = await scopedDesktopCall(token, input.method, bound,
+              mode === "review" ? ["path"] : mode === "approve" ? ["reviewId", "requestId"] : ["requestId"]);
+            if (mode === "review") {
+              if (!result || typeof result !== "object" || Array.isArray(result)) throw new Error("Invalid worktree review");
+              const review = result as Record<string, unknown>;
+              result = { ...review, reviewId: sealDesktopReview(reviewSecret, token, reviewScope, review.reviewId, review.expiresAt) };
+            }
+            break;
+          }
+          case "ssh.workspace.catalog.read":
+          case "ssh.workspace.review":
+          case "ssh.workspace.approve":
+          case "ssh.workspace.status":
+          case "ssh.workspace.close.review":
+          case "ssh.workspace.close.approve": {
+            const mode = input.method.slice("ssh.workspace.".length);
+            const secret = desktopSigningSecret();
+            const scope: DesktopReviewScope = { environmentId: engine.store.environmentId,
+              projectId: String(params.projectId ?? ""), sessionId: String(params.sessionId ?? ""), feature: "ssh-workspace" };
+            const fields = mode === "catalog.read" ? [] : mode === "review" ? ["connectionId"]
+              : mode === "close.review" ? ["workspaceId"] : mode === "status" ? ["requestId", "workspaceId"] : ["reviewId", "requestId"];
+            if (mode === "status" && (Object.hasOwn(params, "requestId") === Object.hasOwn(params, "workspaceId")))
+              throw new Error("SSH status requires exactly one owned identity");
+            const bound = { ...params };
+            if (Object.hasOwn(params, "requestId")) bound.requestId = desktopOperationId(secret, token, scope, params.requestId);
+            if (Object.hasOwn(params, "reviewId")) bound.reviewId = openDesktopReview(secret, token, scope, params.reviewId);
+            if (Object.hasOwn(params, "workspaceId")) bound.workspaceId = openDesktopResource(secret, token, scope, "workspace", params.workspaceId);
+            result = await scopedDesktopCall(token, input.method, bound, fields, { actorId: desktopActorId(secret, token, scope) });
+            if (!result || typeof result !== "object" || Array.isArray(result)) throw new Error("Invalid SSH workspace response");
+            const response = { ...(result as Record<string, unknown>) };
+            if (mode === "review" || mode === "close.review")
+              response.reviewId = sealDesktopReview(secret, token, scope, response.reviewId, response.expiresAt);
+            if (Object.hasOwn(response, "workspaceId")) response.workspaceId = sealDesktopResource(secret, token, scope, "workspace", response.workspaceId);
+            result = response;
+            break;
+          }
+          case "preferences.desktop.read":
+          case "preferences.desktop.template.read":
+          case "preferences.desktop.patch":
+          case "preferences.desktop.status": {
+            const mode = input.method.slice("preferences.desktop.".length);
+            const action = mode === "template.read" ? "templateRead" : mode;
+            result = await scopedDesktopCall(token, `preferences.${action}`, params,
+              mode === "template.read" ? ["templateId", "expectedRevision"] : mode === "patch" ? ["operationId", "expectedRevision", "change"] : mode === "status" ? ["operationId"] : []);
+            break;
+          }
+          case "providers.desktop.read":
+            result = await scopedDesktopCall(token, "providerManagement.read", params, []);
+            break;
+          case "providers.desktop.patch":
+          case "providers.desktop.status":
+          case "providers.desktop.quota.refresh": {
+            const mode = input.method.slice("providers.desktop.".length);
+            const scope: DesktopReviewScope = { environmentId: engine.store.environmentId,
+              projectId: String(params.projectId ?? ""), sessionId: String(params.sessionId ?? ""), feature: "provider-management" };
+            const operationId = desktopOperationId(desktopSigningSecret(), token, scope, params.operationId);
+            result = await scopedDesktopCall(token, `providerManagement.${mode === "quota.refresh" ? "quotaRefresh" : mode}`, { ...params, operationId },
+              mode === "patch" ? ["operationId", "expectedAccountRevision", "provider", "accountId", "change"]
+                : mode === "quota.refresh" ? ["operationId", "expectedAccountRevision", "provider", "accountId", "confirm"] : ["operationId"]);
+            if (!result || typeof result !== "object" || Array.isArray(result) || (result as Record<string, unknown>).operationId !== operationId)
+              throw new Error("Invalid provider operation response");
+            result = { ...(result as Record<string, unknown>), operationId: params.operationId };
+            break;
+          }
+          case "terminals.pty.desktop.list":
+          case "terminals.pty.desktop.create":
+          case "terminals.pty.desktop.attach":
+          case "terminals.pty.desktop.read":
+          case "terminals.pty.desktop.write":
+          case "terminals.pty.desktop.status":
+          case "terminals.pty.desktop.resize":
+          case "terminals.pty.desktop.detach":
+          case "terminals.pty.desktop.close": {
+            const mode = input.method.slice("terminals.pty.desktop.".length);
+            const secret = desktopSigningSecret();
+            const scope: DesktopReviewScope = { environmentId: engine.store.environmentId,
+              projectId: String(params.projectId ?? ""), sessionId: String(params.sessionId ?? ""), feature: "pty-mobile" };
+            const leaseFields = ["terminalId", "epoch", "leaseId"];
+            const fields = mode === "list" ? [] : mode === "create" ? ["requestId", "profileId", "cols", "rows"]
+              : mode === "attach" ? ["terminalId", "epoch", "requestId", "after", "freshRenderer"]
+              : mode === "read" ? ["terminalId", "epoch", "after", "limit"]
+              : mode === "close" ? ["terminalId", "epoch", "requestId"]
+              : mode === "write" ? [...leaseFields, "inputSequence", "dataBase64"]
+              : mode === "resize" ? [...leaseFields, "cols", "rows"] : mode === "status" && Object.hasOwn(params, "requestId") ? ["requestId"] : leaseFields;
+            if (mode === "status" && !Object.hasOwn(params, "requestId") && leaseFields.some((key) => !Object.hasOwn(params, key)))
+              throw new Error("PTY status requires an exact owned lease or create request identity");
+            const bound = { ...params };
+            for (const [key, role] of [["terminalId", "terminal"], ["epoch", "epoch"], ["leaseId", "lease"]] as const)
+              if (Object.hasOwn(params, key)) bound[key] = openDesktopResource(secret, token, scope, role, params[key]);
+            if (Object.hasOwn(params, "requestId")) bound.requestId = desktopOperationId(secret, token, scope, params.requestId);
+            result = await scopedDesktopCall(token, `ptyMobile.${mode}`, bound, fields, { actorId: desktopActorId(secret, token, scope) });
+            const seal = (value: unknown): Record<string, unknown> => {
+              if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Invalid owned PTY response");
+              const object = { ...(value as Record<string, unknown>) };
+              for (const [key, role] of [["terminalId", "terminal"], ["epoch", "epoch"], ["leaseId", "lease"]] as const)
+                if (Object.hasOwn(object, key)) object[key] = sealDesktopResource(secret, token, scope, role, object[key]);
+              return object;
+            };
+            const response = seal(result);
+            if (Object.hasOwn(response, "terminal")) response.terminal = seal(response.terminal);
+            if (Object.hasOwn(response, "terminals")) {
+              if (!Array.isArray(response.terminals) || response.terminals.length > 128) throw new Error("Invalid owned PTY catalog");
+              response.terminals = response.terminals.map(seal);
+            }
+            result = response;
+            break;
+          }
+          case "sessions.contextual.preview": {
+            result = engine.previewContextual(params, readSessionView(String(params.sessionId ?? "")));
+            break;
+          }
           case "commands.dispatch": {
             const sessionId = String(params.sessionId ?? "");
+            // Validate context before adoption or special slash-command handling.
+            if (params.noteCard !== undefined) parseCommand(params);
+            if (params.type === "contextual") {
+              if (engine.store.receiptStatus(String(params.commandId ?? ""))) {
+                // Reconcile the original receipt even if the source moved after acceptance.
+                result = engine.command(params);
+                break;
+              }
+              const parsed = parseCommand(params);
+              if (parsed.type !== "contextual") throw new Error("Invalid contextual command");
+              const reviewed = engine.previewContextual(params, readSessionView(sessionId));
+              if (reviewed.digest !== parsed.previewDigest) throw new Error("The reviewed context changed. Review it again before continuing.");
+            }
             if (
               ["send", "steer", "compact", "configure", "plan", "rewind"].includes(
                 String(params.type),
@@ -2221,16 +2538,34 @@ export function createHostServer(
             );
             break;
           }
+          case "usage.sessions.read":
+            result = readSessionUsage(engine.store, params);
+            break;
           case "notes.list":
+            if (params.sessionId !== undefined) {
+              const session = featureSession(String(params.sessionId));
+              if (params.projectId !== undefined && session.projectId !== String(params.projectId))
+                throw new Error("Session belongs to another project.");
+              result = hostNotes.list(undefined, session.session.id);
+              break;
+            }
             result = hostNotes.list(
               params.projectId === undefined
                 ? undefined
                 : engine.store.project(String(params.projectId)).cwd,
             );
             break;
-          case "notes.get":
-            result = hostNotes.get(params.id);
+          case "notes.get": {
+            const session = params.sessionId !== undefined ? featureSession(String(params.sessionId)) : undefined;
+            if (session && params.projectId !== undefined && session.projectId !== String(params.projectId))
+              throw new Error("Session belongs to another project.");
+            const note = hostNotes.get(params.id);
+            if (params.sessionId !== undefined) {
+              if (note && note.sourceSessionId !== session!.session.id) throw new Error("Note belongs to another session.");
+            }
+            result = note;
             break;
+          }
           case "notes.upsert":
             result = hostNotes.save(params.note, params.expectedUpdatedAt);
             break;
@@ -2245,7 +2580,7 @@ export function createHostServer(
             if (
               inboxOperationWrites(operation) &&
               params.confirm !==
-                (operation.action === "comment" ? "SEND_COMMENT" : "CHANGE_PR_STATE")
+                (operation.action === "comment" ? "SEND_COMMENT" : operation.action === "review" ? "SUBMIT_PR_REVIEW" : operation.action === "jira-board-transition" || operation.action === "jira-board-move" ? "CHANGE_JIRA_BOARD" : "CHANGE_PR_STATE")
             )
               throw new Error("This inbox write requires an explicit owner action.");
             result = providerInbox.request(
@@ -2447,6 +2782,19 @@ export function createHostServer(
             break;
           case "mobile.pairing.cancel":
             result = mobilePairing.cancel(token, params.pairingId);
+            break;
+          case "host.access.read":
+            result = await readHostAccess(engine.store.environmentId, {
+              devices: () => engine.store.pairedDevices(token),
+              lan: () => mobileLan.status(),
+              privateNetwork: () => mobileAccess.status(),
+              tunnels: () => tunnels.status(),
+            });
+            break;
+          case "devices.revokeOther":
+            if (Object.keys(params).some((key) => key !== "id") || typeof params.id !== "string" || !/^[a-zA-Z0-9_-]{1,128}$/.test(params.id))
+              throw new Error("Invalid paired device identity");
+            result = { revoked: engine.store.revokeOtherDevice(params.id, token) };
             break;
           case "mobile.access.status":
             if (params.mode !== undefined && !["lan", "tailscale"].includes(String(params.mode)))

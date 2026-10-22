@@ -1,11 +1,25 @@
 import { describe, expect, it, vi } from "vitest";
 import { execFile } from "node:child_process";
 vi.mock("node:child_process", () => ({ execFile: vi.fn() }));
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { GenericAcpService } from "./generic-acp";
+import { delimiter, join } from "node:path";
+import { GenericAcpService, windowsNpmCli } from "./generic-acp";
 describe("host-owned ACP configuration", () => {
+  it("finds npm on PATH when the packaged host ships only node.exe", async () => {
+    const root = await mkdtemp(join(tmpdir(), "bycoda-npm-cli-"));
+    try {
+      const nodejs = join(root, "nodejs");
+      const cli = join(nodejs, "node_modules", "npm", "bin", "npm-cli.js");
+      await mkdir(join(cli, ".."), { recursive: true });
+      await writeFile(cli, "");
+      const packaged = join(root, "runtime", "node.exe");
+      expect(windowsNpmCli({ PATH: [join(root, "empty"), nodejs].join(delimiter) }, packaged)).toBe(cli);
+      expect(windowsNpmCli({ PATH: join(root, "empty") }, packaged)).toBeUndefined();
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
   it("cancels during registry preparation before starting an installation", async () => {
     const service = new GenericAcpService("unused-cancelled-acp-directory");
     let finish!: (entries: Awaited<ReturnType<typeof service.registry>>) => void;

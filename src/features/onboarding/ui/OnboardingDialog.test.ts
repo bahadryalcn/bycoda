@@ -268,6 +268,17 @@ describe("onboarding workflow", () => {
     expect(loadCrewSceneEnabled()).toBe(true);
     await act(async () =>
       container
+        .querySelector<HTMLInputElement>('input[name="onboarding-crew"][value="lotr"]')!
+        .click(),
+    );
+    expect(loadCrewTheme()).toBe("lotr");
+    await act(async () =>
+      container
+        .querySelector<HTMLInputElement>('input[name="onboarding-crew"][value="star-wars"]')!
+        .click(),
+    );
+    await act(async () =>
+      container
         .querySelector<HTMLInputElement>('input[name="onboarding-crew"][value="none"]')!
         .click(),
     );

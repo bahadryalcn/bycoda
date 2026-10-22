@@ -455,6 +455,10 @@ test("bounded pages search archived rows and preserve selected detail history", 
   await contactHistory.getByRole("button", { name: "Önceki kayıtlar", exact: true }).click();
   await expect(contactHistory).toContainText("36–55 / 75");
   await nav.getByRole("button", { name: "Hesaplar", exact: true }).click();
+  await page
+    .locator(".social-header-actions")
+    .getByRole("button", { name: "More actions", exact: true })
+    .click();
   await page.getByRole("button", { name: "İşlem geçmişi", exact: true }).click();
   await expect(page.locator(".social-history-record:visible")).toHaveCount(50);
   const filters = await openFilters(page, page.locator(".social-job-list:visible"));
@@ -500,6 +504,10 @@ test("history shows distinct outcomes, filters and keeps state after leaving Soc
       .getByRole("navigation", { name: "Sosyal Medya bölümleri" })
       .getByRole("button", { name: "Geçmiş", exact: true }),
   ).toHaveCount(0);
+  await page
+    .locator(".social-header-actions")
+    .getByRole("button", { name: "More actions", exact: true })
+    .click();
   await page.getByRole("button", { name: "İşlem geçmişi", exact: true }).click();
   await expect(page.locator(".social-history-record")).toHaveCount(5);
   const metadata = page
@@ -681,7 +689,7 @@ test("group outreach prepares eligible recipients and shows opt-out exclusions w
   await expect(dialog.getByRole("button", { name: "Taslak kaydet", exact: true })).toBeDisabled();
 });
 
-test("social layout follows its panel width inside a wide window", async ({ page }) => {
+test("social layout follows its panel width inside a wide window", async ({ page }, testInfo) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto("/tests/browser/social.html");
   const view = page.locator("[data-app-social]");
@@ -702,11 +710,18 @@ test("social layout follows its panel width inside a wide window", async ({ page
     element.style.flex = "none";
   });
   await expect(navigation).toHaveCSS("display", "grid");
-  expect(
-    await navigation.evaluate(
-      (element) => getComputedStyle(element).gridTemplateColumns.split(" ").length,
-    ),
-  ).toBe(3);
+  expect(await navigation.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(
+    true,
+  );
+  for (const tab of await navigation.getByRole("button").all()) {
+    await tab.focus();
+    await expect(tab).toBeInViewport();
+    expect(
+      await tab
+        .locator(".social-nav-label")
+        .evaluate((node) => node.scrollWidth <= node.clientWidth + 1),
+    ).toBe(true);
+  }
   const narrowNavigationBounds = (await navigation.boundingBox())!;
   const narrowMainBounds = (await main.boundingBox())!;
   expect(narrowNavigationBounds.y + narrowNavigationBounds.height).toBeLessThanOrEqual(
@@ -714,12 +729,33 @@ test("social layout follows its panel width inside a wide window", async ({ page
   );
   expect(Math.abs(narrowMainBounds.x - narrowNavigationBounds.x)).toBeLessThanOrEqual(1);
   expect(Math.abs(narrowMainBounds.width - narrowNavigationBounds.width)).toBeLessThanOrEqual(1);
-  expect(
-    await page
-      .locator(".social-tabs")
-      .evaluate((element) => element.scrollWidth <= element.clientWidth + 1),
-  ).toBe(true);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   await expect(page.locator(".social-header")).toHaveCSS("grid-column-start", "1");
+  for (const theme of ["light", "dark"]) {
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await page.evaluate(
+      (light) => document.documentElement.classList.toggle("theme-light", light),
+      theme === "light",
+    );
+    for (const width of [390, 768]) {
+      await view.evaluate((element, width) => {
+        element.style.inlineSize = `${width}px`;
+        element.style.maxInlineSize = `${width}px`;
+      }, width);
+      const bounds = (await navigation.boundingBox())!;
+      for (const tab of await navigation.getByRole("button").all()) {
+        const tabBounds = (await tab.boundingBox())!;
+        expect(tabBounds.x).toBeGreaterThanOrEqual(bounds.x);
+        expect(tabBounds.x + tabBounds.width).toBeLessThanOrEqual(bounds.x + bounds.width + 1);
+        await tab.focus();
+        await expect(tab).toBeFocused();
+      }
+      await page.screenshot({
+        path: testInfo.outputPath(`social-navigation-${theme}-${width}.png`),
+        animations: "disabled",
+      });
+    }
+  }
 });
 
 test("searchable project selections keep unfinished forms compact across sections", async ({
@@ -833,14 +869,18 @@ test("social workspace guides OAuth setup and keeps sends disabled", async ({ pa
     projectAccess.getByRole("button", { name: "İzinleri kaydet", exact: true }),
   ).toBeVisible();
   const headingBounds = await page.locator(".social-header-field").first().boundingBox();
-  const filterBounds = await page
-    .getByRole("button", { name: "Bu proje", exact: true })
-    .boundingBox();
+  const filterBounds = await page.locator(".social-project-filter").boundingBox();
   expect(headingBounds).not.toBeNull();
   expect(filterBounds).not.toBeNull();
   expect(Math.max(headingBounds!.y, filterBounds!.y)).toBeLessThan(
     Math.min(headingBounds!.y + headingBounds!.height, filterBounds!.y + filterBounds!.height),
   );
+  await page
+    .locator(".social-header-actions")
+    .getByRole("button", { name: "More actions", exact: true })
+    .click();
+  await expect(page.getByRole("button", { name: "Bu proje", exact: true })).toBeVisible();
+  await page.keyboard.press("Escape");
   await page.getByText("Resmi X API ile bağla", { exact: false }).click();
   await expect(page.getByRole("button", { name: "Tarayıcıda bağla", exact: true })).toBeDisabled();
   await expect(page.getByText("Kurulum gerekli", { exact: true }).last()).toBeVisible();
@@ -1098,6 +1138,10 @@ test("neutral social surfaces keep outcomes readable with larger text and reduce
 }, testInfo) => {
   await seedWorkflow(page);
   await page.emulateMedia({ reducedMotion: "reduce" });
+  await page
+    .locator(".social-header-actions")
+    .getByRole("button", { name: "More actions", exact: true })
+    .click();
   await page.getByRole("button", { name: "İşlem geçmişi", exact: true }).click();
   for (const theme of ["dark", "light"]) {
     await page.evaluate((light) => {

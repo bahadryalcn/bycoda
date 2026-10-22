@@ -24,7 +24,6 @@ describe("Provider bağımsız sosyal araç köprüsü", () => {
       "omp",
       "antigravity",
       "grok",
-      "gemini",
       "cursor",
       "fx",
       "hermes",

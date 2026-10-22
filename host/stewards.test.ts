@@ -473,6 +473,29 @@ describe("host stewards", () => {
     expect(worktrees()).toBe(1);
   });
 
+  it("cancels only the exact steward turn and settles through normal cleanup", async () => {
+    const { stewards, input, startDue, steward, store, worktrees } = setup();
+    stewards.save(input());
+    const turn = await startDue();
+    const runId = steward().run!.runId!;
+    expect(() => stewards.stopRun("steward", "stale-turn")).toThrow("no longer active");
+    expect(store.session(turn.input.sessionId).status).toBe("running");
+    expect(stewards.stopRun("steward", runId)).toMatchObject({ requested: true, run: { runId } });
+    await vi.waitFor(() => expect(store.session(turn.input.sessionId).status).toBe("idle"), { timeout: 10_000 });
+    await stewards.tick();
+    expect(steward().run).toBeUndefined();
+    expect(steward().lastRunStatus).toBe("cancelled");
+    expect(worktrees()).toBe(1);
+    expect(() => stewards.stopRun("steward", runId)).toThrow("no longer active");
+  });
+
+  it("increments the configuration revision for same-clock saves", () => {
+    const { stewards, input } = setup();
+    const first = stewards.save(input());
+    const second = stewards.save(input({ focus: "new focus" }));
+    expect(second.updatedAt).toBeGreaterThan(first.updatedAt);
+  });
+
   it("removes the checkout when the steward is deleted mid-run", async () => {
     const { stewards, engine, input, startDue, worktrees, steward } = setup();
     stewards.save(input());

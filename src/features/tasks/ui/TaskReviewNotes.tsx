@@ -57,7 +57,7 @@ export function TaskReviewNotes({ notes, busy, stale, onRead, onResolve, onOpenR
                 data-review-note={note.id}
                 className="space-y-1.5 rounded-md border border-(--ui-tone-neutral-border) p-2"
               >
-                <div className="flex flex-wrap items-center gap-2 text-[10px]">
+                <div className="flex flex-wrap items-center gap-2 text-(length:--ui-font-caption)">
                   <Badge tone={resolved ? "success" : "warning"}>
                     {resolved ? t("Fixed") : t("Open")}
                   </Badge>

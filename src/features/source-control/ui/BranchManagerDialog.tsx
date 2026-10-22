@@ -278,7 +278,7 @@ export function BranchManagerDialog({ cwd, onClose }: Props) {
   const section = (title: string, rows: GitBranchInfo[]) =>
     rows.length === 0 ? null : (
       <li key={title}>
-        <h3 className="px-1 pt-2 pb-1 text-[10px] font-semibold tracking-[0.04em] text-[var(--ui-text-secondary)] uppercase">
+        <h3 className="px-1 pt-2 pb-1 text-(length:--ui-font-caption) font-semibold text-(--ui-text-secondary)">
           {title}
         </h3>
         <ul>{rows.map(renderRow)}</ul>
@@ -337,7 +337,7 @@ export function BranchManagerDialog({ cwd, onClose }: Props) {
           </p>
         ) : null}
         {listed.length === 0 ? (
-          <p className="px-1 py-2 text-[12px] text-[var(--ui-text-muted)]">
+          <p className="px-1 py-2 text-[12px] text-(--ui-text-secondary)">
             {needle ? t("No branches match") : t("No branches")}
           </p>
         ) : (

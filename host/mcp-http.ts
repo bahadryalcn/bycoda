@@ -7,6 +7,7 @@ import {
 import { sessionConversationPage } from "../src/features/agent-app/model/sessionConversation";
 import {
   conversationToolCatalog,
+  CONVERSATION_MAX_INPUT_BYTES,
   CONVERSATION_MCP_INSTRUCTIONS,
   validateConversationTool,
   runConversationMcp,
@@ -251,7 +252,9 @@ export class McpHttp {
     const protocol = request.headers["mcp-protocol-version"];
     if (protocol !== undefined && (typeof protocol !== "string" || !VERSIONS.includes(protocol)))
       return reject(400, "Unsupported MCP protocol version.");
-    if (Number(request.headers["content-length"] ?? 0) > MAX_BYTES)
+    const maxBytes = allowed.includes("conversation") && this.identity(token, "conversation")?.principal
+      ? CONVERSATION_MAX_INPUT_BYTES : MAX_BYTES;
+    if (Number(request.headers["content-length"] ?? 0) > maxBytes)
       return reject(413, "MCP request too large.");
     this.window.active++;
     let id: string | number | null = null;
@@ -263,7 +266,7 @@ export class McpHttp {
         request.on("data", (chunk: Buffer) => {
           if (oversized) return;
           bytes += chunk.length;
-          if (bytes > MAX_BYTES) {
+          if (bytes > maxBytes) {
             oversized = true;
             chunks.length = 0;
             resolve(undefined);

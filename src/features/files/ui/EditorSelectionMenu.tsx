@@ -65,7 +65,7 @@ export function EditorSelectionMenu({
         {t("Add to chat")}
         <kbd
           aria-hidden="true"
-          className="rounded border border-[var(--color-stroke)] px-1 py-0.5 font-sans text-[10px] text-[var(--ui-text-secondary)]"
+          className="rounded border border-(--ui-tone-neutral-border) px-1 py-0.5 font-sans text-(length:--ui-font-caption) text-(--ui-text-secondary)"
         >
           {shortcut}
         </kbd>

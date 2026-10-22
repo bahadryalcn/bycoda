@@ -1,5 +1,25 @@
-import { describe, expect, it } from "vitest";
-import { linearTeamIdsForFetch } from "./linear";
+import { describe, expect, it, vi } from "vitest";
+import { invoke } from "@tauri-apps/api/core";
+import { linearIssueDetails, linearTeamIdsForFetch, peekLinearIssueDetails } from "./linear";
+
+vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
+
+describe("linear issue details cache", () => {
+  it("caps at 128 entries, evicting the least recently read", async () => {
+    vi.mocked(invoke).mockImplementation(
+      async (_command, args) => ({ id: (args as { id: string }).id }) as never,
+    );
+    for (let i = 0; i < 128; i++) await linearIssueDetails(`lin-${i}`);
+    // Reading lin-0 refreshes it, so lin-1 is now the oldest.
+    expect(peekLinearIssueDetails("lin-0")).not.toBeNull();
+    await linearIssueDetails("lin-128");
+
+    expect(peekLinearIssueDetails("lin-0")).not.toBeNull();
+    expect(peekLinearIssueDetails("lin-1")).toBeNull();
+    expect(peekLinearIssueDetails("lin-2")).not.toBeNull();
+    expect(peekLinearIssueDetails("lin-128")).not.toBeNull();
+  });
+});
 
 describe("linearTeamIdsForFetch", () => {
   const teams = [

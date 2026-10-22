@@ -58,6 +58,27 @@ pub(crate) fn resolve_record(app: &AppHandle, record: &Value) -> Result<SshEndpo
     Ok(runtime_endpoint(resolved))
 }
 
+/// Reviewed personal endpoints include plain saved connections, not only inherited groups.
+/// Called while the canonical connection-store lock is held by server_inventory.
+pub(crate) fn resolve_record_reviewed(
+    app: &AppHandle,
+    record: &Value,
+    expected: &str,
+) -> Result<SshEndpoint, String> {
+    let inheritance = selection(record)?;
+    checked_runtime_endpoint(effective(app, record, inheritance.as_ref())?, expected)
+}
+
+fn checked_runtime_endpoint(
+    resolved: groups::Effective,
+    expected: &str,
+) -> Result<SshEndpoint, String> {
+    if resolved.digest != expected {
+        return Err("Saved SSH configuration changed; review it again before connecting".into());
+    }
+    Ok(runtime_endpoint(resolved))
+}
+
 pub(crate) fn runtime_endpoint(resolved: groups::Effective) -> SshEndpoint {
     let mut endpoint = resolved.endpoint;
     endpoint.runtime_configuration = Some(std::sync::Arc::new(
@@ -212,6 +233,27 @@ fn apply_reviewed_binding(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn reviewed_plain_saved_endpoint_detects_target_and_identity_drift() {
+        let base: SshEndpoint =
+            serde_json::from_value(serde_json::json!({"host":"fixture.invalid","port":22}))
+                .unwrap();
+        let reviewed = groups::resolve(&base, None, None).unwrap();
+        let digest = reviewed.digest.clone();
+        assert!(checked_runtime_endpoint(reviewed, &digest).is_ok());
+        for field in ["host", "port", "identityFile"] {
+            let mut value = serde_json::json!({"host":"fixture.invalid","port":22});
+            value[field] = match field {
+                "port" => serde_json::json!(2222),
+                "host" => serde_json::json!("other.invalid"),
+                _ => serde_json::json!("/synthetic/not-read"),
+            };
+            let changed: SshEndpoint = serde_json::from_value(value).unwrap();
+            let effective = groups::resolve(&changed, None, None).unwrap();
+            assert!(checked_runtime_endpoint(effective, &digest).is_err());
+        }
+    }
     #[test]
     fn reviewed_binding_preserves_ids_local_overrides_and_other_session_metadata() {
         let mut record = serde_json::json!({"id":"existing-id","kind":"ssh","sshEndpoint":{"host":"target.example","port":2222,"user":"local-override"},"metadata":{"group":"legacy-label","favorite":true,"tags":["other-session"],"future":{"keep":true}}});

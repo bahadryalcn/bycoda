@@ -7,6 +7,7 @@ import {
   getAllRateLimits,
   loadFreshRateLimits,
   loadRateLimits,
+  refreshClaudeQuotaOnce,
 } from "./rateLimitsCache";
 
 vi.mock("./rateLimitsFetch", () => ({
@@ -16,6 +17,45 @@ vi.mock("./rateLimitsFetch", () => ({
 }));
 
 const fetchClaude = vi.mocked(fetchClaudeRateLimits);
+
+it("explicit refresh shares a pending request, never queues replay or retries, and retains the old observation time on failure", async () => {
+  fetchClaude.mockResolvedValueOnce(usage(40));
+  await loadRateLimits("claude", "explicit");
+  let finish!: (value: ProviderRateLimits) => void;
+  fetchClaude.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+  );
+  const first = refreshClaudeQuotaOnce("explicit", () => true);
+  const second = refreshClaudeQuotaOnce("explicit", () => true);
+  finish(rateLimited());
+  const [left, right] = await Promise.all([first, second]);
+  expect(left).toEqual(right);
+  expect(left.updatedAt).toBe(1_000_000);
+  expect(left.session?.usedPercent).toBe(40);
+  expect(fetchClaude).toHaveBeenLastCalledWith("explicit", true);
+  await vi.advanceTimersByTimeAsync(60 * 60_000);
+  expect(fetchClaude).toHaveBeenCalledTimes(2);
+});
+
+it("explicit refresh does not publish after the reviewed account/source becomes unavailable", async () => {
+  let finish!: (value: ProviderRateLimits) => void;
+  let allowed = true;
+  fetchClaude.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+  );
+  const running = refreshClaudeQuotaOnce("private", () => allowed);
+  allowed = false;
+  finish(usage(12));
+  await running;
+  expect(getAllRateLimits()["claude:private"]).toBeUndefined();
+  expect(vi.getTimerCount()).toBe(0);
+});
 
 function usage(usedPercent: number): ProviderRateLimits {
   return {

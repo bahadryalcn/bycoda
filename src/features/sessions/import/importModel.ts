@@ -3,6 +3,8 @@ import { isEqualOrInside, pathKey, slash } from "../../../shared/lib/paths";
 
 /** Opens the import dialog from anywhere (rail menu, Settings). */
 export const OPEN_SESSION_IMPORT_EVENT = "bycoda:open-session-import";
+/** Canonical import owners notify the existing recents/history refresh owner. */
+export const SESSION_HISTORY_IMPORTED_EVENT = "bycoda:session-history-imported";
 
 export type SessionImportContext = { cwd: string; provider: ImportProvider };
 

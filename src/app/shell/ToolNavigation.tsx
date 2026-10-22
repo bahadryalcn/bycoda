@@ -24,14 +24,17 @@ import { t, useLocale } from "../../shared/i18n";
 import { TOOL_IDS, type WorkspaceToolId } from "../model/toolWindows";
 import { routeWindowDestination } from "../model/windowNavigation";
 import { Button } from "../../shared/ui/Button";
+import { SearchableSelect } from "../../shared/ui/SearchableSelect";
 import { useSshRunbookQueue } from "../../features/connections/model/sshRunbookQueue";
 import "./toolNavigation.css";
 
 // Retained panels own separate headers. Carry keyboard focus into the header
 // revealed by switching tools, after the previous tablist becomes hidden.
 let pendingKeyboardFocus: WorkspaceToolId | null = null;
-function requestKeyboardFocus(tool: WorkspaceToolId) {
+let pendingPickerFocus = false;
+function requestKeyboardFocus(tool: WorkspaceToolId, picker = false) {
   pendingKeyboardFocus = tool;
+  pendingPickerFocus = picker;
   // Opening a separate window may leave the current navigation unchanged.
   window.setTimeout(() => {
     if (pendingKeyboardFocus === tool) pendingKeyboardFocus = null;
@@ -39,6 +42,7 @@ function requestKeyboardFocus(tool: WorkspaceToolId) {
 }
 function clearKeyboardFocus() {
   pendingKeyboardFocus = null;
+  pendingPickerFocus = false;
 }
 
 export const ToolNavigationContext = createContext<{
@@ -113,9 +117,10 @@ export function ToolNavigation() {
   const [opening, setOpening] = useState(false);
   const [error, setError] = useState("");
   const tabRefs = useRef(new Map<WorkspaceToolId, HTMLButtonElement>());
+  const pickerRef = useRef<HTMLButtonElement>(null);
   useLayoutEffect(() => {
     if (pendingKeyboardFocus && pendingKeyboardFocus === navigation?.active) {
-      tabRefs.current.get(pendingKeyboardFocus)?.focus();
+      (pendingPickerFocus ? pickerRef.current : tabRefs.current.get(pendingKeyboardFocus))?.focus();
       clearKeyboardFocus();
     }
   }, [navigation?.active]);
@@ -155,7 +160,34 @@ export function ToolNavigation() {
     }
   };
   return (
-    <div className="tool-navigation" data-tauri-drag-region="deep">
+    <div
+      className="tool-navigation"
+      data-tool-picker={tools.length > 1 || undefined}
+      data-tauri-drag-region="deep"
+    >
+      {tools.length > 1 ? (
+        <div className="tool-picker" data-tauri-drag-region="false">
+          <SearchableSelect
+            label={t("Workspace tools")}
+            value={navigation.active}
+            options={tools.map((tool) => ({
+              value: tool,
+              label: t(labels[tool]),
+              description:
+                tool === "servers" && sshReviews.intents.length
+                  ? t("Pending SSH reviews")
+                  : undefined,
+            }))}
+            triggerProps={{ ref: pickerRef }}
+            onChange={(value) => {
+              const tool = tools.find((id) => id === value);
+              if (!tool || tool === navigation.active) return;
+              requestKeyboardFocus(tool, true);
+              navigation.onSelect(tool);
+            }}
+          />
+        </div>
+      ) : null}
       <div
         className="tool-tabs"
         role="tablist"

@@ -224,10 +224,10 @@ export function ProviderBinaryControl({
               {t(" CLI")}
             </span>
             <div className="flex items-center gap-1.5">
-              <span className="rounded-full bg-content/10 px-1.5 py-0.5 text-[10px] text-content/50">
+              <span className="rounded-full bg-(--ui-surface-muted) px-1.5 py-0.5 text-[length:var(--ui-font-caption)] text-(--ui-text-secondary)">
                 {t("This machine · all projects")}
               </span>
-              <span className="rounded-full bg-content/10 px-1.5 py-0.5 text-[10px] text-content/50">
+              <span className="rounded-full bg-(--ui-surface-muted) px-1.5 py-0.5 text-[length:var(--ui-font-caption)] text-(--ui-text-secondary)">
                 {working
                   ? t("Checking…")
                   : error
@@ -242,14 +242,17 @@ export function ProviderBinaryControl({
               </span>
             </div>
           </div>
-          <p className="mt-2 text-[11px] leading-relaxed text-content/60">
+          <p className="mt-2 text-[11px] leading-relaxed text-(--ui-text-secondary)">
             {t(
               "The CLI path selects an executable on this machine. Account sign-in and model defaults are managed separately.",
             )}
           </p>
           {editing ? (
             <form className="mt-2" onSubmit={submit}>
-              <label htmlFor={`${provider}-binary-path`} className="text-[11px] text-content/50">
+              <label
+                htmlFor={`${provider}-binary-path`}
+                className="text-[11px] text-(--ui-text-secondary)"
+              >
                 {t("CLI path")}
               </label>
               <TextField
@@ -264,7 +267,7 @@ export function ProviderBinaryControl({
                 autoFocus
                 onChange={(event) => setDraft(event.target.value)}
               />
-              <p className="mt-1.5 text-[10px] text-content/40">
+              <p className="mt-1.5 text-[length:var(--ui-font-caption)] text-(--ui-text-secondary)">
                 {t(
                   "Enter the absolute path to the CLI executable. Changes apply after restarting ",
                 )}
@@ -294,12 +297,12 @@ export function ProviderBinaryControl({
             </form>
           ) : (
             <>
-              <div className="mt-2 rounded-md border border-content/10 bg-content/[0.03] px-2.5 py-2">
-                <span className="block max-h-12 overflow-y-auto whitespace-pre-wrap break-all font-mono text-[10px] text-content/65">
+              <div className="mt-2 rounded-md border border-(--color-stroke) bg-(--ui-surface-muted) px-2.5 py-2">
+                <span className="block max-h-12 overflow-y-auto whitespace-pre-wrap break-all font-mono text-[length:var(--ui-font-caption)] text-(--ui-text-secondary)">
                   {inspection?.path ??
                     (error ? t("CLI could not be resolved") : t("Checking the selected CLI…"))}
                 </span>
-                <span className="mt-1 block max-h-10 overflow-y-auto whitespace-pre-wrap break-words text-[10px] text-content/40">
+                <span className="mt-1 block max-h-10 overflow-y-auto whitespace-pre-wrap break-words text-[length:var(--ui-font-caption)] text-(--ui-text-secondary)">
                   {inspection?.version ??
                     (error ? t("Retry to check this CLI") : t("Checking version…"))}
                 </span>

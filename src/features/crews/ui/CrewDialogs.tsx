@@ -145,15 +145,38 @@ export function StartCrewDialog({
   );
 }
 
+/** Members grouped by responsibility; a member named like its responsibility is not repeated. */
 function CrewRosterSummary({ crew }: { crew: CrewDefinition }) {
+  const groups = (["coordinator", "specialist", "reviewer", "advisor"] as const).flatMap((role) => {
+    const members = crew.agents.filter((agent) => agent.role === role);
+    if (!members.length) return [];
+    const label =
+      role === "specialist"
+        ? members.length > 1
+          ? t("Specialists")
+          : roleLabel(role)
+        : role === "advisor" && members.length > 1
+          ? t("Advisors")
+          : roleLabel(role);
+    const names = members
+      .map((agent) => agent.name)
+      .filter((name) => name.trim().toLocaleLowerCase() !== roleLabel(role).toLocaleLowerCase());
+    return [{ role, label, names }];
+  });
   return (
-    <p className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-(--ui-text-secondary)">
-      {crew.agents.map((agent) => (
-        <span key={agent.id}>
-          <span className="font-medium text-content">{agent.name}</span> · {roleLabel(agent.role)}
-        </span>
+    <dl className="flex flex-wrap gap-x-4 gap-y-1 text-xs">
+      {groups.map((group) => (
+        <div key={group.role} className="flex min-w-0 gap-1">
+          <dt className="text-(--ui-text-secondary)">
+            {group.label}
+            {group.names.length ? ":" : ""}
+          </dt>
+          {group.names.length ? (
+            <dd className="font-medium text-content">{group.names.join(", ")}</dd>
+          ) : null}
+        </div>
       ))}
-    </p>
+    </dl>
   );
 }
 

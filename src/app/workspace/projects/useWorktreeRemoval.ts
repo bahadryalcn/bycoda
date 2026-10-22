@@ -1,4 +1,5 @@
-import { useCallback, type Dispatch, type MutableRefObject, type SetStateAction } from "react";
+import { useCallback, useEffect, type Dispatch, type MutableRefObject, type SetStateAction } from "react";
+import { registerWorktreeRemovalOwner } from "../../../features/source-control/model/worktreeRemovalControl";
 import type { setSessions } from "../../../features/sessions/model/sessionsStore";
 import {
   flushSessionWrites,
@@ -24,6 +25,7 @@ import {
   listWorktrees,
   removeWorktree,
   worktreeSessionIds,
+  type WorktreeRemovalReview,
 } from "../../../features/source-control/model/worktrees";
 import { isEqualOrInside, pathKey } from "../../../shared/lib/paths";
 import { bindResumedSessions } from "../../model/appLifecycle";
@@ -85,7 +87,9 @@ export function useWorktreeRemoval({
   );
 
   const onRemoveWorktree = useCallback(
-    async (cwd: string, path: string, force: boolean, keepSessions = false) => {
+    async (cwd: string, path: string, force: boolean, keepSessions = false, expectedReview?: WorktreeRemovalReview, valid: () => boolean = () => true) => {
+      const assertCurrent = () => { if (!valid()) throw new Error("Worktree removal source changed or became private"); };
+      assertCurrent();
       if (removingWorktreePaths.current.has(path)) {
         throw new Error("This worktree is already being deleted.");
       }
@@ -101,10 +105,18 @@ export function useWorktreeRemoval({
           );
         }
         await onCheckWorktreeRemoval(cwd, path, force);
+        assertCurrent();
         const listed = await listWorktrees(cwd);
         const tree = listed.worktrees.find((entry) => pathKey(entry.path) === pathKey(path));
         if (!tree) throw new Error("This worktree is no longer available.");
         const ids = worktreeSessionIds(tree, sessionsRef.current);
+        assertCurrent();
+        if (expectedReview && (ids.some((id) => {
+          const session = sessionsRef.current.find((entry) => entry.id === id);
+          return !!session && (!!session.busy || !!session.pendingQuestion || !!session.pendingSwitch);
+        }) || JSON.stringify([...ids].sort()) !== JSON.stringify([...expectedReview.sessionIds].sort()))) {
+          throw new Error("Worktree sessions changed after review");
+        }
         if (!keepSessions && ids.length) {
           throw new Error("Move or delete the sessions using this worktree first.");
         }
@@ -116,6 +128,7 @@ export function useWorktreeRemoval({
           );
         }
         for (const id of ids) {
+          assertCurrent();
           removingSessionIds.current.add(id);
           lockedIds.add(id);
           pendingPersist.current.delete(id);
@@ -145,8 +158,9 @@ export function useWorktreeRemoval({
           if (shouldPersistSession(stopped)) await upsertSession(stopped);
         }
         await flushSessionWrites();
+        assertCurrent();
         checkOpenWorktreeFiles(path);
-        const removed = await removeWorktree(cwd, path, force, keepSessions);
+        const removed = await removeWorktree(cwd, path, force, keepSessions, expectedReview);
         const affected = new Set([...ids, ...removed.sessionIds]);
         if (isEqualOrInside(projectCwdRef.current, path)) {
           setProjectCwd(removed.projectCwd);
@@ -201,6 +215,23 @@ export function useWorktreeRemoval({
       stopSessionForRemoval,
     ],
   );
+
+  useEffect(() => registerWorktreeRemovalOwner({
+    capture: (path) => {
+      const linked = sessionsRef.current.filter((session) => !session.worktreeRemoved && isEqualOrInside(sessionWorkCwd(session), path));
+      const sessionIds = linked.map((session) => session.id).sort();
+      const activeSessionIds = linked.filter((session) => session.busy || session.pendingQuestion || session.pendingSwitch).map((session) => session.id).sort();
+      let hasOpenFiles = false;
+      try { checkOpenWorktreeFiles(path); } catch { hasOpenFiles = true; }
+      const changing = [...removingWorktreePaths.current].some((value) => pathKey(value) === pathKey(path)) ||
+        [...switchingWorktrees.current.values()].some((target) => isEqualOrInside(target, path)) ||
+        sessionIds.some((id) => removingSessionIds.current.has(id) || switchingWorktrees.current.has(id));
+      return { sessionIds, activeSessionIds, hasOpenFiles, changing,
+        signature: JSON.stringify([sessionIds, activeSessionIds, hasOpenFiles, changing,
+          linked.map((session) => [session.id, sessionWorkCwd(session), session.harness, session.providerSessionId, session.pendingSwitch]).sort((a, b) => String(a[0]).localeCompare(String(b[0])))]) };
+    },
+    remove: (cwd, path, expected, valid) => onRemoveWorktree(cwd, path, false, true, expected, valid),
+  }), [checkOpenWorktreeFiles, onRemoveWorktree]);
 
   return { checkOpenWorktreeFiles, onCheckWorktreeRemoval, onRemoveWorktree };
 }

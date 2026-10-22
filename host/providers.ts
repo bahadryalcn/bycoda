@@ -7,9 +7,9 @@ import * as pi from "../src/integrations/harness/providers/pi/pi";
 import * as omp from "../src/integrations/harness/providers/omp/omp";
 import * as fx from "../src/integrations/harness/providers/fx/fx";
 import * as hermes from "../src/integrations/harness/providers/hermes/hermes";
-import * as gemini from "../src/integrations/harness/providers/gemini/gemini";
 import * as genericAcp from "../src/integrations/harness/providers/generic-acp/genericAcpAdapter";
 import * as antigravity from "../src/integrations/harness/providers/antigravity/antigravity";
+import { antigravityAdapter } from "../src/integrations/harness/providers/antigravity/antigravityAdapter";
 import type {
   SendTurnInput,
   SteerTurnInput,
@@ -44,6 +44,8 @@ export interface HostProvider {
   rewind?(input: RewindLastTurnInput): Promise<RewindLastTurnResult>;
   cancel(id: string): Promise<void>;
   stop(id: string): Promise<void>;
+  /** Exact provider task only; omission must never mean cancel the whole turn. */
+  stopItem?(id: string, callId: string): Promise<void>;
   bind(id: string, providerId: string, cwd: string, providerAccountId?: string): void;
   approve(id: string, request: number, decision: ApprovalDecision): void;
   answer(id: string, request: number, reply: UserQuestionReply): void;
@@ -78,6 +80,7 @@ const providers: Record<RemoteProvider, HostProvider> = {
     generateBranchName: generateCodexBranchName,
   },
   claude: {
+    stopItem: claude.stopClaudeBackgroundWork,
     steer: claude.steerClaudeTurn,
     send: claude.sendClaudeTurn,
     compact: claude.compactClaudeContext,
@@ -162,19 +165,12 @@ const providers: Record<RemoteProvider, HostProvider> = {
     approve: hermes.respondHermesApproval,
     answer: unsupportedQuestion,
   },
-  gemini: {
-    send: gemini.sendGeminiTurn,
-    cancel: gemini.cancelGeminiTurn,
-    stop: gemini.forgetGeminiSession,
-    bind: gemini.bindGeminiSession,
-    approve: gemini.respondGeminiApproval,
-    answer: unsupportedQuestion,
-  },
+  // The adapter picks ACP or agy's headless stream-json from the resolved binary.
   antigravity: {
-    send: antigravity.sendAntigravityTurn,
-    cancel: antigravity.cancelAntigravityTurn,
-    stop: antigravity.forgetAntigravitySession,
-    bind: antigravity.bindAntigravitySession,
+    send: antigravityAdapter.sendTurn,
+    cancel: antigravityAdapter.cancelTurn,
+    stop: antigravityAdapter.forgetSession!,
+    bind: antigravityAdapter.bindSession!,
     approve: antigravity.respondAntigravityApproval,
     answer: unsupportedQuestion,
   },

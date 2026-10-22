@@ -42,3 +42,13 @@ export function isMacTerminalClearShortcut(event: TerminalKeyEvent): boolean {
     event.key.toLowerCase() === "k"
   );
 }
+
+/**
+ * Printable text or a single backspace: input that edits the prompt line in
+ * place. Control input (Enter, Tab, arrows, Ctrl chords, multiline paste)
+ * may submit or navigate, so suggestion surfaces must not survive it.
+ */
+export function isTerminalTextEdit(data: string): boolean {
+  // oxlint-disable-next-line no-control-regex -- classify transient input without storing or logging it
+  return data === "\x7f" || data === "\b" || !/[\x00-\x1f\x7f]/.test(data);
+}

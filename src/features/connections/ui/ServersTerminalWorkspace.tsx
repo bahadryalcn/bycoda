@@ -1,4 +1,16 @@
-import { createContext, useContext, useRef, useState, type ReactNode } from "react";
+import {
+  createContext,
+  useContext,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
+import {
+  registerSshWorkspaceUi,
+  type SshWorkspaceUiOwner,
+  type SshWorkspaceStatus,
+} from "../model/sshMobileWorkspaceControl";
 import { invoke } from "@tauri-apps/api/core";
 import { TerminalView } from "../../terminal/ui/TerminalView";
 import { ToolHeader } from "../../../app/shell/ToolNavigation";
@@ -53,6 +65,8 @@ export function ServersTerminalWorkspace({
       expectedConfigurationDigest?: string;
       httpProxyTicketId?: string;
       startupEligible?: boolean;
+      mobileValid?: () => boolean;
+      mobileAuthorize?: () => Promise<boolean>;
     }[]
   >([]);
   const [active, setActive] = useState<string | null>(null);
@@ -63,7 +77,105 @@ export function ServersTerminalWorkspace({
     shellIntegration?: "auto" | "bash" | "zsh" | "powershell";
     name?: string;
     startupEligible?: boolean;
+    mobile?: {
+      resourceId: string;
+      digest: string;
+      valid: () => boolean;
+      authorize: () => Promise<boolean>;
+      resolve: (opened: boolean) => void;
+    };
   }>();
+  const configurationRef = useRef(configurationReview);
+  configurationRef.current = configurationReview;
+  const mobileReviewBusy = useRef(false);
+  const mobileResources = useRef(
+    new Map<
+      string,
+      {
+        state: SshWorkspaceStatus["state"];
+        notify: (state: SshWorkspaceStatus["state"]) => void;
+        closed?: () => void;
+        closeFailed?: () => void;
+        finishOpen?: (opened: boolean) => void;
+      }
+    >(),
+  );
+  const terminalSnapshot = useRef(terminals);
+  terminalSnapshot.current = terminals;
+  const mobileApi = useRef<SshWorkspaceUiOwner>(null!);
+  mobileApi.current = {
+    open: (resourceId, server, digest, valid, notify, authorize) => {
+      if (
+        configurationRef.current ||
+        mobileReviewBusy.current ||
+        mobileResources.current.has(resourceId) ||
+        !resourceId.startsWith("ssh-mobile:") ||
+        !valid()
+      )
+        return Promise.resolve(false);
+      mobileReviewBusy.current = true;
+      mobileResources.current.set(resourceId, { state: "opening", notify });
+      return new Promise<boolean>((resolve) => {
+        mobileResources.current.get(resourceId)!.finishOpen = resolve;
+        setConfigurationReview({
+          server,
+          startupEligible: false,
+          mobile: {
+            resourceId,
+            digest,
+            valid,
+            authorize,
+            resolve: (opened) => {
+              mobileReviewBusy.current = false;
+              if (!opened) {
+                const entry = mobileResources.current.get(resourceId);
+                if (entry) {
+                  entry.state = "failed";
+                  entry.notify("failed");
+                  entry.finishOpen?.(false);
+                  entry.finishOpen = undefined;
+                }
+              }
+              // Keep native/host Pending alive until the final pre-spawn authority check settles.
+            },
+          },
+        });
+      });
+    },
+    impact: (resourceId) => {
+      const entry = mobileResources.current.get(resourceId);
+      if (!entry) throw new Error("Terminal was not created by this mobile workspace");
+      return {
+        state: entry.state,
+        count: terminalSnapshot.current.some((terminal) => terminal.id === resourceId) ? 1 : 0,
+      };
+    },
+    close: async (resourceId) => {
+      const entry = mobileResources.current.get(resourceId);
+      if (!entry) throw new Error("Terminal was not created by this mobile workspace");
+      if (entry.state === "closed") return;
+      const terminal = terminalSnapshot.current.find((value) => value.id === resourceId);
+      if (!terminal) throw new Error("Owned terminal is not mounted");
+      const closed = new Promise<void>((resolve, reject) => {
+        entry.closed = resolve;
+        entry.closeFailed = () => reject(new Error("Owned terminal close did not complete"));
+      });
+      // TerminalView cleanup waits for its own spawn and kills only this exact PTY.
+      serverTerminalRestoreState.remove(terminal.restoreId);
+      setTerminals((previous) => previous.filter((value) => value.id !== resourceId));
+      setActive((current) => (current === resourceId ? null : current));
+      await closed;
+    },
+  };
+  useLayoutEffect(
+    () =>
+      registerSshWorkspaceUi({
+        open: (...args) => mobileApi.current.open(...args),
+        close: (...args) => mobileApi.current.close(...args),
+        impact: (...args) => mobileApi.current.impact(...args),
+      }),
+    [],
+  );
   const authorizeProxy = (
     id: string,
     server?: ServerRecord,
@@ -86,11 +198,13 @@ export function ServersTerminalWorkspace({
     shellIntegration: "auto" | "bash" | "zsh" | "powershell" = "auto",
     name = server.name,
     startupEligible = !replacingPendingId,
+    mobile?: { resourceId: string; valid: () => boolean; authorize: () => Promise<boolean> },
   ) => {
-    const id = `ssh:${crypto.randomUUID()}`;
+    const id = mobile?.resourceId ?? `ssh:${crypto.randomUUID()}`;
     const approval = authorizeProxy(id, server, undefined, shellIntegration);
     const httpProxyTicketId = approval ? await approval : undefined;
-    if (httpProxyTicketId === null) return;
+    if (httpProxyTicketId === null) return false;
+    if (mobile && !mobile.valid()) throw new Error("Reviewed mobile SSH source changed");
     const restoreId = crypto.randomUUID();
     setTerminals((previous) => [
       ...previous,
@@ -106,12 +220,15 @@ export function ServersTerminalWorkspace({
         shellIntegration,
         httpProxyTicketId,
         startupEligible,
+        ...(mobile ? { mobileValid: mobile.valid, mobileAuthorize: mobile.authorize } : {}),
       },
     ]);
     serverTerminalRestoreState.add({ tabId: restoreId, serverId: server.id }, replacingPendingId);
     setActive(id);
+    return true;
   };
   const open = (server: ServerRecord, replacingPendingId?: string) => {
+    if (mobileReviewBusy.current) return;
     if (server.metadata.sshInheritance) setConfigurationReview({ server, replacingPendingId });
     else launch(server, replacingPendingId);
   };
@@ -335,6 +452,28 @@ export function ServersTerminalWorkspace({
                           : undefined
                       }
                       sshConnectionId={terminal.server?.id}
+                      canStart={terminal.mobileValid}
+                      authorizeStart={terminal.mobileAuthorize}
+                      onLifecycle={
+                        mobileResources.current.has(terminal.id)
+                          ? (state) => {
+                              const entry = mobileResources.current.get(terminal.id);
+                              if (!entry) return;
+                              entry.state = state;
+                              entry.notify(state);
+                              if (
+                                state === "opened-on-computer" ||
+                                state === "failed" ||
+                                state === "closed"
+                              ) {
+                                entry.finishOpen?.(state === "opened-on-computer");
+                                entry.finishOpen = undefined;
+                              }
+                              if (state === "closed") entry.closed?.();
+                              if (state === "failed") entry.closeFailed?.();
+                            }
+                          : undefined
+                      }
                       sshEndpoint={terminal.endpoint}
                       shellIntegration={terminal.shellIntegration}
                       agentForwardingReviewId={terminal.agentForwardingReviewId}
@@ -416,15 +555,28 @@ export function ServersTerminalWorkspace({
         {configurationReview ? (
           <SshConfigurationConnectReview
             server={configurationReview.server}
-            onClose={() => setConfigurationReview(undefined)}
+            onClose={() => {
+              configurationReview.mobile?.resolve(false);
+              setConfigurationReview(undefined);
+            }}
             onConnect={(digest) => {
-              launch(
+              const mobile = configurationReview.mobile;
+              if (mobile && (digest !== mobile.digest || !mobile.valid())) {
+                mobile.resolve(false);
+                setConfigurationReview(undefined);
+                return;
+              }
+              void launch(
                 configurationReview.server,
                 configurationReview.replacingPendingId,
                 digest,
                 configurationReview.shellIntegration,
                 configurationReview.name,
                 configurationReview.startupEligible,
+                mobile,
+              ).then(
+                (opened) => mobile?.resolve(opened === true),
+                () => mobile?.resolve(false),
               );
               setConfigurationReview(undefined);
             }}

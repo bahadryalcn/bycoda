@@ -84,10 +84,12 @@ export function loadRateLimits(
   force = false,
   canRetry: () => boolean = () => true,
   background = false,
+  oneShot = false,
 ): Promise<ProviderRateLimits> {
   const key = keyFor(provider, accountId);
   const running = pending.get(key);
   if (running) {
+    if (oneShot) return running;
     if (!force) return running;
     const queued = queuedRefreshes.get(key);
     if (queued) return queued;
@@ -109,13 +111,13 @@ export function loadRateLimits(
   cancelRetry(key);
   const generation = Symbol(key);
   generations.set(key, generation);
-  if (!background || !cached) publish(key, fetchingRateLimits(provider, cached));
+  if (!oneShot && (!background || !cached)) publish(key, fetchingRateLimits(provider, cached));
   const run = (async () => {
     let result: ProviderRateLimits;
     try {
       result =
         provider === "claude"
-          ? await fetchClaudeRateLimits(accountId)
+          ? await fetchClaudeRateLimits(accountId, oneShot)
           : provider === "codex"
             ? await fetchCodexRateLimits(accountId)
             : await fetchOpencodeGoRateLimits();
@@ -125,6 +127,7 @@ export function loadRateLimits(
       if (generations.get(key) === generation) pending.delete(key);
     }
     if (generations.get(key) !== generation) return result;
+    if (oneShot && !canRetry()) return result;
     if (result.status === "error") {
       const renewalPending = result.renewalPending === true;
       // A failed request (a 429, a dropped connection) says nothing about the
@@ -136,7 +139,7 @@ export function loadRateLimits(
           ...(renewalPending ? { renewalPending } : {}),
         };
       }
-      scheduleRetry(provider, accountId, canRetry, background, renewalPending);
+      if (!oneShot) scheduleRetry(provider, accountId, canRetry, background, renewalPending);
     } else {
       retryAttempts.delete(key);
     }
@@ -144,6 +147,11 @@ export function loadRateLimits(
   })();
   pending.set(key, run);
   return run;
+}
+
+/** An explicit bounded observation; never queues a replay or schedules background retries. */
+export function refreshClaudeQuotaOnce(accountId: string, canPublish: () => boolean) {
+  return loadRateLimits("claude", accountId, true, canPublish, false, true);
 }
 
 /**

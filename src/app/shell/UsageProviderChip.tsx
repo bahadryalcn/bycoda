@@ -359,7 +359,7 @@ export function UsageProviderChip({
           ) : (
             <>
               <div className="flex items-start gap-2.5 px-1 pb-2.5 pt-0.5">
-                <span className="grid size-7 shrink-0 place-items-center rounded-lg bg-content/[0.06] ring-1 ring-inset ring-content/[0.07]">
+                <span className="grid size-7 shrink-0 place-items-center rounded-lg bg-(--ui-surface-muted) ring-1 ring-inset ring-(--color-stroke)">
                   <HarnessIcon harness={iconHarness} className="size-4" />
                 </span>
                 <div className="min-w-0 flex-1">
@@ -367,16 +367,16 @@ export function UsageProviderChip({
                     {providerLabel}
                     {t(" usage")}
                   </h2>
-                  <p className="mt-0.5 text-[10px] leading-4 text-content/40">
+                  <p className="mt-0.5 text-[length:var(--ui-font-caption)] leading-4 text-(--ui-text-secondary)">
                     {updatedLabel(detailLimits, now)}
                   </p>
                   {presentation?.sourceLabel ? (
-                    <p className="mt-0.5 text-[10px] leading-4 text-content/55">
+                    <p className="mt-0.5 text-[length:var(--ui-font-caption)] leading-4 text-(--ui-text-secondary)">
                       {presentation.sourceLabel}
                     </p>
                   ) : null}
                   {canManageAccounts ? (
-                    <div className="pointer-events-none relative mt-1 -ml-1 inline-flex max-w-full items-center gap-1 rounded px-1 py-0.5 text-[10px] text-content/55">
+                    <div className="pointer-events-none relative mt-1 -ml-1 inline-flex max-w-full items-center gap-1 rounded px-1 py-0.5 text-[length:var(--ui-font-caption)] text-(--ui-text-secondary)">
                       {/* Keep account switching separate from email revelation. */}
                       <Button
                         variant="ghost"
@@ -393,14 +393,14 @@ export function UsageProviderChip({
                       <ProviderAccountSubtitle
                         key={activeAccount && identityKey(activeAccount)}
                         identity={activeIdentity}
-                        className="text-content/35"
+                        className="text-(--ui-text-secondary)"
                       />
                       <ChevronRight className="size-2.5 shrink-0" strokeWidth={1.75} aria-hidden />
                     </div>
                   ) : null}
                 </div>
                 {detailLimits.status === "fetching" ? (
-                  <span className="mt-0.5 inline-flex items-center gap-1 text-[10px] text-content/40">
+                  <span className="mt-0.5 inline-flex items-center gap-1 text-[length:var(--ui-font-caption)] text-(--ui-text-secondary)">
                     <RefreshCw
                       className="size-2.5 motion-safe:animate-spin"
                       strokeWidth={1.75}
@@ -412,7 +412,7 @@ export function UsageProviderChip({
               </div>
 
               {detailLimits.status === "error" && detailWindows.length > 0 ? (
-                <p className="mb-2 rounded-lg bg-warning/10 px-2.5 py-2 text-[10px] leading-4 text-warning dark:text-warning">
+                <p className="mb-2 rounded-lg bg-(--ui-tone-warning-subtle) px-2.5 py-2 text-[length:var(--ui-font-caption)] leading-4 text-warning dark:text-warning">
                   {t("Couldn’t refresh. Showing the last available snapshot.")}
                 </p>
               ) : null}
@@ -497,8 +497,14 @@ function AccountSwitchRow({
       >
         {account ? <AccountColorDot account={account} /> : null}
         <span className="min-w-0 flex-1 truncate">{accountLabel}</span>
-        <span className="text-[10px] text-content/40">{t("Switch account")}</span>
-        <ChevronRight className="size-3 shrink-0 text-content/35" strokeWidth={1.75} aria-hidden />
+        <span className="text-[length:var(--ui-font-caption)] text-(--ui-text-secondary)">
+          {t("Switch account")}
+        </span>
+        <ChevronRight
+          className="size-3 shrink-0 text-(--ui-text-secondary)"
+          strokeWidth={1.75}
+          aria-hidden
+        />
       </Button>
     </div>
   );
@@ -549,7 +555,7 @@ function ProviderAccountPicker({
           {t(" accounts")}
         </h2>
       </div>
-      <p className="mt-1 px-1 text-[10px] leading-4 text-content/40">
+      <p className="mt-1 px-1 text-[length:var(--ui-font-caption)] leading-4 text-(--ui-text-secondary)">
         {t("Applies to this conversation only; new ones use the default account.")}
       </p>
       <div
@@ -568,8 +574,8 @@ function ProviderAccountPicker({
               key={account.id}
               className={`pointer-events-none relative flex w-full items-center gap-3 rounded-lg px-2.5 py-2 text-left text-[11px] ring-1 ring-inset transition-colors ${
                 selected
-                  ? "bg-accent/10 text-content ring-accent/20"
-                  : "bg-content/[0.035] text-content/70 ring-content/[0.06]"
+                  ? "bg-(--ui-surface-selected) text-content ring-(--ui-tone-accent-border)"
+                  : "bg-(--ui-surface-muted) text-(--ui-text-secondary) ring-(--color-stroke)"
               }`}
             >
               {/* A sibling target keeps the email button out of the selection button. */}
@@ -589,15 +595,15 @@ function ProviderAccountPicker({
                   <span className="shrink-0 truncate">{account.label}</span>
                   <ProviderAccountSubtitle
                     identity={identity}
-                    className="text-[10px] text-content/35"
+                    className="text-[length:var(--ui-font-caption)] text-(--ui-text-secondary)"
                   />
                   {orgTag ? (
-                    <span className="max-w-[6rem] shrink-0 truncate rounded bg-content/[0.07] px-1 text-[9px] leading-4 text-content/50">
+                    <span className="max-w-[6rem] shrink-0 truncate rounded bg-(--ui-surface-muted) px-1 text-[length:var(--ui-font-caption)] leading-4 text-(--ui-text-secondary)">
                       {orgTag}
                     </span>
                   ) : null}
                 </span>
-                <span className="mt-1 flex min-w-0 items-center gap-3 text-[10px]">
+                <span className="mt-1 flex min-w-0 items-center gap-3 text-[length:var(--ui-font-caption)]">
                   <span
                     id={`${statusId}-${account.id}`}
                     // Without meters, a long "unknown" reason truncates.
@@ -670,16 +676,19 @@ function SwitchSuggestion({
 }) {
   useLocale();
   return (
-    <section className="mt-2 flex items-center gap-2.5 rounded-lg bg-content/[0.045] px-3 py-2.5 ring-1 ring-inset ring-content/[0.06]">
+    <section className="mt-2 flex items-center gap-2.5 rounded-lg bg-(--ui-surface-muted) px-3 py-2.5 ring-1 ring-inset ring-(--color-stroke)">
       <div className="min-w-0 flex-1">
-        <p className="text-[10px] leading-4 text-content/45">
+        <p className="text-[length:var(--ui-font-caption)] leading-4 text-(--ui-text-secondary)">
           {exhausted ? t("Out of usage") : t("Running low")}
           {t(" · switch to")}
         </p>
         <p className="mt-0.5 flex min-w-0 items-center gap-2 text-[11px]">
           <AccountColorDot account={account} />
           <span className="min-w-0 truncate font-medium">{account.label}</span>
-          <AccountStatusLabel status={accountStatus(limits, now)} className="text-[10px]" />
+          <AccountStatusLabel
+            status={accountStatus(limits, now)}
+            className="text-[length:var(--ui-font-caption)]"
+          />
         </p>
       </div>
       <Button variant="ghost" motion="none" type="button" className="shrink-0" onClick={onSwitch}>
@@ -741,10 +750,10 @@ function AddProviderAccount({
           {t(" account")}
         </h2>
       </div>
-      <p className="mt-1 px-1 text-[10px] leading-4 text-content/40">
+      <p className="mt-1 px-1 text-[length:var(--ui-font-caption)] leading-4 text-(--ui-text-secondary)">
         {t("Give this account a local name, then finish sign-in in your browser.")}
       </p>
-      <label className="mt-3 block text-[10px] font-medium text-content/55">
+      <label className="mt-3 block text-[length:var(--ui-font-caption)] font-medium text-(--ui-text-secondary)">
         {t("Account name")}
         <TextField
           fieldClassName="min-w-0 flex-1"
@@ -771,7 +780,10 @@ function AddProviderAccount({
         {running ? t("Waiting for browser…") : t("Sign in and add account")}
       </Button>
       {error ? (
-        <p className="mt-2 text-[10px] leading-4 text-danger" role="status">
+        <p
+          className="mt-2 text-[length:var(--ui-font-caption)] leading-4 text-danger"
+          role="status"
+        >
           {error}
         </p>
       ) : null}
@@ -823,7 +835,7 @@ function UsageWindowCard({
         value={Math.round(shown)}
         tone={pct >= 90 ? "danger" : pct >= 80 ? "warning" : "neutral"}
       />
-      <div className="mbs-1.5 flex items-center justify-between gap-3 text-[10px] leading-4 text-(--ui-text-secondary)">
+      <div className="mbs-1.5 flex items-center justify-between gap-3 text-[length:var(--ui-font-caption)] leading-4 text-(--ui-text-secondary)">
         <span className="tabular-nums">
           {formatUsagePercent(showRemaining ? pct : remaining)}{" "}
           {showRemaining ? t("used") : t("remaining")}
@@ -890,11 +902,11 @@ function BankedResets({
         <div className="min-w-0">
           <div className="flex items-center gap-1.5">
             <h3 className="text-[11px] font-medium">{t("Banked resets")}</h3>
-            <span className="rounded-full bg-(--ui-surface-muted) px-1.5 py-px text-[9px] font-medium tabular-nums text-(--ui-text-secondary)">
+            <span className="rounded-full bg-(--ui-surface-muted) px-1.5 py-px text-[length:var(--ui-font-caption)] font-medium tabular-nums text-(--ui-text-secondary)">
               {count}
             </span>
           </div>
-          <p className="mbs-0.5 text-[10px] leading-4 text-(--ui-text-secondary)">
+          <p className="mbs-0.5 text-[length:var(--ui-font-caption)] leading-4 text-(--ui-text-secondary)">
             {count} {count === 1 ? t("reset") : t("resets")}
             {t(" available")}
           </p>
@@ -981,15 +993,17 @@ function BankedResetRow({
   useLocale();
   return (
     <article className="rounded-lg border border-(--color-stroke) bg-(--ui-surface) px-2.5 py-2">
-      <h4 className="text-[10px] font-medium leading-4 text-content/70">
+      <h4 className="text-[length:var(--ui-font-caption)] font-medium leading-4 text-(--ui-text-secondary)">
         {credit?.title ?? t("Banked reset {p0}", { p0: index + 1 })}
       </h4>
       {credit?.description ? (
-        <p className="mt-0.5 text-[10px] leading-4 text-content/45">{credit.description}</p>
+        <p className="mt-0.5 text-[length:var(--ui-font-caption)] leading-4 text-(--ui-text-secondary)">
+          {credit.description}
+        </p>
       ) : null}
       <div className="mt-1.5 flex min-h-6 items-center justify-between gap-2">
         <p
-          className="min-w-0 truncate text-[10px] tabular-nums text-content/40"
+          className="min-w-0 truncate text-[length:var(--ui-font-caption)] tabular-nums text-(--ui-text-secondary)"
           title={
             credit?.expiresAt == null
               ? undefined
@@ -1003,14 +1017,14 @@ function BankedResetRow({
               : t("Expires in {p0}", { p0: formatResetDuration(credit.expiresAt - now) })}
         </p>
         {action === "using" ? (
-          <span className="inline-flex shrink-0 items-center gap-1.5 text-[10px] text-content/45">
+          <span className="inline-flex shrink-0 items-center gap-1.5 text-[length:var(--ui-font-caption)] text-(--ui-text-secondary)">
             <RefreshCw className="size-3 motion-safe:animate-spin" strokeWidth={1.75} aria-hidden />
             {t("Applying…")}
           </span>
         ) : isResetOutcome(action) || action === "error" ? (
           <span
-            className={`shrink-0 text-[10px] ${
-              action === "reset" ? "text-success dark:text-success" : "text-content/50"
+            className={`shrink-0 text-[length:var(--ui-font-caption)] ${
+              action === "reset" ? "text-success dark:text-success" : "text-(--ui-text-secondary)"
             }`}
             role="status"
           >
@@ -1030,8 +1044,10 @@ function BankedResetRow({
         ) : null}
       </div>
       {action === "confirming" ? (
-        <div className="mt-2 flex items-center justify-between gap-2 border-t border-content/[0.07] pt-2">
-          <p className="text-[10px] leading-4 text-content/50">{t("Spend this reset now?")}</p>
+        <div className="mt-2 flex items-center justify-between gap-2 border-t border-(--color-stroke) pt-2">
+          <p className="text-[length:var(--ui-font-caption)] leading-4 text-(--ui-text-secondary)">
+            {t("Spend this reset now?")}
+          </p>
           <div className="flex shrink-0 gap-1">
             <Button variant="ghost" motion="none" type="button" className="" onClick={onCancel}>
               {t("Cancel")}
@@ -1106,7 +1122,7 @@ function UnknownUsageBar({ label, loading = false }: { label: string; loading?: 
     <span
       title={label}
       aria-label={label}
-      className="inline-flex h-4 min-w-12 items-center justify-center rounded-sm border border-dashed border-(--color-stroke) bg-(--ui-surface-muted) px-1 text-[10px] text-(--ui-text-secondary)"
+      className="inline-flex h-4 min-w-12 items-center justify-center rounded-sm border border-dashed border-(--color-stroke) bg-(--ui-surface-muted) px-1 text-[length:var(--ui-font-caption)] text-(--ui-text-secondary)"
     >
       {loading ? "···" : "?"}
     </span>

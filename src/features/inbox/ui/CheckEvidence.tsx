@@ -170,7 +170,7 @@ function CheckAnnotation({
             </pre>
           ) : null}
           {canRead && source?.key === sourceKey && !excerpt.length ? (
-            <p className="mt-2 text-[10px] text-(--ui-text-secondary)">
+            <p className="mt-2 text-(length:--ui-font-caption) text-(--ui-text-secondary)">
               {t("Source preview unavailable for this commit.")}
             </p>
           ) : null}

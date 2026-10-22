@@ -24,7 +24,7 @@ it("uses the saved provider/model in the common text runner and an empty host wo
   const generate = socialAgentGenerator("host-social");
   expect(
     await generate(
-      { provider: "gemini", model: "gemini:chosen-model" },
+      { provider: "antigravity", model: "antigravity:chosen-model" },
       "Trusted public prompt",
       signal,
     ),
@@ -35,7 +35,7 @@ it("uses the saved provider/model in the common text runner and an empty host wo
   });
   expect(mocks.register).toHaveBeenCalledOnce();
   expect(mocks.run).toHaveBeenCalledWith({
-    harness: "gemini",
+    harness: "antigravity",
     model: "chosen-model",
     cwd: join("host-social", "text-workspace"),
     prompt: "Trusted public prompt",
@@ -49,11 +49,11 @@ it("an unsupported or unauthenticated saved runner fails without selecting anoth
   mocks.run.mockRejectedValue(new Error("Runner unavailable"));
   await expect(
     socialAgentGenerator("host-social")(
-      { provider: "gemini" },
+      { provider: "antigravity" },
       "Trusted fact",
       new AbortController().signal,
     ),
   ).rejects.toThrow("Runner unavailable");
   expect(mocks.run).toHaveBeenCalledTimes(1);
-  expect(mocks.run.mock.calls[0][0].harness).toBe("gemini");
+  expect(mocks.run.mock.calls[0][0].harness).toBe("antigravity");
 });

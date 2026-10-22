@@ -55,7 +55,7 @@ import { remoteProjectMachines } from "../../connections/model/localSync";
 import { classifyRemoteError } from "../../connections/model/remoteFailure";
 import { listMachineSkills } from "../model/machineSkills";
 import { canDeleteSkill } from "../model/deleteSkill";
-import { AdvancedSettings, Segmented, Toggle } from "../../settings/ui/settingsControls";
+import { Segmented, Toggle } from "../../settings/ui/settingsControls";
 import { cacheSkillPolicy, cachedSkillPolicy } from "../model/skillPreferences";
 import {
   parseSkillPolicy,
@@ -594,6 +594,7 @@ export function SkillsPage({ cwd, header }: { cwd: string; header?: ReactNode })
               onChange={(enabled) => void onToggle(skill, enabled, machine)}
             />
           ) : null}
+          {disabled ? <Badge size="sm">{t("Disabled")}</Badge> : null}
         </div>
         <div className={styles.rowActions}>
           <Button
@@ -792,10 +793,8 @@ export function SkillsPage({ cwd, header }: { cwd: string; header?: ReactNode })
               {renderList(all, shown, machineLists[machine.environmentId]?.error ?? null, machine)}
             </details>
           ))}
-          <AdvancedSettings
-            title={t("Advanced: skill controls and folders")}
-            settingIds={["skill-folders"]}
-          >
+          <details className={styles.policy}>
+            <summary>{t("Advanced: skill controls and folders")}</summary>
             <p
               id="setting-skill-folders"
               data-setting-id="skill-folders"
@@ -814,10 +813,10 @@ export function SkillsPage({ cwd, header }: { cwd: string; header?: ReactNode })
             </p>
             <p className={styles.message}>
               {t(
-                "Native skill controls: Codex, Claude, OpenCode, Pi and OMP. Cursor, Grok, FX, Hermes, Antigravity, Gemini and generic ACP receive current restrictions as instructions; their native skill loading cannot be controlled individually through the connected protocol.",
+                "Native skill controls: Codex, Claude, OpenCode, Pi and OMP. Cursor, Grok, FX, Hermes, Antigravity and generic ACP receive current restrictions as instructions; their native skill loading cannot be controlled individually through the connected protocol.",
               )}
             </p>
-          </AdvancedSettings>
+          </details>
         </div>
         <footer className={styles.libraryFooter} title={cwd}>
           <FolderOpen className="size-3.5" aria-hidden="true" />

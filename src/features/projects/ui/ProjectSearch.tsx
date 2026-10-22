@@ -186,7 +186,7 @@ function ProjectSearchContent({
 
   if (!cwd || cwd === "~") {
     return (
-      <p className="px-3 py-2 text-[12px] text-[var(--ui-text-muted)]">{t("No project folder")}</p>
+      <p className="px-3 py-2 text-[12px] text-(--ui-text-secondary)">{t("No project folder")}</p>
     );
   }
 
@@ -205,7 +205,7 @@ function ProjectSearchContent({
           >
             <ChevronLeft className="size-4" strokeWidth={1.75} />
           </Button>
-          <span className="min-w-0 flex-1 truncate text-[12px] text-[var(--ui-text-muted)]">
+          <span className="min-w-0 flex-1 truncate text-[12px] text-(--ui-text-secondary)">
             {t("Search in files")}
           </span>
         </div>
@@ -302,7 +302,7 @@ function ProjectSearchContent({
           </Button>
         </Popover>
       ) : null}
-      <div className="flex min-h-8 shrink-0 items-center gap-2 px-3 py-1.5 text-[11px] text-[var(--ui-text-muted)]">
+      <div className="flex min-h-8 shrink-0 items-center gap-2 px-3 py-1.5 text-[11px] text-(--ui-text-secondary)">
         {loading ? (
           <>
             <LoaderCircle className="size-3 animate-spin" strokeWidth={1.75} />
@@ -337,12 +337,12 @@ function ProjectSearchContent({
             <div className="flex items-center gap-1.5 px-2 py-1.5">
               <FileTypeIcon name={group.name} isDir={false} size={16} />
               <span className="min-w-0 flex-1 truncate text-[12px] text-content">{group.name}</span>
-              <span className="rounded-full bg-[var(--ui-tone-accent-subtle)] px-1.5 py-0.5 text-[10px] tabular-nums text-accent">
+              <span className="rounded-full bg-[var(--ui-tone-accent-subtle)] px-1.5 py-0.5 text-(length:--ui-font-caption) tabular-nums text-accent">
                 {group.matches.length}
               </span>
             </div>
             <p
-              className="truncate px-2 pb-1 text-[10px] text-[var(--ui-text-muted)]"
+              className="truncate px-2 pb-1 text-(length:--ui-font-caption) text-(--ui-text-secondary)"
               title={group.relative}
             >
               {group.relative}
@@ -358,7 +358,7 @@ function ProjectSearchContent({
                     onDoubleClick={() => openMatch(match, true)}
                     className="flex w-full items-start gap-2 text-left"
                   >
-                    <span className="w-7 shrink-0 pt-px text-right font-mono text-[11px] text-[var(--ui-text-muted)] tabular-nums">
+                    <span className="w-7 shrink-0 pt-px text-right font-mono text-[11px] text-(--ui-text-secondary) tabular-nums">
                       {match.line}
                     </span>
                     <span className="min-w-0 flex-1 truncate font-mono text-[11px] leading-5 text-[var(--color-content)]">

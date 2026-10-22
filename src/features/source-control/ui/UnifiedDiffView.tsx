@@ -1387,7 +1387,7 @@ const DiffLineRow = memo(function DiffLineRow({
                 event.currentTarget.getBoundingClientRect(),
               )
             }
-            className={`diff-hover-comment absolute top-0.5 left-0.5 z-10 grid size-4 place-items-center transition-opacity focus-visible:pointer-events-auto focus-visible:opacity-100 ${
+            className={`diff-hover-comment absolute top-0.5 left-0.5 z-10 grid size-4 place-items-center transition-opacity focus-visible:pointer-events-auto focus-visible:opacity-100 pointer-coarse:pointer-events-auto pointer-coarse:opacity-100 ${
               hovered || commenting ? "opacity-100" : "pointer-events-none opacity-0"
             }`}
           >
@@ -1404,7 +1404,7 @@ const DiffLineRow = memo(function DiffLineRow({
             onClick={() => {
               if (fileId !== undefined && stagePos !== undefined) onStage(fileId, stagePos);
             }}
-            className={`diff-hover-stage absolute top-0.5 left-full z-10 ml-0.5 grid size-4 place-items-center ${
+            className={`diff-hover-stage absolute top-0.5 left-full z-10 ml-0.5 grid size-4 place-items-center focus-visible:pointer-events-auto focus-visible:opacity-100 pointer-coarse:pointer-events-auto pointer-coarse:opacity-100 ${
               stageVisible ? "opacity-100" : "pointer-events-none opacity-0"
             }`}
           >

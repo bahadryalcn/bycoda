@@ -1,5 +1,6 @@
 import { execFileAsync as exec } from "../src/shared/lib/processExecution.node";
 import { existsSync } from "node:fs";
+import { lstat } from "node:fs/promises";
 import { resolve } from "node:path";
 import type {
   GitConflictFile,
@@ -134,7 +135,7 @@ export async function hostOperationState(root: string): Promise<GitOperation | n
   return found?.[1] ?? null;
 }
 
-export type HostConflictStages = GitConflictStages;
+export type HostConflictStages = GitConflictStages & { workingExists: boolean };
 
 /** The base, current (ours) and incoming (theirs) versions of one conflicted
  * file. `relative` must already be confined to the project. */
@@ -154,7 +155,7 @@ export async function hostConflictStages(
     if (!entry) return null;
     try {
       const blob = await run<Buffer>(root, ["cat-file", "blob", entry.sha], "buffer", MAX_BLOB + 1);
-      binary ||= blob.includes(0);
+      binary ||= blob.includes(0) || !Buffer.from(blob.toString("utf8"), "utf8").equals(blob);
       return blob.toString("utf8");
     } catch (reason) {
       if (!String(reason).includes("maxBuffer"))
@@ -177,6 +178,7 @@ export async function hostConflictStages(
     theirs,
     binary,
     tooLarge,
+    workingExists: await lstat(resolve(root, relative)).then(() => true, (error: NodeJS.ErrnoException) => { if (error.code === "ENOENT") return false; throw error; }),
   };
 }
 

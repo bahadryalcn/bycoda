@@ -18,7 +18,7 @@ test("saves workspace and appearance choices, finishes directly and can reopen",
   await expect(dialog.getByRole("heading", { name: "A workspace that fits you" })).toBeInViewport();
   await page.screenshot({ path: `${captures}/workspace-dark.png` });
   await dialog.getByRole("button", { name: /2\s*Appearance/ }).click();
-  await expect(dialog.locator(".onboarding-crew-preview canvas")).toHaveCount(2);
+  await expect(dialog.locator(".onboarding-crew-preview canvas")).toHaveCount(3);
   await expect
     .poll(() =>
       dialog

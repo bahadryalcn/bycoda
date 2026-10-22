@@ -555,7 +555,7 @@ function BranchList({
               {row.branch.name}
             </span>
             {row.branch.remote ? (
-              <span className="shrink-0 rounded bg-[var(--ui-surface)] px-1.5 py-0.5 text-[10px] text-[var(--ui-text-muted)]">
+              <span className="shrink-0 rounded bg-(--ui-surface) px-1.5 py-0.5 text-(length:--ui-font-caption) leading-4 text-(--ui-text-secondary)">
                 {row.branch.remote}
               </span>
             ) : null}

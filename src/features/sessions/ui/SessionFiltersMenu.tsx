@@ -205,7 +205,7 @@ export function SessionFiltersMenu({ x, y, harnesses, filters, onChange, onClose
 function SectionLabel({ children }: { children: string }) {
   useLocale();
   return (
-    <div className="px-2 pb-0.5 pt-2 text-[10px] font-semibold uppercase tracking-[0.08em] text-(--ui-text-secondary)">
+    <div className="px-2 pb-0.5 pt-2 text-(length:--ui-font-caption) font-medium text-(--ui-text-secondary)">
       {children}
     </div>
   );

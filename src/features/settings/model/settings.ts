@@ -254,7 +254,7 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
         { p0: PRODUCT_IDENTITY.displayName },
       );
     },
-    keywords: "account sign in login model harness claude codex gemini cli default hooks",
+    keywords: "account sign in login model harness claude codex cli default hooks",
   },
   {
     id: "usage",
@@ -975,7 +975,7 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
     get label() {
       return t("Crew theme");
     },
-    keywords: "crew theme ekip tema classic star wars starwars yoda obi wan vader luke leia r2 d2",
+    keywords: "crew theme ekip tema classic star wars starwars yoda obi wan vader luke leia r2 d2 lord of the rings lotr yüzüklerin efendisi gandalf sauron nazgul orc ork dwarf cüce hobbit",
   },
   {
     id: "crew-growth",
@@ -993,7 +993,7 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
       return t("Providers and model defaults");
     },
     get keywords() {
-      return `codex opencode cursor grok pi omp fx hermes antigravity gemini google binary path default model effort reasoning fast advisor subagents compact ${t("Default provider")} ${t("Default model")}`;
+      return `codex opencode cursor grok pi omp fx hermes antigravity google binary path default model effort reasoning fast advisor subagents compact ${t("Default provider")} ${t("Default model")}`;
     },
   },
   {
@@ -1974,19 +1974,21 @@ export function subscribeCrewSceneEnabled(onStoreChange: () => void) {
 
 const CREW_GROWTH_ENABLED_KEY = "bycoda.crewGrowthEnabled";
 
-export type CrewTheme = "classic" | "star-wars";
+export type CrewTheme = "classic" | "star-wars" | "lotr";
+const parseCrewTheme = (value: unknown): CrewTheme =>
+  value === "star-wars" || value === "lotr" ? value : "classic";
 const crewThemeSetting = createStoredSetting<CrewTheme>({
   key: "bycoda.crewTheme",
   fallback: "classic",
   event: "bycoda:crew-theme-change",
   storageEvents: true,
-  parse: (value) => (value === "star-wars" ? "star-wars" : "classic"),
+  parse: parseCrewTheme,
   serialize: String,
 });
 export const loadCrewTheme = crewThemeSetting.load;
 export const subscribeCrewTheme = crewThemeSetting.subscribe;
 export function saveCrewTheme(value: CrewTheme) {
-  crewThemeSetting.save(value === "star-wars" ? "star-wars" : "classic");
+  crewThemeSetting.save(parseCrewTheme(value));
 }
 
 export const CREW_GROWTH_ENABLED_DEFAULT = true;

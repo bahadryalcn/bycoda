@@ -13,6 +13,16 @@ void GitGraphWorkspace;
 // No user repository or remote is changed by these scenarios.
 const sha = (n: number) => n.toString(16).padStart(40, "0");
 const large = new URLSearchParams(location.search).has("large");
+const diffUsability = new URLSearchParams(location.search).has("diff-usability");
+const diffRepository = "/fixture/engineering/long-repository-name-for-working-tree-review";
+const diffRelative =
+  "src/features/a-very-long-feature-directory/another-long-nested-directory/selected-hunk-review.ts";
+const diffOriginal =
+  Array.from({ length: 24 }, (_, n) => `const value${n + 1} = ${n + 1};`).join("\n") + "\n";
+const diffCurrent = diffOriginal
+  .replace("value2 = 2", "value2 = 200")
+  .replace("value22 = 22", "value22 = 2200");
+let failHunk = true;
 const commitCount = large ? 5000 : 40;
 const commits = Array.from({ length: commitCount }, (_, n) => ({
   sha: sha(commitCount - n),
@@ -49,6 +59,7 @@ const file = (relative: string, staged = false) => ({
   unstaged: !staged,
 });
 let files = [file("src/workspace.tsx"), file("src/theme.css"), file("README.md", true)];
+if (diffUsability) files = [{ ...file(diffRelative), path: `${diffRepository}/${diffRelative}` }];
 if (large)
   files.push(...Array.from({ length: 597 }, (_, n) => file(`src/features/feature-${n}/index.ts`)));
 const submodules = new URLSearchParams(location.search).has("submodules");
@@ -84,6 +95,13 @@ Object.assign(window, {
     transformCallback: () => 1,
     invoke: async (command: string, args: Record<string, unknown> = {}) => {
       calls.push({ command, args });
+      if (diffUsability && command === "git_stage_contents") {
+        if (failHunk) {
+          failHunk = false;
+          throw new Error("Fixture index.lock: review is preserved; retry the same hunk.");
+        }
+        return;
+      }
       if (command === "git_submodules") {
         if (new URLSearchParams(location.search).has("slow-discovery"))
           await new Promise((resolve) => setTimeout(resolve, 500));
@@ -161,8 +179,8 @@ Object.assign(window, {
       if (command === "git_file_diff" || command === "git_commit_file_diff")
         return {
           ...file(String(args.relative)),
-          original: `// ${args.relative}\nconst before = true;\n`,
-          current: `// ${args.relative}\nconst after = true;\n`,
+          original: diffUsability ? diffOriginal : `// ${args.relative}\nconst before = true;\n`,
+          current: diffUsability ? diffCurrent : `// ${args.relative}\nconst after = true;\n`,
           binary: false,
           tooLarge: false,
         };
@@ -291,7 +309,16 @@ const renderFixture = () =>
           : "w-80 border-r border-stroke"
       }
     >
-      {submodules ? (
+      {diffUsability ? (
+        <GitGraphWorkspace
+          cwd={diffRepository}
+          commit={null}
+          onCommit={() => {}}
+          onDirty={() => {}}
+          onBranch={() => {}}
+          graph={null}
+        />
+      ) : submodules ? (
         <SourceControl
           cwd="/fixture"
           enabled

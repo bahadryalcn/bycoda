@@ -31,6 +31,40 @@ async function fixture() {
   return { dir, cwd, git, checkpoints: new HostCheckpoints(join(dir, "checkpoints")) };
 }
 describe("host turn checkpoints", () => {
+  it("starts a turn beside an untracked nested repository and still reviews regular files", async () => {
+    const f = await fixture();
+    await mkdir(join(f.cwd, "nested"));
+    const nested = (...args: string[]) =>
+      exec("git", args, { cwd: join(f.cwd, "nested"), windowsHide: true });
+    await nested("init", "-q");
+    await writeFile(join(f.cwd, "nested", "n.txt"), "n\n");
+    await nested("add", "n.txt");
+    await nested("-c", "user.email=t@example.invalid", "-c", "user.name=T", "commit", "-qm", "n");
+    await f.checkpoints.begin("session", f.cwd, "one");
+    await writeFile(join(f.cwd, "a.txt"), "one\n");
+    await f.checkpoints.finish("session", f.cwd, "one");
+    expect((await f.checkpoints.status("session", f.cwd)).files.map((file) => file.relative)).toEqual(["a.txt"]);
+  });
+  it("binds guarded keep/undo to the exact reviewed delta and rejects a later completed turn", async () => {
+    const f = await fixture();
+    await f.checkpoints.begin("session", f.cwd, "one");
+    await writeFile(join(f.cwd, "a.txt"), "one\n");
+    await f.checkpoints.finish("session", f.cwd, "one");
+    const first = await f.checkpoints.status("session", f.cwd);
+    expect(first.expectedCheckpoint).toMatch(/^[a-f0-9]{64}$/);
+    expect((await f.checkpoints.fileDiff("session", f.cwd, "a.txt")).expectedCheckpoint).toBe(first.expectedCheckpoint);
+    await f.checkpoints.begin("session", f.cwd, "two");
+    await writeFile(join(f.cwd, "a.txt"), "two\n");
+    await f.checkpoints.finish("session", f.cwd, "two");
+    for (const undo of [true, false])
+      await expect(f.checkpoints.change("session", f.cwd, "a.txt", undo, first.expectedCheckpoint)).rejects.toThrow("checkpoint changed");
+    expect(await readFile(join(f.cwd, "a.txt"), "utf8")).toBe("two\n");
+    const latest = await f.checkpoints.status("session", f.cwd);
+    expect(latest.expectedCheckpoint).not.toBe(first.expectedCheckpoint);
+    await f.checkpoints.change("session", f.cwd, "a.txt", true, latest.expectedCheckpoint);
+    expect(await readFile(join(f.cwd, "a.txt"), "utf8")).toBe("base\n");
+    await expect(f.checkpoints.change("session", f.cwd, "a.txt", false, latest.expectedCheckpoint)).rejects.toThrow("checkpoint changed");
+  });
   it("recovers only its exact settled lease while preserving an independently active native peer", async () => {
     const f = await fixture();
     await f.checkpoints.begin("host", f.cwd, "settled");

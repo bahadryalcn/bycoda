@@ -95,6 +95,10 @@ html [data-activity-dock] {
   align-self: flex-end;
 }
 
+.composer-send-controls > .context-meter {
+  display: flex;
+}
+
 .composer-busy-send {
   display: flex;
   align-items: center;
@@ -178,6 +182,14 @@ html [data-activity-dock] {
   transform-origin: center;
 }
 
+/* Positions the bolt. The pulse stays on the bolt's root <svg>: measured in the
+   WebView2 build, root-<svg> transform animations stay on the compositor, while
+   animated HTML spans (the former WorkingIndicator bars) and SVG children did not. */
+.context-speed-pulse {
+  position: absolute;
+  inset: 0;
+}
+
 .context-speed-outline {
   color: var(--ui-text-disabled);
 }
@@ -202,8 +214,10 @@ html [data-activity-dock] {
 }
 
 .context-meter-empty {
-  min-block-size: 1.75rem;
-  padding-inline: 0.5rem;
+  justify-content: center;
+  inline-size: var(--ui-control-height-sm);
+  block-size: var(--ui-control-height-sm);
+  flex-shrink: 0;
   color: var(--ui-text-secondary);
   font-size: var(--ui-font-caption);
 }

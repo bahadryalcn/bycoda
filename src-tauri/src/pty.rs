@@ -74,7 +74,7 @@ impl PtyHost {
         let sessions = self.sessions.lock().unwrap_or_else(|e| e.into_inner());
         serde_json::json!({"terminals": sessions.iter().filter(|(_, live)| live.ssh_identity.is_none() && crate::worktrees::contains_working_dir(cwd, &live.cwd)).map(|(id, live)| serde_json::json!({"id": id, "cwd": live.cwd, "pid": live.pid})).collect::<Vec<_>>()})
     }
-    pub(crate) fn conversation_write(
+    fn conversation_write(
         &self,
         cwd: &std::path::Path,
         id: &str,
@@ -93,6 +93,16 @@ impl PtyHost {
             .and_then(|_| writer.flush())
             .map_err(|e| format!("Failed to write to terminal: {e}"))?;
         Ok(serde_json::json!({"accepted": true, "terminalId": id, "bytes": data.len()}))
+    }
+    pub(crate) fn conversation_write_checked(
+        &self,
+        app: &AppHandle,
+        cwd: &std::path::Path,
+        id: &str,
+        data: &str,
+    ) -> Result<serde_json::Value, String> {
+        crate::mobile_pty::desktop_control(app, id)?;
+        self.conversation_write(cwd, id, data)
     }
     pub(crate) fn has_working_dir(&self, path: &std::path::Path) -> bool {
         self.sessions
@@ -288,11 +298,23 @@ pub fn pty_spawn(
     // A reloaded page restores its terminals under the same ids while the old
     // shells are still running. Hand the live PTY to the new view instead of
     // hanging up the shell and every job in it.
+    if host.get(&id).is_some() {
+        crate::mobile_pty::desktop_control(&app, &id)?;
+    }
     if let Some(attached) = host.reattach(&id, window.label(), cols, rows) {
         return attached;
     }
 
-    let workdir = working_dir(&cwd);
+    let workdir = if crate::mobile_pty::registered(&app, &id) {
+        let path = std::fs::canonicalize(&cwd)
+            .map_err(|_| "Mobile PTY working directory is unavailable")?;
+        if !path.is_dir() {
+            return Err("Mobile PTY working directory is unavailable".into());
+        }
+        path
+    } else {
+        working_dir(&cwd)
+    };
     let _reservation = crate::worktree_lifecycle::reserve_spawn(&workdir)?;
 
     let shell = shell_for(profile.as_deref());
@@ -617,6 +639,7 @@ pub fn pty_write(
     id: String,
     data: String,
 ) -> Result<(), String> {
+    crate::mobile_pty::desktop_control(window.app_handle(), &id)?;
     let live = host.get_for_window(&id, window.label())?;
     write_shell_input(&live, &id, &data, |event| {
         emit_shell_event(window.app_handle(), window.label(), event)
@@ -649,6 +672,35 @@ fn write_locked(writer: &mut dyn Write, data: &[u8]) -> Result<(), String> {
         .map_err(|e| format!("Failed to write to terminal: {e}"))
 }
 
+pub(crate) fn mobile_write(
+    app: &AppHandle,
+    owner: &str,
+    id: &str,
+    bytes: &[u8],
+) -> Result<(), String> {
+    let host = app.state::<PtyHost>();
+    let live = host.get_for_window(id, owner)?;
+    if live.ssh_identity.is_some() {
+        return Err("Private terminal is not a mobile PTY".into());
+    }
+    let mut writer = live.writer.lock().unwrap_or_else(|e| e.into_inner());
+    write_locked(writer.as_mut(), bytes)
+}
+pub(crate) fn mobile_resize(
+    app: &AppHandle,
+    owner: &str,
+    id: &str,
+    cols: u16,
+    rows: u16,
+) -> Result<(), String> {
+    let host = app.state::<PtyHost>();
+    let live = host.get_for_window(id, owner)?;
+    if live.ssh_identity.is_some() {
+        return Err("Private terminal is not a mobile PTY".into());
+    }
+    resize_live(&live, cols, rows)
+}
+
 /// On a blocking thread: ConPTY's resize waits on conhost, which stalls while
 /// it is busy writing output. On the main thread that froze the whole window,
 /// and on an async worker it would starve other commands.
@@ -660,6 +712,7 @@ pub async fn pty_resize(
     cols: u16,
     rows: u16,
 ) -> Result<(), String> {
+    crate::mobile_pty::desktop_control(window.app_handle(), &id)?;
     let live = host.get_for_window(&id, window.label())?;
     tauri::async_runtime::spawn_blocking(move || resize_live(&live, cols, rows))
         .await
@@ -921,6 +974,9 @@ fn spawn_unix(
             private,
             &integration,
         );
+        if !private {
+            crate::mobile_pty::drained(&data_app, &data_id);
+        }
     });
 
     let wait_app = app;
@@ -939,6 +995,9 @@ fn spawn_unix(
             None
         };
         if let Some(owner) = owner {
+            if !private {
+                crate::mobile_pty::exited(&wait_app, &wait_id, code);
+            }
             emit_to_owner(
                 &wait_app,
                 Some(owner),
@@ -1071,6 +1130,9 @@ fn spawn_windows(
                 &integration,
             )
         });
+        if !private {
+            crate::mobile_pty::drained(&data_app, &data_id);
+        }
     });
 
     let wait_app = app;
@@ -1084,6 +1146,9 @@ fn spawn_windows(
             None
         };
         if let Some(owner) = owner {
+            if !private {
+                crate::mobile_pty::exited(&wait_app, &wait_id, code);
+            }
             emit_to_owner(
                 &wait_app,
                 Some(owner),
@@ -1361,6 +1426,9 @@ fn emit_pty_data(
         return;
     }
     let data = base64::Engine::encode(&base64::engine::general_purpose::STANDARD, bytes);
+    if !private {
+        crate::mobile_pty::output(app, id, &owner, bytes);
+    }
     emit_to_owner(
         app,
         Some(owner),

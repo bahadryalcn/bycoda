@@ -30,16 +30,17 @@ it("dispatches review context and inline review batches through the finite nativ
     body: "Şuraya bakalım.",
     comments: [{ path: "a.ts", line: 3, side: "RIGHT" as const, body: "Kontrol eksik." }],
   };
+  const deadline = Date.now() + 60_000;
   await executeDesktopInboxOperation(
     { action: "review", cwd: "/project", item, ...review },
     runner,
+    deadline,
   );
-  expect(runner.invoke).toHaveBeenLastCalledWith("git_github_pr_review", {
-    cwd: "/project",
-    repo: "owner/repo",
-    number: 7,
-    review,
-  });
+  expect(runner.invoke).toHaveBeenLastCalledWith("desktop_inbox_review", { operation: { action: "review", cwd: "/project", item, ...review }, deadline });
+  runner.invoke.mockClear();
+  for (const invalid of [undefined, Date.now() - 1, Date.now() + 130_000])
+    await expect(executeDesktopInboxOperation({ action: "review", cwd: "/project", item, ...review }, runner, invalid)).rejects.toThrow(/deadline/);
+  expect(runner.invoke).not.toHaveBeenCalled();
 });
 
 const approvalBlock = (requestId: number, decided?: "allow"): Block =>

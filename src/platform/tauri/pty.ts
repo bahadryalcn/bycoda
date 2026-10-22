@@ -107,6 +107,11 @@ function ensureBridge() {
     }),
     listen<ExitPayload>("pty-exit", (event) => {
       const { id, code } = event.payload;
+      // The process is gone: nothing more arrives for this id, so stop tracking it
+      // and drop any unmounted replay. A mounted view keeps its handlers and gets
+      // the exit callback below.
+      openedPtys.delete(id);
+      clearBuffered(id);
       exitHandlers.get(id)?.(code);
     }),
   ]).then((results) => {

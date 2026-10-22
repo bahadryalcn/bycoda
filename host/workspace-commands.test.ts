@@ -38,6 +38,21 @@ async function setup() {
   return { root, projects, commands };
 }
 
+it("pins PR creation to the reviewed provider repository and reads its destination without publishing", async () => {
+  const { projects, commands } = await setup();
+  const cwd = projects[104].cwd;
+  const bridge = commands as unknown as { gitRoot: (cwd: unknown) => Promise<string>; ghCommand: (cwd: unknown, args: string[]) => Promise<string> };
+  const root = vi.spyOn(bridge, "gitRoot").mockResolvedValue(cwd);
+  const gh = vi.spyOn(bridge, "ghCommand").mockResolvedValueOnce(JSON.stringify({ nameWithOwner: "owner/repo", url: "https://github.com/owner/repo" })).mockResolvedValue("https://github.com/owner/repo/pull/1");
+  try {
+    expect(await commands.run("git_pr_destination", { cwd })).toEqual({ nameWithOwner: "owner/repo", url: "https://github.com/owner/repo" });
+    await commands.run("git_pr_create", { cwd, repository: "github.com/owner/repo", title: "Review", body: "Body", base: "main", head: "feature" });
+    expect(gh).toHaveBeenLastCalledWith(cwd, ["pr", "create", "--repo", "github.com/owner/repo", "--title", "Review", "--body", "Body", "--base", "main", "--head", "feature"]);
+    await expect(commands.run("git_pr_create", { cwd, repository: "--bad", title: "Review", body: "Body", base: "main", head: "feature" })).rejects.toThrow("Invalid pull request repository");
+    expect(gh).toHaveBeenCalledTimes(2);
+  } finally { gh.mockRestore(); root.mockRestore(); }
+});
+
 it("routes file and summary requests to the lightweight index, including conflict counts", async () => {
   const { projects, commands } = await setup();
   const cwd = projects[104].cwd;

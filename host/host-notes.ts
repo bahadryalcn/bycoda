@@ -88,7 +88,13 @@ export class HostNotes {
     return results;
   }
 
-  list(sourceCwd?: string) {
+  list(sourceCwd?: string, sourceSessionId?: string) {
+    if (sourceSessionId !== undefined) identifier(sourceSessionId);
+    const clauses: string[] = [];
+    const bindings: string[] = [];
+    if (sourceCwd !== undefined) { clauses.push("source_cwd=?"); bindings.push(sourceCwd); }
+    if (sourceSessionId !== undefined) { clauses.push("source_session_id=?"); bindings.push(sourceSessionId); }
+    const where = clauses.length ? ` WHERE ${clauses.join(" AND ")}` : "";
     const results = this.databases((db) => {
       const orderColumn = db
         .prepare("SELECT 1 FROM pragma_table_info('notes') WHERE name='content_updated_at'")
@@ -97,23 +103,11 @@ export class HostNotes {
         : "updated_at";
       return {
         total: Number(
-          (sourceCwd
-            ? db.prepare("SELECT count(*) AS total FROM notes WHERE source_cwd=?").get(sourceCwd)
-            : db.prepare("SELECT count(*) AS total FROM notes").get()
-          )?.total ?? 0,
+          db.prepare(`SELECT count(*) AS total FROM notes${where}`).get(...bindings)?.total ?? 0,
         ),
-        notes: (sourceCwd
-          ? db
-              .prepare(
-                `SELECT id,slug,title,substr(body,1,500) AS body,tags_json,source_session_id,source_cwd,slug_pending,created_at,updated_at,${orderColumn} AS content_updated_at FROM notes WHERE source_cwd=? ORDER BY ${orderColumn} DESC,id ASC LIMIT 500`,
-              )
-              .all(sourceCwd)
-          : db
-              .prepare(
-                `SELECT id,slug,title,substr(body,1,500) AS body,tags_json,source_session_id,source_cwd,slug_pending,created_at,updated_at,${orderColumn} AS content_updated_at FROM notes ORDER BY ${orderColumn} DESC,id ASC LIMIT 500`,
-              )
-              .all()
-        ).map(noteFromRow),
+        notes: db.prepare(
+          `SELECT id,slug,title,substr(body,1,500) AS body,tags_json,source_session_id,source_cwd,slug_pending,created_at,updated_at,${orderColumn} AS content_updated_at FROM notes${where} ORDER BY ${orderColumn} DESC,id ASC LIMIT 500`,
+        ).all(...bindings).map(noteFromRow),
       };
     });
     const notes = results.flatMap((result) => result.notes);
@@ -126,7 +120,7 @@ export class HostNotes {
       seen.add(note.id);
     }
     const filtered = notes
-      .filter((note) => !sourceCwd || note.sourceCwd === sourceCwd)
+      .filter((note) => (sourceCwd === undefined || note.sourceCwd === sourceCwd) && (sourceSessionId === undefined || note.sourceSessionId === sourceSessionId))
       .sort((a, b) => (b.contentUpdatedAt ?? b.updatedAt) - (a.contentUpdatedAt ?? a.updatedAt));
     return {
       notes: filtered

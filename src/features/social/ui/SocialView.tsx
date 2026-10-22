@@ -75,6 +75,7 @@ import {
   Zap,
   Settings,
   CircleHelp,
+  MoreHorizontal,
 } from "../../../shared/ui/icons";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import { accountConnectionStatus } from "../model/accountConnection";
@@ -187,6 +188,8 @@ export function SocialView({
 }) {
   const [machines, setMachines] = useState<RemoteMachine[]>([]);
   const [machineId, setMachineId] = useState("");
+  const [headerMenuOpen, setHeaderMenuOpen] = useState(false);
+  const headerMenuRef = useRef<HTMLButtonElement>(null);
   const [snapshot, setSnapshot] = useState<SocialSnapshot | null>(null);
   const [projects, setProjects] = useState<HostProject[]>([]);
   const [tab, setTab] = useState<Tab>("Hesaplar");
@@ -557,28 +560,6 @@ export function SocialView({
                 disabled={busy}
               />
             </div>
-            {activeProject && !filter ? (
-              <Button
-                type="button"
-                variant="secondary"
-                size="sm"
-                onClick={() => {
-                  setFilter(activeProject);
-                  setOffsets({});
-                }}
-              >
-                Bu proje
-              </Button>
-            ) : null}
-            <Button
-              variant="secondary"
-              size="sm"
-              loading={busy || loading}
-              type="button"
-              onClick={openHistory}
-            >
-              İşlem geçmişi
-            </Button>
           </div>
           <div className="social-host-status" role="status">
             <span
@@ -635,6 +616,54 @@ export function SocialView({
             ) : null}
           </div>
           <div className="social-header-actions">
+            <Button
+              ref={headerMenuRef}
+              type="button"
+              iconOnly
+              size="sm"
+              variant="ghost"
+              label={t("More actions")}
+              aria-expanded={headerMenuOpen}
+              onClick={() => setHeaderMenuOpen((current) => !current)}
+            >
+              <MoreHorizontal className="size-4" />
+            </Button>
+            {headerMenuOpen ? (
+              <Popover
+                anchor={headerMenuRef}
+                align="end"
+                onDismiss={() => setHeaderMenuOpen(false)}
+                className="social-header-menu"
+              >
+                {activeProject && !filter ? (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    disabled={busy}
+                    onClick={() => {
+                      setFilter(activeProject);
+                      setOffsets({});
+                      setHeaderMenuOpen(false);
+                    }}
+                  >
+                    Bu proje
+                  </Button>
+                ) : null}
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  loading={busy || loading}
+                  type="button"
+                  onClick={() => {
+                    openHistory();
+                    setHeaderMenuOpen(false);
+                  }}
+                >
+                  İşlem geçmişi
+                </Button>
+              </Popover>
+            ) : null}
             <Button
               type="button"
               iconOnly

@@ -1,6 +1,7 @@
 import type { Block, Session } from "../../sessions/model/session";
 import type { UserQuestionReply } from "../../sessions/model/userQuestion";
 import type { DesktopProjectDirectory } from "./protocol";
+import { isRemoteJiraOperation, type RemoteJiraOperation } from "../../inbox/model/jiraBoardProtocol";
 import {
   REMOTE_INBOX_VERSION,
   REMOTE_INBOX_PROVIDERS,
@@ -57,13 +58,24 @@ export type DesktopInboxRunner = {
   results: Map<string, DesktopInboxReply>;
   running: Set<string>;
   onNotesChanged?: () => void | Promise<void>;
+  jira?: (operation: RemoteJiraOperation, deadline?: number) => Promise<unknown>;
 };
 
 /** Executes only existing inbox contracts; auth/config/shell commands are absent. */
 export async function executeDesktopInboxOperation(
   operation: RemoteInboxOperation,
-  runner: Pick<DesktopInboxRunner, "invoke" | "list">,
+  runner: Pick<DesktopInboxRunner, "invoke" | "list" | "jira">,
+  deadline?: number,
 ): Promise<unknown> {
+  if (isRemoteJiraOperation(operation)) {
+    if (!runner.jira) throw new Error("Update the desktop for scoped Jira board access");
+    return runner.jira(operation, deadline);
+  }
+  if (operation.action === "review") {
+    if (!Number.isSafeInteger(deadline) || Number(deadline) <= Date.now() || Number(deadline) > Date.now() + 120_000)
+      throw new Error("The desktop review approval deadline is missing or expired. Update the host and review again.");
+    return runner.invoke("desktop_inbox_review", { operation, deadline });
+  }
   if (operation.action === "providers") {
     const commands = {
       github: "git_github_status",
@@ -307,7 +319,7 @@ export async function runDesktopLiveTick(deps: {
       // Provider HTTP may be slow. Continue heartbeats and Stop/Approve/Answer
       // while native inbox work runs; never repeat a claimed send.
       void Promise.resolve()
-        .then(() => executeDesktopInboxOperation(job.operation, runner))
+        .then(() => executeDesktopInboxOperation(job.operation, runner, job.deadline))
         .then((value) =>
           runner.results.set(job.id, { id: job.id, result: jsonSafe(value ?? null) }),
         )

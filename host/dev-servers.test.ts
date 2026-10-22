@@ -83,6 +83,31 @@ function fixture(options: Partial<DevServersOptions> = {}) {
   return { discovery, children, spawnProcess, service, list, selected, target };
 }
 
+it("rejects a changed reviewed process tree or port set before signalling", async () => {
+  const test = fixture();
+  const server = await test.selected();
+  const target = test.target(server, true);
+  const review = await test.service.handle("devServers.details", target, projects) as { expectedImpact: string };
+  test.discovery.ports.set(root.pid, [endpoint(3999)]);
+  await expect(test.service.handle("devServers.kill", { ...target, expectedImpact: review.expectedImpact }, projects))
+    .rejects.toThrow("reviewed process tree or ports changed");
+  expect(test.discovery.signal).not.toHaveBeenCalled();
+  const fresh = await test.service.handle("devServers.details", target, projects) as { expectedImpact: string };
+  await test.service.handle("devServers.kill", { ...target, expectedImpact: fresh.expectedImpact }, projects);
+  expect(test.discovery.signal).toHaveBeenCalledOnce();
+});
+
+it("rejects an unreviewed child process before force signalling", async () => {
+  const test = fixture();
+  const server = await test.selected();
+  const target = test.target(server, true);
+  const review = await test.service.handle("devServers.details", target, projects) as { expectedImpact: string };
+  test.discovery.live.set(202, { pid: 202, parentPid: root.pid, startedAt: "new-child", name: "worker" });
+  await expect(test.service.handle("devServers.kill", { ...target, expectedImpact: review.expectedImpact }, projects))
+    .rejects.toThrow("reviewed process tree or ports changed");
+  expect(test.discovery.signal).not.toHaveBeenCalled();
+});
+
 describe("host dev server management", () => {
   it("associates dot-prefixed children without accepting parent or sibling paths", () => {
     for (const [base, child, sibling] of [

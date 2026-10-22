@@ -47,7 +47,7 @@ export function GitPickerTrigger({
         )}
       </span>
       {worktree && (
-        <span className="shrink-0 rounded bg-[var(--ui-surface-muted)] px-1 text-[10px] text-[var(--ui-text-muted)]">
+        <span className="shrink-0 rounded bg-(--ui-surface-muted) px-1 text-(length:--ui-font-caption) leading-4 text-(--ui-text-secondary)">
           {t("Worktree")}
         </span>
       )}

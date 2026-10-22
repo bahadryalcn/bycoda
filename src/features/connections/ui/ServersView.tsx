@@ -1,4 +1,5 @@
 import { useLayoutEffect, useRef, useState } from "react";
+import { registerSshWorkspaceCatalog } from "../model/sshMobileWorkspaceControl";
 import { ToolHeader } from "../../../app/shell/ToolNavigation";
 import { OverlayNav } from "../../../app/shell/TitleBar";
 import { WindowControls } from "../../../app/shell/WindowControls";
@@ -187,6 +188,9 @@ export function ServersView({
   );
   if (recentFirst)
     filtered.sort((a, b) => (b.metadata.lastUsedAt ?? 0) - (a.metadata.lastUsedAt ?? 0));
+  const mobileCatalog = useRef({ ready: false, servers: [] as ServerRecord[] });
+  mobileCatalog.current = { ready: loaded && !loading && !error, servers: filtered };
+  useLayoutEffect(() => registerSshWorkspaceCatalog(() => mobileCatalog.current), []);
   const selected = servers.find((server) => server.id === selectedId);
   const menuServer = menu ? servers.find((server) => server.id === menu.serverId) : undefined;
   const colorServer = colorTarget

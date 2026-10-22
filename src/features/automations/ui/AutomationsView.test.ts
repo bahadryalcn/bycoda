@@ -18,6 +18,7 @@ import {
   TRIGGER_EVENTS,
 } from "./AutomationsView";
 import { withQueryClient } from "../../../../tests/browser/queryTest";
+import { resetRetainedState } from "../../../shared/hooks/useRetainedState";
 const AutomationsView = withQueryClient(RawAutomationsView);
 
 const invoke = vi.hoisted(() => vi.fn());
@@ -39,6 +40,7 @@ let container: HTMLDivElement;
 let root: Root;
 
 beforeEach(() => {
+  resetRetainedState();
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   vi.stubGlobal(
     "ResizeObserver",
@@ -366,6 +368,39 @@ it("keeps edited drafts while the compact filter popover changes and resets the 
   expect(container.querySelector('[aria-label="Open Controls review"]')).not.toBeNull();
   expect(filter.hasAttribute("data-button-selected")).toBe(false);
   expect(name.value).toBe("Retained draft");
+});
+
+it("restores unsaved automation work after returning to the tool without sharing it with another host", async () => {
+  await renderControlEditor();
+  await changeInput(
+    container.querySelector<HTMLInputElement>('[aria-label="Automation name"]')!,
+    "Unsaved owner draft",
+  );
+  await act(async () => root.unmount());
+  root = createRoot(container);
+  const show = async (cwd: string) => {
+    await act(async () =>
+      root.render(
+        createElement(AutomationsView, {
+          cwd,
+          recents: [],
+          onClose: vi.fn(),
+          onLaunch: vi.fn(),
+          onOpenSession: vi.fn(),
+          onOpenBackgroundSession: vi.fn(),
+        }),
+      ),
+    );
+  };
+  await show("/work/controls");
+  expect(container.querySelector<HTMLInputElement>('[aria-label="Automation name"]')?.value).toBe(
+    "Unsaved owner draft",
+  );
+  await act(async () => root.unmount());
+  root = createRoot(container);
+  await show("remote://other-machine/work/controls");
+  expect(container.querySelector('[aria-label="Automation name"]')).toBeNull();
+  expect(invoke.mock.calls.some(([command]) => command === "automations_upsert")).toBe(false);
 });
 
 it("searches trigger events by provider while retaining readiness gates and saves added schedules", async () => {

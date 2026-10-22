@@ -160,8 +160,8 @@ export function UsageMeter({
           : t("Resets {p0}", { p0: new Date(window.resetsAt).toLocaleString(getLocale()) })
       }
     >
-      <div className="flex items-baseline justify-between gap-2 text-[10px] leading-3">
-        <span className="min-w-0 truncate text-[var(--ui-text-muted)]">
+      <div className="flex items-baseline justify-between gap-2 text-(length:--ui-font-caption) leading-4">
+        <span className="min-w-0 truncate text-[var(--ui-text-secondary)]">
           {title} · <span className="tabular-nums">{reset}</span>
         </span>
         <span

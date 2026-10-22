@@ -1,6 +1,8 @@
 //! Jira Software boards use their own column mappings and rank field.
 use super::*;
 use std::collections::HashSet;
+#[path = "mobile_board.rs"]
+pub mod mobile_board;
 
 #[derive(Serialize, Debug)]
 #[serde(rename_all = "camelCase")]

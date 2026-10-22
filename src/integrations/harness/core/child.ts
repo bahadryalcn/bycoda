@@ -487,13 +487,8 @@ async function resolveHarnessBinary(
     fx: "harness_resolve_fx",
     hermes: "harness_resolve_hermes",
     antigravity: "harness_resolve_antigravity",
-    gemini: "harness_resolve_gemini",
   };
   return invoke(command[provider]);
-}
-
-export function resolveGeminiBinary(binaryPath?: string | null): Promise<{ path: string }> {
-  return resolveHarnessBinary("gemini", binaryPath);
 }
 
 export function resolveCursorBinary(binaryPath?: string | null): Promise<{ path: string }> {

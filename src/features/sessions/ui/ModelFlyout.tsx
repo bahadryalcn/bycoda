@@ -377,7 +377,7 @@ function ExtrasEntry({ extras, onOpen }: { extras: ModelFlyoutExtras; onOpen: ()
       <SlidersHorizontal className="size-3.5 shrink-0" strokeWidth={1.75} />
       <span className="min-w-0 flex-1 truncate">{t("Extras")}</span>
       {changed > 0 ? (
-        <span className="rounded bg-selection px-1 text-[10px] tabular-nums text-(--ui-tone-neutral-fg)">
+        <span className="rounded bg-selection px-1 text-(length:--ui-font-caption) tabular-nums text-(--ui-tone-neutral-fg)">
           {changed}
         </span>
       ) : null}

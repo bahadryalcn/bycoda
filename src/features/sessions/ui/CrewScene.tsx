@@ -18,8 +18,8 @@ import {
   loadCrewTheme,
   subscribeCrewTheme,
 } from "../../settings/model/settings";
-import { crewCharge, starWarsCharacter } from "./starWarsCrew";
-import { createStarWarsPainter, loadStarWarsCrew } from "./starWarsPainter";
+import { crewCharge } from "./starWarsCrew";
+import { riggedCrewTheme } from "./crewThemes";
 import "./CrewScene.css";
 import { useShellSessions } from "../model/sessionsStore";
 import type { Session } from "../model/session";
@@ -100,7 +100,7 @@ function CrewStage({
 }: SceneProps) {
   useLocale();
   const theme = useSyncExternalStore(subscribeCrewTheme, loadCrewTheme, loadCrewTheme);
-  const starWars = theme === "star-wars";
+  const rigged = riggedCrewTheme(theme);
   const sessions = useShellSessions();
   const crew =
     previewCrew ??
@@ -121,7 +121,7 @@ function CrewStage({
   const crewKey = crew
     .map((seat) => {
       const age = ageOf(seat);
-      return `${seat.role}/${seat.working}/${age.stage}/${Math.round(age.growth * 20)}/${starWars ? crewCharge(seat.context, growthEnabled)?.toFixed(2) : ""}`;
+      return `${seat.role}/${seat.working}/${age.stage}/${Math.round(age.growth * 20)}/${rigged ? crewCharge(seat.context, growthEnabled)?.toFixed(2) : ""}`;
     })
     .join(";");
   const crewRef = useRef(crew);
@@ -135,7 +135,7 @@ function CrewStage({
   useEffect(() => {
     let live = true;
     setArtStatus("loading");
-    void (starWars ? loadStarWarsCrew() : loadCrewSignLogo()).then(
+    void (rigged ? rigged.load() : loadCrewSignLogo()).then(
       () => {
         if (live) setArtStatus("ready");
       },
@@ -146,7 +146,7 @@ function CrewStage({
     return () => {
       live = false;
     };
-  }, [starWars, artRetry]);
+  }, [rigged, artRetry]);
   const workingCount = crew.filter((seat) => seat.working).length;
   const standing = useRef<number[]>(Array(6).fill(0));
   const arrivals = useRef<number[]>(Array(6).fill(1));
@@ -158,7 +158,7 @@ function CrewStage({
   const startedAt = useRef<number | null>(null);
   const enabled = useDecorativeMotionEnabled();
   const [running, setRunning] = useState(false);
-  const frame = starWars
+  const frame = rigged
     ? variant === "background"
       ? 100
       : 50
@@ -210,7 +210,7 @@ function CrewStage({
   useEffect(() => {
     const surface = canvas.current;
     if (!surface) return;
-    const draw = starWars ? createStarWarsPainter(surface) : createCodeArtPainter(surface);
+    const draw = rigged ? rigged.createPainter(surface) : createCodeArtPainter(surface);
     let previous: number | undefined;
     let previousLabels: number | undefined;
     let lastFrame = performance.now();
@@ -265,7 +265,7 @@ function CrewStage({
           arrival: arrivals.current[id],
           role: seats[id]?.role ?? ("subagent" as CrewRole),
           working: !!target,
-          charge: starWars ? crewCharge(seats[id]?.context, growthEnabled) : undefined,
+          charge: rigged ? crewCharge(seats[id]?.context, growthEnabled) : undefined,
           age,
         };
       });
@@ -275,10 +275,7 @@ function CrewStage({
       )
         displayedCount.current--;
       activity.length = displayedCount.current;
-      const layout = (starWars ? starWarsLayout : crewLayout)(
-        displayedCount.current,
-        viewportWidth,
-      );
+      const layout = (rigged ? starWarsLayout : crewLayout)(displayedCount.current, viewportWidth);
       if (running)
         converseWithNeighbours(
           activity,
@@ -287,7 +284,7 @@ function CrewStage({
         );
       activity.forEach((state, id) => {
         applyConversationMood(state, id, expressionTime, running && seatWorking(id));
-        if (!starWars) applySmokingBreak(state, id, expressionTime, running);
+        if (!rigged) applySmokingBreak(state, id, expressionTime, running);
         applyIdleLife(state, id, expressionTime, running);
       });
       // A working uncle stands and never sips; a seated one only sips tea or smokes.
@@ -301,7 +298,7 @@ function CrewStage({
         .map((place) => {
           const state = activity[place.id];
           const age = state.age!;
-          const character = starWars ? starWarsCharacter(place.id, state.role) : undefined;
+          const character = rigged?.character(place.id, state.role);
           // Labels stay above the full action, including Yoda's airborne pose.
           const height = character
             ? character.headroom + (character.id === "yoda" ? 32 : 8)
@@ -348,7 +345,7 @@ function CrewStage({
       clearTimeout(timer);
       draw.dispose?.();
     };
-  }, [running, crewKey, viewportWidth, frame, artStatus, starWars, growthEnabled]);
+  }, [running, crewKey, viewportWidth, frame, artStatus, rigged, growthEnabled]);
   return (
     <div
       ref={container}
@@ -361,27 +358,32 @@ function CrewStage({
       role={variant === "hero" ? (artStatus === "error" ? "group" : "img") : undefined}
       aria-label={
         variant === "hero"
-          ? starWars
+          ? theme === "star-wars"
             ? t(
                 "Star Wars crew: Obi-Wan leads and Yoda advises. {p0} crew members, {p1} working. Color and meters show context usage, not task progress.",
                 { p0: crew.length, p1: workingCount },
               )
-            : t(
-                "{p0} crew members beneath the bycoda sign: the main agent, the advisor and subagents; {p1} working and standing. Monochrome binary code art.",
-                { p0: crew.length, p1: workingCount },
-              )
+            : theme === "lotr"
+              ? t(
+                  "Lord of the Rings crew: Gandalf leads and Sauron advises. {p0} crew members, {p1} working. Color and meters show context usage, not task progress.",
+                  { p0: crew.length, p1: workingCount },
+                )
+              : t(
+                  "{p0} crew members beneath the bycoda sign: the main agent, the advisor and subagents; {p1} working and standing. Monochrome binary code art.",
+                  { p0: crew.length, p1: workingCount },
+                )
           : undefined
       }
       aria-hidden={variant === "background" ? true : undefined}
     >
-      {starWars && (
+      {rigged && (
         <div className="crew-scene__theme-title" aria-hidden="true">
-          <span>STAR WARS</span>
+          <span>{rigged.title}</span>
           <small>{t("Agent crew")}</small>
         </div>
       )}
       <div className="crew-scene__stage">
-        {starWars && artStatus !== "ready" && (
+        {rigged && artStatus !== "ready" && (
           <div className="crew-scene__status" role="status">
             {artStatus === "loading" ? (
               t("Loading crew…")
@@ -405,11 +407,11 @@ function CrewStage({
         />
         <div className="crew-scene__labels" aria-hidden="true">
           {labels.map((label) => {
-            const character = starWarsCharacter(label.id, label.role);
+            const character = rigged?.character(label.id, label.role);
             const charge = crewCharge(crew[label.id]?.context, growthEnabled);
             const percent = charge === undefined ? undefined : Math.round(charge * 100);
             const displayName =
-              crew[label.id]?.name || (starWars ? character.name : roleText(label.role));
+              crew[label.id]?.name || (character ? character.name : roleText(label.role));
             return (
               <span
                 key={label.id}
@@ -417,10 +419,10 @@ function CrewStage({
                 data-role={label.role}
                 data-working={label.working ? "true" : "false"}
                 data-age={ageOf(crew[label.id]).stage}
-                data-character={starWars ? character.id : undefined}
-                data-charge={starWars && growthEnabled ? (percent ?? "unknown") : undefined}
+                data-character={character?.id}
+                data-charge={rigged && growthEnabled ? (percent ?? "unknown") : undefined}
                 title={
-                  starWars
+                  character
                     ? `${displayName} · ${character.name} · ${roleText(label.role)}${growthEnabled ? ` · ${percent === undefined ? t("Context unknown") : t("Context: {p0}%", { p0: percent })}` : ""}`
                     : displayName
                 }
@@ -430,7 +432,7 @@ function CrewStage({
                   inlineSize: `${(label.width / CODE_WIDTH) * 100}%`,
                 }}
               >
-                {starWars ? (
+                {character ? (
                   <>
                     <span className="crew-scene__name">{displayName}</span>
                     <span className="crew-scene__detail">

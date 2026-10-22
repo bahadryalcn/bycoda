@@ -105,7 +105,6 @@ describe("InboxDetail layout", () => {
 
     expect(headerIndex).toBeGreaterThan(-1);
     expect(scrollIndex).toBeGreaterThan(headerIndex);
-    expect(header).toContain("line-clamp-2");
     expect(header).toContain('title="A long inbox issue"');
     expect(header).toContain("Send to agent");
     expect(header).toContain("Ask");

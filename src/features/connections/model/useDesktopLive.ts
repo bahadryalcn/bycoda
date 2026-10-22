@@ -85,6 +85,7 @@ export function useDesktopLive(
           beat,
           deletions: state.current.deletions,
           inbox: {
+            jira: async (operation, deadline) => (await import("../../inbox/model/jiraMobileBridge")).executeRemoteJiraBoard(operation, deadline),
             invoke: (command, args) => invoke(command, args),
             list: async (projects, query) => {
               const { listInboxItems } = await import("../../inbox/model/githubTasks");

@@ -54,8 +54,6 @@ export function loginHarness(
   signal?: AbortSignal,
 ): Promise<void> {
   signal?.throwIfAborted();
-  if (harness === "gemini")
-    return import("../providers/gemini/geminiCatalog").then(({ loginGemini }) => loginGemini());
   const key = `${harness}:${accountId ?? "default"}`;
   const current = inflight.get(key);
   if (current) return current;

@@ -689,13 +689,23 @@ export function BtwSheet({
                       onKeyDown={(event) => {
                         if (event.altKey || event.ctrlKey || event.metaKey) return;
                         const index = tabs.findIndex((item) => item.id === tab.id);
-                        const next = event.key === "ArrowLeft" ? (index + tabs.length - 1) % tabs.length
-                          : event.key === "ArrowRight" ? (index + 1) % tabs.length
-                          : event.key === "Home" ? 0 : event.key === "End" ? tabs.length - 1 : -1;
+                        const next =
+                          event.key === "ArrowLeft"
+                            ? (index + tabs.length - 1) % tabs.length
+                            : event.key === "ArrowRight"
+                              ? (index + 1) % tabs.length
+                              : event.key === "Home"
+                                ? 0
+                                : event.key === "End"
+                                  ? tabs.length - 1
+                                  : -1;
                         if (next < 0) return;
                         event.preventDefault();
                         btw.selectTab(tabs[next].id);
-                        event.currentTarget.closest('[role="tablist"]')?.querySelectorAll<HTMLButtonElement>('[role="tab"]')[next]?.focus();
+                        event.currentTarget
+                          .closest('[role="tablist"]')
+                          ?.querySelectorAll<HTMLButtonElement>('[role="tab"]')
+                          [next]?.focus();
                       }}
                       className="min-w-0"
                     >
@@ -777,7 +787,7 @@ export function BtwSheet({
             <div className="btw-sheet-body shrink-0 px-5 pb-3">
               <Alert tone="info" role="alert">
                 <div className="min-w-0">
-                  <div className="text-[10px] font-medium uppercase tracking-[0.08em] text-(--ui-tone-danger-fg)">
+                  <div className="text-(length:--ui-font-caption) font-medium text-(--ui-tone-danger-fg)">
                     {t("Couldn’t finish")}
                   </div>
                   <div className="mt-1 text-[12px] leading-4.5 text-(--ui-tone-danger-fg)">

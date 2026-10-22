@@ -123,6 +123,7 @@ import {
   resolveModel,
 } from "../../sessions/model/models";
 import { projectKey, projectName } from "../../../shared/lib/paths";
+import { useRetainedState } from "../../../shared/hooks/useRetainedState";
 import { parseRemotePath } from "../../connections/model/remoteProjects";
 import { useLockSnapshot } from "../../group-lock/hooks/useGroupLock";
 import { isProjectLockedIn } from "../../group-lock/model/lockState";
@@ -156,8 +157,6 @@ type Props = {
   onOpenBackgroundSession: (target: BackgroundSessionTarget) => void | Promise<void>;
 };
 
-let rememberedAutomationId: string | null = null;
-
 function automationKey(automation: Pick<Automation, "id" | "host">): string {
   return JSON.stringify([automation.host?.machineId ?? null, automation.id]);
 }
@@ -180,6 +179,7 @@ export function AutomationsView({
       role="region"
       aria-label={t("Automations")}
       data-app-automations
+      style={{ containerType: "inline-size", containerName: "automations" }}
       className="flex min-h-0 min-w-0 flex-1 flex-col text-(--ui-tone-neutral-fg)"
     >
       <div
@@ -270,17 +270,22 @@ function AutomationsContent({
     error: string | null;
   }>({ id: null, runs: [], loading: false, error: null });
   const [historyRevision, setHistoryRevision] = useState(0);
-  const [selectedId, setSelectedId] = useState<string | null>(rememberedAutomationId);
-  const [query, setQuery] = useState("");
-  const [statusFilter, setStatusFilter] = useState("all");
+  const viewStateKey = `automations:${cwd ? projectKey(cwd) : "global"}`;
+  const [selectedId, setSelectedId] = useRetainedState<string | null>(
+    `${viewStateKey}:selected`,
+    null,
+  );
+  const [query, setQuery] = useRetainedState(`${viewStateKey}:query`, "");
+  const [statusFilter, setStatusFilter] = useRetainedState(`${viewStateKey}:status`, "all");
   const [filterOpen, setFilterOpen] = useState(false);
   const [focusMode, setFocusMode] = useState(false);
+  const [compactListOpen, setCompactListOpen] = useState(false);
   const [assistantOpen, setAssistantOpen] = useState(false);
   const filterButton = useRef<HTMLButtonElement>(null);
   const deferredQuery = useDeferredValue(query);
   const [error, setError] = useState<string | null>(null);
-  const [draft, setDraft] = useState<AutomationDraft | null>(null);
-  const [pickerOpen, setPickerOpen] = useState(true);
+  const [draft, setDraft] = useRetainedState<AutomationDraft | null>(`${viewStateKey}:draft`, null);
+  const [pickerOpen, setPickerOpen] = useState(() => draft == null);
   const [saving, setSaving] = useState(false);
   const savingRef = useRef(false);
   const [running, setRunning] = useState<string | null>(null);
@@ -295,16 +300,6 @@ function AutomationsContent({
     if (localQuery.error) setError(localQuery.error.message);
     else if (localQuery.data) setError(null);
   }, [localQuery.error, localQuery.data]);
-  useEffect(() => {
-    setSelectedId((current) => {
-      const preferred = current ?? rememberedAutomationId;
-      return preferred && automations.some((entry) => automationKey(entry) === preferred)
-        ? preferred
-        : automations[0]
-          ? automationKey(automations[0])
-          : null;
-    });
-  }, [automations, storedAutomations]);
   useEffect(
     () =>
       subscribeAutomations((change) => {
@@ -345,6 +340,30 @@ function AutomationsContent({
     setUnreachableNames(hostQuery.data.unreachable);
     showHostAutomations(hostQuery.data.automations);
   }, [hostQuery.data, showHostAutomations]);
+  useEffect(() => {
+    setSelectedId((current) => {
+      // A retained host selection must survive the local list arriving first.
+      if (
+        current &&
+        (localQuery.isPending ||
+          hostQuery.isPending ||
+          hostQuery.data?.automations !== hostAutomations)
+      )
+        return current;
+      return current && automations.some((entry) => automationKey(entry) === current)
+        ? current
+        : automations[0]
+          ? automationKey(automations[0])
+          : null;
+    });
+  }, [
+    automations,
+    hostAutomations,
+    hostQuery.data,
+    hostQuery.isPending,
+    localQuery.isPending,
+    setSelectedId,
+  ]);
   const historyTarget = automations.find((entry) => automationKey(entry) === selectedId);
   const historyKey = [
     "automations",
@@ -369,7 +388,6 @@ function AutomationsContent({
     void queryClient.invalidateQueries({ queryKey: historyKey });
   }, [historyRevision, selectedId, queryClient]);
   useEffect(() => {
-    rememberedAutomationId = selectedId;
     setHistory({
       id: selectedId,
       runs: historyQuery.data ?? [],
@@ -416,6 +434,7 @@ function AutomationsContent({
 
   const beginCreate = () => {
     if (savingRef.current) return;
+    setCompactListOpen(false);
     setPickerOpen(true);
     setDraft(null);
   };
@@ -542,7 +561,23 @@ function AutomationsContent({
   const listLock = useLockOverscroll<HTMLDivElement>();
 
   return (
-    <div className="flex min-h-0 min-w-0 flex-1 flex-col sm:flex-row text-(--ui-tone-neutral-fg)">
+    <div
+      className="automation-layout flex min-h-0 min-w-0 flex-1 flex-col sm:flex-row text-(--ui-tone-neutral-fg)"
+      data-list-open={compactListOpen || undefined}
+    >
+      <div className="automation-compact-navigation">
+        <Button
+          variant="ghost"
+          aria-pressed={compactListOpen}
+          onClick={() => {
+            setFocusMode(false);
+            setCompactListOpen((open) => !open);
+          }}
+        >
+          {t(compactListOpen ? "Back" : "Show automation list")}
+          {!compactListOpen ? ` · ${automations.length}` : null}
+        </Button>
+      </div>
       <aside
         hidden={focusMode}
         className={
@@ -654,6 +689,7 @@ function AutomationsContent({
                       setPickerOpen(false);
                       setDraft(null);
                       setSelectedId(automationKey(automation));
+                      setCompactListOpen(false);
                     }}
                     onToggle={(enabled) => void onToggle(automation, enabled)}
                   />
@@ -686,7 +722,12 @@ function AutomationsContent({
               {t("AI assistant")}
             </Button>
           ) : null}
-          <Button variant="ghost" aria-pressed={focusMode} onClick={() => setFocusMode(!focusMode)}>
+          <Button
+            className="automation-focus-action"
+            variant="ghost"
+            aria-pressed={focusMode}
+            onClick={() => setFocusMode(!focusMode)}
+          >
             {t(focusMode ? "Show automation list" : "Focus mode")}
           </Button>
         </div>
@@ -834,7 +875,7 @@ function AutomationCard({
         selected={active}
         layout="stacked"
       >
-        <span className="flex min-w-0 items-center gap-1.5 pr-8 text-[10px] text-(--ui-text-muted)">
+        <span className="flex min-w-0 items-center gap-1.5 pr-8 text-(length:--ui-font-caption) text-(--ui-text-muted)">
           <TriggerMark
             kind={automationTriggers(automation)[0]?.kind ?? automation.triggerKind}
             className="size-3"
@@ -902,6 +943,7 @@ function AutomationPicker({
   const [category, setCategory] = useState<AutomationTemplateCategoryId>("all");
   const lockOverscroll = useLockOverscroll<HTMLDivElement>();
   const [templateQuery, setTemplateQuery] = useState("");
+  const [allTemplates, setAllTemplates] = useState(false);
   const templates = templatesForCategory(category).filter((template) =>
     `${t(template.name)} ${t(template.description)}`
       .toLocaleLowerCase()
@@ -963,7 +1005,10 @@ function AutomationPicker({
               </span>
             </div>
           </Button>
-          {templates.map((template) => {
+          {(allTemplates || templateQuery.trim() || category !== "all"
+            ? templates
+            : templates.slice(0, 4)
+          ).map((template) => {
             const Icon = TEMPLATE_ICONS[template.icon];
             return (
               <Button
@@ -996,6 +1041,16 @@ function AutomationPicker({
             );
           })}
         </div>
+        {!templateQuery.trim() && category === "all" && templates.length > 4 ? (
+          <Button
+            className="mt-3"
+            variant="ghost"
+            aria-expanded={allTemplates}
+            onClick={() => setAllTemplates((value) => !value)}
+          >
+            {t(allTemplates ? "Show less" : "Show all")} · {templates.length}
+          </Button>
+        ) : null}
       </div>
     </div>
   );
@@ -2345,7 +2400,7 @@ export function TriggerRow({
         onClick={onRemove}
         variant="ghost"
         iconOnly
-        className="opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100 focus-visible:opacity-100"
+        className="opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100 focus-visible:opacity-100 pointer-coarse:opacity-100"
         label={t("Remove trigger")}
       >
         <X className="size-3.5" />

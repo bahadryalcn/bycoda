@@ -110,7 +110,7 @@ export function RefPill({ refInfo }: { refInfo: GraphRefChip }) {
   return (
     <span
       title={refTitle(refInfo)}
-      className={`flex h-3.5 min-w-0 shrink items-center gap-0.5 px-1.5 text-[10px] leading-none ${
+      className={`flex h-4 min-w-0 shrink items-center gap-0.5 px-1.5 text-(length:--ui-font-caption) leading-none ${
         refInfo.kind === "tag" ? "rounded-[4px]" : "rounded-full"
       } ${refInfo.color ? "" : "bg-[var(--ui-surface-muted)] text-[var(--ui-text-secondary)]"} ${
         refInfo.current ? "font-semibold ring-1 ring-[var(--color-stroke)]" : ""
@@ -169,7 +169,7 @@ export function RefPills({
       {hidden.length > 0 ? (
         <span
           title={hidden.map(refTitle).join("\n")}
-          className="flex h-3.5 shrink-0 items-center rounded-full bg-[var(--ui-surface-muted)] px-1.5 text-[10px] leading-none text-[var(--ui-text-secondary)]"
+          className="flex h-4 shrink-0 items-center rounded-full bg-(--ui-surface-muted) px-1.5 text-(length:--ui-font-caption) leading-none text-(--ui-text-secondary)"
         >
           +{hidden.length}
         </span>

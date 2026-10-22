@@ -348,25 +348,25 @@ function SearchableSelectMenu({
         className={[
           triggerProps?.className,
           variant === "row"
-            ? "inline-flex h-[var(--ui-control-height-compact)] max-w-full items-center gap-1 rounded-md bg-content/10 py-0 pr-1.5 pl-2 text-left text-[12px] focus-visible:outline-2 focus-visible:outline-accent hover:bg-content/[0.14] focus-visible:bg-content/[0.14] disabled:opacity-50"
+            ? "inline-flex h-[var(--ui-control-height-compact)] max-w-full items-center gap-1 rounded-md bg-(--ui-surface-raised) py-0 pr-1.5 pl-2 text-left text-[12px] focus-visible:outline-2 focus-visible:outline-accent hover:bg-(--ui-surface-hover) focus-visible:bg-(--ui-surface-hover) disabled:opacity-50"
             : variant === "panel"
-              ? "flex h-14 w-full items-center justify-end gap-3 rounded-xl border border-content/6 bg-content/6 px-4 text-right text-[14px] font-medium focus-visible:outline-2 focus-visible:outline-accent hover:bg-content/8 focus:border-content/12 focus:bg-content/8 disabled:opacity-50 active:scale-[0.995]"
+              ? "flex h-14 w-full items-center justify-end gap-3 rounded-xl border border-(--ui-tone-neutral-border) bg-(--ui-surface-raised) px-4 text-right text-[14px] font-medium focus-visible:outline-2 focus-visible:outline-accent hover:bg-(--ui-surface-hover) focus:border-(--ui-tone-neutral-border) focus:bg-(--ui-surface-hover) disabled:opacity-50 active:scale-[0.995]"
               : variant === "pill"
-                ? "inline-flex h-[var(--ui-control-height-compact)] max-w-full items-center gap-1 rounded-md bg-content/10 py-0 pr-1.5 pl-2 text-left text-[12px] focus-visible:outline-2 focus-visible:outline-accent hover:bg-content/[0.14] focus-visible:bg-content/[0.14] disabled:opacity-50"
+                ? "inline-flex h-[var(--ui-control-height-compact)] max-w-full items-center gap-1 rounded-md bg-(--ui-surface-raised) py-0 pr-1.5 pl-2 text-left text-[12px] focus-visible:outline-2 focus-visible:outline-accent hover:bg-(--ui-surface-hover) focus-visible:bg-(--ui-surface-hover) disabled:opacity-50"
                 : variant === "transparent"
-                  ? "flex h-[var(--ui-control-height)] w-full items-center justify-between gap-2 rounded-md border border-content/10 bg-transparent px-2.5 text-left text-[13px] focus-visible:outline-2 focus-visible:outline-accent hover:border-content/20 focus:border-content/25 disabled:opacity-50 active:scale-[0.99]"
-                  : "flex h-[var(--ui-control-height)] w-full items-center justify-between gap-2 rounded-md border border-content/10 bg-background-base px-2.5 text-left text-[13px] focus-visible:outline-2 focus-visible:outline-accent hover:border-content/20 focus:border-content/25 disabled:opacity-50 active:scale-[0.99]",
+                  ? "flex h-[var(--ui-control-height)] w-full items-center justify-between gap-2 rounded-md border border-(--ui-tone-neutral-border) bg-transparent px-2.5 text-left text-[13px] focus-visible:outline-2 focus-visible:outline-accent hover:border-(--ui-tone-neutral-border) focus:border-(--ui-focus-ring-color) disabled:opacity-50 active:scale-[0.99]"
+                  : "flex h-[var(--ui-control-height)] w-full items-center justify-between gap-2 rounded-md border border-(--ui-tone-neutral-border) bg-background-base px-2.5 text-left text-[13px] focus-visible:outline-2 focus-visible:outline-accent hover:border-(--ui-tone-neutral-border) focus:border-(--ui-focus-ring-color) disabled:opacity-50 active:scale-[0.99]",
         ]
           .filter(Boolean)
           .join(" ")}
       >
         <span
-          className={`min-w-0 truncate ${variant === "panel" ? "flex-1 text-right" : variant === "pill" || variant === "row" ? "" : "flex-1"} ${selectedLabel ? "text-content" : "text-content/40"}`}
+          className={`min-w-0 truncate ${variant === "panel" ? "flex-1 text-right" : variant === "pill" || variant === "row" ? "" : "flex-1"} ${selectedLabel ? "text-content" : "text-(--ui-text-secondary)"}`}
         >
           <SelectValue value={value} label={selectedLabel ?? placeholder} />
         </span>
         <ChevronDown
-          className={`shrink-0 text-content/45 motion-safe:transition-transform duration-150 ease-out ${variant === "pill" || variant === "row" ? "size-3" : "size-3.5"} ${open ? "rotate-180" : ""}`}
+          className={`shrink-0 text-(--ui-text-secondary) motion-safe:transition-transform duration-150 ease-out ${variant === "pill" || variant === "row" ? "size-3" : "size-3.5"} ${open ? "rotate-180" : ""}`}
           strokeWidth={1.75}
         />
       </SelectTrigger>
@@ -417,7 +417,7 @@ function SearchableSelectMenu({
           className="bycoda-arc bycoda-arc-menu flex flex-col overflow-hidden"
         >
           {searchable ? (
-            <ComboboxSearch className="flex h-8 shrink-0 items-center gap-2 border-b border-stroke px-2.5 text-content/45 focus-within:text-content/70">
+            <ComboboxSearch className="flex h-8 shrink-0 items-center gap-2 border-b border-stroke px-2.5 text-(--ui-text-secondary) focus-within:text-(--ui-text-secondary)">
               <Search className="size-3.5 shrink-0" strokeWidth={1.75} />
               <span className="sr-only">{searchPlaceholder}</span>
               <SearchInput
@@ -438,7 +438,7 @@ function SearchableSelectMenu({
                   setActive(0);
                 }}
                 onKeyDown={onSearchKeyDown}
-                className="min-w-0 flex-1 bg-transparent text-[12px] text-content placeholder:text-content/35"
+                className="min-w-0 flex-1 bg-transparent text-[12px] text-content placeholder:text-(--ui-text-secondary)"
               />
             </ComboboxSearch>
           ) : null}
@@ -487,7 +487,7 @@ function SearchableSelectMenu({
                     } ${
                       highlighted
                         ? "bg-selection text-content"
-                        : "text-content/75 hover:bg-content/5 hover:text-content"
+                        : "text-(--ui-text-secondary) hover:bg-(--ui-surface-hover) hover:text-content"
                     }`}
                   >
                     <span className="grid size-3.5 shrink-0 place-items-center">
@@ -508,7 +508,10 @@ function SearchableSelectMenu({
                 );
               })
             ) : (
-              <p role="status" className="px-2 py-3 text-center text-[12px] text-content/45">
+              <p
+                role="status"
+                className="px-2 py-3 text-center text-[12px] text-(--ui-text-secondary)"
+              >
                 {emptyLabel}
               </p>
             )}

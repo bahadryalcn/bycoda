@@ -283,7 +283,7 @@ export function SidebarWorktreeSwitcher({
                   )}
                   <span className="min-w-0 flex-1">
                     <span className="block truncate text-[12px]">{tree.label}</span>
-                    <span className="block truncate text-[10px] text-[var(--ui-text-muted)]">
+                    <span className="block truncate text-(length:--ui-font-caption) text-(--ui-text-secondary)">
                       {tree.detail}
                     </span>
                   </span>
@@ -293,7 +293,7 @@ export function SidebarWorktreeSwitcher({
               );
             })}
             {data && rows.length === 0 ? (
-              <p className="px-2.5 py-5 text-center text-[12px] text-[var(--ui-text-muted)]">
+              <p className="px-2.5 py-5 text-center text-[12px] text-(--ui-text-secondary)">
                 {t("No matching working copies")}
               </p>
             ) : null}
@@ -341,7 +341,7 @@ function OpenTabs({ stats }: { stats?: { tabs: number; busy: boolean } }) {
     <span
       title={label}
       aria-label={label}
-      className="flex shrink-0 items-center gap-1 text-[11px] tabular-nums text-[var(--ui-text-muted)]"
+      className="flex shrink-0 items-center gap-1 text-(length:--ui-font-caption) tabular-nums text-(--ui-text-secondary)"
     >
       {stats.busy ? <span className="size-1.5 animate-pulse rounded-full bg-accent" /> : null}
       {stats.tabs}

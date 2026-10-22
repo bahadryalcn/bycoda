@@ -50,6 +50,11 @@ export function supportsAdoptedSessions(capabilities: string[] | undefined): boo
   return !!capabilities?.includes(ADOPTED_CAPABILITY);
 }
 
+/** A loaded copy that can be compared: idle, with its whole transcript. A
+ * long one opens with only its tail until earlier pages arrive. */
+const comparable = (session: Session | undefined): session is Session =>
+  !!session && !session.busy && !session.historyLoading;
+
 /** Entries worth fetching: a loaded, idle local copy whose host revision moved. */
 export function planAdoptedFetches(
   entries: readonly AdoptedEntry[],
@@ -57,10 +62,9 @@ export function planAdoptedFetches(
   mirrored: ReadonlyMap<string, number>,
 ): AdoptedEntry[] {
   const byId = new Map(local.map((session) => [session.id, session]));
-  return entries.filter((entry) => {
-    const session = byId.get(entry.id);
-    return !!session && !session.busy && mirrored.get(entry.id) !== entry.revision;
-  });
+  return entries.filter(
+    (entry) => comparable(byId.get(entry.id)) && mirrored.get(entry.id) !== entry.revision,
+  );
 }
 
 /** The host copy's transcript laid over the local session. Desktop identity
@@ -137,6 +141,19 @@ function sameBlockContent(a: Block, b: Block): boolean {
   );
 }
 
+/** The local block is an earlier state of the host's same reply. */
+function isCutShort(local: Block, host: Block): boolean {
+  return (
+    local.id === host.id &&
+    local.role === host.role &&
+    local.role !== "user" &&
+    typeof local.text === "string" &&
+    typeof host.text === "string" &&
+    host.text.length > local.text.length &&
+    host.text.startsWith(local.text)
+  );
+}
+
 /** Which side holds more of one shared transcript, or `undefined` when they
  * diverge. Quitting mid-turn seals the desktop's open turn (cancelled tools,
  * settled approvals, turn duration) and appends a notice: a host block still
@@ -168,6 +185,10 @@ function compareTranscripts(
       (blockJson(a) === blockJson(b) || isOpenBlock(b) || sameBlockContent(a, b))
     )
       continue;
+    // A copy saved while the host was still writing its reply ends in that
+    // reply cut short (storage drops the stream flag). The host holds more of
+    // it: never "same", which would let the stale tail replace the reply.
+    if (i === mine.length - 1 && isCutShort(a, b)) return { lead: "host" };
     return { divergence: `${i}\0${a.id}\0${b.id}` };
   }
   if (mine.length === theirs.length) return { lead: "same" };
@@ -294,6 +315,13 @@ const autoPreserved = new WeakMap<Map<string, number>, Map<string, string>>();
 /** The last host snapshot received per session, to ask for deltas. Bounded:
  * a snapshot is a whole transcript. */
 const snapshots = new WeakMap<Map<string, number>, Map<string, HostSession>>();
+/** Sessions seen running on the host whose finished transcript has not been
+ * applied here yet, with when it was first missed. They stay "continuing
+ * elsewhere" so no local turn starts on the stale copy. */
+const awaitingHost = new WeakMap<Map<string, number>, Map<string, number | undefined>>();
+/** How long a finished host turn may fail to arrive before the conversation
+ * is handed to an explicit sync instead of staying held. */
+export const ADOPTED_ARRIVAL_LIMIT_MS = 60_000;
 export const ADOPTED_SNAPSHOT_LIMIT = 6;
 
 /** An explicit refresh resolves divergence only after preserving the local
@@ -307,6 +335,9 @@ export async function refreshAdoptedSession(
   const before = deps.local().find((session) => session.id === sessionId);
   if (!before || before.busy)
     throw new Error("Wait for the local turn to finish before refreshing.");
+  // A partly loaded transcript would be saved as a copy missing its start;
+  // the mirror catches it up once loaded.
+  if (before.historyLoading) return false;
   // Always request a full snapshot, including when the revision has not moved.
   const host = await deps.load(sessionId);
   return applyAdoptedSnapshot(deps, before, host);
@@ -322,7 +353,7 @@ async function applyAdoptedSnapshot(
   const beforeTranscript = transcript(before);
   const unchanged = () => {
     const current = deps.local().find((session) => session.id === sessionId);
-    if (!current || current.busy || current !== before || transcript(current) !== beforeTranscript)
+    if (!comparable(current) || current !== before || transcript(current) !== beforeTranscript)
       throw new Error("The local conversation changed while refreshing. Try again.");
     return current;
   };
@@ -389,14 +420,45 @@ export async function mirrorAdoptedSessions(deps: AdoptedMirrorDeps): Promise<Se
     if (known.size > ADOPTED_SNAPSHOT_LIMIT) known.delete(known.keys().next().value!);
   };
   const running = new Set(entries.filter((entry) => entry.status === "running").map((e) => e.id));
-  deps.onRunning?.(running);
+  const listed = new Map(entries.map((entry) => [entry.id, entry]));
+  let awaiting = awaitingHost.get(deps.mirrored);
+  if (!awaiting) awaitingHost.set(deps.mirrored, (awaiting = new Map()));
+  for (const id of running) awaiting.set(id, undefined);
+  // Released once its last revision is applied (or judged: local ahead) or
+  // flagged as a conflict, which waits for an explicit sync instead.
+  const held = () => {
+    const flagged = new Set(
+      deps.local().filter((session) => session.adoptedSyncConflict).map((session) => session.id),
+    );
+    for (const [id, since] of awaiting) {
+      const entry = listed.get(id);
+      if (!entry) {
+        awaiting.delete(id);
+        continue;
+      }
+      if (entry.status === "running") continue;
+      if (deps.mirrored.get(id) === entry.revision || flagged.has(id)) {
+        awaiting.delete(id);
+        continue;
+      }
+      if (since === undefined) awaiting.set(id, Date.now());
+      else if (Date.now() - since > ADOPTED_ARRIVAL_LIMIT_MS) {
+        // Still unreadable: nothing is replaced; the Sync banner takes over.
+        const current = deps.local().find((session) => session.id === id);
+        if (current) deps.conflict?.(current);
+        awaiting.delete(id);
+      }
+    }
+    return new Set(awaiting.keys());
+  };
+  deps.onRunning?.(held());
   for (const entry of planAdoptedFetches(entries, deps.local(), deps.mirrored)) {
     try {
       const before = deps.local().find((session) => session.id === entry.id);
       const host = await deps.load(entry.id, known.get(entry.id));
       // A local turn may have started while the snapshot was in flight.
       const current = deps.local().find((session) => session.id === entry.id);
-      if (!current || current.busy) continue;
+      if (!comparable(current)) continue;
       if (before && transcript(before) !== transcript(current)) {
         deps.conflict?.(current);
         continue;
@@ -462,6 +524,11 @@ export async function mirrorAdoptedSessions(deps: AdoptedMirrorDeps): Promise<Se
           // A tab can open during adoption with an older stored copy. Only a
           // transcript applied to that tab establishes its mirrored revision.
           present.add(entry.id);
+          // The saved copy, as storage returns it, is the shared baseline: a
+          // copy still unchanged from it takes the host's later turns as they
+          // are, even when it was saved mid-reply.
+          const adopted = await deps.stored(entry.id).catch(() => null);
+          if (adopted && !base.has(entry.id)) base.set(entry.id, adopted);
           continue;
         }
         // A copy the host is still writing is caught up once the turn ends.
@@ -503,6 +570,7 @@ export async function mirrorAdoptedSessions(deps: AdoptedMirrorDeps): Promise<Se
       }
     }
   }
-  // Sessions already mirrored at this revision still need the hold flag.
+  // Release sessions whose finished turn arrived during this pass.
+  deps.onRunning?.(held());
   return running;
 }

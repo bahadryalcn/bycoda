@@ -2,6 +2,42 @@ import { expect, test } from "@playwright/test";
 import { mkdirSync } from "node:fs";
 
 for (const theme of ["light", "dark"]) {
+  test(`terminal returns from a hidden panel: ${theme}`, async ({ page }) => {
+    const errors: string[] = [];
+    page.on("pageerror", (error) => errors.push(error.message));
+    await page.setViewportSize({ width: 1000, height: 800 });
+    await page.goto(`/tests/browser/terminal-tools.html?theme=${theme}`);
+    const panel = page.locator(".project-terminal-dock");
+    const canvas = page.locator(".xterm-screen canvas");
+    await expect(page.locator("html")).toHaveAttribute("data-terminal-prompt", /^ready>\s*$/);
+    await expect(canvas.first()).toBeVisible();
+    for (const width of [1000, 390, 1000]) {
+      await panel.evaluate((element) => {
+        element.style.display = "none";
+      });
+      // Disposing WebGL is evidence that the visibility observer saw the hidden panel.
+      await expect(canvas).toHaveCount(0);
+      await page.evaluate(() =>
+        document.dispatchEvent(
+          new CustomEvent("test-pty-output", {
+            detail: `\r\n${"background output ".repeat(20)}\r\nreturned> `,
+          }),
+        ),
+      );
+      await page.setViewportSize({ width, height: 800 });
+      await panel.evaluate((element) => {
+        element.style.display = "";
+      });
+      await expect(canvas.first()).toBeVisible();
+      await expect(page.locator("html")).toHaveAttribute("data-terminal-prompt", /^returned>\s*$/);
+      await page.locator(".xterm-helper-textarea").pressSequentially("ok");
+      await expect(page.locator("html")).toHaveAttribute("data-terminal-prompt", /^returned> ok$/);
+    }
+    expect(errors).toEqual([]);
+  });
+}
+
+for (const theme of ["light", "dark"]) {
   for (const width of [390, 1440]) {
     test(`remote suggestion list: ${theme} ${width}`, async ({ page }) => {
       await page.setViewportSize({ width, height: 800 });

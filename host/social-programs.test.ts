@@ -487,14 +487,14 @@ describe("AI campaign programs through SocialService", () => {
     await f.call("policy.save", {
       policies: {
         global: {},
-        platforms: { x: { agent: { provider: "gemini", model: "platform-override" } } },
+        platforms: { x: { agent: { provider: "antigravity", model: "platform-override" } } },
       },
     });
     f.config.limits.totalGenerations = 1;
     const p = await f.create();
     await f.call("programs.generate", { id: p.id });
     await f.service.programs.idle();
-    expect(generate.mock.calls[0][0]).toEqual({ provider: "gemini", model: "platform-override" });
+    expect(generate.mock.calls[0][0]).toEqual({ provider: "antigravity", model: "platform-override" });
     const o = (await f.detail(p)).occurrences[0];
     await f.call("programs.regenerate", { id: p.id, occurrenceId: o.id, accountId: f.a.id });
     await f.service.programs.idle();
