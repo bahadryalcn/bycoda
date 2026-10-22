@@ -449,7 +449,7 @@ pub fn mobile_pty_call(
         let mut registry = host.inner.lock().unwrap_or_else(|e| e.into_inner());
         registry
             .entries
-            .remove(&input["terminalId"].as_str().unwrap_or_default().to_owned());
+            .remove(input["terminalId"].as_str().unwrap_or_default());
         registry.requests.insert(key, (signature, result.clone()));
         return Ok(result);
     }

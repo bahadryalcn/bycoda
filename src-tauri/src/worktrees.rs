@@ -803,6 +803,7 @@ fn remove_with_sessions(
 }
 
 #[tauri::command(async)]
+#[allow(clippy::too_many_arguments)]
 pub fn git_worktree_remove(
     cwd: String,
     path: String,

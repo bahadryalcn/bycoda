@@ -15,7 +15,7 @@ pub struct Filters {
 impl Filters {
     fn validate(&self) -> Result<(), String> {
         if self.allowed_board_ids.len() > 500
-            || self.allowed_board_ids.iter().any(|id| *id == 0)
+            || self.allowed_board_ids.contains(&0)
             || self.project_ids.as_ref().is_some_and(|ids| {
                 ids.len() > 1000
                     || ids
@@ -123,12 +123,14 @@ fn checked_snapshot(
     }
     Ok(value)
 }
+type BoardState = (Value, Value, Vec<String>, HashMap<String, Version>);
+
 fn board_state(
     config: &JiraConfig,
     board_id: u64,
     scope: &Scope,
     filters: &Filters,
-) -> Result<(Value, Value, Vec<String>, HashMap<String, Version>), String> {
+) -> Result<BoardState, String> {
     let data = jira_get(
         config,
         &format!("/rest/agile/1.0/board/{board_id}/configuration"),
@@ -420,7 +422,7 @@ fn check_state(
         return Err("Jira did not return rank revisions; refresh or use the desktop board to rank this issue".into());
     }
     for key in keys {
-        if snapshot.versions.get(key).is_none() || snapshot.versions.get(key) != versions.get(key) {
+        if !snapshot.versions.contains_key(key) || snapshot.versions.get(key) != versions.get(key) {
             return Err(
                 "The Jira issue status, version or rank changed; refresh before applying".into(),
             );
